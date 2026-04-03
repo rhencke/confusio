@@ -43,7 +43,8 @@ end
 -- Default handlers. Add an entry here for every endpoint confusio exposes.
 -- Override in backends/<name>.lua only when the backend behaves differently.
 local defaults = {
-  root = function() respond_json(200, "OK", {}) end,
+  root   = function() respond_json(200, "OK", {}) end,
+  emojis = function() respond_json(200, "OK", {}) end,
 }
 
 -- Resolve handlers once at startup: backend overrides shadow defaults via __index.
@@ -96,15 +97,20 @@ end
 -- ---------------------------------------------------------------------------
 -- Route registry
 --
--- Exact:      route_add("/emojis",               "emojis")
--- Parametric: route_add("/repos/{owner}/{repo}",  "repo")
+-- Each entry: { path, handler_name }.
+-- Exact:      { "/emojis",               "emojis" }
+-- Parametric: { "/repos/{owner}/{repo}",  "repo" }
 --
 -- Each handler_name must have an entry in defaults above (and optionally an
 -- override in backends/<name>.lua). Parametric captures are passed positionally:
 --   repo = function(owner, repo) ... end
 -- ---------------------------------------------------------------------------
 
-route_add("/", "root")
+local routes = {
+  { "/",       "root" },
+  { "/emojis", "emojis" },
+}
+for _, r in ipairs(routes) do route_add(r[1], r[2]) end
 
 function OnHttpRequest()
   local method = GetMethod()

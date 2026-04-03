@@ -10,14 +10,6 @@ GitHub's API is the lingua franca of git hosting tools. Other providers speak th
 
 Built with [Redbean](https://redbean.dev) — a single-file web server containing a Lua interpreter, distributed as a self-extracting zip.
 
-## Initially targeted providers
-
-- GitLab
-- Bitbucket
-- Gitea
-- Forgejo
-- Sourcehut
-
 ## How it works
 
 Confusio runs as a local proxy. Point your tools at it and Confusio translates GitHub API calls to the target provider's native API.
@@ -26,13 +18,14 @@ Auth is currently PAT-based: provide a token for the target provider and Confusi
 
 ## Compatibility
 
-| Endpoint | GitLab | Bitbucket | Gitea | Forgejo | Sourcehut |
-|----------|:------:|:---------:|:-----:|:-------:|:---------:|
-| `GET /`  | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Endpoint | Gitea | Forgejo | GitLab | Bitbucket | Sourcehut | Gogs | Codeberg | Gitbucket | OneDev | Phabricator | Pagure | RhodeCode | Kallithea | Gerrit | Azure DevOps | SourceForge | NotABug | Launchpad | Radicle | Harness |
+|----------|:-----:|:-------:|:------:|:---------:|:---------:|:----:|:--------:|:---------:|:------:|:-----------:|:------:|:---------:|:---------:|:------:|:------------:|:-----------:|:-------:|:---------:|:-------:|:-------:|
+| `GET /` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `GET /emojis` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
-✅ Supported · ⚠️ Partial · ❌ Unsupported
+✅ Supported · ❌ Unsupported (returns 404)
 
-The matrix will be published to GitHub Pages.
+The full matrix is also published at the [project landing page](https://rhencke.github.io/confusio/).
 
 ## Status
 
