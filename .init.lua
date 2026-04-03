@@ -1,5 +1,5 @@
--- Config defaults
-local config = {
+-- Config defaults (global so backends/<name>.lua can read it at startup)
+config = {
   backend  = "",
   base_url = "https://gitea.com",
 }
@@ -30,34 +30,35 @@ end
 -- Strip trailing slash for uniform concatenation.
 config.base_url = config.base_url:gsub("/$", "")
 
-local function respond_json(status, reason, body)
+-- respond_json and backend_impls are global so backends/<name>.lua can access them.
+function respond_json(status, reason, body)
   SetStatus(status, reason)
   SetHeader("Content-Type", "application/json; charset=utf-8")
   Write(EncodeJson(body))
 end
 
--- Backend-specific handler overrides. Only define what differs from the default.
--- To add a new backend: add a new key with its endpoint overrides.
+-- Backend-specific handler overrides. Each backend lives in backends/<name>.lua
+-- and sets backend_impl = { endpoint = function, ... } for its overrides.
+-- Only endpoints that behave differently from the default need to be listed.
+-- To add a new backend: create backends/<name>.lua (it will be loaded automatically).
 -- To add a new endpoint: add it to defaults; only add to a backend if it differs.
-local backend_impls = {
-  gitea = {
-    root = function()
-      local ok, status = pcall(Fetch, config.base_url .. "/api/v1/version")
-      if ok and status == 200 then respond_json(200, "OK", {})
-      else respond_json(503, "Service Unavailable", {}) end
-    end,
-  },
-}
+backend_impl = {}
+if config.backend ~= "" then
+  assert(config.backend:match("^[%a][%w_]*$"),
+    "invalid backend name: " .. config.backend)
+  dofile("/zip/backends/" .. config.backend .. ".lua")
+end
 
 -- Default handlers used when the active backend has no override.
 local defaults = {
-  root = function() respond_json(200, "OK", {}) end,
+  root   = function() respond_json(200, "OK", {}) end,
+  emojis = function() respond_json(200, "OK", {}) end,
 }
 
 -- Resolve once at startup: handle.X uses the backend override if present,
 -- otherwise falls through to defaults.X. The backend is fixed for the
 -- program's lifetime so this table never changes after init.
-local handle = setmetatable(backend_impls[config.backend] or {}, { __index = defaults })
+local handle = setmetatable(backend_impl, { __index = defaults })
 
 -- Route table maps path → handler name.
 -- O(1) lookup; adding an endpoint is one table entry.

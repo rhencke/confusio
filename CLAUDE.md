@@ -29,10 +29,14 @@ test/
   test-unit.sh               — unit test harness (starts confusio + mock, runs hurl)
   test-integration.sh        — integration test harness (live gitea.com)
   test-mock-validate.sh      — validate mock response structure vs real instance
-  root.hurl                  — hurl assertions for GET / (no backend)
+  default-root.hurl          — hurl assertions for GET / (no backend)
+  default-emojis.hurl        — hurl assertions for GET /emojis (no backend)
   gitea-root.hurl            — hurl assertions for GET / (gitea backend)
-  gitea-api-version.hurl     — hurl assertions for /api/v1/version (used by validate-mock)
+  gitea-emojis.hurl          — hurl assertions for GET /emojis (gitea backend)
   mock-gitea.lua             — Redbean handler for the mock Gitea server
+  lib.sh                     — shared helpers for test scripts
+  validate/
+    gitea-api-version.hurl   — hurl assertions for /api/v1/version (used by validate-mock)
 .github/
   workflows/ci.yml           — CI: parallel test-unit and test-integration jobs
   actions/setup/action.yml   — composite action: cache redbean.com and hurl
@@ -139,6 +143,10 @@ Hard-won insights from building this project. **Keep this section current**: whe
 ### GitHub Actions composite actions
 
 - **A local composite action (`uses: ./.github/actions/setup`) cannot contain `actions/checkout`.** The workflow runner needs to find the action file before checkout has run — chicken-and-egg. Always put `actions/checkout@v4` as an explicit first step in each job; the composite action handles everything after.
+
+### Handler architecture
+
+- **The backend is fixed for the program's lifetime** — config is loaded once at startup and never changes. Resolve handler functions at startup, not per-request. Use `setmetatable(backend_impls[config.backend] or {}, { __index = defaults })` so backend-specific handlers override the defaults, and missing entries fall through automatically. This avoids per-request dispatch and leverages Lua's native prototype-style inheritance.
 
 ### Mock server design
 

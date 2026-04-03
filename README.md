@@ -28,7 +28,8 @@ Auth is currently PAT-based: provide a token for the target provider and Confusi
 
 | Endpoint | GitLab | Bitbucket | Gitea | Forgejo | Sourcehut |
 |----------|:------:|:---------:|:-----:|:-------:|:---------:|
-| `GET /`  | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `GET /` | ❌ | ❌ | ✅ | ❌ | ❌ |
+| `GET /emojis` | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 ✅ Supported · ⚠️ Partial · ❌ Unsupported
 

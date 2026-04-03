@@ -18,3 +18,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
       - run: make test-integration
+
+  build-artifact:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: make build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: confusio.com
+          path: confusio.com
