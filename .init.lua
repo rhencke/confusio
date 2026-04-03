@@ -32,6 +32,35 @@ function respond_json(status, reason, body)
   Write(EncodeJson(body))
 end
 
+-- make_fetch_opts is global: backends/<name>.lua uses it to forward auth.
+--
+-- Returns a Fetch options table with the correct Authorization header for the
+-- target provider, or nil when no Authorization header is present on the
+-- incoming request. The raw token value passes through verbatim; only the
+-- scheme wrapper changes.
+--
+-- scheme: "token" | "bearer" | "basic-colon" | "basic"
+--   "token"       → Authorization: token <tok>
+--   "bearer"      → Authorization: Bearer <tok>
+--   "basic-colon" → Authorization: Basic base64(:tok)  (Azure DevOps — empty username)
+--   "basic"       → Authorization: Basic base64(tok)   (client passes user:pass as tok)
+function make_fetch_opts(scheme)
+  local h = GetHeader("Authorization")
+  if not h or h == "" then return nil end
+  local tok = h:match("^[Tt]oken%s+(.+)$") or h:match("^[Bb]earer%s+(.+)$") or h
+  local hdr
+  if scheme == "token" then
+    hdr = "token " .. tok
+  elseif scheme == "bearer" then
+    hdr = "Bearer " .. tok
+  elseif scheme == "basic-colon" then
+    hdr = "Basic " .. EncodeBase64(":" .. tok)
+  elseif scheme == "basic" then
+    hdr = "Basic " .. EncodeBase64(tok)
+  end
+  return { headers = { ["Authorization"] = hdr } }
+end
+
 -- backend_impl is global: set by backends/<name>.lua at startup.
 backend_impl = {}
 if config.backend ~= "" then

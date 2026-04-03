@@ -32,36 +32,54 @@ start_mock() {
   start_isolated sh "$MOCK_BIN" -p "$MOCK_PORT"
 }
 
-# --- Phase 1: no config (default behaviour) ---
-TMPDIR1=$(mktemp -d)
-trap "rm -rf $TMPDIR1" EXIT
-start_confusio "$TMPDIR1"
-PID=$!
-trap "kill $PID 2>/dev/null || true; rm -rf $TMPDIR1" EXIT
-$HURL --retry 10 --retry-interval 200 --connect-timeout 1 --max-time 5 \
-  --variable host=localhost:$CONFUSIO_PORT test/root.hurl
-kill $PID 2>/dev/null || true; sleep 0.3
+run_hurl() {
+  $HURL --retry 10 --retry-interval 200 --connect-timeout 1 --max-time 5 \
+    --variable host=localhost:$CONFUSIO_PORT "$1"
+}
 
-# --- Phase 2: Gitea backend via -D CLI flags ---
-TMPDIR2=$(mktemp -d)
-start_mock
-MOCK_PID=$!
-start_confusio "$TMPDIR2" "-- backend=gitea base_url=http://127.0.0.1:$MOCK_PORT"
-PID=$!
-trap "kill $PID 2>/dev/null || true; kill $MOCK_PID 2>/dev/null || true; rm -rf $TMPDIR2" EXIT
-$HURL --retry 10 --retry-interval 200 --connect-timeout 1 --max-time 5 \
-  --variable host=localhost:$CONFUSIO_PORT test/gitea-root.hurl
-kill $PID 2>/dev/null || true; kill $MOCK_PID 2>/dev/null || true; sleep 0.3
+# run_phase <hurl_file> [confusio_args...]
+# Starts confusio in a temp dir, runs the hurl assertion, then cleans up.
+run_phase() {
+  local hurl_file="$1"; shift
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  start_confusio "$tmpdir" "$@"
+  PID=$!
+  trap "kill $PID 2>/dev/null || true; rm -rf $tmpdir" EXIT
+  run_hurl "$hurl_file"
+  kill $PID 2>/dev/null || true; sleep 0.3
+}
+
+# run_mock_phase <hurl_file> [confusio_args...]
+# Like run_phase but also starts the mock backend server.
+# Set CONFUSIO_CONFIG before calling to write a .confusio.lua config file.
+run_mock_phase() {
+  local hurl_file="$1"; shift
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  if [ -n "${CONFUSIO_CONFIG:-}" ]; then
+    printf '%s\n' "$CONFUSIO_CONFIG" > "$tmpdir/.confusio.lua"
+  fi
+  start_mock; MOCK_PID=$!
+  start_confusio "$tmpdir" "$@"
+  PID=$!
+  trap "kill $PID 2>/dev/null || true; kill $MOCK_PID 2>/dev/null || true; rm -rf $tmpdir" EXIT
+  run_hurl "$hurl_file"
+  kill $PID 2>/dev/null || true; kill $MOCK_PID 2>/dev/null || true; sleep 0.3
+}
+
+MOCK_ARGS="-- backend=gitea base_url=http://127.0.0.1:$MOCK_PORT"
+
+# --- Phase 1: no config (default behaviour) ---
+run_phase test/root.hurl
+
+# --- Phase 2: Gitea backend via CLI flags ---
+run_mock_phase test/gitea-root.hurl $MOCK_ARGS
 
 # --- Phase 3: Gitea backend via .confusio.lua config file ---
-TMPDIR3=$(mktemp -d)
-cat > "$TMPDIR3/.confusio.lua" <<EOF
-confusio = { backend="gitea", base_url="http://127.0.0.1:$MOCK_PORT" }
-EOF
-start_mock
-MOCK_PID=$!
-start_confusio "$TMPDIR3"
-PID=$!
-trap "kill $PID 2>/dev/null || true; kill $MOCK_PID 2>/dev/null || true; rm -rf $TMPDIR3" EXIT
-$HURL --retry 10 --retry-interval 200 --connect-timeout 1 --max-time 5 \
-  --variable host=localhost:$CONFUSIO_PORT test/gitea-root.hurl
+CONFUSIO_CONFIG="confusio = { backend=\"gitea\", base_url=\"http://127.0.0.1:$MOCK_PORT\" }"
+run_mock_phase test/gitea-root.hurl
+unset CONFUSIO_CONFIG
+
+# --- Phase 4: Gitea backend with token passthrough ---
+run_mock_phase test/gitea-root-auth.hurl $MOCK_ARGS
