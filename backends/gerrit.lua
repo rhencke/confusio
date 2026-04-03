@@ -1,7 +1,7 @@
 -- Gerrit backend handler overrides.
 backend_impl = {
   root = function()
-    local ok, status = pcall(Fetch, config.base_url .. "/config/server/version")
+    local ok, status = pcall(Fetch, config.base_url .. "/config/server/version", make_fetch_opts("basic"))
     if ok and status == 200 then respond_json(200, "OK", {})
     else respond_json(503, "Service Unavailable", {}) end
   end,

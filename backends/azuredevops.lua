@@ -1,7 +1,7 @@
 -- Azure DevOps backend handler overrides.
 backend_impl = {
   root = function()
-    local ok, status = pcall(Fetch, config.base_url .. "/_apis/connectionData")
+    local ok, status = pcall(Fetch, config.base_url .. "/_apis/connectionData", make_fetch_opts("basic-colon"))
     if ok and status == 200 then respond_json(200, "OK", {})
     else respond_json(503, "Service Unavailable", {}) end
   end,

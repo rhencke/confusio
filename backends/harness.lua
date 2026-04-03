@@ -1,7 +1,7 @@
 -- Harness backend handler overrides.
 backend_impl = {
   root = function()
-    local ok, status = pcall(Fetch, config.base_url .. "/gateway/code/api/v1")
+    local ok, status = pcall(Fetch, config.base_url .. "/gateway/code/api/v1", make_fetch_opts("bearer"))
     if ok and status == 200 then respond_json(200, "OK", {})
     else respond_json(503, "Service Unavailable", {}) end
   end,
