@@ -36,12 +36,27 @@ confusio.com: redbean.com .init.lua
 	cp redbean.com confusio.com
 	zip confusio.com .init.lua
 
-.PHONY: build test clean
+mock-gitea.com: redbean.com test/mock-gitea.lua
+	cp redbean.com mock-gitea.com
+	@mkdir -p .tmp-mock
+	cp test/mock-gitea.lua .tmp-mock/.init.lua
+	(cd .tmp-mock && zip -u ../mock-gitea.com .init.lua)
+	rm -rf .tmp-mock
+
+.PHONY: build test test-unit test-integration validate-mock clean
 
 build: confusio.com
 
-test: confusio.com hurl
-	bash test/test.sh
+test: test-unit test-integration
+
+test-unit: confusio.com mock-gitea.com hurl
+	bash test/test-unit.sh
+
+test-integration: confusio.com hurl
+	bash test/test-integration.sh
+
+validate-mock: mock-gitea.com
+	bash test/test-mock-validate.sh
 
 clean:
-	rm -f redbean.com confusio.com hurl
+	rm -f redbean.com confusio.com mock-gitea.com hurl
