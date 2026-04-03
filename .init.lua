@@ -36,26 +36,40 @@ local function respond_json(status, reason, body)
   Write(EncodeJson(body))
 end
 
-local function handle_root_gitea()
-  local ok, status = pcall(Fetch, config.base_url .. "/api/v1/version")
-  if ok and status == 200 then
-    respond_json(200, "OK", {})
-  else
-    respond_json(503, "Service Unavailable", {})
-  end
-end
+-- Backend-specific handler overrides. Only define what differs from the default.
+-- To add a new backend: add a new key with its endpoint overrides.
+-- To add a new endpoint: add it to defaults; only add to a backend if it differs.
+local backend_impls = {
+  gitea = {
+    root = function()
+      local ok, status = pcall(Fetch, config.base_url .. "/api/v1/version")
+      if ok and status == 200 then respond_json(200, "OK", {})
+      else respond_json(503, "Service Unavailable", {}) end
+    end,
+  },
+}
+
+-- Default handlers used when the active backend has no override.
+local defaults = {
+  root = function() respond_json(200, "OK", {}) end,
+}
+
+-- Resolve once at startup: handle.X uses the backend override if present,
+-- otherwise falls through to defaults.X. The backend is fixed for the
+-- program's lifetime so this table never changes after init.
+local handle = setmetatable(backend_impls[config.backend] or {}, { __index = defaults })
+
+-- Route table maps path → handler name.
+-- O(1) lookup; adding an endpoint is one table entry.
+local routes = {
+  ["/"]       = "root",
+  ["/emojis"] = "emojis",
+}
 
 function OnHttpRequest()
   local method = GetMethod()
   local path   = GetPath()
-
-  if (method == "GET" or method == "HEAD") and path == "/" then
-    if config.backend == "gitea" then
-      handle_root_gitea()
-    else
-      respond_json(200, "OK", {})
-    end
-  else
-    Route()
-  end
+  if method ~= "GET" and method ~= "HEAD" then Route(); return end
+  local ep = routes[path]
+  if ep then handle[ep]() else Route() end
 end
