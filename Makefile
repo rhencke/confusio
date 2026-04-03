@@ -32,9 +32,9 @@ else
 	chmod +x hurl
 endif
 
-confusio.com: redbean.com .init.lua
+confusio.com: redbean.com .init.lua $(wildcard backends/*.lua)
 	cp redbean.com confusio.com
-	zip confusio.com .init.lua
+	zip confusio.com .init.lua $(wildcard backends/*.lua)
 
 mock-gitea.com: redbean.com test/mock-gitea.lua
 	cp redbean.com mock-gitea.com

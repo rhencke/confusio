@@ -83,17 +83,22 @@ When implementing a new endpoint, check the spec for:
 ## Adding a new endpoint
 
 1. Check `vendor/github-rest-api-description/api.github.com.yaml` for the endpoint's contract.
-2. Add a `handle_<path>_<backend>()` function in `.init.lua`.
-3. Route to it in `OnHttpRequest()`.
-4. Add a hurl assertion file in `test/` and wire it into `test/test-unit.sh` (mock) and `test/test-integration.sh` (live).
-5. Update the compatibility matrix in `README.md`.
+2. Add a `route_add(...)` call in `.init.lua`:
+   - Exact path: `route_add("/emojis", "emojis")`
+   - Parametric path: `route_add("/repos/{owner}/{repo}", "repo")`
+3. Add a default handler to the `defaults` table in `.init.lua`.
+4. If any backend behaves differently, add an override in `backends/<name>.lua`.
+   Parametric captures are passed positionally: `repo = function(owner, repo) ... end`
+5. Add a hurl assertion file in `test/` and wire it into `test/test-unit.sh` (mock) and `test/test-integration.sh` (live).
+6. Update the compatibility matrix in `README.md`.
 
 ## Adding a new backend
 
-1. Add the backend name to config validation in `.init.lua` (or leave open — currently no validation).
-2. Implement `handle_<endpoint>_<newbackend>()` functions.
-3. Add mock server as `test/mock-<newbackend>.lua` and build it in the `Makefile` (copy pattern from `mock-gitea.com`).
-4. Add a `test/test-mock-validate.sh`-equivalent for the new backend if its spec differs meaningfully.
+1. Create `backends/<name>.lua`. Set `backend_impl = { endpoint = function, ... }` with only
+   the endpoints that differ from the defaults. The file is loaded automatically when
+   `config.backend == "<name>"` — no changes to `.init.lua` needed.
+2. Add mock server as `test/mock-<newbackend>.lua` and build it in the `Makefile` (copy pattern from `mock-gitea.com`).
+3. Add a `test/test-mock-validate.sh`-equivalent for the new backend if its spec differs meaningfully.
 
 ## Redbean API notes
 
@@ -139,6 +144,19 @@ Hard-won insights from building this project. **Keep this section current**: whe
 ### GitHub Actions composite actions
 
 - **A local composite action (`uses: ./.github/actions/setup`) cannot contain `actions/checkout`.** The workflow runner needs to find the action file before checkout has run — chicken-and-egg. Always put `actions/checkout@v4` as an explicit first step in each job; the composite action handles everything after.
+
+### Routing
+
+- **Segment-based radix trie** (`route_add` / `route_match` in `.init.lua`): O(k) lookup where
+  k = path depth. Static edges are preferred over param edges at each node, so `/repos/search`
+  beats `/repos/{owner}` when both are registered. Captures from `{param}` segments are passed
+  as positional arguments to the handler.
+- **Startup-time handler resolution**: `setmetatable(backend_impl, { __index = defaults })` is
+  built once after config loads. The backend is fixed for the program's lifetime — no per-request
+  dispatch needed. Backend files set `backend_impl = { ... }` globally; `dofile` runs in global
+  scope so locals from `.init.lua` are not visible to backend files.
+- **`/zip/` prefix for dofile**: Redbean's `dofile` resolves paths on the real filesystem by
+  default. Files inside the zip must be accessed as `dofile("/zip/backends/gitea.lua")`.
 
 ### Mock server design
 
