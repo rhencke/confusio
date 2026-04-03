@@ -14,7 +14,17 @@ Built with [Redbean](https://redbean.dev) — a single-file web server containin
 
 Confusio runs as a local proxy. Point your tools at it and Confusio translates GitHub API calls to the target provider's native API.
 
-Auth is currently PAT-based: provide a token for the target provider and Confusio passes it through, translated to the right format. OAuth is out of scope for now.
+Auth is PAT passthrough. Include a standard `Authorization` header in your request to confusio (e.g. `Authorization: token ghp_abc123…` — same as GitHub) and it will be re-formatted for the target provider:
+
+| Provider | confusio sends |
+|----------|---------------|
+| Gitea, Forgejo, Gogs, Codeberg, NotABug, Pagure, Sourcehut | `Authorization: token <value>` |
+| GitLab, OneDev, RhodeCode, Kallithea, Gitbucket, Harness, Radicle | `Authorization: Bearer <value>` |
+| Azure DevOps | `Authorization: Basic base64(:<value>)` |
+| Bitbucket, Gerrit | `Authorization: Basic base64(<value>)` — pass `user:password` as the token value |
+| SourceForge, Launchpad, Phabricator | No auth forwarded (public health endpoints) |
+
+The token value is never stored or modified — only the scheme wrapper changes. OAuth is out of scope for now.
 
 ## Compatibility
 

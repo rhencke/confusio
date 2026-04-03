@@ -104,7 +104,8 @@ When implementing a new endpoint, check the spec for:
 
 - `GetMethod()`, `GetPath()`, `GetHeader()` — inspect the incoming request
 - `SetStatus(code, reason)`, `SetHeader(name, value)`, `Write(body)` — build the response
-- `Fetch(url)` — outgoing HTTP (returns `status, headers, body`; use `pcall` for error handling)
+- `Fetch(url[, opts])` — outgoing HTTP. `opts` may include `method`, `body`, and `headers` (table). Returns `status, headers, body`; wrap in `pcall` (throws on network failure). `make_fetch_opts(scheme)` in `.init.lua` builds the opts table for auth passthrough.
+- `EncodeBase64(str)` — standard base64 encoding (used for Basic auth headers)
 - `EncodeJson(table)`, `DecodeJson(string)` — JSON encode/decode
 - `Route()` — fall through to default Redbean routing (static files in the zip)
 - `dofile(path)` — load a Lua file into the current environment (used for `.confusio.lua`)
@@ -132,7 +133,8 @@ Hard-won insights from building this project. **Keep this section current**: whe
 ### Redbean
 
 - **`-D key=value` is NOT for Lua globals.** It means "directory overlay" — passing `-D backend=gitea` errors with "not a directory: backend=gitea". Use SCRIPTARGS instead: `sh ./confusio.com -- backend=gitea`.
-- **`Fetch(url)` return values**: returns `status, headers, body` — but wrap in `pcall` because it throws on connection failure rather than returning an error status.
+- **`Fetch(url, opts)` full signature**: `opts` is an optional table with keys `method`, `body`, and `headers` (a table of string pairs). Returns `status, headers, body` on success — but wrap in `pcall` because it throws on connection failure rather than returning an error status. Passing `nil` as `opts` is valid and makes an unauthenticated GET.
+- **`EncodeBase64(str)`** is available and produces standard base64. Used by `make_fetch_opts` for Basic auth schemes.
 - **`EncodeJson({})` produces `"{}"` (a JSON object), not `"[]"`.** Lua tables with no integer keys serialize as objects.
 - **Redbean sends `SIGTERM` to its entire process group** on shutdown (not just to itself). Any test script that starts Redbean without `setsid` will be killed when confusio shuts down. Always use `setsid` to isolate server processes.
 
