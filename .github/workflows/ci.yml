@@ -1,0 +1,23 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache redbean
+        uses: actions/cache@v4
+        with:
+          path: redbean.com
+          key: redbean-${{ hashFiles('.redbean-version') }}
+      - name: Cache hurl
+        uses: actions/cache@v4
+        with:
+          path: hurl
+          key: hurl-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.hurl-version') }}
+      - name: Test
+        run: make test
