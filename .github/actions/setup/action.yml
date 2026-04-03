@@ -1,0 +1,13 @@
+name: Cache dependencies
+description: Restore cached redbean and hurl binaries
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache@v4
+      with:
+        path: redbean.com
+        key: redbean-${{ hashFiles('.redbean-version') }}
+    - uses: actions/cache@v4
+      with:
+        path: hurl
+        key: hurl-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.hurl-version') }}
