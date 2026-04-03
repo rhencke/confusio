@@ -1,9 +1,7 @@
--- Gitea backend handler overrides.
--- Loaded by .init.lua when config.backend == "gitea".
--- Only endpoints that behave differently from the default need to be listed here.
+-- Bitbucket backend handler overrides.
 backend_impl = {
   root = function()
-    local ok, status = pcall(Fetch, config.base_url .. "/api/v1/version")
+    local ok, status = pcall(Fetch, config.base_url .. "/2.0/user")
     if ok and status == 200 then respond_json(200, "OK", {})
     else respond_json(503, "Service Unavailable", {}) end
   end,
