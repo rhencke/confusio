@@ -26,7 +26,11 @@ Auth is currently PAT-based: provide a token for the target provider and Confusi
 
 ## Compatibility
 
-Not every provider supports every GitHub API concept. Confusio maintains a compatibility matrix — each GitHub API endpoint mapped against each provider, showing whether it's fully supported, partially supported, or unsupported. Think of it as a support table you can scan to see what works before you try it.
+| Endpoint | GitLab | Bitbucket | Gitea | Forgejo | Sourcehut |
+|----------|:------:|:---------:|:-----:|:-------:|:---------:|
+| `GET /`  | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+✅ Supported · ⚠️ Partial · ❌ Unsupported
 
 The matrix will be published to GitHub Pages.
 
