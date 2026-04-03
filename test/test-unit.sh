@@ -83,3 +83,6 @@ unset CONFUSIO_CONFIG
 
 # --- Phase 4: Gitea backend with token passthrough ---
 run_mock_phase test/gitea-root-auth.hurl $MOCK_ARGS
+
+# --- Phase 5: Repos API (Gitea backend) ---
+run_mock_phase test/gitea-repos.hurl $MOCK_ARGS
