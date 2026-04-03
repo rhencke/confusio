@@ -18,8 +18,8 @@ Auth is currently PAT-based: provide a token for the target provider and Confusi
 
 ## Compatibility
 
-| Endpoint | Gitea | Forgejo | GitLab | Bitbucket | Sourcehut | Gogs | Codeberg | Gitbucket | OneDev | Phabricator | Pagure | RhodeCode | Kallithea | Gerrit | Azure DevOps | SourceForge | NotABug | Launchpad | Radicle | Harness |
-|----------|:-----:|:-------:|:------:|:---------:|:---------:|:----:|:--------:|:---------:|:------:|:-----------:|:------:|:---------:|:---------:|:------:|:------------:|:-----------:|:-------:|:---------:|:-------:|:-------:|
+| Endpoint | Azure DevOps | Bitbucket | Codeberg | Forgejo | Gerrit | Gitbucket | Gitea | GitLab | Gogs | Harness | Kallithea | Launchpad | NotABug | OneDev | Pagure | Phabricator | Radicle | RhodeCode | SourceForge | Sourcehut |
+|----------|:------------:|:---------:|:--------:|:-------:|:------:|:---------:|:-----:|:------:|:----:|:-------:|:---------:|:---------:|:-------:|:------:|:------:|:-----------:|:-------:|:---------:|:-----------:|:---------:|
 | `GET /` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `GET /emojis` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
