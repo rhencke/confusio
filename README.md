@@ -28,12 +28,7 @@ The token value is never stored or modified — only the scheme wrapper changes.
 
 ## Compatibility
 
-| Endpoint | Azure DevOps | Bitbucket | Codeberg | Forgejo | Gerrit | Gitbucket | Gitea | GitLab | Gogs | Harness | Kallithea | Launchpad | NotABug | OneDev | Pagure | Phabricator | Radicle | RhodeCode | SourceForge | Sourcehut |
-|----------|:------------:|:---------:|:--------:|:-------:|:------:|:---------:|:-----:|:------:|:----:|:-------:|:---------:|:---------:|:-------:|:------:|:------:|:-----------:|:-------:|:---------:|:-----------:|:---------:|
-| `GET /` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `GET /emojis` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-
-✅ Supported · ❌ Unsupported (returns 404)
+See the [full compatibility matrix](https://rhencke.github.io/confusio/) on the project landing page.
 
 The full matrix is also published at the [project landing page](https://rhencke.github.io/confusio/).
 
