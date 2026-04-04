@@ -143,6 +143,26 @@ function OnHttpRequest()
   elseif path:find("^/_apis/projects/testorg/teams/team%-abc123/members/") and method == "DELETE" then
     SetStatus(204, "No Content")
 
+  -- All teams (get_user_teams: GET /_apis/teams) -----------------------------
+  elseif path == "/_apis/teams" and method == "GET" then
+    SetStatus(200, "OK")
+    json('{"count":1,"value":[' ..
+      '{"id":"team-abc123","name":"core","description":"Core team",' ..
+      '"projectId":"proj-testorg","projectName":"testorg",' ..
+      '"url":"","identityUrl":""}' ..
+      ']}')
+
+  -- Single team by GUID (get_team: GET /_apis/teams/{team_id}) ---------------
+  elseif path == "/_apis/teams/team-abc123" then
+    SetStatus(200, "OK")
+    json('{"id":"team-abc123","name":"core","description":"Core team",' ..
+      '"projectId":"proj-testorg","projectName":"testorg",' ..
+      '"url":"","identityUrl":""}')
+
+  elseif path:find("^/_apis/teams/") then
+    SetStatus(404, "Not Found")
+    json('{"message":"Not Found"}')
+
   -- Webhooks subscriptions (get_repo_hooks second step) --------------------
   elseif path == "/_apis/hooks/subscriptions" then
     SetStatus(200, "OK")

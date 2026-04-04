@@ -218,3 +218,81 @@ GET http://{{host}}/orgs/testorg/teams/core/teams
 HTTP 200
 [Asserts]
 body == "[]"
+
+# Legacy team-by-id API (/teams/{team_id}) ----------------------------------------
+# team_id is the ADO team GUID (e.g. "team-abc123").
+
+# GET /user/teams
+GET http://{{host}}/user/teams
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$" isCollection
+jsonpath "$[0].id" isInteger
+jsonpath "$[0].name" isString
+jsonpath "$[0].slug" isString
+
+# GET /teams/{team_id}
+GET http://{{host}}/teams/team-abc123
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$.id" == 0
+jsonpath "$.name" == "core"
+jsonpath "$.slug" == "core"
+jsonpath "$.permission" isString
+
+# GET /teams/{team_id} — unknown GUID → 404
+GET http://{{host}}/teams/nonexist
+
+HTTP 404
+
+# GET /teams/{team_id}/members
+GET http://{{host}}/teams/team-abc123/members
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$" isCollection
+jsonpath "$[0].login" isString
+
+# GET /teams/{team_id}/members/{username} — deprecated legacy, member → 204
+GET http://{{host}}/teams/team-abc123/members/octocat
+
+HTTP 204
+
+# GET /teams/{team_id}/memberships/{username} — member → 200
+GET http://{{host}}/teams/team-abc123/memberships/octocat
+
+HTTP 200
+[Asserts]
+jsonpath "$.role" isString
+jsonpath "$.state" == "active"
+
+# GET /teams/{team_id}/repos — ADO has no team-repo model; returns []
+GET http://{{host}}/teams/team-abc123/repos
+
+HTTP 200
+[Asserts]
+body == "[]"
+
+# GET /teams/{team_id}/repos/{owner}/{repo} — not supported in ADO
+GET http://{{host}}/teams/team-abc123/repos/testorg/hello-world
+
+HTTP 404
+
+# GET /teams/{team_id}/invitations — no invitations in ADO
+GET http://{{host}}/teams/team-abc123/invitations
+
+HTTP 200
+[Asserts]
+body == "[]"
+
+# GET /teams/{team_id}/teams — no child teams in ADO
+GET http://{{host}}/teams/team-abc123/teams
+
+HTTP 200
+[Asserts]
+body == "[]"

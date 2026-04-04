@@ -3,6 +3,7 @@
 
 local base = function() return config.base_url .. "/api/v4" end
 local auth = function() return make_fetch_opts("bearer") end
+local PAGES = {per_page="per_page",page="page"}
 
 -- Encode owner/repo as GitLab project ID (URL-encoded "owner/repo").
 local function project_id(owner, repo_name)
@@ -189,7 +190,7 @@ backend_impl = {
 
   get_user_repos = proxy_handler(translate_gl_projects, function()
     return append_page_params(base().."/projects?owned=true&membership=true",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   post_user_repos = function()
@@ -199,7 +200,7 @@ backend_impl = {
 
   get_org_repos = proxy_handler(translate_gl_projects, function(org)
     return append_page_params(base().."/groups/"..org.."/projects",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   post_org_repos = function(org)
@@ -236,7 +237,7 @@ backend_impl = {
     function(owner, repo_name)
       return append_page_params(
         base().."/projects/"..project_id(owner, repo_name).."/repository/contributors",
-        {per_page="per_page",page="page"})
+        PAGES)
     end),
 
   get_repo_tags = proxy_handler(
@@ -250,7 +251,7 @@ backend_impl = {
     function(owner, repo_name)
       return append_page_params(
         base().."/projects/"..project_id(owner, repo_name).."/repository/tags",
-        {per_page="per_page",page="page"})
+        PAGES)
     end),
 
   -- GitLab does not have a direct equivalent of GitHub's /teams endpoint for repos.
@@ -270,7 +271,7 @@ backend_impl = {
     function(owner, repo_name)
       return append_page_params(
         base().."/projects/"..project_id(owner, repo_name).."/repository/branches",
-        {per_page="per_page",page="page"})
+        PAGES)
     end),
 
   get_repo_branch = proxy_handler(
@@ -305,7 +306,7 @@ backend_impl = {
     function(owner, repo_name)
       return append_page_params(
         base().."/projects/"..project_id(owner, repo_name).."/repository/commits",
-        {per_page="per_page",page="page"})
+        PAGES)
     end),
 
   get_repo_commit = proxy_handler(
@@ -353,7 +354,7 @@ backend_impl = {
       fetch_json(append_page_params(
         base() .. "/projects/" .. project_id(owner, repo_name) ..
           "/repository/commits/" .. ref .. "/statuses",
-        { per_page = "per_page", page = "page" })))
+        PAGES)))
   end,
 
   get_commit_combined_status = function(owner, repo_name, ref)
@@ -523,7 +524,7 @@ backend_impl = {
     function(owner, repo_name)
       return append_page_params(
         base().."/projects/"..project_id(owner, repo_name).."/members/all",
-        {per_page="per_page",page="page"})
+        PAGES)
     end),
 
   get_repo_collaborator = function(owner, repo_name, username)
@@ -595,7 +596,7 @@ backend_impl = {
   get_repo_forks = proxy_handler(translate_gl_projects, function(owner, repo_name)
     return append_page_params(
       base().."/projects/"..project_id(owner, repo_name).."/forks",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   post_repo_forks = function(owner, repo_name)
@@ -630,7 +631,7 @@ backend_impl = {
     function(owner, repo_name)
       return append_page_params(
         base().."/projects/"..project_id(owner, repo_name).."/releases",
-        {per_page="per_page",page="page"})
+        PAGES)
     end),
 
   post_repo_releases = function(owner, repo_name)
@@ -675,7 +676,7 @@ backend_impl = {
   get_repo_keys = proxy_handler(nil, function(owner, repo_name)
     return append_page_params(
       base().."/projects/"..project_id(owner, repo_name).."/deploy_keys",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   post_repo_keys = function(owner, repo_name)
@@ -705,7 +706,7 @@ backend_impl = {
   get_repo_hooks = proxy_handler(nil, function(owner, repo_name)
     return append_page_params(
       base().."/projects/"..project_id(owner, repo_name).."/hooks",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   post_repo_hooks = function(owner, repo_name)
@@ -756,13 +757,13 @@ backend_impl = {
   -- GET /users/{username}/repos -----------------------------------------------
   get_users_repos = proxy_handler(translate_gl_projects, function(username)
     return append_page_params(base().."/users/"..username.."/projects",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   -- GET /repositories (all public projects) -----------------------------------
   get_repositories = proxy_handler(translate_gl_projects, function()
     return append_page_params(base().."/projects?visibility=public",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   -- Commit comments -----------------------------------------------------------
@@ -770,7 +771,7 @@ backend_impl = {
   get_commit_comments = proxy_handler(nil, function(owner, repo_name, commit_sha)
     return append_page_params(
       base().."/projects/"..project_id(owner, repo_name).."/repository/commits/"..commit_sha.."/comments",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   post_commit_comment = function(owner, repo_name, commit_sha)
@@ -799,7 +800,7 @@ backend_impl = {
 
   -- GET /users
   get_users = proxy_handler(translate_gl_users, function()
-    return append_page_params(base().."/users", {per_page="per_page",page="page"})
+    return append_page_params(base().."/users", PAGES)
   end),
 
   -- Emails --------------------------------------------------------------------
@@ -823,7 +824,7 @@ backend_impl = {
 
   -- GET /user/keys
   get_user_keys = proxy_handler(nil, function()
-    return append_page_params(base().."/user/keys", {per_page="per_page",page="page"})
+    return append_page_params(base().."/user/keys", PAGES)
   end),
 
   -- POST /user/keys
@@ -854,7 +855,7 @@ backend_impl = {
 
   -- GET /user/gpg_keys
   get_user_gpg_keys = proxy_handler(nil, function()
-    return append_page_params(base().."/user/gpg_keys", {per_page="per_page",page="page"})
+    return append_page_params(base().."/user/gpg_keys", PAGES)
   end),
 
   -- POST /user/gpg_keys
@@ -895,7 +896,7 @@ backend_impl = {
         return groups
       end,
       fetch_json(append_page_params(base().."/groups/"..org.."/subgroups",
-        {per_page="per_page",page="page"})))
+        PAGES)))
   end,
 
   -- POST /orgs/{org}/teams
@@ -974,7 +975,7 @@ backend_impl = {
         return out
       end,
       fetch_json(append_page_params(base().."/groups/"..gid.."/members",
-        {per_page="per_page",page="page"})))
+        PAGES)))
   end,
 
   -- GET /orgs/{org}/teams/{team_slug}/memberships/{username}
@@ -1041,7 +1042,7 @@ backend_impl = {
     local gid = (DecodeJson(body) or {}).id
     proxy_json(translate_gl_projects,
       fetch_json(append_page_params(base().."/groups/"..gid.."/projects",
-        {per_page="per_page",page="page"})))
+        PAGES)))
   end,
 
   -- GET /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
@@ -1113,7 +1114,7 @@ backend_impl = {
         return groups
       end,
       fetch_json(append_page_params(base().."/groups/"..gid.."/subgroups",
-        {per_page="per_page",page="page"})))
+        PAGES)))
   end,
 
   -- Legacy team-by-id API (/teams/{team_id}) ------------------------------------
@@ -1127,7 +1128,7 @@ backend_impl = {
         return groups
       end,
       fetch_json(append_page_params(base().."/groups?min_access_level=10",
-        {per_page="per_page",page="page"})))
+        PAGES)))
   end,
 
   -- GET /teams/{team_id}
@@ -1170,7 +1171,7 @@ backend_impl = {
         return out
       end,
       fetch_json(append_page_params(base().."/groups/"..team_id.."/members",
-        {per_page="per_page",page="page"})))
+        PAGES)))
   end,
 
   -- GET /teams/{team_id}/members/{username} — deprecated legacy, 204 if member
@@ -1251,7 +1252,7 @@ backend_impl = {
   get_team_repos = function(team_id)
     proxy_json(translate_gl_projects,
       fetch_json(append_page_params(base().."/groups/"..team_id.."/projects",
-        {per_page="per_page",page="page"})))
+        PAGES)))
   end,
 
   -- GET /teams/{team_id}/repos/{owner}/{repo}
@@ -1301,6 +1302,6 @@ backend_impl = {
         return groups
       end,
       fetch_json(append_page_params(base().."/groups/"..team_id.."/subgroups",
-        {per_page="per_page",page="page"})))
+        PAGES)))
   end,
 }

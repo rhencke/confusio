@@ -4,6 +4,7 @@
 
 local base = function() return config.base_url .. "/api/v3" end
 local auth = function() return make_fetch_opts("bearer") end
+local PAGES = {per_page="per_page",page="page"}
 
 local function fetch_json(url, method, body)
   local opts = auth()
@@ -53,7 +54,7 @@ backend_impl = {
   end,
 
   get_user_repos = proxy_handler(nil, function()
-    return append_page_params(base().."/user/repos", {per_page="per_page",page="page"})
+    return append_page_params(base().."/user/repos", PAGES)
   end),
 
   post_user_repos = function()
@@ -61,7 +62,7 @@ backend_impl = {
   end,
 
   get_org_repos = proxy_handler(nil, function(org)
-    return append_page_params(base().."/orgs/"..org.."/repos", {per_page="per_page",page="page"})
+    return append_page_params(base().."/orgs/"..org.."/repos", PAGES)
   end),
 
   post_org_repos = function(org)
@@ -84,12 +85,12 @@ backend_impl = {
 
   get_repo_contributors = proxy_handler(nil, function(o, r)
     return append_page_params(base().."/repos/"..o.."/"..r.."/contributors",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   get_repo_tags = proxy_handler(nil, function(o, r)
     return append_page_params(base().."/repos/"..o.."/"..r.."/tags",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   get_repo_teams = proxy_handler(nil, function(o, r)
@@ -99,7 +100,7 @@ backend_impl = {
   -- Branches ------------------------------------------------------------------
   get_repo_branches = proxy_handler(nil, function(o, r)
     return append_page_params(base().."/repos/"..o.."/"..r.."/branches",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   get_repo_branch = proxy_handler(nil, function(o, r, branch)
@@ -109,7 +110,7 @@ backend_impl = {
   -- Commits -------------------------------------------------------------------
   get_repo_commits = proxy_handler(nil, function(o, r)
     return append_page_params(base().."/repos/"..o.."/"..r.."/commits",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   get_repo_commit = proxy_handler(nil, function(o, r, ref)
@@ -119,7 +120,7 @@ backend_impl = {
   -- Statuses ------------------------------------------------------------------
   get_commit_statuses = proxy_handler(nil, function(o, r, ref)
     return append_page_params(base().."/repos/"..o.."/"..r.."/statuses/"..ref,
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   get_commit_combined_status = proxy_handler(nil, function(o, r, ref)
@@ -179,7 +180,7 @@ backend_impl = {
   -- Collaborators -------------------------------------------------------------
   get_repo_collaborators = proxy_handler(nil, function(o, r)
     return append_page_params(base().."/repos/"..o.."/"..r.."/collaborators",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   get_repo_collaborator = function(owner, repo_name, username)
@@ -216,7 +217,7 @@ backend_impl = {
   -- Forks ---------------------------------------------------------------------
   get_repo_forks = proxy_handler(nil, function(o, r)
     return append_page_params(base().."/repos/"..o.."/"..r.."/forks",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   post_repo_forks = function(owner, repo_name)
@@ -228,7 +229,7 @@ backend_impl = {
   -- Releases ------------------------------------------------------------------
   get_repo_releases = proxy_handler(nil, function(o, r)
     return append_page_params(base().."/repos/"..o.."/"..r.."/releases",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   post_repo_releases = function(owner, repo_name)
@@ -266,7 +267,7 @@ backend_impl = {
 
   get_repo_release_assets = proxy_handler(nil, function(o, r, id)
     return append_page_params(base().."/repos/"..o.."/"..r.."/releases/"..id.."/assets",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   get_repo_release_asset = proxy_handler(nil, function(o, r, asset_id)
@@ -291,7 +292,7 @@ backend_impl = {
   -- Deploy keys ---------------------------------------------------------------
   get_repo_keys = proxy_handler(nil, function(o, r)
     return append_page_params(base().."/repos/"..o.."/"..r.."/keys",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   post_repo_keys = function(owner, repo_name)
@@ -316,7 +317,7 @@ backend_impl = {
   -- Webhooks ------------------------------------------------------------------
   get_repo_hooks = proxy_handler(nil, function(o, r)
     return append_page_params(base().."/repos/"..o.."/"..r.."/hooks",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   post_repo_hooks = function(owner, repo_name)
@@ -383,7 +384,7 @@ backend_impl = {
   -- Commit comments -----------------------------------------------------------
   get_repo_comments = proxy_handler(nil, function(o, r)
     return append_page_params(base().."/repos/"..o.."/"..r.."/comments",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   get_repo_comment = proxy_handler(nil, function(o, r, comment_id)
@@ -407,7 +408,7 @@ backend_impl = {
 
   get_commit_comments = proxy_handler(nil, function(o, r, sha)
     return append_page_params(base().."/repos/"..o.."/"..r.."/commits/"..sha.."/comments",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   post_commit_comment = function(owner, repo_name, commit_sha)
@@ -419,11 +420,11 @@ backend_impl = {
   -- GET /users/{username}/repos + public repos --------------------------------
   get_users_repos = proxy_handler(nil, function(username)
     return append_page_params(base().."/users/"..username.."/repos",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   get_repositories = proxy_handler(nil, function()
-    return append_page_params(base().."/repositories", {per_page="per_page",page="page"})
+    return append_page_params(base().."/repositories", PAGES)
   end),
 
   -- Users (GitHub-compatible passthrough) -------------------------------------
@@ -439,15 +440,15 @@ backend_impl = {
   end),
 
   get_users = proxy_handler(nil, function()
-    return append_page_params(base().."/users", {per_page="per_page",page="page"})
+    return append_page_params(base().."/users", PAGES)
   end),
 
   get_user_followers = proxy_handler(nil, function()
-    return append_page_params(base().."/user/followers", {per_page="per_page",page="page"})
+    return append_page_params(base().."/user/followers", PAGES)
   end),
 
   get_user_following = proxy_handler(nil, function()
-    return append_page_params(base().."/user/following", {per_page="per_page",page="page"})
+    return append_page_params(base().."/user/following", PAGES)
   end),
 
   get_user_is_following = function(username)
@@ -467,12 +468,12 @@ backend_impl = {
 
   get_users_followers = proxy_handler(nil, function(username)
     return append_page_params(base().."/users/"..username.."/followers",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   get_users_following = proxy_handler(nil, function(username)
     return append_page_params(base().."/users/"..username.."/following",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   get_users_is_following = function(username, target)
@@ -501,7 +502,7 @@ backend_impl = {
   end,
 
   get_user_keys = proxy_handler(nil, function()
-    return append_page_params(base().."/user/keys", {per_page="per_page",page="page"})
+    return append_page_params(base().."/user/keys", PAGES)
   end),
 
   post_user_keys = function()
@@ -520,14 +521,14 @@ backend_impl = {
 
   get_users_keys = proxy_handler(nil, function(username)
     return append_page_params(base().."/users/"..username.."/keys",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   -- Teams (GitHub-compatible passthrough) -------------------------------------
 
   get_org_teams = proxy_handler(nil, function(org)
     return append_page_params(base().."/orgs/"..org.."/teams",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   post_org_teams = function(org)
@@ -551,12 +552,12 @@ backend_impl = {
 
   get_org_team_invitations = proxy_handler(nil, function(org, slug)
     return append_page_params(base().."/orgs/"..org.."/teams/"..slug.."/invitations",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   get_org_team_members = proxy_handler(nil, function(org, slug)
     return append_page_params(base().."/orgs/"..org.."/teams/"..slug.."/members",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   get_org_team_membership = proxy_handler(nil, function(org, slug, username)
@@ -579,7 +580,7 @@ backend_impl = {
 
   get_org_team_repos = proxy_handler(nil, function(org, slug)
     return append_page_params(base().."/orgs/"..org.."/teams/"..slug.."/repos",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   get_org_team_repo = proxy_handler(nil, function(org, slug, owner, repo_name)
@@ -605,13 +606,13 @@ backend_impl = {
 
   get_org_team_children = proxy_handler(nil, function(org, slug)
     return append_page_params(base().."/orgs/"..org.."/teams/"..slug.."/teams",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   -- Legacy team-by-id API (/teams/{team_id}) ------------------------------------
 
   get_user_teams = proxy_handler(nil, function()
-    return append_page_params(base().."/user/teams", {per_page="per_page",page="page"})
+    return append_page_params(base().."/user/teams", PAGES)
   end),
 
   get_team = proxy_handler(nil, function(team_id)
@@ -631,12 +632,12 @@ backend_impl = {
 
   get_team_invitations = proxy_handler(nil, function(team_id)
     return append_page_params(base().."/teams/"..team_id.."/invitations",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   get_team_members = proxy_handler(nil, function(team_id)
     return append_page_params(base().."/teams/"..team_id.."/members",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   get_team_member = function(team_id, username)
@@ -675,7 +676,7 @@ backend_impl = {
 
   get_team_repos = proxy_handler(nil, function(team_id)
     return append_page_params(base().."/teams/"..team_id.."/repos",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   get_team_repo = proxy_handler(nil, function(team_id, owner, repo_name)
@@ -701,6 +702,6 @@ backend_impl = {
 
   get_team_children = proxy_handler(nil, function(team_id)
     return append_page_params(base().."/teams/"..team_id.."/teams",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 }

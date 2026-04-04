@@ -3,6 +3,7 @@
 
 local base = function() return config.base_url .. "/2.0" end
 local auth = function() return make_fetch_opts("basic") end
+local PAGES = { per_page = "pagelen", page = "page" }
 
 local function fetch_json(url, method, body)
   local opts = auth()
@@ -224,7 +225,7 @@ backend_impl = {
         return repos
       end,
       fetch_json(append_page_params(base() .. "/repositories?role=member",
-        { per_page = "pagelen", page = "page" })))
+        PAGES)))
   end,
 
   post_user_repos = function()
@@ -241,7 +242,7 @@ backend_impl = {
         return repos
       end,
       fetch_json(append_page_params(base() .. "/repositories/" .. workspace,
-        { per_page = "pagelen", page = "page" })))
+        PAGES)))
   end,
 
   post_org_repos = function(workspace)
@@ -266,7 +267,7 @@ backend_impl = {
       end,
       fetch_json(append_page_params(
         base() .. "/repositories/" .. username,
-        { per_page = "pagelen", page = "page" })))
+        PAGES)))
   end,
 
   -- GET /repositories (public)
@@ -278,7 +279,7 @@ backend_impl = {
         return repos
       end,
       fetch_json(append_page_params(base() .. "/repositories",
-        { per_page = "pagelen", page = "page" })))
+        PAGES)))
   end,
 
   get_repo_languages = function(owner, repo_name)
@@ -303,7 +304,7 @@ backend_impl = {
       end,
       fetch_json(append_page_params(
         base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/refs/tags",
-        { per_page = "pagelen", page = "page" })))
+        PAGES)))
   end,
 
   -- Branches ------------------------------------------------------------------
@@ -323,7 +324,7 @@ backend_impl = {
       end,
       fetch_json(append_page_params(
         base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/refs/branches",
-        { per_page = "pagelen", page = "page" })))
+        PAGES)))
   end,
 
   get_repo_branch = function(owner, repo_name, branch)
@@ -350,7 +351,7 @@ backend_impl = {
       end,
       fetch_json(append_page_params(
         base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/commits",
-        { per_page = "pagelen", page = "page" })))
+        PAGES)))
   end,
 
   get_repo_commit = proxy_handler(translate_bb_commit, function(o, r, sha)
@@ -369,7 +370,7 @@ backend_impl = {
       fetch_json(append_page_params(
         base() .. "/repositories/" .. owner .. "/" .. repo_name ..
           "/commit/" .. sha .. "/statuses",
-        { per_page = "pagelen", page = "page" })))
+        PAGES)))
   end,
 
   get_commit_combined_status = function(owner, repo_name, sha)
@@ -467,7 +468,7 @@ backend_impl = {
       end,
       fetch_json(append_page_params(
         base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/forks",
-        { per_page = "pagelen", page = "page" })))
+        PAGES)))
   end,
 
   post_repo_forks = function(owner, repo_name)
@@ -491,7 +492,7 @@ backend_impl = {
       end,
       fetch_json(append_page_params(
         base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/deploy-keys",
-        { per_page = "pagelen", page = "page" })))
+        PAGES)))
   end,
 
   post_repo_keys = function(owner, repo_name)
@@ -527,7 +528,7 @@ backend_impl = {
       end,
       fetch_json(append_page_params(
         base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/hooks",
-        { per_page = "pagelen", page = "page" })))
+        PAGES)))
   end,
 
   post_repo_hooks = function(owner, repo_name)

@@ -5,6 +5,7 @@
 
 local base = function() return config.base_url .. "/api/v1" end
 local auth = function() return make_fetch_opts("token") end
+local PAGES = { per_page = "limit", page = "page" }
 
 -- Thin wrappers that forward request body and headers for mutating calls.
 local function fetch_json(url, method, body)
@@ -42,7 +43,7 @@ end
 local function proxy_users_follow_list(username, rel)
   proxy_json(translate_users,
     fetch_json(append_page_params(base() .. "/users/" .. username .. "/" .. rel,
-      { per_page = "limit", page = "page" })))
+      PAGES)))
 end
 
 -- Returns a handler function: defers fetch_json(url_fn(...)) to request time.
@@ -121,7 +122,7 @@ backend_impl = {
   -- GET /user/repos
   get_user_repos = function()
     proxy_json(translate_repos,
-      fetch_json(append_page_params(base() .. "/user/repos", { per_page = "limit", page = "page" })))
+      fetch_json(append_page_params(base() .. "/user/repos", PAGES)))
   end,
 
   -- POST /user/repos
@@ -133,7 +134,7 @@ backend_impl = {
   get_org_repos = function(org)
     proxy_json(translate_repos,
       fetch_json(append_page_params(base() .. "/orgs/" .. org .. "/repos",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   -- POST /orgs/{org}/repos
@@ -170,7 +171,7 @@ backend_impl = {
     proxy_json(nil,
       fetch_json(append_page_params(
         base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contributors",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   -- GET /repos/{owner}/{repo}/tags
@@ -179,7 +180,7 @@ backend_impl = {
     proxy_json(nil,
       fetch_json(append_page_params(
         base() .. "/repos/" .. owner .. "/" .. repo_name .. "/tags",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   -- Branches ------------------------------------------------------------------
@@ -196,7 +197,7 @@ backend_impl = {
     proxy_json(tr_branches,
       fetch_json(append_page_params(
         base() .. "/repos/" .. owner .. "/" .. repo_name .. "/branches",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   -- GET /repos/{owner}/{repo}/branches/{branch}
@@ -216,7 +217,7 @@ backend_impl = {
     proxy_json(nil,
       fetch_json(append_page_params(
         base() .. "/repos/" .. owner .. "/" .. repo_name .. "/commits",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   -- GET /repos/{owner}/{repo}/commits/{ref}
@@ -232,7 +233,7 @@ backend_impl = {
     proxy_json(nil,
       fetch_json(append_page_params(
         base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. ref,
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   -- GET /repos/{owner}/{repo}/commits/{ref}/status  (combined)
@@ -315,7 +316,7 @@ backend_impl = {
     proxy_json(nil,
       fetch_json(append_page_params(
         base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   -- GET /repos/{owner}/{repo}/collaborators/{username} — 204 if collaborator, 404 if not
@@ -362,7 +363,7 @@ backend_impl = {
     proxy_json(translate_repos,
       fetch_json(append_page_params(
         base() .. "/repos/" .. owner .. "/" .. repo_name .. "/forks",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   -- POST /repos/{owner}/{repo}/forks
@@ -379,7 +380,7 @@ backend_impl = {
     proxy_json(nil,
       fetch_json(append_page_params(
         base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   -- POST /repos/{owner}/{repo}/releases
@@ -428,7 +429,7 @@ backend_impl = {
     proxy_json(nil,
       fetch_json(append_page_params(
         base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id .. "/assets",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   -- POST /repos/{owner}/{repo}/releases/{release_id}/assets — multipart; pass through
@@ -476,7 +477,7 @@ backend_impl = {
     proxy_json(nil,
       fetch_json(append_page_params(
         base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   -- POST /repos/{owner}/{repo}/keys
@@ -508,7 +509,7 @@ backend_impl = {
     proxy_json(nil,
       fetch_json(append_page_params(
         base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   -- POST /repos/{owner}/{repo}/hooks
@@ -583,7 +584,7 @@ backend_impl = {
     proxy_json(translate_repos,
       fetch_json(append_page_params(
         base() .. "/users/" .. username .. "/repos",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   -- GET /repositories (public repos list) — use Gitea's repo search
@@ -592,7 +593,7 @@ backend_impl = {
       function(data) return translate_repos(data.data or {}) end,
       fetch_json(append_page_params(
         base() .. "/repos/search",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   -- Commit comments -----------------------------------------------------------
@@ -602,7 +603,7 @@ backend_impl = {
     proxy_json(nil,
       fetch_json(append_page_params(
         base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   -- GET /repos/{owner}/{repo}/comments/{comment_id}
@@ -632,7 +633,7 @@ backend_impl = {
     proxy_json(nil,
       fetch_json(append_page_params(
         base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/commits/" .. commit_sha .. "/notes",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   -- POST /repos/{owner}/{repo}/commits/{commit_sha}/comments
@@ -657,17 +658,17 @@ backend_impl = {
 
   -- GET /users
   get_users = proxy_handler(translate_users, function()
-    return append_page_params(base() .. "/admin/users", { per_page = "limit", page = "page" })
+    return append_page_params(base() .. "/admin/users", PAGES)
   end),
 
   -- GET /user/followers
   get_user_followers = proxy_handler(translate_users, function()
-    return append_page_params(base() .. "/user/followers", { per_page = "limit", page = "page" })
+    return append_page_params(base() .. "/user/followers", PAGES)
   end),
 
   -- GET /user/following
   get_user_following = proxy_handler(translate_users, function()
-    return append_page_params(base() .. "/user/following", { per_page = "limit", page = "page" })
+    return append_page_params(base() .. "/user/following", PAGES)
   end),
 
   -- GET /user/following/{username} — 204 if following, 404 if not
@@ -698,7 +699,7 @@ backend_impl = {
 
   -- GET /user/keys
   get_user_keys = proxy_handler(nil, function()
-    return append_page_params(base() .. "/user/keys", { per_page = "limit", page = "page" })
+    return append_page_params(base() .. "/user/keys", PAGES)
   end),
 
   -- POST /user/keys
@@ -719,14 +720,14 @@ backend_impl = {
 
   -- GET /users/{username}/keys
   get_users_keys = proxy_handler(nil, function(u)
-    return append_page_params(base() .. "/users/" .. u .. "/keys", { per_page = "limit", page = "page" })
+    return append_page_params(base() .. "/users/" .. u .. "/keys", PAGES)
   end),
 
   -- GPG Keys ------------------------------------------------------------------
 
   -- GET /user/gpg_keys
   get_user_gpg_keys = proxy_handler(nil, function()
-    return append_page_params(base() .. "/user/gpg_keys", { per_page = "limit", page = "page" })
+    return append_page_params(base() .. "/user/gpg_keys", PAGES)
   end),
 
   -- POST /user/gpg_keys
@@ -747,7 +748,7 @@ backend_impl = {
 
   -- GET /users/{username}/gpg_keys
   get_users_gpg_keys = proxy_handler(nil, function(u)
-    return append_page_params(base() .. "/users/" .. u .. "/gpg_keys", { per_page = "limit", page = "page" })
+    return append_page_params(base() .. "/users/" .. u .. "/gpg_keys", PAGES)
   end),
 
   -- Emails --------------------------------------------------------------------
@@ -788,7 +789,7 @@ backend_impl = {
         return teams
       end,
       fetch_json(append_page_params(base() .. "/orgs/" .. org .. "/teams",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   -- POST /orgs/{org}/teams
@@ -851,7 +852,7 @@ backend_impl = {
     if not id then respond_json(404, "Not Found", { message = "Not Found" }); return end
     proxy_json(translate_users,
       fetch_json(append_page_params(base() .. "/teams/" .. id .. "/members",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   -- GET /orgs/{org}/teams/{team_slug}/memberships/{username}
@@ -900,7 +901,7 @@ backend_impl = {
         return repos
       end,
       fetch_json(append_page_params(base() .. "/teams/" .. id .. "/repos",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   -- GET /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
@@ -958,7 +959,7 @@ backend_impl = {
         return teams
       end,
       fetch_json(append_page_params(base() .. "/user/teams",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   -- GET /teams/{team_id}
@@ -988,7 +989,7 @@ backend_impl = {
   get_team_members = function(team_id)
     proxy_json(translate_users,
       fetch_json(append_page_params(base() .. "/teams/" .. team_id .. "/members",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   -- GET /teams/{team_id}/members/{username} — deprecated legacy endpoint
@@ -1049,7 +1050,7 @@ backend_impl = {
         return repos
       end,
       fetch_json(append_page_params(base() .. "/teams/" .. team_id .. "/repos",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   -- GET /teams/{team_id}/repos/{owner}/{repo}

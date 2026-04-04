@@ -4,6 +4,7 @@
 
 local base = function() return config.base_url .. "/api/0" end
 local auth = function() return make_fetch_opts("token") end
+local PAGES = {per_page="per_page",page="page"}
 
 local function fetch_json(url, method, body)
   local opts = auth()
@@ -138,7 +139,7 @@ backend_impl = {
         return projects
       end,
       fetch_json(append_page_params(base() .. "/user/" .. username .. "/projects",
-        { per_page = "per_page", page = "page" })))
+        PAGES)))
   end,
 
   post_user_repos = function()
@@ -162,7 +163,7 @@ backend_impl = {
     end,
     function(namespace)
       return append_page_params(base().."/projects?namespace="..namespace,
-        {per_page="per_page",page="page"})
+        PAGES)
     end),
 
   post_org_repos = function(namespace)
@@ -390,7 +391,7 @@ backend_impl = {
     end,
     function(username)
       return append_page_params(base().."/user/"..username.."/projects",
-        {per_page="per_page",page="page"})
+        PAGES)
     end),
 
   -- Public repos list ---------------------------------------------------------
@@ -403,7 +404,7 @@ backend_impl = {
         return projects
       end,
       fetch_json(append_page_params(base() .. "/repos",
-        { per_page = "per_page", page = "page" })))
+        PAGES)))
   end,
 
 }
