@@ -72,12 +72,38 @@ local function translate_gerrit_repo(r, owner, repo_name)
   }
 end
 
+-- Gerrit prepends ")]}'\n" (5 chars) to all JSON responses as XSSI protection.
+local function gerrit_decode(body)
+  if body and body:sub(1, 4) == ")]}\'" then
+    return DecodeJson(body:sub(6)) or {}
+  end
+  return DecodeJson(body) or {}
+end
+
+-- Map a Gerrit account object to GitHub user format.
+local function translate_gerrit_user(u)
+  if not u then return {} end
+  return {
+    login      = u.username or "",
+    id         = u._account_id or 0,
+    node_id    = "",
+    avatar_url = "",
+    html_url   = "",
+    type       = "User",
+    site_admin = false,
+    name       = u.name or "",
+    email      = u.email or "",
+  }
+end
+
 -- Gerrit branch: { ref, revision }
 local function translate_gerrit_branch(b)
   if not b then return {} end
   local name = b.ref and b.ref:match("^refs/heads/(.+)") or (b.ref or "")
   return { name = name, commit = { sha = b.revision or "", url = "" }, protected = false }
 end
+
+local proxy_handler = make_proxy_handler(fetch_json)
 
 -- Gerrit tag: { ref, revision, object }
 local function translate_gerrit_tag(t)
@@ -92,11 +118,8 @@ backend_impl = {
     if ok and status == 200 then respond_json(200, "OK", {})
     else respond_json(503, "Service Unavailable", {}) end
   end,
-  get_repo = function(owner, repo_name)
-    proxy_json(
-      function(r) return translate_gerrit_repo(r, owner, repo_name) end,
-      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name)))
-  end,
+  get_repo = proxy_handler(translate_gerrit_repo,
+    function(owner, repo_name) return base() .. "/projects/" .. project_id(owner, repo_name) end),
 
   patch_repo = function(owner, repo_name)
     local req = DecodeJson(GetBody() or "{}")
@@ -158,58 +181,95 @@ backend_impl = {
   -- Branches ------------------------------------------------------------------
   -- GET /a/projects/{id}/branches/ → [{ ref, revision }]
 
-  get_repo_branches = function(owner, repo_name)
-    proxy_json(
-      function(branches)
-        local result = {}
-        for _, b in ipairs(branches or {}) do
-          if b.ref and b.ref:match("^refs/heads/") then
-            result[#result + 1] = translate_gerrit_branch(b)
-          end
+  get_repo_branches = proxy_handler(
+    function(branches)
+      local result = {}
+      for _, b in ipairs(branches or {}) do
+        if b.ref and b.ref:match("^refs/heads/") then
+          result[#result + 1] = translate_gerrit_branch(b)
         end
-        return result
-      end,
-      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/branches/"))
-  end,
+      end
+      return result
+    end,
+    function(owner, repo_name)
+      return base() .. "/projects/" .. project_id(owner, repo_name) .. "/branches/"
+    end),
 
-  get_repo_branch = function(owner, repo_name, branch)
-    proxy_json(translate_gerrit_branch,
-      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
-        "/branches/refs%2Fheads%2F" .. branch))
-  end,
+  get_repo_branch = proxy_handler(translate_gerrit_branch,
+    function(owner, repo_name, branch)
+      return base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/branches/refs%2Fheads%2F" .. branch
+    end),
 
   -- Tags ----------------------------------------------------------------------
   -- GET /a/projects/{id}/tags/ → [{ ref, revision, object }]
 
-  get_repo_tags = function(owner, repo_name)
-    proxy_json(
-      function(tags)
-        local result = {}
-        for _, t in ipairs(tags or {}) do result[#result + 1] = translate_gerrit_tag(t) end
-        return result
-      end,
-      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/tags/"))
-  end,
+  get_repo_tags = proxy_handler(
+    function(tags)
+      local result = {}
+      for _, t in ipairs(tags or {}) do result[#result + 1] = translate_gerrit_tag(t) end
+      return result
+    end,
+    function(owner, repo_name)
+      return base() .. "/projects/" .. project_id(owner, repo_name) .. "/tags/"
+    end),
 
   -- Commits -------------------------------------------------------------------
   -- Gerrit: GET /a/projects/{id}/commits/{sha}
 
-  get_repo_commit = function(owner, repo_name, ref)
-    proxy_json(
-      function(c)
-        if not c then return {} end
-        local author = c.author or {}
-        local committer = c.committer or {}
-        return {
-          sha    = c.commit or "",
-          commit = {
-            message   = c.message or "",
-            author    = { name = author.name or "", email = author.email or "", date = author.date or "" },
-            committer = { name = committer.name or "", email = committer.email or "", date = committer.date or "" },
-          },
-        }
-      end,
-      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/commits/" .. ref))
+  get_repo_commit = proxy_handler(
+    function(c)
+      if not c then return {} end
+      local author = c.author or {}
+      local committer = c.committer or {}
+      return {
+        sha    = c.commit or "",
+        commit = {
+          message   = c.message or "",
+          author    = { name = author.name or "", email = author.email or "", date = author.date or "" },
+          committer = { name = committer.name or "", email = committer.email or "", date = committer.date or "" },
+        },
+      }
+    end,
+    function(owner, repo_name, ref)
+      return base() .. "/projects/" .. project_id(owner, repo_name) .. "/commits/" .. ref
+    end),
+
+  -- Users ---------------------------------------------------------------------
+
+  -- GET /user — authenticated user
+  get_user = function()
+    local ok, status, _, body = fetch_json(base() .. "/accounts/self?o=DETAILS")
+    if ok and status == 200 then
+      respond_json(200, "OK", translate_gerrit_user(gerrit_decode(body)))
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- GET /users/{username}
+  get_users_username = function(username)
+    local ok, status, _, body = fetch_json(base() .. "/accounts/" .. username .. "?o=DETAILS")
+    if ok and status == 200 then
+      respond_json(200, "OK", translate_gerrit_user(gerrit_decode(body)))
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- GET /users — search active accounts
+  get_users = function()
+    local limit = GetParam("per_page") or "30"
+    local page  = tonumber(GetParam("page")) or 1
+    local skip  = (page - 1) * (tonumber(limit) or 30)
+    local url = base() .. "/accounts/?q=is:active&o=DETAILS&n=" .. limit
+      .. (skip > 0 and ("&S=" .. skip) or "")
+    local ok, status, _, body = fetch_json(url)
+    if ok and status == 200 then
+      local accounts = gerrit_decode(body)
+      local users = {}
+      for _, a in ipairs(accounts) do users[#users + 1] = translate_gerrit_user(a) end
+      respond_json(200, "OK", users)
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
   end,
 
   -- Contents ------------------------------------------------------------------

@@ -189,14 +189,7 @@ local function translate_bbs_hook_req(body_str)
   })
 end
 
-local function proxy_handler(xform, url_fn)
-  return function(...)
-    local args = {...}
-    proxy_json(
-      type(xform) == "function" and function(r) return xform(r, table.unpack(args)) end or xform,
-      fetch_json(url_fn(...)))
-  end
-end
+local proxy_handler = make_proxy_handler(fetch_json)
 
 -- Repo path helper: /projects/{owner}/repos/{repo}
 local function repo_path(owner, repo_name)

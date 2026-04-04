@@ -117,14 +117,7 @@ local function translate_gl_users(users)
   return users
 end
 
-local function proxy_handler(xform, url_fn)
-  return function(...)
-    local args = {...}
-    proxy_json(
-      type(xform) == "function" and function(r) return xform(r, table.unpack(args)) end or xform,
-      fetch_json(url_fn(...)))
-  end
-end
+local proxy_handler = make_proxy_handler(fetch_json)
 
 -- Look up a GitLab user ID by username. Returns nil on failure.
 local function gl_user_id(username)

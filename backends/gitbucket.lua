@@ -27,14 +27,7 @@ local function set_204_or_error(method, url)
   else respond_json(503, "Service Unavailable", {}) end
 end
 
-local function proxy_handler(xform, url_fn)
-  return function(...)
-    local args = {...}
-    proxy_json(
-      type(xform) == "function" and function(r) return xform(r, table.unpack(args)) end or xform,
-      fetch_json(url_fn(...)))
-  end
-end
+local proxy_handler = make_proxy_handler(fetch_json)
 
 backend_impl = {
   get_root = function()

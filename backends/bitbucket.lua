@@ -173,14 +173,7 @@ local function translate_bb_hook(h)
   }
 end
 
-local function proxy_handler(xform, url_fn)
-  return function(...)
-    local args = {...}
-    proxy_json(
-      type(xform) == "function" and function(r) return xform(r, table.unpack(args)) end or xform,
-      fetch_json(url_fn(...)))
-  end
-end
+local proxy_handler = make_proxy_handler(fetch_json)
 
 local function translate_bb_hook_req(body_str)
   local req = DecodeJson(body_str or "{}")

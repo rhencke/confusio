@@ -151,6 +151,8 @@ local function translate_harness_hook(h)
 end
 
 -- Translate GitHub webhook request to Harness format.
+local proxy_handler = make_proxy_handler(fetch_json)
+
 local function translate_harness_hook_req(body_str)
   local req = DecodeJson(body_str or "{}")
   local cfg = req.config or {}
@@ -169,10 +171,9 @@ backend_impl = {
     else respond_json(503, "Service Unavailable", {}) end
   end,
 
-  get_repo = function(owner, repo_name)
-    proxy_json(translate_harness_repo,
-      fetch_json(base() .. "/repos/" .. repo_ref(owner, repo_name)))
-  end,
+  get_repo = proxy_handler(translate_harness_repo, function(owner, repo_name)
+    return base().."/repos/"..repo_ref(owner, repo_name)
+  end),
 
   patch_repo = function(owner, repo_name)
     proxy_json(translate_harness_repo,
@@ -189,22 +190,18 @@ backend_impl = {
     else respond_json(503, "Service Unavailable", {}) end
   end,
 
-  get_user_repos = function()
-    proxy_json(translate_harness_repos,
-      fetch_json(append_page_params(base() .. "/repos",
-        { per_page = "limit", page = "page" })))
-  end,
+  get_user_repos = proxy_handler(translate_harness_repos, function()
+    return append_page_params(base().."/repos", {per_page="limit",page="page"})
+  end),
 
   post_user_repos = function()
     proxy_json_created(translate_harness_repo,
       fetch_json(base() .. "/repos", "POST", translate_harness_req(GetBody())))
   end,
 
-  get_org_repos = function(space)
-    proxy_json(translate_harness_repos,
-      fetch_json(append_page_params(base() .. "/spaces/" .. space .. "/repos",
-        { per_page = "limit", page = "page" })))
-  end,
+  get_org_repos = proxy_handler(translate_harness_repos, function(space)
+    return append_page_params(base().."/spaces/"..space.."/repos", {per_page="limit",page="page"})
+  end),
 
   post_org_repos = function(space)
     local req = DecodeJson(GetBody() or "{}")
@@ -242,10 +239,9 @@ backend_impl = {
         { per_page = "limit", page = "page" })))
   end,
 
-  get_repo_branch = function(owner, repo_name, branch)
-    proxy_json(translate_harness_branch,
-      fetch_json(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/branches/" .. branch))
-  end,
+  get_repo_branch = proxy_handler(translate_harness_branch, function(owner, repo_name, branch)
+    return base().."/repos/"..repo_ref(owner, repo_name).."/branches/"..branch
+  end),
 
   -- Commits -------------------------------------------------------------------
 
@@ -263,23 +259,20 @@ backend_impl = {
       fetch_json(url))
   end,
 
-  get_repo_commit = function(owner, repo_name, ref)
-    proxy_json(translate_harness_commit,
-      fetch_json(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/commits/" .. ref))
-  end,
+  get_repo_commit = proxy_handler(translate_harness_commit, function(owner, repo_name, ref)
+    return base().."/repos/"..repo_ref(owner, repo_name).."/commits/"..ref
+  end),
 
   -- Statuses ------------------------------------------------------------------
   -- Harness uses /check/commits/{sha} for CI results.
 
-  get_commit_statuses = function(owner, repo_name, ref)
-    proxy_json(nil,
-      fetch_json(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/check/commits/" .. ref))
-  end,
+  get_commit_statuses = proxy_handler(nil, function(owner, repo_name, ref)
+    return base().."/repos/"..repo_ref(owner, repo_name).."/check/commits/"..ref
+  end),
 
-  get_commit_combined_status = function(owner, repo_name, ref)
-    proxy_json(nil,
-      fetch_json(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/check/commits/" .. ref))
-  end,
+  get_commit_combined_status = proxy_handler(nil, function(owner, repo_name, ref)
+    return base().."/repos/"..repo_ref(owner, repo_name).."/check/commits/"..ref
+  end),
 
   post_commit_status = function(owner, repo_name, sha)
     proxy_json_created(nil,
@@ -325,12 +318,10 @@ backend_impl = {
 
   -- Forks ---------------------------------------------------------------------
 
-  get_repo_forks = function(owner, repo_name)
-    proxy_json(translate_harness_repos,
-      fetch_json(append_page_params(
-        base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/forks",
-        { per_page = "limit", page = "page" })))
-  end,
+  get_repo_forks = proxy_handler(translate_harness_repos, function(owner, repo_name)
+    return append_page_params(
+      base().."/repos/"..repo_ref(owner, repo_name).."/forks", {per_page="limit",page="page"})
+  end),
 
   post_repo_forks = function(owner, repo_name)
     proxy_json_created(translate_harness_repo,
@@ -361,10 +352,9 @@ backend_impl = {
         "POST", EncodeJson(h)))
   end,
 
-  get_repo_key = function(owner, repo_name, key_id)
-    proxy_json(translate_harness_key,
-      fetch_json(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/keys/" .. key_id))
-  end,
+  get_repo_key = proxy_handler(translate_harness_key, function(owner, repo_name, key_id)
+    return base().."/repos/"..repo_ref(owner, repo_name).."/keys/"..key_id
+  end),
 
   delete_repo_key = function(owner, repo_name, key_id)
     local ok, status = fetch_json(
@@ -394,10 +384,9 @@ backend_impl = {
         "POST", translate_harness_hook_req(GetBody())))
   end,
 
-  get_repo_hook = function(owner, repo_name, hook_id)
-    proxy_json(translate_harness_hook,
-      fetch_json(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/webhooks/" .. hook_id))
-  end,
+  get_repo_hook = proxy_handler(translate_harness_hook, function(owner, repo_name, hook_id)
+    return base().."/repos/"..repo_ref(owner, repo_name).."/webhooks/"..hook_id
+  end),
 
   patch_repo_hook = function(owner, repo_name, hook_id)
     proxy_json(translate_harness_hook,
@@ -446,10 +435,9 @@ backend_impl = {
 
   -- Languages -----------------------------------------------------------------
 
-  get_repo_languages = function(owner, repo_name)
-    proxy_json(nil,
-      fetch_json(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/languages"))
-  end,
+  get_repo_languages = proxy_handler(nil, function(owner, repo_name)
+    return base().."/repos/"..repo_ref(owner, repo_name).."/languages"
+  end),
 
   -- Archive -------------------------------------------------------------------
 
@@ -469,12 +457,50 @@ backend_impl = {
 
   -- Users' repos --------------------------------------------------------------
 
-  get_users_repos = function(username)
-    -- Harness: list repos in a space by name (space = username)
-    proxy_json(translate_harness_repos,
-      fetch_json(append_page_params(
-        base() .. "/spaces/" .. username .. "/repos",
-        { per_page = "limit", page = "page" })))
+  get_users_repos = proxy_handler(translate_harness_repos, function(username)
+    return append_page_params(base().."/spaces/"..username.."/repos", {per_page="limit",page="page"})
+  end),
+
+  -- Users ---------------------------------------------------------------------
+
+  -- GET /user
+  get_user = function()
+    proxy_json(
+      function(u)
+        if not u then return {} end
+        return {
+          login      = u.uid or "",
+          id         = u.id or 0,
+          node_id    = "",
+          avatar_url = u.url or "",
+          html_url   = "",
+          type       = "User",
+          site_admin = u.admin or false,
+          name       = u.display_name or "",
+          email      = u.email or "",
+        }
+      end,
+      fetch_json(base() .. "/user"))
+  end,
+
+  -- PATCH /user
+  patch_user = function()
+    proxy_json(
+      function(u)
+        if not u then return {} end
+        return {
+          login      = u.uid or "",
+          id         = u.id or 0,
+          node_id    = "",
+          avatar_url = u.url or "",
+          html_url   = "",
+          type       = "User",
+          site_admin = u.admin or false,
+          name       = u.display_name or "",
+          email      = u.email or "",
+        }
+      end,
+      fetch_json(base() .. "/user", "PATCH", GetBody()))
   end,
 
 }

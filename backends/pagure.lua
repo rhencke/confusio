@@ -75,6 +75,8 @@ end
 
 -- Translate a Pagure commit object to GitHub format.
 -- Pagure: { id, message, date, date_utc, author: { name, email } }
+local proxy_handler = make_proxy_handler(fetch_json)
+
 local function translate_pagure_commit(c)
   if not c then return {} end
   local author = c.author or {}
@@ -97,10 +99,9 @@ backend_impl = {
     else respond_json(503, "Service Unavailable", {}) end
   end,
 
-  get_repo = function(owner, repo_name)
-    proxy_json(translate_pagure_repo,
-      fetch_json(base() .. "/" .. owner .. "/" .. repo_name))
-  end,
+  get_repo = proxy_handler(translate_pagure_repo, function(owner, repo_name)
+    return base().."/"..owner.."/"..repo_name
+  end),
 
   patch_repo = function(owner, repo_name)
     -- Pagure: update project description via POST /api/0/{owner}/{repo}/modify
@@ -153,17 +154,16 @@ backend_impl = {
       fetch_json(base() .. "/new", "POST", EncodeJson(pg)))
   end,
 
-  get_org_repos = function(namespace)
-    -- Pagure: list projects in a namespace/group
-    proxy_json(
-      function(data)
-        local projects = data.projects or {}
-        for i, p in ipairs(projects) do projects[i] = translate_pagure_repo(p) end
-        return projects
-      end,
-      fetch_json(append_page_params(base() .. "/projects?namespace=" .. namespace,
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_org_repos = proxy_handler(
+    function(data)
+      local projects = data.projects or {}
+      for i, p in ipairs(projects) do projects[i] = translate_pagure_repo(p) end
+      return projects
+    end,
+    function(namespace)
+      return append_page_params(base().."/projects?namespace="..namespace,
+        {per_page="per_page",page="page"})
+    end),
 
   post_org_repos = function(namespace)
     -- Pagure: create project with namespace
@@ -179,12 +179,9 @@ backend_impl = {
       fetch_json(base() .. "/new", "POST", EncodeJson(pg)))
   end,
 
-  get_repo_topics = function(owner, repo_name)
-    -- Pagure uses "tags" not topics — return them as names
-    proxy_json(
-      function(r) return { names = r.tags or {} } end,
-      fetch_json(base() .. "/" .. owner .. "/" .. repo_name))
-  end,
+  get_repo_topics = proxy_handler(
+    function(r) return { names = r.tags or {} } end,
+    function(owner, repo_name) return base().."/"..owner.."/"..repo_name end),
 
   put_repo_topics = function(owner, repo_name)
     -- Pagure: set tags via POST /api/0/{owner}/{repo}/modify with tags field
@@ -202,17 +199,15 @@ backend_impl = {
   -- Pagure: GET /api/0/{owner}/{repo}/git/branches → { branches: ["main", ...] }
   -- No commit SHAs in branch list response.
 
-  get_repo_branches = function(owner, repo_name)
-    proxy_json(
-      function(data)
-        local branches = {}
-        for _, name in ipairs(data.branches or {}) do
-          branches[#branches + 1] = translate_pagure_branch(name)
-        end
-        return branches
-      end,
-      fetch_json(base() .. "/" .. owner .. "/" .. repo_name .. "/git/branches"))
-  end,
+  get_repo_branches = proxy_handler(
+    function(data)
+      local branches = {}
+      for _, name in ipairs(data.branches or {}) do
+        branches[#branches + 1] = translate_pagure_branch(name)
+      end
+      return branches
+    end,
+    function(owner, repo_name) return base().."/"..owner.."/"..repo_name.."/git/branches" end),
 
   -- Commits -------------------------------------------------------------------
   -- Pagure: GET /api/0/{owner}/{repo}/commits?branch={branch}&limit={n}&start={offset}
@@ -238,17 +233,15 @@ backend_impl = {
   -- Tags ----------------------------------------------------------------------
   -- Pagure returns { "tags": ["v1.0", ...] } — just tag names, no commit info
 
-  get_repo_tags = function(owner, repo_name)
-    proxy_json(
-      function(data)
-        local tags = {}
-        for _, name in ipairs(data.tags or {}) do
-          tags[#tags + 1] = { name = name, commit = { sha = "", url = "" } }
-        end
-        return tags
-      end,
-      fetch_json(base() .. "/" .. owner .. "/" .. repo_name .. "/git/tags"))
-  end,
+  get_repo_tags = proxy_handler(
+    function(data)
+      local tags = {}
+      for _, name in ipairs(data.tags or {}) do
+        tags[#tags + 1] = { name = name, commit = { sha = "", url = "" } }
+      end
+      return tags
+    end,
+    function(owner, repo_name) return base().."/"..owner.."/"..repo_name.."/git/tags" end),
 
   -- Contents ------------------------------------------------------------------
   -- Pagure: GET /api/0/{owner}/{repo}/raw/{path}?ref={ref} — returns raw bytes.
@@ -300,18 +293,15 @@ backend_impl = {
   -- Forks ---------------------------------------------------------------------
   -- Pagure: POST /api/0/fork with form body
 
-  get_repo_forks = function(owner, repo_name)
-    -- Pagure: GET project and return forks list
-    proxy_json(
-      function(data)
-        local forks = {}
-        for _, f in ipairs(data.forks or {}) do
-          forks[#forks + 1] = translate_pagure_repo(f)
-        end
-        return forks
-      end,
-      fetch_json(base() .. "/" .. owner .. "/" .. repo_name))
-  end,
+  get_repo_forks = proxy_handler(
+    function(data)
+      local forks = {}
+      for _, f in ipairs(data.forks or {}) do
+        forks[#forks + 1] = translate_pagure_repo(f)
+      end
+      return forks
+    end,
+    function(owner, repo_name) return base().."/"..owner.."/"..repo_name end),
 
   post_repo_forks = function(owner, repo_name)
     -- Pagure fork endpoint expects form-encoded body
@@ -327,18 +317,81 @@ backend_impl = {
       pcall(Fetch, base() .. "/fork", fopts))
   end,
 
-  -- Users' repos --------------------------------------------------------------
+  -- Users ---------------------------------------------------------------------
 
-  get_users_repos = function(username)
+  -- GET /user — two-step: whoami then full profile
+  get_user = function()
+    local ok, status, _, ubody = fetch_json(base() .. "/-/whoami")
+    if not ok or status ~= 200 then respond_json(503, "Service Unavailable", {}); return end
+    local me = DecodeJson(ubody) or {}
+    local username = me.username or ""
+    if username == "" then respond_json(503, "Service Unavailable", {}); return end
     proxy_json(
       function(data)
-        local projects = data.repos or data.projects or {}
-        for i, p in ipairs(projects) do projects[i] = translate_pagure_repo(p) end
-        return projects
+        local u = data.user or data
+        return {
+          login      = u.username or "",
+          id         = 0,
+          node_id    = "",
+          avatar_url = u.avatar_url or "",
+          html_url   = config.base_url .. "/" .. (u.username or ""),
+          type       = "User",
+          site_admin = false,
+          name       = u.fullname or "",
+          email      = (u.emails and u.emails[1]) or "",
+        }
       end,
-      fetch_json(append_page_params(base() .. "/user/" .. username .. "/projects",
-        { per_page = "per_page", page = "page" })))
+      fetch_json(base() .. "/user/" .. username))
   end,
+
+  -- GET /users/{username}
+  get_users_username = proxy_handler(
+    function(data)
+      local u = data.user or data
+      return {
+        login      = u.username or "",
+        id         = 0,
+        node_id    = "",
+        avatar_url = u.avatar_url or "",
+        html_url   = config.base_url .. "/" .. (u.username or ""),
+        type       = "User",
+        site_admin = false,
+        name       = u.fullname or "",
+      }
+    end,
+    function(username) return base().."/user/"..username end),
+
+  -- GET /users
+  get_users = proxy_handler(
+    function(data)
+      local users = {}
+      for _, name in ipairs(data.users or {}) do
+        users[#users + 1] = {
+          login      = name,
+          id         = 0,
+          node_id    = "",
+          avatar_url = "",
+          html_url   = config.base_url .. "/" .. name,
+          type       = "User",
+          site_admin = false,
+        }
+      end
+      return users
+    end,
+    function() return base().."/users" end),
+
+  -- Users' repos --------------------------------------------------------------
+
+  get_users_repos = proxy_handler(
+    function(data)
+      local projects = data.repos or data.projects or {}
+      for i, p in ipairs(projects) do projects[i] = translate_pagure_repo(p) end
+      return projects
+    end,
+    function(username)
+      return append_page_params(base().."/user/"..username.."/projects",
+        {per_page="per_page",page="page"})
+    end),
 
   -- Public repos list ---------------------------------------------------------
 

@@ -66,6 +66,11 @@ function OnHttpRequest()
     SetStatus(200, "OK")
     raw("file content\n")
 
+  -- Users -------------------------------------------------------------------
+  elseif path == "/~api/users" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"name":"octocat","fullName":"The Octocat","email":"octocat@github.com"}]')
+
   else
     SetStatus(404, "Not Found")
   end

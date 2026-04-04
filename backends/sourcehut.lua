@@ -94,6 +94,8 @@ end
 
 -- Translate a Sourcehut log entry to GitHub commit format.
 -- Sourcehut: { id, message, timestamp, author: { name, email } }
+local proxy_handler = make_proxy_handler(fetch_json)
+
 local function translate_srht_commit(c)
   if not c then return {} end
   local author = c.author or {}
@@ -116,10 +118,9 @@ backend_impl = {
     else respond_json(503, "Service Unavailable", {}) end
   end,
 
-  get_repo = function(owner, repo_name)
-    proxy_json(translate_srht_repo,
-      fetch_json(base() .. "/~" .. owner .. "/repos/" .. repo_name))
-  end,
+  get_repo = proxy_handler(translate_srht_repo, function(owner, repo_name)
+    return base().."/~"..owner.."/repos/"..repo_name
+  end),
 
   patch_repo = function(owner, repo_name)
     -- Sourcehut uses PUT for updates
@@ -167,33 +168,30 @@ backend_impl = {
   -- Branches ------------------------------------------------------------------
   -- Sourcehut: filter /refs for refs starting with "refs/heads/"
 
-  get_repo_branches = function(owner, repo_name)
-    proxy_json(
-      function(data)
-        local branches = {}
-        for _, ref in ipairs(data.results or {}) do
-          if ref.name and ref.name:match("^refs/heads/") then
-            branches[#branches + 1] = translate_srht_branch(ref)
-          end
+  get_repo_branches = proxy_handler(
+    function(data)
+      local branches = {}
+      for _, ref in ipairs(data.results or {}) do
+        if ref.name and ref.name:match("^refs/heads/") then
+          branches[#branches + 1] = translate_srht_branch(ref)
         end
-        return branches
-      end,
-      fetch_json(base() .. "/~" .. owner .. "/repos/" .. repo_name .. "/refs"))
-  end,
+      end
+      return branches
+    end,
+    function(owner, repo_name) return base().."/~"..owner.."/repos/"..repo_name.."/refs" end),
 
-  get_repo_branch = function(owner, repo_name, branch)
-    -- Fetch the specific ref: refs/heads/{branch}
-    proxy_json(
-      function(data)
-        for _, ref in ipairs(data.results or {}) do
-          if ref.name == "refs/heads/" .. branch then
-            return translate_srht_branch(ref)
-          end
+  get_repo_branch = proxy_handler(
+    function(data, owner, repo_name, branch)
+      for _, ref in ipairs(data.results or {}) do
+        if ref.name == "refs/heads/" .. branch then
+          return translate_srht_branch(ref)
         end
-        return {}
-      end,
-      fetch_json(base() .. "/~" .. owner .. "/repos/" .. repo_name .. "/refs"))
-  end,
+      end
+      return {}
+    end,
+    function(owner, repo_name)
+      return base() .. "/~" .. owner .. "/repos/" .. repo_name .. "/refs"
+    end),
 
   -- Tags ----------------------------------------------------------------------
   -- Sourcehut /refs returns { results: [...] } with name and target fields
@@ -297,6 +295,31 @@ backend_impl = {
       end,
       fetch_json(append_page_params(base() .. "/~" .. username .. "/repos",
         { per_page = "limit" })))
+  end,
+
+  -- Users ---------------------------------------------------------------------
+
+  -- GET /user
+  get_user = function()
+    proxy_json(
+      function(u)
+        if not u then return {} end
+        local canonical = u.canonical_name or ""
+        local login = canonical:sub(1, 1) == "~" and canonical:sub(2) or canonical
+        return {
+          login      = login,
+          id         = 0,
+          node_id    = "",
+          avatar_url = "",
+          html_url   = config.base_url .. "/" .. canonical,
+          type       = "User",
+          site_admin = false,
+          name       = u.name or canonical,
+          email      = u.email or "",
+          blog       = u.url or "",
+        }
+      end,
+      fetch_json(base() .. "/user"))
   end,
 
 }

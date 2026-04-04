@@ -111,6 +111,25 @@ function make_fetch_opts(scheme)
   return { headers = { ["Authorization"] = hdr } }
 end
 
+-- make_proxy_handler is global: returns a proxy_handler bound to a backend's fetch_json.
+-- Each backend calls: local proxy_handler = make_proxy_handler(fetch_json)
+--
+-- The returned proxy_handler(xform, url_fn) builds a handler function that fetches
+-- url_fn(...) and passes the decoded response through xform (plus handler args).
+-- xform receives (response_body, ...handler_args) so closures over handler args are not
+-- needed. Named translate functions that only take the response body work as-is
+-- (extra args are silently ignored by Lua).
+function make_proxy_handler(fetch_fn)
+  return function(xform, url_fn)
+    return function(...)
+      local args = {...}
+      proxy_json(
+        type(xform) == "function" and function(r) return xform(r, table.unpack(args)) end or xform,
+        fetch_fn(url_fn(...)))
+    end
+  end
+end
+
 -- translate_repo is global: maps a Gitea-style repo object to GitHub field names.
 -- Called by any Gitea-API-compatible backend (gitea, forgejo, gogs, codeberg, notabug).
 function translate_repo(r)

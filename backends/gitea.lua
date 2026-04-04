@@ -48,14 +48,7 @@ end
 -- Returns a handler function: defers fetch_json(url_fn(...)) to request time.
 -- xform receives (response_body, ...handler_args) so closures over handler args are not needed.
 -- Named translate functions that only take the response body work as-is (extra args ignored).
-local function proxy_handler(xform, url_fn)
-  return function(...)
-    local args = {...}
-    proxy_json(
-      type(xform) == "function" and function(r) return xform(r, table.unpack(args)) end or xform,
-      fetch_json(url_fn(...)))
-  end
-end
+local proxy_handler = make_proxy_handler(fetch_json)
 
 local function filter_verified_emails(emails)
   local out = {}
