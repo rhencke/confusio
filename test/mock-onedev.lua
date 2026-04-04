@@ -22,9 +22,16 @@ function OnHttpRequest()
     json('"10.0.0"')
 
   -- Project list (used for ID resolution, user repos, org repos, public repos)
+  -- Return empty when the query targets an unknown project path.
   elseif path == "/~api/projects" then
-    SetStatus(200, "OK")
-    json('[' .. PROJECT .. ']')
+    local q = GetParam("query") or ""
+    if q ~= "" and not q:find("octocat/hello-world", 1, true) then
+      SetStatus(200, "OK")
+      json('[]')
+    else
+      SetStatus(200, "OK")
+      json('[' .. PROJECT .. ']')
+    end
 
   -- Single project ---------------------------------------------------------
   elseif path == "/~api/projects/1" then

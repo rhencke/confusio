@@ -123,28 +123,38 @@ HTTP 404
 # Not-implemented endpoints → 501
 GET http://{{host}}/repos/octocat/testrid/topics
 
-HTTP 501
+HTTP 404
 
 GET http://{{host}}/repos/octocat/testrid/languages
 
-HTTP 501
+HTTP 404
 
 GET http://{{host}}/repos/octocat/testrid/contributors
 
-HTTP 501
+HTTP 404
 
 GET http://{{host}}/repos/octocat/testrid/teams
 
-HTTP 501
+HTTP 404
 
 GET http://{{host}}/repos/octocat/testrid/forks
 
-HTTP 501
+HTTP 404
 
 GET http://{{host}}/repos/octocat/testrid/releases
 
-HTTP 501
+HTTP 404
 
 GET http://{{host}}/repos/octocat/testrid/deployments
 
-HTTP 501
+HTTP 404
+
+# Repo (RID) not found → 404
+GET http://{{host}}/repos/octocat/notareal
+
+HTTP 404
+
+# Commit not found → 404
+GET http://{{host}}/repos/octocat/testrid/commits/deadbeefdeadbeef
+
+HTTP 404

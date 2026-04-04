@@ -1,5 +1,5 @@
-# Pagure backend repos API assertions.
-# Uses /api/0/; branches have no commit SHAs; tags are names only.
+# Bitbucket Datacenter (Server) backend repos API assertions.
+# Uses /rest/api/1.0/; project key is the owner; personal repos use ~username.
 
 # GET /repos/{owner}/{repo}
 GET http://{{host}}/repos/octocat/hello-world
@@ -10,18 +10,10 @@ header "Content-Type" == "application/json; charset=utf-8"
 jsonpath "$.name" == "hello-world"
 jsonpath "$.full_name" isString
 jsonpath "$.owner.login" isString
-jsonpath "$.default_branch" isString
 jsonpath "$.private" isBoolean
+jsonpath "$.visibility" isString
 
-# GET /repos/{owner}/{repo}/topics — Pagure uses project tags as topics
-GET http://{{host}}/repos/octocat/hello-world/topics
-
-HTTP 200
-[Asserts]
-header "Content-Type" == "application/json; charset=utf-8"
-jsonpath "$.names" isCollection
-
-# GET /user/repos — needs /-/whoami first
+# GET /user/repos
 GET http://{{host}}/user/repos
 
 HTTP 200
@@ -29,7 +21,7 @@ HTTP 200
 header "Content-Type" == "application/json; charset=utf-8"
 jsonpath "$" isCollection
 
-# GET /orgs/{org}/repos — Pagure namespace
+# GET /orgs/{project}/repos
 GET http://{{host}}/orgs/testorg/repos
 
 HTTP 200
@@ -37,14 +29,34 @@ HTTP 200
 header "Content-Type" == "application/json; charset=utf-8"
 jsonpath "$" isCollection
 
-# GET /repos/{owner}/{repo}/branches — names only, SHA is empty string
-GET http://{{host}}/repos/octocat/hello-world/branches
+# GET /repos/{owner}/{repo}/tags
+GET http://{{host}}/repos/octocat/hello-world/tags
 
 HTTP 200
 [Asserts]
 header "Content-Type" == "application/json; charset=utf-8"
 jsonpath "$" isCollection
 jsonpath "$[0].name" isString
+jsonpath "$[0].commit.sha" isString
+
+# GET /repos/{owner}/{repo}/branches
+GET http://{{host}}/repos/octocat/hello-world/branches
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$" isCollection
+jsonpath "$[0].name" == "main"
+jsonpath "$[0].commit.sha" isString
+
+# GET /repos/{owner}/{repo}/branches/{branch}
+GET http://{{host}}/repos/octocat/hello-world/branches/main
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$.name" isString
+jsonpath "$.commit.sha" isString
 
 # Branch protection → 404
 GET http://{{host}}/repos/octocat/hello-world/branches/main/protection
@@ -60,16 +72,15 @@ header "Content-Type" == "application/json; charset=utf-8"
 jsonpath "$" isCollection
 jsonpath "$[0].sha" isString
 
-# GET /repos/{owner}/{repo}/tags — names only, SHA is empty string
-GET http://{{host}}/repos/octocat/hello-world/tags
+# GET /repos/{owner}/{repo}/commits/{ref}
+GET http://{{host}}/repos/octocat/hello-world/commits/abc123
 
 HTTP 200
 [Asserts]
 header "Content-Type" == "application/json; charset=utf-8"
-jsonpath "$" isCollection
-jsonpath "$[0].name" isString
+jsonpath "$.sha" isString
 
-# GET /repos/{owner}/{repo}/readme — fetched from raw bytes
+# GET /repos/{owner}/{repo}/readme
 GET http://{{host}}/repos/octocat/hello-world/readme
 
 HTTP 200
@@ -88,7 +99,7 @@ header "Content-Type" == "application/json; charset=utf-8"
 jsonpath "$.type" == "file"
 jsonpath "$.encoding" == "base64"
 
-# GET /repos/{owner}/{repo}/forks — from repo object
+# GET /repos/{owner}/{repo}/forks
 GET http://{{host}}/repos/octocat/hello-world/forks
 
 HTTP 200
@@ -96,7 +107,49 @@ HTTP 200
 header "Content-Type" == "application/json; charset=utf-8"
 jsonpath "$" isCollection
 
-# GET /users/{username}/repos
+# GET /repos/{owner}/{repo}/keys — DC uses /ssh endpoint
+GET http://{{host}}/repos/octocat/hello-world/keys
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$" isCollection
+jsonpath "$[0].id" isInteger
+
+# GET /repos/{owner}/{repo}/keys/{key_id}
+GET http://{{host}}/repos/octocat/hello-world/keys/1
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$.id" isInteger
+
+# GET /repos/{owner}/{repo}/hooks
+GET http://{{host}}/repos/octocat/hello-world/hooks
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$" isCollection
+jsonpath "$[0].id" isInteger
+
+# GET /repos/{owner}/{repo}/hooks/{hook_id}
+GET http://{{host}}/repos/octocat/hello-world/hooks/1
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$.id" isInteger
+
+# GET /repos/{owner}/{repo}/hooks/{hook_id}/config
+GET http://{{host}}/repos/octocat/hello-world/hooks/1/config
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$.url" isString
+
+# GET /users/{username}/repos — via ~username personal project
 GET http://{{host}}/users/octocat/repos
 
 HTTP 200
@@ -122,6 +175,10 @@ GET http://{{host}}/repos/octocat/hello-world/rulesets
 HTTP 404
 
 # Not-implemented endpoints → 501
+GET http://{{host}}/repos/octocat/hello-world/topics
+
+HTTP 404
+
 GET http://{{host}}/repos/octocat/hello-world/languages
 
 HTTP 404
@@ -144,5 +201,10 @@ HTTP 404
 
 # Repo not found → 404
 GET http://{{host}}/repos/nonexist/notareal
+
+HTTP 404
+
+# Commit not found → 404
+GET http://{{host}}/repos/octocat/hello-world/commits/deadbeefdeadbeef
 
 HTTP 404

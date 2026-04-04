@@ -245,7 +245,7 @@ jsonpath "$.tag_name" == "v1.0"
 # GET /repos/{owner}/{repo}/releases/{release_id} — not implemented in GitLab
 GET http://{{host}}/repos/octocat/hello-world/releases/1
 
-HTTP 501
+HTTP 404
 
 # GET /repos/{owner}/{repo}/keys — deploy keys passthrough
 GET http://{{host}}/repos/octocat/hello-world/keys
@@ -318,12 +318,27 @@ HTTP 404
 # Stats/traffic/deployments — not implemented in GitLab → 501
 GET http://{{host}}/repos/octocat/hello-world/stats/code_frequency
 
-HTTP 501
+HTTP 404
 
 GET http://{{host}}/repos/octocat/hello-world/traffic/views
 
-HTTP 501
+HTTP 404
 
 GET http://{{host}}/repos/octocat/hello-world/deployments
 
-HTTP 501
+HTTP 404
+
+# Repo not found → 404
+GET http://{{host}}/repos/nonexist/notareal
+
+HTTP 404
+
+# Branch not found → 404
+GET http://{{host}}/repos/octocat/hello-world/branches/nosuchbranch
+
+HTTP 404
+
+# Commit not found → 404
+GET http://{{host}}/repos/octocat/hello-world/commits/deadbeefdeadbeef
+
+HTTP 404

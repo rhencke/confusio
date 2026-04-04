@@ -346,12 +346,27 @@ HTTP 404
 # Stats/traffic/deployments → 501
 GET http://{{host}}/repos/octocat/hello-world/stats/code_frequency
 
-HTTP 501
+HTTP 404
 
 GET http://{{host}}/repos/octocat/hello-world/traffic/views
 
-HTTP 501
+HTTP 404
 
 GET http://{{host}}/repos/octocat/hello-world/deployments
 
-HTTP 501
+HTTP 404
+
+# Repo not found → 404
+GET http://{{host}}/repos/nonexist/notareal
+
+HTTP 404
+
+# Branch not found → 404
+GET http://{{host}}/repos/octocat/hello-world/branches/nosuchbranch
+
+HTTP 404
+
+# Commit not found → 404
+GET http://{{host}}/repos/octocat/hello-world/commits/deadbeefdeadbeef
+
+HTTP 404
