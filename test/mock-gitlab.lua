@@ -207,6 +207,70 @@ function OnHttpRequest()
     SetStatus(200, "OK")
     json('[]')
 
+  -- Teams (subgroups) ---------------------------------------------------------
+  elseif path == "/api/v4/groups/testorg/subgroups" then
+    SetStatus(200, "OK")
+    json('[{"id":10,"name":"core","path":"core","description":"Core team",' ..
+      '"visibility":"internal","web_url":"http://localhost/testorg/core"}]')
+
+  -- Redbean decodes %2F → / before calling GetPath(), so match decoded form.
+  elseif path == "/api/v4/groups/testorg/core" then
+    SetStatus(200, "OK")
+    json('{"id":10,"name":"core","path":"core","description":"Core team",' ..
+      '"visibility":"internal","web_url":"http://localhost/testorg/core"}')
+
+  elseif path == "/api/v4/groups/10/members" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"username":"octocat","name":"The Octocat","avatar_url":"",' ..
+      '"web_url":"http://localhost/octocat","access_level":30}]')
+
+  elseif path == "/api/v4/groups/10/members/1" then
+    SetStatus(200, "OK")
+    json('{"id":1,"username":"octocat","name":"The Octocat","access_level":30,' ..
+      '"avatar_url":"","web_url":"http://localhost/octocat"}')
+
+  elseif path == "/api/v4/groups/10/projects" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"name":"hello-world","path":"hello-world",' ..
+      '"path_with_namespace":"octocat/hello-world","description":"My first repo",' ..
+      '"visibility":"public","web_url":"http://localhost/octocat/hello-world",' ..
+      '"ssh_url_to_repo":"git@localhost:octocat/hello-world.git",' ..
+      '"http_url_to_repo":"http://localhost/octocat/hello-world.git",' ..
+      '"forks_count":0,"star_count":0,"default_branch":"main",' ..
+      '"namespace":{"id":10,"kind":"group","path":"core","name":"core"}}]')
+
+  elseif path == "/api/v4/groups/10/subgroups" then
+    SetStatus(200, "OK")
+    json('[]')
+
+  -- Legacy team-by-id API -------------------------------------------------------
+  -- Project owned by group 10 (used for GET /teams/{team_id}/repos/{owner}/{repo})
+  elseif path == "/api/v4/projects/testorg/core-project" then
+    SetStatus(200, "OK")
+    json('{"id":2,"path":"core-project","path_with_namespace":"testorg/core-project",' ..
+      '"namespace":{"id":10,"path":"core","name":"core","kind":"group","avatar_url":"",' ..
+      '"web_url":"http://localhost/testorg/core"},' ..
+      '"visibility":"public","web_url":"http://localhost/testorg/core-project",' ..
+      '"description":"","forked_from_project":null,' ..
+      '"http_url_to_repo":"http://localhost/testorg/core-project.git",' ..
+      '"ssh_url_to_repo":"git@localhost:testorg/core-project.git",' ..
+      '"statistics":{"repository_size":0},"star_count":0,"forks_count":0,' ..
+      '"open_issues_count":0,"issues_enabled":true,"wiki_enabled":false,' ..
+      '"archived":false,"default_branch":"main",' ..
+      '"created_at":"2011-01-26T19:01:12Z","last_activity_at":"2011-01-26T19:01:12Z",' ..
+      '"topics":[]}')
+
+  elseif path == "/api/v4/groups" then
+    -- GET /user/teams: all groups the current user belongs to
+    SetStatus(200, "OK")
+    json('[{"id":10,"name":"core","path":"core","description":"Core team",' ..
+      '"visibility":"internal","web_url":"http://localhost/testorg/core"}]')
+
+  elseif path == "/api/v4/groups/10" then
+    SetStatus(200, "OK")
+    json('{"id":10,"name":"core","path":"core","description":"Core team",' ..
+      '"visibility":"internal","web_url":"http://localhost/testorg/core"}')
+
   else
     SetStatus(404, "Not Found")
   end
