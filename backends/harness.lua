@@ -96,8 +96,6 @@ backend_impl = {
     else respond_json(503, "Service Unavailable", {}) end
   end,
 
-  get_emojis = function() respond_json(404, "Not Found", { message = "Not Found" }) end,
-
   get_repo = function(owner, repo_name)
     proxy_json(translate_harness_repo,
       fetch_json(base() .. "/repos/" .. repo_ref(owner, repo_name)))
@@ -142,25 +140,6 @@ backend_impl = {
       fetch_json(base() .. "/repos", "POST", EncodeJson(req)))
   end,
 
-  -- Harness Code has no topics API.
-  get_repo_topics = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
-
-  put_repo_topics = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
-
-  -- Harness Code has no language detection API.
-  get_repo_languages = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
-
-  -- Harness Code has no contributors endpoint.
-  get_repo_contributors = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
-
   get_repo_tags = function(owner, repo_name)
     proxy_json(
       function(tags)
@@ -175,7 +154,4 @@ backend_impl = {
         { per_page = "limit", page = "page" })))
   end,
 
-  get_repo_teams = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
 }

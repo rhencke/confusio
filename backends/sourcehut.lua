@@ -87,8 +87,6 @@ backend_impl = {
     else respond_json(503, "Service Unavailable", {}) end
   end,
 
-  get_emojis = function() respond_json(404, "Not Found", { message = "Not Found" }) end,
-
   get_repo = function(owner, repo_name)
     proxy_json(translate_srht_repo,
       fetch_json(base() .. "/~" .. owner .. "/repos/" .. repo_name))
@@ -137,34 +135,6 @@ backend_impl = {
       fetch_json(base() .. "/" .. canonical .. "/repos", "POST", translate_srht_req(GetBody())))
   end,
 
-  -- Sourcehut has no concept of organizations; individual users own repos.
-  get_org_repos = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
-
-  post_org_repos = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
-
-  -- Sourcehut has no topics API.
-  get_repo_topics = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
-
-  put_repo_topics = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
-
-  -- Sourcehut has no language detection API.
-  get_repo_languages = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
-
-  -- Sourcehut has no contributors endpoint.
-  get_repo_contributors = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
-
   get_repo_tags = function(owner, repo_name)
     -- Sourcehut /refs returns { results: [...] } with name and target fields
     -- Filter to tags only (refs starting with "refs/tags/")
@@ -182,7 +152,4 @@ backend_impl = {
       fetch_json(base() .. "/~" .. owner .. "/repos/" .. repo_name .. "/refs"))
   end,
 
-  get_repo_teams = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
 }

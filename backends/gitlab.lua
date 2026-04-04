@@ -100,8 +100,6 @@ backend_impl = {
     else respond_json(503, "Service Unavailable", {}) end
   end,
 
-  get_emojis = function() respond_json(404, "Not Found", { message = "Not Found" }) end,
-
   get_repo = function(owner, repo_name)
     proxy_json(translate_gl_repo,
       fetch_json(base() .. "/projects/" .. project_id(owner, repo_name)))
@@ -206,5 +204,547 @@ backend_impl = {
   -- GitLab does not have a direct equivalent of GitHub's /teams endpoint for repos.
   get_repo_teams = function()
     respond_json(404, "Not Found", { message = "Not Found" })
+  end,
+
+  -- Branches ------------------------------------------------------------------
+
+  get_repo_branches = function(owner, repo_name)
+    proxy_json(
+      function(branches)
+        for _, b in ipairs(branches or {}) do
+          if b.commit then b.commit.sha = b.commit.id end
+        end
+        return branches or {}
+      end,
+      fetch_json(append_page_params(
+        base() .. "/projects/" .. project_id(owner, repo_name) .. "/repository/branches",
+        { per_page = "per_page", page = "page" })))
+  end,
+
+  get_repo_branch = function(owner, repo_name, branch)
+    proxy_json(
+      function(b)
+        if b and b.commit then b.commit.sha = b.commit.id end
+        return b or {}
+      end,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/repository/branches/" .. branch))
+  end,
+
+  -- Commits -------------------------------------------------------------------
+
+  get_repo_commits = function(owner, repo_name)
+    proxy_json(
+      function(commits)
+        local result = {}
+        for _, c in ipairs(commits or {}) do
+          result[#result+1] = {
+            sha      = c.id,
+            html_url = c.web_url or "",
+            commit   = {
+              message    = c.message,
+              author     = { name = c.author_name, email = c.author_email, date = c.authored_date },
+              committer  = { name = c.committer_name or c.author_name,
+                             email = c.committer_email or c.author_email,
+                             date  = c.committed_date or c.authored_date },
+            },
+          }
+        end
+        return result
+      end,
+      fetch_json(append_page_params(
+        base() .. "/projects/" .. project_id(owner, repo_name) .. "/repository/commits",
+        { per_page = "per_page", page = "page" })))
+  end,
+
+  get_repo_commit = function(owner, repo_name, ref)
+    proxy_json(
+      function(c)
+        if not c then return {} end
+        return {
+          sha      = c.id,
+          html_url = c.web_url or "",
+          commit   = {
+            message    = c.message,
+            author     = { name = c.author_name, email = c.author_email, date = c.authored_date },
+            committer  = { name = c.committer_name or c.author_name,
+                           email = c.committer_email or c.author_email,
+                           date  = c.committed_date or c.authored_date },
+          },
+          stats = c.stats,
+        }
+      end,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/repository/commits/" .. ref))
+  end,
+
+  -- Statuses ------------------------------------------------------------------
+
+  -- GitLab status mapping: running→pending, failed→failure, canceled→error
+  get_commit_statuses = function(owner, repo_name, ref)
+    local gl_to_gh = { pending="pending", running="pending", success="success",
+                       failed="failure", canceled="error" }
+    proxy_json(
+      function(statuses)
+        local result = {}
+        for _, s in ipairs(statuses or {}) do
+          result[#result+1] = {
+            id          = s.id,
+            state       = gl_to_gh[s.status] or s.status,
+            description = s.description,
+            target_url  = s.target_url,
+            context     = s.name,
+            created_at  = s.created_at,
+            updated_at  = s.updated_at,
+          }
+        end
+        return result
+      end,
+      fetch_json(append_page_params(
+        base() .. "/projects/" .. project_id(owner, repo_name) ..
+          "/repository/commits/" .. ref .. "/statuses",
+        { per_page = "per_page", page = "page" })))
+  end,
+
+  get_commit_combined_status = function(owner, repo_name, ref)
+    -- GitLab has no single-object combined status; return the list as-is
+    -- and wrap in a GitHub-style combined status object.
+    local gl_to_gh = { pending="pending", running="pending", success="success",
+                       failed="failure", canceled="error" }
+    proxy_json(
+      function(statuses)
+        local state = "success"
+        local result = {}
+        for _, s in ipairs(statuses or {}) do
+          local gh_state = gl_to_gh[s.status] or s.status
+          if gh_state == "failure" or gh_state == "error" then state = gh_state end
+          if gh_state == "pending" and state == "success" then state = "pending" end
+          result[#result+1] = {
+            id = s.id, state = gh_state, context = s.name,
+            description = s.description, target_url = s.target_url,
+          }
+        end
+        return { state = state, statuses = result, total_count = #result }
+      end,
+      fetch_json(
+        base() .. "/projects/" .. project_id(owner, repo_name) ..
+          "/repository/commits/" .. ref .. "/statuses"))
+  end,
+
+  post_commit_status = function(owner, repo_name, sha)
+    local req = DecodeJson(GetBody() or "{}")
+    local gh_to_gl = { pending="pending", success="success", failure="failed", error="failed" }
+    local gl_body = EncodeJson({
+      state       = gh_to_gl[req.state] or req.state,
+      name        = req.context or "default",
+      description = req.description,
+      target_url  = req.target_url,
+    })
+    proxy_json_created(
+      function(s)
+        local gl_to_gh = { pending="pending", running="pending", success="success",
+                           failed="failure", canceled="error" }
+        return {
+          id = s.id, state = gl_to_gh[s.status] or s.status,
+          description = s.description, target_url = s.target_url, context = s.name,
+        }
+      end,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/statuses/" .. sha, "POST", gl_body))
+  end,
+
+  -- Contents ------------------------------------------------------------------
+
+  get_repo_readme = function(owner, repo_name)
+    -- Try to fetch README.md; fall back to 404 if not found.
+    proxy_json(
+      function(f)
+        if not f then return {} end
+        return { name=f.file_name, path=f.file_path, sha=f.blob_id, size=f.size,
+                 type="file", encoding=f.encoding, content=f.content }
+      end,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/repository/files/README.md?ref=HEAD"))
+  end,
+
+  get_repo_readme_dir = function(owner, repo_name, dir)
+    local enc_path = dir:gsub("/", "%%2F") .. "%%2FREADME.md"
+    proxy_json(
+      function(f)
+        if not f then return {} end
+        return { name=f.file_name, path=f.file_path, sha=f.blob_id, size=f.size,
+                 type="file", encoding=f.encoding, content=f.content }
+      end,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/repository/files/" .. enc_path .. "?ref=HEAD"))
+  end,
+
+  get_repo_content = function(owner, repo_name, path)
+    local enc_path = path:gsub("/", "%%2F")
+    proxy_json(
+      function(f)
+        if not f then return {} end
+        return { name=f.file_name, path=f.file_path, sha=f.blob_id, size=f.size,
+                 type="file", encoding=f.encoding, content=f.content }
+      end,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/repository/files/" .. enc_path .. "?ref=HEAD"))
+  end,
+
+  put_repo_content = function(owner, repo_name, path)
+    local enc_path = path:gsub("/", "%%2F")
+    local req = DecodeJson(GetBody() or "{}")
+    -- Check if file exists to decide create vs update
+    local ok, status = pcall(Fetch,
+      base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/repository/files/" .. enc_path .. "?ref=" .. (req.branch or "HEAD"),
+      auth())
+    local method = (ok and status == 200) and "PUT" or "POST"
+    local gl_body = EncodeJson({
+      branch         = req.branch or "main",
+      content        = req.content,
+      commit_message = req.message,
+      encoding       = req.encoding or "base64",
+    })
+    proxy_json(nil,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/repository/files/" .. enc_path, method, gl_body))
+  end,
+
+  delete_repo_content = function(owner, repo_name, path)
+    local enc_path = path:gsub("/", "%%2F")
+    local req = DecodeJson(GetBody() or "{}")
+    local gl_body = EncodeJson({
+      branch         = req.branch or "main",
+      commit_message = req.message,
+      sha            = req.sha,
+    })
+    proxy_json(nil,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/repository/files/" .. enc_path, "DELETE", gl_body))
+  end,
+
+  get_repo_tarball = function(owner, repo_name, ref)
+    SetStatus(302, "Found")
+    SetHeader("Location",
+      base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/repository/archive.tar.gz?sha=" .. ref)
+    Write("")
+  end,
+
+  get_repo_zipball = function(owner, repo_name, ref)
+    SetStatus(302, "Found")
+    SetHeader("Location",
+      base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/repository/archive.zip?sha=" .. ref)
+    Write("")
+  end,
+
+  -- Compare -------------------------------------------------------------------
+
+  get_repo_compare = function(owner, repo_name, basehead)
+    -- Split "base...head" or "base..head"
+    local base_ref, head_ref = basehead:match("^(.-)%.%.%.(.+)$")
+    if not base_ref then base_ref, head_ref = basehead:match("^(.-)%.%.(.+)$") end
+    if not base_ref then base_ref = "HEAD"; head_ref = basehead end
+    proxy_json(nil,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/repository/compare?from=" .. base_ref .. "&to=" .. head_ref))
+  end,
+
+  -- Collaborators -------------------------------------------------------------
+
+  get_repo_collaborators = function(owner, repo_name)
+    proxy_json(
+      function(members)
+        local result = {}
+        local al_map = { [10]="pull", [20]="pull", [30]="push", [40]="push", [50]="admin" }
+        for _, m in ipairs(members or {}) do
+          result[#result+1] = {
+            login      = m.username,
+            id         = m.id,
+            avatar_url = m.avatar_url or "",
+            type       = "User",
+            permissions = {
+              admin = (m.access_level or 0) >= 50,
+              push  = (m.access_level or 0) >= 30,
+              pull  = (m.access_level or 0) >= 10,
+            },
+          }
+        end
+        return result
+      end,
+      fetch_json(append_page_params(
+        base() .. "/projects/" .. project_id(owner, repo_name) .. "/members/all",
+        { per_page = "per_page", page = "page" })))
+  end,
+
+  get_repo_collaborator = function(owner, repo_name, username)
+    -- Resolve username to user ID, then check membership
+    local ok, status, _, ubody = fetch_json(base() .. "/users?username=" .. username)
+    if not ok or status ~= 200 then respond_json(404, "Not Found", {}); return end
+    local users = DecodeJson(ubody) or {}
+    local uid = users[1] and users[1].id
+    if not uid then respond_json(404, "Not Found", {}); return end
+    local ok2, status2 = pcall(Fetch,
+      base() .. "/projects/" .. project_id(owner, repo_name) .. "/members/" .. uid, auth())
+    if ok2 and status2 == 200 then SetStatus(204, "No Content")
+    else respond_json(404, "Not Found", { message = "Not a collaborator" }) end
+  end,
+
+  put_repo_collaborator = function(owner, repo_name, username)
+    local ok, status, _, ubody = fetch_json(base() .. "/users?username=" .. username)
+    if not ok or status ~= 200 then respond_json(404, "Not Found", {}); return end
+    local users = DecodeJson(ubody) or {}
+    local uid = users[1] and users[1].id
+    if not uid then respond_json(404, "Not Found", {}); return end
+    local req = DecodeJson(GetBody() or "{}")
+    local perm = req.permission or "push"
+    local level_map = { pull=30, push=30, admin=50 }
+    local body = EncodeJson({ user_id = uid, access_level = level_map[perm] or 30 })
+    -- Try add first; if conflict, update
+    local ok2, status2 = fetch_json(
+      base() .. "/projects/" .. project_id(owner, repo_name) .. "/members", "POST", body)
+    if ok2 and (status2 == 201 or status2 == 200) then SetStatus(204, "No Content")
+    elseif ok2 and status2 == 409 then
+      -- Already a member — update
+      local ok3, status3 = fetch_json(
+        base() .. "/projects/" .. project_id(owner, repo_name) .. "/members/" .. uid, "PUT", body)
+      if ok3 and (status3 == 200 or status3 == 201) then SetStatus(204, "No Content")
+      else respond_json(status3 or 503, "Error", {}) end
+    else respond_json(status2 or 503, "Error", {}) end
+  end,
+
+  delete_repo_collaborator = function(owner, repo_name, username)
+    local ok, status, _, ubody = fetch_json(base() .. "/users?username=" .. username)
+    if not ok or status ~= 200 then respond_json(404, "Not Found", {}); return end
+    local users = DecodeJson(ubody) or {}
+    local uid = users[1] and users[1].id
+    if not uid then respond_json(404, "Not Found", {}); return end
+    local ok2, status2 = fetch_json(
+      base() .. "/projects/" .. project_id(owner, repo_name) .. "/members/" .. uid, "DELETE")
+    if ok2 and (status2 == 200 or status2 == 204) then SetStatus(204, "No Content")
+    else respond_json(status2 or 503, "Error", {}) end
+  end,
+
+  get_repo_collaborator_permission = function(owner, repo_name, username)
+    local ok, status, _, ubody = fetch_json(base() .. "/users?username=" .. username)
+    if not ok or status ~= 200 then respond_json(404, "Not Found", {}); return end
+    local users = DecodeJson(ubody) or {}
+    local uid = users[1] and users[1].id
+    if not uid then respond_json(404, "Not Found", {}); return end
+    proxy_json(
+      function(m)
+        local al = m and m.access_level or 0
+        local perm = al >= 50 and "admin" or (al >= 30 and "write" or "read")
+        return { permission = perm, user = { login = username, id = uid } }
+      end,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/members/" .. uid))
+  end,
+
+  -- Forks ---------------------------------------------------------------------
+
+  get_repo_forks = function(owner, repo_name)
+    proxy_json(translate_gl_projects,
+      fetch_json(append_page_params(
+        base() .. "/projects/" .. project_id(owner, repo_name) .. "/forks",
+        { per_page = "per_page", page = "page" })))
+  end,
+
+  post_repo_forks = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    local body = req.organization and EncodeJson({ namespace = req.organization }) or "{}"
+    proxy_json_created(translate_gl_repo,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/fork",
+        "POST", body))
+  end,
+
+  -- Releases ------------------------------------------------------------------
+  -- GitLab releases use tag_name as identifier rather than an integer ID.
+
+  get_repo_releases = function(owner, repo_name)
+    proxy_json(
+      function(rels)
+        local result = {}
+        for i, r in ipairs(rels or {}) do
+          result[i] = {
+            id           = i,
+            tag_name     = r.tag_name,
+            name         = r.name,
+            body         = r.description,
+            draft        = false,
+            prerelease   = false,
+            created_at   = r.created_at,
+            published_at = r.released_at or r.created_at,
+            assets       = {},
+          }
+        end
+        return result
+      end,
+      fetch_json(append_page_params(
+        base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases",
+        { per_page = "per_page", page = "page" })))
+  end,
+
+  post_repo_releases = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    local body = EncodeJson({
+      tag_name    = req.tag_name,
+      name        = req.name,
+      description = req.body,
+    })
+    proxy_json_created(
+      function(r)
+        return { id=1, tag_name=r.tag_name, name=r.name, body=r.description,
+                 draft=false, prerelease=false, created_at=r.created_at,
+                 published_at=r.released_at or r.created_at, assets={} }
+      end,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/releases", "POST", body))
+  end,
+
+  get_repo_release_latest = function(owner, repo_name)
+    proxy_json(
+      function(r)
+        return { id=1, tag_name=r.tag_name, name=r.name, body=r.description,
+                 draft=false, prerelease=false, created_at=r.created_at,
+                 published_at=r.released_at or r.created_at, assets={} }
+      end,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/releases/permalink/latest"))
+  end,
+
+  get_repo_release_by_tag = function(owner, repo_name, tag)
+    proxy_json(
+      function(r)
+        return { id=1, tag_name=r.tag_name, name=r.name, body=r.description,
+                 draft=false, prerelease=false, created_at=r.created_at,
+                 published_at=r.released_at or r.created_at, assets={} }
+      end,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/releases/" .. tag))
+  end,
+
+  -- Deploy keys ---------------------------------------------------------------
+
+  get_repo_keys = function(owner, repo_name)
+    proxy_json(nil,
+      fetch_json(append_page_params(
+        base() .. "/projects/" .. project_id(owner, repo_name) .. "/deploy_keys",
+        { per_page = "per_page", page = "page" })))
+  end,
+
+  post_repo_keys = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    local body = EncodeJson({ title = req.title, key = req.key,
+                               can_push = not (req.read_only ~= false) })
+    proxy_json_created(nil,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/deploy_keys", "POST", body))
+  end,
+
+  get_repo_key = function(owner, repo_name, key_id)
+    proxy_json(nil,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/deploy_keys/" .. key_id))
+  end,
+
+  delete_repo_key = function(owner, repo_name, key_id)
+    local ok, status = fetch_json(
+      base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/deploy_keys/" .. key_id, "DELETE")
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- Webhooks ------------------------------------------------------------------
+
+  get_repo_hooks = function(owner, repo_name)
+    proxy_json(nil,
+      fetch_json(append_page_params(
+        base() .. "/projects/" .. project_id(owner, repo_name) .. "/hooks",
+        { per_page = "per_page", page = "page" })))
+  end,
+
+  post_repo_hooks = function(owner, repo_name)
+    proxy_json_created(nil,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/hooks", "POST", GetBody()))
+  end,
+
+  get_repo_hook = function(owner, repo_name, hook_id)
+    proxy_json(nil,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/hooks/" .. hook_id))
+  end,
+
+  -- GitLab uses PUT for hook updates
+  patch_repo_hook = function(owner, repo_name, hook_id)
+    proxy_json(nil,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/hooks/" .. hook_id, "PUT", GetBody()))
+  end,
+
+  delete_repo_hook = function(owner, repo_name, hook_id)
+    local ok, status = fetch_json(
+      base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/hooks/" .. hook_id, "DELETE")
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  get_repo_hook_config = function(owner, repo_name, hook_id)
+    proxy_json(
+      function(h) return { url = h.url } end,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/hooks/" .. hook_id))
+  end,
+
+  patch_repo_hook_config = function(owner, repo_name, hook_id)
+    local new_cfg = DecodeJson(GetBody() or "{}")
+    local url = base() .. "/projects/" .. project_id(owner, repo_name) .. "/hooks/" .. hook_id
+    local ok, status, _, body = fetch_json(url)
+    if not ok or status ~= 200 then
+      if ok then respond_json(status, "Error", {}) else respond_json(503, "Service Unavailable", {}) end
+      return
+    end
+    local hook = DecodeJson(body) or {}
+    if new_cfg.url then hook.url = new_cfg.url end
+    proxy_json(function(h) return { url = h.url } end, fetch_json(url, "PUT", EncodeJson(hook)))
+  end,
+
+  -- GET /users/{username}/repos -----------------------------------------------
+  get_users_repos = function(username)
+    proxy_json(translate_gl_projects,
+      fetch_json(append_page_params(
+        base() .. "/users/" .. username .. "/projects",
+        { per_page = "per_page", page = "page" })))
+  end,
+
+  -- GET /repositories (all public projects) -----------------------------------
+  get_repositories = function()
+    proxy_json(translate_gl_projects,
+      fetch_json(append_page_params(
+        base() .. "/projects?visibility=public",
+        { per_page = "per_page", page = "page" })))
+  end,
+
+  -- Commit comments -----------------------------------------------------------
+  -- GitLab uses notes on commits: /projects/{id}/repository/commits/{sha}/comments
+  get_commit_comments = function(owner, repo_name, commit_sha)
+    proxy_json(nil,
+      fetch_json(append_page_params(
+        base() .. "/projects/" .. project_id(owner, repo_name) ..
+          "/repository/commits/" .. commit_sha .. "/comments",
+        { per_page = "per_page", page = "page" })))
+  end,
+
+  post_commit_comment = function(owner, repo_name, commit_sha)
+    proxy_json_created(nil,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/repository/commits/" .. commit_sha .. "/comments", "POST", GetBody()))
   end,
 }

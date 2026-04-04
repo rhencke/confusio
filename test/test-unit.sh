@@ -86,3 +86,6 @@ run_mock_phase test/gitea-root-auth.hurl $MOCK_ARGS
 
 # --- Phase 5: Repos API (Gitea backend) ---
 run_mock_phase test/gitea-repos.hurl $MOCK_ARGS
+
+# --- Phase 6: Extended Repos API (branches, commits, contents, releases, etc.) ---
+run_mock_phase test/gitea-repos-ext.hurl $MOCK_ARGS

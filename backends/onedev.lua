@@ -101,8 +101,6 @@ backend_impl = {
     else respond_json(503, "Service Unavailable", {}) end
   end,
 
-  get_emojis = function() respond_json(404, "Not Found", { message = "Not Found" }) end,
-
   get_repo = function(owner, repo_name)
     local id = resolve_project_id(owner, repo_name)
     if not id then respond_json(404, "Not Found", { message = "Not Found" }); return end
@@ -162,25 +160,6 @@ backend_impl = {
       fetch_json(base() .. "/projects", "POST", EncodeJson(od)))
   end,
 
-  -- OneDev has no topics API.
-  get_repo_topics = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
-
-  put_repo_topics = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
-
-  -- OneDev has no language detection API.
-  get_repo_languages = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
-
-  -- OneDev has no contributors endpoint.
-  get_repo_contributors = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
-
   get_repo_tags = function(owner, repo_name)
     local id = resolve_project_id(owner, repo_name)
     if not id then respond_json(404, "Not Found", { message = "Not Found" }); return end
@@ -197,7 +176,4 @@ backend_impl = {
       fetch_json(base() .. "/projects/" .. id .. "/tags"))
   end,
 
-  get_repo_teams = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
 }

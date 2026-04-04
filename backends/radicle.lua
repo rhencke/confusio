@@ -95,8 +95,6 @@ backend_impl = {
     else respond_json(503, "Service Unavailable", {}) end
   end,
 
-  get_emojis = function() respond_json(404, "Not Found", { message = "Not Found" }) end,
-
   -- GET /repos/{owner}/{rid} — owner is ignored; repo = RID
   get_repo = function(_, rid)
     proxy_json(translate_radicle_repo, fetch_json(base() .. "/repos/" .. rid))
@@ -125,34 +123,6 @@ backend_impl = {
       fetch_json(base() .. "/repos", "POST", translate_radicle_req(GetBody())))
   end,
 
-  -- Radicle has no org concept
-  get_org_repos = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
-
-  post_org_repos = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
-
-  -- Radicle has no topics API
-  get_repo_topics = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
-
-  put_repo_topics = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
-
-  -- Radicle has no language detection
-  get_repo_languages = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
-
-  -- Radicle has no contributors endpoint
-  get_repo_contributors = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
-
   get_repo_tags = function(_, rid)
     -- Radicle returns [{ name, oid }] or [{ ref, oid }]
     proxy_json(
@@ -168,10 +138,6 @@ backend_impl = {
         return result
       end,
       fetch_json(base() .. "/repos/" .. rid .. "/tags"))
-  end,
-
-  get_repo_teams = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
   end,
 
   -- Branches ------------------------------------------------------------------

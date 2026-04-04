@@ -92,8 +92,6 @@ backend_impl = {
     if ok and status == 200 then respond_json(200, "OK", {})
     else respond_json(503, "Service Unavailable", {}) end
   end,
-  get_emojis = function() respond_json(404, "Not Found", { message = "Not Found" }) end,
-
   get_repo = function(owner, repo_name)
     proxy_json(
       function(r) return translate_gerrit_repo(r, owner, repo_name) end,

@@ -74,8 +74,6 @@ backend_impl = {
     else respond_json(503, "Service Unavailable", {}) end
   end,
 
-  get_emojis = function() respond_json(404, "Not Found", { message = "Not Found" }) end,
-
   get_repo = function(owner, repo_name)
     proxy_json(translate_pagure_repo,
       fetch_json(base() .. "/" .. owner .. "/" .. repo_name))
@@ -177,16 +175,6 @@ backend_impl = {
       fetch_json(url, "POST", EncodeJson({ tags = req.names or {} })))
   end,
 
-  -- Pagure has no language detection API.
-  get_repo_languages = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
-
-  -- Pagure has no standard contributors endpoint.
-  get_repo_contributors = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
-
   get_repo_tags = function(owner, repo_name)
     -- Pagure returns { "tags": ["v1.0", ...] } — just tag names, no commit info
     proxy_json(
@@ -200,7 +188,4 @@ backend_impl = {
       fetch_json(base() .. "/" .. owner .. "/" .. repo_name .. "/git/tags"))
   end,
 
-  get_repo_teams = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
 }
