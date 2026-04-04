@@ -1,10 +1,6 @@
 REDBEAN_VERSION := $(shell cat .redbean-version)
 REDBEAN_URL      = https://redbean.dev/redbean-$(REDBEAN_VERSION).com
 
-MOCKS = mock-gitea.com mock-gitlab.com mock-gitbucket.com mock-bitbucket.com \
-        mock-harness.com mock-pagure.com mock-onedev.com mock-sourcehut.com \
-        mock-radicle.com mock-bitbucket_datacenter.com
-
 HURL_VERSION  := $(shell cat .hurl-version)
 HURL_OS       := $(shell uname -s)
 HURL_RAW_ARCH := $(shell uname -m)
@@ -47,14 +43,45 @@ mock-%.com: redbean.com test/mock-%.lua
 	(cd .tmp-mock && zip -u ../$@ .init.lua)
 	rm -rf .tmp-mock
 
-.PHONY: build test test-unit test-integration validate-mock clean
+# Backend test configuration.
+# To add a backend: append to BACKENDS (ports auto-assigned from 18080).
+# Each backend needs test/mock-<name>.lua (symlink ok) and
+# test/<name>-repos.hurl + test/<name>-users.hurl (symlinks ok).
+BACKENDS = bitbucket bitbucket_datacenter codeberg forgejo gitbucket gitea gitlab gogs \
+           harness kallithea launchpad notabug onedev pagure phabricator radicle \
+           rhodecode sourceforge sourcehut
+MOCKS    = $(addprefix mock-,$(addsuffix .com,$(BACKENDS)))
+
+gitea_HURL = test/gitea-root-auth.hurl test/gitea-repos.hurl \
+             test/gitea-repos-ext.hurl test/gitea-users.hurl
+
+$(eval _p := 18080)
+$(foreach b,$(BACKENDS),$(eval $(b)_CPORT := $(_p))$(eval $(b)_MPORT := $(shell expr $(_p) + 1))$(eval _p := $(shell expr $(_p) + 2)))
+
+define BACKEND_RULE
+.PHONY: test-unit-$(1)
+test-unit-$(1): confusio.com mock-$(1).com hurl
+	bash test/run-backend.sh mock-$(1).com \
+	  $($(1)_CPORT) $($(1)_MPORT) \
+	  "-- backend=$(1) base_url=http://127.0.0.1:$($(1)_MPORT)" \
+	  $(or $($(1)_HURL),test/$(1)-repos.hurl test/$(1)-users.hurl)
+endef
+
+$(foreach b,$(BACKENDS),$(eval $(call BACKEND_RULE,$(b))))
+
+.PHONY: build test test-unit test-unit-backends test-integration validate-mock clean
 
 build: confusio.com
 
 test: test-unit test-integration
 
+# Sequential preamble (boot-path checks), then all backends in parallel
 test-unit: confusio.com $(MOCKS) hurl
 	bash test/test-unit.sh
+	$(MAKE) -j$$(nproc) test-unit-backends
+
+# Aggregate target — Make runs all prerequisites in parallel under -j
+test-unit-backends: $(addprefix test-unit-,$(BACKENDS))
 
 test-integration: confusio.com hurl
 	bash test/test-integration.sh
