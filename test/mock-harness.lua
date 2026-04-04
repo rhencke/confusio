@@ -130,6 +130,12 @@ function OnHttpRequest()
     SetStatus(200, "OK")
     json('[' .. REPO .. ']')
 
+  -- Users ------------------------------------------------------------------
+  elseif path == base .. "/user" then
+    SetStatus(200, "OK")
+    json('{"id":1,"uid":"octocat","display_name":"The Octocat","email":"octocat@github.com",' ..
+      '"admin":false,"url":""}')
+
   else
     SetStatus(404, "Not Found")
   end

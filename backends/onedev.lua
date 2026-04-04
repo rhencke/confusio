@@ -94,6 +94,23 @@ local function translate_onedev_repos(repos)
   return repos
 end
 
+local proxy_handler = make_proxy_handler(fetch_json)
+
+local function translate_onedev_user(u)
+  if not u then return {} end
+  return {
+    login      = u.name or "",
+    id         = u.id or 0,
+    node_id    = "",
+    avatar_url = "",
+    html_url   = "",
+    type       = "User",
+    site_admin = false,
+    name       = u.fullName or u.name or "",
+    email      = u.email or "",
+  }
+end
+
 -- Translate a OneDev branch object to GitHub format.
 -- OneDev: { name, commitHash }
 local function translate_onedev_branch(b)
@@ -321,5 +338,31 @@ backend_impl = {
       fetch_json(base() .. "/projects?query=" .. query
         .. "&count=" .. count .. "&offset=" .. ((page-1)*count)))
   end,
+
+  -- Users ---------------------------------------------------------------------
+
+  -- GET /users
+  get_users = function()
+    local count  = GetParam("per_page") or "30"
+    local page   = tonumber(GetParam("page")) or 1
+    local offset = (page - 1) * (tonumber(count) or 30)
+    proxy_json(
+      function(users)
+        users = users or {}
+        for i, u in ipairs(users) do users[i] = translate_onedev_user(u) end
+        return users
+      end,
+      fetch_json(base() .. "/users?offset=" .. offset .. "&count=" .. count))
+  end,
+
+  -- GET /users/{username} — query by name, take first match
+  get_users_username = proxy_handler(
+    function(users)
+      local u = (users and users[1]) or {}
+      return translate_onedev_user(u)
+    end,
+    function(username)
+      return base() .. "/users?query=name+is+%22" .. username .. "%22&count=1"
+    end),
 
 }

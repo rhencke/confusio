@@ -93,6 +93,40 @@ local function translate_gl_projects(projects)
   return projects
 end
 
+-- Map a GitLab user object to GitHub format.
+local function translate_gl_user(u)
+  if not u then return {} end
+  return {
+    login      = u.username,
+    id         = u.id,
+    node_id    = "",
+    avatar_url = u.avatar_url or "",
+    html_url   = u.web_url or "",
+    type       = "User",
+    site_admin = u.is_admin or false,
+    name       = u.name,
+    email      = u.email,
+    location   = u.location,
+    blog       = u.website_url,
+    created_at = u.created_at,
+  }
+end
+
+local function translate_gl_users(users)
+  for i, u in ipairs(users) do users[i] = translate_gl_user(u) end
+  return users
+end
+
+local proxy_handler = make_proxy_handler(fetch_json)
+
+-- Look up a GitLab user ID by username. Returns nil on failure.
+local function gl_user_id(username)
+  local ok, status, _, body = fetch_json(base() .. "/users?username=" .. username)
+  if not ok or status ~= 200 then return nil end
+  local list = DecodeJson(body) or {}
+  return list[1] and list[1].id
+end
+
 backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, base() .. "/version", auth())
@@ -100,10 +134,9 @@ backend_impl = {
     else respond_json(503, "Service Unavailable", {}) end
   end,
 
-  get_repo = function(owner, repo_name)
-    proxy_json(translate_gl_repo,
-      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name)))
-  end,
+  get_repo = proxy_handler(translate_gl_repo, function(owner, repo_name)
+    return base().."/projects/"..project_id(owner, repo_name)
+  end),
 
   patch_repo = function(owner, repo_name)
     proxy_json(translate_gl_repo,
@@ -121,24 +154,20 @@ backend_impl = {
     else respond_json(503, "Service Unavailable", {}) end
   end,
 
-  get_user_repos = function()
-    -- GitLab: list projects owned by the authenticated user
-    proxy_json(translate_gl_projects,
-      fetch_json(append_page_params(base() .. "/projects?owned=true&membership=true",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_user_repos = proxy_handler(translate_gl_projects, function()
+    return append_page_params(base().."/projects?owned=true&membership=true",
+      {per_page="per_page",page="page"})
+  end),
 
   post_user_repos = function()
     proxy_json_created(translate_gl_repo,
       fetch_json(base() .. "/projects", "POST", translate_gl_req(GetBody())))
   end,
 
-  get_org_repos = function(org)
-    -- GitLab: list projects in a group
-    proxy_json(translate_gl_projects,
-      fetch_json(append_page_params(base() .. "/groups/" .. org .. "/projects",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_org_repos = proxy_handler(translate_gl_projects, function(org)
+    return append_page_params(base().."/groups/"..org.."/projects",
+      {per_page="per_page",page="page"})
+  end),
 
   post_org_repos = function(org)
     local gl_req = translate_gl_req(GetBody())
@@ -148,11 +177,9 @@ backend_impl = {
       fetch_json(base() .. "/projects", "POST", EncodeJson(gl)))
   end,
 
-  get_repo_topics = function(owner, repo_name)
-    proxy_json(
-      function(p) return { names = p.topics or {} } end,
-      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name)))
-  end,
+  get_repo_topics = proxy_handler(
+    function(p) return { names = p.topics or {} } end,
+    function(owner, repo_name) return base().."/projects/"..project_id(owner, repo_name) end),
 
   put_repo_topics = function(owner, repo_name)
     local req = DecodeJson(GetBody() or "{}")
@@ -162,44 +189,36 @@ backend_impl = {
         "PUT", EncodeJson({ topics = req.names or {} })))
   end,
 
-  get_repo_languages = function(owner, repo_name)
-    -- GitLab returns { "Ruby": 66.69, "JavaScript": ... } (percentages, not bytes)
-    -- GitHub returns { "Ruby": 12345 } (bytes). We pass through as-is — values differ.
-    proxy_json(nil,
-      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/languages"))
-  end,
+  get_repo_languages = proxy_handler(nil, function(owner, repo_name)
+    return base().."/projects/"..project_id(owner, repo_name).."/languages"
+  end),
 
-  get_repo_contributors = function(owner, repo_name)
-    -- GitLab contributors are under /repository/contributors
-    -- GitLab: [{ name, email, commits, additions, deletions }]
-    -- GitHub: [{ login, contributions, ... }]
-    proxy_json(
-      function(contribs)
-        for i, c in ipairs(contribs) do
-          contribs[i] = { login = c.name, contributions = c.commits }
-        end
-        return contribs
-      end,
-      fetch_json(append_page_params(
-        base() .. "/projects/" .. project_id(owner, repo_name) .. "/repository/contributors",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_repo_contributors = proxy_handler(
+    function(contribs)
+      for i, c in ipairs(contribs) do
+        contribs[i] = { login = c.name, contributions = c.commits }
+      end
+      return contribs
+    end,
+    function(owner, repo_name)
+      return append_page_params(
+        base().."/projects/"..project_id(owner, repo_name).."/repository/contributors",
+        {per_page="per_page",page="page"})
+    end),
 
-  get_repo_tags = function(owner, repo_name)
-    -- GitLab: [{ name, commit: { id, ... }, ... }]
-    -- GitHub: [{ name, commit: { sha, url }, ... }]
-    proxy_json(
-      function(tags)
-        for i, t in ipairs(tags) do
-          local c = t.commit or {}
-          tags[i] = { name = t.name, commit = { sha = c.id, url = "" } }
-        end
-        return tags
-      end,
-      fetch_json(append_page_params(
-        base() .. "/projects/" .. project_id(owner, repo_name) .. "/repository/tags",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_repo_tags = proxy_handler(
+    function(tags)
+      for i, t in ipairs(tags) do
+        local c = t.commit or {}
+        tags[i] = { name = t.name, commit = { sha = c.id, url = "" } }
+      end
+      return tags
+    end,
+    function(owner, repo_name)
+      return append_page_params(
+        base().."/projects/"..project_id(owner, repo_name).."/repository/tags",
+        {per_page="per_page",page="page"})
+    end),
 
   -- GitLab does not have a direct equivalent of GitHub's /teams endpoint for repos.
   get_repo_teams = function()
@@ -208,60 +227,35 @@ backend_impl = {
 
   -- Branches ------------------------------------------------------------------
 
-  get_repo_branches = function(owner, repo_name)
-    proxy_json(
-      function(branches)
-        for _, b in ipairs(branches or {}) do
-          if b.commit then b.commit.sha = b.commit.id end
-        end
-        return branches or {}
-      end,
-      fetch_json(append_page_params(
-        base() .. "/projects/" .. project_id(owner, repo_name) .. "/repository/branches",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_repo_branches = proxy_handler(
+    function(branches)
+      for _, b in ipairs(branches or {}) do
+        if b.commit then b.commit.sha = b.commit.id end
+      end
+      return branches or {}
+    end,
+    function(owner, repo_name)
+      return append_page_params(
+        base().."/projects/"..project_id(owner, repo_name).."/repository/branches",
+        {per_page="per_page",page="page"})
+    end),
 
-  get_repo_branch = function(owner, repo_name, branch)
-    proxy_json(
-      function(b)
-        if b and b.commit then b.commit.sha = b.commit.id end
-        return b or {}
-      end,
-      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
-        "/repository/branches/" .. branch))
-  end,
+  get_repo_branch = proxy_handler(
+    function(b)
+      if b and b.commit then b.commit.sha = b.commit.id end
+      return b or {}
+    end,
+    function(owner, repo_name, branch)
+      return base().."/projects/"..project_id(owner, repo_name).."/repository/branches/"..branch
+    end),
 
   -- Commits -------------------------------------------------------------------
 
-  get_repo_commits = function(owner, repo_name)
-    proxy_json(
-      function(commits)
-        local result = {}
-        for _, c in ipairs(commits or {}) do
-          result[#result+1] = {
-            sha      = c.id,
-            html_url = c.web_url or "",
-            commit   = {
-              message    = c.message,
-              author     = { name = c.author_name, email = c.author_email, date = c.authored_date },
-              committer  = { name = c.committer_name or c.author_name,
-                             email = c.committer_email or c.author_email,
-                             date  = c.committed_date or c.authored_date },
-            },
-          }
-        end
-        return result
-      end,
-      fetch_json(append_page_params(
-        base() .. "/projects/" .. project_id(owner, repo_name) .. "/repository/commits",
-        { per_page = "per_page", page = "page" })))
-  end,
-
-  get_repo_commit = function(owner, repo_name, ref)
-    proxy_json(
-      function(c)
-        if not c then return {} end
-        return {
+  get_repo_commits = proxy_handler(
+    function(commits)
+      local result = {}
+      for _, c in ipairs(commits or {}) do
+        result[#result+1] = {
           sha      = c.id,
           html_url = c.web_url or "",
           commit   = {
@@ -271,12 +265,35 @@ backend_impl = {
                            email = c.committer_email or c.author_email,
                            date  = c.committed_date or c.authored_date },
           },
-          stats = c.stats,
         }
-      end,
-      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
-        "/repository/commits/" .. ref))
-  end,
+      end
+      return result
+    end,
+    function(owner, repo_name)
+      return append_page_params(
+        base().."/projects/"..project_id(owner, repo_name).."/repository/commits",
+        {per_page="per_page",page="page"})
+    end),
+
+  get_repo_commit = proxy_handler(
+    function(c)
+      if not c then return {} end
+      return {
+        sha      = c.id,
+        html_url = c.web_url or "",
+        commit   = {
+          message    = c.message,
+          author     = { name = c.author_name, email = c.author_email, date = c.authored_date },
+          committer  = { name = c.committer_name or c.author_name,
+                         email = c.committer_email or c.author_email,
+                         date  = c.committed_date or c.authored_date },
+        },
+        stats = c.stats,
+      }
+    end,
+    function(owner, repo_name, ref)
+      return base().."/projects/"..project_id(owner, repo_name).."/repository/commits/"..ref
+    end),
 
   -- Statuses ------------------------------------------------------------------
 
@@ -355,17 +372,15 @@ backend_impl = {
 
   -- Contents ------------------------------------------------------------------
 
-  get_repo_readme = function(owner, repo_name)
-    -- Try to fetch README.md; fall back to 404 if not found.
-    proxy_json(
-      function(f)
-        if not f then return {} end
-        return { name=f.file_name, path=f.file_path, sha=f.blob_id, size=f.size,
-                 type="file", encoding=f.encoding, content=f.content }
-      end,
-      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
-        "/repository/files/README.md?ref=HEAD"))
-  end,
+  get_repo_readme = proxy_handler(
+    function(f)
+      if not f then return {} end
+      return { name=f.file_name, path=f.file_path, sha=f.blob_id, size=f.size,
+               type="file", encoding=f.encoding, content=f.content }
+    end,
+    function(owner, repo_name)
+      return base().."/projects/"..project_id(owner, repo_name).."/repository/files/README.md?ref=HEAD"
+    end),
 
   get_repo_readme_dir = function(owner, repo_name, dir)
     local enc_path = dir:gsub("/", "%%2F") .. "%%2FREADME.md"
@@ -454,30 +469,29 @@ backend_impl = {
 
   -- Collaborators -------------------------------------------------------------
 
-  get_repo_collaborators = function(owner, repo_name)
-    proxy_json(
-      function(members)
-        local result = {}
-        local al_map = { [10]="pull", [20]="pull", [30]="push", [40]="push", [50]="admin" }
-        for _, m in ipairs(members or {}) do
-          result[#result+1] = {
-            login      = m.username,
-            id         = m.id,
-            avatar_url = m.avatar_url or "",
-            type       = "User",
-            permissions = {
-              admin = (m.access_level or 0) >= 50,
-              push  = (m.access_level or 0) >= 30,
-              pull  = (m.access_level or 0) >= 10,
-            },
-          }
-        end
-        return result
-      end,
-      fetch_json(append_page_params(
-        base() .. "/projects/" .. project_id(owner, repo_name) .. "/members/all",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_repo_collaborators = proxy_handler(
+    function(members)
+      local result = {}
+      for _, m in ipairs(members or {}) do
+        result[#result+1] = {
+          login      = m.username,
+          id         = m.id,
+          avatar_url = m.avatar_url or "",
+          type       = "User",
+          permissions = {
+            admin = (m.access_level or 0) >= 50,
+            push  = (m.access_level or 0) >= 30,
+            pull  = (m.access_level or 0) >= 10,
+          },
+        }
+      end
+      return result
+    end,
+    function(owner, repo_name)
+      return append_page_params(
+        base().."/projects/"..project_id(owner, repo_name).."/members/all",
+        {per_page="per_page",page="page"})
+    end),
 
   get_repo_collaborator = function(owner, repo_name, username)
     -- Resolve username to user ID, then check membership
@@ -545,12 +559,11 @@ backend_impl = {
 
   -- Forks ---------------------------------------------------------------------
 
-  get_repo_forks = function(owner, repo_name)
-    proxy_json(translate_gl_projects,
-      fetch_json(append_page_params(
-        base() .. "/projects/" .. project_id(owner, repo_name) .. "/forks",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_repo_forks = proxy_handler(translate_gl_projects, function(owner, repo_name)
+    return append_page_params(
+      base().."/projects/"..project_id(owner, repo_name).."/forks",
+      {per_page="per_page",page="page"})
+  end),
 
   post_repo_forks = function(owner, repo_name)
     local req = DecodeJson(GetBody() or "{}")
@@ -563,29 +576,29 @@ backend_impl = {
   -- Releases ------------------------------------------------------------------
   -- GitLab releases use tag_name as identifier rather than an integer ID.
 
-  get_repo_releases = function(owner, repo_name)
-    proxy_json(
-      function(rels)
-        local result = {}
-        for i, r in ipairs(rels or {}) do
-          result[i] = {
-            id           = i,
-            tag_name     = r.tag_name,
-            name         = r.name,
-            body         = r.description,
-            draft        = false,
-            prerelease   = false,
-            created_at   = r.created_at,
-            published_at = r.released_at or r.created_at,
-            assets       = {},
-          }
-        end
-        return result
-      end,
-      fetch_json(append_page_params(
-        base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_repo_releases = proxy_handler(
+    function(rels)
+      local result = {}
+      for i, r in ipairs(rels or {}) do
+        result[i] = {
+          id           = i,
+          tag_name     = r.tag_name,
+          name         = r.name,
+          body         = r.description,
+          draft        = false,
+          prerelease   = false,
+          created_at   = r.created_at,
+          published_at = r.released_at or r.created_at,
+          assets       = {},
+        }
+      end
+      return result
+    end,
+    function(owner, repo_name)
+      return append_page_params(
+        base().."/projects/"..project_id(owner, repo_name).."/releases",
+        {per_page="per_page",page="page"})
+    end),
 
   post_repo_releases = function(owner, repo_name)
     local req = DecodeJson(GetBody() or "{}")
@@ -604,36 +617,33 @@ backend_impl = {
         "/releases", "POST", body))
   end,
 
-  get_repo_release_latest = function(owner, repo_name)
-    proxy_json(
-      function(r)
-        return { id=1, tag_name=r.tag_name, name=r.name, body=r.description,
-                 draft=false, prerelease=false, created_at=r.created_at,
-                 published_at=r.released_at or r.created_at, assets={} }
-      end,
-      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
-        "/releases/permalink/latest"))
-  end,
+  get_repo_release_latest = proxy_handler(
+    function(r)
+      return { id=1, tag_name=r.tag_name, name=r.name, body=r.description,
+               draft=false, prerelease=false, created_at=r.created_at,
+               published_at=r.released_at or r.created_at, assets={} }
+    end,
+    function(owner, repo_name)
+      return base().."/projects/"..project_id(owner, repo_name).."/releases/permalink/latest"
+    end),
 
-  get_repo_release_by_tag = function(owner, repo_name, tag)
-    proxy_json(
-      function(r)
-        return { id=1, tag_name=r.tag_name, name=r.name, body=r.description,
-                 draft=false, prerelease=false, created_at=r.created_at,
-                 published_at=r.released_at or r.created_at, assets={} }
-      end,
-      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
-        "/releases/" .. tag))
-  end,
+  get_repo_release_by_tag = proxy_handler(
+    function(r)
+      return { id=1, tag_name=r.tag_name, name=r.name, body=r.description,
+               draft=false, prerelease=false, created_at=r.created_at,
+               published_at=r.released_at or r.created_at, assets={} }
+    end,
+    function(owner, repo_name, tag)
+      return base().."/projects/"..project_id(owner, repo_name).."/releases/"..tag
+    end),
 
   -- Deploy keys ---------------------------------------------------------------
 
-  get_repo_keys = function(owner, repo_name)
-    proxy_json(nil,
-      fetch_json(append_page_params(
-        base() .. "/projects/" .. project_id(owner, repo_name) .. "/deploy_keys",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_repo_keys = proxy_handler(nil, function(owner, repo_name)
+    return append_page_params(
+      base().."/projects/"..project_id(owner, repo_name).."/deploy_keys",
+      {per_page="per_page",page="page"})
+  end),
 
   post_repo_keys = function(owner, repo_name)
     local req = DecodeJson(GetBody() or "{}")
@@ -644,11 +654,9 @@ backend_impl = {
         "/deploy_keys", "POST", body))
   end,
 
-  get_repo_key = function(owner, repo_name, key_id)
-    proxy_json(nil,
-      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
-        "/deploy_keys/" .. key_id))
-  end,
+  get_repo_key = proxy_handler(nil, function(owner, repo_name, key_id)
+    return base().."/projects/"..project_id(owner, repo_name).."/deploy_keys/"..key_id
+  end),
 
   delete_repo_key = function(owner, repo_name, key_id)
     local ok, status = fetch_json(
@@ -661,12 +669,11 @@ backend_impl = {
 
   -- Webhooks ------------------------------------------------------------------
 
-  get_repo_hooks = function(owner, repo_name)
-    proxy_json(nil,
-      fetch_json(append_page_params(
-        base() .. "/projects/" .. project_id(owner, repo_name) .. "/hooks",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_repo_hooks = proxy_handler(nil, function(owner, repo_name)
+    return append_page_params(
+      base().."/projects/"..project_id(owner, repo_name).."/hooks",
+      {per_page="per_page",page="page"})
+  end),
 
   post_repo_hooks = function(owner, repo_name)
     proxy_json_created(nil,
@@ -674,11 +681,9 @@ backend_impl = {
         "/hooks", "POST", GetBody()))
   end,
 
-  get_repo_hook = function(owner, repo_name, hook_id)
-    proxy_json(nil,
-      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
-        "/hooks/" .. hook_id))
-  end,
+  get_repo_hook = proxy_handler(nil, function(owner, repo_name, hook_id)
+    return base().."/projects/"..project_id(owner, repo_name).."/hooks/"..hook_id
+  end),
 
   -- GitLab uses PUT for hook updates
   patch_repo_hook = function(owner, repo_name, hook_id)
@@ -696,12 +701,11 @@ backend_impl = {
     else respond_json(503, "Service Unavailable", {}) end
   end,
 
-  get_repo_hook_config = function(owner, repo_name, hook_id)
-    proxy_json(
-      function(h) return { url = h.url } end,
-      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
-        "/hooks/" .. hook_id))
-  end,
+  get_repo_hook_config = proxy_handler(
+    function(h) return { url = h.url } end,
+    function(owner, repo_name, hook_id)
+      return base().."/projects/"..project_id(owner, repo_name).."/hooks/"..hook_id
+    end),
 
   patch_repo_hook_config = function(owner, repo_name, hook_id)
     local new_cfg = DecodeJson(GetBody() or "{}")
@@ -717,34 +721,132 @@ backend_impl = {
   end,
 
   -- GET /users/{username}/repos -----------------------------------------------
-  get_users_repos = function(username)
-    proxy_json(translate_gl_projects,
-      fetch_json(append_page_params(
-        base() .. "/users/" .. username .. "/projects",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_users_repos = proxy_handler(translate_gl_projects, function(username)
+    return append_page_params(base().."/users/"..username.."/projects",
+      {per_page="per_page",page="page"})
+  end),
 
   -- GET /repositories (all public projects) -----------------------------------
-  get_repositories = function()
-    proxy_json(translate_gl_projects,
-      fetch_json(append_page_params(
-        base() .. "/projects?visibility=public",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_repositories = proxy_handler(translate_gl_projects, function()
+    return append_page_params(base().."/projects?visibility=public",
+      {per_page="per_page",page="page"})
+  end),
 
   -- Commit comments -----------------------------------------------------------
   -- GitLab uses notes on commits: /projects/{id}/repository/commits/{sha}/comments
-  get_commit_comments = function(owner, repo_name, commit_sha)
-    proxy_json(nil,
-      fetch_json(append_page_params(
-        base() .. "/projects/" .. project_id(owner, repo_name) ..
-          "/repository/commits/" .. commit_sha .. "/comments",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_commit_comments = proxy_handler(nil, function(owner, repo_name, commit_sha)
+    return append_page_params(
+      base().."/projects/"..project_id(owner, repo_name).."/repository/commits/"..commit_sha.."/comments",
+      {per_page="per_page",page="page"})
+  end),
 
   post_commit_comment = function(owner, repo_name, commit_sha)
     proxy_json_created(nil,
       fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
         "/repository/commits/" .. commit_sha .. "/comments", "POST", GetBody()))
+  end,
+
+  -- Users ---------------------------------------------------------------------
+
+  -- GET /user
+  get_user = proxy_handler(translate_gl_user, function() return base().."/user" end),
+
+  -- PATCH /user
+  patch_user = function()
+    proxy_json(translate_gl_user, fetch_json(base() .. "/user", "PUT", GetBody()))
+  end,
+
+  -- GET /users/{username}
+  get_users_username = proxy_handler(
+    function(list)
+      local u = (list and list[1]) or {}
+      return translate_gl_user(u)
+    end,
+    function(username) return base().."/users?username="..username end),
+
+  -- GET /users
+  get_users = proxy_handler(translate_gl_users, function()
+    return append_page_params(base().."/users", {per_page="per_page",page="page"})
+  end),
+
+  -- Emails --------------------------------------------------------------------
+
+  -- GET /user/emails
+  get_user_emails = proxy_handler(nil, function() return base().."/user/emails" end),
+
+  -- POST /user/emails
+  post_user_emails = function()
+    proxy_json_created(nil, fetch_json(base() .. "/user/emails", "POST", GetBody()))
+  end,
+
+  -- DELETE /user/emails
+  delete_user_emails = function()
+    -- GitLab requires DELETE /user/emails/{id}; without an ID we can't delete by address.
+    -- Return 204 as a best-effort passthrough.
+    respond_json(404, "Not Found", { message = "Not Found" })
+  end,
+
+  -- SSH Keys ------------------------------------------------------------------
+
+  -- GET /user/keys
+  get_user_keys = proxy_handler(nil, function()
+    return append_page_params(base().."/user/keys", {per_page="per_page",page="page"})
+  end),
+
+  -- POST /user/keys
+  post_user_keys = function()
+    proxy_json_created(nil, fetch_json(base() .. "/user/keys", "POST", GetBody()))
+  end,
+
+  -- GET /user/keys/{key_id}
+  get_user_key = proxy_handler(nil, function(key_id) return base().."/user/keys/"..key_id end),
+
+  -- DELETE /user/keys/{key_id}
+  delete_user_key = function(key_id)
+    local opts = auth() or {}; opts.method = "DELETE"
+    local ok, status = pcall(Fetch, base() .. "/user/keys/" .. key_id, opts)
+    if ok and status == 204 then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- GET /users/{username}/keys
+  get_users_keys = function(username)
+    local uid = gl_user_id(username)
+    if not uid then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    proxy_json(nil, fetch_json(base() .. "/users/" .. uid .. "/keys"))
+  end,
+
+  -- GPG Keys ------------------------------------------------------------------
+
+  -- GET /user/gpg_keys
+  get_user_gpg_keys = proxy_handler(nil, function()
+    return append_page_params(base().."/user/gpg_keys", {per_page="per_page",page="page"})
+  end),
+
+  -- POST /user/gpg_keys
+  post_user_gpg_keys = function()
+    proxy_json_created(nil, fetch_json(base() .. "/user/gpg_keys", "POST", GetBody()))
+  end,
+
+  -- GET /user/gpg_keys/{gpg_key_id}
+  get_user_gpg_key = proxy_handler(nil, function(gpg_key_id)
+    return base().."/user/gpg_keys/"..gpg_key_id
+  end),
+
+  -- DELETE /user/gpg_keys/{gpg_key_id}
+  delete_user_gpg_key = function(gpg_key_id)
+    local opts = auth() or {}; opts.method = "DELETE"
+    local ok, status = pcall(Fetch, base() .. "/user/gpg_keys/" .. gpg_key_id, opts)
+    if ok and status == 204 then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- GET /users/{username}/gpg_keys
+  get_users_gpg_keys = function(username)
+    local uid = gl_user_id(username)
+    if not uid then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    proxy_json(nil, fetch_json(base() .. "/users/" .. uid .. "/gpg_keys"))
   end,
 }

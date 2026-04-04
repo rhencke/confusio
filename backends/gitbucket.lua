@@ -19,6 +19,16 @@ local function fetch_json(url, method, body)
   return pcall(Fetch, url, opts)
 end
 
+local function set_204_or_error(method, url)
+  local opts = auth() or {}; opts.method = method
+  local ok, status = pcall(Fetch, url, opts)
+  if ok and status == 204 then SetStatus(204, "No Content")
+  elseif ok then respond_json(status, "Error", {})
+  else respond_json(503, "Service Unavailable", {}) end
+end
+
+local proxy_handler = make_proxy_handler(fetch_json)
+
 backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, base() .. "/rate_limit", auth())
@@ -26,9 +36,7 @@ backend_impl = {
     else respond_json(503, "Service Unavailable", {}) end
   end,
 
-  get_repo = function(owner, repo_name)
-    proxy_json(nil, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name))
-  end,
+  get_repo = proxy_handler(nil, function(o, r) return base().."/repos/"..o.."/"..r end),
 
   patch_repo = function(owner, repo_name)
     proxy_json(nil,
@@ -44,30 +52,25 @@ backend_impl = {
     else respond_json(503, "Service Unavailable", {}) end
   end,
 
-  get_user_repos = function()
-    proxy_json(nil,
-      fetch_json(append_page_params(base() .. "/user/repos",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_user_repos = proxy_handler(nil, function()
+    return append_page_params(base().."/user/repos", {per_page="per_page",page="page"})
+  end),
 
   post_user_repos = function()
     proxy_json_created(nil, fetch_json(base() .. "/user/repos", "POST", GetBody()))
   end,
 
-  get_org_repos = function(org)
-    proxy_json(nil,
-      fetch_json(append_page_params(base() .. "/orgs/" .. org .. "/repos",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_org_repos = proxy_handler(nil, function(org)
+    return append_page_params(base().."/orgs/"..org.."/repos", {per_page="per_page",page="page"})
+  end),
 
   post_org_repos = function(org)
     proxy_json_created(nil, fetch_json(base() .. "/orgs/" .. org .. "/repos", "POST", GetBody()))
   end,
 
-  get_repo_topics = function(owner, repo_name)
-    proxy_json(nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/topics"))
-  end,
+  get_repo_topics = proxy_handler(nil, function(o, r)
+    return base().."/repos/"..o.."/"..r.."/topics"
+  end),
 
   put_repo_topics = function(owner, repo_name)
     proxy_json(nil,
@@ -75,69 +78,53 @@ backend_impl = {
         "PUT", GetBody()))
   end,
 
-  get_repo_languages = function(owner, repo_name)
-    proxy_json(nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/languages"))
-  end,
+  get_repo_languages = proxy_handler(nil, function(o, r)
+    return base().."/repos/"..o.."/"..r.."/languages"
+  end),
 
-  get_repo_contributors = function(owner, repo_name)
-    proxy_json(nil,
-      fetch_json(append_page_params(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contributors",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_repo_contributors = proxy_handler(nil, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/contributors",
+      {per_page="per_page",page="page"})
+  end),
 
-  get_repo_tags = function(owner, repo_name)
-    proxy_json(nil,
-      fetch_json(append_page_params(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/tags",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_repo_tags = proxy_handler(nil, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/tags",
+      {per_page="per_page",page="page"})
+  end),
 
-  get_repo_teams = function(owner, repo_name)
-    proxy_json(nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/teams"))
-  end,
+  get_repo_teams = proxy_handler(nil, function(o, r)
+    return base().."/repos/"..o.."/"..r.."/teams"
+  end),
 
   -- Branches ------------------------------------------------------------------
-  get_repo_branches = function(owner, repo_name)
-    proxy_json(nil,
-      fetch_json(append_page_params(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/branches",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_repo_branches = proxy_handler(nil, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/branches",
+      {per_page="per_page",page="page"})
+  end),
 
-  get_repo_branch = function(owner, repo_name, branch)
-    proxy_json(nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/branches/" .. branch))
-  end,
+  get_repo_branch = proxy_handler(nil, function(o, r, branch)
+    return base().."/repos/"..o.."/"..r.."/branches/"..branch
+  end),
 
   -- Commits -------------------------------------------------------------------
-  get_repo_commits = function(owner, repo_name)
-    proxy_json(nil,
-      fetch_json(append_page_params(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/commits",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_repo_commits = proxy_handler(nil, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/commits",
+      {per_page="per_page",page="page"})
+  end),
 
-  get_repo_commit = function(owner, repo_name, ref)
-    proxy_json(nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/commits/" .. ref))
-  end,
+  get_repo_commit = proxy_handler(nil, function(o, r, ref)
+    return base().."/repos/"..o.."/"..r.."/commits/"..ref
+  end),
 
   -- Statuses ------------------------------------------------------------------
-  get_commit_statuses = function(owner, repo_name, ref)
-    proxy_json(nil,
-      fetch_json(append_page_params(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. ref,
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_commit_statuses = proxy_handler(nil, function(o, r, ref)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/statuses/"..ref,
+      {per_page="per_page",page="page"})
+  end),
 
-  get_commit_combined_status = function(owner, repo_name, ref)
-    proxy_json(nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
-        "/commits/" .. ref .. "/status"))
-  end,
+  get_commit_combined_status = proxy_handler(nil, function(o, r, ref)
+    return base().."/repos/"..o.."/"..r.."/commits/"..ref.."/status"
+  end),
 
   post_commit_status = function(owner, repo_name, sha)
     proxy_json_created(nil,
@@ -146,20 +133,17 @@ backend_impl = {
   end,
 
   -- Contents ------------------------------------------------------------------
-  get_repo_readme = function(owner, repo_name)
-    proxy_json(nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/readme"))
-  end,
+  get_repo_readme = proxy_handler(nil, function(o, r)
+    return base().."/repos/"..o.."/"..r.."/readme"
+  end),
 
-  get_repo_readme_dir = function(owner, repo_name, dir)
-    proxy_json(nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/readme/" .. dir))
-  end,
+  get_repo_readme_dir = proxy_handler(nil, function(o, r, dir)
+    return base().."/repos/"..o.."/"..r.."/readme/"..dir
+  end),
 
-  get_repo_content = function(owner, repo_name, path)
-    proxy_json(nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/" .. path))
-  end,
+  get_repo_content = proxy_handler(nil, function(o, r, path)
+    return base().."/repos/"..o.."/"..r.."/contents/"..path
+  end),
 
   put_repo_content = function(owner, repo_name, path)
     proxy_json(nil,
@@ -188,19 +172,15 @@ backend_impl = {
   end,
 
   -- Compare -------------------------------------------------------------------
-  get_repo_compare = function(owner, repo_name, basehead)
-    proxy_json(nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
-        "/compare/" .. basehead))
-  end,
+  get_repo_compare = proxy_handler(nil, function(o, r, basehead)
+    return base().."/repos/"..o.."/"..r.."/compare/"..basehead
+  end),
 
   -- Collaborators -------------------------------------------------------------
-  get_repo_collaborators = function(owner, repo_name)
-    proxy_json(nil,
-      fetch_json(append_page_params(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_repo_collaborators = proxy_handler(nil, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/collaborators",
+      {per_page="per_page",page="page"})
+  end),
 
   get_repo_collaborator = function(owner, repo_name, username)
     local ok, status = pcall(Fetch,
@@ -229,19 +209,15 @@ backend_impl = {
     else respond_json(503, "Service Unavailable", {}) end
   end,
 
-  get_repo_collaborator_permission = function(owner, repo_name, username)
-    proxy_json(nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
-        "/collaborators/" .. username .. "/permission"))
-  end,
+  get_repo_collaborator_permission = proxy_handler(nil, function(o, r, username)
+    return base().."/repos/"..o.."/"..r.."/collaborators/"..username.."/permission"
+  end),
 
   -- Forks ---------------------------------------------------------------------
-  get_repo_forks = function(owner, repo_name)
-    proxy_json(nil,
-      fetch_json(append_page_params(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/forks",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_repo_forks = proxy_handler(nil, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/forks",
+      {per_page="per_page",page="page"})
+  end),
 
   post_repo_forks = function(owner, repo_name)
     proxy_json_created(nil,
@@ -250,12 +226,10 @@ backend_impl = {
   end,
 
   -- Releases ------------------------------------------------------------------
-  get_repo_releases = function(owner, repo_name)
-    proxy_json(nil,
-      fetch_json(append_page_params(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_repo_releases = proxy_handler(nil, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/releases",
+      {per_page="per_page",page="page"})
+  end),
 
   post_repo_releases = function(owner, repo_name)
     proxy_json_created(nil,
@@ -263,22 +237,17 @@ backend_impl = {
         "/releases", "POST", GetBody()))
   end,
 
-  get_repo_release_latest = function(owner, repo_name)
-    proxy_json(nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/latest"))
-  end,
+  get_repo_release_latest = proxy_handler(nil, function(o, r)
+    return base().."/repos/"..o.."/"..r.."/releases/latest"
+  end),
 
-  get_repo_release_by_tag = function(owner, repo_name, tag)
-    proxy_json(nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
-        "/releases/tags/" .. tag))
-  end,
+  get_repo_release_by_tag = proxy_handler(nil, function(o, r, tag)
+    return base().."/repos/"..o.."/"..r.."/releases/tags/"..tag
+  end),
 
-  get_repo_release = function(owner, repo_name, release_id)
-    proxy_json(nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
-        "/releases/" .. release_id))
-  end,
+  get_repo_release = proxy_handler(nil, function(o, r, id)
+    return base().."/repos/"..o.."/"..r.."/releases/"..id
+  end),
 
   patch_repo_release = function(owner, repo_name, release_id)
     proxy_json(nil,
@@ -295,19 +264,14 @@ backend_impl = {
     else respond_json(503, "Service Unavailable", {}) end
   end,
 
-  get_repo_release_assets = function(owner, repo_name, release_id)
-    proxy_json(nil,
-      fetch_json(append_page_params(
-        base() .. "/repos/" .. owner .. "/" .. repo_name ..
-          "/releases/" .. release_id .. "/assets",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_repo_release_assets = proxy_handler(nil, function(o, r, id)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/releases/"..id.."/assets",
+      {per_page="per_page",page="page"})
+  end),
 
-  get_repo_release_asset = function(owner, repo_name, asset_id)
-    proxy_json(nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
-        "/releases/assets/" .. asset_id))
-  end,
+  get_repo_release_asset = proxy_handler(nil, function(o, r, asset_id)
+    return base().."/repos/"..o.."/"..r.."/releases/assets/"..asset_id
+  end),
 
   patch_repo_release_asset = function(owner, repo_name, asset_id)
     proxy_json(nil,
@@ -325,12 +289,10 @@ backend_impl = {
   end,
 
   -- Deploy keys ---------------------------------------------------------------
-  get_repo_keys = function(owner, repo_name)
-    proxy_json(nil,
-      fetch_json(append_page_params(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_repo_keys = proxy_handler(nil, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/keys",
+      {per_page="per_page",page="page"})
+  end),
 
   post_repo_keys = function(owner, repo_name)
     proxy_json_created(nil,
@@ -338,11 +300,9 @@ backend_impl = {
         "/keys", "POST", GetBody()))
   end,
 
-  get_repo_key = function(owner, repo_name, key_id)
-    proxy_json(nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
-        "/keys/" .. key_id))
-  end,
+  get_repo_key = proxy_handler(nil, function(o, r, key_id)
+    return base().."/repos/"..o.."/"..r.."/keys/"..key_id
+  end),
 
   delete_repo_key = function(owner, repo_name, key_id)
     local ok, status = fetch_json(
@@ -354,12 +314,10 @@ backend_impl = {
   end,
 
   -- Webhooks ------------------------------------------------------------------
-  get_repo_hooks = function(owner, repo_name)
-    proxy_json(nil,
-      fetch_json(append_page_params(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_repo_hooks = proxy_handler(nil, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/hooks",
+      {per_page="per_page",page="page"})
+  end),
 
   post_repo_hooks = function(owner, repo_name)
     proxy_json_created(nil,
@@ -367,11 +325,9 @@ backend_impl = {
         "/hooks", "POST", GetBody()))
   end,
 
-  get_repo_hook = function(owner, repo_name, hook_id)
-    proxy_json(nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
-        "/hooks/" .. hook_id))
-  end,
+  get_repo_hook = proxy_handler(nil, function(o, r, hook_id)
+    return base().."/repos/"..o.."/"..r.."/hooks/"..hook_id
+  end),
 
   patch_repo_hook = function(owner, repo_name, hook_id)
     proxy_json(nil,
@@ -388,12 +344,9 @@ backend_impl = {
     else respond_json(503, "Service Unavailable", {}) end
   end,
 
-  get_repo_hook_config = function(owner, repo_name, hook_id)
-    proxy_json(
-      function(h) return h.config or {} end,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
-        "/hooks/" .. hook_id))
-  end,
+  get_repo_hook_config = proxy_handler(
+    function(h) return h.config or {} end,
+    function(o, r, hook_id) return base().."/repos/"..o.."/"..r.."/hooks/"..hook_id end),
 
   patch_repo_hook_config = function(owner, repo_name, hook_id)
     local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id
@@ -428,18 +381,14 @@ backend_impl = {
   end,
 
   -- Commit comments -----------------------------------------------------------
-  get_repo_comments = function(owner, repo_name)
-    proxy_json(nil,
-      fetch_json(append_page_params(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_repo_comments = proxy_handler(nil, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/comments",
+      {per_page="per_page",page="page"})
+  end),
 
-  get_repo_comment = function(owner, repo_name, comment_id)
-    proxy_json(nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
-        "/comments/" .. comment_id))
-  end,
+  get_repo_comment = proxy_handler(nil, function(o, r, comment_id)
+    return base().."/repos/"..o.."/"..r.."/comments/"..comment_id
+  end),
 
   patch_repo_comment = function(owner, repo_name, comment_id)
     proxy_json(nil,
@@ -456,13 +405,10 @@ backend_impl = {
     else respond_json(503, "Service Unavailable", {}) end
   end,
 
-  get_commit_comments = function(owner, repo_name, commit_sha)
-    proxy_json(nil,
-      fetch_json(append_page_params(
-        base() .. "/repos/" .. owner .. "/" .. repo_name ..
-          "/commits/" .. commit_sha .. "/comments",
-        { per_page = "per_page", page = "page" })))
-  end,
+  get_commit_comments = proxy_handler(nil, function(o, r, sha)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/commits/"..sha.."/comments",
+      {per_page="per_page",page="page"})
+  end),
 
   post_commit_comment = function(owner, repo_name, commit_sha)
     proxy_json_created(nil,
@@ -471,17 +417,109 @@ backend_impl = {
   end,
 
   -- GET /users/{username}/repos + public repos --------------------------------
-  get_users_repos = function(username)
-    proxy_json(nil,
-      fetch_json(append_page_params(
-        base() .. "/users/" .. username .. "/repos",
-        { per_page = "per_page", page = "page" })))
+  get_users_repos = proxy_handler(nil, function(username)
+    return append_page_params(base().."/users/"..username.."/repos",
+      {per_page="per_page",page="page"})
+  end),
+
+  get_repositories = proxy_handler(nil, function()
+    return append_page_params(base().."/repositories", {per_page="per_page",page="page"})
+  end),
+
+  -- Users (GitHub-compatible passthrough) -------------------------------------
+
+  get_user = proxy_handler(nil, function() return base().."/user" end),
+
+  patch_user = function()
+    proxy_json(nil, fetch_json(base() .. "/user", "PATCH", GetBody()))
   end,
 
-  get_repositories = function()
-    proxy_json(nil,
-      fetch_json(append_page_params(
-        base() .. "/repositories",
-        { per_page = "per_page", page = "page" })))
+  get_users_username = proxy_handler(nil, function(username)
+    return base().."/users/"..username
+  end),
+
+  get_users = proxy_handler(nil, function()
+    return append_page_params(base().."/users", {per_page="per_page",page="page"})
+  end),
+
+  get_user_followers = proxy_handler(nil, function()
+    return append_page_params(base().."/user/followers", {per_page="per_page",page="page"})
+  end),
+
+  get_user_following = proxy_handler(nil, function()
+    return append_page_params(base().."/user/following", {per_page="per_page",page="page"})
+  end),
+
+  get_user_is_following = function(username)
+    local ok, status = pcall(Fetch, base() .. "/user/following/" .. username, auth())
+    if ok and status == 204 then SetStatus(204, "No Content")
+    elseif ok then respond_json(404, "Not Found", { message = "Not Following" })
+    else respond_json(503, "Service Unavailable", {}) end
   end,
+
+  put_user_following = function(username)
+    set_204_or_error("PUT", base() .. "/user/following/" .. username)
+  end,
+
+  delete_user_following = function(username)
+    set_204_or_error("DELETE", base() .. "/user/following/" .. username)
+  end,
+
+  get_users_followers = proxy_handler(nil, function(username)
+    return append_page_params(base().."/users/"..username.."/followers",
+      {per_page="per_page",page="page"})
+  end),
+
+  get_users_following = proxy_handler(nil, function(username)
+    return append_page_params(base().."/users/"..username.."/following",
+      {per_page="per_page",page="page"})
+  end),
+
+  get_users_is_following = function(username, target)
+    local ok, status = pcall(Fetch,
+      base() .. "/users/" .. username .. "/following/" .. target, auth())
+    if ok and status == 204 then SetStatus(204, "No Content")
+    elseif ok then respond_json(404, "Not Found", { message = "Not Following" })
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  get_user_emails = proxy_handler(nil, function() return base().."/user/emails" end),
+
+  post_user_emails = function()
+    proxy_json_created(nil, fetch_json(base() .. "/user/emails", "POST", GetBody()))
+  end,
+
+  delete_user_emails = function()
+    local opts = auth() or {}
+    opts.method = "DELETE"; opts.body = GetBody()
+    opts.headers = opts.headers or {}
+    opts.headers["Content-Type"] = "application/json"
+    local ok, status = pcall(Fetch, base() .. "/user/emails", opts)
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  get_user_keys = proxy_handler(nil, function()
+    return append_page_params(base().."/user/keys", {per_page="per_page",page="page"})
+  end),
+
+  post_user_keys = function()
+    proxy_json_created(nil, fetch_json(base() .. "/user/keys", "POST", GetBody()))
+  end,
+
+  get_user_key = proxy_handler(nil, function(key_id) return base().."/user/keys/"..key_id end),
+
+  delete_user_key = function(key_id)
+    local opts = auth() or {}; opts.method = "DELETE"
+    local ok, status = pcall(Fetch, base() .. "/user/keys/" .. key_id, opts)
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  get_users_keys = proxy_handler(nil, function(username)
+    return append_page_params(base().."/users/"..username.."/keys",
+      {per_page="per_page",page="page"})
+  end),
 }

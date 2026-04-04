@@ -111,6 +111,25 @@ function make_fetch_opts(scheme)
   return { headers = { ["Authorization"] = hdr } }
 end
 
+-- make_proxy_handler is global: returns a proxy_handler bound to a backend's fetch_json.
+-- Each backend calls: local proxy_handler = make_proxy_handler(fetch_json)
+--
+-- The returned proxy_handler(xform, url_fn) builds a handler function that fetches
+-- url_fn(...) and passes the decoded response through xform (plus handler args).
+-- xform receives (response_body, ...handler_args) so closures over handler args are not
+-- needed. Named translate functions that only take the response body work as-is
+-- (extra args are silently ignored by Lua).
+function make_proxy_handler(fetch_fn)
+  return function(xform, url_fn)
+    return function(...)
+      local args = {...}
+      proxy_json(
+        type(xform) == "function" and function(r) return xform(r, table.unpack(args)) end or xform,
+        fetch_fn(url_fn(...)))
+    end
+  end
+end
+
 -- translate_repo is global: maps a Gitea-style repo object to GitHub field names.
 -- Called by any Gitea-API-compatible backend (gitea, forgejo, gogs, codeberg, notabug).
 function translate_repo(r)
@@ -158,6 +177,28 @@ function translate_repo(r)
     updated_at        = r.updated,
     pushed_at         = r.updated,
     permissions       = r.permissions,
+  }
+end
+
+-- translate_user is global: maps a Gitea-style user object to GitHub field names.
+-- Called by any Gitea-API-compatible backend (gitea, forgejo, gogs, codeberg, notabug).
+function translate_user(u)
+  if not u then return {} end
+  return {
+    login      = u.login,
+    id         = u.id,
+    node_id    = "",
+    avatar_url = u.avatar_url,
+    html_url   = u.html_url,
+    type       = "User",
+    site_admin = u.is_admin or false,
+    name       = u.full_name,
+    email      = u.email,
+    location   = u.location,
+    blog       = u.website,
+    followers  = u.followers_count or 0,
+    following  = u.following_count or 0,
+    created_at = u.created,
   }
 end
 
@@ -393,6 +434,64 @@ local routes = {
   ["GET /repos/{owner}/{repo}/deployments/{deployment_id}/statuses"]           = "get_repo_deployment_statuses",
   ["POST /repos/{owner}/{repo}/deployments/{deployment_id}/statuses"]          = "post_repo_deployment_status",
   ["GET /repos/{owner}/{repo}/deployments/{deployment_id}/statuses/{status_id}"] = "get_repo_deployment_status",
+
+  -- Users (https://docs.github.com/en/rest/users)
+  ["GET /user"]                                                                    = "get_user",
+  ["PATCH /user"]                                                                  = "patch_user",
+  ["GET /user/{account_id}"]                                                       = "get_user_by_id",
+  ["GET /users"]                                                                   = "get_users",
+  ["GET /users/{username}"]                                                        = "get_users_username",
+  ["GET /users/{username}/hovercard"]                                              = "get_users_hovercard",
+
+  -- Blocking
+  ["GET /user/blocks"]                                                             = "get_user_blocks",
+  ["GET /user/blocks/{username}"]                                                  = "get_user_block",
+  ["PUT /user/blocks/{username}"]                                                  = "put_user_block",
+  ["DELETE /user/blocks/{username}"]                                               = "delete_user_block",
+
+  -- Emails
+  ["GET /user/emails"]                                                             = "get_user_emails",
+  ["POST /user/emails"]                                                            = "post_user_emails",
+  ["DELETE /user/emails"]                                                          = "delete_user_emails",
+  ["PATCH /user/email/visibility"]                                                 = "patch_user_email_visibility",
+  ["GET /user/public_emails"]                                                      = "get_user_public_emails",
+
+  -- Followers
+  ["GET /user/followers"]                                                          = "get_user_followers",
+  ["GET /user/following"]                                                          = "get_user_following",
+  ["GET /user/following/{username}"]                                               = "get_user_is_following",
+  ["PUT /user/following/{username}"]                                               = "put_user_following",
+  ["DELETE /user/following/{username}"]                                            = "delete_user_following",
+  ["GET /users/{username}/followers"]                                              = "get_users_followers",
+  ["GET /users/{username}/following"]                                              = "get_users_following",
+  ["GET /users/{username}/following/{target_user}"]                                = "get_users_is_following",
+
+  -- GPG Keys
+  ["GET /user/gpg_keys"]                                                           = "get_user_gpg_keys",
+  ["POST /user/gpg_keys"]                                                          = "post_user_gpg_keys",
+  ["GET /user/gpg_keys/{gpg_key_id}"]                                              = "get_user_gpg_key",
+  ["DELETE /user/gpg_keys/{gpg_key_id}"]                                           = "delete_user_gpg_key",
+  ["GET /users/{username}/gpg_keys"]                                               = "get_users_gpg_keys",
+
+  -- SSH Keys
+  ["GET /user/keys"]                                                               = "get_user_keys",
+  ["POST /user/keys"]                                                              = "post_user_keys",
+  ["GET /user/keys/{key_id}"]                                                      = "get_user_key",
+  ["DELETE /user/keys/{key_id}"]                                                   = "delete_user_key",
+  ["GET /users/{username}/keys"]                                                   = "get_users_keys",
+
+  -- Social Accounts
+  ["GET /user/social_accounts"]                                                    = "get_user_social_accounts",
+  ["POST /user/social_accounts"]                                                   = "post_user_social_accounts",
+  ["DELETE /user/social_accounts"]                                                 = "delete_user_social_accounts",
+  ["GET /users/{username}/social_accounts"]                                        = "get_users_social_accounts",
+
+  -- SSH Signing Keys
+  ["GET /user/ssh_signing_keys"]                                                   = "get_user_ssh_signing_keys",
+  ["POST /user/ssh_signing_keys"]                                                  = "post_user_ssh_signing_keys",
+  ["GET /user/ssh_signing_keys/{ssh_signing_key_id}"]                              = "get_user_ssh_signing_key",
+  ["DELETE /user/ssh_signing_keys/{ssh_signing_key_id}"]                           = "delete_user_ssh_signing_key",
+  ["GET /users/{username}/ssh_signing_keys"]                                       = "get_users_ssh_signing_keys",
 }
 for spec, name in pairs(routes) do route_add(spec, name) end
 

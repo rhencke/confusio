@@ -76,6 +76,15 @@ function OnHttpRequest()
     SetStatus(200, "OK")
     raw("file content\n")
 
+  -- Users -------------------------------------------------------------------
+  elseif path == "/api/0/user/octocat" then
+    SetStatus(200, "OK")
+    json('{"user":{"username":"octocat","fullname":"The Octocat","avatar_url":""}}')
+
+  elseif path == "/api/0/users" then
+    SetStatus(200, "OK")
+    json('{"users":["octocat","hubot"],"total_users":2}')
+
   -- Users' repos -----------------------------------------------------------
   elseif path:find("^/api/0/user/") then
     SetStatus(200, "OK")

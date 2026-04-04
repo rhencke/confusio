@@ -26,6 +26,38 @@ local function translate_repos(repos)
   return repos
 end
 
+local function translate_users(users)
+  for i, u in ipairs(users) do users[i] = translate_user(u) end
+  return users
+end
+
+local function set_204_or_error(method, url)
+  local opts = auth() or {}; opts.method = method
+  local ok, status = pcall(Fetch, url, opts)
+  if ok and status == 204 then SetStatus(204, "No Content")
+  elseif ok then respond_json(status, "Error", {})
+  else respond_json(503, "Service Unavailable", {}) end
+end
+
+local function proxy_users_follow_list(username, rel)
+  proxy_json(translate_users,
+    fetch_json(append_page_params(base() .. "/users/" .. username .. "/" .. rel,
+      { per_page = "limit", page = "page" })))
+end
+
+-- Returns a handler function: defers fetch_json(url_fn(...)) to request time.
+-- xform receives (response_body, ...handler_args) so closures over handler args are not needed.
+-- Named translate functions that only take the response body work as-is (extra args ignored).
+local proxy_handler = make_proxy_handler(fetch_json)
+
+local function filter_verified_emails(emails)
+  local out = {}
+  for _, e in ipairs(emails or {}) do
+    if e.verified then out[#out + 1] = e end
+  end
+  return out
+end
+
 backend_impl = {
   -- Health check
   get_root = function()
@@ -578,5 +610,139 @@ backend_impl = {
       fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
         "/git/commits/" .. commit_sha .. "/notes", "POST", GetBody()))
   end,
+
+  -- Users ---------------------------------------------------------------------
+
+  -- GET /user
+  get_user = proxy_handler(translate_user, function() return base() .. "/user" end),
+
+  -- PATCH /user
+  patch_user = function()
+    proxy_json(translate_user, fetch_json(base() .. "/user/settings", "PATCH", GetBody()))
+  end,
+
+  -- GET /users/{username}
+  get_users_username = proxy_handler(translate_user, function(u) return base() .. "/users/" .. u end),
+
+  -- GET /users
+  get_users = proxy_handler(translate_users, function()
+    return append_page_params(base() .. "/admin/users", { per_page = "limit", page = "page" })
+  end),
+
+  -- GET /user/followers
+  get_user_followers = proxy_handler(translate_users, function()
+    return append_page_params(base() .. "/user/followers", { per_page = "limit", page = "page" })
+  end),
+
+  -- GET /user/following
+  get_user_following = proxy_handler(translate_users, function()
+    return append_page_params(base() .. "/user/following", { per_page = "limit", page = "page" })
+  end),
+
+  -- GET /user/following/{username} — 204 if following, 404 if not
+  get_user_is_following = function(username)
+    local ok, status = pcall(Fetch, base() .. "/user/following/" .. username, auth())
+    if ok and status == 204 then SetStatus(204, "No Content")
+    elseif ok then respond_json(404, "Not Found", { message = "Not Following" })
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- PUT /user/following/{username}
+  put_user_following = function(username)
+    set_204_or_error("PUT", base() .. "/user/following/" .. username)
+  end,
+
+  -- DELETE /user/following/{username}
+  delete_user_following = function(username)
+    set_204_or_error("DELETE", base() .. "/user/following/" .. username)
+  end,
+
+  -- GET /users/{username}/followers
+  get_users_followers = function(username) proxy_users_follow_list(username, "followers") end,
+
+  -- GET /users/{username}/following
+  get_users_following = function(username) proxy_users_follow_list(username, "following") end,
+
+  -- SSH Keys ------------------------------------------------------------------
+
+  -- GET /user/keys
+  get_user_keys = proxy_handler(nil, function()
+    return append_page_params(base() .. "/user/keys", { per_page = "limit", page = "page" })
+  end),
+
+  -- POST /user/keys
+  post_user_keys = function()
+    proxy_json_created(nil, fetch_json(base() .. "/user/keys", "POST", GetBody()))
+  end,
+
+  -- GET /user/keys/{key_id}
+  get_user_key = proxy_handler(nil, function(id) return base() .. "/user/keys/" .. id end),
+
+  -- DELETE /user/keys/{key_id}
+  delete_user_key = function(key_id)
+    local ok, status = fetch_json(base() .. "/user/keys/" .. key_id, "DELETE")
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- GET /users/{username}/keys
+  get_users_keys = proxy_handler(nil, function(u)
+    return append_page_params(base() .. "/users/" .. u .. "/keys", { per_page = "limit", page = "page" })
+  end),
+
+  -- GPG Keys ------------------------------------------------------------------
+
+  -- GET /user/gpg_keys
+  get_user_gpg_keys = proxy_handler(nil, function()
+    return append_page_params(base() .. "/user/gpg_keys", { per_page = "limit", page = "page" })
+  end),
+
+  -- POST /user/gpg_keys
+  post_user_gpg_keys = function()
+    proxy_json_created(nil, fetch_json(base() .. "/user/gpg_keys", "POST", GetBody()))
+  end,
+
+  -- GET /user/gpg_keys/{gpg_key_id}
+  get_user_gpg_key = proxy_handler(nil, function(id) return base() .. "/user/gpg_keys/" .. id end),
+
+  -- DELETE /user/gpg_keys/{gpg_key_id}
+  delete_user_gpg_key = function(gpg_key_id)
+    local ok, status = fetch_json(base() .. "/user/gpg_keys/" .. gpg_key_id, "DELETE")
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- GET /users/{username}/gpg_keys
+  get_users_gpg_keys = proxy_handler(nil, function(u)
+    return append_page_params(base() .. "/users/" .. u .. "/gpg_keys", { per_page = "limit", page = "page" })
+  end),
+
+  -- Emails --------------------------------------------------------------------
+
+  -- GET /user/emails
+  get_user_emails = proxy_handler(nil, function() return base() .. "/user/emails" end),
+
+  -- POST /user/emails
+  post_user_emails = function()
+    proxy_json_created(nil, fetch_json(base() .. "/user/emails", "POST", GetBody()))
+  end,
+
+  -- DELETE /user/emails
+  delete_user_emails = function()
+    local opts = auth() or {}
+    opts.method = "DELETE"
+    opts.body = GetBody()
+    opts.headers = opts.headers or {}
+    opts.headers["Content-Type"] = "application/json"
+    local ok, status = pcall(Fetch, base() .. "/user/emails", opts)
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- GET /user/public_emails — Gitea has no separate endpoint; filter verified from /user/emails
+  get_user_public_emails = proxy_handler(filter_verified_emails, function() return base() .. "/user/emails" end),
 
 }
