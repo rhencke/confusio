@@ -219,6 +219,57 @@ function OnHttpRequest()
     SetStatus(200, "OK")
     json('[' .. REPO .. ']')
 
+  -- Users (GitHub-compatible) ----------------------------------------------
+  elseif path == "/api/v3/user" then
+    SetStatus(200, "OK")
+    json('{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"",' ..
+      '"type":"User","site_admin":false,"name":"The Octocat","email":"octocat@github.com",' ..
+      '"followers":100,"following":5}')
+
+  elseif path == "/api/v3/users/octocat" then
+    SetStatus(200, "OK")
+    json('{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"",' ..
+      '"type":"User","site_admin":false,"name":"The Octocat"}')
+
+  elseif path == "/api/v3/users" then
+    SetStatus(200, "OK")
+    json('[{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User"}]')
+
+  elseif path == "/api/v3/user/followers" then
+    SetStatus(200, "OK")
+    json('[{"login":"hubot","id":2,"node_id":"","avatar_url":"","html_url":"","type":"User"}]')
+
+  elseif path == "/api/v3/user/following" then
+    SetStatus(200, "OK")
+    json('[]')
+
+  elseif path == "/api/v3/user/following/hubot" then
+    SetStatus(204, "No Content")
+
+  elseif path == "/api/v3/users/octocat/followers" then
+    SetStatus(200, "OK")
+    json('[{"login":"hubot","id":2,"node_id":"","avatar_url":"","html_url":"","type":"User"}]')
+
+  elseif path == "/api/v3/users/octocat/following" then
+    SetStatus(200, "OK")
+    json('[]')
+
+  elseif path == "/api/v3/user/emails" then
+    SetStatus(200, "OK")
+    json('[{"email":"octocat@github.com","verified":true,"primary":true,"visibility":"public"}]')
+
+  elseif path == "/api/v3/user/keys" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"key":"ssh-rsa AAAAB3N...","title":"my key"}]')
+
+  elseif path == "/api/v3/user/keys/1" then
+    SetStatus(200, "OK")
+    json('{"id":1,"key":"ssh-rsa AAAAB3N...","title":"my key"}')
+
+  elseif path == "/api/v3/users/octocat/keys" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"key":"ssh-rsa AAAAB3N...","title":"my key"}]')
+
   else
     SetStatus(404, "Not Found")
   end
