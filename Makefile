@@ -57,13 +57,55 @@ mock-gitbucket.com: redbean.com test/mock-gitbucket.lua
 	(cd .tmp-mock && zip -u ../mock-gitbucket.com .init.lua)
 	rm -rf .tmp-mock
 
+mock-bitbucket.com: redbean.com test/mock-bitbucket.lua
+	cp redbean.com mock-bitbucket.com
+	@mkdir -p .tmp-mock
+	cp test/mock-bitbucket.lua .tmp-mock/.init.lua
+	(cd .tmp-mock && zip -u ../mock-bitbucket.com .init.lua)
+	rm -rf .tmp-mock
+
+mock-harness.com: redbean.com test/mock-harness.lua
+	cp redbean.com mock-harness.com
+	@mkdir -p .tmp-mock
+	cp test/mock-harness.lua .tmp-mock/.init.lua
+	(cd .tmp-mock && zip -u ../mock-harness.com .init.lua)
+	rm -rf .tmp-mock
+
+mock-pagure.com: redbean.com test/mock-pagure.lua
+	cp redbean.com mock-pagure.com
+	@mkdir -p .tmp-mock
+	cp test/mock-pagure.lua .tmp-mock/.init.lua
+	(cd .tmp-mock && zip -u ../mock-pagure.com .init.lua)
+	rm -rf .tmp-mock
+
+mock-onedev.com: redbean.com test/mock-onedev.lua
+	cp redbean.com mock-onedev.com
+	@mkdir -p .tmp-mock
+	cp test/mock-onedev.lua .tmp-mock/.init.lua
+	(cd .tmp-mock && zip -u ../mock-onedev.com .init.lua)
+	rm -rf .tmp-mock
+
+mock-sourcehut.com: redbean.com test/mock-sourcehut.lua
+	cp redbean.com mock-sourcehut.com
+	@mkdir -p .tmp-mock
+	cp test/mock-sourcehut.lua .tmp-mock/.init.lua
+	(cd .tmp-mock && zip -u ../mock-sourcehut.com .init.lua)
+	rm -rf .tmp-mock
+
+mock-radicle.com: redbean.com test/mock-radicle.lua
+	cp redbean.com mock-radicle.com
+	@mkdir -p .tmp-mock
+	cp test/mock-radicle.lua .tmp-mock/.init.lua
+	(cd .tmp-mock && zip -u ../mock-radicle.com .init.lua)
+	rm -rf .tmp-mock
+
 .PHONY: build test test-unit test-integration validate-mock clean
 
 build: confusio.com
 
 test: test-unit test-integration
 
-test-unit: confusio.com mock-gitea.com mock-gitlab.com mock-gitbucket.com hurl
+test-unit: confusio.com mock-gitea.com mock-gitlab.com mock-gitbucket.com mock-bitbucket.com mock-harness.com mock-pagure.com mock-onedev.com mock-sourcehut.com mock-radicle.com hurl
 	bash test/test-unit.sh
 
 test-integration: confusio.com hurl
@@ -73,4 +115,4 @@ validate-mock: mock-gitea.com
 	bash test/test-mock-validate.sh
 
 clean:
-	rm -f redbean.com confusio.com mock-gitea.com mock-gitlab.com mock-gitbucket.com hurl
+	rm -f redbean.com confusio.com mock-gitea.com mock-gitlab.com mock-gitbucket.com mock-bitbucket.com mock-harness.com mock-pagure.com mock-onedev.com mock-sourcehut.com mock-radicle.com hurl

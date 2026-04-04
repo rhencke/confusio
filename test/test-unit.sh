@@ -8,6 +8,12 @@ CONFUSIO_BIN=$(pwd)/confusio.com
 MOCK_BIN=$(pwd)/mock-gitea.com
 MOCK_GITLAB_BIN=$(pwd)/mock-gitlab.com
 MOCK_GITBUCKET_BIN=$(pwd)/mock-gitbucket.com
+MOCK_BITBUCKET_BIN=$(pwd)/mock-bitbucket.com
+MOCK_HARNESS_BIN=$(pwd)/mock-harness.com
+MOCK_PAGURE_BIN=$(pwd)/mock-pagure.com
+MOCK_ONEDEV_BIN=$(pwd)/mock-onedev.com
+MOCK_SOURCEHUT_BIN=$(pwd)/mock-sourcehut.com
+MOCK_RADICLE_BIN=$(pwd)/mock-radicle.com
 HURL=$(pwd)/hurl
 
 start_isolated() {
@@ -102,4 +108,40 @@ MOCK_BIN="$_saved_mock"
 _saved_mock="$MOCK_BIN"
 MOCK_BIN="$MOCK_GITBUCKET_BIN"
 run_mock_phase test/gitbucket-repos.hurl -- backend=gitbucket base_url=http://127.0.0.1:$MOCK_PORT
+MOCK_BIN="$_saved_mock"
+
+# --- Phase 9: Bitbucket backend ---
+_saved_mock="$MOCK_BIN"
+MOCK_BIN="$MOCK_BITBUCKET_BIN"
+run_mock_phase test/bitbucket-repos.hurl -- backend=bitbucket base_url=http://127.0.0.1:$MOCK_PORT
+MOCK_BIN="$_saved_mock"
+
+# --- Phase 10: Harness backend ---
+_saved_mock="$MOCK_BIN"
+MOCK_BIN="$MOCK_HARNESS_BIN"
+run_mock_phase test/harness-repos.hurl -- backend=harness base_url=http://127.0.0.1:$MOCK_PORT
+MOCK_BIN="$_saved_mock"
+
+# --- Phase 11: Pagure backend ---
+_saved_mock="$MOCK_BIN"
+MOCK_BIN="$MOCK_PAGURE_BIN"
+run_mock_phase test/pagure-repos.hurl -- backend=pagure base_url=http://127.0.0.1:$MOCK_PORT
+MOCK_BIN="$_saved_mock"
+
+# --- Phase 12: OneDev backend ---
+_saved_mock="$MOCK_BIN"
+MOCK_BIN="$MOCK_ONEDEV_BIN"
+run_mock_phase test/onedev-repos.hurl -- backend=onedev base_url=http://127.0.0.1:$MOCK_PORT
+MOCK_BIN="$_saved_mock"
+
+# --- Phase 13: Sourcehut backend ---
+_saved_mock="$MOCK_BIN"
+MOCK_BIN="$MOCK_SOURCEHUT_BIN"
+run_mock_phase test/sourcehut-repos.hurl -- backend=sourcehut base_url=http://127.0.0.1:$MOCK_PORT
+MOCK_BIN="$_saved_mock"
+
+# --- Phase 14: Radicle backend ---
+_saved_mock="$MOCK_BIN"
+MOCK_BIN="$MOCK_RADICLE_BIN"
+run_mock_phase test/radicle-repos.hurl -- backend=radicle base_url=http://127.0.0.1:$MOCK_PORT
 MOCK_BIN="$_saved_mock"
