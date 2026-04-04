@@ -155,3 +155,9 @@ MOCK_BIN="$_saved_mock"
 
 # --- Phase 16: Users API (Gitea backend) ---
 run_mock_phase test/gitea-users.hurl $MOCK_ARGS
+
+# --- Phase 17: Users API (GitLab backend) ---
+_saved_mock="$MOCK_BIN"
+MOCK_BIN="$MOCK_GITLAB_BIN"
+run_mock_phase test/gitlab-users.hurl -- backend=gitlab base_url=http://127.0.0.1:$MOCK_PORT
+MOCK_BIN="$_saved_mock"

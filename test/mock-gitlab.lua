@@ -170,6 +170,43 @@ function OnHttpRequest()
     SetStatus(200, "OK")
     json('[' .. PROJECT .. ']')
 
+  -- Users ------------------------------------------------------------------
+  elseif path == "/api/v4/user" then
+    SetStatus(200, "OK")
+    json('{"id":1,"username":"octocat","name":"The Octocat","email":"octocat@github.com",' ..
+      '"avatar_url":"","web_url":"http://localhost/octocat","is_admin":false,' ..
+      '"location":"San Francisco","website_url":"https://github.blog","created_at":"2011-01-25T18:44:36Z"}')
+
+  elseif path == "/api/v4/users" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"username":"octocat","name":"The Octocat","email":"octocat@github.com",' ..
+      '"avatar_url":"","web_url":"http://localhost/octocat","is_admin":false,' ..
+      '"location":"San Francisco","website_url":"https://github.blog","created_at":"2011-01-25T18:44:36Z"}]')
+
+  elseif path == "/api/v4/user/emails" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"email":"octocat@github.com","confirmed_at":"2011-01-25T18:44:36Z"}]')
+
+  elseif path == "/api/v4/user/keys" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"title":"my key","key":"ssh-rsa AAAAB3N...","created_at":"2020-01-01T00:00:00Z"}]')
+
+  elseif path == "/api/v4/user/keys/1" then
+    SetStatus(200, "OK")
+    json('{"id":1,"title":"my key","key":"ssh-rsa AAAAB3N...","created_at":"2020-01-01T00:00:00Z"}')
+
+  elseif path == "/api/v4/users/1/keys" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"title":"my key","key":"ssh-rsa AAAAB3N...","created_at":"2020-01-01T00:00:00Z"}]')
+
+  elseif path == "/api/v4/user/gpg_keys" then
+    SetStatus(200, "OK")
+    json('[]')
+
+  elseif path == "/api/v4/users/1/gpg_keys" then
+    SetStatus(200, "OK")
+    json('[]')
+
   else
     SetStatus(404, "Not Found")
   end
