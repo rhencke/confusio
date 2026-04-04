@@ -16,7 +16,7 @@ Built with [Redbean](https://redbean.dev): a self-contained web server + Lua int
 | `make test` | Both of the above |
 | `make validate-mock` | Run `test/gitea-api-version.hurl` against both the mock and a real Gitea instance to check they agree |
 
-**Before any commit: run `make -j test-unit`.** `make test-integration` requires network and is acceptable to defer to CI.
+**Before any commit: run `make -j test-unit`.** `make -j test-integration` requires network and is acceptable to defer to CI.
 
 ## Project structure
 

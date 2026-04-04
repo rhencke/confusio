@@ -10,11 +10,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
-      - run: make test-unit
+      - run: make -j test-unit
 
   test-integration:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
-      - run: make test-integration
+      - run: make -j test-integration
