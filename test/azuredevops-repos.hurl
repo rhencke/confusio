@@ -151,3 +151,70 @@ jsonpath "$[0].name" isString
 GET http://{{host}}/repos/nonexist/notareal
 
 HTTP 404
+
+# Teams API (/orgs/{org}/teams) -----------------------------------------------
+
+# GET /orgs/{org}/teams — list ADO project teams
+GET http://{{host}}/orgs/testorg/teams
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$" isCollection
+jsonpath "$[0].id" isInteger
+jsonpath "$[0].name" isString
+jsonpath "$[0].slug" isString
+jsonpath "$[0].permission" isString
+
+# GET /orgs/{org}/teams/{team_slug} — get team by slug
+GET http://{{host}}/orgs/testorg/teams/core
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$.name" == "core"
+jsonpath "$.slug" == "core"
+jsonpath "$.permission" isString
+
+# GET /orgs/{org}/teams/{team_slug} — unknown slug → 404
+GET http://{{host}}/orgs/testorg/teams/nosuchteam
+
+HTTP 404
+
+# GET /orgs/{org}/teams/{team_slug}/members
+GET http://{{host}}/orgs/testorg/teams/core/members
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$" isCollection
+jsonpath "$[0].login" isString
+
+# GET /orgs/{org}/teams/{team_slug}/memberships/{username} — member → 200
+GET http://{{host}}/orgs/testorg/teams/core/memberships/octocat
+
+HTTP 200
+[Asserts]
+jsonpath "$.role" isString
+jsonpath "$.state" == "active"
+
+# GET /orgs/{org}/teams/{team_slug}/repos — ADO has no team-repo model; returns []
+GET http://{{host}}/orgs/testorg/teams/core/repos
+
+HTTP 200
+[Asserts]
+body == "[]"
+
+# GET /orgs/{org}/teams/{team_slug}/invitations — no invitations in ADO
+GET http://{{host}}/orgs/testorg/teams/core/invitations
+
+HTTP 200
+[Asserts]
+body == "[]"
+
+# GET /orgs/{org}/teams/{team_slug}/teams — no nested teams in ADO
+GET http://{{host}}/orgs/testorg/teams/core/teams
+
+HTTP 200
+[Asserts]
+body == "[]"
