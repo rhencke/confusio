@@ -7,6 +7,7 @@ MOCK_PORT=18081
 CONFUSIO_BIN=$(pwd)/confusio.com
 MOCK_BIN=$(pwd)/mock-gitea.com
 MOCK_GITLAB_BIN=$(pwd)/mock-gitlab.com
+MOCK_GITBUCKET_BIN=$(pwd)/mock-gitbucket.com
 HURL=$(pwd)/hurl
 
 start_isolated() {
@@ -95,4 +96,10 @@ run_mock_phase test/gitea-repos-ext.hurl $MOCK_ARGS
 _saved_mock="$MOCK_BIN"
 MOCK_BIN="$MOCK_GITLAB_BIN"
 run_mock_phase test/gitlab-repos.hurl -- backend=gitlab base_url=http://127.0.0.1:$MOCK_PORT
+MOCK_BIN="$_saved_mock"
+
+# --- Phase 8: GitBucket backend ---
+_saved_mock="$MOCK_BIN"
+MOCK_BIN="$MOCK_GITBUCKET_BIN"
+run_mock_phase test/gitbucket-repos.hurl -- backend=gitbucket base_url=http://127.0.0.1:$MOCK_PORT
 MOCK_BIN="$_saved_mock"
