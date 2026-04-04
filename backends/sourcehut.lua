@@ -80,6 +80,35 @@ local function translate_srht_req(body_str)
   return EncodeJson(sr)
 end
 
+-- Translate a Sourcehut ref to a GitHub branch object.
+-- Only call for refs with names like "refs/heads/main".
+local function translate_srht_branch(ref)
+  if not ref then return {} end
+  local name = ref.name and ref.name:match("^refs/heads/(.+)") or (ref.name or "")
+  return {
+    name      = name,
+    commit    = { sha = ref.target or "", url = "" },
+    protected = false,
+  }
+end
+
+-- Translate a Sourcehut log entry to GitHub commit format.
+-- Sourcehut: { id, message, timestamp, author: { name, email } }
+local function translate_srht_commit(c)
+  if not c then return {} end
+  local author = c.author or {}
+  return {
+    sha    = c.id or "",
+    commit = {
+      message   = c.message or "",
+      author    = { name = author.name or "", email = author.email or "", date = c.timestamp or "" },
+      committer = { name = author.name or "", email = author.email or "", date = c.timestamp or "" },
+    },
+    author    = { login = author.name or "", id = 0, avatar_url = "" },
+    committer = { login = author.name or "", id = 0, avatar_url = "" },
+  }
+end
+
 backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, config.base_url .. "/api/version", auth())
@@ -135,9 +164,42 @@ backend_impl = {
       fetch_json(base() .. "/" .. canonical .. "/repos", "POST", translate_srht_req(GetBody())))
   end,
 
+  -- Branches ------------------------------------------------------------------
+  -- Sourcehut: filter /refs for refs starting with "refs/heads/"
+
+  get_repo_branches = function(owner, repo_name)
+    proxy_json(
+      function(data)
+        local branches = {}
+        for _, ref in ipairs(data.results or {}) do
+          if ref.name and ref.name:match("^refs/heads/") then
+            branches[#branches + 1] = translate_srht_branch(ref)
+          end
+        end
+        return branches
+      end,
+      fetch_json(base() .. "/~" .. owner .. "/repos/" .. repo_name .. "/refs"))
+  end,
+
+  get_repo_branch = function(owner, repo_name, branch)
+    -- Fetch the specific ref: refs/heads/{branch}
+    proxy_json(
+      function(data)
+        for _, ref in ipairs(data.results or {}) do
+          if ref.name == "refs/heads/" .. branch then
+            return translate_srht_branch(ref)
+          end
+        end
+        return {}
+      end,
+      fetch_json(base() .. "/~" .. owner .. "/repos/" .. repo_name .. "/refs"))
+  end,
+
+  -- Tags ----------------------------------------------------------------------
+  -- Sourcehut /refs returns { results: [...] } with name and target fields
+  -- Filter to tags only (refs starting with "refs/tags/")
+
   get_repo_tags = function(owner, repo_name)
-    -- Sourcehut /refs returns { results: [...] } with name and target fields
-    -- Filter to tags only (refs starting with "refs/tags/")
     proxy_json(
       function(data)
         local tags = {}
@@ -150,6 +212,91 @@ backend_impl = {
         return tags
       end,
       fetch_json(base() .. "/~" .. owner .. "/repos/" .. repo_name .. "/refs"))
+  end,
+
+  -- Commits -------------------------------------------------------------------
+  -- Sourcehut: GET /api/~{owner}/repos/{name}/log or /log/{ref}
+
+  get_repo_commits = function(owner, repo_name)
+    local ref = GetParam("sha") or ""
+    local url = base() .. "/~" .. owner .. "/repos/" .. repo_name .. "/log"
+    if ref ~= "" then url = url .. "/" .. ref end
+    url = append_page_params(url, { per_page = "limit" })
+    proxy_json(
+      function(data)
+        local commits = data.results or {}
+        for i, c in ipairs(commits) do commits[i] = translate_srht_commit(c) end
+        return commits
+      end,
+      fetch_json(url))
+  end,
+
+  get_repo_commit = function(owner, repo_name, ref)
+    -- Fetch the log at the specific ref and return first entry.
+    proxy_json(
+      function(data)
+        local c = (data.results or {})[1]
+        return translate_srht_commit(c)
+      end,
+      fetch_json(base() .. "/~" .. owner .. "/repos/" .. repo_name .. "/log/" .. ref .. "?limit=1"))
+  end,
+
+  -- Contents ------------------------------------------------------------------
+  -- Sourcehut: GET /api/~{owner}/repos/{name}/blob/{ref}/{path} — raw bytes.
+
+  get_repo_readme = function(owner, repo_name)
+    local ref = GetParam("ref") or "HEAD"
+    local candidates = { "README.md", "README", "readme.md", "README.rst" }
+    for _, fname in ipairs(candidates) do
+      local url = base() .. "/~" .. owner .. "/repos/" .. repo_name ..
+        "/blob/" .. ref .. "/" .. fname
+      local ok, status, _, body = fetch_json(url)
+      if ok and status == 200 then
+        respond_json(200, "OK", {
+          type     = "file",
+          name     = fname,
+          path     = fname,
+          sha      = "",
+          size     = #body,
+          encoding = "base64",
+          content  = EncodeBase64(body),
+        })
+        return
+      end
+    end
+    respond_json(404, "Not Found", { message = "Not Found" })
+  end,
+
+  get_repo_content = function(owner, repo_name, path)
+    local ref = GetParam("ref") or "HEAD"
+    local url = base() .. "/~" .. owner .. "/repos/" .. repo_name ..
+      "/blob/" .. ref .. "/" .. path
+    local ok, status, _, body = fetch_json(url)
+    if ok and status == 200 then
+      respond_json(200, "OK", {
+        type     = "file",
+        name     = path:match("[^/]+$") or path,
+        path     = path,
+        sha      = "",
+        size     = #body,
+        encoding = "base64",
+        content  = EncodeBase64(body),
+      })
+    elseif ok then respond_json(status, "Error", { message = "Error" })
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- Users' repos --------------------------------------------------------------
+
+  get_users_repos = function(username)
+    proxy_json(
+      function(data)
+        local repos = data.results or {}
+        for i, r in ipairs(repos) do repos[i] = translate_srht_repo(r) end
+        return repos
+      end,
+      fetch_json(append_page_params(base() .. "/~" .. username .. "/repos",
+        { per_page = "limit" })))
   end,
 
 }
