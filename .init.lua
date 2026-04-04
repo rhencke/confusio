@@ -226,6 +226,9 @@ end
 for _, ep in ipairs({
   "get_org_teams", "get_org_team_invitations",
   "get_org_team_members", "get_org_team_repos", "get_org_team_children",
+  -- Legacy team-by-id list endpoints
+  "get_user_teams",
+  "get_team_invitations", "get_team_members", "get_team_repos", "get_team_children",
 }) do
   if not backend_impl[ep] then backend_impl[ep] = teams_empty end
 end
@@ -465,6 +468,25 @@ local routes = {
   ["PUT /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}"]                      = "put_org_team_repo",
   ["DELETE /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}"]                   = "delete_org_team_repo",
   ["GET /orgs/{org}/teams/{team_slug}/teams"]                                     = "get_org_team_children",
+
+  -- Legacy team endpoints (team_id-based) — deprecated in favour of slug-based above
+  ["GET /user/teams"]                                                              = "get_user_teams",
+  ["GET /teams/{team_id}"]                                                         = "get_team",
+  ["PATCH /teams/{team_id}"]                                                       = "patch_team",
+  ["DELETE /teams/{team_id}"]                                                      = "delete_team",
+  ["GET /teams/{team_id}/invitations"]                                             = "get_team_invitations",
+  ["GET /teams/{team_id}/members"]                                                 = "get_team_members",
+  ["GET /teams/{team_id}/members/{username}"]                                      = "get_team_member",
+  ["PUT /teams/{team_id}/members/{username}"]                                      = "put_team_member",
+  ["DELETE /teams/{team_id}/members/{username}"]                                   = "delete_team_member",
+  ["GET /teams/{team_id}/memberships/{username}"]                                  = "get_team_membership",
+  ["PUT /teams/{team_id}/memberships/{username}"]                                  = "put_team_membership",
+  ["DELETE /teams/{team_id}/memberships/{username}"]                               = "delete_team_membership",
+  ["GET /teams/{team_id}/repos"]                                                   = "get_team_repos",
+  ["GET /teams/{team_id}/repos/{owner}/{repo}"]                                    = "get_team_repo",
+  ["PUT /teams/{team_id}/repos/{owner}/{repo}"]                                    = "put_team_repo",
+  ["DELETE /teams/{team_id}/repos/{owner}/{repo}"]                                 = "delete_team_repo",
+  ["GET /teams/{team_id}/teams"]                                                   = "get_team_children",
 
   -- Users (https://docs.github.com/en/rest/users)
   ["GET /user"]                                                                    = "get_user",
