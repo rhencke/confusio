@@ -66,6 +66,22 @@ local function translate_bb_repo(r)
 end
 
 -- Translate GitHub create/update request body to Bitbucket format.
+-- Map a Bitbucket user object to GitHub format.
+local function translate_bb_user(u)
+  if not u then return {} end
+  local links = u.links or {}
+  return {
+    login      = u.nickname or u.display_name or "",
+    id         = 0,
+    node_id    = u.account_id or "",
+    avatar_url = (links.avatar and links.avatar.href) or "",
+    html_url   = (links.html and links.html.href) or "",
+    type       = "User",
+    site_admin = false,
+    name       = u.display_name,
+  }
+end
+
 local function translate_bb_req(body_str)
   local req = DecodeJson(body_str or "{}")
   local bb = {}
@@ -157,6 +173,15 @@ local function translate_bb_hook(h)
   }
 end
 
+local function proxy_handler(xform, url_fn)
+  return function(...)
+    local args = {...}
+    proxy_json(
+      type(xform) == "function" and function(r) return xform(r, table.unpack(args)) end or xform,
+      fetch_json(url_fn(...)))
+  end
+end
+
 local function translate_bb_hook_req(body_str)
   local req = DecodeJson(body_str or "{}")
   local bb_events = {}
@@ -178,10 +203,9 @@ backend_impl = {
     else respond_json(503, "Service Unavailable", {}) end
   end,
 
-  get_repo = function(owner, repo_name)
-    proxy_json(translate_bb_repo,
-      fetch_json(base() .. "/repositories/" .. owner .. "/" .. repo_name))
-  end,
+  get_repo = proxy_handler(translate_bb_repo, function(o, r)
+    return base().."/repositories/"..o.."/"..r
+  end),
 
   patch_repo = function(owner, repo_name)
     proxy_json(translate_bb_repo,
@@ -336,10 +360,9 @@ backend_impl = {
         { per_page = "pagelen", page = "page" })))
   end,
 
-  get_repo_commit = function(owner, repo_name, sha)
-    proxy_json(translate_bb_commit,
-      fetch_json(base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/commit/" .. sha))
-  end,
+  get_repo_commit = proxy_handler(translate_bb_commit, function(o, r, sha)
+    return base().."/repositories/"..o.."/"..r.."/commit/"..sha
+  end),
 
   -- Commit statuses -----------------------------------------------------------
 
@@ -486,11 +509,9 @@ backend_impl = {
         "POST", EncodeJson(bb)))
   end,
 
-  get_repo_key = function(owner, repo_name, key_id)
-    proxy_json(translate_bb_key,
-      fetch_json(base() .. "/repositories/" .. owner .. "/" .. repo_name ..
-        "/deploy-keys/" .. key_id))
-  end,
+  get_repo_key = proxy_handler(translate_bb_key, function(o, r, key_id)
+    return base().."/repositories/"..o.."/"..r.."/deploy-keys/"..key_id
+  end),
 
   delete_repo_key = function(owner, repo_name, key_id)
     local url = base() .. "/repositories/" .. owner .. "/" .. repo_name ..
@@ -543,4 +564,14 @@ backend_impl = {
     elseif ok then respond_json(status, "Error", {})
     else respond_json(503, "Service Unavailable", {}) end
   end,
+
+  -- Users ---------------------------------------------------------------------
+
+  -- GET /user
+  get_user = proxy_handler(translate_bb_user, function() return base().."/user" end),
+
+  -- GET /users/{username}
+  get_users_username = proxy_handler(translate_bb_user, function(username)
+    return base().."/users/"..username
+  end),
 }

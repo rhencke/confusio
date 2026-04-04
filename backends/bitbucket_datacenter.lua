@@ -86,6 +86,22 @@ local function translate_bbs_repo(r, proj_key)
   }
 end
 
+-- Map a Bitbucket DC user object to GitHub format.
+local function translate_bbs_user(u)
+  if not u then return {} end
+  return {
+    login      = u.name or u.slug or "",
+    id         = u.id or 0,
+    node_id    = "",
+    avatar_url = "",
+    html_url   = "",
+    type       = "User",
+    site_admin = false,
+    name       = u.displayName or "",
+    email      = u.emailAddress or "",
+  }
+end
+
 local function translate_bbs_repos(data, proj_key)
   local repos = (data and data.values) or {}
   for i, r in ipairs(repos) do repos[i] = translate_bbs_repo(r, proj_key) end
@@ -173,6 +189,15 @@ local function translate_bbs_hook_req(body_str)
   })
 end
 
+local function proxy_handler(xform, url_fn)
+  return function(...)
+    local args = {...}
+    proxy_json(
+      type(xform) == "function" and function(r) return xform(r, table.unpack(args)) end or xform,
+      fetch_json(url_fn(...)))
+  end
+end
+
 -- Repo path helper: /projects/{owner}/repos/{repo}
 local function repo_path(owner, repo_name)
   return base() .. "/projects/" .. owner .. "/repos/" .. repo_name
@@ -185,11 +210,8 @@ backend_impl = {
     else respond_json(503, "Service Unavailable", {}) end
   end,
 
-  get_repo = function(owner, repo_name)
-    proxy_json(
-      function(r) return translate_bbs_repo(r, owner) end,
-      fetch_json(repo_path(owner, repo_name)))
-  end,
+  get_repo = proxy_handler(translate_bbs_repo,
+    function(owner, repo_name) return repo_path(owner, repo_name) end),
 
   patch_repo = function(owner, repo_name)
     proxy_json(
@@ -206,11 +228,9 @@ backend_impl = {
   end,
 
   -- GET /user/repos — DC: GET /repos (all repos visible to the auth'd user)
-  get_user_repos = function()
-    proxy_json(
-      function(data) return translate_bbs_repos(data) end,
-      fetch_json(bbs_page_url(base() .. "/repos")))
-  end,
+  get_user_repos = proxy_handler(translate_bbs_repos, function()
+    return bbs_page_url(base().."/repos")
+  end),
 
   post_user_repos = function()
     -- DC requires a project key; no generic "my repos" create endpoint.
@@ -218,11 +238,10 @@ backend_impl = {
       { message = "POST /user/repos requires a project key; use POST /orgs/{project}/repos" })
   end,
 
-  get_org_repos = function(project_key)
-    proxy_json(
-      function(data) return translate_bbs_repos(data, project_key) end,
-      fetch_json(bbs_page_url(base() .. "/projects/" .. project_key .. "/repos")))
-  end,
+  get_org_repos = proxy_handler(translate_bbs_repos,
+    function(project_key)
+      return bbs_page_url(base() .. "/projects/" .. project_key .. "/repos")
+    end),
 
   post_org_repos = function(project_key)
     proxy_json_created(
@@ -232,59 +251,50 @@ backend_impl = {
   end,
 
   -- GET /users/{username}/repos — via personal project ~username
-  get_users_repos = function(username)
-    proxy_json(
-      function(data) return translate_bbs_repos(data, "~" .. username) end,
-      fetch_json(bbs_page_url(base() .. "/projects/~" .. username .. "/repos")))
-  end,
+  get_users_repos = proxy_handler(
+    function(data, username) return translate_bbs_repos(data, "~" .. username) end,
+    function(username) return bbs_page_url(base() .. "/projects/~" .. username .. "/repos") end),
 
   -- GET /repositories — all repos visible to the authenticated user
-  get_repositories = function()
-    proxy_json(
-      function(data) return translate_bbs_repos(data) end,
-      fetch_json(bbs_page_url(base() .. "/repos")))
-  end,
+  get_repositories = proxy_handler(translate_bbs_repos, function()
+    return bbs_page_url(base().."/repos")
+  end),
 
   -- Tags -----------------------------------------------------------------------
   -- DC: GET /projects/{proj}/repos/{slug}/tags → { values: [{id, displayId, latestCommit}] }
 
-  get_repo_tags = function(owner, repo_name)
-    proxy_json(
-      function(data)
-        local tags = data.values or {}
-        local result = {}
-        for _, t in ipairs(tags) do
-          result[#result + 1] = {
-            name   = t.displayId or t.id or "",
-            commit = { sha = t.latestCommit or t.latestChangeset or "", url = "" },
-          }
-        end
-        return result
-      end,
-      fetch_json(bbs_page_url(repo_path(owner, repo_name) .. "/tags")))
-  end,
+  get_repo_tags = proxy_handler(
+    function(data)
+      local tags = data.values or {}
+      local result = {}
+      for _, t in ipairs(tags) do
+        result[#result + 1] = {
+          name   = t.displayId or t.id or "",
+          commit = { sha = t.latestCommit or t.latestChangeset or "", url = "" },
+        }
+      end
+      return result
+    end,
+    function(owner, repo_name) return bbs_page_url(repo_path(owner, repo_name).."/tags") end),
 
   -- Branches -------------------------------------------------------------------
 
-  get_repo_branches = function(owner, repo_name)
-    proxy_json(
-      function(data)
-        local branches = data.values or {}
-        for i, b in ipairs(branches) do branches[i] = translate_bbs_branch(b) end
-        return branches
-      end,
-      fetch_json(bbs_page_url(repo_path(owner, repo_name) .. "/branches")))
-  end,
+  get_repo_branches = proxy_handler(
+    function(data)
+      local branches = data.values or {}
+      for i, b in ipairs(branches) do branches[i] = translate_bbs_branch(b) end
+      return branches
+    end,
+    function(owner, repo_name) return bbs_page_url(repo_path(owner, repo_name).."/branches") end),
 
-  get_repo_branch = function(owner, repo_name, branch)
-    -- DC has no single-branch GET; query with filterText and return first match.
-    proxy_json(
-      function(data)
-        local b = (data.values or {})[1]
-        return b and translate_bbs_branch(b) or {}
-      end,
-      fetch_json(repo_path(owner, repo_name) .. "/branches?filterText=" .. branch .. "&limit=1"))
-  end,
+  get_repo_branch = proxy_handler(
+    function(data)
+      local b = (data.values or {})[1]
+      return b and translate_bbs_branch(b) or {}
+    end,
+    function(owner, repo_name, branch)
+      return repo_path(owner, repo_name).."/branches?filterText="..branch.."&limit=1"
+    end),
 
   -- Commits --------------------------------------------------------------------
 
@@ -304,10 +314,9 @@ backend_impl = {
       fetch_json(url))
   end,
 
-  get_repo_commit = function(owner, repo_name, sha)
-    proxy_json(translate_bbs_commit,
-      fetch_json(repo_path(owner, repo_name) .. "/commits/" .. sha))
-  end,
+  get_repo_commit = proxy_handler(translate_bbs_commit, function(owner, repo_name, sha)
+    return repo_path(owner, repo_name).."/commits/"..sha
+  end),
 
   -- Contents -------------------------------------------------------------------
   -- DC: GET /projects/{proj}/repos/{slug}/raw/{path}?at={ref}
@@ -356,11 +365,8 @@ backend_impl = {
 
   -- Forks ----------------------------------------------------------------------
 
-  get_repo_forks = function(owner, repo_name)
-    proxy_json(
-      function(data) return translate_bbs_repos(data, owner) end,
-      fetch_json(bbs_page_url(repo_path(owner, repo_name) .. "/forks")))
-  end,
+  get_repo_forks = proxy_handler(translate_bbs_repos,
+    function(owner, repo_name) return bbs_page_url(repo_path(owner, repo_name) .. "/forks") end),
 
   post_repo_forks = function(owner, repo_name)
     local req = DecodeJson(GetBody() or "{}")
@@ -377,15 +383,13 @@ backend_impl = {
   -- Deploy keys ----------------------------------------------------------------
   -- DC: /ssh endpoint (not /deploy-keys)
 
-  get_repo_keys = function(owner, repo_name)
-    proxy_json(
-      function(data)
-        local keys = data.values or {}
-        for i, k in ipairs(keys) do keys[i] = translate_bbs_key(k) end
-        return keys
-      end,
-      fetch_json(bbs_page_url(repo_path(owner, repo_name) .. "/ssh")))
-  end,
+  get_repo_keys = proxy_handler(
+    function(data)
+      local keys = data.values or {}
+      for i, k in ipairs(keys) do keys[i] = translate_bbs_key(k) end
+      return keys
+    end,
+    function(owner, repo_name) return bbs_page_url(repo_path(owner, repo_name).."/ssh") end),
 
   post_repo_keys = function(owner, repo_name)
     local req = DecodeJson(GetBody() or "{}")
@@ -398,10 +402,9 @@ backend_impl = {
         "POST", EncodeJson(bb)))
   end,
 
-  get_repo_key = function(owner, repo_name, key_id)
-    proxy_json(translate_bbs_key,
-      fetch_json(repo_path(owner, repo_name) .. "/ssh/" .. key_id))
-  end,
+  get_repo_key = proxy_handler(translate_bbs_key, function(owner, repo_name, key_id)
+    return repo_path(owner, repo_name).."/ssh/"..key_id
+  end),
 
   delete_repo_key = function(owner, repo_name, key_id)
     local dopts = auth() or {}; dopts.method = "DELETE"
@@ -413,15 +416,13 @@ backend_impl = {
 
   -- Webhooks -------------------------------------------------------------------
 
-  get_repo_hooks = function(owner, repo_name)
-    proxy_json(
-      function(data)
-        local hooks = data.values or {}
-        for i, h in ipairs(hooks) do hooks[i] = translate_bbs_hook(h) end
-        return hooks
-      end,
-      fetch_json(bbs_page_url(repo_path(owner, repo_name) .. "/webhooks")))
-  end,
+  get_repo_hooks = proxy_handler(
+    function(data)
+      local hooks = data.values or {}
+      for i, h in ipairs(hooks) do hooks[i] = translate_bbs_hook(h) end
+      return hooks
+    end,
+    function(owner, repo_name) return bbs_page_url(repo_path(owner, repo_name).."/webhooks") end),
 
   post_repo_hooks = function(owner, repo_name)
     proxy_json_created(translate_bbs_hook,
@@ -429,10 +430,9 @@ backend_impl = {
         "POST", translate_bbs_hook_req(GetBody())))
   end,
 
-  get_repo_hook = function(owner, repo_name, hook_id)
-    proxy_json(translate_bbs_hook,
-      fetch_json(repo_path(owner, repo_name) .. "/webhooks/" .. hook_id))
-  end,
+  get_repo_hook = proxy_handler(translate_bbs_hook, function(owner, repo_name, hook_id)
+    return repo_path(owner, repo_name).."/webhooks/"..hook_id
+  end),
 
   patch_repo_hook = function(owner, repo_name, hook_id)
     proxy_json(translate_bbs_hook,
@@ -448,9 +448,23 @@ backend_impl = {
     else respond_json(503, "Service Unavailable", {}) end
   end,
 
-  get_repo_hook_config = function(owner, repo_name, hook_id)
-    proxy_json(
-      function(h) return (translate_bbs_hook(h)).config or {} end,
-      fetch_json(repo_path(owner, repo_name) .. "/webhooks/" .. hook_id))
-  end,
+  get_repo_hook_config = proxy_handler(
+    function(h) return (translate_bbs_hook(h)).config or {} end,
+    function(owner, repo_name, hook_id) return repo_path(owner, repo_name).."/webhooks/"..hook_id end),
+
+  -- Users ---------------------------------------------------------------------
+
+  -- GET /users/{username}
+  get_users_username = proxy_handler(translate_bbs_user, function(username)
+    return base().."/users/"..username
+  end),
+
+  -- GET /users
+  get_users = proxy_handler(
+    function(data)
+      local users = (data and data.values) or {}
+      for i, u in ipairs(users) do users[i] = translate_bbs_user(u) end
+      return users
+    end,
+    function() return bbs_page_url(base().."/users") end),
 }

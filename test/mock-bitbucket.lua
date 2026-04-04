@@ -125,6 +125,17 @@ function OnHttpRequest()
     json('{"values":[{"uuid":"{1}","url":"https://example.com/hook",' ..
       '"events":["repo:push"],"active":true}],"pagelen":30,"size":1,"page":1}')
 
+  -- Users ------------------------------------------------------------------
+  elseif path == "/2.0/user" then
+    SetStatus(200, "OK")
+    json('{"account_id":"abc123","nickname":"octocat","display_name":"The Octocat",' ..
+      '"links":{"avatar":{"href":""},"html":{"href":"http://bitbucket.org/octocat"}}}')
+
+  elseif path == "/2.0/users/octocat" then
+    SetStatus(200, "OK")
+    json('{"account_id":"abc123","nickname":"octocat","display_name":"The Octocat",' ..
+      '"links":{"avatar":{"href":""},"html":{"href":"http://bitbucket.org/octocat"}}}')
+
   else
     SetStatus(404, "Not Found")
   end

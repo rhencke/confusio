@@ -105,6 +105,17 @@ function OnHttpRequest()
     json('{"values":[{"id":1,"name":"web","url":"https://example.com/hook",' ..
       '"events":["repo:refs_changed"],"active":true}],"isLastPage":true}')
 
+  -- Users ------------------------------------------------------------------
+  elseif path == "/rest/api/1.0/users/octocat" then
+    SetStatus(200, "OK")
+    json('{"id":1,"name":"octocat","slug":"octocat","displayName":"The Octocat",' ..
+      '"emailAddress":"octocat@github.com","type":"NORMAL","active":true}')
+
+  elseif path == "/rest/api/1.0/users" then
+    SetStatus(200, "OK")
+    json('{"values":[{"id":1,"name":"octocat","slug":"octocat","displayName":"The Octocat",' ..
+      '"emailAddress":"octocat@github.com","type":"NORMAL","active":true}],"isLastPage":true}')
+
   else
     SetStatus(404, "Not Found")
   end
