@@ -1,0 +1,176 @@
+function OnHttpRequest()
+  local path = GetPath()
+
+  local function json(body)
+    SetHeader("Content-Type", "application/json")
+    Write(body)
+  end
+
+  -- Redbean's Fetch decodes %2F to / before sending, so the mock receives plain slashes
+  local pb = "/api/v4/projects/octocat/hello-world"
+
+  -- Minimal GitLab project object
+  local PROJECT =
+    '{"id":1,"path":"hello-world","path_with_namespace":"octocat/hello-world",' ..
+    '"namespace":{"id":1,"path":"octocat","name":"octocat","kind":"user","avatar_url":"",' ..
+    '"web_url":"http://localhost/octocat"},' ..
+    '"visibility":"public","web_url":"http://localhost/octocat/hello-world",' ..
+    '"description":"My first repo","forked_from_project":null,' ..
+    '"http_url_to_repo":"http://localhost/octocat/hello-world.git",' ..
+    '"ssh_url_to_repo":"git@localhost:octocat/hello-world.git",' ..
+    '"statistics":{"repository_size":12345},"star_count":80,"forks_count":9,' ..
+    '"open_issues_count":0,"issues_enabled":true,"wiki_enabled":false,' ..
+    '"archived":false,"default_branch":"main",' ..
+    '"created_at":"2011-01-26T19:01:12Z","last_activity_at":"2011-01-26T19:14:43Z",' ..
+    '"topics":["lua","api"]}'
+
+  if path == "/api/v4/version" then
+    SetStatus(200, "OK")
+    json('{"version":"16.0.0","revision":"abc123"}')
+
+  -- Project ----------------------------------------------------------------
+  elseif path == pb then
+    SetStatus(200, "OK")
+    json(PROJECT)
+
+  elseif path == "/api/v4/projects" then
+    -- get_user_repos (?owned=true&membership=true) and get_repositories (?visibility=public)
+    SetStatus(200, "OK")
+    json('[' .. PROJECT .. ']')
+
+  elseif path == "/api/v4/groups/testorg/projects" then
+    SetStatus(200, "OK")
+    json('[' .. PROJECT .. ']')
+
+  -- Languages --------------------------------------------------------------
+  elseif path == pb .. "/languages" then
+    SetStatus(200, "OK")
+    json('{"JavaScript":66.69,"Lua":33.31}')
+
+  -- Contributors -----------------------------------------------------------
+  elseif path == pb .. "/repository/contributors" then
+    SetStatus(200, "OK")
+    json('[{"name":"octocat","email":"octocat@github.com","commits":100}]')
+
+  -- Tags -------------------------------------------------------------------
+  elseif path == pb .. "/repository/tags" then
+    SetStatus(200, "OK")
+    json('[{"name":"v1.0","commit":{"id":"abc123def456","message":"Release"}}]')
+
+  -- Branches ---------------------------------------------------------------
+  elseif path == pb .. "/repository/branches/main" then
+    SetStatus(200, "OK")
+    json('{"name":"main","commit":{"id":"abc123def456","message":"Initial commit"},"protected":false}')
+
+  elseif path == pb .. "/repository/branches" then
+    SetStatus(200, "OK")
+    json('[{"name":"main","commit":{"id":"abc123def456","message":"Initial commit"},"protected":false}]')
+
+  -- Commits ----------------------------------------------------------------
+  elseif path == pb .. "/repository/commits/abc123/statuses" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"status":"success","description":"Build passed","name":"ci",' ..
+      '"target_url":"http://ci.example.com","created_at":"2020-01-01T00:00:00Z",' ..
+      '"updated_at":"2020-01-01T00:00:00Z"}]')
+
+  elseif path == pb .. "/repository/commits/abc123" then
+    SetStatus(200, "OK")
+    json('{"id":"abc123def456","message":"Initial commit","author_name":"Octocat",' ..
+      '"author_email":"octocat@github.com","authored_date":"2011-01-26T19:01:12Z",' ..
+      '"web_url":"http://localhost/octocat/hello-world/-/commit/abc123def456"}')
+
+  elseif path == pb .. "/repository/commits" then
+    SetStatus(200, "OK")
+    json('[{"id":"abc123def456","message":"Initial commit","author_name":"Octocat",' ..
+      '"author_email":"octocat@github.com","authored_date":"2011-01-26T19:01:12Z",' ..
+      '"web_url":"http://localhost/octocat/hello-world/-/commit/abc123def456"}]')
+
+  -- Contents ---------------------------------------------------------------
+  elseif path == pb .. "/repository/files/README.md" then
+    SetStatus(200, "OK")
+    json('{"file_name":"README.md","file_path":"README.md","blob_id":"abc123",' ..
+      '"size":100,"encoding":"base64","content":"SGVsbG8gV29ybGQ="}')
+
+  -- Compare ----------------------------------------------------------------
+  elseif path == pb .. "/repository/compare" then
+    SetStatus(200, "OK")
+    json('{"commits":[],"diffs":[],"compare_timeout":false}')
+
+  -- Collaborators ----------------------------------------------------------
+  elseif path == pb .. "/members/all" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"username":"octocat","avatar_url":"","access_level":50}]')
+
+  elseif path == "/api/v4/users" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"username":"octocat","avatar_url":""}]')
+
+  elseif path == pb .. "/members/1" then
+    SetStatus(200, "OK")
+    json('{"id":1,"username":"octocat","access_level":50}')
+
+  -- Forks ------------------------------------------------------------------
+  elseif path == pb .. "/forks" then
+    SetStatus(200, "OK")
+    json('[{"id":3,"path":"hello-world","path_with_namespace":"forker/hello-world",' ..
+      '"namespace":{"id":2,"path":"forker","name":"forker","kind":"user","avatar_url":"",' ..
+      '"web_url":"http://localhost/forker"},' ..
+      '"visibility":"public","web_url":"http://localhost/forker/hello-world",' ..
+      '"description":"Fork","forked_from_project":{"id":1},' ..
+      '"http_url_to_repo":"http://localhost/forker/hello-world.git",' ..
+      '"ssh_url_to_repo":"git@localhost:forker/hello-world.git",' ..
+      '"star_count":0,"forks_count":0,"open_issues_count":0,' ..
+      '"issues_enabled":true,"wiki_enabled":false,"archived":false,"default_branch":"main",' ..
+      '"created_at":"2020-01-01T00:00:00Z","last_activity_at":"2020-01-01T00:00:00Z","topics":[]}]')
+
+  -- Releases ---------------------------------------------------------------
+  elseif path == pb .. "/releases/permalink/latest" then
+    SetStatus(200, "OK")
+    json('{"tag_name":"v1.0","name":"Release 1.0","description":"First release",' ..
+      '"created_at":"2020-01-01T00:00:00Z","released_at":"2020-01-01T00:00:00Z"}')
+
+  elseif path == pb .. "/releases/v1.0" then
+    SetStatus(200, "OK")
+    json('{"tag_name":"v1.0","name":"Release 1.0","description":"First release",' ..
+      '"created_at":"2020-01-01T00:00:00Z","released_at":"2020-01-01T00:00:00Z"}')
+
+  elseif path == pb .. "/releases" then
+    SetStatus(200, "OK")
+    json('[{"tag_name":"v1.0","name":"Release 1.0","description":"First release",' ..
+      '"created_at":"2020-01-01T00:00:00Z","released_at":"2020-01-01T00:00:00Z"}]')
+
+  -- Deploy keys ------------------------------------------------------------
+  elseif path == pb .. "/deploy_keys/1" then
+    SetStatus(200, "OK")
+    json('{"id":1,"title":"my key","key":"ssh-rsa AAAAB3...","can_push":false,' ..
+      '"created_at":"2020-01-01T00:00:00Z"}')
+
+  elseif path == pb .. "/deploy_keys" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"title":"my key","key":"ssh-rsa AAAAB3...","can_push":false,' ..
+      '"created_at":"2020-01-01T00:00:00Z"}]')
+
+  -- Webhooks ---------------------------------------------------------------
+  elseif path == pb .. "/hooks/1" then
+    SetStatus(200, "OK")
+    json('{"id":1,"url":"https://example.com/hook","push_events":true,"active":true}')
+
+  elseif path == pb .. "/hooks" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"url":"https://example.com/hook","push_events":true,"active":true}]')
+
+  -- Commit comments --------------------------------------------------------
+  elseif path == pb .. "/repository/commits/abc123/comments" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"note":"Nice commit","author":{"username":"octocat"},' ..
+      '"created_at":"2020-01-01T00:00:00Z"}]')
+
+  -- Users' repos -----------------------------------------------------------
+  elseif path == "/api/v4/users/octocat/projects" then
+    SetStatus(200, "OK")
+    json('[' .. PROJECT .. ']')
+
+  else
+    SetStatus(404, "Not Found")
+  end
+end

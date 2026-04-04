@@ -43,13 +43,20 @@ mock-gitea.com: redbean.com test/mock-gitea.lua
 	(cd .tmp-mock && zip -u ../mock-gitea.com .init.lua)
 	rm -rf .tmp-mock
 
+mock-gitlab.com: redbean.com test/mock-gitlab.lua
+	cp redbean.com mock-gitlab.com
+	@mkdir -p .tmp-mock
+	cp test/mock-gitlab.lua .tmp-mock/.init.lua
+	(cd .tmp-mock && zip -u ../mock-gitlab.com .init.lua)
+	rm -rf .tmp-mock
+
 .PHONY: build test test-unit test-integration validate-mock clean
 
 build: confusio.com
 
 test: test-unit test-integration
 
-test-unit: confusio.com mock-gitea.com hurl
+test-unit: confusio.com mock-gitea.com mock-gitlab.com hurl
 	bash test/test-unit.sh
 
 test-integration: confusio.com hurl
@@ -59,4 +66,4 @@ validate-mock: mock-gitea.com
 	bash test/test-mock-validate.sh
 
 clean:
-	rm -f redbean.com confusio.com mock-gitea.com hurl
+	rm -f redbean.com confusio.com mock-gitea.com mock-gitlab.com hurl

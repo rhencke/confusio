@@ -6,6 +6,7 @@ CONFUSIO_PORT=18080
 MOCK_PORT=18081
 CONFUSIO_BIN=$(pwd)/confusio.com
 MOCK_BIN=$(pwd)/mock-gitea.com
+MOCK_GITLAB_BIN=$(pwd)/mock-gitlab.com
 HURL=$(pwd)/hurl
 
 start_isolated() {
@@ -89,3 +90,9 @@ run_mock_phase test/gitea-repos.hurl $MOCK_ARGS
 
 # --- Phase 6: Extended Repos API (branches, commits, contents, releases, etc.) ---
 run_mock_phase test/gitea-repos-ext.hurl $MOCK_ARGS
+
+# --- Phase 7: GitLab backend ---
+_saved_mock="$MOCK_BIN"
+MOCK_BIN="$MOCK_GITLAB_BIN"
+run_mock_phase test/gitlab-repos.hurl -- backend=gitlab base_url=http://127.0.0.1:$MOCK_PORT
+MOCK_BIN="$_saved_mock"
