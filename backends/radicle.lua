@@ -173,4 +173,139 @@ backend_impl = {
   get_repo_teams = function()
     respond_json(404, "Not Found", { message = "Not Found" })
   end,
+
+  -- Branches ------------------------------------------------------------------
+  -- Radicle: GET /api/v1/repos/{rid}/branches → [{ name, head }]
+
+  get_repo_branches = function(_, rid)
+    proxy_json(
+      function(branches)
+        branches = branches or {}
+        local result = {}
+        for _, b in ipairs(branches) do
+          result[#result + 1] = {
+            name      = b.name or "",
+            commit    = { sha = b.head or "", url = "" },
+            protected = false,
+          }
+        end
+        return result
+      end,
+      fetch_json(base() .. "/repos/" .. rid .. "/branches"))
+  end,
+
+  get_repo_branch = function(_, rid, branch)
+    -- Fetch all branches and find the named one.
+    proxy_json(
+      function(branches)
+        for _, b in ipairs(branches or {}) do
+          if b.name == branch then
+            return { name = b.name, commit = { sha = b.head or "", url = "" }, protected = false }
+          end
+        end
+        return {}
+      end,
+      fetch_json(base() .. "/repos/" .. rid .. "/branches"))
+  end,
+
+  -- Commits -------------------------------------------------------------------
+  -- Radicle: GET /api/v1/repos/{rid}/commits?branch={branch}
+
+  get_repo_commits = function(_, rid)
+    local branch = GetParam("sha") or ""
+    local url = base() .. "/repos/" .. rid .. "/commits"
+    if branch ~= "" then url = url .. "?branch=" .. branch end
+    proxy_json(
+      function(commits)
+        commits = commits or {}
+        local result = {}
+        for _, c in ipairs(commits) do
+          local author = c.author or {}
+          result[#result + 1] = {
+            sha    = c.id or "",
+            commit = {
+              message   = c.message or "",
+              author    = { name = author.name or "", email = author.email or "", date = "" },
+              committer = { name = author.name or "", email = author.email or "", date = "" },
+            },
+            author    = { login = author.name or "", id = 0, avatar_url = "" },
+            committer = { login = author.name or "", id = 0, avatar_url = "" },
+          }
+        end
+        return result
+      end,
+      fetch_json(url))
+  end,
+
+  get_repo_commit = function(_, rid, ref)
+    proxy_json(
+      function(c)
+        if not c then return {} end
+        local author = c.author or {}
+        return {
+          sha    = c.id or "",
+          commit = {
+            message   = c.message or "",
+            author    = { name = author.name or "", email = author.email or "", date = "" },
+            committer = { name = author.name or "", email = author.email or "", date = "" },
+          },
+        }
+      end,
+      fetch_json(base() .. "/repos/" .. rid .. "/commits/" .. ref))
+  end,
+
+  -- Contents ------------------------------------------------------------------
+  -- Radicle: GET /api/v1/repos/{rid}/blob/{commit}/{path} — raw bytes
+
+  get_repo_readme = function(_, rid)
+    local ref = GetParam("ref") or "HEAD"
+    local candidates = { "README.md", "README", "readme.md", "README.rst" }
+    for _, fname in ipairs(candidates) do
+      local ok, status, _, body = fetch_json(
+        base() .. "/repos/" .. rid .. "/blob/" .. ref .. "/" .. fname)
+      if ok and status == 200 then
+        respond_json(200, "OK", {
+          type     = "file", name = fname, path = fname, sha = "",
+          size     = #body, encoding = "base64", content = EncodeBase64(body),
+        })
+        return
+      end
+    end
+    respond_json(404, "Not Found", { message = "Not Found" })
+  end,
+
+  get_repo_content = function(_, rid, path)
+    local ref = GetParam("ref") or "HEAD"
+    local ok, status, _, body = fetch_json(
+      base() .. "/repos/" .. rid .. "/blob/" .. ref .. "/" .. path)
+    if ok and status == 200 then
+      respond_json(200, "OK", {
+        type     = "file",
+        name     = path:match("[^/]+$") or path,
+        path     = path,
+        sha      = "",
+        size     = #body,
+        encoding = "base64",
+        content  = EncodeBase64(body),
+      })
+    elseif ok then respond_json(status, "Error", { message = "Error" })
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- Users' repos --------------------------------------------------------------
+
+  get_users_repos = function(username)
+    -- Radicle: list repos seeded by a specific node/delegate
+    proxy_json(translate_radicle_repos,
+      fetch_json(append_page_params(
+        base() .. "/repos?show=all&delegate=" .. username,
+        { per_page = "perPage", page = "page" })))
+  end,
+
+  get_repositories = function()
+    proxy_json(translate_radicle_repos,
+      fetch_json(append_page_params(base() .. "/repos?show=all",
+        { per_page = "perPage", page = "page" })))
+  end,
+
 }
