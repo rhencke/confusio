@@ -607,4 +607,100 @@ backend_impl = {
     return append_page_params(base().."/orgs/"..org.."/teams/"..slug.."/teams",
       {per_page="per_page",page="page"})
   end),
+
+  -- Legacy team-by-id API (/teams/{team_id}) ------------------------------------
+
+  get_user_teams = proxy_handler(nil, function()
+    return append_page_params(base().."/user/teams", {per_page="per_page",page="page"})
+  end),
+
+  get_team = proxy_handler(nil, function(team_id)
+    return base().."/teams/"..team_id
+  end),
+
+  patch_team = function(team_id)
+    proxy_json(nil, fetch_json(base().."/teams/"..team_id, "PATCH", GetBody()))
+  end,
+
+  delete_team = function(team_id)
+    local ok, status = fetch_json(base().."/teams/"..team_id, "DELETE")
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  get_team_invitations = proxy_handler(nil, function(team_id)
+    return append_page_params(base().."/teams/"..team_id.."/invitations",
+      {per_page="per_page",page="page"})
+  end),
+
+  get_team_members = proxy_handler(nil, function(team_id)
+    return append_page_params(base().."/teams/"..team_id.."/members",
+      {per_page="per_page",page="page"})
+  end),
+
+  get_team_member = function(team_id, username)
+    local ok, status = pcall(Fetch,
+      base().."/teams/"..team_id.."/members/"..username, auth())
+    if ok and status == 204 then SetStatus(204, "No Content")
+    elseif ok then respond_json(404, "Not Found", { message = "Not Found" })
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  put_team_member = function(team_id, username)
+    set_204_or_error("PUT", base().."/teams/"..team_id.."/members/"..username)
+  end,
+
+  delete_team_member = function(team_id, username)
+    set_204_or_error("DELETE", base().."/teams/"..team_id.."/members/"..username)
+  end,
+
+  get_team_membership = proxy_handler(nil, function(team_id, username)
+    return base().."/teams/"..team_id.."/memberships/"..username
+  end),
+
+  put_team_membership = function(team_id, username)
+    proxy_json(nil,
+      fetch_json(base().."/teams/"..team_id.."/memberships/"..username,
+        "PUT", GetBody()))
+  end,
+
+  delete_team_membership = function(team_id, username)
+    local ok, status = fetch_json(
+      base().."/teams/"..team_id.."/memberships/"..username, "DELETE")
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  get_team_repos = proxy_handler(nil, function(team_id)
+    return append_page_params(base().."/teams/"..team_id.."/repos",
+      {per_page="per_page",page="page"})
+  end),
+
+  get_team_repo = proxy_handler(nil, function(team_id, owner, repo_name)
+    return base().."/teams/"..team_id.."/repos/"..owner.."/"..repo_name
+  end),
+
+  put_team_repo = function(team_id, owner, repo_name)
+    local ok, status = fetch_json(
+      base().."/teams/"..team_id.."/repos/"..owner.."/"..repo_name,
+      "PUT", GetBody())
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  delete_team_repo = function(team_id, owner, repo_name)
+    local ok, status = fetch_json(
+      base().."/teams/"..team_id.."/repos/"..owner.."/"..repo_name, "DELETE")
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  get_team_children = proxy_handler(nil, function(team_id)
+    return append_page_params(base().."/teams/"..team_id.."/teams",
+      {per_page="per_page",page="page"})
+  end),
 }

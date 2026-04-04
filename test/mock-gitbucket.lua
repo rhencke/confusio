@@ -309,6 +309,48 @@ function OnHttpRequest()
     SetStatus(200, "OK")
     json('[]')
 
+  -- Legacy team-by-id API -------------------------------------------------------
+  elseif path == "/api/v3/user/teams" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"name":"core","slug":"core","description":"Core team",' ..
+      '"privacy":"closed","permission":"push","members_url":"","repositories_url":""}]')
+
+  elseif path == "/api/v3/teams/1" then
+    SetStatus(200, "OK")
+    json('{"id":1,"name":"core","slug":"core","description":"Core team",' ..
+      '"privacy":"closed","permission":"push","members_url":"","repositories_url":""}')
+
+  elseif path == "/api/v3/teams/1/members" then
+    SetStatus(200, "OK")
+    json('[{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User"}]')
+
+  elseif path == "/api/v3/teams/1/members/octocat" then
+    SetStatus(204, "No Content")
+
+  elseif path == "/api/v3/teams/1/memberships/octocat" then
+    SetStatus(200, "OK")
+    json('{"url":"","role":"member","state":"active"}')
+
+  elseif path == "/api/v3/teams/1/repos" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"name":"hello-world","full_name":"testorg/hello-world","private":false,' ..
+      '"owner":{"login":"testorg","id":2,"node_id":"","avatar_url":"","html_url":"","type":"Organization"},' ..
+      '"html_url":"","default_branch":"main","visibility":"public"}]')
+
+  elseif path == "/api/v3/teams/1/repos/testorg/hello-world" then
+    SetStatus(200, "OK")
+    json('{"id":1,"name":"hello-world","full_name":"testorg/hello-world","private":false,' ..
+      '"owner":{"login":"testorg","id":2,"node_id":"","avatar_url":"","html_url":"","type":"Organization"},' ..
+      '"html_url":"","default_branch":"main","visibility":"public"}')
+
+  elseif path == "/api/v3/teams/1/invitations" then
+    SetStatus(200, "OK")
+    json('[]')
+
+  elseif path == "/api/v3/teams/1/teams" then
+    SetStatus(200, "OK")
+    json('[]')
+
   else
     SetStatus(404, "Not Found")
   end
