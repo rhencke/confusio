@@ -38,16 +38,16 @@ confusio.com: redbean.com .init.lua $(wildcard backends/*.lua)
 
 mock-%.com: redbean.com test/mock-%.lua
 	cp redbean.com $@
-	@mkdir -p .tmp-mock
-	cp test/mock-$*.lua .tmp-mock/.init.lua
-	(cd .tmp-mock && zip -u ../$@ .init.lua)
-	rm -rf .tmp-mock
+	@mkdir -p .tmp-mock-$*
+	cp test/mock-$*.lua .tmp-mock-$*/.init.lua
+	(cd .tmp-mock-$* && zip -u ../$@ .init.lua)
+	rm -rf .tmp-mock-$*
 
 # Backend test configuration.
 # To add a backend: append to BACKENDS (ports auto-assigned from 18080).
 # Each backend needs test/mock-<name>.lua (symlink ok) and
 # test/<name>-repos.hurl + test/<name>-users.hurl (symlinks ok).
-BACKENDS = azuredevops bitbucket bitbucket_datacenter codeberg forgejo gitbucket gitea gitlab gogs \
+BACKENDS = azuredevops bitbucket bitbucket_datacenter codeberg forgejo gerrit gitbucket gitea gitlab gogs \
            harness kallithea launchpad notabug onedev pagure phabricator radicle \
            rhodecode sourceforge sourcehut
 MOCKS    = $(addprefix mock-,$(addsuffix .com,$(BACKENDS)))
