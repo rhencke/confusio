@@ -107,6 +107,62 @@ function OnHttpRequest()
     SetStatus(201, "Created")
     json(REPO)
 
+  -- Teams --------------------------------------------------------------------
+  -- ADO: /_apis/projects/{project}/teams
+
+  elseif path == "/_apis/projects/testorg/teams" and method == "GET" then
+    SetStatus(200, "OK")
+    json('{"count":1,"value":[' ..
+      '{"id":"team-abc123","name":"core","description":"Core team",' ..
+      '"url":"","identityUrl":"","projectId":"proj-testorg","projectName":"testorg"}' ..
+      ']}')
+
+  elseif path == "/_apis/projects/testorg/teams" and method == "POST" then
+    SetStatus(201, "Created")
+    json('{"id":"team-new-123","name":"newteam","description":"",' ..
+      '"url":"","identityUrl":"","projectId":"proj-testorg","projectName":"testorg"}')
+
+  elseif path == "/_apis/projects/testorg/teams/team-abc123" and method == "PATCH" then
+    SetStatus(200, "OK")
+    json('{"id":"team-abc123","name":"core","description":"Core team",' ..
+      '"url":"","identityUrl":"","projectId":"proj-testorg","projectName":"testorg"}')
+
+  elseif path == "/_apis/projects/testorg/teams/team-abc123" and method == "DELETE" then
+    SetStatus(204, "No Content")
+
+  elseif path == "/_apis/projects/testorg/teams/team-abc123/members" and method == "GET" then
+    SetStatus(200, "OK")
+    json('{"count":1,"value":[{"isTeamAdmin":false,' ..
+      '"identity":{"id":"user-abc123","displayName":"The Octocat","uniqueName":"octocat",' ..
+      '"url":"","imageUrl":""}}]}')
+
+  elseif path == "/_apis/projects/testorg/teams/team-abc123/members" and method == "POST" then
+    SetStatus(200, "OK")
+    json('{}')
+
+  elseif path:find("^/_apis/projects/testorg/teams/team%-abc123/members/") and method == "DELETE" then
+    SetStatus(204, "No Content")
+
+  -- All teams (get_user_teams: GET /_apis/teams) -----------------------------
+  elseif path == "/_apis/teams" and method == "GET" then
+    SetStatus(200, "OK")
+    json('{"count":1,"value":[' ..
+      '{"id":"team-abc123","name":"core","description":"Core team",' ..
+      '"projectId":"proj-testorg","projectName":"testorg",' ..
+      '"url":"","identityUrl":""}' ..
+      ']}')
+
+  -- Single team by GUID (get_team: GET /_apis/teams/{team_id}) ---------------
+  elseif path == "/_apis/teams/team-abc123" then
+    SetStatus(200, "OK")
+    json('{"id":"team-abc123","name":"core","description":"Core team",' ..
+      '"projectId":"proj-testorg","projectName":"testorg",' ..
+      '"url":"","identityUrl":""}')
+
+  elseif path:find("^/_apis/teams/") then
+    SetStatus(404, "Not Found")
+    json('{"message":"Not Found"}')
+
   -- Webhooks subscriptions (get_repo_hooks second step) --------------------
   elseif path == "/_apis/hooks/subscriptions" then
     SetStatus(200, "OK")

@@ -4,6 +4,7 @@
 
 local base = function() return config.base_url .. "/gateway/code/api/v1" end
 local auth = function() return make_fetch_opts("bearer") end
+local PAGES = {per_page="limit",page="page"}
 
 local function fetch_json(url, method, body)
   local opts = auth()
@@ -191,7 +192,7 @@ backend_impl = {
   end,
 
   get_user_repos = proxy_handler(translate_harness_repos, function()
-    return append_page_params(base().."/repos", {per_page="limit",page="page"})
+    return append_page_params(base().."/repos", PAGES)
   end),
 
   post_user_repos = function()
@@ -200,7 +201,7 @@ backend_impl = {
   end,
 
   get_org_repos = proxy_handler(translate_harness_repos, function(space)
-    return append_page_params(base().."/spaces/"..space.."/repos", {per_page="limit",page="page"})
+    return append_page_params(base().."/spaces/"..space.."/repos", PAGES)
   end),
 
   post_org_repos = function(space)
@@ -222,7 +223,7 @@ backend_impl = {
       end,
       fetch_json(append_page_params(
         base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/tags",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   -- Branches ------------------------------------------------------------------
@@ -236,7 +237,7 @@ backend_impl = {
       end,
       fetch_json(append_page_params(
         base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/branches",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   get_repo_branch = proxy_handler(translate_harness_branch, function(owner, repo_name, branch)
@@ -249,7 +250,7 @@ backend_impl = {
     local ref = GetParam("sha") or ""
     local url = base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/commits"
     if ref ~= "" then url = url .. "?git_ref=" .. ref end
-    url = append_page_params(url, { per_page = "limit", page = "page" })
+    url = append_page_params(url, PAGES)
     proxy_json(
       function(commits)
         commits = commits or {}
@@ -320,7 +321,7 @@ backend_impl = {
 
   get_repo_forks = proxy_handler(translate_harness_repos, function(owner, repo_name)
     return append_page_params(
-      base().."/repos/"..repo_ref(owner, repo_name).."/forks", {per_page="limit",page="page"})
+      base().."/repos/"..repo_ref(owner, repo_name).."/forks", PAGES)
   end),
 
   post_repo_forks = function(owner, repo_name)
@@ -340,7 +341,7 @@ backend_impl = {
       end,
       fetch_json(append_page_params(
         base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/keys",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   post_repo_keys = function(owner, repo_name)
@@ -375,7 +376,7 @@ backend_impl = {
       end,
       fetch_json(append_page_params(
         base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/webhooks",
-        { per_page = "limit", page = "page" })))
+        PAGES)))
   end,
 
   post_repo_hooks = function(owner, repo_name)
@@ -458,7 +459,7 @@ backend_impl = {
   -- Users' repos --------------------------------------------------------------
 
   get_users_repos = proxy_handler(translate_harness_repos, function(username)
-    return append_page_params(base().."/spaces/"..username.."/repos", {per_page="limit",page="page"})
+    return append_page_params(base().."/spaces/"..username.."/repos", PAGES)
   end),
 
   -- Users ---------------------------------------------------------------------

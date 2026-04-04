@@ -108,6 +108,58 @@ local function translate_ado_tag(t)
   return { name = name, commit = { sha = t.objectId or "", url = "" } }
 end
 
+-- Teams -----------------------------------------------------------------------
+-- ADO: GET /_apis/projects/{project}/teams (project = GitHub org)
+
+local function ado_team_slug(name)
+  return (name or ""):lower():gsub("[^%w%-]", "-")
+end
+
+local function translate_ado_team(t)
+  if not t then return {} end
+  return {
+    id                   = 0,
+    node_id              = t.id or "",
+    name                 = t.name or "",
+    slug                 = ado_team_slug(t.name),
+    description          = t.description or "",
+    privacy              = "closed",
+    notification_setting = "notifications_enabled",
+    permission           = "pull",
+    members_url          = "",
+    repositories_url     = "",
+    parent               = nil,
+  }
+end
+
+local function ado_find_team(org, slug)
+  local ok, status, _, body = fetch_json(
+    ado_url(config.base_url .. "/_apis/projects/" .. org .. "/teams"))
+  if not ok or status ~= 200 then return nil end
+  for _, t in ipairs((DecodeJson(body) or {}).value or {}) do
+    if ado_team_slug(t.name) == slug then return t end
+  end
+  return nil
+end
+
+-- Fetch a team directly by its ADO GUID (uses /_apis/teams/{id}).
+-- Returns the team object (which includes projectName) or nil on failure.
+local function ado_get_team_by_id(team_id)
+  local ok, status, _, body = fetch_json(
+    ado_url(config.base_url .. "/_apis/teams/" .. team_id))
+  if not ok or status ~= 200 then return nil end
+  return DecodeJson(body) or nil
+end
+
+-- Fetch members for a team given its GUID and project name.
+-- Returns the parsed response body or nil on failure.
+local function ado_fetch_team_members(proj, team_id)
+  local ok, status, _, body = fetch_json(ado_url(config.base_url ..
+    "/_apis/projects/" .. proj .. "/teams/" .. team_id .. "/members"))
+  if not ok or status ~= 200 then return nil end
+  return DecodeJson(body) or nil
+end
+
 -- ADO webhook: { id, url, publisherInputs: { repository }, status, eventType }
 local function translate_ado_hook(h)
   if not h then return {} end
@@ -373,5 +425,297 @@ backend_impl = {
       end,
       fetch_json(ado_url(repos_base(username))))
   end,
+
+  -- Teams ---------------------------------------------------------------------
+
+  get_org_teams = function(org)
+    proxy_json(
+      function(data)
+        local result = {}
+        for _, t in ipairs(data.value or {}) do result[#result + 1] = translate_ado_team(t) end
+        return result
+      end,
+      fetch_json(ado_url(config.base_url .. "/_apis/projects/" .. org .. "/teams")))
+  end,
+
+  post_org_teams = function(org)
+    local req = DecodeJson(GetBody() or "{}")
+    local a = { name = req.name or "", description = req.description or "" }
+    proxy_json_created(translate_ado_team,
+      fetch_json(ado_url(config.base_url .. "/_apis/projects/" .. org .. "/teams"),
+        "POST", EncodeJson(a)))
+  end,
+
+  get_org_team = function(org, slug)
+    local t = ado_find_team(org, slug)
+    if not t then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    respond_json(200, "OK", translate_ado_team(t))
+  end,
+
+  patch_org_team = function(org, slug)
+    local t = ado_find_team(org, slug)
+    if not t then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local req = DecodeJson(GetBody() or "{}")
+    local a = {}
+    if req.name        then a.name        = req.name        end
+    if req.description then a.description = req.description end
+    proxy_json(translate_ado_team,
+      fetch_json(ado_url(config.base_url .. "/_apis/projects/" .. org ..
+        "/teams/" .. t.id), "PATCH", EncodeJson(a)))
+  end,
+
+  delete_org_team = function(org, slug)
+    local t = ado_find_team(org, slug)
+    if not t then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local dopts = auth() or {}; dopts.method = "DELETE"
+    local ok, status = pcall(Fetch,
+      ado_url(config.base_url .. "/_apis/projects/" .. org .. "/teams/" .. t.id), dopts)
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  get_org_team_invitations = function() Write("[]") end,
+
+  get_org_team_members = function(org, slug)
+    local t = ado_find_team(org, slug)
+    if not t then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    proxy_json(
+      function(data)
+        local result = {}
+        for _, m in ipairs(data.value or {}) do
+          local ident = m.identity or {}
+          result[#result + 1] = {
+            login      = ident.uniqueName or ident.displayName or "",
+            id         = 0,
+            node_id    = ident.id or "",
+            avatar_url = ident.imageUrl or "",
+            type       = "User",
+          }
+        end
+        return result
+      end,
+      fetch_json(ado_url(config.base_url .. "/_apis/projects/" .. org ..
+        "/teams/" .. t.id .. "/members")))
+  end,
+
+  get_org_team_membership = function(org, slug, username)
+    local t = ado_find_team(org, slug)
+    if not t then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local ok, status, _, body = fetch_json(ado_url(config.base_url ..
+      "/_apis/projects/" .. org .. "/teams/" .. t.id .. "/members"))
+    if not ok or status ~= 200 then
+      respond_json(ok and status or 503, "Error", {}); return
+    end
+    for _, m in ipairs((DecodeJson(body) or {}).value or {}) do
+      local ident = m.identity or {}
+      local name  = ident.uniqueName or ident.displayName or ""
+      local short = name:match("^([^@]+)") or name
+      if name == username or short == username then
+        respond_json(200, "OK", {
+          url   = "",
+          role  = m.isTeamAdmin and "maintainer" or "member",
+          state = "active",
+        })
+        return
+      end
+    end
+    respond_json(404, "Not Found", { message = "Not Found" })
+  end,
+
+  -- ADO team membership is managed through security groups (no simple add/remove
+  -- in the Teams REST API). Forward as best-effort and pass through the response.
+  put_org_team_membership = function(org, slug, username)
+    local t = ado_find_team(org, slug)
+    if not t then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local req = DecodeJson(GetBody() or "{}")
+    local role = req.role or "member"
+    local ok, status = fetch_json(
+      ado_url(config.base_url .. "/_apis/projects/" .. org ..
+        "/teams/" .. t.id .. "/members"),
+      "POST", EncodeJson({ id = username }))
+    -- ADO may return 400/404 here if the username isn't an AAD object ID; surface gracefully.
+    if ok and status == 200 then
+      respond_json(200, "OK", { url = "", role = role, state = "active" })
+    elseif ok and (status == 204 or status == 201) then
+      respond_json(200, "OK", { url = "", role = role, state = "active" })
+    else
+      respond_json(200, "OK", { url = "", role = role, state = "pending" })
+    end
+  end,
+
+  delete_org_team_membership = function(org, slug, username)
+    local t = ado_find_team(org, slug)
+    if not t then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local dopts = auth() or {}; dopts.method = "DELETE"
+    pcall(Fetch, ado_url(config.base_url .. "/_apis/projects/" .. org ..
+      "/teams/" .. t.id .. "/members/" .. username), dopts)
+    SetStatus(204, "No Content")
+  end,
+
+  -- ADO does not model team-repo associations at this level; return empty list.
+  get_org_team_repos = function() Write("[]") end,
+  -- PUT/DELETE team repo not supported in ADO model.
+  put_org_team_repo = function()
+    respond_json(422, "Unprocessable Entity",
+      { message = "Team repository associations are not supported by Azure DevOps" })
+  end,
+  delete_org_team_repo = function()
+    SetStatus(204, "No Content")
+  end,
+
+  get_org_team_children = function() Write("[]") end,
+
+  -- Legacy team-by-id API (/teams/{team_id}) ----------------------------------
+  -- team_id is the ADO team GUID (e.g. "team-abc123").
+
+  get_user_teams = function()
+    proxy_json(
+      function(data)
+        local result = {}
+        for _, t in ipairs(data.value or {}) do result[#result + 1] = translate_ado_team(t) end
+        return result
+      end,
+      fetch_json(ado_url(config.base_url .. "/_apis/teams")))
+  end,
+
+  get_team = function(team_id)
+    local t = ado_get_team_by_id(team_id)
+    if not t then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    respond_json(200, "OK", translate_ado_team(t))
+  end,
+
+  patch_team = function(team_id)
+    local t = ado_get_team_by_id(team_id)
+    if not t then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local req = DecodeJson(GetBody() or "{}")
+    local a = {}
+    if req.name        then a.name        = req.name        end
+    if req.description then a.description = req.description end
+    proxy_json(translate_ado_team,
+      fetch_json(ado_url(config.base_url .. "/_apis/projects/" .. (t.projectName or "") ..
+        "/teams/" .. team_id), "PATCH", EncodeJson(a)))
+  end,
+
+  delete_team = function(team_id)
+    local t = ado_get_team_by_id(team_id)
+    if not t then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local dopts = auth() or {}; dopts.method = "DELETE"
+    local ok, status = pcall(Fetch,
+      ado_url(config.base_url .. "/_apis/projects/" .. (t.projectName or "") ..
+        "/teams/" .. team_id), dopts)
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  get_team_invitations = function() Write("[]") end,
+
+  get_team_members = function(team_id)
+    local t = ado_get_team_by_id(team_id)
+    if not t then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local data = ado_fetch_team_members(t.projectName or "", team_id)
+    if not data then respond_json(503, "Service Unavailable", {}); return end
+    local result = {}
+    for _, m in ipairs(data.value or {}) do
+      local ident = m.identity or {}
+      result[#result + 1] = {
+        login      = ident.uniqueName or ident.displayName or "",
+        id         = 0,
+        node_id    = ident.id or "",
+        avatar_url = ident.imageUrl or "",
+        type       = "User",
+      }
+    end
+    respond_json(200, "OK", result)
+  end,
+
+  get_team_member = function(team_id, username)
+    local t = ado_get_team_by_id(team_id)
+    if not t then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local data = ado_fetch_team_members(t.projectName or "", team_id)
+    if not data then respond_json(503, "Service Unavailable", {}); return end
+    for _, m in ipairs(data.value or {}) do
+      local ident = m.identity or {}
+      local name  = ident.uniqueName or ident.displayName or ""
+      local short = name:match("^([^@]+)") or name
+      if name == username or short == username then
+        SetStatus(204, "No Content"); return
+      end
+    end
+    respond_json(404, "Not Found", { message = "Not Found" })
+  end,
+
+  put_team_member = function(team_id, username)
+    local t = ado_get_team_by_id(team_id)
+    if not t then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    fetch_json(ado_url(config.base_url .. "/_apis/projects/" .. (t.projectName or "") ..
+      "/teams/" .. team_id .. "/members"), "POST", EncodeJson({ id = username }))
+    SetStatus(204, "No Content")
+  end,
+
+  delete_team_member = function(team_id, username)
+    local t = ado_get_team_by_id(team_id)
+    if not t then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local dopts = auth() or {}; dopts.method = "DELETE"
+    pcall(Fetch, ado_url(config.base_url .. "/_apis/projects/" .. (t.projectName or "") ..
+      "/teams/" .. team_id .. "/members/" .. username), dopts)
+    SetStatus(204, "No Content")
+  end,
+
+  get_team_membership = function(team_id, username)
+    local t = ado_get_team_by_id(team_id)
+    if not t then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local data = ado_fetch_team_members(t.projectName or "", team_id)
+    if not data then respond_json(503, "Service Unavailable", {}); return end
+    for _, m in ipairs(data.value or {}) do
+      local ident = m.identity or {}
+      local name  = ident.uniqueName or ident.displayName or ""
+      local short = name:match("^([^@]+)") or name
+      if name == username or short == username then
+        respond_json(200, "OK", {
+          url   = "",
+          role  = m.isTeamAdmin and "maintainer" or "member",
+          state = "active",
+        })
+        return
+      end
+    end
+    respond_json(404, "Not Found", { message = "Not Found" })
+  end,
+
+  put_team_membership = function(team_id, username)
+    local t = ado_get_team_by_id(team_id)
+    if not t then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local req = DecodeJson(GetBody() or "{}")
+    local role = req.role or "member"
+    local ok, status = fetch_json(
+      ado_url(config.base_url .. "/_apis/projects/" .. (t.projectName or "") ..
+        "/teams/" .. team_id .. "/members"),
+      "POST", EncodeJson({ id = username }))
+    if ok and (status == 200 or status == 201 or status == 204) then
+      respond_json(200, "OK", { url = "", role = role, state = "active" })
+    else
+      respond_json(200, "OK", { url = "", role = role, state = "pending" })
+    end
+  end,
+
+  delete_team_membership = function(team_id, username)
+    local t = ado_get_team_by_id(team_id)
+    if not t then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local dopts = auth() or {}; dopts.method = "DELETE"
+    pcall(Fetch, ado_url(config.base_url .. "/_apis/projects/" .. (t.projectName or "") ..
+      "/teams/" .. team_id .. "/members/" .. username), dopts)
+    SetStatus(204, "No Content")
+  end,
+
+  get_team_repos    = function() Write("[]") end,
+  get_team_repo     = function() respond_json(404, "Not Found", { message = "Not Found" }) end,
+  put_team_repo     = function()
+    respond_json(422, "Unprocessable Entity",
+      { message = "Team repository associations are not supported by Azure DevOps" })
+  end,
+  delete_team_repo  = function() SetStatus(204, "No Content") end,
+  get_team_children = function() Write("[]") end,
 
 }

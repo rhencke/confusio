@@ -5,6 +5,7 @@
 
 local base = function() return config.base_url .. "/api/v1" end
 local auth = function() return make_fetch_opts("bearer") end
+local PAGES = { per_page = "perPage", page = "page" }
 
 local function fetch_json(url, method, body)
   local opts = auth()
@@ -115,7 +116,7 @@ backend_impl = {
     -- Radicle: list repos seeded/hosted locally
     proxy_json(translate_radicle_repos,
       fetch_json(append_page_params(base() .. "/repos?show=local",
-        { per_page = "perPage", page = "page" })))
+        PAGES)))
   end,
 
   post_user_repos = function()
@@ -265,13 +266,13 @@ backend_impl = {
     proxy_json(translate_radicle_repos,
       fetch_json(append_page_params(
         base() .. "/repos?show=all&delegate=" .. username,
-        { per_page = "perPage", page = "page" })))
+        PAGES)))
   end,
 
   get_repositories = function()
     proxy_json(translate_radicle_repos,
       fetch_json(append_page_params(base() .. "/repos?show=all",
-        { per_page = "perPage", page = "page" })))
+        PAGES)))
   end,
 
 }

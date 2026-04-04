@@ -216,6 +216,23 @@ if not backend_impl.get_root then
   backend_impl.get_root = function() respond_json(200, "OK", {}) end
 end
 
+-- Teams list defaults: backends without a native teams concept return empty arrays.
+-- Individual-item and mutating endpoints fall through to 404 (nil handler).
+local function teams_empty()
+  SetStatus(200, "OK")
+  SetHeader("Content-Type", "application/json; charset=utf-8")
+  Write("[]")
+end
+for _, ep in ipairs({
+  "get_org_teams", "get_org_team_invitations",
+  "get_org_team_members", "get_org_team_repos", "get_org_team_children",
+  -- Legacy team-by-id list endpoints
+  "get_user_teams",
+  "get_team_invitations", "get_team_members", "get_team_repos", "get_team_children",
+}) do
+  if not backend_impl[ep] then backend_impl[ep] = teams_empty end
+end
+
 -- Handlers resolved once at startup; backend is fixed for the program's lifetime.
 -- Registered routes not implemented by the backend return 404.
 local handle = backend_impl
@@ -434,6 +451,42 @@ local routes = {
   ["GET /repos/{owner}/{repo}/deployments/{deployment_id}/statuses"]           = "get_repo_deployment_statuses",
   ["POST /repos/{owner}/{repo}/deployments/{deployment_id}/statuses"]          = "post_repo_deployment_status",
   ["GET /repos/{owner}/{repo}/deployments/{deployment_id}/statuses/{status_id}"] = "get_repo_deployment_status",
+
+  -- Teams (https://docs.github.com/en/rest/teams)
+  ["GET /orgs/{org}/teams"]                                                       = "get_org_teams",
+  ["POST /orgs/{org}/teams"]                                                      = "post_org_teams",
+  ["GET /orgs/{org}/teams/{team_slug}"]                                           = "get_org_team",
+  ["PATCH /orgs/{org}/teams/{team_slug}"]                                         = "patch_org_team",
+  ["DELETE /orgs/{org}/teams/{team_slug}"]                                        = "delete_org_team",
+  ["GET /orgs/{org}/teams/{team_slug}/invitations"]                               = "get_org_team_invitations",
+  ["GET /orgs/{org}/teams/{team_slug}/members"]                                   = "get_org_team_members",
+  ["GET /orgs/{org}/teams/{team_slug}/memberships/{username}"]                    = "get_org_team_membership",
+  ["PUT /orgs/{org}/teams/{team_slug}/memberships/{username}"]                    = "put_org_team_membership",
+  ["DELETE /orgs/{org}/teams/{team_slug}/memberships/{username}"]                 = "delete_org_team_membership",
+  ["GET /orgs/{org}/teams/{team_slug}/repos"]                                     = "get_org_team_repos",
+  ["GET /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}"]                      = "get_org_team_repo",
+  ["PUT /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}"]                      = "put_org_team_repo",
+  ["DELETE /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}"]                   = "delete_org_team_repo",
+  ["GET /orgs/{org}/teams/{team_slug}/teams"]                                     = "get_org_team_children",
+
+  -- Legacy team endpoints (team_id-based) — deprecated in favour of slug-based above
+  ["GET /user/teams"]                                                              = "get_user_teams",
+  ["GET /teams/{team_id}"]                                                         = "get_team",
+  ["PATCH /teams/{team_id}"]                                                       = "patch_team",
+  ["DELETE /teams/{team_id}"]                                                      = "delete_team",
+  ["GET /teams/{team_id}/invitations"]                                             = "get_team_invitations",
+  ["GET /teams/{team_id}/members"]                                                 = "get_team_members",
+  ["GET /teams/{team_id}/members/{username}"]                                      = "get_team_member",
+  ["PUT /teams/{team_id}/members/{username}"]                                      = "put_team_member",
+  ["DELETE /teams/{team_id}/members/{username}"]                                   = "delete_team_member",
+  ["GET /teams/{team_id}/memberships/{username}"]                                  = "get_team_membership",
+  ["PUT /teams/{team_id}/memberships/{username}"]                                  = "put_team_membership",
+  ["DELETE /teams/{team_id}/memberships/{username}"]                               = "delete_team_membership",
+  ["GET /teams/{team_id}/repos"]                                                   = "get_team_repos",
+  ["GET /teams/{team_id}/repos/{owner}/{repo}"]                                    = "get_team_repo",
+  ["PUT /teams/{team_id}/repos/{owner}/{repo}"]                                    = "put_team_repo",
+  ["DELETE /teams/{team_id}/repos/{owner}/{repo}"]                                 = "delete_team_repo",
+  ["GET /teams/{team_id}/teams"]                                                   = "get_team_children",
 
   -- Users (https://docs.github.com/en/rest/users)
   ["GET /user"]                                                                    = "get_user",

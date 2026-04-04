@@ -1,1 +1,1 @@
-stub-root.hurl
+stub-repos.hurl

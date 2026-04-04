@@ -342,3 +342,141 @@ HTTP 404
 GET http://{{host}}/repos/octocat/hello-world/commits/deadbeefdeadbeef
 
 HTTP 404
+
+# Teams API — mapped to GitLab subgroups ----------------------------------------
+
+# GET /orgs/{org}/teams — subgroups as teams
+GET http://{{host}}/orgs/testorg/teams
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$" isCollection
+jsonpath "$[0].id" isInteger
+jsonpath "$[0].slug" == "core"
+jsonpath "$[0].name" == "core"
+
+# GET /orgs/{org}/teams/{team_slug}
+GET http://{{host}}/orgs/testorg/teams/core
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$.slug" == "core"
+
+# GET /orgs/{org}/teams/{team_slug}/members
+GET http://{{host}}/orgs/testorg/teams/core/members
+
+HTTP 200
+[Asserts]
+jsonpath "$" isCollection
+jsonpath "$[0].login" == "octocat"
+
+# GET /orgs/{org}/teams/{team_slug}/memberships/{username}
+GET http://{{host}}/orgs/testorg/teams/core/memberships/octocat
+
+HTTP 200
+[Asserts]
+jsonpath "$.role" isString
+jsonpath "$.state" == "active"
+
+# GET /orgs/{org}/teams/{team_slug}/repos
+GET http://{{host}}/orgs/testorg/teams/core/repos
+
+HTTP 200
+[Asserts]
+jsonpath "$" isCollection
+
+# GET /orgs/{org}/teams/{team_slug}/invitations — no concept in GitLab
+GET http://{{host}}/orgs/testorg/teams/core/invitations
+
+HTTP 200
+[Asserts]
+body == "[]"
+
+# GET /orgs/{org}/teams/{team_slug}/teams — sub-subgroups
+GET http://{{host}}/orgs/testorg/teams/core/teams
+
+HTTP 200
+[Asserts]
+body == "[]"
+
+# Legacy team-by-id API (/teams/{team_id}) ----------------------------------------
+
+# GET /user/teams
+GET http://{{host}}/user/teams
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$" isCollection
+jsonpath "$[0].id" isInteger
+jsonpath "$[0].name" isString
+jsonpath "$[0].slug" isString
+
+# GET /teams/{team_id}
+GET http://{{host}}/teams/10
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$.id" == 10
+jsonpath "$.name" == "core"
+jsonpath "$.slug" == "core"
+jsonpath "$.permission" isString
+
+# GET /teams/{team_id} — unknown ID → 404
+GET http://{{host}}/teams/999
+
+HTTP 404
+
+# GET /teams/{team_id}/members
+GET http://{{host}}/teams/10/members
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$" isCollection
+jsonpath "$[0].login" isString
+
+# GET /teams/{team_id}/members/{username} — deprecated legacy, member → 204
+GET http://{{host}}/teams/10/members/octocat
+
+HTTP 204
+
+# GET /teams/{team_id}/memberships/{username} — member → 200
+GET http://{{host}}/teams/10/memberships/octocat
+
+HTTP 200
+[Asserts]
+jsonpath "$.role" isString
+jsonpath "$.state" == "active"
+
+# GET /teams/{team_id}/repos
+GET http://{{host}}/teams/10/repos
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$" isCollection
+
+# GET /teams/{team_id}/repos/{owner}/{repo} — repo belongs to group 10
+GET http://{{host}}/teams/10/repos/testorg/core-project
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+
+# GET /teams/{team_id}/invitations — no concept in GitLab
+GET http://{{host}}/teams/10/invitations
+
+HTTP 200
+[Asserts]
+body == "[]"
+
+# GET /teams/{team_id}/teams — no nested teams in this subgroup
+GET http://{{host}}/teams/10/teams
+
+HTTP 200
+[Asserts]
+body == "[]"

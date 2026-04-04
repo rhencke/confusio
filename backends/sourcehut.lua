@@ -3,6 +3,7 @@
 
 local base = function() return config.base_url .. "/api" end
 local auth = function() return make_fetch_opts("token") end
+local PAGES = { per_page = "limit" }
 
 local function fetch_json(url, method, body)
   local opts = auth()
@@ -152,7 +153,7 @@ backend_impl = {
       end,
       -- Sourcehut uses cursor-based pagination; only limit is supported for page size
       fetch_json(append_page_params(base() .. "/" .. canonical .. "/repos",
-        { per_page = "limit" })))
+        PAGES)))
   end,
 
   post_user_repos = function()
@@ -219,7 +220,7 @@ backend_impl = {
     local ref = GetParam("sha") or ""
     local url = base() .. "/~" .. owner .. "/repos/" .. repo_name .. "/log"
     if ref ~= "" then url = url .. "/" .. ref end
-    url = append_page_params(url, { per_page = "limit" })
+    url = append_page_params(url, PAGES)
     proxy_json(
       function(data)
         local commits = data.results or {}
@@ -294,7 +295,7 @@ backend_impl = {
         return repos
       end,
       fetch_json(append_page_params(base() .. "/~" .. username .. "/repos",
-        { per_page = "limit" })))
+        PAGES)))
   end,
 
   -- Users ---------------------------------------------------------------------

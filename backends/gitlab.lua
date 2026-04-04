@@ -3,6 +3,7 @@
 
 local base = function() return config.base_url .. "/api/v4" end
 local auth = function() return make_fetch_opts("bearer") end
+local PAGES = {per_page="per_page",page="page"}
 
 -- Encode owner/repo as GitLab project ID (URL-encoded "owner/repo").
 local function project_id(owner, repo_name)
@@ -127,6 +128,39 @@ local function gl_user_id(username)
   return list[1] and list[1].id
 end
 
+-- Translate a GitLab group to GitHub team format.
+-- Teams in GitHub map to subgroups in GitLab.
+local function translate_gl_team(g)
+  if not g then return {} end
+  return {
+    id                   = g.id,
+    node_id              = "",
+    name                 = g.name,
+    slug                 = g.path,
+    description          = g.description or "",
+    privacy              = g.visibility == "private" and "secret" or "closed",
+    notification_setting = "notifications_enabled",
+    permission           = "pull",
+    members_url          = "",
+    repositories_url     = "",
+    parent               = nil,
+  }
+end
+
+-- Translate a GitLab group member to GitHub user format.
+local function translate_gl_member(m)
+  if not m then return {} end
+  return {
+    login      = m.username,
+    id         = m.id,
+    node_id    = "",
+    avatar_url = m.avatar_url or "",
+    html_url   = m.web_url or "",
+    type       = "User",
+    site_admin = false,
+  }
+end
+
 backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, base() .. "/version", auth())
@@ -156,7 +190,7 @@ backend_impl = {
 
   get_user_repos = proxy_handler(translate_gl_projects, function()
     return append_page_params(base().."/projects?owned=true&membership=true",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   post_user_repos = function()
@@ -166,7 +200,7 @@ backend_impl = {
 
   get_org_repos = proxy_handler(translate_gl_projects, function(org)
     return append_page_params(base().."/groups/"..org.."/projects",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   post_org_repos = function(org)
@@ -203,7 +237,7 @@ backend_impl = {
     function(owner, repo_name)
       return append_page_params(
         base().."/projects/"..project_id(owner, repo_name).."/repository/contributors",
-        {per_page="per_page",page="page"})
+        PAGES)
     end),
 
   get_repo_tags = proxy_handler(
@@ -217,7 +251,7 @@ backend_impl = {
     function(owner, repo_name)
       return append_page_params(
         base().."/projects/"..project_id(owner, repo_name).."/repository/tags",
-        {per_page="per_page",page="page"})
+        PAGES)
     end),
 
   -- GitLab does not have a direct equivalent of GitHub's /teams endpoint for repos.
@@ -237,7 +271,7 @@ backend_impl = {
     function(owner, repo_name)
       return append_page_params(
         base().."/projects/"..project_id(owner, repo_name).."/repository/branches",
-        {per_page="per_page",page="page"})
+        PAGES)
     end),
 
   get_repo_branch = proxy_handler(
@@ -272,7 +306,7 @@ backend_impl = {
     function(owner, repo_name)
       return append_page_params(
         base().."/projects/"..project_id(owner, repo_name).."/repository/commits",
-        {per_page="per_page",page="page"})
+        PAGES)
     end),
 
   get_repo_commit = proxy_handler(
@@ -320,7 +354,7 @@ backend_impl = {
       fetch_json(append_page_params(
         base() .. "/projects/" .. project_id(owner, repo_name) ..
           "/repository/commits/" .. ref .. "/statuses",
-        { per_page = "per_page", page = "page" })))
+        PAGES)))
   end,
 
   get_commit_combined_status = function(owner, repo_name, ref)
@@ -490,7 +524,7 @@ backend_impl = {
     function(owner, repo_name)
       return append_page_params(
         base().."/projects/"..project_id(owner, repo_name).."/members/all",
-        {per_page="per_page",page="page"})
+        PAGES)
     end),
 
   get_repo_collaborator = function(owner, repo_name, username)
@@ -562,7 +596,7 @@ backend_impl = {
   get_repo_forks = proxy_handler(translate_gl_projects, function(owner, repo_name)
     return append_page_params(
       base().."/projects/"..project_id(owner, repo_name).."/forks",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   post_repo_forks = function(owner, repo_name)
@@ -597,7 +631,7 @@ backend_impl = {
     function(owner, repo_name)
       return append_page_params(
         base().."/projects/"..project_id(owner, repo_name).."/releases",
-        {per_page="per_page",page="page"})
+        PAGES)
     end),
 
   post_repo_releases = function(owner, repo_name)
@@ -642,7 +676,7 @@ backend_impl = {
   get_repo_keys = proxy_handler(nil, function(owner, repo_name)
     return append_page_params(
       base().."/projects/"..project_id(owner, repo_name).."/deploy_keys",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   post_repo_keys = function(owner, repo_name)
@@ -672,7 +706,7 @@ backend_impl = {
   get_repo_hooks = proxy_handler(nil, function(owner, repo_name)
     return append_page_params(
       base().."/projects/"..project_id(owner, repo_name).."/hooks",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   post_repo_hooks = function(owner, repo_name)
@@ -723,13 +757,13 @@ backend_impl = {
   -- GET /users/{username}/repos -----------------------------------------------
   get_users_repos = proxy_handler(translate_gl_projects, function(username)
     return append_page_params(base().."/users/"..username.."/projects",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   -- GET /repositories (all public projects) -----------------------------------
   get_repositories = proxy_handler(translate_gl_projects, function()
     return append_page_params(base().."/projects?visibility=public",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   -- Commit comments -----------------------------------------------------------
@@ -737,7 +771,7 @@ backend_impl = {
   get_commit_comments = proxy_handler(nil, function(owner, repo_name, commit_sha)
     return append_page_params(
       base().."/projects/"..project_id(owner, repo_name).."/repository/commits/"..commit_sha.."/comments",
-      {per_page="per_page",page="page"})
+      PAGES)
   end),
 
   post_commit_comment = function(owner, repo_name, commit_sha)
@@ -766,7 +800,7 @@ backend_impl = {
 
   -- GET /users
   get_users = proxy_handler(translate_gl_users, function()
-    return append_page_params(base().."/users", {per_page="per_page",page="page"})
+    return append_page_params(base().."/users", PAGES)
   end),
 
   -- Emails --------------------------------------------------------------------
@@ -790,7 +824,7 @@ backend_impl = {
 
   -- GET /user/keys
   get_user_keys = proxy_handler(nil, function()
-    return append_page_params(base().."/user/keys", {per_page="per_page",page="page"})
+    return append_page_params(base().."/user/keys", PAGES)
   end),
 
   -- POST /user/keys
@@ -821,7 +855,7 @@ backend_impl = {
 
   -- GET /user/gpg_keys
   get_user_gpg_keys = proxy_handler(nil, function()
-    return append_page_params(base().."/user/gpg_keys", {per_page="per_page",page="page"})
+    return append_page_params(base().."/user/gpg_keys", PAGES)
   end),
 
   -- POST /user/gpg_keys
@@ -848,5 +882,426 @@ backend_impl = {
     local uid = gl_user_id(username)
     if not uid then respond_json(404, "Not Found", { message = "Not Found" }); return end
     proxy_json(nil, fetch_json(base() .. "/users/" .. uid .. "/gpg_keys"))
+  end,
+
+  -- Teams — mapped to GitLab subgroups ----------------------------------------
+  -- GitHub: /orgs/{org}/teams/{team_slug}  →  GitLab: /groups/{org}%2F{slug}
+  -- GitLab group members have access levels; repos are the group's projects.
+
+  -- GET /orgs/{org}/teams
+  get_org_teams = function(org)
+    proxy_json(
+      function(groups)
+        for i, g in ipairs(groups) do groups[i] = translate_gl_team(g) end
+        return groups
+      end,
+      fetch_json(append_page_params(base().."/groups/"..org.."/subgroups",
+        PAGES)))
+  end,
+
+  -- POST /orgs/{org}/teams
+  post_org_teams = function(org)
+    local req  = DecodeJson(GetBody() or "{}")
+    local parent_ok, parent_status, _, parent_body =
+      fetch_json(base().."/groups/"..org)
+    if not parent_ok or parent_status ~= 200 then
+      respond_json(parent_ok and parent_status or 503, "Error", {}); return
+    end
+    local parent = DecodeJson(parent_body) or {}
+    local body = {
+      name       = req.name,
+      path       = (req.name or ""):lower():gsub("[^%w%-]", "-"),
+      parent_id  = parent.id,
+      description = req.description,
+      visibility = req.privacy == "secret" and "private" or "internal",
+    }
+    proxy_json_created(translate_gl_team,
+      fetch_json(base().."/groups", "POST", EncodeJson(body)))
+  end,
+
+  -- GET /orgs/{org}/teams/{team_slug}
+  get_org_team = function(org, slug)
+    proxy_json(translate_gl_team,
+      fetch_json(base().."/groups/"..org.."%2F"..slug))
+  end,
+
+  -- PATCH /orgs/{org}/teams/{team_slug}
+  patch_org_team = function(org, slug)
+    local ok, status, _, body = fetch_json(base().."/groups/"..org.."%2F"..slug)
+    if not ok or status ~= 200 then
+      respond_json(ok and status or 503, "Error", {}); return
+    end
+    local gid = (DecodeJson(body) or {}).id
+    local req  = DecodeJson(GetBody() or "{}")
+    local upd  = {}
+    if req.name        then upd.name        = req.name end
+    if req.description then upd.description = req.description end
+    proxy_json(translate_gl_team,
+      fetch_json(base().."/groups/"..gid, "PUT", EncodeJson(upd)))
+  end,
+
+  -- DELETE /orgs/{org}/teams/{team_slug}
+  delete_org_team = function(org, slug)
+    local ok, status, _, body = fetch_json(base().."/groups/"..org.."%2F"..slug)
+    if not ok or status ~= 200 then
+      respond_json(ok and status or 503, "Error", {}); return
+    end
+    local gid = (DecodeJson(body) or {}).id
+    local dopts = auth() or {}; dopts.method = "DELETE"
+    local dok, dstatus = pcall(Fetch, base().."/groups/"..gid, dopts)
+    if dok and (dstatus == 202 or dstatus == 204) then SetStatus(204, "No Content")
+    elseif dok then respond_json(dstatus, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- GET /orgs/{org}/teams/{team_slug}/invitations — no concept in GitLab
+  get_org_team_invitations = function()
+    SetStatus(200, "OK")
+    SetHeader("Content-Type", "application/json; charset=utf-8")
+    Write("[]")
+  end,
+
+  -- GET /orgs/{org}/teams/{team_slug}/members
+  get_org_team_members = function(org, slug)
+    local ok, status, _, body = fetch_json(base().."/groups/"..org.."%2F"..slug)
+    if not ok or status ~= 200 then
+      respond_json(ok and status or 503, "Error", {}); return
+    end
+    local gid = (DecodeJson(body) or {}).id
+    proxy_json(
+      function(members)
+        local out = {}
+        for _, m in ipairs(members) do out[#out+1] = translate_gl_member(m) end
+        return out
+      end,
+      fetch_json(append_page_params(base().."/groups/"..gid.."/members",
+        PAGES)))
+  end,
+
+  -- GET /orgs/{org}/teams/{team_slug}/memberships/{username}
+  get_org_team_membership = function(org, slug, username)
+    local ok, status, _, body = fetch_json(base().."/groups/"..org.."%2F"..slug)
+    if not ok or status ~= 200 then
+      respond_json(ok and status or 503, "Error", {}); return
+    end
+    local gid = (DecodeJson(body) or {}).id
+    local uid = gl_user_id(username)
+    if not uid then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local mok, mstatus, _, mbody = fetch_json(
+      base().."/groups/"..gid.."/members/"..uid)
+    if mok and mstatus == 200 then
+      local m = DecodeJson(mbody) or {}
+      local role = (m.access_level or 0) >= 50 and "maintainer" or "member"
+      respond_json(200, "OK", { url = "", role = role, state = "active" })
+    elseif mok then respond_json(404, "Not Found", { message = "Not Found" })
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- PUT /orgs/{org}/teams/{team_slug}/memberships/{username}
+  put_org_team_membership = function(org, slug, username)
+    local ok, status, _, body = fetch_json(base().."/groups/"..org.."%2F"..slug)
+    if not ok or status ~= 200 then
+      respond_json(ok and status or 503, "Error", {}); return
+    end
+    local gid = (DecodeJson(body) or {}).id
+    local uid = gl_user_id(username)
+    if not uid then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local req = DecodeJson(GetBody() or "{}")
+    local level = req.role == "maintainer" and 50 or 30
+    local mok, mstatus = fetch_json(
+      base().."/groups/"..gid.."/members", "POST",
+      EncodeJson({ user_id = uid, access_level = level }))
+    if mok and (mstatus == 200 or mstatus == 201) then
+      respond_json(200, "OK", { url = "", role = req.role or "member", state = "active" })
+    elseif mok then respond_json(mstatus, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- DELETE /orgs/{org}/teams/{team_slug}/memberships/{username}
+  delete_org_team_membership = function(org, slug, username)
+    local ok, status, _, body = fetch_json(base().."/groups/"..org.."%2F"..slug)
+    if not ok or status ~= 200 then
+      respond_json(ok and status or 503, "Error", {}); return
+    end
+    local gid = (DecodeJson(body) or {}).id
+    local uid = gl_user_id(username)
+    if not uid then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local dopts = auth() or {}; dopts.method = "DELETE"
+    local dok, dstatus = pcall(Fetch, base().."/groups/"..gid.."/members/"..uid, dopts)
+    if dok and (dstatus == 204 or dstatus == 200) then SetStatus(204, "No Content")
+    elseif dok then respond_json(dstatus, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- GET /orgs/{org}/teams/{team_slug}/repos
+  get_org_team_repos = function(org, slug)
+    local ok, status, _, body = fetch_json(base().."/groups/"..org.."%2F"..slug)
+    if not ok or status ~= 200 then
+      respond_json(ok and status or 503, "Error", {}); return
+    end
+    local gid = (DecodeJson(body) or {}).id
+    proxy_json(translate_gl_projects,
+      fetch_json(append_page_params(base().."/groups/"..gid.."/projects",
+        PAGES)))
+  end,
+
+  -- GET /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
+  get_org_team_repo = function(org, slug, owner, repo_name)
+    local ok, status, _, body = fetch_json(base().."/groups/"..org.."%2F"..slug)
+    if not ok or status ~= 200 then
+      respond_json(ok and status or 503, "Error", {}); return
+    end
+    local gid = (DecodeJson(body) or {}).id
+    local pid = project_id(owner, repo_name)
+    -- Check if the project belongs to this subgroup
+    local pok, pstatus, _, pbody = fetch_json(base().."/projects/"..pid)
+    if not pok or pstatus ~= 200 then
+      respond_json(404, "Not Found", { message = "Not Found" }); return
+    end
+    local proj = DecodeJson(pbody) or {}
+    local ns = proj.namespace or {}
+    if tostring(ns.id) ~= tostring(gid) then
+      respond_json(404, "Not Found", { message = "Not Found" }); return
+    end
+    respond_json(200, "OK", translate_gl_repo(proj))
+  end,
+
+  -- PUT /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
+  put_org_team_repo = function(org, slug, owner, repo_name)
+    local ok, status, _, body = fetch_json(base().."/groups/"..org.."%2F"..slug)
+    if not ok or status ~= 200 then
+      respond_json(ok and status or 503, "Error", {}); return
+    end
+    local gid = (DecodeJson(body) or {}).id
+    local pid = project_id(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    local access = req.permission == "admin" and 50
+      or (req.permission == "push" and 30 or 20)
+    local pok, pstatus = fetch_json(
+      base().."/projects/"..pid.."/share", "POST",
+      EncodeJson({ group_id = gid, group_access = access }))
+    if pok and (pstatus == 200 or pstatus == 201) then SetStatus(204, "No Content")
+    elseif pok then respond_json(pstatus, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- DELETE /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
+  delete_org_team_repo = function(org, slug, owner, repo_name)
+    local ok, status, _, body = fetch_json(base().."/groups/"..org.."%2F"..slug)
+    if not ok or status ~= 200 then
+      respond_json(ok and status or 503, "Error", {}); return
+    end
+    local gid = (DecodeJson(body) or {}).id
+    local pid = project_id(owner, repo_name)
+    local dopts = auth() or {}; dopts.method = "DELETE"
+    local dok, dstatus = pcall(Fetch,
+      base().."/projects/"..pid.."/share/"..gid, dopts)
+    if dok and (dstatus == 204 or dstatus == 200) then SetStatus(204, "No Content")
+    elseif dok then respond_json(dstatus, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- GET /orgs/{org}/teams/{team_slug}/teams — list sub-subgroups
+  get_org_team_children = function(org, slug)
+    local ok, status, _, body = fetch_json(base().."/groups/"..org.."%2F"..slug)
+    if not ok or status ~= 200 then
+      respond_json(ok and status or 503, "Error", {}); return
+    end
+    local gid = (DecodeJson(body) or {}).id
+    proxy_json(
+      function(groups)
+        for i, g in ipairs(groups) do groups[i] = translate_gl_team(g) end
+        return groups
+      end,
+      fetch_json(append_page_params(base().."/groups/"..gid.."/subgroups",
+        PAGES)))
+  end,
+
+  -- Legacy team-by-id API (/teams/{team_id}) ------------------------------------
+  -- team_id maps to GitLab group numeric ID.
+
+  -- GET /user/teams — all groups the authenticated user belongs to
+  get_user_teams = function()
+    proxy_json(
+      function(groups)
+        for i, g in ipairs(groups) do groups[i] = translate_gl_team(g) end
+        return groups
+      end,
+      fetch_json(append_page_params(base().."/groups?min_access_level=10",
+        PAGES)))
+  end,
+
+  -- GET /teams/{team_id}
+  get_team = function(team_id)
+    proxy_json(translate_gl_team, fetch_json(base().."/groups/"..team_id))
+  end,
+
+  -- PATCH /teams/{team_id}
+  patch_team = function(team_id)
+    local req = DecodeJson(GetBody() or "{}")
+    local upd = {}
+    if req.name        then upd.name        = req.name end
+    if req.description then upd.description = req.description end
+    proxy_json(translate_gl_team,
+      fetch_json(base().."/groups/"..team_id, "PUT", EncodeJson(upd)))
+  end,
+
+  -- DELETE /teams/{team_id}
+  delete_team = function(team_id)
+    local dopts = auth() or {}; dopts.method = "DELETE"
+    local ok, status = pcall(Fetch, base().."/groups/"..team_id, dopts)
+    if ok and (status == 202 or status == 204) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- GET /teams/{team_id}/invitations — no concept in GitLab
+  get_team_invitations = function()
+    SetStatus(200, "OK")
+    SetHeader("Content-Type", "application/json; charset=utf-8")
+    Write("[]")
+  end,
+
+  -- GET /teams/{team_id}/members
+  get_team_members = function(team_id)
+    proxy_json(
+      function(members)
+        local out = {}
+        for _, m in ipairs(members) do out[#out+1] = translate_gl_member(m) end
+        return out
+      end,
+      fetch_json(append_page_params(base().."/groups/"..team_id.."/members",
+        PAGES)))
+  end,
+
+  -- GET /teams/{team_id}/members/{username} — deprecated legacy, 204 if member
+  get_team_member = function(team_id, username)
+    local uid = gl_user_id(username)
+    if not uid then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local ok, status = pcall(Fetch,
+      base().."/groups/"..team_id.."/members/"..uid, auth())
+    if ok and status == 200 then SetStatus(204, "No Content")
+    elseif ok then respond_json(404, "Not Found", { message = "Not Found" })
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- PUT /teams/{team_id}/members/{username} — deprecated legacy
+  put_team_member = function(team_id, username)
+    local uid = gl_user_id(username)
+    if not uid then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local ok, status = fetch_json(base().."/groups/"..team_id.."/members", "POST",
+      EncodeJson({ user_id = uid, access_level = 30 }))
+    if ok and (status == 200 or status == 201) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- DELETE /teams/{team_id}/members/{username} — deprecated legacy
+  delete_team_member = function(team_id, username)
+    local uid = gl_user_id(username)
+    if not uid then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local dopts = auth() or {}; dopts.method = "DELETE"
+    local ok, status = pcall(Fetch,
+      base().."/groups/"..team_id.."/members/"..uid, dopts)
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- GET /teams/{team_id}/memberships/{username}
+  get_team_membership = function(team_id, username)
+    local uid = gl_user_id(username)
+    if not uid then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local ok, status, _, body = fetch_json(
+      base().."/groups/"..team_id.."/members/"..uid)
+    if ok and status == 200 then
+      local m = DecodeJson(body) or {}
+      local role = (m.access_level or 0) >= 50 and "maintainer" or "member"
+      respond_json(200, "OK", { url = "", role = role, state = "active" })
+    elseif ok then respond_json(404, "Not Found", { message = "Not Found" })
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- PUT /teams/{team_id}/memberships/{username}
+  put_team_membership = function(team_id, username)
+    local uid = gl_user_id(username)
+    if not uid then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local req = DecodeJson(GetBody() or "{}")
+    local level = req.role == "maintainer" and 50 or 30
+    local ok, status = fetch_json(base().."/groups/"..team_id.."/members", "POST",
+      EncodeJson({ user_id = uid, access_level = level }))
+    if ok and (status == 200 or status == 201) then
+      respond_json(200, "OK", { url = "", role = req.role or "member", state = "active" })
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- DELETE /teams/{team_id}/memberships/{username}
+  delete_team_membership = function(team_id, username)
+    local uid = gl_user_id(username)
+    if not uid then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local dopts = auth() or {}; dopts.method = "DELETE"
+    local ok, status = pcall(Fetch,
+      base().."/groups/"..team_id.."/members/"..uid, dopts)
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- GET /teams/{team_id}/repos
+  get_team_repos = function(team_id)
+    proxy_json(translate_gl_projects,
+      fetch_json(append_page_params(base().."/groups/"..team_id.."/projects",
+        PAGES)))
+  end,
+
+  -- GET /teams/{team_id}/repos/{owner}/{repo}
+  get_team_repo = function(team_id, owner, repo_name)
+    local pid = project_id(owner, repo_name)
+    local ok, status, _, body = fetch_json(base().."/projects/"..pid)
+    if not ok or status ~= 200 then
+      respond_json(404, "Not Found", { message = "Not Found" }); return
+    end
+    local proj = DecodeJson(body) or {}
+    local ns = proj.namespace or {}
+    if tostring(ns.id) ~= tostring(team_id) then
+      respond_json(404, "Not Found", { message = "Not Found" }); return
+    end
+    respond_json(200, "OK", translate_gl_repo(proj))
+  end,
+
+  -- PUT /teams/{team_id}/repos/{owner}/{repo}
+  put_team_repo = function(team_id, owner, repo_name)
+    local pid = project_id(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    local access = req.permission == "admin" and 50
+      or (req.permission == "push" and 30 or 20)
+    local ok, status = fetch_json(base().."/projects/"..pid.."/share", "POST",
+      EncodeJson({ group_id = team_id, group_access = access }))
+    if ok and (status == 200 or status == 201) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- DELETE /teams/{team_id}/repos/{owner}/{repo}
+  delete_team_repo = function(team_id, owner, repo_name)
+    local pid = project_id(owner, repo_name)
+    local dopts = auth() or {}; dopts.method = "DELETE"
+    local ok, status = pcall(Fetch,
+      base().."/projects/"..pid.."/share/"..team_id, dopts)
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- GET /teams/{team_id}/teams — sub-subgroups
+  get_team_children = function(team_id)
+    proxy_json(
+      function(groups)
+        for i, g in ipairs(groups) do groups[i] = translate_gl_team(g) end
+        return groups
+      end,
+      fetch_json(append_page_params(base().."/groups/"..team_id.."/subgroups",
+        PAGES)))
   end,
 }
