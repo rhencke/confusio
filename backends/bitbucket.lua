@@ -78,14 +78,105 @@ local function translate_bb_req(body_str)
   return EncodeJson(bb)
 end
 
+local function translate_bb_commit(c)
+  if not c then return {} end
+  local author = c.author or {}
+  local user   = author.user or {}
+  local parents = {}
+  for _, p in ipairs(c.parents or {}) do
+    parents[#parents + 1] = { sha = p.hash or "" }
+  end
+  return {
+    sha    = c.hash or "",
+    commit = {
+      message   = c.message or "",
+      author    = {
+        name  = user.display_name or author.raw or "",
+        email = "",
+        date  = c.date or "",
+      },
+      committer = {
+        name  = user.display_name or author.raw or "",
+        email = "",
+        date  = c.date or "",
+      },
+    },
+    author    = { login = user.nickname or "", id = 0 },
+    committer = { login = user.nickname or "", id = 0 },
+    parents   = parents,
+  }
+end
+
+local function bb_state_to_github(state)
+  if state == "SUCCESSFUL" then return "success"
+  elseif state == "FAILED"     then return "failure"
+  elseif state == "INPROGRESS" then return "pending"
+  else return "error" end
+end
+
+local function github_state_to_bb(state)
+  if state == "success" then return "SUCCESSFUL"
+  elseif state == "failure" then return "FAILED"
+  elseif state == "pending" then return "INPROGRESS"
+  else return "FAILED" end
+end
+
+local function translate_bb_status(s)
+  return {
+    state       = bb_state_to_github(s.state),
+    context     = s.key or "",
+    description = s.description or "",
+    target_url  = s.url or "",
+    created_at  = s.created_on or "",
+    updated_at  = s.updated_on or "",
+  }
+end
+
+local function translate_bb_key(k)
+  return {
+    id         = k.id or 0,
+    key        = k.key or "",
+    title      = k.label or "",
+    read_only  = true,
+    verified   = true,
+    created_at = k.created_on or "",
+  }
+end
+
+local function translate_bb_hook(h)
+  local events = {}
+  for _, e in ipairs(h.events or {}) do
+    -- "repo:push" → "push", "pullrequest:created" → "pull_request"
+    events[#events + 1] = (e:match(":(.+)$") or e):gsub("_", ".")
+  end
+  return {
+    id     = h.uuid and h.uuid:gsub("[{}]", "") or "",
+    config = { url = h.url or "", content_type = "json" },
+    events = events,
+    active = h.active ~= false,
+  }
+end
+
+local function translate_bb_hook_req(body_str)
+  local req = DecodeJson(body_str or "{}")
+  local bb_events = {}
+  for _, e in ipairs(req.events or {}) do
+    bb_events[#bb_events + 1] = "repo:" .. e
+  end
+  return EncodeJson({
+    description = (req.config and req.config.url) or req.url or "",
+    url         = (req.config and req.config.url) or req.url or "",
+    active      = req.active ~= false,
+    events      = #bb_events > 0 and bb_events or { "repo:push" },
+  })
+end
+
 backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, base() .. "/user", auth())
     if ok and status == 200 then respond_json(200, "OK", {})
     else respond_json(503, "Service Unavailable", {}) end
   end,
-
-  get_emojis = function() respond_json(404, "Not Found", { message = "Not Found" }) end,
 
   get_repo = function(owner, repo_name)
     proxy_json(translate_bb_repo,
@@ -120,8 +211,7 @@ backend_impl = {
   end,
 
   post_user_repos = function()
-    -- Bitbucket requires workspace; use owner from token context — not directly available.
-    -- Return 501 for now (no equivalent single endpoint).
+    -- Bitbucket requires workspace; no equivalent single endpoint.
     respond_json(501, "Not Implemented",
       { message = "POST /user/repos requires workspace context; use POST /orgs/{workspace}/repos" })
   end,
@@ -138,7 +228,6 @@ backend_impl = {
   end,
 
   post_org_repos = function(workspace)
-    -- Bitbucket: POST /2.0/repositories/{workspace}/{slug}
     local raw = GetBody() or "{}"
     local req = DecodeJson(raw)
     local slug = req.name
@@ -150,13 +239,29 @@ backend_impl = {
         "POST", translate_bb_req(raw)))
   end,
 
-  -- Bitbucket does not have a topics API.
-  get_repo_topics = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
+  -- GET /users/{username}/repos
+  get_users_repos = function(username)
+    proxy_json(
+      function(data)
+        local repos = data.values or {}
+        for i, r in ipairs(repos) do repos[i] = translate_bb_repo(r) end
+        return repos
+      end,
+      fetch_json(append_page_params(
+        base() .. "/repositories/" .. username,
+        { per_page = "pagelen", page = "page" })))
   end,
 
-  put_repo_topics = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
+  -- GET /repositories (public)
+  get_repositories = function()
+    proxy_json(
+      function(data)
+        local repos = data.values or {}
+        for i, r in ipairs(repos) do repos[i] = translate_bb_repo(r) end
+        return repos
+      end,
+      fetch_json(append_page_params(base() .. "/repositories",
+        { per_page = "pagelen", page = "page" })))
   end,
 
   get_repo_languages = function(owner, repo_name)
@@ -169,14 +274,7 @@ backend_impl = {
       fetch_json(base() .. "/repositories/" .. owner .. "/" .. repo_name))
   end,
 
-  -- Bitbucket contributors are in /commits; no direct contributors list endpoint.
-  get_repo_contributors = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
-  end,
-
   get_repo_tags = function(owner, repo_name)
-    -- Bitbucket: { name, target: { hash, ... } }
-    -- GitHub: { name, commit: { sha, url } }
     proxy_json(
       function(data)
         local tags = data.values or {}
@@ -191,7 +289,258 @@ backend_impl = {
         { per_page = "pagelen", page = "page" })))
   end,
 
-  get_repo_teams = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
+  -- Branches ------------------------------------------------------------------
+
+  get_repo_branches = function(owner, repo_name)
+    proxy_json(
+      function(data)
+        local branches = data.values or {}
+        for i, b in ipairs(branches) do
+          branches[i] = {
+            name      = b.name,
+            commit    = { sha = (b.target and b.target.hash) or "", url = "" },
+            protected = false,
+          }
+        end
+        return branches
+      end,
+      fetch_json(append_page_params(
+        base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/refs/branches",
+        { per_page = "pagelen", page = "page" })))
+  end,
+
+  get_repo_branch = function(owner, repo_name, branch)
+    proxy_json(
+      function(b)
+        return {
+          name      = b.name,
+          commit    = { sha = (b.target and b.target.hash) or "", url = "" },
+          protected = false,
+        }
+      end,
+      fetch_json(base() .. "/repositories/" .. owner .. "/" .. repo_name ..
+        "/refs/branches/" .. branch))
+  end,
+
+  -- Commits -------------------------------------------------------------------
+
+  get_repo_commits = function(owner, repo_name)
+    proxy_json(
+      function(data)
+        local commits = data.values or {}
+        for i, c in ipairs(commits) do commits[i] = translate_bb_commit(c) end
+        return commits
+      end,
+      fetch_json(append_page_params(
+        base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/commits",
+        { per_page = "pagelen", page = "page" })))
+  end,
+
+  get_repo_commit = function(owner, repo_name, sha)
+    proxy_json(translate_bb_commit,
+      fetch_json(base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/commit/" .. sha))
+  end,
+
+  -- Commit statuses -----------------------------------------------------------
+
+  get_commit_statuses = function(owner, repo_name, sha)
+    proxy_json(
+      function(data)
+        local statuses = data.values or {}
+        for i, s in ipairs(statuses) do statuses[i] = translate_bb_status(s) end
+        return statuses
+      end,
+      fetch_json(append_page_params(
+        base() .. "/repositories/" .. owner .. "/" .. repo_name ..
+          "/commit/" .. sha .. "/statuses",
+        { per_page = "pagelen", page = "page" })))
+  end,
+
+  get_commit_combined_status = function(owner, repo_name, sha)
+    proxy_json(
+      function(data)
+        local statuses = data.values or {}
+        local combined = "success"
+        for _, s in ipairs(statuses) do
+          local g = bb_state_to_github(s.state)
+          if g == "failure" or g == "error" then combined = g; break
+          elseif g == "pending" then combined = "pending" end
+        end
+        local out = {}
+        for i, s in ipairs(statuses) do out[i] = translate_bb_status(s) end
+        return { state = combined, statuses = out, total_count = #out }
+      end,
+      fetch_json(base() .. "/repositories/" .. owner .. "/" .. repo_name ..
+        "/commit/" .. sha .. "/statuses"))
+  end,
+
+  post_commit_status = function(owner, repo_name, sha)
+    local req = DecodeJson(GetBody() or "{}")
+    local bb = {
+      state       = github_state_to_bb(req.state or ""),
+      key         = req.context or "default",
+      url         = req.target_url or "",
+      name        = req.context or "default",
+      description = req.description or "",
+    }
+    proxy_json(translate_bb_status,
+      fetch_json(base() .. "/repositories/" .. owner .. "/" .. repo_name ..
+        "/commit/" .. sha .. "/statuses/build", "POST", EncodeJson(bb)))
+  end,
+
+  -- Contents ------------------------------------------------------------------
+
+  get_repo_readme = function(owner, repo_name)
+    local repo_url = base() .. "/repositories/" .. owner .. "/" .. repo_name
+    local ok, status, _, body = fetch_json(repo_url)
+    if not ok or status ~= 200 then respond_json(404, "Not Found", {}); return end
+    local repo = DecodeJson(body or "{}")
+    local ref = (repo.mainbranch and repo.mainbranch.name) or "HEAD"
+    for _, name in ipairs({ "README.md", "README", "readme.md", "Readme.md" }) do
+      local ok2, status2, _, body2 = fetch_json(repo_url .. "/src/" .. ref .. "/" .. name)
+      if ok2 and status2 == 200 then
+        respond_json(200, "OK", {
+          type = "file", encoding = "base64",
+          content = EncodeBase64(body2 or ""),
+          name = name, path = name, sha = "", size = #(body2 or ""),
+        })
+        return
+      end
+    end
+    respond_json(404, "Not Found", { message = "README not found" })
+  end,
+
+  get_repo_content = function(owner, repo_name, path)
+    local ref = GetParam("ref") or "HEAD"
+    local ok, status, _, body = fetch_json(
+      base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/src/" .. ref .. "/" .. path)
+    if not ok then respond_json(503, "Service Unavailable", {}); return end
+    if status ~= 200 then respond_json(status, "Not Found", {}); return end
+    -- Detect directory listing (JSON with "values") vs raw file content
+    local parsed = (body and body:sub(1, 1) == "{") and DecodeJson(body) or nil
+    if parsed and parsed.values then
+      local out = {}
+      for _, e in ipairs(parsed.values or {}) do
+        out[#out + 1] = {
+          type = e.type == "commit_directory" and "dir" or "file",
+          name = e.path and e.path:match("[^/]+$") or "",
+          path = e.path or "",
+          sha  = "",
+          size = e.size or 0,
+        }
+      end
+      respond_json(200, "OK", out)
+    else
+      respond_json(200, "OK", {
+        type = "file", encoding = "base64",
+        content = EncodeBase64(body or ""),
+        name = path:match("[^/]+$") or path,
+        path = path, sha = "", size = #(body or ""),
+      })
+    end
+  end,
+
+  -- Forks ---------------------------------------------------------------------
+
+  get_repo_forks = function(owner, repo_name)
+    proxy_json(
+      function(data)
+        local forks = data.values or {}
+        for i, r in ipairs(forks) do forks[i] = translate_bb_repo(r) end
+        return forks
+      end,
+      fetch_json(append_page_params(
+        base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/forks",
+        { per_page = "pagelen", page = "page" })))
+  end,
+
+  post_repo_forks = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    local bb = {}
+    if req.organization then bb.workspace = req.organization end
+    if req.name         then bb.name      = req.name end
+    proxy_json_created(translate_bb_repo,
+      fetch_json(base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/forks",
+        "POST", EncodeJson(bb)))
+  end,
+
+  -- Deploy keys ---------------------------------------------------------------
+
+  get_repo_keys = function(owner, repo_name)
+    proxy_json(
+      function(data)
+        local keys = data.values or {}
+        for i, k in ipairs(keys) do keys[i] = translate_bb_key(k) end
+        return keys
+      end,
+      fetch_json(append_page_params(
+        base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/deploy-keys",
+        { per_page = "pagelen", page = "page" })))
+  end,
+
+  post_repo_keys = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    local bb = { key = req.key or "", label = req.title or "" }
+    proxy_json_created(translate_bb_key,
+      fetch_json(base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/deploy-keys",
+        "POST", EncodeJson(bb)))
+  end,
+
+  get_repo_key = function(owner, repo_name, key_id)
+    proxy_json(translate_bb_key,
+      fetch_json(base() .. "/repositories/" .. owner .. "/" .. repo_name ..
+        "/deploy-keys/" .. key_id))
+  end,
+
+  delete_repo_key = function(owner, repo_name, key_id)
+    local url = base() .. "/repositories/" .. owner .. "/" .. repo_name ..
+      "/deploy-keys/" .. key_id
+    local dopts = auth() or {}; dopts.method = "DELETE"
+    local ok, status = pcall(Fetch, url, dopts)
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- Webhooks ------------------------------------------------------------------
+
+  get_repo_hooks = function(owner, repo_name)
+    proxy_json(
+      function(data)
+        local hooks = data.values or {}
+        for i, h in ipairs(hooks) do hooks[i] = translate_bb_hook(h) end
+        return hooks
+      end,
+      fetch_json(append_page_params(
+        base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/hooks",
+        { per_page = "pagelen", page = "page" })))
+  end,
+
+  post_repo_hooks = function(owner, repo_name)
+    proxy_json_created(translate_bb_hook,
+      fetch_json(base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/hooks",
+        "POST", translate_bb_hook_req(GetBody())))
+  end,
+
+  get_repo_hook = function(owner, repo_name, hook_id)
+    proxy_json(translate_bb_hook,
+      fetch_json(base() .. "/repositories/" .. owner .. "/" .. repo_name ..
+        "/hooks/{" .. hook_id .. "}"))
+  end,
+
+  patch_repo_hook = function(owner, repo_name, hook_id)
+    proxy_json(translate_bb_hook,
+      fetch_json(base() .. "/repositories/" .. owner .. "/" .. repo_name ..
+        "/hooks/{" .. hook_id .. "}", "PUT", translate_bb_hook_req(GetBody())))
+  end,
+
+  delete_repo_hook = function(owner, repo_name, hook_id)
+    local url = base() .. "/repositories/" .. owner .. "/" .. repo_name ..
+      "/hooks/{" .. hook_id .. "}"
+    local dopts = auth() or {}; dopts.method = "DELETE"
+    local ok, status = pcall(Fetch, url, dopts)
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
   end,
 }

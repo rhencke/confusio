@@ -67,14 +67,35 @@ local function translate_pagure_repo(r)
   }
 end
 
+-- Translate a Pagure branch name to GitHub format.
+-- Pagure branch list returns only names, no commit SHAs.
+local function translate_pagure_branch(name)
+  return { name = name, commit = { sha = "", url = "" }, protected = false }
+end
+
+-- Translate a Pagure commit object to GitHub format.
+-- Pagure: { id, message, date, date_utc, author: { name, email } }
+local function translate_pagure_commit(c)
+  if not c then return {} end
+  local author = c.author or {}
+  return {
+    sha    = c.id or "",
+    commit = {
+      message   = c.message or "",
+      author    = { name = author.name or "", email = author.email or "", date = c.date_utc or "" },
+      committer = { name = author.name or "", email = author.email or "", date = c.date_utc or "" },
+    },
+    author    = { login = author.name or "", id = 0, avatar_url = "" },
+    committer = { login = author.name or "", id = 0, avatar_url = "" },
+  }
+end
+
 backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, base() .. "/version", auth())
     if ok and status == 200 then respond_json(200, "OK", {})
     else respond_json(503, "Service Unavailable", {}) end
   end,
-
-  get_emojis = function() respond_json(404, "Not Found", { message = "Not Found" }) end,
 
   get_repo = function(owner, repo_name)
     proxy_json(translate_pagure_repo,
@@ -177,18 +198,47 @@ backend_impl = {
       fetch_json(url, "POST", EncodeJson({ tags = req.names or {} })))
   end,
 
-  -- Pagure has no language detection API.
-  get_repo_languages = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
+  -- Branches ------------------------------------------------------------------
+  -- Pagure: GET /api/0/{owner}/{repo}/git/branches → { branches: ["main", ...] }
+  -- No commit SHAs in branch list response.
+
+  get_repo_branches = function(owner, repo_name)
+    proxy_json(
+      function(data)
+        local branches = {}
+        for _, name in ipairs(data.branches or {}) do
+          branches[#branches + 1] = translate_pagure_branch(name)
+        end
+        return branches
+      end,
+      fetch_json(base() .. "/" .. owner .. "/" .. repo_name .. "/git/branches"))
   end,
 
-  -- Pagure has no standard contributors endpoint.
-  get_repo_contributors = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
+  -- Commits -------------------------------------------------------------------
+  -- Pagure: GET /api/0/{owner}/{repo}/commits?branch={branch}&limit={n}&start={offset}
+
+  get_repo_commits = function(owner, repo_name)
+    local branch = GetParam("sha") or GetParam("branch") or ""
+    local limit  = GetParam("per_page") or "30"
+    local page   = tonumber(GetParam("page")) or 1
+    local limit_n = tonumber(limit) or 30
+    local start  = (page - 1) * limit_n
+    local url = base() .. "/" .. owner .. "/" .. repo_name ..
+      "/commits?limit=" .. limit .. "&start=" .. start
+    if branch ~= "" then url = url .. "&branch=" .. branch end
+    proxy_json(
+      function(data)
+        local commits = data.commits or {}
+        for i, c in ipairs(commits) do commits[i] = translate_pagure_commit(c) end
+        return commits
+      end,
+      fetch_json(url))
   end,
+
+  -- Tags ----------------------------------------------------------------------
+  -- Pagure returns { "tags": ["v1.0", ...] } — just tag names, no commit info
 
   get_repo_tags = function(owner, repo_name)
-    -- Pagure returns { "tags": ["v1.0", ...] } — just tag names, no commit info
     proxy_json(
       function(data)
         local tags = {}
@@ -200,7 +250,107 @@ backend_impl = {
       fetch_json(base() .. "/" .. owner .. "/" .. repo_name .. "/git/tags"))
   end,
 
-  get_repo_teams = function()
+  -- Contents ------------------------------------------------------------------
+  -- Pagure: GET /api/0/{owner}/{repo}/raw/{path}?ref={ref} — returns raw bytes.
+  -- We base64-encode and return a GitHub-shaped content object.
+
+  get_repo_readme = function(owner, repo_name)
+    local ref = GetParam("ref") or ""
+    -- Try common README filenames in order.
+    local candidates = { "README.md", "README", "readme.md", "README.rst" }
+    for _, fname in ipairs(candidates) do
+      local url = base() .. "/" .. owner .. "/" .. repo_name .. "/raw/" .. fname
+      if ref ~= "" then url = url .. "?ref=" .. ref end
+      local ok, status, _, body = fetch_json(url)
+      if ok and status == 200 then
+        respond_json(200, "OK", {
+          type     = "file",
+          name     = fname,
+          path     = fname,
+          sha      = "",
+          size     = #body,
+          encoding = "base64",
+          content  = EncodeBase64(body),
+        })
+        return
+      end
+    end
     respond_json(404, "Not Found", { message = "Not Found" })
   end,
+
+  get_repo_content = function(owner, repo_name, path)
+    local ref = GetParam("ref") or ""
+    local url = base() .. "/" .. owner .. "/" .. repo_name .. "/raw/" .. path
+    if ref ~= "" then url = url .. "?ref=" .. ref end
+    local ok, status, _, body = fetch_json(url)
+    if ok and status == 200 then
+      respond_json(200, "OK", {
+        type     = "file",
+        name     = path:match("[^/]+$") or path,
+        path     = path,
+        sha      = "",
+        size     = #body,
+        encoding = "base64",
+        content  = EncodeBase64(body),
+      })
+    elseif ok then respond_json(status, "Error", { message = "Error" })
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- Forks ---------------------------------------------------------------------
+  -- Pagure: POST /api/0/fork with form body
+
+  get_repo_forks = function(owner, repo_name)
+    -- Pagure: GET project and return forks list
+    proxy_json(
+      function(data)
+        local forks = {}
+        for _, f in ipairs(data.forks or {}) do
+          forks[#forks + 1] = translate_pagure_repo(f)
+        end
+        return forks
+      end,
+      fetch_json(base() .. "/" .. owner .. "/" .. repo_name))
+  end,
+
+  post_repo_forks = function(owner, repo_name)
+    -- Pagure fork endpoint expects form-encoded body
+    local req = DecodeJson(GetBody() or "{}")
+    local fopts = auth() or {}
+    fopts.method = "POST"
+    fopts.body = "repo=" .. repo_name .. "&namespace=" .. owner
+    if req.organization then fopts.body = fopts.body .. "&username=" .. req.organization end
+    fopts.headers = fopts.headers or {}
+    fopts.headers["Content-Type"] = "application/x-www-form-urlencoded"
+    proxy_json_created(
+      function(resp) return translate_pagure_repo(resp.project or resp) end,
+      pcall(Fetch, base() .. "/fork", fopts))
+  end,
+
+  -- Users' repos --------------------------------------------------------------
+
+  get_users_repos = function(username)
+    proxy_json(
+      function(data)
+        local projects = data.repos or data.projects or {}
+        for i, p in ipairs(projects) do projects[i] = translate_pagure_repo(p) end
+        return projects
+      end,
+      fetch_json(append_page_params(base() .. "/user/" .. username .. "/projects",
+        { per_page = "per_page", page = "page" })))
+  end,
+
+  -- Public repos list ---------------------------------------------------------
+
+  get_repositories = function()
+    proxy_json(
+      function(data)
+        local projects = data.projects or {}
+        for i, p in ipairs(projects) do projects[i] = translate_pagure_repo(p) end
+        return projects
+      end,
+      fetch_json(append_page_params(base() .. "/repos",
+        { per_page = "per_page", page = "page" })))
+  end,
+
 }

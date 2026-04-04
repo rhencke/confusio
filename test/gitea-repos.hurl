@@ -65,7 +65,7 @@ jsonpath "$" isCollection
 jsonpath "$[0].name" == "v1.0"
 jsonpath "$[0].commit.sha" isString
 
-# GET /repos/{owner}/{repo}/teams — Gitea returns 404 (no GitHub-style teams)
+# GET /repos/{owner}/{repo}/teams — not implemented (returns 501)
 GET http://{{host}}/repos/octocat/hello-world/teams
 
 HTTP 404
@@ -75,3 +75,8 @@ HTTP 404
 DELETE http://{{host}}/user/repos
 
 HTTP 405
+
+# Repo not found → 404
+GET http://{{host}}/repos/nonexist/notareal
+
+HTTP 404

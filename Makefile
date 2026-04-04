@@ -1,6 +1,10 @@
 REDBEAN_VERSION := $(shell cat .redbean-version)
 REDBEAN_URL      = https://redbean.dev/redbean-$(REDBEAN_VERSION).com
 
+MOCKS = mock-gitea.com mock-gitlab.com mock-gitbucket.com mock-bitbucket.com \
+        mock-harness.com mock-pagure.com mock-onedev.com mock-sourcehut.com \
+        mock-radicle.com mock-bitbucket_datacenter.com
+
 HURL_VERSION  := $(shell cat .hurl-version)
 HURL_OS       := $(shell uname -s)
 HURL_RAW_ARCH := $(shell uname -m)
@@ -36,11 +40,11 @@ confusio.com: redbean.com .init.lua $(wildcard backends/*.lua)
 	cp redbean.com confusio.com
 	zip confusio.com .init.lua $(wildcard backends/*.lua)
 
-mock-gitea.com: redbean.com test/mock-gitea.lua
-	cp redbean.com mock-gitea.com
+mock-%.com: redbean.com test/mock-%.lua
+	cp redbean.com $@
 	@mkdir -p .tmp-mock
-	cp test/mock-gitea.lua .tmp-mock/.init.lua
-	(cd .tmp-mock && zip -u ../mock-gitea.com .init.lua)
+	cp test/mock-$*.lua .tmp-mock/.init.lua
+	(cd .tmp-mock && zip -u ../$@ .init.lua)
 	rm -rf .tmp-mock
 
 .PHONY: build test test-unit test-integration validate-mock clean
@@ -49,7 +53,7 @@ build: confusio.com
 
 test: test-unit test-integration
 
-test-unit: confusio.com mock-gitea.com hurl
+test-unit: confusio.com $(MOCKS) hurl
 	bash test/test-unit.sh
 
 test-integration: confusio.com hurl
@@ -59,4 +63,4 @@ validate-mock: mock-gitea.com
 	bash test/test-mock-validate.sh
 
 clean:
-	rm -f redbean.com confusio.com mock-gitea.com hurl
+	rm -f redbean.com confusio.com $(MOCKS) hurl

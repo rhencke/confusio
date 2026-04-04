@@ -169,35 +169,15 @@ if config.backend ~= "" then
   dofile("/zip/backends/" .. config.backend .. ".lua")
 end
 
--- not_implemented is a default handler body used for endpoints whose provider
--- support is not yet wired up.
-local function not_implemented()
-  respond_json(501, "Not Implemented", { message = "Not Implemented" })
+-- Health check default: return 200 if no backend configured.
+-- Each backend overrides get_root to probe its upstream.
+if not backend_impl.get_root then
+  backend_impl.get_root = function() respond_json(200, "OK", {}) end
 end
 
--- Default handlers. Add an entry here for every route registered below.
--- Override in backends/<name>.lua only when the backend behaves differently.
-local defaults = {
-  get_root              = function() respond_json(200, "OK", {}) end,
-  get_emojis            = function() respond_json(200, "OK", {}) end,
-  get_repo              = not_implemented,
-  patch_repo            = not_implemented,
-  delete_repo           = not_implemented,
-  get_user_repos        = not_implemented,
-  post_user_repos       = not_implemented,
-  get_org_repos         = not_implemented,
-  post_org_repos        = not_implemented,
-  get_repo_topics       = not_implemented,
-  put_repo_topics       = not_implemented,
-  get_repo_languages    = not_implemented,
-  get_repo_contributors = not_implemented,
-  get_repo_tags         = not_implemented,
-  get_repo_teams        = not_implemented,
-}
-
--- Resolve handlers once at startup: backend overrides shadow defaults via __index.
--- The backend is fixed for the program's lifetime — no per-request dispatch needed.
-local handle = setmetatable(backend_impl, { __index = defaults })
+-- Handlers resolved once at startup; backend is fixed for the program's lifetime.
+-- Registered routes not implemented by the backend return 404.
+local handle = backend_impl
 
 -- ---------------------------------------------------------------------------
 -- Segment-based radix trie router
@@ -211,7 +191,7 @@ local handle = setmetatable(backend_impl, { __index = defaults })
 --
 -- A second path-only trie tracks which paths are known at all; when a verb+path
 -- lookup misses but the path is known, OnHttpRequest returns 405 rather than
--- falling through to Redbean's default routing.
+-- 404. Unknown paths return JSON 404 directly; Route() is no longer called.
 -- ---------------------------------------------------------------------------
 
 local function new_node() return { static = {}, param = nil, handler = nil } end
@@ -282,33 +262,149 @@ end
 
 local routes = {
   -- Root
-  { "GET /",                                            "get_root"              },
+  ["GET /"]                                                                    = "get_root",
   -- Emojis
-  { "GET /emojis",                                      "get_emojis"            },
-  -- Repos API (https://docs.github.com/en/rest/repos/repos)
-  { "GET /repos/{owner}/{repo}",                        "get_repo"              },
-  { "PATCH /repos/{owner}/{repo}",                      "patch_repo"            },
-  { "DELETE /repos/{owner}/{repo}",                     "delete_repo"           },
-  { "GET /user/repos",                                  "get_user_repos"        },
-  { "POST /user/repos",                                 "post_user_repos"       },
-  { "GET /orgs/{org}/repos",                            "get_org_repos"         },
-  { "POST /orgs/{org}/repos",                           "post_org_repos"        },
-  { "GET /repos/{owner}/{repo}/topics",                 "get_repo_topics"       },
-  { "PUT /repos/{owner}/{repo}/topics",                 "put_repo_topics"       },
-  { "GET /repos/{owner}/{repo}/languages",              "get_repo_languages"    },
-  { "GET /repos/{owner}/{repo}/contributors",           "get_repo_contributors" },
-  { "GET /repos/{owner}/{repo}/tags",                   "get_repo_tags"         },
-  { "GET /repos/{owner}/{repo}/teams",                  "get_repo_teams"        },
+  ["GET /emojis"]                                                              = "get_emojis",
+
+  -- Repos core (https://docs.github.com/en/rest/repos/repos)
+  ["GET /repos/{owner}/{repo}"]                                                = "get_repo",
+  ["PATCH /repos/{owner}/{repo}"]                                              = "patch_repo",
+  ["DELETE /repos/{owner}/{repo}"]                                             = "delete_repo",
+  ["GET /user/repos"]                                                          = "get_user_repos",
+  ["POST /user/repos"]                                                         = "post_user_repos",
+  ["GET /orgs/{org}/repos"]                                                    = "get_org_repos",
+  ["POST /orgs/{org}/repos"]                                                   = "post_org_repos",
+  ["GET /users/{username}/repos"]                                              = "get_users_repos",
+  ["GET /repositories"]                                                        = "get_repositories",
+
+  -- Topics / languages / contributors / tags / teams
+  ["GET /repos/{owner}/{repo}/topics"]                                         = "get_repo_topics",
+  ["PUT /repos/{owner}/{repo}/topics"]                                         = "put_repo_topics",
+  ["GET /repos/{owner}/{repo}/languages"]                                      = "get_repo_languages",
+  ["GET /repos/{owner}/{repo}/contributors"]                                   = "get_repo_contributors",
+  ["GET /repos/{owner}/{repo}/tags"]                                           = "get_repo_tags",
+  ["GET /repos/{owner}/{repo}/teams"]                                          = "get_repo_teams",
+
+  -- Branches (https://docs.github.com/en/rest/branches)
+  ["GET /repos/{owner}/{repo}/branches"]                                       = "get_repo_branches",
+  ["GET /repos/{owner}/{repo}/branches/{branch}"]                              = "get_repo_branch",
+
+  -- Commits (https://docs.github.com/en/rest/commits)
+  ["GET /repos/{owner}/{repo}/commits"]                                        = "get_repo_commits",
+  ["GET /repos/{owner}/{repo}/commits/{ref}"]                                  = "get_repo_commit",
+
+  -- Commit comments
+  ["GET /repos/{owner}/{repo}/comments"]                                       = "get_repo_comments",
+  ["GET /repos/{owner}/{repo}/comments/{comment_id}"]                          = "get_repo_comment",
+  ["PATCH /repos/{owner}/{repo}/comments/{comment_id}"]                        = "patch_repo_comment",
+  ["DELETE /repos/{owner}/{repo}/comments/{comment_id}"]                       = "delete_repo_comment",
+  ["GET /repos/{owner}/{repo}/commits/{commit_sha}/comments"]                  = "get_commit_comments",
+  ["POST /repos/{owner}/{repo}/commits/{commit_sha}/comments"]                 = "post_commit_comment",
+
+  -- Statuses
+  ["GET /repos/{owner}/{repo}/commits/{ref}/statuses"]                         = "get_commit_statuses",
+  ["GET /repos/{owner}/{repo}/commits/{ref}/status"]                           = "get_commit_combined_status",
+  ["POST /repos/{owner}/{repo}/statuses/{sha}"]                                = "post_commit_status",
+
+  -- Contents (https://docs.github.com/en/rest/repos/contents)
+  ["GET /repos/{owner}/{repo}/readme"]                                         = "get_repo_readme",
+  ["GET /repos/{owner}/{repo}/readme/{dir}"]                                   = "get_repo_readme_dir",
+  ["GET /repos/{owner}/{repo}/contents/{path}"]                                = "get_repo_content",
+  ["PUT /repos/{owner}/{repo}/contents/{path}"]                                = "put_repo_content",
+  ["DELETE /repos/{owner}/{repo}/contents/{path}"]                             = "delete_repo_content",
+  ["GET /repos/{owner}/{repo}/tarball/{ref}"]                                  = "get_repo_tarball",
+  ["GET /repos/{owner}/{repo}/zipball/{ref}"]                                  = "get_repo_zipball",
+
+  -- Compare
+  ["GET /repos/{owner}/{repo}/compare/{basehead}"]                             = "get_repo_compare",
+
+  -- Collaborators (https://docs.github.com/en/rest/collaborators)
+  ["GET /repos/{owner}/{repo}/collaborators"]                                  = "get_repo_collaborators",
+  ["GET /repos/{owner}/{repo}/collaborators/{username}"]                       = "get_repo_collaborator",
+  ["PUT /repos/{owner}/{repo}/collaborators/{username}"]                       = "put_repo_collaborator",
+  ["DELETE /repos/{owner}/{repo}/collaborators/{username}"]                    = "delete_repo_collaborator",
+  ["GET /repos/{owner}/{repo}/collaborators/{username}/permission"]            = "get_repo_collaborator_permission",
+
+  -- Forks (https://docs.github.com/en/rest/repos/forks)
+  ["GET /repos/{owner}/{repo}/forks"]                                          = "get_repo_forks",
+  ["POST /repos/{owner}/{repo}/forks"]                                         = "post_repo_forks",
+
+  -- Merges (https://docs.github.com/en/rest/branches/merging)
+  ["POST /repos/{owner}/{repo}/merges"]                                        = "post_repo_merges",
+  ["POST /repos/{owner}/{repo}/merge-upstream"]                                = "post_repo_merge_upstream",
+
+  -- Releases (https://docs.github.com/en/rest/releases)
+  ["GET /repos/{owner}/{repo}/releases"]                                       = "get_repo_releases",
+  ["POST /repos/{owner}/{repo}/releases"]                                      = "post_repo_releases",
+  ["GET /repos/{owner}/{repo}/releases/latest"]                                = "get_repo_release_latest",
+  ["GET /repos/{owner}/{repo}/releases/tags/{tag}"]                            = "get_repo_release_by_tag",
+  ["GET /repos/{owner}/{repo}/releases/{release_id}"]                          = "get_repo_release",
+  ["PATCH /repos/{owner}/{repo}/releases/{release_id}"]                        = "patch_repo_release",
+  ["DELETE /repos/{owner}/{repo}/releases/{release_id}"]                       = "delete_repo_release",
+  ["GET /repos/{owner}/{repo}/releases/{release_id}/assets"]                   = "get_repo_release_assets",
+  ["POST /repos/{owner}/{repo}/releases/{release_id}/assets"]                  = "post_repo_release_assets",
+  ["GET /repos/{owner}/{repo}/releases/assets/{asset_id}"]                     = "get_repo_release_asset",
+  ["PATCH /repos/{owner}/{repo}/releases/assets/{asset_id}"]                   = "patch_repo_release_asset",
+  ["DELETE /repos/{owner}/{repo}/releases/assets/{asset_id}"]                  = "delete_repo_release_asset",
+
+  -- Deploy keys (https://docs.github.com/en/rest/deploy-keys)
+  ["GET /repos/{owner}/{repo}/keys"]                                           = "get_repo_keys",
+  ["POST /repos/{owner}/{repo}/keys"]                                          = "post_repo_keys",
+  ["GET /repos/{owner}/{repo}/keys/{key_id}"]                                  = "get_repo_key",
+  ["DELETE /repos/{owner}/{repo}/keys/{key_id}"]                               = "delete_repo_key",
+
+  -- Webhooks (https://docs.github.com/en/rest/repos/webhooks)
+  ["GET /repos/{owner}/{repo}/hooks"]                                          = "get_repo_hooks",
+  ["POST /repos/{owner}/{repo}/hooks"]                                         = "post_repo_hooks",
+  ["GET /repos/{owner}/{repo}/hooks/{hook_id}"]                                = "get_repo_hook",
+  ["PATCH /repos/{owner}/{repo}/hooks/{hook_id}"]                              = "patch_repo_hook",
+  ["DELETE /repos/{owner}/{repo}/hooks/{hook_id}"]                             = "delete_repo_hook",
+  ["GET /repos/{owner}/{repo}/hooks/{hook_id}/config"]                         = "get_repo_hook_config",
+  ["PATCH /repos/{owner}/{repo}/hooks/{hook_id}/config"]                       = "patch_repo_hook_config",
+  ["POST /repos/{owner}/{repo}/hooks/{hook_id}/pings"]                         = "post_repo_hook_ping",
+  ["POST /repos/{owner}/{repo}/hooks/{hook_id}/tests"]                         = "post_repo_hook_test",
+
+  -- Statistics (https://docs.github.com/en/rest/metrics/statistics)
+  ["GET /repos/{owner}/{repo}/stats/code_frequency"]                           = "get_repo_stats_code_frequency",
+  ["GET /repos/{owner}/{repo}/stats/commit_activity"]                          = "get_repo_stats_commit_activity",
+  ["GET /repos/{owner}/{repo}/stats/contributors"]                             = "get_repo_stats_contributors",
+  ["GET /repos/{owner}/{repo}/stats/participation"]                            = "get_repo_stats_participation",
+  ["GET /repos/{owner}/{repo}/stats/punch_card"]                               = "get_repo_stats_punch_card",
+
+  -- Traffic (https://docs.github.com/en/rest/metrics/traffic)
+  ["GET /repos/{owner}/{repo}/traffic/clones"]                                 = "get_repo_traffic_clones",
+  ["GET /repos/{owner}/{repo}/traffic/popular/paths"]                          = "get_repo_traffic_paths",
+  ["GET /repos/{owner}/{repo}/traffic/popular/referrers"]                      = "get_repo_traffic_referrers",
+  ["GET /repos/{owner}/{repo}/traffic/views"]                                  = "get_repo_traffic_views",
+
+  -- Invitations (https://docs.github.com/en/rest/collaborators/invitations)
+  ["GET /repos/{owner}/{repo}/invitations"]                                    = "get_repo_invitations",
+  ["PATCH /repos/{owner}/{repo}/invitations/{invitation_id}"]                  = "patch_repo_invitation",
+  ["DELETE /repos/{owner}/{repo}/invitations/{invitation_id}"]                 = "delete_repo_invitation",
+  ["GET /user/repository_invitations"]                                         = "get_user_repo_invitations",
+  ["PATCH /user/repository_invitations/{invitation_id}"]                       = "patch_user_repo_invitation",
+  ["DELETE /user/repository_invitations/{invitation_id}"]                      = "delete_user_repo_invitation",
+
+  -- Deployments (https://docs.github.com/en/rest/deployments)
+  ["GET /repos/{owner}/{repo}/deployments"]                                    = "get_repo_deployments",
+  ["POST /repos/{owner}/{repo}/deployments"]                                   = "post_repo_deployments",
+  ["GET /repos/{owner}/{repo}/deployments/{deployment_id}"]                    = "get_repo_deployment",
+  ["DELETE /repos/{owner}/{repo}/deployments/{deployment_id}"]                 = "delete_repo_deployment",
+  ["GET /repos/{owner}/{repo}/deployments/{deployment_id}/statuses"]           = "get_repo_deployment_statuses",
+  ["POST /repos/{owner}/{repo}/deployments/{deployment_id}/statuses"]          = "post_repo_deployment_status",
+  ["GET /repos/{owner}/{repo}/deployments/{deployment_id}/statuses/{status_id}"] = "get_repo_deployment_status",
 }
-for _, r in ipairs(routes) do route_add(r[1], r[2]) end
+for spec, name in pairs(routes) do route_add(spec, name) end
 
 function OnHttpRequest()
   local ep, caps = route_match(GetMethod(), GetPath())
   if ep then
-    handle[ep](table.unpack(caps))
+    local fn = handle[ep]
+    if fn then fn(table.unpack(caps))
+    else respond_json(404, "Not Found", { message = "Not Found" }) end
   elseif path_known(GetPath()) then
     respond_json(405, "Method Not Allowed", { message = "Method Not Allowed" })
   else
-    Route()
+    respond_json(404, "Not Found", { message = "Not Found" })
   end
 end
