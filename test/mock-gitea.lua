@@ -173,6 +173,39 @@ function OnHttpRequest()
     ["/api/v1/user/emails"]                                       = {200,
       '[{"email":"octocat@github.com","verified":true,"primary":true},' ..
       '{"email":"private@example.com","verified":false,"primary":false}]'},
+
+    -- Teams
+    ["/api/v1/user/teams"]                                         = {200,
+      '[{"id":1,"name":"core","description":"Core team","permission":"write",' ..
+      '"includes_all_repositories":false,"units":["repo.code"]}]'},
+    ["/api/v1/orgs/testorg/teams"]                               = {200,
+      '[{"id":1,"name":"core","description":"Core team","permission":"write",' ..
+      '"includes_all_repositories":false,"units":["repo.code"]},' ..
+      '{"id":2,"name":"Owners","description":"","permission":"owner",' ..
+      '"includes_all_repositories":true,"units":["repo.code"]}]'},
+    ["/api/v1/orgs/testorg/teams?limit=50"]                      = {200,
+      '[{"id":1,"name":"core","description":"Core team","permission":"write",' ..
+      '"includes_all_repositories":false,"units":["repo.code"]},' ..
+      '{"id":2,"name":"Owners","description":"","permission":"owner",' ..
+      '"includes_all_repositories":true,"units":["repo.code"]}]'},
+    ["/api/v1/teams/1"]                                          = {200,
+      '{"id":1,"name":"core","description":"Core team","permission":"write",' ..
+      '"includes_all_repositories":false,"units":["repo.code"]}'},
+    ["GET /api/v1/teams/1/members/octocat"]                      = {204, nil},
+    ["/api/v1/teams/1/members"]                                  = {200,
+      '[{"login":"octocat","id":1,"avatar_url":"","html_url":"http://localhost/octocat",' ..
+      '"full_name":"The Octocat","email":"octocat@github.com","is_admin":false,' ..
+      '"location":"","website":"","followers_count":0,"following_count":0,' ..
+      '"created":"2011-01-25T18:44:36Z"}]'},
+    ["/api/v1/teams/1/repos"]                                    = {200,
+      '[{"id":1,"name":"hello-world","full_name":"octocat/hello-world","private":false,' ..
+      '"owner":{"login":"octocat","id":1,"avatar_url":"","url":"","html_url":"","type":"User"},' ..
+      '"html_url":"http://localhost/octocat/hello-world","description":"My first repo",' ..
+      '"fork":false,"url":"","clone_url":"","homepage":"","stargazers_count":0,' ..
+      '"watchers_count":0,"language":null,"has_issues":true,"has_wiki":true,' ..
+      '"forks_count":0,"archived":false,"open_issues_count":0,"default_branch":"main",' ..
+      '"visibility":"public"}]'},
+    ["GET /api/v1/teams/1/repos/testorg/hello-world"]            = {204, nil},
   }
 
   local entry = routes[method .. " " .. path] or routes[path]

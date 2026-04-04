@@ -58,6 +58,37 @@ local function filter_verified_emails(emails)
   return out
 end
 
+-- Map a Gitea team object to GitHub format.
+local function translate_gitea_team(t)
+  if not t then return {} end
+  local slug = (t.name or ""):lower():gsub("[^%w%-]", "-")
+  return {
+    id                   = t.id,
+    node_id              = "",
+    name                 = t.name,
+    slug                 = slug,
+    description          = t.description or "",
+    privacy              = "closed",
+    notification_setting = "notifications_enabled",
+    permission           = t.permission == "owner" and "admin" or (t.permission or "pull"),
+    members_url          = "",
+    repositories_url     = "",
+    parent               = nil,
+  }
+end
+
+-- Look up a Gitea team ID by org and slug.  Gitea uses numeric IDs; the slug
+-- is matched against the lowercased-and-slugified team name.
+local function gitea_find_team_id(org, slug)
+  local ok, status, _, body = fetch_json(base() .. "/orgs/" .. org .. "/teams?limit=50")
+  if not ok or status ~= 200 then return nil end
+  for _, t in ipairs(DecodeJson(body) or {}) do
+    local ts = (t.name or ""):lower():gsub("[^%w%-]", "-")
+    if ts == slug then return t.id end
+  end
+  return nil
+end
+
 backend_impl = {
   -- Health check
   get_root = function()
@@ -744,5 +775,308 @@ backend_impl = {
 
   -- GET /user/public_emails — Gitea has no separate endpoint; filter verified from /user/emails
   get_user_public_emails = proxy_handler(filter_verified_emails, function() return base() .. "/user/emails" end),
+
+  -- Teams ---------------------------------------------------------------------
+  -- Gitea teams use numeric IDs, not slugs.  find_team_id lists all teams for
+  -- the org and matches by lowercased, slugified name.
+
+  -- GET /orgs/{org}/teams
+  get_org_teams = function(org)
+    proxy_json(
+      function(teams)
+        for i, t in ipairs(teams) do teams[i] = translate_gitea_team(t) end
+        return teams
+      end,
+      fetch_json(append_page_params(base() .. "/orgs/" .. org .. "/teams",
+        { per_page = "limit", page = "page" })))
+  end,
+
+  -- POST /orgs/{org}/teams
+  post_org_teams = function(org)
+    local req = DecodeJson(GetBody() or "{}")
+    local body = {
+      name        = req.name,
+      description = req.description,
+      permission  = req.permission == "admin" and "owner" or (req.permission or "read"),
+      units       = { "repo.code", "repo.issues", "repo.pulls", "repo.releases" },
+      includes_all_repositories = false,
+    }
+    proxy_json_created(translate_gitea_team,
+      fetch_json(base() .. "/orgs/" .. org .. "/teams", "POST", EncodeJson(body)))
+  end,
+
+  -- GET /orgs/{org}/teams/{team_slug}
+  get_org_team = function(org, slug)
+    local id = gitea_find_team_id(org, slug)
+    if not id then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    proxy_json(translate_gitea_team, fetch_json(base() .. "/teams/" .. id))
+  end,
+
+  -- PATCH /orgs/{org}/teams/{team_slug}
+  patch_org_team = function(org, slug)
+    local id = gitea_find_team_id(org, slug)
+    if not id then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local req = DecodeJson(GetBody() or "{}")
+    local body = {}
+    if req.name        then body.name        = req.name end
+    if req.description then body.description = req.description end
+    if req.permission  then
+      body.permission = req.permission == "admin" and "owner" or req.permission
+    end
+    proxy_json(translate_gitea_team,
+      fetch_json(base() .. "/teams/" .. id, "PATCH", EncodeJson(body)))
+  end,
+
+  -- DELETE /orgs/{org}/teams/{team_slug}
+  delete_org_team = function(org, slug)
+    local id = gitea_find_team_id(org, slug)
+    if not id then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local opts = auth() or {}; opts.method = "DELETE"
+    local ok, status = pcall(Fetch, base() .. "/teams/" .. id, opts)
+    if ok and status == 204 then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- GET /orgs/{org}/teams/{team_slug}/invitations — Gitea has no invitations
+  get_org_team_invitations = function()
+    SetStatus(200, "OK")
+    SetHeader("Content-Type", "application/json; charset=utf-8")
+    Write("[]")
+  end,
+
+  -- GET /orgs/{org}/teams/{team_slug}/members
+  get_org_team_members = function(org, slug)
+    local id = gitea_find_team_id(org, slug)
+    if not id then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    proxy_json(translate_users,
+      fetch_json(append_page_params(base() .. "/teams/" .. id .. "/members",
+        { per_page = "limit", page = "page" })))
+  end,
+
+  -- GET /orgs/{org}/teams/{team_slug}/memberships/{username}
+  get_org_team_membership = function(org, slug, username)
+    local id = gitea_find_team_id(org, slug)
+    if not id then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local ok, status = pcall(Fetch,
+      base() .. "/teams/" .. id .. "/members/" .. username, auth())
+    if ok and status == 204 then
+      respond_json(200, "OK", { url = "", role = "member", state = "active" })
+    elseif ok then respond_json(404, "Not Found", { message = "Not Found" })
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- PUT /orgs/{org}/teams/{team_slug}/memberships/{username}
+  put_org_team_membership = function(org, slug, username)
+    local id = gitea_find_team_id(org, slug)
+    if not id then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local opts = auth() or {}; opts.method = "PUT"
+    local ok, status = pcall(Fetch, base() .. "/teams/" .. id .. "/members/" .. username, opts)
+    if ok and (status == 204 or status == 200) then
+      respond_json(200, "OK", { url = "", role = "member", state = "active" })
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- DELETE /orgs/{org}/teams/{team_slug}/memberships/{username}
+  delete_org_team_membership = function(org, slug, username)
+    local id = gitea_find_team_id(org, slug)
+    if not id then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local opts = auth() or {}; opts.method = "DELETE"
+    local ok, status = pcall(Fetch,
+      base() .. "/teams/" .. id .. "/members/" .. username, opts)
+    if ok and status == 204 then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- GET /orgs/{org}/teams/{team_slug}/repos
+  get_org_team_repos = function(org, slug)
+    local id = gitea_find_team_id(org, slug)
+    if not id then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    proxy_json(
+      function(repos)
+        for i, r in ipairs(repos) do repos[i] = translate_repo(r) end
+        return repos
+      end,
+      fetch_json(append_page_params(base() .. "/teams/" .. id .. "/repos",
+        { per_page = "limit", page = "page" })))
+  end,
+
+  -- GET /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
+  get_org_team_repo = function(org, slug, owner, repo_name)
+    local id = gitea_find_team_id(org, slug)
+    if not id then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local ok, status, _, body = fetch_json(
+      base() .. "/teams/" .. id .. "/repos/" .. owner .. "/" .. repo_name)
+    if ok and (status == 204 or status == 200) then
+      local r = (status == 200 and DecodeJson(body)) or {}
+      respond_json(200, "OK", translate_repo(r))
+    elseif ok then respond_json(404, "Not Found", { message = "Not Found" })
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- PUT /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
+  put_org_team_repo = function(org, slug, owner, repo_name)
+    local id = gitea_find_team_id(org, slug)
+    if not id then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local opts = auth() or {}; opts.method = "PUT"
+    local ok, status = pcall(Fetch,
+      base() .. "/teams/" .. id .. "/repos/" .. owner .. "/" .. repo_name, opts)
+    if ok and status == 204 then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- DELETE /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
+  delete_org_team_repo = function(org, slug, owner, repo_name)
+    local id = gitea_find_team_id(org, slug)
+    if not id then respond_json(404, "Not Found", { message = "Not Found" }); return end
+    local opts = auth() or {}; opts.method = "DELETE"
+    local ok, status = pcall(Fetch,
+      base() .. "/teams/" .. id .. "/repos/" .. owner .. "/" .. repo_name, opts)
+    if ok and status == 204 then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- GET /orgs/{org}/teams/{team_slug}/teams — Gitea has no nested teams
+  get_org_team_children = function()
+    SetStatus(200, "OK")
+    SetHeader("Content-Type", "application/json; charset=utf-8")
+    Write("[]")
+  end,
+
+  -- Legacy team-by-id endpoints (GitHub /teams/{team_id} → Gitea /teams/{id}).
+  -- No slug lookup needed — the caller already provides the numeric ID.
+
+  -- GET /user/teams
+  get_user_teams = function()
+    proxy_json(
+      function(teams)
+        for i, t in ipairs(teams) do teams[i] = translate_gitea_team(t) end
+        return teams
+      end,
+      fetch_json(append_page_params(base() .. "/user/teams",
+        { per_page = "limit", page = "page" })))
+  end,
+
+  -- GET /teams/{team_id}
+  get_team = function(team_id)
+    proxy_json(translate_gitea_team, fetch_json(base() .. "/teams/" .. team_id))
+  end,
+
+  -- PATCH /teams/{team_id}
+  patch_team = function(team_id)
+    local req = DecodeJson(GetBody() or "{}")
+    local body = {}
+    if req.name        then body.name        = req.name end
+    if req.description then body.description = req.description end
+    if req.permission  then
+      body.permission = req.permission == "admin" and "owner" or req.permission
+    end
+    proxy_json(translate_gitea_team,
+      fetch_json(base() .. "/teams/" .. team_id, "PATCH", EncodeJson(body)))
+  end,
+
+  -- DELETE /teams/{team_id}
+  delete_team = function(team_id)
+    set_204_or_error("DELETE", base() .. "/teams/" .. team_id)
+  end,
+
+  -- GET /teams/{team_id}/members
+  get_team_members = function(team_id)
+    proxy_json(translate_users,
+      fetch_json(append_page_params(base() .. "/teams/" .. team_id .. "/members",
+        { per_page = "limit", page = "page" })))
+  end,
+
+  -- GET /teams/{team_id}/members/{username} — deprecated legacy endpoint
+  get_team_member = function(team_id, username)
+    local ok, status = pcall(Fetch,
+      base() .. "/teams/" .. team_id .. "/members/" .. username, auth())
+    if ok and status == 204 then SetStatus(204, "No Content")
+    elseif ok then respond_json(404, "Not Found", { message = "Not Found" })
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- PUT /teams/{team_id}/members/{username} — deprecated legacy endpoint
+  put_team_member = function(team_id, username)
+    local opts = auth() or {}; opts.method = "PUT"
+    local ok, status = pcall(Fetch,
+      base() .. "/teams/" .. team_id .. "/members/" .. username, opts)
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- DELETE /teams/{team_id}/members/{username} — deprecated legacy endpoint
+  delete_team_member = function(team_id, username)
+    set_204_or_error("DELETE", base() .. "/teams/" .. team_id .. "/members/" .. username)
+  end,
+
+  -- GET /teams/{team_id}/memberships/{username}
+  get_team_membership = function(team_id, username)
+    local ok, status = pcall(Fetch,
+      base() .. "/teams/" .. team_id .. "/members/" .. username, auth())
+    if ok and status == 204 then
+      respond_json(200, "OK", { url = "", role = "member", state = "active" })
+    elseif ok then respond_json(404, "Not Found", { message = "Not Found" })
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- PUT /teams/{team_id}/memberships/{username}
+  put_team_membership = function(team_id, username)
+    local opts = auth() or {}; opts.method = "PUT"
+    local ok, status = pcall(Fetch,
+      base() .. "/teams/" .. team_id .. "/members/" .. username, opts)
+    if ok and (status == 204 or status == 200) then
+      respond_json(200, "OK", { url = "", role = "member", state = "active" })
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- DELETE /teams/{team_id}/memberships/{username}
+  delete_team_membership = function(team_id, username)
+    set_204_or_error("DELETE", base() .. "/teams/" .. team_id .. "/members/" .. username)
+  end,
+
+  -- GET /teams/{team_id}/repos
+  get_team_repos = function(team_id)
+    proxy_json(
+      function(repos)
+        for i, r in ipairs(repos) do repos[i] = translate_repo(r) end
+        return repos
+      end,
+      fetch_json(append_page_params(base() .. "/teams/" .. team_id .. "/repos",
+        { per_page = "limit", page = "page" })))
+  end,
+
+  -- GET /teams/{team_id}/repos/{owner}/{repo}
+  get_team_repo = function(team_id, owner, repo_name)
+    local ok, status, _, body = fetch_json(
+      base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name)
+    if ok and (status == 204 or status == 200) then
+      local r = (status == 200 and DecodeJson(body)) or {}
+      respond_json(200, "OK", translate_repo(r))
+    elseif ok then respond_json(404, "Not Found", { message = "Not Found" })
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- PUT /teams/{team_id}/repos/{owner}/{repo}
+  put_team_repo = function(team_id, owner, repo_name)
+    local opts = auth() or {}; opts.method = "PUT"
+    local ok, status = pcall(Fetch,
+      base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name, opts)
+    if ok and status == 204 then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- DELETE /teams/{team_id}/repos/{owner}/{repo}
+  delete_team_repo = function(team_id, owner, repo_name)
+    set_204_or_error("DELETE",
+      base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name)
+  end,
 
 }
