@@ -270,6 +270,45 @@ function OnHttpRequest()
     SetStatus(200, "OK")
     json('[{"id":1,"key":"ssh-rsa AAAAB3N...","title":"my key"}]')
 
+  -- Teams -------------------------------------------------------------------
+  elseif path == "/api/v3/orgs/testorg/teams" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"name":"core","slug":"core","description":"Core team",' ..
+      '"privacy":"closed","permission":"push","members_url":"","repositories_url":""}]')
+
+  elseif path == "/api/v3/orgs/testorg/teams/core" then
+    SetStatus(200, "OK")
+    json('{"id":1,"name":"core","slug":"core","description":"Core team",' ..
+      '"privacy":"closed","permission":"push","members_url":"","repositories_url":""}')
+
+  elseif path == "/api/v3/orgs/testorg/teams/core/members" then
+    SetStatus(200, "OK")
+    json('[{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User"}]')
+
+  elseif path == "/api/v3/orgs/testorg/teams/core/memberships/octocat" then
+    SetStatus(200, "OK")
+    json('{"url":"","role":"member","state":"active"}')
+
+  elseif path == "/api/v3/orgs/testorg/teams/core/repos" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"name":"hello-world","full_name":"octocat/hello-world","private":false,' ..
+      '"owner":{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User"},' ..
+      '"html_url":"","default_branch":"main","visibility":"public"}]')
+
+  elseif path == "/api/v3/orgs/testorg/teams/core/repos/octocat/hello-world" then
+    SetStatus(200, "OK")
+    json('{"id":1,"name":"hello-world","full_name":"octocat/hello-world","private":false,' ..
+      '"owner":{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User"},' ..
+      '"html_url":"","default_branch":"main","visibility":"public"}')
+
+  elseif path == "/api/v3/orgs/testorg/teams/core/invitations" then
+    SetStatus(200, "OK")
+    json('[]')
+
+  elseif path == "/api/v3/orgs/testorg/teams/core/teams" then
+    SetStatus(200, "OK")
+    json('[]')
+
   else
     SetStatus(404, "Not Found")
   end

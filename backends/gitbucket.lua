@@ -522,4 +522,89 @@ backend_impl = {
     return append_page_params(base().."/users/"..username.."/keys",
       {per_page="per_page",page="page"})
   end),
+
+  -- Teams (GitHub-compatible passthrough) -------------------------------------
+
+  get_org_teams = proxy_handler(nil, function(org)
+    return append_page_params(base().."/orgs/"..org.."/teams",
+      {per_page="per_page",page="page"})
+  end),
+
+  post_org_teams = function(org)
+    proxy_json_created(nil, fetch_json(base().."/orgs/"..org.."/teams", "POST", GetBody()))
+  end,
+
+  get_org_team = proxy_handler(nil, function(org, slug)
+    return base().."/orgs/"..org.."/teams/"..slug
+  end),
+
+  patch_org_team = function(org, slug)
+    proxy_json(nil, fetch_json(base().."/orgs/"..org.."/teams/"..slug, "PATCH", GetBody()))
+  end,
+
+  delete_org_team = function(org, slug)
+    local ok, status = fetch_json(base().."/orgs/"..org.."/teams/"..slug, "DELETE")
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  get_org_team_invitations = proxy_handler(nil, function(org, slug)
+    return append_page_params(base().."/orgs/"..org.."/teams/"..slug.."/invitations",
+      {per_page="per_page",page="page"})
+  end),
+
+  get_org_team_members = proxy_handler(nil, function(org, slug)
+    return append_page_params(base().."/orgs/"..org.."/teams/"..slug.."/members",
+      {per_page="per_page",page="page"})
+  end),
+
+  get_org_team_membership = proxy_handler(nil, function(org, slug, username)
+    return base().."/orgs/"..org.."/teams/"..slug.."/memberships/"..username
+  end),
+
+  put_org_team_membership = function(org, slug, username)
+    proxy_json(nil,
+      fetch_json(base().."/orgs/"..org.."/teams/"..slug.."/memberships/"..username,
+        "PUT", GetBody()))
+  end,
+
+  delete_org_team_membership = function(org, slug, username)
+    local ok, status = fetch_json(
+      base().."/orgs/"..org.."/teams/"..slug.."/memberships/"..username, "DELETE")
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  get_org_team_repos = proxy_handler(nil, function(org, slug)
+    return append_page_params(base().."/orgs/"..org.."/teams/"..slug.."/repos",
+      {per_page="per_page",page="page"})
+  end),
+
+  get_org_team_repo = proxy_handler(nil, function(org, slug, owner, repo_name)
+    return base().."/orgs/"..org.."/teams/"..slug.."/repos/"..owner.."/"..repo_name
+  end),
+
+  put_org_team_repo = function(org, slug, owner, repo_name)
+    local ok, status = fetch_json(
+      base().."/orgs/"..org.."/teams/"..slug.."/repos/"..owner.."/"..repo_name,
+      "PUT", GetBody())
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  delete_org_team_repo = function(org, slug, owner, repo_name)
+    local ok, status = fetch_json(
+      base().."/orgs/"..org.."/teams/"..slug.."/repos/"..owner.."/"..repo_name, "DELETE")
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  get_org_team_children = proxy_handler(nil, function(org, slug)
+    return append_page_params(base().."/orgs/"..org.."/teams/"..slug.."/teams",
+      {per_page="per_page",page="page"})
+  end),
 }

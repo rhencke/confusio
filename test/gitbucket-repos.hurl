@@ -370,3 +370,69 @@ HTTP 404
 GET http://{{host}}/repos/octocat/hello-world/commits/deadbeefdeadbeef
 
 HTTP 404
+
+# Teams API (/orgs/{org}/teams) -----------------------------------------------
+
+# GET /orgs/{org}/teams
+GET http://{{host}}/orgs/testorg/teams
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$" isCollection
+jsonpath "$[0].id" isInteger
+jsonpath "$[0].slug" isString
+jsonpath "$[0].permission" isString
+
+# GET /orgs/{org}/teams/{team_slug}
+GET http://{{host}}/orgs/testorg/teams/core
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$.slug" == "core"
+jsonpath "$.permission" isString
+
+# GET /orgs/{org}/teams/{team_slug}/members
+GET http://{{host}}/orgs/testorg/teams/core/members
+
+HTTP 200
+[Asserts]
+jsonpath "$" isCollection
+jsonpath "$[0].login" isString
+
+# GET /orgs/{org}/teams/{team_slug}/memberships/{username}
+GET http://{{host}}/orgs/testorg/teams/core/memberships/octocat
+
+HTTP 200
+[Asserts]
+jsonpath "$.role" isString
+jsonpath "$.state" == "active"
+
+# GET /orgs/{org}/teams/{team_slug}/repos
+GET http://{{host}}/orgs/testorg/teams/core/repos
+
+HTTP 200
+[Asserts]
+jsonpath "$" isCollection
+
+# GET /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
+GET http://{{host}}/orgs/testorg/teams/core/repos/octocat/hello-world
+
+HTTP 200
+[Asserts]
+jsonpath "$.name" isString
+
+# GET /orgs/{org}/teams/{team_slug}/invitations
+GET http://{{host}}/orgs/testorg/teams/core/invitations
+
+HTTP 200
+[Asserts]
+body == "[]"
+
+# GET /orgs/{org}/teams/{team_slug}/teams
+GET http://{{host}}/orgs/testorg/teams/core/teams
+
+HTTP 200
+[Asserts]
+body == "[]"
