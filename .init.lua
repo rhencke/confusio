@@ -112,11 +112,13 @@ end
 -- xform receives (response_body, ...handler_args) so closures over handler args are not
 -- needed. Named translate functions that only take the response body work as-is
 -- (extra args are silently ignored by Lua).
-function make_proxy_handler(fetch_fn)
+-- proxy_fn defaults to proxy_json; pass proxy_json_created for 201 Created endpoints.
+function make_proxy_handler(fetch_fn, proxy_fn)
+  proxy_fn = proxy_fn or proxy_json
   return function(xform, url_fn)
     return function(...)
       local args = {...}
-      proxy_json(
+      proxy_fn(
         type(xform) == "function" and function(r) return xform(r, table.unpack(args)) end or xform,
         fetch_fn(url_fn(...)))
     end
@@ -126,14 +128,7 @@ end
 -- Like make_proxy_handler but for create endpoints: responds 201 Created.
 -- Each backend calls: local proxy_handler_created = make_proxy_handler_created(fetch_json)
 function make_proxy_handler_created(fetch_fn)
-  return function(xform, url_fn)
-    return function(...)
-      local args = {...}
-      proxy_json_created(
-        type(xform) == "function" and function(r) return xform(r, table.unpack(args)) end or xform,
-        fetch_fn(url_fn(...)))
-    end
-  end
+  return make_proxy_handler(fetch_fn, proxy_json_created)
 end
 
 -- translate_repo is global: maps a Gitea-style repo object to GitHub field names.
