@@ -10,6 +10,11 @@ GitHub's API is the lingua franca of git hosting tools. Other providers speak th
 
 Built with [Redbean](https://redbean.dev) — a single-file web server containing a Lua interpreter, distributed as a self-extracting zip.
 
+## Prerequisites
+
+- `make`, `zip`, `wget` — needed to build
+- `curl`, `bash` — additionally needed to run tests
+
 ## Quick start
 
 **1. Build**
