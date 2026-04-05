@@ -215,6 +215,125 @@ local function translate_gitea_milestones(milestones)
   return milestones
 end
 
+-- Map a Gitea pull request branch reference to GitHub format.
+local function translate_gitea_pr_branch(b)
+  if not b then
+    return {}
+  end
+  return {
+    label = b.label or b.ref or "",
+    ref = b.ref or "",
+    sha = b.sha or "",
+    repo = b.repo and translate_repo(b.repo) or nil,
+  }
+end
+
+-- Map a Gitea pull request object to GitHub format.
+-- Gitea timestamps: "created"/"updated"/"closed"/"merged" (no _at suffix).
+local function translate_gitea_pull(pr)
+  if not pr then
+    return {}
+  end
+  return {
+    id = pr.id,
+    node_id = "",
+    number = pr.number,
+    state = pr.state,
+    locked = false,
+    title = pr.title,
+    body = pr.body,
+    user = translate_user(pr.user),
+    head = translate_gitea_pr_branch(pr.head),
+    base = translate_gitea_pr_branch(pr.base),
+    draft = pr.draft or false,
+    created_at = pr.created,
+    updated_at = pr.updated,
+    closed_at = pr.closed,
+    merged_at = pr.merged,
+    merge_commit_sha = pr.merge_commit_sha,
+    merged_by = pr.merged_by and translate_user(pr.merged_by) or nil,
+    diff_url = pr.diff_url or "",
+    patch_url = pr.patch_url or "",
+    html_url = pr.html_url or "",
+    url = pr.url or "",
+    mergeable = pr.mergeable,
+    comments = pr.comments,
+    review_comments = pr.review_comments,
+    additions = pr.additions,
+    deletions = pr.deletions,
+    changed_files = pr.changed_files,
+  }
+end
+
+local function translate_gitea_pulls(prs)
+  for i, pr in ipairs(prs) do
+    prs[i] = translate_gitea_pull(pr)
+  end
+  return prs
+end
+
+-- Map a Gitea pull request review to GitHub format.
+-- Gitea type/state: APPROVED, REJECT/REQUEST_CHANGES→CHANGES_REQUESTED, COMMENT, UNKNOWN→COMMENT.
+local function translate_gitea_review(r)
+  if not r then
+    return {}
+  end
+  local state = r.state or r.type or "COMMENT"
+  if state == "REJECT" or state == "REQUEST_CHANGES" then
+    state = "CHANGES_REQUESTED"
+  elseif state ~= "APPROVED" and state ~= "DISMISSED" then
+    state = "COMMENT"
+  end
+  return {
+    id = r.id,
+    node_id = "",
+    user = translate_user(r.user),
+    body = r.body or "",
+    state = state,
+    submitted_at = r.submitted_at,
+    html_url = "",
+    pull_request_url = "",
+  }
+end
+
+local function translate_gitea_reviews(reviews)
+  for i, r in ipairs(reviews) do
+    reviews[i] = translate_gitea_review(r)
+  end
+  return reviews
+end
+
+-- Map a Gitea inline review comment to GitHub format.
+local function translate_gitea_review_comment(c)
+  if not c then
+    return {}
+  end
+  return {
+    id = c.id,
+    node_id = "",
+    path = c.path or "",
+    position = c.line,
+    original_position = c.original_line,
+    commit_id = c.commit_id or "",
+    original_commit_id = c.original_commit_id or "",
+    diff_hunk = c.diff_hunk or "",
+    body = c.body or "",
+    user = translate_user(c.user),
+    created_at = c.created_at or c.created,
+    updated_at = c.updated_at or c.updated,
+    html_url = "",
+    pull_request_url = "",
+    url = "",
+  }
+end
+
+local function translate_gitea_review_comments(comments)
+  for i, c in ipairs(comments) do
+    comments[i] = translate_gitea_review_comment(c)
+  end
+  return comments
+end
+
 -- Look up a Gitea label ID by name within a repo.
 local function gitea_find_label_id(owner, repo_name, label_name)
   local ok, status, _, body =
@@ -1945,5 +2064,227 @@ backend_impl = {
       "DELETE",
       base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name
     )
+  end,
+
+  -- Pull Requests ---------------------------------------------------------------
+
+  -- GET /repos/{owner}/{repo}/pulls
+  get_repo_pulls = proxy_handler(translate_gitea_pulls, function(o, r)
+    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/pulls", PAGES)
+  end),
+
+  -- POST /repos/{owner}/{repo}/pulls
+  post_repo_pulls = proxy_handler_created(translate_gitea_pull, function(o, r)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/pulls", "POST", GetBody()
+  end),
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}
+  get_repo_pull = proxy_handler(translate_gitea_pull, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n
+  end),
+
+  -- PATCH /repos/{owner}/{repo}/pulls/{pull_number}
+  patch_repo_pull = proxy_handler(translate_gitea_pull, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n, "PATCH", GetBody()
+  end),
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/commits
+  get_pull_commits = proxy_handler(nil, function(o, r, n)
+    return append_page_params(
+      base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/commits",
+      PAGES
+    )
+  end),
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/files
+  get_pull_files = proxy_handler(nil, function(o, r, n)
+    return append_page_params(
+      base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/files",
+      PAGES
+    )
+  end),
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/merge
+  -- Gitea returns 204 if merged, 404 if not — same semantics as GitHub.
+  get_pull_merge = function(owner, repo_name, pull_number)
+    local ok, status = fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/merge"
+    )
+    if ok and status == 204 then
+      SetStatus(204, "No Content")
+    elseif ok and status == 404 then
+      respond_json(404, "Not Found", { message = "Pull Request is not merged" })
+    elseif ok then
+      respond_json(status, "Error", {})
+    else
+      respond_json(503, "Service Unavailable", {})
+    end
+  end,
+
+  -- PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge
+  -- GitHub uses PUT; Gitea uses POST.
+  put_pull_merge = function(owner, repo_name, pull_number)
+    local ok, status = fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/merge",
+      "POST",
+      GetBody()
+    )
+    if ok and status == 204 then
+      SetStatus(204, "No Content")
+    elseif ok then
+      respond_json(status, "Error", {})
+    else
+      respond_json(503, "Service Unavailable", {})
+    end
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
+  get_pull_requested_reviewers = proxy_handler(nil, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/requested_reviewers"
+  end),
+
+  -- POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
+  post_pull_requested_reviewers = proxy_handler(nil, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/requested_reviewers",
+      "POST",
+      GetBody()
+  end),
+
+  -- DELETE /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
+  delete_pull_requested_reviewers = function(owner, repo_name, pull_number)
+    local ok, status = fetch_json(
+      base()
+        .. "/repos/"
+        .. owner
+        .. "/"
+        .. repo_name
+        .. "/pulls/"
+        .. pull_number
+        .. "/requested_reviewers",
+      "DELETE",
+      GetBody()
+    )
+    if ok and (status == 204 or status == 200) then
+      SetStatus(204, "No Content")
+    elseif ok then
+      respond_json(status, "Error", {})
+    else
+      respond_json(503, "Service Unavailable", {})
+    end
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews
+  get_pull_reviews = proxy_handler(translate_gitea_reviews, function(o, r, n)
+    return append_page_params(
+      base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/reviews",
+      PAGES
+    )
+  end),
+
+  -- POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews
+  post_pull_review = proxy_handler_created(translate_gitea_review, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/reviews", "POST", GetBody()
+  end),
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
+  get_pull_review = proxy_handler(translate_gitea_review, function(o, r, n, id)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/reviews/" .. id
+  end),
+
+  -- DELETE /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
+  delete_pull_review = function(owner, repo_name, pull_number, review_id)
+    local ok, status = fetch_json(
+      base()
+        .. "/repos/"
+        .. owner
+        .. "/"
+        .. repo_name
+        .. "/pulls/"
+        .. pull_number
+        .. "/reviews/"
+        .. review_id,
+      "DELETE"
+    )
+    if ok and (status == 204 or status == 200) then
+      SetStatus(204, "No Content")
+    elseif ok then
+      respond_json(status, "Error", {})
+    else
+      respond_json(503, "Service Unavailable", {})
+    end
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments
+  get_pull_review_comments = proxy_handler(translate_gitea_review_comments, function(o, r, n, id)
+    return base()
+      .. "/repos/"
+      .. o
+      .. "/"
+      .. r
+      .. "/pulls/"
+      .. n
+      .. "/reviews/"
+      .. id
+      .. "/comments"
+  end),
+
+  -- PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/dismissals
+  -- GitHub uses PUT; Gitea uses POST.
+  put_pull_review_dismissal = function(owner, repo_name, pull_number, review_id)
+    proxy_json(
+      translate_gitea_review,
+      fetch_json(
+        base()
+          .. "/repos/"
+          .. owner
+          .. "/"
+          .. repo_name
+          .. "/pulls/"
+          .. pull_number
+          .. "/reviews/"
+          .. review_id
+          .. "/dismissals",
+        "POST",
+        GetBody()
+      )
+    )
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/comments
+  -- Aggregates inline review comments across all reviews for the PR.
+  get_pull_comments = function(owner, repo_name, pull_number)
+    local ok, status, _, body = fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/reviews"
+    )
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local reviews = DecodeJson(body) or {}
+    local all_comments = {}
+    for _, rev in ipairs(reviews) do
+      local cok, cstatus, _, cbody = fetch_json(
+        base()
+          .. "/repos/"
+          .. owner
+          .. "/"
+          .. repo_name
+          .. "/pulls/"
+          .. pull_number
+          .. "/reviews/"
+          .. rev.id
+          .. "/comments"
+      )
+      if cok and cstatus == 200 then
+        for _, c in ipairs(DecodeJson(cbody) or {}) do
+          all_comments[#all_comments + 1] = translate_gitea_review_comment(c)
+        end
+      end
+    end
+    respond_json(200, "OK", all_comments)
   end,
 }

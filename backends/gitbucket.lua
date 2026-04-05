@@ -1066,4 +1066,116 @@ backend_impl = {
   get_team_children = proxy_handler(nil, function(team_id)
     return append_page_params(base() .. "/teams/" .. team_id .. "/teams", PAGES)
   end),
+
+  -- Pull Requests (GitHub-compatible passthrough) --------------------------------
+
+  get_repo_pulls = proxy_handler(nil, function(o, r)
+    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/pulls", PAGES)
+  end),
+
+  post_repo_pulls = function(owner, repo_name)
+    proxy_json_created(
+      nil,
+      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls", "POST", GetBody())
+    )
+  end,
+
+  get_repo_pull = proxy_handler(nil, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n
+  end),
+
+  patch_repo_pull = function(owner, repo_name, pull_number)
+    proxy_json(
+      nil,
+      fetch_json(
+        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number,
+        "PATCH",
+        GetBody()
+      )
+    )
+  end,
+
+  get_pull_commits = proxy_handler(nil, function(o, r, n)
+    return append_page_params(
+      base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/commits",
+      PAGES
+    )
+  end),
+
+  get_pull_files = proxy_handler(nil, function(o, r, n)
+    return append_page_params(
+      base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/files",
+      PAGES
+    )
+  end),
+
+  get_pull_merge = function(owner, repo_name, pull_number)
+    local ok, status = pcall(
+      Fetch,
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/merge",
+      auth()
+    )
+    if ok and status == 204 then
+      SetStatus(204, "No Content")
+    elseif ok and status == 404 then
+      respond_json(404, "Not Found", { message = "Pull Request is not merged" })
+    elseif ok then
+      respond_json(status, "Error", {})
+    else
+      respond_json(503, "Service Unavailable", {})
+    end
+  end,
+
+  put_pull_merge = function(owner, repo_name, pull_number)
+    local ok, status = fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/merge",
+      "PUT",
+      GetBody()
+    )
+    if ok and status == 204 then
+      SetStatus(204, "No Content")
+    elseif ok then
+      respond_json(status, "Error", {})
+    else
+      respond_json(503, "Service Unavailable", {})
+    end
+  end,
+
+  get_pull_requested_reviewers = proxy_handler(nil, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/requested_reviewers"
+  end),
+
+  get_pull_reviews = proxy_handler(nil, function(o, r, n)
+    return append_page_params(
+      base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/reviews",
+      PAGES
+    )
+  end),
+
+  get_pull_review = proxy_handler(nil, function(o, r, n, review_id)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/reviews/" .. review_id
+  end),
+
+  get_pull_review_comments = proxy_handler(nil, function(o, r, n, review_id)
+    return append_page_params(
+      base()
+        .. "/repos/"
+        .. o
+        .. "/"
+        .. r
+        .. "/pulls/"
+        .. n
+        .. "/reviews/"
+        .. review_id
+        .. "/comments",
+      PAGES
+    )
+  end),
+
+  get_pull_comments = proxy_handler(nil, function(o, r, n)
+    return append_page_params(
+      base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/comments",
+      PAGES
+    )
+  end),
 }

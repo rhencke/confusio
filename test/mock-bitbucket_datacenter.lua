@@ -128,6 +128,71 @@ function OnHttpRequest()
       '{"values":[{"id":1,"name":"octocat","slug":"octocat","displayName":"The Octocat",'
         .. '"emailAddress":"octocat@github.com","type":"NORMAL","active":true}],"isLastPage":true}'
     )
+
+  -- Pull Requests ----------------------------------------------------------
+  elseif
+    path == rb .. "/pull-requests" or path:find("^" .. rb:gsub("%-", "%%-") .. "/pull%-requests%?")
+  then
+    SetStatus(200, "OK")
+    local BBS_USER =
+      '{"id":1,"name":"octocat","slug":"octocat","displayName":"The Octocat","emailAddress":"octocat@github.com","type":"NORMAL","active":true}'
+    local PR = '{"id":1,"version":0,"title":"A great PR","description":"PR description",'
+      .. '"state":"MERGED","open":false,"closed":true,'
+      .. '"author":{"user":'
+      .. BBS_USER
+      .. ',"role":"AUTHOR","approved":false,"status":"UNAPPROVED"},'
+      .. '"fromRef":{"id":"refs/heads/feature","displayId":"feature","latestCommit":"abc123def456",'
+      .. '"repository":{"slug":"hello-world","project":{"key":"octocat","type":"PERSONAL"}}},'
+      .. '"toRef":{"id":"refs/heads/main","displayId":"main","latestCommit":"def456abc123",'
+      .. '"repository":{"slug":"hello-world","project":{"key":"octocat","type":"PERSONAL"}}},'
+      .. '"reviewers":[{"user":{"id":2,"name":"reviewer","slug":"reviewer","displayName":"Reviewer"},'
+      .. '"role":"REVIEWER","approved":true,"status":"APPROVED"}],'
+      .. '"participants":[],'
+      .. '"createdDate":1577836800000,"updatedDate":1578009600000,'
+      .. '"links":{"self":[{"href":"http://localhost/projects/octocat/repos/hello-world/pull-requests/1"}]}}'
+    json('{"values":[' .. PR .. '],"isLastPage":true,"start":0,"limit":25}')
+  elseif path == rb .. "/pull-requests/1" then
+    SetStatus(200, "OK")
+    local BBS_USER =
+      '{"id":1,"name":"octocat","slug":"octocat","displayName":"The Octocat","emailAddress":"octocat@github.com","type":"NORMAL","active":true}'
+    json(
+      '{"id":1,"version":0,"title":"A great PR","description":"PR description",'
+        .. '"state":"MERGED","open":false,"closed":true,'
+        .. '"author":{"user":'
+        .. BBS_USER
+        .. ',"role":"AUTHOR","approved":false,"status":"UNAPPROVED"},'
+        .. '"fromRef":{"id":"refs/heads/feature","displayId":"feature","latestCommit":"abc123def456",'
+        .. '"repository":{"slug":"hello-world","project":{"key":"octocat","type":"PERSONAL"}}},'
+        .. '"toRef":{"id":"refs/heads/main","displayId":"main","latestCommit":"def456abc123",'
+        .. '"repository":{"slug":"hello-world","project":{"key":"octocat","type":"PERSONAL"}}},'
+        .. '"reviewers":[{"user":{"id":2,"name":"reviewer","slug":"reviewer","displayName":"Reviewer"},'
+        .. '"role":"REVIEWER","approved":true,"status":"APPROVED"}],'
+        .. '"participants":[],'
+        .. '"createdDate":1577836800000,"updatedDate":1578009600000,'
+        .. '"links":{"self":[{"href":"http://localhost/projects/octocat/repos/hello-world/pull-requests/1"}]}}'
+    )
+  elseif path == rb .. "/pull-requests/1/commits" then
+    SetStatus(200, "OK")
+    json('{"values":[],"isLastPage":true,"start":0,"limit":25}')
+  elseif path == rb .. "/pull-requests/1/changes" then
+    SetStatus(200, "OK")
+    json(
+      '{"values":[{"path":{"components":["README.md"],"parent":"","name":"README.md","toString":"README.md"},'
+        .. '"executable":false,"type":"MODIFY"}],"isLastPage":true}'
+    )
+  elseif path == rb .. "/pull-requests/1/comments" then
+    SetStatus(200, "OK")
+    local BBS_USER =
+      '{"id":1,"name":"octocat","slug":"octocat","displayName":"The Octocat","emailAddress":"octocat@github.com","type":"NORMAL","active":true}'
+    json(
+      '{"values":[{"id":1,"text":"Nice change here",'
+        .. '"author":'
+        .. BBS_USER
+        .. ","
+        .. '"createdDate":1577836800000,"updatedDate":1578009600000,'
+        .. '"anchor":{"line":1,"lineType":"ADDED","fileType":"TO","path":"README.md","srcPath":"README.md"}}],'
+        .. '"isLastPage":true}'
+    )
   else
     SetStatus(404, "Not Found")
   end

@@ -22,6 +22,14 @@ function OnHttpRequest()
 
   local rb = "/api/v3/repos/octocat/hello-world"
 
+  local PR = '{"id":1,"number":1,"title":"A great PR","body":"PR description",'
+    .. '"state":"closed","user":{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User"},'
+    .. '"head":{"label":"octocat/hello-world:feature","ref":"feature","sha":"abc123def456"},'
+    .. '"base":{"label":"octocat/hello-world:main","ref":"main","sha":"def456abc123"},'
+    .. '"draft":false,"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-02T00:00:00Z",'
+    .. '"closed_at":"2020-01-02T00:00:00Z","merged_at":"2020-01-02T00:00:00Z",'
+    .. '"merge_commit_sha":"abc123","html_url":"http://localhost/octocat/hello-world/pulls/1"}'
+
   if path == "/api/v3/rate_limit" then
     SetStatus(200, "OK")
     json('{"rate":{"limit":60,"remaining":60,"reset":9999999999}}')
@@ -482,6 +490,56 @@ function OnHttpRequest()
   elseif path == "/api/v3/teams/1/teams" then
     SetStatus(200, "OK")
     json("[]")
+  -- Pull Requests ------------------------------------------------------------
+  elseif path == rb .. "/pulls" then
+    SetStatus(200, "OK")
+    json("[" .. PR .. "]")
+  elseif path == rb .. "/pulls/1" then
+    SetStatus(200, "OK")
+    json(PR)
+  elseif path == rb .. "/pulls/1/commits" then
+    SetStatus(200, "OK")
+    json("[]")
+  elseif path == rb .. "/pulls/1/files" then
+    SetStatus(200, "OK")
+    json("[]")
+  elseif path == rb .. "/pulls/1/merge" then
+    SetStatus(204, "No Content")
+  elseif path == rb .. "/pulls/1/requested_reviewers" then
+    SetStatus(200, "OK")
+    json('{"users":[],"teams":[]}')
+  elseif path == rb .. "/pulls/1/reviews" then
+    SetStatus(200, "OK")
+    json(
+      '[{"id":1,"node_id":"","user":{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User"},'
+        .. '"body":"LGTM","state":"APPROVED","submitted_at":"2020-01-01T00:00:00Z",'
+        .. '"html_url":"","pull_request_url":""}]'
+    )
+  elseif path == rb .. "/pulls/1/reviews/1" then
+    SetStatus(200, "OK")
+    json(
+      '{"id":1,"node_id":"","user":{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User"},'
+        .. '"body":"LGTM","state":"APPROVED","submitted_at":"2020-01-01T00:00:00Z",'
+        .. '"html_url":"","pull_request_url":""}'
+    )
+  elseif path == rb .. "/pulls/1/reviews/1/comments" then
+    SetStatus(200, "OK")
+    json(
+      '[{"id":1,"node_id":"","path":"README.md","position":1,"original_position":1,'
+        .. '"commit_id":"abc123","original_commit_id":"abc123","diff_hunk":"@@ -1,3 +1,3 @@",'
+        .. '"body":"Nice change","user":{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User"},'
+        .. '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",'
+        .. '"html_url":"","pull_request_url":"","url":""}]'
+    )
+  elseif path == rb .. "/pulls/1/comments" then
+    SetStatus(200, "OK")
+    json(
+      '[{"id":1,"node_id":"","path":"README.md","position":1,"original_position":1,'
+        .. '"commit_id":"abc123","original_commit_id":"abc123","diff_hunk":"@@ -1,3 +1,3 @@",'
+        .. '"body":"Nice change","user":{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User"},'
+        .. '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",'
+        .. '"html_url":"","pull_request_url":"","url":""}]'
+    )
   else
     SetStatus(404, "Not Found")
   end
