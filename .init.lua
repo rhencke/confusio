@@ -205,67 +205,17 @@ if config.backend ~= "" then
   dofile("/zip/backends/" .. config.backend .. ".lua")
 end
 
--- Health check default: return 200 if no backend configured.
--- Each backend overrides get_root to probe its upstream.
-if not backend_impl.get_root then
-  backend_impl.get_root = function() respond_json(200, "OK", {}) end
-end
-
--- Teams list defaults: backends without a native teams concept return empty arrays.
--- Individual-item and mutating endpoints fall through to 404 (nil handler).
-local function teams_empty()
-  SetStatus(200, "OK")
-  SetHeader("Content-Type", "application/json; charset=utf-8")
-  Write("[]")
-end
-for _, ep in ipairs({
-  "get_org_teams", "get_org_team_invitations",
-  "get_org_team_members", "get_org_team_repos", "get_org_team_children",
-  -- Legacy team-by-id list endpoints
-  "get_user_teams",
-  "get_team_invitations", "get_team_members", "get_team_repos", "get_team_children",
-}) do
-  if not backend_impl[ep] then backend_impl[ep] = teams_empty end
-end
-
--- Security advisory defaults: most providers have no native equivalent.
--- List endpoints return [] (no advisories); individual/mutating endpoints → 404 (nil handler).
-local function security_advisories_empty()
-  SetStatus(200, "OK")
-  SetHeader("Content-Type", "application/json; charset=utf-8")
-  Write("[]")
-end
-for _, ep in ipairs({
-  "get_global_advisories",
-  "get_org_security_advisories",
-  "get_repo_security_advisories",
-}) do
-  if not backend_impl[ep] then backend_impl[ep] = security_advisories_empty end
-end
-
--- Issues defaults: list endpoints return [] when the backend has no native issues support;
--- individual/mutating endpoints fall through to 404 (nil handler).
-local function issues_empty()
-  SetStatus(200, "OK")
-  SetHeader("Content-Type", "application/json; charset=utf-8")
-  Write("[]")
-end
-for _, ep in ipairs({
-  "get_issues", "get_org_issues", "get_user_issues",
-  "get_repo_issues", "get_repo_issue_comments", "get_repo_issue_events",
-  "get_issue_comments", "get_issue_events", "get_issue_timeline",
-  "get_issue_labels",
-  "get_issue_deps_blocked_by", "get_issue_deps_blocking",
-  "get_issue_sub_issues", "get_issue_field_values",
-  "get_repo_assignees", "get_repo_labels",
-  "get_repo_milestones", "get_repo_milestone_labels",
-}) do
-  if not backend_impl[ep] then backend_impl[ep] = issues_empty end
-end
-
 -- Handlers resolved once at startup; backend is fixed for the program's lifetime.
 -- Registered routes not implemented by the backend return 404.
 local handle = backend_impl
+
+-- Default handler for list endpoints: backends without native support return [].
+-- Backends that implement the endpoint override it; others fall back to this default.
+local function empty_list()
+  SetStatus(200, "OK")
+  SetHeader("Content-Type", "application/json; charset=utf-8")
+  Write("[]")
+end
 
 -- ---------------------------------------------------------------------------
 -- Segment-based radix trie router
@@ -300,11 +250,14 @@ local function _trie_insert(t, key)
   return node
 end
 
--- route_add("VERB /path", handler_name)
+-- route_add("VERB /path", handler_name [, default_fn])
 -- e.g. route_add("GET /repos/{owner}/{repo}", "get_repo")
-local function route_add(route, handler_name)
+-- When default_fn is given it is used if the backend has no handler for handler_name.
+local function route_add(route, handler_name, default_fn)
   local verb, path = route:match("^(%S+)%s+(.+)$")
-  _trie_insert(trie, verb .. path).handler = handler_name
+  local n = _trie_insert(trie, verb .. path)
+  n.handler = handler_name
+  n.default = default_fn
   _trie_insert(path_trie, path).handler = true
 end
 
@@ -329,8 +282,8 @@ end
 
 local function route_match(method, path)
   local node, caps = _trie_walk(trie, method .. path)
-  if node then return node.handler, caps end
-  return nil, nil
+  if node then return node.handler, caps, node.default end
+  return nil, nil, nil
 end
 
 local function path_known(path)
@@ -350,7 +303,7 @@ end
 
 local routes = {
   -- Root
-  ["GET /"]                                                                    = "get_root",
+  ["GET /"]                                                                    = { "get_root", function() respond_json(200, "OK", {}) end },
   -- Emojis
   ["GET /emojis"]                                                              = "get_emojis",
 
@@ -483,46 +436,46 @@ local routes = {
   ["GET /repos/{owner}/{repo}/deployments/{deployment_id}/statuses/{status_id}"] = "get_repo_deployment_status",
 
   -- Teams (https://docs.github.com/en/rest/teams)
-  ["GET /orgs/{org}/teams"]                                                       = "get_org_teams",
+  ["GET /orgs/{org}/teams"]                                                       = { "get_org_teams", empty_list },
   ["POST /orgs/{org}/teams"]                                                      = "post_org_teams",
   ["GET /orgs/{org}/teams/{team_slug}"]                                           = "get_org_team",
   ["PATCH /orgs/{org}/teams/{team_slug}"]                                         = "patch_org_team",
   ["DELETE /orgs/{org}/teams/{team_slug}"]                                        = "delete_org_team",
-  ["GET /orgs/{org}/teams/{team_slug}/invitations"]                               = "get_org_team_invitations",
-  ["GET /orgs/{org}/teams/{team_slug}/members"]                                   = "get_org_team_members",
+  ["GET /orgs/{org}/teams/{team_slug}/invitations"]                               = { "get_org_team_invitations", empty_list },
+  ["GET /orgs/{org}/teams/{team_slug}/members"]                                   = { "get_org_team_members", empty_list },
   ["GET /orgs/{org}/teams/{team_slug}/memberships/{username}"]                    = "get_org_team_membership",
   ["PUT /orgs/{org}/teams/{team_slug}/memberships/{username}"]                    = "put_org_team_membership",
   ["DELETE /orgs/{org}/teams/{team_slug}/memberships/{username}"]                 = "delete_org_team_membership",
-  ["GET /orgs/{org}/teams/{team_slug}/repos"]                                     = "get_org_team_repos",
+  ["GET /orgs/{org}/teams/{team_slug}/repos"]                                     = { "get_org_team_repos", empty_list },
   ["GET /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}"]                      = "get_org_team_repo",
   ["PUT /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}"]                      = "put_org_team_repo",
   ["DELETE /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}"]                   = "delete_org_team_repo",
-  ["GET /orgs/{org}/teams/{team_slug}/teams"]                                     = "get_org_team_children",
+  ["GET /orgs/{org}/teams/{team_slug}/teams"]                                     = { "get_org_team_children", empty_list },
 
   -- Legacy team endpoints (team_id-based) — deprecated in favour of slug-based above
-  ["GET /user/teams"]                                                              = "get_user_teams",
+  ["GET /user/teams"]                                                              = { "get_user_teams", empty_list },
   ["GET /teams/{team_id}"]                                                         = "get_team",
   ["PATCH /teams/{team_id}"]                                                       = "patch_team",
   ["DELETE /teams/{team_id}"]                                                      = "delete_team",
-  ["GET /teams/{team_id}/invitations"]                                             = "get_team_invitations",
-  ["GET /teams/{team_id}/members"]                                                 = "get_team_members",
+  ["GET /teams/{team_id}/invitations"]                                             = { "get_team_invitations", empty_list },
+  ["GET /teams/{team_id}/members"]                                                 = { "get_team_members", empty_list },
   ["GET /teams/{team_id}/members/{username}"]                                      = "get_team_member",
   ["PUT /teams/{team_id}/members/{username}"]                                      = "put_team_member",
   ["DELETE /teams/{team_id}/members/{username}"]                                   = "delete_team_member",
   ["GET /teams/{team_id}/memberships/{username}"]                                  = "get_team_membership",
   ["PUT /teams/{team_id}/memberships/{username}"]                                  = "put_team_membership",
   ["DELETE /teams/{team_id}/memberships/{username}"]                               = "delete_team_membership",
-  ["GET /teams/{team_id}/repos"]                                                   = "get_team_repos",
+  ["GET /teams/{team_id}/repos"]                                                   = { "get_team_repos", empty_list },
   ["GET /teams/{team_id}/repos/{owner}/{repo}"]                                    = "get_team_repo",
   ["PUT /teams/{team_id}/repos/{owner}/{repo}"]                                    = "put_team_repo",
   ["DELETE /teams/{team_id}/repos/{owner}/{repo}"]                                 = "delete_team_repo",
-  ["GET /teams/{team_id}/teams"]                                                   = "get_team_children",
+  ["GET /teams/{team_id}/teams"]                                                   = { "get_team_children", empty_list },
 
   -- Security advisories (https://docs.github.com/en/rest/security-advisories)
-  ["GET /advisories"]                                                              = "get_global_advisories",
+  ["GET /advisories"]                                                              = { "get_global_advisories", empty_list },
   ["GET /advisories/{ghsa_id}"]                                                   = "get_global_advisory",
-  ["GET /orgs/{org}/security-advisories"]                                          = "get_org_security_advisories",
-  ["GET /repos/{owner}/{repo}/security-advisories"]                                = "get_repo_security_advisories",
+  ["GET /orgs/{org}/security-advisories"]                                          = { "get_org_security_advisories", empty_list },
+  ["GET /repos/{owner}/{repo}/security-advisories"]                                = { "get_repo_security_advisories", empty_list },
   ["POST /repos/{owner}/{repo}/security-advisories"]                               = "post_repo_security_advisory",
   ["POST /repos/{owner}/{repo}/security-advisories/reports"]                       = "post_repo_security_advisory_report",
   ["GET /repos/{owner}/{repo}/security-advisories/{ghsa_id}"]                      = "get_repo_security_advisory",
@@ -531,33 +484,33 @@ local routes = {
   ["POST /repos/{owner}/{repo}/security-advisories/{ghsa_id}/forks"]               = "post_repo_security_advisory_fork",
 
   -- Issues (https://docs.github.com/en/rest/issues)
-  ["GET /issues"]                                                                  = "get_issues",
-  ["GET /orgs/{org}/issues"]                                                       = "get_org_issues",
-  ["GET /user/issues"]                                                             = "get_user_issues",
-  ["GET /repos/{owner}/{repo}/issues"]                                             = "get_repo_issues",
+  ["GET /issues"]                                                                  = { "get_issues", empty_list },
+  ["GET /orgs/{org}/issues"]                                                       = { "get_org_issues", empty_list },
+  ["GET /user/issues"]                                                             = { "get_user_issues", empty_list },
+  ["GET /repos/{owner}/{repo}/issues"]                                             = { "get_repo_issues", empty_list },
   ["POST /repos/{owner}/{repo}/issues"]                                            = "post_repo_issues",
-  ["GET /repos/{owner}/{repo}/issues/comments"]                                    = "get_repo_issue_comments",
+  ["GET /repos/{owner}/{repo}/issues/comments"]                                    = { "get_repo_issue_comments", empty_list },
   ["GET /repos/{owner}/{repo}/issues/comments/{comment_id}"]                       = "get_repo_issue_comment",
   ["PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}"]                     = "patch_repo_issue_comment",
   ["DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}"]                    = "delete_repo_issue_comment",
   ["PUT /repos/{owner}/{repo}/issues/comments/{comment_id}/pin"]                   = "put_repo_issue_comment_pin",
   ["DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}/pin"]                = "delete_repo_issue_comment_pin",
-  ["GET /repos/{owner}/{repo}/issues/events"]                                      = "get_repo_issue_events",
+  ["GET /repos/{owner}/{repo}/issues/events"]                                      = { "get_repo_issue_events", empty_list },
   ["GET /repos/{owner}/{repo}/issues/events/{event_id}"]                           = "get_repo_issue_event",
   ["GET /repos/{owner}/{repo}/issues/{issue_number}"]                              = "get_repo_issue",
   ["PATCH /repos/{owner}/{repo}/issues/{issue_number}"]                            = "patch_repo_issue",
   ["POST /repos/{owner}/{repo}/issues/{issue_number}/assignees"]                   = "post_issue_assignees",
   ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/assignees"]                 = "delete_issue_assignees",
   ["GET /repos/{owner}/{repo}/issues/{issue_number}/assignees/{assignee}"]         = "get_issue_assignee",
-  ["GET /repos/{owner}/{repo}/issues/{issue_number}/comments"]                     = "get_issue_comments",
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/comments"]                     = { "get_issue_comments", empty_list },
   ["POST /repos/{owner}/{repo}/issues/{issue_number}/comments"]                    = "post_issue_comment",
-  ["GET /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocked_by"]      = "get_issue_deps_blocked_by",
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocked_by"]      = { "get_issue_deps_blocked_by", empty_list },
   ["POST /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocked_by"]     = "post_issue_deps_blocked_by",
   ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocked_by/{issue_id}"] = "delete_issue_dep_blocked_by",
-  ["GET /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocking"]        = "get_issue_deps_blocking",
-  ["GET /repos/{owner}/{repo}/issues/{issue_number}/events"]                       = "get_issue_events",
-  ["GET /repos/{owner}/{repo}/issues/{issue_number}/issue-field-values"]           = "get_issue_field_values",
-  ["GET /repos/{owner}/{repo}/issues/{issue_number}/labels"]                       = "get_issue_labels",
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocking"]        = { "get_issue_deps_blocking", empty_list },
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/events"]                       = { "get_issue_events", empty_list },
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/issue-field-values"]           = { "get_issue_field_values", empty_list },
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/labels"]                       = { "get_issue_labels", empty_list },
   ["POST /repos/{owner}/{repo}/issues/{issue_number}/labels"]                      = "post_issue_labels",
   ["PUT /repos/{owner}/{repo}/issues/{issue_number}/labels"]                       = "put_issue_labels",
   ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels"]                    = "delete_issue_labels",
@@ -565,30 +518,30 @@ local routes = {
   ["PUT /repos/{owner}/{repo}/issues/{issue_number}/lock"]                         = "put_issue_lock",
   ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/lock"]                      = "delete_issue_lock",
   ["GET /repos/{owner}/{repo}/issues/{issue_number}/parent"]                       = "get_issue_parent",
-  ["GET /repos/{owner}/{repo}/issues/{issue_number}/sub_issues"]                   = "get_issue_sub_issues",
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/sub_issues"]                   = { "get_issue_sub_issues", empty_list },
   ["POST /repos/{owner}/{repo}/issues/{issue_number}/sub_issues"]                  = "post_issue_sub_issues",
   ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/sub_issue"]                 = "delete_issue_sub_issue",
   ["PATCH /repos/{owner}/{repo}/issues/{issue_number}/sub_issues/priority"]        = "patch_issue_sub_issues_priority",
-  ["GET /repos/{owner}/{repo}/issues/{issue_number}/timeline"]                     = "get_issue_timeline",
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/timeline"]                     = { "get_issue_timeline", empty_list },
 
   -- Assignees (https://docs.github.com/en/rest/issues/assignees)
-  ["GET /repos/{owner}/{repo}/assignees"]                                          = "get_repo_assignees",
+  ["GET /repos/{owner}/{repo}/assignees"]                                          = { "get_repo_assignees", empty_list },
   ["GET /repos/{owner}/{repo}/assignees/{assignee}"]                               = "get_repo_assignee",
 
   -- Labels (https://docs.github.com/en/rest/issues/labels)
-  ["GET /repos/{owner}/{repo}/labels"]                                             = "get_repo_labels",
+  ["GET /repos/{owner}/{repo}/labels"]                                             = { "get_repo_labels", empty_list },
   ["POST /repos/{owner}/{repo}/labels"]                                            = "post_repo_labels",
   ["GET /repos/{owner}/{repo}/labels/{name}"]                                      = "get_repo_label",
   ["PATCH /repos/{owner}/{repo}/labels/{name}"]                                    = "patch_repo_label",
   ["DELETE /repos/{owner}/{repo}/labels/{name}"]                                   = "delete_repo_label",
 
   -- Milestones (https://docs.github.com/en/rest/issues/milestones)
-  ["GET /repos/{owner}/{repo}/milestones"]                                         = "get_repo_milestones",
+  ["GET /repos/{owner}/{repo}/milestones"]                                         = { "get_repo_milestones", empty_list },
   ["POST /repos/{owner}/{repo}/milestones"]                                        = "post_repo_milestones",
   ["GET /repos/{owner}/{repo}/milestones/{milestone_number}"]                      = "get_repo_milestone",
   ["PATCH /repos/{owner}/{repo}/milestones/{milestone_number}"]                    = "patch_repo_milestone",
   ["DELETE /repos/{owner}/{repo}/milestones/{milestone_number}"]                   = "delete_repo_milestone",
-  ["GET /repos/{owner}/{repo}/milestones/{milestone_number}/labels"]               = "get_repo_milestone_labels",
+  ["GET /repos/{owner}/{repo}/milestones/{milestone_number}/labels"]               = { "get_repo_milestone_labels", empty_list },
 
   -- Issue field values via repository_id (GitHub-specific)
   ["POST /repositories/{repository_id}/issues/{issue_number}/issue-field-values"]  = "post_repository_issue_field_values",
@@ -653,12 +606,15 @@ local routes = {
   ["DELETE /user/ssh_signing_keys/{ssh_signing_key_id}"]                           = "delete_user_ssh_signing_key",
   ["GET /users/{username}/ssh_signing_keys"]                                       = "get_users_ssh_signing_keys",
 }
-for spec, name in pairs(routes) do route_add(spec, name) end
+for spec, v in pairs(routes) do
+  if type(v) == "string" then route_add(spec, v)
+  else route_add(spec, v[1], v[2]) end
+end
 
 function OnHttpRequest()
-  local ep, caps = route_match(GetMethod(), GetPath())
+  local ep, caps, default_fn = route_match(GetMethod(), GetPath())
   if ep then
-    local fn = handle[ep]
+    local fn = handle[ep] or default_fn
     if fn then fn(table.unpack(caps))
     else respond_json(404, "Not Found", { message = "Not Found" }) end
   elseif path_known(GetPath()) then
