@@ -94,6 +94,52 @@ local function translate_bb_user(u)
   }
 end
 
+-- Map a Bitbucket workspace object to GitHub user format (used for user search).
+local function translate_bb_workspace(w)
+  if not w then
+    return {}
+  end
+  local links = w.links or {}
+  return {
+    login = w.slug or "",
+    id = 0,
+    node_id = w.uuid or "",
+    avatar_url = (links.avatar and links.avatar.href) or "",
+    html_url = (links.html and links.html.href) or "",
+    type = "User",
+    site_admin = false,
+    name = w.name,
+  }
+end
+
+-- Proxy a Bitbucket paginated response {"values":[...],"size":N,...} to the
+-- GitHub search envelope {"total_count":N,"incomplete_results":false,"items":[...]}.
+local function proxy_search_bb(translate_item, url)
+  local ok, status, _, body = fetch_json(url)
+  if not ok then
+    respond_json(503, "Service Unavailable", {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, "Error", {})
+    return
+  end
+  local raw = DecodeJson(body) or {}
+  local items = {}
+  for i, item in ipairs(raw.values or {}) do
+    items[i] = translate_item(item)
+  end
+  SetStatus(200, "OK")
+  SetHeader("Content-Type", "application/json; charset=utf-8")
+  Write(
+    '{"total_count":'
+      .. #items
+      .. ',"incomplete_results":false,"items":'
+      .. (#items > 0 and EncodeJson(items) or "[]")
+      .. "}"
+  )
+end
+
 local function translate_bb_req(body_str)
   local req = DecodeJson(body_str or "{}")
   local bb = {}
@@ -1273,5 +1319,25 @@ backend_impl = {
       end
     end
     respond_json(200, "OK", result)
+  end,
+
+  -- Search -----------------------------------------------------------------------
+
+  -- GET /search/repositories — maps to Bitbucket GET /repositories?q=name~"<q>"
+  search_repositories = function()
+    local q = GetParam("q") or ""
+    proxy_search_bb(
+      translate_bb_repo,
+      append_page_params(base() .. '/repositories?q=name~"' .. q .. '"', PAGES)
+    )
+  end,
+
+  -- GET /search/users — maps to Bitbucket GET /workspaces?q=slug~"<q>"
+  search_users = function()
+    local q = GetParam("q") or ""
+    proxy_search_bb(
+      translate_bb_workspace,
+      append_page_params(base() .. '/workspaces?q=slug~"' .. q .. '"', PAGES)
+    )
   end,
 }

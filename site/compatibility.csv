@@ -69,8 +69,8 @@ GET /repos/{owner}/{repo}/pulls/comments,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/pulls/comments/{comment_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 
 Search,,,,,,,,,,,,,,,,,,,,,
-GET /search/repositories,n,n,n,y,y,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-GET /search/users,n,n,n,y,y,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n
+GET /search/repositories,n,y,n,y,y,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n
+GET /search/users,n,y,n,y,y,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n
 GET /search/issues,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /search/commits,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /search/code,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
