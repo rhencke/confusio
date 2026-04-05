@@ -12,8 +12,8 @@ Built with [Redbean](https://redbean.dev) — a single-file web server containin
 
 ## Prerequisites
 
-- `make`, `zip`, `wget` — needed to build
-- `curl`, `bash` — needed to run tests
+- `make`, `zip`, `curl` — needed to build and run tests
+- `bash` — needed to run tests
 
 ## Quick start
 

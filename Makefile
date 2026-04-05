@@ -18,7 +18,7 @@ HURL_URL       = https://github.com/Orange-OpenSource/hurl/releases/download/$(H
 endif
 
 redbean.com: .redbean-version
-	wget -q $(REDBEAN_URL) -O redbean.com
+	curl -fsSL $(REDBEAN_URL) -o redbean.com
 	chmod +x redbean.com
 
 hurl: .hurl-version
