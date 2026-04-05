@@ -2,7 +2,7 @@
 
 *confusio linguarum* — the confusion of tongues.
 
-A REST API shim that implements a subset of GitHub's remote API, translating requests to other providers under the hood.
+A REST API shim that implements a subset of GitHub's API, translating requests to other git hosting providers under the hood.
 
 ## What it is
 
@@ -10,28 +10,102 @@ GitHub's API is the lingua franca of git hosting tools. Other providers speak th
 
 Built with [Redbean](https://redbean.dev) — a single-file web server containing a Lua interpreter, distributed as a self-extracting zip.
 
-## How it works
+## Prerequisites
 
-Confusio runs as a local proxy. Point your tools at it and Confusio translates GitHub API calls to the target provider's native API.
+- `make`, `zip`, `curl` — needed to build and run tests
+- `bash` — needed to run tests
 
-Auth is PAT passthrough. Include a standard `Authorization` header in your request to confusio (e.g. `Authorization: token ghp_abc123…` — same as GitHub) and it will be re-formatted for the target provider:
+## Quick start
 
-| Provider | confusio sends |
-|----------|---------------|
+**1. Build**
+
+```bash
+git clone https://github.com/rhencke/confusio
+cd confusio
+make build       # produces confusio.com
+```
+
+**2. Run**
+
+```bash
+# Cloud-hosted providers — base URL defaults to the well-known public instance
+sh ./confusio.com -p 8080 -- gitea
+sh ./confusio.com -p 8080 -- gitlab
+sh ./confusio.com -p 8080 -- forgejo
+
+# Self-hosted instance — supply your own base URL
+sh ./confusio.com -p 8080 -- gitea https://my-gitea.example.com
+sh ./confusio.com -p 8080 -- gitlab https://gitlab.example.com
+```
+
+**3. Point your tools at it**
+
+Set your tool's GitHub API base URL to `http://localhost:8080` and provide your provider token in the `Authorization` header (same format as GitHub: `token <pat>`).
+
+## Configuration
+
+Config is supplied as positional CLI arguments after `--`:
+
+```bash
+sh ./confusio.com -p 8080 -- <backend> [base_url]
+```
+
+```bash
+# Use provider default URL
+sh ./confusio.com -p 8080 -- gitea
+
+# Override the URL (self-hosted instance)
+sh ./confusio.com -p 8080 -- gitea https://my-gitea.example.com
+```
+
+## Providers
+
+| Provider | `backend` value | Default `base_url` | Auth: pass as `token` |
+|----------|----------------|--------------------|-----------------------|
+| [Azure DevOps](https://dev.azure.com) | `azuredevops` | *(required: `https://dev.azure.com/{org}`)* | Personal access token *(see note)* |
+| [Bitbucket](https://bitbucket.org) | `bitbucket` | `https://api.bitbucket.org` | `user:app-password` *(see note)* |
+| [Bitbucket Datacenter](https://www.atlassian.com/software/bitbucket/enterprise) | `bitbucket_datacenter` | *(self-hosted — required)* | `user:password` *(see note)* |
+| [Codeberg](https://codeberg.org) | `codeberg` | `https://codeberg.org` | API token |
+| [Forgejo](https://forgejo.org) | `forgejo` | `https://codeberg.org` | API token |
+| [Gerrit](https://www.gerritcodereview.com) | `gerrit` | *(self-hosted — required)* | `user:http-password` *(see note)* |
+| [Gitbucket](https://gitbucket.github.io) | `gitbucket` | *(self-hosted — required)* | API token |
+| [Gitea](https://gitea.com) | `gitea` | `https://gitea.com` | API token |
+| [GitLab](https://gitlab.com) | `gitlab` | `https://gitlab.com` | Personal access token |
+| [Gogs](https://gogs.io) | `gogs` | `https://try.gogs.io` | API token |
+| [Harness Code](https://harness.io) | `harness` | `https://app.harness.io` | API token |
+| [Kallithea](https://kallithea-scm.org) | `kallithea` | *(self-hosted — required)* | API token |
+| [Launchpad](https://launchpad.net) | `launchpad` | `https://api.launchpad.net` | *(public endpoints only)* |
+| [NotABug](https://notabug.org) | `notabug` | `https://notabug.org` | API token |
+| [OneDev](https://onedev.io) | `onedev` | `https://code.onedev.io` | API token |
+| [Pagure](https://pagure.io) | `pagure` | `https://pagure.io` | API token |
+| [Phabricator](https://www.phacility.com) | `phabricator` | *(self-hosted — required)* | *(public endpoints only)* |
+| [Radicle](https://radicle.xyz) | `radicle` | `http://127.0.0.1:8080` | Bearer token |
+| [RhodeCode](https://rhodecode.com) | `rhodecode` | *(self-hosted — required)* | API token |
+| [SourceForge](https://sourceforge.net) | `sourceforge` | `https://sourceforge.net` | *(public endpoints only)* |
+| [Sourcehut](https://sr.ht) | `sourcehut` | `https://git.sr.ht` | Personal access token |
+
+**Notes on auth format:**
+
+- **Azure DevOps**: pass your PAT as `token <pat>` — confusio re-encodes it as `Basic base64(:<pat>)`.
+- **Bitbucket / Gerrit / Bitbucket Datacenter**: pass `user:password` (or `user:app-password`) as `token user:password` — confusio re-encodes it as `Basic base64(user:password)`.
+- All other providers: pass your token as `token <value>` (same header format as GitHub).
+
+## Auth passthrough
+
+Confusio never stores or logs tokens. The raw token value passes through unchanged; only the scheme wrapper is adjusted:
+
+| Provider group | Confusio sends |
+|----------------|---------------|
 | Gitea, Forgejo, Gogs, Codeberg, NotABug, Pagure, Sourcehut | `Authorization: token <value>` |
 | GitLab, OneDev, RhodeCode, Kallithea, Gitbucket, Harness, Radicle | `Authorization: Bearer <value>` |
 | Azure DevOps | `Authorization: Basic base64(:<value>)` |
-| Bitbucket, Gerrit | `Authorization: Basic base64(<value>)` — pass `user:password` as the token value |
-| SourceForge, Launchpad, Phabricator | No auth forwarded (public health endpoints) |
-
-The token value is never stored or modified — only the scheme wrapper changes. OAuth is out of scope for now.
-
-## Compatibility
-
-See the [full compatibility matrix](https://rhencke.github.io/confusio/) on the project landing page.
-
-The full matrix is also published at the [project landing page](https://rhencke.github.io/confusio/).
+| Bitbucket, Gerrit, Bitbucket Datacenter | `Authorization: Basic base64(<value>)` |
+| SourceForge, Launchpad, Phabricator | *(no auth forwarded)* |
 
 ## Status
 
 Early design stage.
+
+## Compatibility
+
+See the [full compatibility matrix](https://rhencke.github.io/confusio/) on the project landing page.

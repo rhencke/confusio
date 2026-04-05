@@ -2,6 +2,7 @@
 -- Loaded by .init.lua when config.backend == "gitea".
 -- Only endpoints that behave differently from the default need to be listed here.
 -- Also dofile'd by API-compatible backends: forgejo, gogs, codeberg, notabug.
+if config.base_url == "" then config.base_url = "https://gitea.com" end
 
 local base = function() return config.base_url .. "/api/v1" end
 local auth = function() return make_fetch_opts("token") end

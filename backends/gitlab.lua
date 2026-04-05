@@ -1,5 +1,6 @@
 -- GitLab backend handler overrides.
 -- GitLab identifies projects by URL-encoded "namespace/path" as the project ID.
+if config.base_url == "" then config.base_url = "https://gitlab.com" end
 
 local base = function() return config.base_url .. "/api/v4" end
 local auth = function() return make_fetch_opts("bearer") end

@@ -10,11 +10,12 @@ Built with [Redbean](https://redbean.dev): a self-contained web server + Lua int
 
 | Command | What it does |
 |---------|-------------|
-| `make build` | Produces `confusio.com` (app) |
-| `make test-unit` | Unit tests against mock backends, no network |
-| `make test-integration` | Integration tests against live gitea.com |
-| `make test` | Both of the above |
-| `make validate-mock` | Run `test/gitea-api-version.hurl` against both the mock and a real Gitea instance to check they agree |
+| `make -j build` | Produces `confusio.com` (app) |
+| `make -j test-unit` | Unit tests against mock backends, no network |
+| `make -j test-integration` | Integration tests against live gitea.com |
+| `make -j test` | Both of the above |
+| `make -j validate-mock` | Run `test/gitea-api-version.hurl` against both the mock and a real Gitea instance to check they agree |
+| `make -j site` | Build GitHub Pages site into `_site/` (generates matrix from CSV) |
 
 **Before any commit: run `make -j test-unit`.** `make -j test-integration` requires network and is acceptable to defer to CI.
 
@@ -31,6 +32,12 @@ Only spelunk the output if the exit code is non-zero.
 Makefile                     — build, test, and download targets
 .redbean-version             — pinned Redbean version (wget'd by make)
 .hurl-version                — pinned Hurl version (curl'd by make)
+site/
+  index.html                 — GitHub Pages template (contains <!-- COMPAT_MATRIX --> placeholder)
+  compatibility.csv          — compatibility matrix source data (one row per route group, one column per provider)
+scripts/
+  gen-matrix.py              — generates the HTML table from compatibility.csv into the template
+_site/                       — generated output (gitignored; produced by `make site` or the Pages workflow)
 test/
   test-unit.sh               — unit test harness (starts confusio + mock, runs hurl)
   test-integration.sh        — integration test harness (live gitea.com)
@@ -41,6 +48,7 @@ test/
   mock-gitea.lua             — Redbean handler for the mock Gitea server
 .github/
   workflows/ci.yml           — CI: parallel test-unit and test-integration jobs
+  workflows/pages.yml        — GitHub Pages build: generates matrix from CSV, deploys _site/
   actions/setup/action.yml   — composite action: cache redbean.com and hurl
 vendor/
   github-rest-api-description/
@@ -55,27 +63,19 @@ vendor/
 # No backend (returns {} for GET /)
 sh ./confusio.com -p 8080
 
-# Gitea backend via CLI args
-sh ./confusio.com -p 8080 -- backend=gitea base_url=https://gitea.com
-
-# Gitea backend via config file (.confusio.lua in working directory)
-sh ./confusio.com -p 8080
-# .confusio.lua: confusio = { backend="gitea", base_url="https://gitea.com" }
+# Gitea backend via CLI args (positional: backend [base_url])
+sh ./confusio.com -p 8080 -- gitea
+sh ./confusio.com -p 8080 -- gitea https://gitea.com
 ```
 
 ## Configuration system
 
-Config has two mechanisms with **structural parity** — both use the same key names, enforced by a single `CONFIG_KEYS` table in `.init.lua`:
+Config is supplied as positional SCRIPTARGS after `--`: first arg = backend, second arg = base_url.
 
 | Mechanism | Syntax |
 |-----------|--------|
-| SCRIPTARGS (highest precedence) | `sh ./confusio.com -- key=value key2=value2` |
-| `.confusio.lua` config file | `confusio = { key = "value" }` |
-| Defaults (lowest precedence) | hardcoded in `.init.lua` |
-
-Config file is Lua (not TOML/JSON) so it can call functions — useful for secrets backends (e.g., `base_url = vault_read("secret/gitea-url")`).
-
-**Adding a new config key**: add it to the `config` table defaults AND to `CONFIG_KEYS`. Both mechanisms pick it up automatically.
+| SCRIPTARGS (positional) | `sh ./confusio.com -- <backend> [base_url]` |
+| Defaults | hardcoded in `.init.lua` |
 
 ## GitHub API reference
 
@@ -96,7 +96,7 @@ When implementing a new endpoint, check the spec for:
 4. If any backend behaves differently, add an override in `backends/<name>.lua`.
    Parametric captures are passed positionally: `repo = function(owner, repo) ... end`
 5. Add a hurl assertion file in `test/` and wire it into `test/test-unit.sh` (mock) and `test/test-integration.sh` (live).
-6. Update the compatibility matrix in `README.md`.
+6. Update `site/compatibility.csv`: add a row (or update an existing row) for the new endpoint. Values: `y` = native support, `~` = partial/stub, `~explanation` = partial with tooltip explanation, `n` = returns 404/501. The GitHub Pages site is regenerated automatically from this CSV in CI — never edit the generated HTML.
 
 ## Adding a new backend
 
@@ -105,6 +105,7 @@ When implementing a new endpoint, check the spec for:
    `config.backend == "<name>"` — no changes to `.init.lua` needed.
 2. Add mock server as `test/mock-<newbackend>.lua` and build it in the `Makefile` (copy pattern from `mock-gitea.com`).
 3. Add a `test/test-mock-validate.sh`-equivalent for the new backend if its spec differs meaningfully.
+4. Add a column for the new backend in `site/compatibility.csv` and fill in support values for every row.
 
 ## Redbean API notes
 
@@ -114,7 +115,7 @@ When implementing a new endpoint, check the spec for:
 - `EncodeBase64(str)` — standard base64 encoding (used for Basic auth headers)
 - `EncodeJson(table)`, `DecodeJson(string)` — JSON encode/decode
 - `Route()` — fall through to default Redbean routing (static files in the zip)
-- `dofile(path)` — load a Lua file into the current environment (used for `.confusio.lua`)
+- `dofile(path)` — load a Lua file into the current environment (used for backend files)
 
 ## Process isolation in tests
 
@@ -138,7 +139,7 @@ Hard-won insights from building this project. **Keep this section current**: whe
 
 ### Redbean
 
-- **`-D key=value` is NOT for Lua globals.** It means "directory overlay" — passing `-D backend=gitea` errors with "not a directory: backend=gitea". Use SCRIPTARGS instead: `sh ./confusio.com -- backend=gitea`.
+- **`-D key=value` is NOT for Lua globals.** It means "directory overlay" — passing `-D backend=gitea` errors with "not a directory: backend=gitea". Use positional SCRIPTARGS instead: `sh ./confusio.com -- gitea`.
 - **`Fetch(url, opts)` full signature**: `opts` is an optional table with keys `method`, `body`, and `headers` (a table of string pairs). Returns `status, headers, body` on success — but wrap in `pcall` because it throws on connection failure rather than returning an error status. Passing `nil` as `opts` is valid and makes an unauthenticated GET.
 - **`EncodeBase64(str)`** is available and produces standard base64. Used by `make_fetch_opts` for Basic auth schemes.
 - **`EncodeJson({})` produces `"{}"` (a JSON object), not `"[]"`.** Lua tables with no integer keys serialize as objects.

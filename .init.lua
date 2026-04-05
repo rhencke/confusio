@@ -1,26 +1,19 @@
 -- Config defaults (global: backends/<name>.lua can read at startup)
+-- base_url defaults to "" here; each backend sets its own default at load time
+-- (after SCRIPTARGS are applied) if the user hasn't provided an explicit value.
 config = {
   backend  = "",
-  base_url = "https://gitea.com",
+  base_url = "",
 }
 
--- Config keys accepted by both .confusio.lua and SCRIPTARGS.
-local CONFIG_KEYS = { "backend", "base_url" }
-
--- Load .confusio.lua if present.
-if pcall(dofile, ".confusio.lua") then
-  if type(confusio) == "table" then
-    for k, v in pairs(confusio) do
-      if config[k] ~= nil then config[k] = v end
-    end
-  end
-  confusio = nil
-end
-
--- SCRIPTARGS (key=value after --) override config file.
+-- SCRIPTARGS (positional after --): first arg = backend, second = base_url.
+local positional_keys = { "backend", "base_url" }
+local pos_idx = 1
 for _, a in ipairs(arg or {}) do
-  local k, v = a:match("^([%w_]+)=(.+)$")
-  if k and config[k] ~= nil then config[k] = v end
+  if positional_keys[pos_idx] then
+    config[positional_keys[pos_idx]] = a
+    pos_idx = pos_idx + 1
+  end
 end
 
 config.base_url = config.base_url:gsub("/$", "")

@@ -127,6 +127,25 @@
   td { text-align: center; background: var(--bg); }
   td:first-child { background: var(--surface); }
 
+  /* Endpoint column */
+  td.ep {
+    text-align: left;
+    background: var(--surface);
+  }
+
+  /* Section header rows */
+  td.section-hdr {
+    background: var(--border);
+    font-weight: 600;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 0.85rem;
+    padding: 0.4rem 0.9rem;
+    text-align: left;
+    position: sticky;
+    left: 0;
+    z-index: 1;
+  }
+
   .yes { color: var(--green); }
   .partial { color: var(--yellow); }
   .no { color: var(--red); }
@@ -147,7 +166,7 @@
 
 <div class="hero">
   <h1><em>confusio</em></h1>
-  <p class="tagline">A single-binary REST API shim that translates GitHub API calls to 20 git hosting providers.</p>
+  <p class="tagline">A single-binary REST API shim that translates GitHub API calls to 20+ git hosting providers.</p>
   <a class="download" href="https://github.com/rhencke/confusio/releases/latest">Download confusio.com</a>
   <span class="sub">Single file. No dependencies. Runs anywhere.</span>
 </div>
@@ -155,286 +174,7 @@
 <section>
   <h2>Compatibility Matrix</h2>
   <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Endpoint</th>
-          <th>Azure DevOps</th>
-          <th>Bitbucket</th>
-          <th>Codeberg</th>
-          <th>Forgejo</th>
-          <th>Gerrit</th>
-          <th>Gitbucket</th>
-          <th>Gitea</th>
-          <th>GitLab</th>
-          <th>Gogs</th>
-          <th>Harness</th>
-          <th>Kallithea</th>
-          <th>Launchpad</th>
-          <th>NotABug</th>
-          <th>OneDev</th>
-          <th>Pagure</th>
-          <th>Phabricator</th>
-          <th>Radicle</th>
-          <th>RhodeCode</th>
-          <th>SourceForge</th>
-          <th>Sourcehut</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>GET /</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-        </tr>
-        <tr>
-          <td>GET /emojis</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-        </tr>
-        <tr>
-          <td>GET /repos/{owner}/{repo}</td>
-          <td class="no">&#x274C;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="yes">&#x2705;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-        </tr>
-        <tr>
-          <td>PATCH /repos/{owner}/{repo}</td>
-          <td class="no">&#x274C;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="yes">&#x2705;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-        </tr>
-        <tr>
-          <td>DELETE /repos/{owner}/{repo}</td>
-          <td class="no">&#x274C;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-        </tr>
-        <tr>
-          <td>GET/POST /user/repos</td>
-          <td class="no">&#x274C;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="yes">&#x2705;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-        </tr>
-        <tr>
-          <td>GET/POST /orgs/{org}/repos</td>
-          <td class="no">&#x274C;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-        </tr>
-        <tr>
-          <td>GET /users/{username}/repos</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-        </tr>
-        <tr>
-          <td>GET /repos/…/topics</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-        </tr>
-        <tr>
-          <td>GET /repos/…/languages</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-        </tr>
-        <tr>
-          <td>GET /repos/…/branches</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-        </tr>
-        <tr>
-          <td>GET /repos/…/commits</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-        </tr>
-        <tr>
-          <td>GET/PUT/DELETE /repos/…/contents/…</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-        </tr>
-        <tr>
-          <td>GET /repos/…/collaborators</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-        </tr>
-        <tr>
-          <td>GET/POST /repos/…/forks</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-        </tr>
-        <tr>
-          <td>GET /repos/…/releases</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-        </tr>
-        <tr>
-          <td>GET /repos/…/keys</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-        </tr>
-        <tr>
-          <td>GET /repos/…/hooks</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-        </tr>
-        <tr>
-          <td>GET /repos/…/tags</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="yes">&#x2705;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-        </tr>
-        <tr><td colspan="21" style="background:var(--bg-secondary);font-weight:600;padding:0.4rem 0.75rem;">Users API</td></tr>
-        <tr>
-          <td>GET/PATCH /user</td>
-          <td class="no">&#x274C;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-        </tr>
-        <tr>
-          <td>GET /users</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-        </tr>
-        <tr>
-          <td>GET /users/{username}</td>
-          <td class="no">&#x274C;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-        </tr>
-        <tr>
-          <td>GET /user/followers, /user/following</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-        </tr>
-        <tr>
-          <td>GET /user/keys, /user/gpg_keys</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-        </tr>
-        <tr>
-          <td>GET /user/emails</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="yes">&#x2705;</td>
-          <td class="yes">&#x2705;</td><td class="yes">&#x2705;</td><td class="yes">&#x2705;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="yes">&#x2705;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-          <td class="no">&#x274C;</td><td class="no">&#x274C;</td>
-        </tr>
-      </tbody>
-    </table>
+<!-- COMPAT_MATRIX -->
   </div>
   <p style="margin-top:0.75rem; color:var(--text-muted); font-size:0.85rem;">
     &#x2705; Supported &middot; &#x26A0;&#xFE0F; Partial &middot; &#x274C; Unsupported (returns 404 or 501)

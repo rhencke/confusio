@@ -2,7 +2,7 @@
 # Run one backend's hurl test files in parallel against a dedicated server pair.
 # Usage: run-backend.sh <mock_bin> <confusio_port> <mock_port> <confusio_args> [hurl_files...]
 #
-# confusio_args is a single string passed as-is to confusio (e.g. "-- backend=gitea base_url=...")
+# confusio_args is a single string passed as-is to confusio (e.g. "-- gitea https://...")
 # hurl_files are passed together to hurl --jobs so they run in parallel.
 set -euo pipefail
 
@@ -38,9 +38,6 @@ start_isolated sh "$MOCK_BIN" -p "$MPORT"
 MPID=$!
 
 # Start confusio (with optional confusio_args)
-if [ -n "${CONFUSIO_CONFIG:-}" ]; then
-  printf '%s\n' "$CONFUSIO_CONFIG" > "$tmpdir/.confusio.lua"
-fi
 if command -v setsid >/dev/null 2>&1; then
   # shellcheck disable=SC2086
   (cd "$tmpdir" && setsid sh "$CONFUSIO_BIN" -p "$CPORT" $CONF_ARGS) &

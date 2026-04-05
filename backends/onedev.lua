@@ -1,6 +1,7 @@
 -- OneDev backend handler overrides.
 -- Uses OneDev REST API at /~api/.
 -- Projects are addressed by integer ID; owner/repo maps via path query.
+if config.base_url == "" then config.base_url = "https://code.onedev.io" end
 
 local base = function() return config.base_url .. "/~api" end
 local auth = function() return make_fetch_opts("bearer") end

@@ -1,6 +1,7 @@
 -- Pagure backend handler overrides.
 -- Uses Pagure REST API at /api/0/.
 -- Repos are addressed as /api/0/{namespace}/{repo} (owner = namespace/username).
+if config.base_url == "" then config.base_url = "https://pagure.io" end
 
 local base = function() return config.base_url .. "/api/0" end
 local auth = function() return make_fetch_opts("token") end

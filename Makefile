@@ -18,7 +18,7 @@ HURL_URL       = https://github.com/Orange-OpenSource/hurl/releases/download/$(H
 endif
 
 redbean.com: .redbean-version
-	wget -q $(REDBEAN_URL) -O redbean.com
+	curl -fsSL $(REDBEAN_URL) -o redbean.com
 	chmod +x redbean.com
 
 hurl: .hurl-version
@@ -71,15 +71,20 @@ define BACKEND_RULE
 test-unit-$(1): confusio.com mock-$(1).com hurl
 	bash test/run-backend.sh mock-$(1).com \
 	  $($(1)_CPORT) $($(1)_MPORT) \
-	  "-- backend=$(1) base_url=http://127.0.0.1:$($(1)_MPORT)" \
+	  "-- $(1) http://127.0.0.1:$($(1)_MPORT)" \
 	  $(or $($(1)_HURL),test/$(1)-repos.hurl test/$(1)-users.hurl)
 endef
 
 $(foreach b,$(BACKENDS),$(eval $(call BACKEND_RULE,$(b))))
 
-.PHONY: build test test-unit test-unit-backends test-integration validate-mock clean
+.PHONY: build site test test-unit test-unit-backends test-integration validate-mock clean
 
 build: confusio.com
+
+site:
+	mkdir -p _site
+	cp -r site/. _site/
+	python3 scripts/gen-matrix.py site/compatibility.csv site/index.html _site/index.html
 
 test: test-unit test-integration
 
@@ -99,3 +104,4 @@ validate-mock: mock-gitea.com
 
 clean:
 	rm -f redbean.com confusio.com $(MOCKS) hurl
+	rm -rf _site
