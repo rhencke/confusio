@@ -84,6 +84,8 @@ codeberg_HURL = test/codeberg-repos.hurl test/codeberg-repos-ext.hurl \
                 test/codeberg-users.hurl test/codeberg-pulls.hurl
 forgejo_HURL = test/forgejo-repos.hurl test/forgejo-repos-ext.hurl \
                test/forgejo-users.hurl test/forgejo-pulls.hurl
+gogs_HURL = test/gogs-repos.hurl test/gogs-repos-ext.hurl \
+            test/gogs-users.hurl test/gogs-pulls.hurl
 gitlab_HURL = test/gitlab-repos.hurl test/gitlab-users.hurl \
               test/gitlab-issues.hurl
 gitbucket_HURL = test/gitbucket-repos.hurl test/gitbucket-users.hurl \
