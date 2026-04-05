@@ -1,1 +1,1 @@
-stub-search.hurl
+gitea-search.hurl

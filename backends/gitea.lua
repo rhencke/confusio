@@ -365,6 +365,45 @@ local function gitea_find_team_id(org, slug)
   return nil
 end
 
+-- Returns a backend_impl handler for a Gitea search endpoint.
+-- endpoint: Gitea API path (e.g. "/repos/search"), translate_item: per-item translation fn.
+-- Gitea wraps results in {"data":[...],"ok":true}; we wrap in the GitHub search envelope.
+-- X-Total-Count header is used for total_count when present.
+local function search_response(endpoint, translate_item)
+  return function()
+    local q = GetParam("q") or ""
+    local url = base() .. endpoint .. "?q=" .. q
+    local pp = GetParam("per_page")
+    local pg = GetParam("page")
+    if pp and pp ~= "" then
+      url = url .. "&limit=" .. pp
+    end
+    if pg and pg ~= "" then
+      url = url .. "&page=" .. pg
+    end
+    local ok, status, headers, body = fetch_json(url)
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local raw = (DecodeJson(body) or {}).data or {}
+    local total = tonumber(headers and (headers["X-Total-Count"] or headers["x-total-count"]))
+      or #raw
+    local items = {}
+    for i, r in ipairs(raw) do
+      items[i] = translate_item(r)
+    end
+    local items_json = #items > 0 and EncodeJson(items) or "[]"
+    SetStatus(200, "OK")
+    SetHeader("Content-Type", "application/json; charset=utf-8")
+    Write('{"total_count":' .. total .. ',"incomplete_results":false,"items":' .. items_json .. '}')
+  end
+end
+
 backend_impl = {
   -- Health check
   get_root = function()
@@ -2293,4 +2332,12 @@ backend_impl = {
     end
     respond_json(200, "OK", all_comments)
   end,
+
+  -- Search ---------------------------------------------------------------------
+
+  -- GET /search/repositories → Gitea /repos/search
+  search_repositories = search_response("/repos/search", translate_repo),
+
+  -- GET /search/users → Gitea /users/search
+  search_users = search_response("/users/search", translate_user),
 }

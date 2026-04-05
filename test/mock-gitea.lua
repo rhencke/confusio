@@ -369,6 +369,10 @@ function OnHttpRequest()
     -- Assignees
     ["/api/v1/repos/octocat/hello-world/assignees"] = { 200, "[" .. USER .. "]" },
 
+    -- Search
+    ["/api/v1/repos/search"] = { 200, '{"data":[' .. REPO .. '],"ok":true}' },
+    ["/api/v1/users/search"] = { 200, '{"data":[' .. USER .. '],"ok":true}' },
+
     -- Pull Requests
     ["/api/v1/repos/octocat/hello-world/pulls"] = { 200, "[" .. PR .. "]" },
     ["/api/v1/repos/octocat/hello-world/pulls/1"] = { 200, PR },
