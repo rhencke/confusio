@@ -85,7 +85,77 @@ end
 
 -- Translate a Pagure commit object to GitHub format.
 -- Pagure: { id, message, date, date_utc, author: { name, email } }
-local proxy_handler = make_proxy_handler(fetch_json)
+local proxy_handler         = make_proxy_handler(fetch_json)
+local proxy_handler_created = make_proxy_handler(fetch_json, proxy_json_created)
+
+-- Translate a Pagure user to GitHub format.
+local function translate_pagure_user(u)
+  if not u then return {} end
+  return {
+    login      = u.name or u.username or "",
+    id         = 0,
+    node_id    = "",
+    avatar_url = u.avatar_url or "",
+    html_url   = config.base_url .. "/" .. (u.url_path or u.name or ""),
+    type       = "User",
+    site_admin = false,
+    name       = u.fullname or u.name or "",
+  }
+end
+
+-- Translate a Pagure issue tag (string) to a GitHub label object.
+local function translate_pagure_tag(tag)
+  return { id = 0, node_id = "", url = "", name = tag or "", color = "", description = "", default = false }
+end
+
+-- Translate a Pagure issue to GitHub format.
+-- Pagure states: "Open", "Closed"
+-- Pagure dates: Unix timestamps as strings
+local function translate_pagure_issue(i)
+  if not i then return {} end
+  local state = (i.status == "Open") and "open" or "closed"
+  local labels = {}
+  for _, tag in ipairs(i.tags or {}) do
+    labels[#labels + 1] = translate_pagure_tag(tag)
+  end
+  local assignees = {}
+  if i.assignee then assignees[1] = translate_pagure_user(i.assignee) end
+  local user = translate_pagure_user(i.user)
+  -- Pagure date_created is a Unix timestamp string; convert to ISO 8601
+  local function ts(v)
+    if not v then return "" end
+    -- Try to return as-is if it looks like a timestamp (digits only)
+    return tostring(v)
+  end
+  return {
+    id         = i.id or 0,
+    number     = i.id or 0,
+    title      = i.title or "",
+    body       = i.content or "",
+    state      = state,
+    user       = user,
+    assignees  = assignees,
+    labels     = labels,
+    milestone  = nil,
+    created_at = ts(i.date_created),
+    updated_at = ts(i.last_updated),
+    closed_at  = nil,
+    html_url   = config.base_url .. "/" .. (i.full_url or ""),
+  }
+end
+
+-- Translate a Pagure comment to GitHub format.
+local function translate_pagure_comment(c)
+  if not c then return {} end
+  return {
+    id         = c.id or 0,
+    body       = c.comment or "",
+    user       = translate_pagure_user(c.user),
+    created_at = tostring(c.date_created or ""),
+    updated_at = tostring(c.date_created or ""),
+    html_url   = "",
+  }
+end
 
 local function translate_pagure_commit(c)
   if not c then
@@ -102,6 +172,12 @@ local function translate_pagure_commit(c)
     author = { login = author.name or "", id = 0, avatar_url = "" },
     committer = { login = author.name or "", id = 0, avatar_url = "" },
   }
+end
+
+local function translate_pagure_issues(data)
+  local issues = data.issues or {}
+  for i, iss in ipairs(issues) do issues[i] = translate_pagure_issue(iss) end
+  return issues
 end
 
 backend_impl = {
@@ -449,4 +525,35 @@ backend_impl = {
       return projects
     end, fetch_json(append_page_params(base() .. "/repos", PAGES)))
   end,
+
+  -- Issues --------------------------------------------------------------------
+
+  get_repo_issues = proxy_handler(translate_pagure_issues, function(o, r)
+    return append_page_params(base().."/"..o.."/"..r.."/issues", PAGES)
+  end),
+
+  -- Pagure uses /issue/{id} (singular) for individual issues
+  get_repo_issue = proxy_handler(translate_pagure_issue, function(o, r, n)
+    return base().."/"..o.."/"..r.."/issue/"..n
+  end),
+
+  get_issue_comments = function(owner, repo_name, issue_number)
+    -- Pagure returns comments embedded in the issue object
+    local ok, status, _, body = fetch_json(
+      base().."/"..owner.."/"..repo_name.."/issue/"..issue_number)
+    if not ok then respond_json(503, "Service Unavailable", {}); return end
+    if status ~= 200 then respond_json(status, "Error", {}); return end
+    local issue = DecodeJson(body or "{}") or {}
+    local comments = {}
+    for _, c in ipairs(issue.comments or {}) do
+      comments[#comments + 1] = translate_pagure_comment(c)
+    end
+    respond_json(200, "OK", comments)
+  end,
+
+  get_repo_labels = function(owner, repo_name)
+    -- Pagure has no repo-level label list endpoint; return empty list
+    respond_json(200, "OK", {})
+  end,
+
 }

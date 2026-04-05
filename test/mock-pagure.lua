@@ -76,6 +76,36 @@ function OnHttpRequest()
     SetStatus(200, "OK")
     raw("file content\n")
 
+  -- Issues -----------------------------------------------------------------
+  -- Individual issue (Pagure uses /issue/{id} singular)
+  elseif path == rp .. "/issue/9999" then
+    SetStatus(404, "Not Found")
+    json('{"error":"Issue not found","error_code":"ENOISSUE"}')
+
+  elseif path == rp .. "/issue/1" then
+    SetStatus(200, "OK")
+    json('{"id":1,"title":"Found a bug","content":"Bug description",' ..
+      '"status":"Open",' ..
+      '"user":{"name":"octocat","fullname":"The Octocat","url_path":"user/octocat","avatar_url":""},' ..
+      '"assignee":null,' ..
+      '"tags":["bug"],' ..
+      '"date_created":"1577836800","last_updated":"1577923200",' ..
+      '"full_url":"octocat/hello-world/issue/1",' ..
+      '"comments":[{"id":1,"comment":"This is a comment",' ..
+        '"user":{"name":"octocat","fullname":"The Octocat","url_path":"user/octocat","avatar_url":""},' ..
+        '"date_created":"1577836800"}]}')
+
+  elseif path == rp .. "/issues" then
+    SetStatus(200, "OK")
+    json('{"issues":[{"id":1,"title":"Found a bug","content":"Bug description",' ..
+      '"status":"Open",' ..
+      '"user":{"name":"octocat","fullname":"The Octocat","url_path":"user/octocat","avatar_url":""},' ..
+      '"assignee":null,' ..
+      '"tags":["bug"],' ..
+      '"date_created":"1577836800","last_updated":"1577923200",' ..
+      '"full_url":"octocat/hello-world/issue/1","comments":[]}],' ..
+      '"total_issues":1}')
+
   -- Users -------------------------------------------------------------------
   elseif path == "/api/0/user/octocat" then
     SetStatus(200, "OK")

@@ -66,7 +66,8 @@ end
 -- Returns a handler function: defers fetch_json(url_fn(...)) to request time.
 -- xform receives (response_body, ...handler_args) so closures over handler args are not needed.
 -- Named translate functions that only take the response body work as-is (extra args ignored).
-local proxy_handler = make_proxy_handler(fetch_json)
+local proxy_handler         = make_proxy_handler(fetch_json)
+local proxy_handler_created = make_proxy_handler(fetch_json, proxy_json_created)
 
 local function filter_verified_emails(emails)
   local out = {}
@@ -97,6 +98,115 @@ local function translate_gitea_team(t)
     repositories_url = "",
     parent = nil,
   }
+end
+
+-- Map a Gitea label object to GitHub format.
+-- Gitea color includes a '#' prefix; GitHub does not.
+local function translate_gitea_label(l)
+  if not l then return {} end
+  return {
+    id          = l.id,
+    node_id     = "",
+    url         = l.url or "",
+    name        = l.name,
+    color       = (l.color or ""):gsub("^#", ""),
+    description = l.description or "",
+    default     = false,
+  }
+end
+
+-- Map a Gitea milestone object to GitHub format.
+local function translate_gitea_milestone(m)
+  if not m then return nil end
+  return {
+    id            = m.id,
+    node_id       = "",
+    number        = m.id,
+    title         = m.title,
+    description   = m.description or "",
+    state         = m.state or "open",
+    open_issues   = m.open_issues or 0,
+    closed_issues = m.closed_issues or 0,
+    created_at    = m.created_at,
+    updated_at    = m.updated_at,
+    closed_at     = m.closed_at,
+    due_on        = m.due_on,
+  }
+end
+
+-- Map a Gitea issue object to GitHub format.
+-- Gitea timestamps use "created"/"updated"/"closed"; GitHub uses "_at" suffix.
+local function translate_gitea_issue(i)
+  if not i then return {} end
+  local labels, assignees = {}, {}
+  for _, l in ipairs(i.labels or {}) do
+    labels[#labels + 1] = translate_gitea_label(l)
+  end
+  for _, u in ipairs(i.assignees or {}) do
+    assignees[#assignees + 1] = translate_user(u)
+  end
+  return {
+    id           = i.id,
+    node_id      = "",
+    number       = i.number,
+    title        = i.title,
+    body         = i.body,
+    state        = i.state,
+    user         = translate_user(i.user),
+    assignees    = assignees,
+    labels       = labels,
+    milestone    = i.milestone and translate_gitea_milestone(i.milestone) or nil,
+    comments     = i.comments,
+    created_at   = i.created,
+    updated_at   = i.updated,
+    closed_at    = i.closed,
+    html_url     = i.html_url or "",
+    url          = i.url or "",
+    pull_request = i.pull_request and { url = "", html_url = "", diff_url = "", patch_url = "" } or nil,
+  }
+end
+
+-- Map a Gitea issue comment object to GitHub format.
+local function translate_gitea_issue_comment(c)
+  if not c then return {} end
+  return {
+    id         = c.id,
+    node_id    = "",
+    url        = c.url or "",
+    html_url   = c.html_url or "",
+    body       = c.body,
+    user       = translate_user(c.user),
+    created_at = c.created,
+    updated_at = c.updated,
+  }
+end
+
+local function translate_gitea_issues(issues)
+  for i, iss in ipairs(issues) do issues[i] = translate_gitea_issue(iss) end
+  return issues
+end
+local function translate_gitea_issue_comments(comments)
+  for i, c in ipairs(comments) do comments[i] = translate_gitea_issue_comment(c) end
+  return comments
+end
+local function translate_gitea_labels(labels)
+  for i, l in ipairs(labels) do labels[i] = translate_gitea_label(l) end
+  return labels
+end
+local function translate_gitea_milestones(milestones)
+  for i, m in ipairs(milestones) do milestones[i] = translate_gitea_milestone(m) end
+  return milestones
+end
+
+-- Look up a Gitea label ID by name within a repo.
+local function gitea_find_label_id(owner, repo_name, label_name)
+  local ok, status, _, body = fetch_json(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/labels?limit=50")
+  if not ok or status ~= 200 then return nil end
+  for _, l in ipairs(DecodeJson(body) or {}) do
+    if l.name == label_name then return l.id end
+  end
+  return nil
 end
 
 -- Look up a Gitea team ID by org and slug.  Gitea uses numeric IDs; the slug
@@ -1289,6 +1399,272 @@ backend_impl = {
       respond_json(503, "Service Unavailable", {})
     end
   end,
+
+  -- Issues -------------------------------------------------------------------
+
+  -- GET /repos/{owner}/{repo}/issues
+  get_repo_issues = proxy_handler(translate_gitea_issues, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/issues", PAGES)
+  end),
+
+  -- POST /repos/{owner}/{repo}/issues
+  post_repo_issues = proxy_handler_created(translate_gitea_issue, function(o, r)
+    return base().."/repos/"..o.."/"..r.."/issues", "POST", GetBody()
+  end),
+
+  -- GET /repos/{owner}/{repo}/issues/{issue_number}
+  get_repo_issue = proxy_handler(translate_gitea_issue, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/issues/"..n
+  end),
+
+  -- PATCH /repos/{owner}/{repo}/issues/{issue_number}
+  patch_repo_issue = proxy_handler(translate_gitea_issue, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/issues/"..n, "PATCH", GetBody()
+  end),
+
+  -- GET /repos/{owner}/{repo}/issues/comments  (all issue comments in repo)
+  get_repo_issue_comments = proxy_handler(translate_gitea_issue_comments, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/issues/comments", PAGES)
+  end),
+
+  -- GET /repos/{owner}/{repo}/issues/comments/{comment_id}
+  get_repo_issue_comment = proxy_handler(translate_gitea_issue_comment, function(o, r, id)
+    return base().."/repos/"..o.."/"..r.."/issues/comments/"..id
+  end),
+
+  -- PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}
+  patch_repo_issue_comment = proxy_handler(translate_gitea_issue_comment, function(o, r, id)
+    return base().."/repos/"..o.."/"..r.."/issues/comments/"..id, "PATCH", GetBody()
+  end),
+
+  -- DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}
+  delete_repo_issue_comment = function(owner, repo_name, comment_id)
+    local ok, status = fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name ..
+      "/issues/comments/" .. comment_id, "DELETE")
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- GET /repos/{owner}/{repo}/issues/events  (all issue events in repo)
+  get_repo_issue_events = proxy_handler(nil, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/issues/events", PAGES)
+  end),
+
+  -- GET /repos/{owner}/{repo}/issues/events/{event_id}
+  get_repo_issue_event = proxy_handler(nil, function(o, r, id)
+    return base().."/repos/"..o.."/"..r.."/issues/events/"..id
+  end),
+
+  -- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
+  get_issue_comments = proxy_handler(translate_gitea_issue_comments, function(o, r, n)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/issues/"..n.."/comments", PAGES)
+  end),
+
+  -- POST /repos/{owner}/{repo}/issues/{issue_number}/comments
+  post_issue_comment = proxy_handler_created(translate_gitea_issue_comment, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/issues/"..n.."/comments", "POST", GetBody()
+  end),
+
+  -- GET /repos/{owner}/{repo}/issues/{issue_number}/events
+  get_issue_events = proxy_handler(nil, function(o, r, n)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/issues/"..n.."/events", PAGES)
+  end),
+
+  -- GET /repos/{owner}/{repo}/issues/{issue_number}/timeline
+  get_issue_timeline = proxy_handler(nil, function(o, r, n)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/issues/"..n.."/timeline", PAGES)
+  end),
+
+  -- GET /repos/{owner}/{repo}/issues/{issue_number}/labels
+  get_issue_labels = proxy_handler(translate_gitea_labels, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/issues/"..n.."/labels"
+  end),
+
+  -- POST /repos/{owner}/{repo}/issues/{issue_number}/labels
+  -- GitHub body: { labels: ["name1", ...] }; Gitea body: { labels: [id1, ...] }
+  -- Look up each name to find its ID.
+  post_issue_labels = function(owner, repo_name, issue_number)
+    local req = DecodeJson(GetBody() or "{}")
+    local ids = {}
+    for _, name in ipairs(req.labels or {}) do
+      local id = gitea_find_label_id(owner, repo_name, name)
+      if id then ids[#ids + 1] = id end
+    end
+    proxy_json(translate_gitea_labels,
+      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
+        "/issues/" .. issue_number .. "/labels",
+        "POST", EncodeJson({ labels = ids })))
+  end,
+
+  -- PUT /repos/{owner}/{repo}/issues/{issue_number}/labels  (replace all)
+  put_issue_labels = function(owner, repo_name, issue_number)
+    local req = DecodeJson(GetBody() or "{}")
+    local ids = {}
+    for _, name in ipairs(req.labels or {}) do
+      local id = gitea_find_label_id(owner, repo_name, name)
+      if id then ids[#ids + 1] = id end
+    end
+    proxy_json(translate_gitea_labels,
+      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
+        "/issues/" .. issue_number .. "/labels",
+        "PUT", EncodeJson({ labels = ids })))
+  end,
+
+  -- DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels  (remove all)
+  delete_issue_labels = function(owner, repo_name, issue_number)
+    local ok, status = fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name ..
+      "/issues/" .. issue_number .. "/labels", "DELETE")
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}
+  -- GitHub uses the label name; Gitea uses the numeric label ID.
+  delete_issue_label = function(owner, repo_name, issue_number, label_name)
+    local id = gitea_find_label_id(owner, repo_name, label_name)
+    if not id then respond_json(404, "Not Found", { message = "Label not found" }); return end
+    local ok, status = fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name ..
+      "/issues/" .. issue_number .. "/labels/" .. id, "DELETE")
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- PUT /repos/{owner}/{repo}/issues/{issue_number}/lock
+  put_issue_lock = function(owner, repo_name, issue_number)
+    local opts = auth() or {}; opts.method = "PUT"
+    opts.body = GetBody()
+    opts.headers = opts.headers or {}
+    opts.headers["Content-Type"] = "application/json"
+    local ok, status = pcall(Fetch,
+      base() .. "/repos/" .. owner .. "/" .. repo_name ..
+      "/issues/" .. issue_number .. "/lock", opts)
+    if ok and status == 204 then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- DELETE /repos/{owner}/{repo}/issues/{issue_number}/lock
+  delete_issue_lock = function(owner, repo_name, issue_number)
+    set_204_or_error("DELETE",
+      base() .. "/repos/" .. owner .. "/" .. repo_name ..
+      "/issues/" .. issue_number .. "/lock")
+  end,
+
+  -- POST /repos/{owner}/{repo}/issues/{issue_number}/assignees
+  post_issue_assignees = proxy_handler(translate_gitea_issue, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/issues/"..n.."/assignees", "POST", GetBody()
+  end),
+
+  -- DELETE /repos/{owner}/{repo}/issues/{issue_number}/assignees
+  delete_issue_assignees = proxy_handler(translate_gitea_issue, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/issues/"..n.."/assignees", "DELETE", GetBody()
+  end),
+
+  -- GET /repos/{owner}/{repo}/issues/{issue_number}/assignees/{assignee}
+  -- Gitea has no direct endpoint; check the issue's assignees list.
+  get_issue_assignee = function(owner, repo_name, issue_number, assignee)
+    local ok, status, _, body = fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name ..
+      "/issues/" .. issue_number)
+    if not ok then respond_json(503, "Service Unavailable", {}); return end
+    if status ~= 200 then respond_json(status, "Error", {}); return end
+    local issue = DecodeJson(body) or {}
+    for _, u in ipairs(issue.assignees or {}) do
+      if u.login == assignee then SetStatus(204, "No Content"); return end
+    end
+    respond_json(404, "Not Found", { message = "Not an assignee" })
+  end,
+
+  -- Assignees -----------------------------------------------------------------
+
+  -- GET /repos/{owner}/{repo}/assignees  (users eligible for assignment)
+  get_repo_assignees = proxy_handler(translate_users, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/assignees", PAGES)
+  end),
+
+  -- Labels (repo-level) -------------------------------------------------------
+
+  -- GET /repos/{owner}/{repo}/labels
+  get_repo_labels = proxy_handler(translate_gitea_labels, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/labels", PAGES)
+  end),
+
+  -- POST /repos/{owner}/{repo}/labels
+  post_repo_labels = proxy_handler_created(translate_gitea_label, function(o, r)
+    return base().."/repos/"..o.."/"..r.."/labels", "POST", GetBody()
+  end),
+
+  -- GET /repos/{owner}/{repo}/labels/{name}
+  -- GitHub uses label name in the URL; Gitea uses numeric ID.
+  get_repo_label = function(owner, repo_name, label_name)
+    local id = gitea_find_label_id(owner, repo_name, label_name)
+    if not id then respond_json(404, "Not Found", { message = "Label not found" }); return end
+    proxy_json(translate_gitea_label,
+      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/labels/" .. id))
+  end,
+
+  -- PATCH /repos/{owner}/{repo}/labels/{name}
+  patch_repo_label = function(owner, repo_name, label_name)
+    local id = gitea_find_label_id(owner, repo_name, label_name)
+    if not id then respond_json(404, "Not Found", { message = "Label not found" }); return end
+    proxy_json(translate_gitea_label,
+      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/labels/" .. id,
+        "PATCH", GetBody()))
+  end,
+
+  -- DELETE /repos/{owner}/{repo}/labels/{name}
+  delete_repo_label = function(owner, repo_name, label_name)
+    local id = gitea_find_label_id(owner, repo_name, label_name)
+    if not id then respond_json(404, "Not Found", { message = "Label not found" }); return end
+    local ok, status = fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/labels/" .. id, "DELETE")
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- Milestones ----------------------------------------------------------------
+
+  -- GET /repos/{owner}/{repo}/milestones
+  get_repo_milestones = proxy_handler(translate_gitea_milestones, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/milestones", PAGES)
+  end),
+
+  -- POST /repos/{owner}/{repo}/milestones
+  post_repo_milestones = proxy_handler_created(translate_gitea_milestone, function(o, r)
+    return base().."/repos/"..o.."/"..r.."/milestones", "POST", GetBody()
+  end),
+
+  -- GET /repos/{owner}/{repo}/milestones/{milestone_number}
+  get_repo_milestone = proxy_handler(translate_gitea_milestone, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/milestones/"..n
+  end),
+
+  -- PATCH /repos/{owner}/{repo}/milestones/{milestone_number}
+  patch_repo_milestone = proxy_handler(translate_gitea_milestone, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/milestones/"..n, "PATCH", GetBody()
+  end),
+
+  -- DELETE /repos/{owner}/{repo}/milestones/{milestone_number}
+  delete_repo_milestone = function(owner, repo_name, milestone_number)
+    local ok, status = fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name ..
+      "/milestones/" .. milestone_number, "DELETE")
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- GET /repos/{owner}/{repo}/milestones/{milestone_number}/labels
+  get_repo_milestone_labels = proxy_handler(translate_gitea_labels, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/milestones/"..n.."/labels"
+  end),
 
   -- GET /orgs/{org}/teams/{team_slug}/teams — Gitea has no nested teams
   get_org_team_children = function()

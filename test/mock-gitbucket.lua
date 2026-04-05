@@ -235,6 +235,105 @@ function OnHttpRequest()
         .. '"created_at":"2020-01-01T00:00:00Z"}]'
     )
 
+  -- Issues (GitHub-compatible) --------------------------------------------
+  elseif path == rb .. "/issues" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"number":1,"title":"Found a bug","body":"Bug description",' ..
+      '"state":"open","user":{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User"},' ..
+      '"assignees":[],"labels":[{"id":1,"name":"bug","color":"d73a4a","description":"","default":false,"node_id":"","url":""}],' ..
+      '"milestone":{"id":1,"number":1,"title":"v1.0","description":"First milestone","state":"open",' ..
+      '"open_issues":1,"closed_issues":0,"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",' ..
+      '"due_on":null,"closed_at":null,"url":"","html_url":"","labels_url":"","node_id":""},' ..
+      '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-02T00:00:00Z","closed_at":null,' ..
+      '"html_url":"http://localhost/octocat/hello-world/issues/1","node_id":""}]')
+
+  elseif path == rb .. "/issues/9999" then
+    SetStatus(404, "Not Found")
+    json('{"message":"Not Found"}')
+
+  elseif path == rb .. "/issues/1/comments" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"body":"This is a comment","user":{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User"},' ..
+      '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",' ..
+      '"html_url":"http://localhost/octocat/hello-world/issues/1#issuecomment-1","node_id":"","url":""}]')
+
+  elseif path == rb .. "/issues/1/events" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"event":"closed","actor":{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User"},' ..
+      '"commit_id":null,"created_at":"2020-01-01T00:00:00Z","node_id":"","url":""}]')
+
+  elseif path == rb .. "/issues/1/timeline" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"event":"closed","actor":{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User"},' ..
+      '"created_at":"2020-01-01T00:00:00Z","node_id":""}]')
+
+  elseif path == rb .. "/issues/1/labels" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"name":"bug","color":"d73a4a","description":"","default":false,"node_id":"","url":""}]')
+
+  elseif path == rb .. "/issues/1" then
+    SetStatus(200, "OK")
+    json('{"id":1,"number":1,"title":"Found a bug","body":"Bug description",' ..
+      '"state":"open","user":{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User"},' ..
+      '"assignees":[],"labels":[{"id":1,"name":"bug","color":"d73a4a","description":"","default":false,"node_id":"","url":""}],' ..
+      '"milestone":{"id":1,"number":1,"title":"v1.0","description":"First milestone","state":"open",' ..
+      '"open_issues":1,"closed_issues":0,"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",' ..
+      '"due_on":null,"closed_at":null,"url":"","html_url":"","labels_url":"","node_id":""},' ..
+      '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-02T00:00:00Z","closed_at":null,' ..
+      '"html_url":"http://localhost/octocat/hello-world/issues/1","node_id":""}')
+
+  elseif path == rb .. "/issues/comments/1" then
+    SetStatus(200, "OK")
+    json('{"id":1,"body":"This is a comment","user":{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User"},' ..
+      '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",' ..
+      '"html_url":"http://localhost/octocat/hello-world/issues/1#issuecomment-1","node_id":"","url":""}')
+
+  elseif path == rb .. "/issues/comments" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"body":"This is a comment","user":{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User"},' ..
+      '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",' ..
+      '"html_url":"http://localhost/octocat/hello-world/issues/1#issuecomment-1","node_id":"","url":""}]')
+
+  elseif path == rb .. "/issues/events" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"event":"closed","actor":{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User"},' ..
+      '"commit_id":null,"created_at":"2020-01-01T00:00:00Z","node_id":"","url":""}]')
+
+  -- Labels ------------------------------------------------------------------
+  elseif path == rb .. "/labels/nosuchlabel" then
+    SetStatus(404, "Not Found")
+    json('{"message":"Not Found"}')
+
+  elseif path == rb .. "/labels/bug" then
+    SetStatus(200, "OK")
+    json('{"id":1,"name":"bug","color":"d73a4a","description":"","default":false,"node_id":"","url":""}')
+
+  elseif path == rb .. "/labels" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"name":"bug","color":"d73a4a","description":"","default":false,"node_id":"","url":""}]')
+
+  -- Milestones --------------------------------------------------------------
+  elseif path == rb .. "/milestones/1/labels" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"name":"bug","color":"d73a4a","description":"","default":false,"node_id":"","url":""}]')
+
+  elseif path == rb .. "/milestones/1" then
+    SetStatus(200, "OK")
+    json('{"id":1,"number":1,"title":"v1.0","description":"First milestone","state":"open",' ..
+      '"open_issues":1,"closed_issues":0,"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",' ..
+      '"due_on":null,"closed_at":null,"url":"","html_url":"","labels_url":"","node_id":""}')
+
+  elseif path == rb .. "/milestones" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"number":1,"title":"v1.0","description":"First milestone","state":"open",' ..
+      '"open_issues":1,"closed_issues":0,"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",' ..
+      '"due_on":null,"closed_at":null,"url":"","html_url":"","labels_url":"","node_id":""}]')
+
+  -- Assignees ---------------------------------------------------------------
+  elseif path == rb .. "/assignees" then
+    SetStatus(200, "OK")
+    json('[{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User"}]')
+
   -- Users' repos -----------------------------------------------------------
   elseif path == "/api/v3/users/octocat/repos" then
     SetStatus(200, "OK")
