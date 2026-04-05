@@ -50,6 +50,12 @@ backend_impl = {
     end
   end,
 
+  get_rate_limit = proxy_handler(function(data)
+    return { rate = data.rate or data }
+  end, function()
+    return base() .. "/rate_limit"
+  end),
+
   get_repo = proxy_handler(nil, function(o, r)
     return base() .. "/repos/" .. o .. "/" .. r
   end),

@@ -217,6 +217,17 @@ local function empty_list()
   Write("[]")
 end
 
+-- Default handler for GET /rate_limit: no provider has a GitHub-compatible rate
+-- limit API, so confusio returns a partial response with just the `rate` key.
+-- limit=999999 means "effectively unlimited"; reset is set one hour ahead of now.
+local function rate_limit_response()
+  local limit = 999999
+  local reset = os.time() + 3600
+  respond_json(200, "OK", {
+    rate = { limit = limit, used = 0, remaining = limit, reset = reset },
+  })
+end
+
 -- ---------------------------------------------------------------------------
 -- Segment-based radix trie router
 --
@@ -306,6 +317,8 @@ local routes = {
   ["GET /"]                                                                    = { "get_root", function() respond_json(200, "OK", {}) end },
   -- Emojis
   ["GET /emojis"]                                                              = "get_emojis",
+  -- Rate Limits (https://docs.github.com/en/rest/rate-limit)
+  ["GET /rate_limit"]                                                          = { "get_rate_limit", rate_limit_response },
 
   -- Repos core (https://docs.github.com/en/rest/repos/repos)
   ["GET /repos/{owner}/{repo}"]                                                = "get_repo",

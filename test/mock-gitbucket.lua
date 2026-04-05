@@ -32,7 +32,7 @@ function OnHttpRequest()
 
   if path == "/api/v3/rate_limit" then
     SetStatus(200, "OK")
-    json('{"rate":{"limit":60,"remaining":60,"reset":9999999999}}')
+    json('{"rate":{"limit":60,"used":0,"remaining":60,"reset":9999999999}}')
 
   -- Repo -------------------------------------------------------------------
   elseif path == rb then
