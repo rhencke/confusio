@@ -94,6 +94,12 @@
   }
   @media (max-width: 768px) {
     .table-scroll-hint { display: block; }
+    th:first-child,
+    td:first-child {
+      max-width: 40vw;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
   }
   table {
     border-collapse: separate;
