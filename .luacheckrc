@@ -1,6 +1,5 @@
 -- luacheck configuration for confusio
 std = "lua54"
-exclude_files = { ".luarocks/" }
 max_line_length = 200
 
 globals = {
