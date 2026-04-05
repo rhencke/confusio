@@ -76,6 +76,46 @@ function OnHttpRequest()
   elseif path:find("^" .. rp:gsub("%-", "%%-") .. "/blob/") then
     SetStatus(200, "OK")
     raw("file content\n")
+
+  -- todo.sr.ht Issues (tracker) --------------------------------------------
+  -- Paths: /api/~octocat/trackers/hello-world/tickets[/{id}[/events]]
+
+  elseif path == "/api/~octocat/trackers/hello-world/tickets" then
+    SetStatus(200, "OK")
+    json(
+      '{"results":[{"id":1,"created":"2020-01-01T00:00:00+00:00",'
+        .. '"updated":"2020-01-02T00:00:00+00:00",'
+        .. '"title":"Found a bug","body":"Bug description",'
+        .. '"status":"reported",'
+        .. '"submitter":{"canonical_name":"~octocat","name":"octocat"}}],'
+        .. '"total":1,"next":null}'
+    )
+
+  elseif path == "/api/~octocat/trackers/hello-world/tickets/1" then
+    SetStatus(200, "OK")
+    json(
+      '{"id":1,"created":"2020-01-01T00:00:00+00:00",'
+        .. '"updated":"2020-01-02T00:00:00+00:00",'
+        .. '"title":"Found a bug","body":"Bug description",'
+        .. '"status":"reported",'
+        .. '"submitter":{"canonical_name":"~octocat","name":"octocat"}}'
+    )
+
+  elseif path == "/api/~octocat/trackers/hello-world/tickets/9999" then
+    SetStatus(404, "Not Found")
+    json('{"errors":[{"field":"ticket","reason":"not found"}]}')
+
+  elseif path == "/api/~octocat/trackers/hello-world/tickets/1/events" then
+    SetStatus(200, "OK")
+    json(
+      '{"results":[{"id":1,"created":"2020-01-03T00:00:00+00:00",'
+        .. '"event_type":["comment"],'
+        .. '"comment":{"id":1,"created":"2020-01-03T00:00:00+00:00",'
+        .. '"text":"This is a comment",'
+        .. '"author":{"canonical_name":"~octocat","name":"octocat"}}}],'
+        .. '"total":1,"next":null}'
+    )
+
   else
     SetStatus(404, "Not Found")
   end

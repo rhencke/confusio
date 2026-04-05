@@ -1,11 +1,19 @@
 -- Sourcehut backend handler overrides.
 -- Uses git.sr.ht REST API at /api/~{username}/repos/{name}.
+-- Issues use todo.sr.ht REST API at /api/~{username}/trackers/{name}/tickets.
 if config.base_url == "" then
   config.base_url = "https://git.sr.ht"
 end
 
 local base = function()
   return config.base_url .. "/api"
+end
+
+-- Derive the todo.sr.ht base URL from the git.sr.ht base URL.
+-- In production: https://git.sr.ht → https://todo.sr.ht
+-- In tests (IP:PORT): unchanged, same mock server handles both API path prefixes.
+local todo_base = function()
+  return config.base_url:gsub("git%.sr%.ht", "todo.sr.ht") .. "/api"
 end
 local auth = function()
   return make_fetch_opts("token")
@@ -105,6 +113,58 @@ local function translate_srht_branch(ref)
     name = name,
     commit = { sha = ref.target or "", url = "" },
     protected = false,
+  }
+end
+
+-- Translate a todo.sr.ht ticket to GitHub issue format.
+-- Sourcehut: { id, created, updated, title, body, status, submitter: { canonical_name, name } }
+local function translate_srht_ticket(t)
+  if not t then
+    return {}
+  end
+  local submitter = t.submitter or {}
+  local canonical = submitter.canonical_name or ""
+  local login = canonical:sub(1, 1) == "~" and canonical:sub(2) or (submitter.name or canonical)
+  local status = t.status or "reported"
+  local state = (status == "resolved" or status == "closed") and "closed" or "open"
+  return {
+    id = t.id or 0,
+    node_id = "",
+    number = t.id or 0,
+    title = t.title or "",
+    body = t.body or "",
+    state = state,
+    user = { login = login, id = 0, node_id = "", avatar_url = "", url = "", type = "User" },
+    assignees = {},
+    labels = {},
+    milestone = nil,
+    created_at = t.created or "",
+    updated_at = t.updated or t.created or "",
+    closed_at = nil,
+    html_url = "",
+  }
+end
+
+-- Translate a todo.sr.ht event to GitHub issue comment format.
+-- Events with no comment field (status changes, etc.) are skipped by the caller.
+-- event: { id, created, event_type, comment: { id, created, text, author } }
+local function translate_srht_event_comment(e)
+  if not e or not e.comment then
+    return nil
+  end
+  local comment = e.comment
+  local author = comment.author or {}
+  local canonical = author.canonical_name or ""
+  local login = canonical:sub(1, 1) == "~" and canonical:sub(2) or (author.name or canonical)
+  return {
+    id = comment.id or e.id or 0,
+    node_id = "",
+    url = "",
+    body = comment.text or "",
+    user = { login = login, id = 0, node_id = "", avatar_url = "", url = "", type = "User" },
+    created_at = comment.created or e.created or "",
+    updated_at = comment.created or e.created or "",
+    html_url = "",
   }
 end
 
@@ -368,5 +428,114 @@ backend_impl = {
         blog = u.url or "",
       }
     end, fetch_json(base() .. "/user"))
+  end,
+
+  -- Issues --------------------------------------------------------------------
+  -- todo.sr.ht: GET /api/~{owner}/trackers/{repo}/tickets
+
+  get_repo_issues = function(owner, repo_name)
+    local url = todo_base() .. "/~" .. owner .. "/trackers/" .. repo_name .. "/tickets"
+    url = append_page_params(url, PAGES)
+    proxy_json(function(data)
+      local tickets = data.results or {}
+      local result = {}
+      for _, t in ipairs(tickets) do
+        result[#result + 1] = translate_srht_ticket(t)
+      end
+      return result
+    end, fetch_json(url))
+  end,
+
+  -- GET /repos/{owner}/{repo}/issues/{issue_number}
+  get_repo_issue = function(owner, repo_name, issue_number)
+    local url = todo_base() .. "/~" .. owner .. "/trackers/" .. repo_name .. "/tickets/" .. issue_number
+    local ok, status, _, body = fetch_json(url)
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status == 404 then
+      respond_json(404, "Not Found", { message = "Not Found" })
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local ticket = DecodeJson(body)
+    respond_json(200, "OK", translate_srht_ticket(ticket))
+  end,
+
+  -- POST /repos/{owner}/{repo}/issues
+  post_repo_issues = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    local payload = EncodeJson({ title = req.title or "", description = req.body or "" })
+    local ok, status, _, body = fetch_json(
+      todo_base() .. "/~" .. owner .. "/trackers/" .. repo_name .. "/tickets",
+      "POST",
+      payload
+    )
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 and status ~= 201 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local ticket = DecodeJson(body)
+    respond_json(201, "Created", translate_srht_ticket(ticket))
+  end,
+
+  -- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
+  -- todo.sr.ht: GET /api/~{owner}/trackers/{repo}/tickets/{id}/events
+  -- Filter events to only those with a comment field.
+  get_issue_comments = function(owner, repo_name, issue_number)
+    local url = todo_base()
+      .. "/~"
+      .. owner
+      .. "/trackers/"
+      .. repo_name
+      .. "/tickets/"
+      .. issue_number
+      .. "/events"
+    url = append_page_params(url, PAGES)
+    proxy_json(function(data)
+      local events = data.results or {}
+      local comments = {}
+      for _, e in ipairs(events) do
+        local c = translate_srht_event_comment(e)
+        if c then
+          comments[#comments + 1] = c
+        end
+      end
+      return comments
+    end, fetch_json(url))
+  end,
+
+  -- POST /repos/{owner}/{repo}/issues/{issue_number}/comments
+  post_issue_comment = function(owner, repo_name, issue_number)
+    local req = DecodeJson(GetBody() or "{}")
+    local payload = EncodeJson({ comment = req.body or "" })
+    local url = todo_base()
+      .. "/~"
+      .. owner
+      .. "/trackers/"
+      .. repo_name
+      .. "/tickets/"
+      .. issue_number
+      .. "/events"
+    local ok, status, _, body = fetch_json(url, "POST", payload)
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 and status ~= 201 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local event = DecodeJson(body)
+    local comment = translate_srht_event_comment(event)
+    respond_json(201, "Created", comment or {})
   end,
 }
