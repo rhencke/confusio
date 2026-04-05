@@ -400,7 +400,7 @@ local function search_response(endpoint, translate_item)
     local items_json = #items > 0 and EncodeJson(items) or "[]"
     SetStatus(200, "OK")
     SetHeader("Content-Type", "application/json; charset=utf-8")
-    Write('{"total_count":' .. total .. ',"incomplete_results":false,"items":' .. items_json .. '}')
+    Write('{"total_count":' .. total .. ',"incomplete_results":false,"items":' .. items_json .. "}")
   end
 end
 
