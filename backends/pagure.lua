@@ -78,7 +78,7 @@ end
 -- Translate a Pagure commit object to GitHub format.
 -- Pagure: { id, message, date, date_utc, author: { name, email } }
 local proxy_handler         = make_proxy_handler(fetch_json)
-local proxy_handler_created = make_proxy_handler_created(fetch_json)
+local proxy_handler_created = make_proxy_handler(fetch_json, proxy_json_created)
 
 -- Translate a Pagure user to GitHub format.
 local function translate_pagure_user(u)

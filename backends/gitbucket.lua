@@ -29,7 +29,7 @@ local function set_204_or_error(method, url)
 end
 
 local proxy_handler         = make_proxy_handler(fetch_json)
-local proxy_handler_created = make_proxy_handler_created(fetch_json)
+local proxy_handler_created = make_proxy_handler(fetch_json, proxy_json_created)
 
 backend_impl = {
   get_root = function()

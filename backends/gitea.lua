@@ -51,7 +51,7 @@ end
 -- xform receives (response_body, ...handler_args) so closures over handler args are not needed.
 -- Named translate functions that only take the response body work as-is (extra args ignored).
 local proxy_handler         = make_proxy_handler(fetch_json)
-local proxy_handler_created = make_proxy_handler_created(fetch_json)
+local proxy_handler_created = make_proxy_handler(fetch_json, proxy_json_created)
 
 local function filter_verified_emails(emails)
   local out = {}

@@ -120,7 +120,7 @@ local function translate_gl_users(users)
 end
 
 local proxy_handler         = make_proxy_handler(fetch_json)
-local proxy_handler_created = make_proxy_handler_created(fetch_json)
+local proxy_handler_created = make_proxy_handler(fetch_json, proxy_json_created)
 
 -- Look up a GitLab user ID by username. Returns nil on failure.
 local function gl_user_id(username)
