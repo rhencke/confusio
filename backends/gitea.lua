@@ -69,6 +69,35 @@ end
 local proxy_handler = make_proxy_handler(fetch_json)
 local proxy_handler_created = make_proxy_handler(fetch_json, proxy_json_created)
 
+-- Proxy a Gitea search response {"data":[...],"ok":true} to the GitHub search
+-- envelope {"total_count":N,"incomplete_results":false,"items":[...]}.
+-- translate_item is applied to each element of data[].
+local function proxy_search(translate_item, url)
+  local ok, status, _, body = fetch_json(url)
+  if not ok then
+    respond_json(503, "Service Unavailable", {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, "Error", {})
+    return
+  end
+  local raw = (DecodeJson(body) or {}).data or {}
+  local items = {}
+  for i, item in ipairs(raw) do
+    items[i] = translate_item(item)
+  end
+  SetStatus(200, "OK")
+  SetHeader("Content-Type", "application/json; charset=utf-8")
+  Write(
+    '{"total_count":'
+      .. #items
+      .. ',"incomplete_results":false,"items":'
+      .. (#items > 0 and EncodeJson(items) or "[]")
+      .. "}"
+  )
+end
+
 local function filter_verified_emails(emails)
   local out = {}
   for _, e in ipairs(emails or {}) do
@@ -2292,5 +2321,19 @@ backend_impl = {
       end
     end
     respond_json(200, "OK", all_comments)
+  end,
+
+  -- Search -----------------------------------------------------------------------
+
+  -- GET /search/repositories — maps to Gitea GET /repos/search
+  search_repositories = function()
+    local q = GetParam("q") or ""
+    proxy_search(translate_repo, append_page_params(base() .. "/repos/search?q=" .. q, PAGES))
+  end,
+
+  -- GET /search/users — maps to Gitea GET /users/search
+  search_users = function()
+    local q = GetParam("q") or ""
+    proxy_search(translate_user, append_page_params(base() .. "/users/search?q=" .. q, PAGES))
   end,
 }
