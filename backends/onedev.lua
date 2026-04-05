@@ -554,20 +554,35 @@ backend_impl = {
     elseif state ~= "all" then
       query = query .. "+%22State%22+is+%22Open%22"
     end
-    proxy_json(function(issues)
-      issues = issues or {}
-      for i, iss in ipairs(issues) do
-        issues[i] = translate_onedev_issue(iss)
-      end
-      return issues
-    end, fetch_json(base() .. "/issues?query=" .. query .. "&count=" .. count .. "&offset=" .. ((page - 1) * count)))
+    proxy_json(
+      function(issues)
+        issues = issues or {}
+        for i, iss in ipairs(issues) do
+          issues[i] = translate_onedev_issue(iss)
+        end
+        return issues
+      end,
+      fetch_json(
+        base()
+          .. "/issues?query="
+          .. query
+          .. "&count="
+          .. count
+          .. "&offset="
+          .. ((page - 1) * count)
+      )
+    )
   end,
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}
   -- OneDev: query by project path + per-project number, take first result.
   get_repo_issue = function(owner, repo_name, issue_number)
     local path = owner ~= "" and (owner .. "/" .. repo_name) or repo_name
-    local query = "%22Project%22+is+%22" .. path .. "%22+%22Number%22+is+%22" .. issue_number .. "%22"
+    local query = "%22Project%22+is+%22"
+      .. path
+      .. "%22+%22Number%22+is+%22"
+      .. issue_number
+      .. "%22"
     local ok, status, _, body = fetch_json(base() .. "/issues?query=" .. query .. "&count=1")
     if not ok then
       respond_json(503, "Service Unavailable", {})
@@ -594,7 +609,10 @@ backend_impl = {
     end
     local req = DecodeJson(GetBody() or "{}")
     local od = { projectId = id, title = req.title or "", description = req.body or "" }
-    proxy_json_created(translate_onedev_issue, fetch_json(base() .. "/issues", "POST", EncodeJson(od)))
+    proxy_json_created(
+      translate_onedev_issue,
+      fetch_json(base() .. "/issues", "POST", EncodeJson(od))
+    )
   end,
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
@@ -620,13 +638,24 @@ backend_impl = {
     local count = tonumber(GetParam("per_page")) or 30
     local page = tonumber(GetParam("page")) or 1
     local cq = "%22Issue%22+is+%22" .. issue_id .. "%22"
-    proxy_json(function(comments)
-      comments = comments or {}
-      for i, c in ipairs(comments) do
-        comments[i] = translate_onedev_issue_comment(c)
-      end
-      return comments
-    end, fetch_json(base() .. "/issue-comments?query=" .. cq .. "&count=" .. count .. "&offset=" .. ((page - 1) * count)))
+    proxy_json(
+      function(comments)
+        comments = comments or {}
+        for i, c in ipairs(comments) do
+          comments[i] = translate_onedev_issue_comment(c)
+        end
+        return comments
+      end,
+      fetch_json(
+        base()
+          .. "/issue-comments?query="
+          .. cq
+          .. "&count="
+          .. count
+          .. "&offset="
+          .. ((page - 1) * count)
+      )
+    )
   end,
 
   -- POST /repos/{owner}/{repo}/issues/{issue_number}/comments
