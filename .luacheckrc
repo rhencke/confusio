@@ -18,6 +18,7 @@ globals = {
   "EncodeJson",
   "DecodeJson",
   "EncodeBase64",
+  "EscapeParam",
   -- Redbean built-ins: routing
   "Route",
   "OnHttpRequest",
