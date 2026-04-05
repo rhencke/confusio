@@ -211,6 +211,143 @@ end
 
 local proxy_handler = make_proxy_handler(fetch_json)
 
+-- Map a Bitbucket pull request branch ref to GitHub format.
+local function translate_bb_pr_branch(ref)
+  if not ref then
+    return {}
+  end
+  local branch = ref.branch or {}
+  local commit = ref.commit or {}
+  local repo = ref.repository or {}
+  return {
+    label = repo.full_name and (repo.full_name .. ":" .. (branch.name or "")) or (branch.name or ""),
+    ref = branch.name or "",
+    sha = commit.hash or "",
+  }
+end
+
+-- Map a Bitbucket pull request object to GitHub format.
+local function translate_bb_pull(pr)
+  if not pr then
+    return {}
+  end
+  local state = pr.state
+  local is_merged = state == "MERGED"
+  local gh_state = state == "OPEN" and "open" or "closed"
+  local merge_commit = pr.merge_commit or {}
+  local participants = pr.participants or {}
+  -- Find merged_by from participant with role AUTHOR only if merged; Bitbucket
+  -- doesn't expose a dedicated merged_by field, so use closed_by if present.
+  local closed_by = pr.closed_by
+  return {
+    id = pr.id or 0,
+    node_id = "",
+    number = pr.id or 0,
+    state = gh_state,
+    locked = false,
+    title = pr.title or "",
+    body = pr.description or "",
+    user = translate_bb_user(pr.author),
+    head = translate_bb_pr_branch(pr.source),
+    base = translate_bb_pr_branch(pr.destination),
+    draft = false,
+    created_at = pr.created_on or "",
+    updated_at = pr.updated_on or "",
+    closed_at = (not is_merged and gh_state == "closed") and (pr.updated_on or "") or nil,
+    merged_at = is_merged and (pr.updated_on or "") or nil,
+    merge_commit_sha = merge_commit.hash or nil,
+    merged_by = (is_merged and closed_by) and translate_bb_user(closed_by) or nil,
+    html_url = (pr.links and pr.links.html and pr.links.html.href) or "",
+    url = (pr.links and pr.links.self and pr.links.self.href) or "",
+    diff_url = (pr.links and pr.links.diff and pr.links.diff.href) or "",
+    patch_url = "",
+    mergeable = state == "OPEN" or nil,
+    comments = 0,
+    review_comments = 0,
+    commits = 0,
+    additions = 0,
+    deletions = 0,
+    changed_files = 0,
+    participants = nil,
+  }
+end
+
+local function translate_bb_pulls(data)
+  local prs = data.values or {}
+  for i, pr in ipairs(prs) do
+    prs[i] = translate_bb_pull(pr)
+  end
+  return prs
+end
+
+-- Map a Bitbucket diffstat entry to GitHub file format.
+local function translate_bb_diffstat_file(f)
+  if not f then
+    return {}
+  end
+  local status = f.status or "modified"
+  -- Bitbucket statuses: "added", "removed", "modified", "renamed"
+  local new_file = f.new or {}
+  local old_file = f.old or {}
+  return {
+    sha = "",
+    filename = new_file.path or old_file.path or "",
+    status = status,
+    additions = f.lines_added or 0,
+    deletions = f.lines_removed or 0,
+    changes = (f.lines_added or 0) + (f.lines_removed or 0),
+    patch = "",
+  }
+end
+
+-- Map a Bitbucket PR comment (with inline position) to GitHub review comment format.
+local function translate_bb_pr_comment(c)
+  if not c then
+    return {}
+  end
+  local content = (c.content or {}).raw or ""
+  local inline = c.inline or {}
+  return {
+    id = c.id or 0,
+    node_id = "",
+    path = inline.path or "",
+    position = inline.to or inline.from,
+    original_position = inline.from,
+    commit_id = "",
+    original_commit_id = "",
+    diff_hunk = "",
+    body = content,
+    user = translate_bb_user(c.user or c.author),
+    created_at = c.created_on or "",
+    updated_at = c.updated_on or "",
+    html_url = (c.links and c.links.html and c.links.html.href) or "",
+    pull_request_url = "",
+    url = "",
+  }
+end
+
+-- Map Bitbucket PR participants with REVIEWER role to GitHub reviews format.
+local function translate_bb_participants_to_reviews(participants)
+  local result = {}
+  local idx = 0
+  for _, p in ipairs(participants or {}) do
+    if p.role == "REVIEWER" and p.approved then
+      idx = idx + 1
+      result[idx] = {
+        id = idx,
+        node_id = "",
+        user = translate_bb_user(p.user),
+        body = "",
+        state = "APPROVED",
+        submitted_at = p.participated_on or "",
+        html_url = "",
+        pull_request_url = "",
+      }
+    end
+  end
+  return result
+end
+
 -- Translate a Bitbucket issue to GitHub format.
 -- Bitbucket states: "open", "resolved", "wontfix", "invalid", "duplicate", "on hold", "closed"
 local function translate_bb_issue(i)
@@ -861,4 +998,262 @@ backend_impl = {
   get_repo_milestones = proxy_handler(translate_bb_milestones, function(o, r)
     return base() .. "/repositories/" .. o .. "/" .. r .. "/milestones"
   end),
+
+  -- Pull Requests ---------------------------------------------------------------
+
+  -- GET /repos/{owner}/{repo}/pulls
+  get_repo_pulls = proxy_handler(translate_bb_pulls, function(o, r)
+    return append_page_params(
+      base() .. "/repositories/" .. o .. "/" .. r .. "/pullrequests",
+      PAGES
+    )
+  end),
+
+  -- POST /repos/{owner}/{repo}/pulls
+  post_repo_pulls = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    local bb = {}
+    if req.title then
+      bb.title = req.title
+    end
+    if req.body then
+      bb.description = req.body
+    end
+    if req.head then
+      bb.source = { branch = { name = req.head } }
+    end
+    if req.base then
+      bb.destination = { branch = { name = req.base } }
+    end
+    proxy_json_created(
+      translate_bb_pull,
+      fetch_json(
+        base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/pullrequests",
+        "POST",
+        EncodeJson(bb)
+      )
+    )
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}
+  get_repo_pull = proxy_handler(translate_bb_pull, function(o, r, n)
+    return base() .. "/repositories/" .. o .. "/" .. r .. "/pullrequests/" .. n
+  end),
+
+  -- PATCH /repos/{owner}/{repo}/pulls/{pull_number}
+  -- Bitbucket uses PUT for updates.
+  patch_repo_pull = function(owner, repo_name, pull_number)
+    local req = DecodeJson(GetBody() or "{}")
+    local bb = {}
+    if req.title then
+      bb.title = req.title
+    end
+    if req.body then
+      bb.description = req.body
+    end
+    -- Bitbucket can close a PR via status but there's no simple state field in PUT.
+    proxy_json(
+      translate_bb_pull,
+      fetch_json(
+        base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/pullrequests/" .. pull_number,
+        "PUT",
+        EncodeJson(bb)
+      )
+    )
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/commits
+  get_pull_commits = proxy_handler(function(data)
+    local commits = data.values or {}
+    for i, c in ipairs(commits) do
+      commits[i] = translate_bb_commit(c)
+    end
+    return commits
+  end, function(o, r, n)
+    return append_page_params(
+      base() .. "/repositories/" .. o .. "/" .. r .. "/pullrequests/" .. n .. "/commits",
+      PAGES
+    )
+  end),
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/files
+  -- Bitbucket uses /diffstat for file-level change stats.
+  get_pull_files = proxy_handler(function(data)
+    local files = data.values or {}
+    for i, f in ipairs(files) do
+      files[i] = translate_bb_diffstat_file(f)
+    end
+    return files
+  end, function(o, r, n)
+    return append_page_params(
+      base() .. "/repositories/" .. o .. "/" .. r .. "/pullrequests/" .. n .. "/diffstat",
+      PAGES
+    )
+  end),
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/merge
+  -- Returns 204 if PR state is MERGED, 404 otherwise.
+  get_pull_merge = function(owner, repo_name, pull_number)
+    local ok, status, _, body = fetch_json(
+      base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/pullrequests/" .. pull_number
+    )
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local pr = DecodeJson(body) or {}
+    if pr.state == "MERGED" then
+      SetStatus(204, "No Content")
+    else
+      respond_json(404, "Not Found", { message = "Pull Request is not merged" })
+    end
+  end,
+
+  -- PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge
+  -- Bitbucket uses POST for merging.
+  put_pull_merge = function(owner, repo_name, pull_number)
+    local req = DecodeJson(GetBody() or "{}")
+    local bb = {}
+    if req.merge_method then
+      bb.merge_strategy = req.merge_method
+    end
+    if req.commit_message then
+      bb.message = req.commit_message
+    end
+    local ok, status = fetch_json(
+      base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/pullrequests/" .. pull_number .. "/merge",
+      "POST",
+      EncodeJson(bb)
+    )
+    if ok and status == 200 then
+      SetStatus(204, "No Content")
+    elseif ok then
+      respond_json(status, "Error", {})
+    else
+      respond_json(503, "Service Unavailable", {})
+    end
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
+  -- Bitbucket: participants with role=REVIEWER and not yet approved.
+  get_pull_requested_reviewers = function(owner, repo_name, pull_number)
+    local ok, status, _, body = fetch_json(
+      base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/pullrequests/" .. pull_number
+    )
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local pr = DecodeJson(body) or {}
+    local users = {}
+    for _, p in ipairs(pr.participants or {}) do
+      if p.role == "REVIEWER" and not p.approved then
+        users[#users + 1] = translate_bb_user(p.user)
+      end
+    end
+    respond_json(200, "OK", { users = users, teams = {} })
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews
+  -- Bitbucket: participants with role=REVIEWER and approved=true → APPROVED reviews.
+  get_pull_reviews = function(owner, repo_name, pull_number)
+    local ok, status, _, body = fetch_json(
+      base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/pullrequests/" .. pull_number
+    )
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local pr = DecodeJson(body) or {}
+    respond_json(200, "OK", translate_bb_participants_to_reviews(pr.participants))
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
+  get_pull_review = function(owner, repo_name, pull_number, review_id)
+    local ok, status, _, body = fetch_json(
+      base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/pullrequests/" .. pull_number
+    )
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local pr = DecodeJson(body) or {}
+    local reviews = translate_bb_participants_to_reviews(pr.participants)
+    local rid = tonumber(review_id)
+    if rid and reviews[rid] then
+      respond_json(200, "OK", reviews[rid])
+    else
+      respond_json(404, "Not Found", { message = "Not Found" })
+    end
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments
+  -- Bitbucket has no per-review inline comments; return all inline PR comments.
+  get_pull_review_comments = function(owner, repo_name, pull_number)
+    local ok, status, _, body = fetch_json(
+      append_page_params(
+        base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/pullrequests/" .. pull_number .. "/comments",
+        PAGES
+      )
+    )
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local data = DecodeJson(body) or {}
+    local result = {}
+    for _, c in ipairs(data.values or {}) do
+      if c.inline then
+        result[#result + 1] = translate_bb_pr_comment(c)
+      end
+    end
+    respond_json(200, "OK", result)
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/comments
+  -- Bitbucket inline PR comments (those with an "inline" field).
+  get_pull_comments = function(owner, repo_name, pull_number)
+    local ok, status, _, body = fetch_json(
+      append_page_params(
+        base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/pullrequests/" .. pull_number .. "/comments",
+        PAGES
+      )
+    )
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local data = DecodeJson(body) or {}
+    local result = {}
+    for _, c in ipairs(data.values or {}) do
+      if c.inline then
+        result[#result + 1] = translate_bb_pr_comment(c)
+      end
+    end
+    respond_json(200, "OK", result)
+  end,
 }

@@ -93,7 +93,7 @@ gitlab_HURL = test/gitlab-repos.hurl test/gitlab-users.hurl \
 gitbucket_HURL = test/gitbucket-repos.hurl test/gitbucket-users.hurl \
                  test/gitbucket-issues.hurl
 bitbucket_HURL = test/bitbucket-repos.hurl test/bitbucket-users.hurl \
-                 test/bitbucket-issues.hurl
+                 test/bitbucket-issues.hurl test/bitbucket-pulls.hurl
 pagure_HURL = test/pagure-repos.hurl test/pagure-users.hurl \
               test/pagure-issues.hurl
 
