@@ -80,6 +80,8 @@ MOCKS    = $(addprefix mock-,$(addsuffix .com,$(BACKENDS)))
 gitea_HURL  = test/gitea-root-auth.hurl test/gitea-repos.hurl \
               test/gitea-repos-ext.hurl test/gitea-users.hurl \
               test/gitea-issues.hurl test/gitea-pulls.hurl
+codeberg_HURL = test/codeberg-repos.hurl test/codeberg-repos-ext.hurl \
+                test/codeberg-users.hurl test/codeberg-pulls.hurl
 forgejo_HURL = test/forgejo-repos.hurl test/forgejo-repos-ext.hurl \
                test/forgejo-users.hurl test/forgejo-pulls.hurl
 gitlab_HURL = test/gitlab-repos.hurl test/gitlab-users.hurl \
