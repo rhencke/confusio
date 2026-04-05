@@ -78,10 +78,22 @@
 
   /* Compat table wrapper — scrollable with sticky headers */
   .table-wrap {
-    overflow: auto;
+    overflow-x: auto;
+    overflow-y: auto;
     max-height: 80vh;
     border: 1px solid var(--border);
     border-radius: 8px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .table-scroll-hint {
+    display: none;
+    text-align: right;
+    margin-top: 0.4rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+  }
+  @media (max-width: 768px) {
+    .table-scroll-hint { display: block; }
   }
   table {
     border-collapse: separate;
@@ -100,6 +112,7 @@
 
   /* Sticky top header row */
   thead th {
+    position: -webkit-sticky;
     position: sticky;
     top: 0;
     z-index: 2;
@@ -110,6 +123,7 @@
   /* Sticky first column */
   th:first-child,
   td:first-child {
+    position: -webkit-sticky;
     position: sticky;
     left: 0;
     z-index: 1;
@@ -141,6 +155,7 @@
     font-size: 0.85rem;
     padding: 0.4rem 0.9rem;
     text-align: left;
+    position: -webkit-sticky;
     position: sticky;
     left: 0;
     z-index: 1;
@@ -176,6 +191,7 @@
   <div class="table-wrap">
 <!-- COMPAT_MATRIX -->
   </div>
+  <p class="table-scroll-hint">Scroll to see all providers &#x2192;</p>
   <p style="margin-top:0.75rem; color:var(--text-muted); font-size:0.85rem;">
     &#x2705; Supported &middot; &#x26A0;&#xFE0F; Partial &middot; &#x274C; Unsupported (returns 404 or 501)
   </p>
