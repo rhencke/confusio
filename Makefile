@@ -91,7 +91,7 @@ notabug_HURL = test/notabug-repos.hurl test/notabug-repos-ext.hurl \
 gitlab_HURL = test/gitlab-repos.hurl test/gitlab-users.hurl \
               test/gitlab-issues.hurl test/gitlab-pulls.hurl
 gitbucket_HURL = test/gitbucket-repos.hurl test/gitbucket-users.hurl \
-                 test/gitbucket-issues.hurl
+                 test/gitbucket-issues.hurl test/gitbucket-pulls.hurl
 bitbucket_HURL = test/bitbucket-repos.hurl test/bitbucket-users.hurl \
                  test/bitbucket-issues.hurl test/bitbucket-pulls.hurl
 bitbucket_datacenter_HURL = test/bitbucket_datacenter-repos.hurl \
