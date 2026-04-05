@@ -177,14 +177,18 @@ function OnHttpRequest()
       .. '"links":{"avatar":{"href":""},"html":{"href":"https://bitbucket.org/octocat"}}}'
     local PR = '{"id":1,"title":"A great PR","description":"PR description",'
       .. '"state":"MERGED",'
-      .. '"author":' .. BB_USER .. ","
+      .. '"author":'
+      .. BB_USER
+      .. ","
       .. '"source":{"branch":{"name":"feature"},"commit":{"hash":"abc123"},'
       .. '"repository":{"full_name":"octocat/hello-world"}},'
       .. '"destination":{"branch":{"name":"main"},"commit":{"hash":"def456"},'
       .. '"repository":{"full_name":"octocat/hello-world"}},'
       .. '"merge_commit":{"hash":"merged123"},'
       .. '"created_on":"2020-01-01T00:00:00Z","updated_on":"2020-01-03T00:00:00Z",'
-      .. '"participants":[{"user":' .. BB_USER .. ',"role":"REVIEWER","approved":true,'
+      .. '"participants":[{"user":'
+      .. BB_USER
+      .. ',"role":"REVIEWER","approved":true,'
       .. '"state":"approved","participated_on":"2020-01-02T00:00:00Z"}],'
       .. '"links":{"html":{"href":"https://bitbucket.org/octocat/hello-world/pull-requests/1"},'
       .. '"self":{"href":"https://api.bitbucket.org/2.0/repositories/octocat/hello-world/pullrequests/1"},'
@@ -198,14 +202,18 @@ function OnHttpRequest()
     json(
       '{"id":1,"title":"A great PR","description":"PR description",'
         .. '"state":"MERGED",'
-        .. '"author":' .. BB_USER .. ","
+        .. '"author":'
+        .. BB_USER
+        .. ","
         .. '"source":{"branch":{"name":"feature"},"commit":{"hash":"abc123"},'
         .. '"repository":{"full_name":"octocat/hello-world"}},'
         .. '"destination":{"branch":{"name":"main"},"commit":{"hash":"def456"},'
         .. '"repository":{"full_name":"octocat/hello-world"}},'
         .. '"merge_commit":{"hash":"merged123"},'
         .. '"created_on":"2020-01-01T00:00:00Z","updated_on":"2020-01-03T00:00:00Z",'
-        .. '"participants":[{"user":' .. BB_USER .. ',"role":"REVIEWER","approved":true,'
+        .. '"participants":[{"user":'
+        .. BB_USER
+        .. ',"role":"REVIEWER","approved":true,'
         .. '"state":"approved","participated_on":"2020-01-02T00:00:00Z"}],'
         .. '"links":{"html":{"href":"https://bitbucket.org/octocat/hello-world/pull-requests/1"},'
         .. '"self":{"href":"https://api.bitbucket.org/2.0/repositories/octocat/hello-world/pullrequests/1"},'
@@ -229,7 +237,9 @@ function OnHttpRequest()
       .. '"links":{"avatar":{"href":""},"html":{"href":"https://bitbucket.org/octocat"}}}'
     json(
       '{"id":1,"title":"A great PR","state":"MERGED",'
-        .. '"author":' .. BB_USER .. ","
+        .. '"author":'
+        .. BB_USER
+        .. ","
         .. '"source":{"branch":{"name":"feature"},"commit":{"hash":"abc123"},'
         .. '"repository":{"full_name":"octocat/hello-world"}},'
         .. '"destination":{"branch":{"name":"main"},"commit":{"hash":"def456"},'
@@ -246,7 +256,9 @@ function OnHttpRequest()
       .. '"links":{"avatar":{"href":""},"html":{"href":"https://bitbucket.org/octocat"}}}'
     json(
       '{"values":[{"id":1,"content":{"raw":"Nice change here"},'
-        .. '"author":' .. BB_USER .. ","
+        .. '"author":'
+        .. BB_USER
+        .. ","
         .. '"created_on":"2020-01-01T00:00:00Z","updated_on":"2020-01-01T00:00:00Z",'
         .. '"inline":{"path":"README.md","from":null,"to":1},'
         .. '"links":{"html":{"href":""}}}],'

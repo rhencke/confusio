@@ -220,7 +220,8 @@ local function translate_bb_pr_branch(ref)
   local commit = ref.commit or {}
   local repo = ref.repository or {}
   return {
-    label = repo.full_name and (repo.full_name .. ":" .. (branch.name or "")) or (branch.name or ""),
+    label = repo.full_name and (repo.full_name .. ":" .. (branch.name or ""))
+      or (branch.name or ""),
     ref = branch.name or "",
     sha = commit.hash or "",
   }
@@ -235,7 +236,6 @@ local function translate_bb_pull(pr)
   local is_merged = state == "MERGED"
   local gh_state = state == "OPEN" and "open" or "closed"
   local merge_commit = pr.merge_commit or {}
-  local participants = pr.participants or {}
   -- Find merged_by from participant with role AUTHOR only if merged; Bitbucket
   -- doesn't expose a dedicated merged_by field, so use closed_by if present.
   local closed_by = pr.closed_by
@@ -1003,10 +1003,7 @@ backend_impl = {
 
   -- GET /repos/{owner}/{repo}/pulls
   get_repo_pulls = proxy_handler(translate_bb_pulls, function(o, r)
-    return append_page_params(
-      base() .. "/repositories/" .. o .. "/" .. r .. "/pullrequests",
-      PAGES
-    )
+    return append_page_params(base() .. "/repositories/" .. o .. "/" .. r .. "/pullrequests", PAGES)
   end),
 
   -- POST /repos/{owner}/{repo}/pulls
@@ -1125,7 +1122,14 @@ backend_impl = {
       bb.message = req.commit_message
     end
     local ok, status = fetch_json(
-      base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/pullrequests/" .. pull_number .. "/merge",
+      base()
+        .. "/repositories/"
+        .. owner
+        .. "/"
+        .. repo_name
+        .. "/pullrequests/"
+        .. pull_number
+        .. "/merge",
       "POST",
       EncodeJson(bb)
     )
@@ -1208,7 +1212,14 @@ backend_impl = {
   get_pull_review_comments = function(owner, repo_name, pull_number)
     local ok, status, _, body = fetch_json(
       append_page_params(
-        base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/pullrequests/" .. pull_number .. "/comments",
+        base()
+          .. "/repositories/"
+          .. owner
+          .. "/"
+          .. repo_name
+          .. "/pullrequests/"
+          .. pull_number
+          .. "/comments",
         PAGES
       )
     )
@@ -1235,7 +1246,14 @@ backend_impl = {
   get_pull_comments = function(owner, repo_name, pull_number)
     local ok, status, _, body = fetch_json(
       append_page_params(
-        base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/pullrequests/" .. pull_number .. "/comments",
+        base()
+          .. "/repositories/"
+          .. owner
+          .. "/"
+          .. repo_name
+          .. "/pullrequests/"
+          .. pull_number
+          .. "/comments",
         PAGES
       )
     )
