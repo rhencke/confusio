@@ -18,6 +18,12 @@ Built with [Redbean](https://redbean.dev): a self-contained web server + Lua int
 
 **Before any commit: run `make -j test-unit`.** `make -j test-integration` requires network and is acceptable to defer to CI.
 
+**Checking test results:** Use the exit code, not stdout parsing. The output is noisy (redbean logs prefixed with `I2026-`). The correct pattern:
+```bash
+make -j test-unit; echo "EXIT: $?"
+```
+Only spelunk the output if the exit code is non-zero.
+
 ## Project structure
 
 ```
