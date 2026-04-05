@@ -217,6 +217,14 @@ local function empty_list()
   Write("[]")
 end
 
+-- Default handler for search endpoints: no provider has a GitHub-compatible
+-- search API by default, so confusio returns an empty result set.
+local function search_empty()
+  SetStatus(200, "OK")
+  SetHeader("Content-Type", "application/json; charset=utf-8")
+  Write('{"total_count":0,"incomplete_results":false,"items":[]}')
+end
+
 -- Default handler for GET /rate_limit: no provider has a GitHub-compatible rate
 -- limit API, so confusio returns a partial response with just the `rate` key.
 -- limit=999999 means "effectively unlimited"; reset is set one hour ahead of now.
@@ -560,6 +568,15 @@ local routes = {
   ["POST /repositories/{repository_id}/issues/{issue_number}/issue-field-values"]  = "post_repository_issue_field_values",
   ["PUT /repositories/{repository_id}/issues/{issue_number}/issue-field-values"]   = "put_repository_issue_field_values",
   ["DELETE /repositories/{repository_id}/issues/{issue_number}/issue-field-values/{issue_field_id}"] = "delete_repository_issue_field_value",
+
+  -- Search (https://docs.github.com/en/rest/search)
+  ["GET /search/repositories"]                                                       = { "search_repositories", search_empty },
+  ["GET /search/code"]                                                               = { "search_code", search_empty },
+  ["GET /search/commits"]                                                            = { "search_commits", search_empty },
+  ["GET /search/issues"]                                                             = { "search_issues", search_empty },
+  ["GET /search/labels"]                                                             = { "search_labels", search_empty },
+  ["GET /search/topics"]                                                             = { "search_topics", search_empty },
+  ["GET /search/users"]                                                              = { "search_users", search_empty },
 
   -- Pull Requests (https://docs.github.com/en/rest/pulls)
   ["GET /repos/{owner}/{repo}/pulls"]                                              = { "get_repo_pulls", empty_list },
