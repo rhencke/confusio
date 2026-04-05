@@ -94,6 +94,9 @@ gitbucket_HURL = test/gitbucket-repos.hurl test/gitbucket-users.hurl \
                  test/gitbucket-issues.hurl
 bitbucket_HURL = test/bitbucket-repos.hurl test/bitbucket-users.hurl \
                  test/bitbucket-issues.hurl test/bitbucket-pulls.hurl
+bitbucket_datacenter_HURL = test/bitbucket_datacenter-repos.hurl \
+                             test/bitbucket_datacenter-users.hurl \
+                             test/bitbucket_datacenter-pulls.hurl
 pagure_HURL = test/pagure-repos.hurl test/pagure-users.hurl \
               test/pagure-issues.hurl
 

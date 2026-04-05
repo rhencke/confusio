@@ -54,16 +54,16 @@ GET /repos/{owner}/{repo}/labels,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,~stub only,n,n,n,
 GET /repos/{owner}/{repo}/milestones,n,y,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/assignees,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
 Pull Requests,,,,,,,,,,,,,,,,,,,,,
-GET /repos/{owner}/{repo}/pulls,n,y,n,y,y,n,n,y,y,y,n,n,n,n,n,n,n,n,n,n,n
-POST /repos/{owner}/{repo}/pulls,n,y,n,y,y,n,n,y,y,y,n,n,n,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/pulls/{pull_number},n,y,n,y,y,n,n,y,y,y,n,n,n,n,n,n,n,n,n,n,n
-PATCH /repos/{owner}/{repo}/pulls/{pull_number},n,y,n,y,y,n,n,y,y,y,n,n,n,n,n,n,n,n,n,n,n
-PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge,n,y,n,y,y,n,n,y,y,y,n,n,n,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/pulls/{pull_number}/commits,n,y,n,y,y,n,n,y,y,y,n,n,n,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/pulls/{pull_number}/files,n,~via diffstat,n,y,y,n,n,y,y,y,n,n,n,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/pulls/{pull_number}/comments,n,~inline PR comments,n,~aggregated via reviews,~aggregated via reviews,n,n,~aggregated via reviews,~via MR notes,~aggregated via reviews,n,n,n,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews,n,~via participants,n,y,y,n,n,y,~via MR approvals,y,n,n,n,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id},n,~via participants,n,y,y,n,n,y,~via MR approvals,y,n,n,n,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments,n,~inline PR comments,n,y,y,n,n,y,~via MR notes,y,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/pulls,n,y,y,y,y,n,n,y,y,y,n,n,n,n,n,n,n,n,n,n,n
+POST /repos/{owner}/{repo}/pulls,n,y,y,y,y,n,n,y,y,y,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/pulls/{pull_number},n,y,y,y,y,n,n,y,y,y,n,n,n,n,n,n,n,n,n,n,n
+PATCH /repos/{owner}/{repo}/pulls/{pull_number},n,y,y,y,y,n,n,y,y,y,n,n,n,n,n,n,n,n,n,n,n
+PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge,n,y,y,y,y,n,n,y,y,y,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/pulls/{pull_number}/commits,n,y,y,y,y,n,n,y,y,y,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/pulls/{pull_number}/files,n,~via diffstat,~via /changes,y,y,n,n,y,y,y,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/pulls/{pull_number}/comments,n,~inline PR comments,~inline PR comments,~aggregated via reviews,~aggregated via reviews,n,n,~aggregated via reviews,~via MR notes,~aggregated via reviews,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews,n,~via participants,~via reviewers,y,y,n,n,y,~via MR approvals,y,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id},n,~via participants,~via reviewers,y,y,n,n,y,~via MR approvals,y,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments,n,~inline PR comments,~inline PR comments,y,y,n,n,y,~via MR notes,y,n,n,n,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/pulls/comments,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/pulls/comments/{comment_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n

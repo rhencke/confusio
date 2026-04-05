@@ -220,6 +220,159 @@ local function repo_path(owner, repo_name)
   return base() .. "/projects/" .. owner .. "/repos/" .. repo_name
 end
 
+-- DC timestamp (ms epoch) to ISO-8601 string.
+local function bbs_ts(ms)
+  if not ms then
+    return nil
+  end
+  return os.date("!%Y-%m-%dT%H:%M:%SZ", math.floor(ms / 1000))
+end
+
+-- Map a DC pull request ref (fromRef/toRef) to GitHub head/base format.
+local function translate_bbs_pr_ref(ref)
+  if not ref then
+    return {}
+  end
+  local repo = ref.repository or {}
+  local proj = repo.project or {}
+  local owner = proj.key or ""
+  -- Strip leading ~ for personal projects
+  owner = owner:match("^~(.+)$") or owner
+  return {
+    label = owner ~= "" and (owner .. "/" .. (repo.slug or "") .. ":" .. (ref.displayId or ""))
+      or (ref.displayId or ""),
+    ref = ref.displayId or (ref.id and ref.id:match("refs/heads/(.+)")) or "",
+    sha = ref.latestCommit or "",
+  }
+end
+
+-- Map a DC pull request object to GitHub format.
+local function translate_bbs_pull(pr)
+  if not pr then
+    return {}
+  end
+  local state = pr.state or ""
+  local is_merged = state == "MERGED"
+  local gh_state = state == "OPEN" and "open" or "closed"
+  local author_obj = pr.author or {}
+  local created = bbs_ts(pr.createdDate)
+  local updated = bbs_ts(pr.updatedDate)
+  local self_links = (pr.links and pr.links.self) or {}
+  local html_url = (self_links[1] and self_links[1].href) or ""
+  return {
+    id = pr.id or 0,
+    node_id = "",
+    number = pr.id or 0,
+    state = gh_state,
+    locked = false,
+    title = pr.title or "",
+    body = pr.description or "",
+    user = translate_bbs_user(author_obj.user),
+    head = translate_bbs_pr_ref(pr.fromRef),
+    base = translate_bbs_pr_ref(pr.toRef),
+    draft = false,
+    created_at = created or "",
+    updated_at = updated or "",
+    closed_at = (not is_merged and gh_state == "closed") and updated or nil,
+    merged_at = is_merged and updated or nil,
+    merge_commit_sha = nil,
+    merged_by = nil,
+    html_url = html_url,
+    url = html_url,
+    diff_url = "",
+    patch_url = "",
+    mergeable = state == "OPEN" or nil,
+    comments = 0,
+    review_comments = 0,
+    commits = 0,
+    additions = 0,
+    deletions = 0,
+    changed_files = 0,
+  }
+end
+
+local function translate_bbs_pulls(data)
+  local prs = (data and data.values) or {}
+  for i, pr in ipairs(prs) do
+    prs[i] = translate_bbs_pull(pr)
+  end
+  return prs
+end
+
+-- Map a DC pull request change entry to GitHub file format.
+-- DC: { path: { toString: "README.md" }, type: "ADD"|"MODIFY"|"DELETE"|"MOVE" }
+local function translate_bbs_pr_change(c)
+  if not c then
+    return {}
+  end
+  local path_obj = c.path or {}
+  local fname = path_obj.toString or path_obj.name or ""
+  local dc_type = c.type or "MODIFY"
+  local status = dc_type == "ADD" and "added"
+    or dc_type == "DELETE" and "removed"
+    or dc_type == "MOVE" and "renamed"
+    or "modified"
+  return {
+    sha = "",
+    filename = fname,
+    status = status,
+    additions = 0,
+    deletions = 0,
+    changes = 0,
+    patch = "",
+  }
+end
+
+-- Map a DC pull request comment to GitHub review comment format.
+-- DC: { id, text, author: { name, displayName, ... }, createdDate, updatedDate,
+--       anchor: { path, line, lineType, fileType } }
+local function translate_bbs_pr_comment(c)
+  if not c then
+    return {}
+  end
+  local anchor = c.anchor or {}
+  return {
+    id = c.id or 0,
+    node_id = "",
+    path = anchor.path or "",
+    position = anchor.line,
+    original_position = anchor.line,
+    commit_id = "",
+    original_commit_id = "",
+    diff_hunk = "",
+    body = c.text or "",
+    user = translate_bbs_user(c.author),
+    created_at = bbs_ts(c.createdDate) or "",
+    updated_at = bbs_ts(c.updatedDate) or "",
+    html_url = "",
+    pull_request_url = "",
+    url = "",
+  }
+end
+
+-- Map DC PR reviewers array to GitHub reviews format.
+-- DC reviewer: { user: {...}, role: "REVIEWER", approved: true, status: "APPROVED" }
+local function translate_bbs_reviewers_to_reviews(reviewers)
+  local result = {}
+  local idx = 0
+  for _, r in ipairs(reviewers or {}) do
+    if r.approved then
+      idx = idx + 1
+      result[idx] = {
+        id = idx,
+        node_id = "",
+        user = translate_bbs_user(r.user),
+        body = "",
+        state = "APPROVED",
+        submitted_at = "",
+        html_url = "",
+        pull_request_url = "",
+      }
+    end
+  end
+  return result
+end
+
 backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, base() .. "/repos", auth())
@@ -539,4 +692,253 @@ backend_impl = {
   end, function()
     return bbs_page_url(base() .. "/users")
   end),
+
+  -- Pull Requests ---------------------------------------------------------------
+
+  -- GET /repos/{owner}/{repo}/pulls
+  get_repo_pulls = function(owner, repo_name)
+    local state = GetParam("state") or "open"
+    local dc_state = state == "closed" and "MERGED,DECLINED" or state == "all" and "ALL" or "OPEN"
+    local url = bbs_page_url(repo_path(owner, repo_name) .. "/pull-requests?state=" .. dc_state)
+    proxy_json(translate_bbs_pulls, fetch_json(url))
+  end,
+
+  -- POST /repos/{owner}/{repo}/pulls
+  post_repo_pulls = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    local dc = {}
+    if req.title then
+      dc.title = req.title
+    end
+    if req.body then
+      dc.description = req.body
+    end
+    if req.head then
+      dc.fromRef = { id = "refs/heads/" .. req.head }
+    end
+    if req.base then
+      dc.toRef = { id = "refs/heads/" .. req.base }
+    end
+    proxy_json_created(
+      translate_bbs_pull,
+      fetch_json(repo_path(owner, repo_name) .. "/pull-requests", "POST", EncodeJson(dc))
+    )
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}
+  get_repo_pull = proxy_handler(translate_bbs_pull, function(owner, repo_name, pull_number)
+    return repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number
+  end),
+
+  -- PATCH /repos/{owner}/{repo}/pulls/{pull_number}
+  -- DC uses PUT for updates and requires a version field.
+  patch_repo_pull = function(owner, repo_name, pull_number)
+    local pr_url = repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number
+    local ok, status, _, body = fetch_json(pr_url)
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local current = DecodeJson(body) or {}
+    local req = DecodeJson(GetBody() or "{}")
+    local dc = { version = current.version or 0 }
+    if req.title then
+      dc.title = req.title
+    end
+    if req.body then
+      dc.description = req.body
+    end
+    proxy_json(translate_bbs_pull, fetch_json(pr_url, "PUT", EncodeJson(dc)))
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/commits
+  get_pull_commits = proxy_handler(function(data)
+    local commits = (data and data.values) or {}
+    for i, c in ipairs(commits) do
+      commits[i] = translate_bbs_commit(c)
+    end
+    return commits
+  end, function(owner, repo_name, pull_number)
+    return bbs_page_url(
+      repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number .. "/commits"
+    )
+  end),
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/files
+  -- DC uses /changes for per-file info (no line stats).
+  get_pull_files = proxy_handler(function(data)
+    local changes = (data and data.values) or {}
+    for i, c in ipairs(changes) do
+      changes[i] = translate_bbs_pr_change(c)
+    end
+    return changes
+  end, function(owner, repo_name, pull_number)
+    return bbs_page_url(
+      repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number .. "/changes"
+    )
+  end),
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/merge
+  -- Returns 204 if PR is merged, 404 otherwise.
+  get_pull_merge = function(owner, repo_name, pull_number)
+    local ok, status, _, body =
+      fetch_json(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number)
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local pr = DecodeJson(body) or {}
+    if pr.state == "MERGED" then
+      SetStatus(204, "No Content")
+    else
+      respond_json(404, "Not Found", { message = "Pull Request is not merged" })
+    end
+  end,
+
+  -- PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge
+  -- DC: POST /pull-requests/{id}/merge; requires version from current PR.
+  put_pull_merge = function(owner, repo_name, pull_number)
+    local pr_url = repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number
+    local ok, status, _, body = fetch_json(pr_url)
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local current = DecodeJson(body) or {}
+    local req = DecodeJson(GetBody() or "{}")
+    local dc = { version = current.version or 0 }
+    if req.commit_message then
+      dc.message = req.commit_message
+    end
+    local mok, mstatus = fetch_json(pr_url .. "/merge", "POST", EncodeJson(dc))
+    if mok and (mstatus == 200 or mstatus == 204) then
+      SetStatus(204, "No Content")
+    elseif mok then
+      respond_json(mstatus, "Error", {})
+    else
+      respond_json(503, "Service Unavailable", {})
+    end
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
+  -- DC: reviewers in PR object who have not yet approved.
+  get_pull_requested_reviewers = function(owner, repo_name, pull_number)
+    local ok, status, _, body =
+      fetch_json(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number)
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local pr = DecodeJson(body) or {}
+    local users = {}
+    for _, r in ipairs(pr.reviewers or {}) do
+      if not r.approved then
+        users[#users + 1] = translate_bbs_user(r.user)
+      end
+    end
+    respond_json(200, "OK", { users = users, teams = {} })
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews
+  -- DC: reviewers with approved=true in PR object.
+  get_pull_reviews = function(owner, repo_name, pull_number)
+    local ok, status, _, body =
+      fetch_json(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number)
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local pr = DecodeJson(body) or {}
+    respond_json(200, "OK", translate_bbs_reviewers_to_reviews(pr.reviewers))
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
+  get_pull_review = function(owner, repo_name, pull_number, review_id)
+    local ok, status, _, body =
+      fetch_json(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number)
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local pr = DecodeJson(body) or {}
+    local reviews = translate_bbs_reviewers_to_reviews(pr.reviewers)
+    local rid = tonumber(review_id)
+    if rid and reviews[rid] then
+      respond_json(200, "OK", reviews[rid])
+    else
+      respond_json(404, "Not Found", { message = "Not Found" })
+    end
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments
+  -- DC has no per-review comments; return all PR inline comments.
+  get_pull_review_comments = function(owner, repo_name, pull_number)
+    local ok, status, _, body = fetch_json(
+      bbs_page_url(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number .. "/comments")
+    )
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local data = DecodeJson(body) or {}
+    local result = {}
+    for _, c in ipairs(data.values or {}) do
+      if c.anchor then
+        result[#result + 1] = translate_bbs_pr_comment(c)
+      end
+    end
+    respond_json(200, "OK", result)
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/comments
+  -- DC inline PR comments (those with an anchor field).
+  get_pull_comments = function(owner, repo_name, pull_number)
+    local ok, status, _, body = fetch_json(
+      bbs_page_url(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number .. "/comments")
+    )
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local data = DecodeJson(body) or {}
+    local result = {}
+    for _, c in ipairs(data.values or {}) do
+      if c.anchor then
+        result[#result + 1] = translate_bbs_pr_comment(c)
+      end
+    end
+    respond_json(200, "OK", result)
+  end,
 }
