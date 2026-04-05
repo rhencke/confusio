@@ -1184,4 +1184,17 @@ backend_impl = {
       PAGES
     )
   end),
+
+  -- Search -------------------------------------------------------------------
+  -- GitBucket's GitHub-compatible API exposes /api/v3/search/{repositories,users}
+  -- which return the GitHub search envelope format directly — no translation needed.
+  search_repositories = proxy_handler(nil, function()
+    local q = GetParam("q") or ""
+    return append_page_params(base() .. "/search/repositories?q=" .. q, PAGES)
+  end),
+
+  search_users = proxy_handler(nil, function()
+    local q = GetParam("q") or ""
+    return append_page_params(base() .. "/search/users?q=" .. q, PAGES)
+  end),
 }
