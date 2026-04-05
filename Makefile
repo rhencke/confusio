@@ -29,6 +29,8 @@ STYLUA_PLATFORM = linux-$(STYLUA_ARCH)
 endif
 STYLUA_URL = https://github.com/JohnnyMorganz/StyLua/releases/download/v$(STYLUA_VERSION)/stylua-$(STYLUA_PLATFORM).zip
 
+LUACHECK_VERSION := $(shell cat .luacheck-version)
+
 redbean.com: .redbean-version
 	curl -fsSL $(REDBEAN_URL) -o redbean.com
 	chmod +x redbean.com
@@ -47,6 +49,9 @@ endif
 stylua: .stylua-version
 	curl -sL $(STYLUA_URL) | unzip -p - stylua > stylua
 	chmod +x stylua
+
+.luarocks/bin/luacheck: .luacheck-version
+	luarocks install --tree .luarocks luacheck $(LUACHECK_VERSION)
 
 confusio.com: redbean.com .init.lua $(wildcard backends/*.lua)
 	cp redbean.com confusio.com
@@ -121,9 +126,9 @@ validate-mock: mock-gitea.com
 test-format: stylua
 	./stylua --check .
 
-test-lint:
-	luacheck .
+test-lint: .luarocks/bin/luacheck
+	.luarocks/bin/luacheck .
 
 clean:
 	rm -f redbean.com confusio.com $(MOCKS) hurl stylua
-	rm -rf _site
+	rm -rf _site .luarocks
