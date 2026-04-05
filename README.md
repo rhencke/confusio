@@ -82,27 +82,27 @@ confusio = {
 
 | Provider | `backend` value | Default `base_url` | Auth: pass as `token` |
 |----------|----------------|--------------------|-----------------------|
-| [Gitea](https://gitea.com) | `gitea` | `https://gitea.com` | API token |
-| [Forgejo](https://forgejo.org) | `forgejo` | `https://codeberg.org` | API token |
-| [Gogs](https://gogs.io) | `gogs` | `https://try.gogs.io` | API token |
-| [Codeberg](https://codeberg.org) | `codeberg` | `https://codeberg.org` | API token |
-| [NotABug](https://notabug.org) | `notabug` | `https://notabug.org` | API token |
-| [GitLab](https://gitlab.com) | `gitlab` | `https://gitlab.com` | Personal access token |
-| [Gitbucket](https://gitbucket.github.io) | `gitbucket` | *(self-hosted — required)* | API token |
-| [Harness Code](https://harness.io) | `harness` | `https://app.harness.io` | API token |
-| [OneDev](https://onedev.io) | `onedev` | `https://code.onedev.io` | API token |
-| [RhodeCode](https://rhodecode.com) | `rhodecode` | *(self-hosted — required)* | API token |
-| [Kallithea](https://kallithea-scm.org) | `kallithea` | *(self-hosted — required)* | API token |
-| [Radicle](https://radicle.xyz) | `radicle` | `http://127.0.0.1:8080` | Bearer token |
 | [Azure DevOps](https://dev.azure.com) | `azuredevops` | *(required: `https://dev.azure.com/{org}`)* | Personal access token *(see note)* |
 | [Bitbucket](https://bitbucket.org) | `bitbucket` | `https://api.bitbucket.org` | `user:app-password` *(see note)* |
 | [Bitbucket Datacenter](https://www.atlassian.com/software/bitbucket/enterprise) | `bitbucket_datacenter` | *(self-hosted — required)* | `user:password` *(see note)* |
+| [Codeberg](https://codeberg.org) | `codeberg` | `https://codeberg.org` | API token |
+| [Forgejo](https://forgejo.org) | `forgejo` | `https://codeberg.org` | API token |
 | [Gerrit](https://www.gerritcodereview.com) | `gerrit` | *(self-hosted — required)* | `user:http-password` *(see note)* |
-| [Pagure](https://pagure.io) | `pagure` | `https://pagure.io` | API token |
-| [Sourcehut](https://sr.ht) | `sourcehut` | `https://git.sr.ht` | Personal access token |
-| [SourceForge](https://sourceforge.net) | `sourceforge` | `https://sourceforge.net` | *(public endpoints only)* |
+| [Gitbucket](https://gitbucket.github.io) | `gitbucket` | *(self-hosted — required)* | API token |
+| [Gitea](https://gitea.com) | `gitea` | `https://gitea.com` | API token |
+| [GitLab](https://gitlab.com) | `gitlab` | `https://gitlab.com` | Personal access token |
+| [Gogs](https://gogs.io) | `gogs` | `https://try.gogs.io` | API token |
+| [Harness Code](https://harness.io) | `harness` | `https://app.harness.io` | API token |
+| [Kallithea](https://kallithea-scm.org) | `kallithea` | *(self-hosted — required)* | API token |
 | [Launchpad](https://launchpad.net) | `launchpad` | `https://api.launchpad.net` | *(public endpoints only)* |
+| [NotABug](https://notabug.org) | `notabug` | `https://notabug.org` | API token |
+| [OneDev](https://onedev.io) | `onedev` | `https://code.onedev.io` | API token |
+| [Pagure](https://pagure.io) | `pagure` | `https://pagure.io` | API token |
 | [Phabricator](https://www.phacility.com) | `phabricator` | *(self-hosted — required)* | *(public endpoints only)* |
+| [Radicle](https://radicle.xyz) | `radicle` | `http://127.0.0.1:8080` | Bearer token |
+| [RhodeCode](https://rhodecode.com) | `rhodecode` | *(self-hosted — required)* | API token |
+| [SourceForge](https://sourceforge.net) | `sourceforge` | `https://sourceforge.net` | *(public endpoints only)* |
+| [Sourcehut](https://sr.ht) | `sourcehut` | `https://git.sr.ht` | Personal access token |
 
 **Notes on auth format:**
 
