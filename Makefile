@@ -71,7 +71,7 @@ define BACKEND_RULE
 test-unit-$(1): confusio.com mock-$(1).com hurl
 	bash test/run-backend.sh mock-$(1).com \
 	  $($(1)_CPORT) $($(1)_MPORT) \
-	  "-- backend=$(1) base_url=http://127.0.0.1:$($(1)_MPORT)" \
+	  "-- $(1) http://127.0.0.1:$($(1)_MPORT)" \
 	  $(or $($(1)_HURL),test/$(1)-repos.hurl test/$(1)-users.hurl)
 endef
 

@@ -6,29 +6,11 @@ config = {
   base_url = "",
 }
 
--- Config keys accepted by both .confusio.lua and SCRIPTARGS.
-local CONFIG_KEYS = { "backend", "base_url" }
-
--- Load .confusio.lua if present.
-if pcall(dofile, ".confusio.lua") then
-  if type(confusio) == "table" then
-    for k, v in pairs(confusio) do
-      if config[k] ~= nil then config[k] = v end
-    end
-  end
-  confusio = nil
-end
-
--- SCRIPTARGS (positional or key=value after --) override config file.
--- Positional: first non-key=value arg = backend, second = base_url.
--- Key=value: backend=gitea base_url=https://... (also accepted).
+-- SCRIPTARGS (positional after --): first arg = backend, second = base_url.
 local positional_keys = { "backend", "base_url" }
 local pos_idx = 1
 for _, a in ipairs(arg or {}) do
-  local k, v = a:match("^([%w_]+)=(.+)$")
-  if k and config[k] ~= nil then
-    config[k] = v
-  elseif positional_keys[pos_idx] then
+  if positional_keys[pos_idx] then
     config[positional_keys[pos_idx]] = a
     pos_idx = pos_idx + 1
   end

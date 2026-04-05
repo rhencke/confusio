@@ -66,25 +66,16 @@ sh ./confusio.com -p 8080
 # Gitea backend via CLI args (positional: backend [base_url])
 sh ./confusio.com -p 8080 -- gitea
 sh ./confusio.com -p 8080 -- gitea https://gitea.com
-
-# Gitea backend via config file (.confusio.lua in working directory)
-sh ./confusio.com -p 8080
-# .confusio.lua: confusio = { backend="gitea", base_url="https://gitea.com" }
 ```
 
 ## Configuration system
 
-Config has two mechanisms:
+Config is supplied as positional SCRIPTARGS after `--`: first arg = backend, second arg = base_url.
 
 | Mechanism | Syntax |
 |-----------|--------|
-| SCRIPTARGS (highest precedence) | `sh ./confusio.com -- <backend> [base_url]` |
-| `.confusio.lua` config file | `confusio = { backend = "...", base_url = "..." }` |
-| Defaults (lowest precedence) | hardcoded in `.init.lua` |
-
-SCRIPTARGS are positional: first arg = backend, second arg = base_url. Key=value form (`backend=gitea base_url=https://...`) is also accepted.
-
-Config file is Lua (not TOML/JSON) so it can call functions — useful for secrets backends (e.g., `base_url = vault_read("secret/gitea-url")`).
+| SCRIPTARGS (positional) | `sh ./confusio.com -- <backend> [base_url]` |
+| Defaults | hardcoded in `.init.lua` |
 
 ## GitHub API reference
 
@@ -124,7 +115,7 @@ When implementing a new endpoint, check the spec for:
 - `EncodeBase64(str)` — standard base64 encoding (used for Basic auth headers)
 - `EncodeJson(table)`, `DecodeJson(string)` — JSON encode/decode
 - `Route()` — fall through to default Redbean routing (static files in the zip)
-- `dofile(path)` — load a Lua file into the current environment (used for `.confusio.lua`)
+- `dofile(path)` — load a Lua file into the current environment (used for backend files)
 
 ## Process isolation in tests
 

@@ -45,9 +45,6 @@ run_phase() {
 run_mock_phase() {
   local hurl_file="$1"; shift
   local tmpdir; tmpdir=$(mktemp -d)
-  if [ -n "${CONFUSIO_CONFIG:-}" ]; then
-    printf '%s\n' "$CONFUSIO_CONFIG" > "$tmpdir/.confusio.lua"
-  fi
   start_isolated sh "$MOCK_GITEA_BIN" -p "$MOCK_PORT"; MOCK_PID=$!
   start_confusio "$tmpdir" "$@"; PID=$!
   trap "kill $PID 2>/dev/null || true; kill $MOCK_PID 2>/dev/null || true; rm -rf $tmpdir" EXIT
@@ -62,8 +59,3 @@ run_phase test/root.hurl
 
 # Phase 2: Gitea via CLI flags
 run_mock_phase test/gitea-root.hurl $MOCK_ARGS
-
-# Phase 3: Gitea via .confusio.lua config file
-CONFUSIO_CONFIG="confusio = { backend=\"gitea\", base_url=\"http://127.0.0.1:$MOCK_PORT\" }"
-run_mock_phase test/gitea-root.hurl
-unset CONFUSIO_CONFIG

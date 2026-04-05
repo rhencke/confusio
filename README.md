@@ -13,7 +13,7 @@ Built with [Redbean](https://redbean.dev) — a single-file web server containin
 ## Prerequisites
 
 - `make`, `zip`, `wget` — needed to build
-- `curl`, `bash` — additionally needed to run tests
+- `curl`, `bash` — needed to run tests
 
 ## Quick start
 
@@ -44,9 +44,7 @@ Set your tool's GitHub API base URL to `http://localhost:8080` and provide your 
 
 ## Configuration
 
-Config is supplied as positional CLI arguments after `--`, or in a `.confusio.lua` file in the working directory. CLI arguments take precedence.
-
-**CLI arguments (positional):**
+Config is supplied as positional CLI arguments after `--`:
 
 ```bash
 sh ./confusio.com -p 8080 -- <backend> [base_url]
@@ -58,24 +56,6 @@ sh ./confusio.com -p 8080 -- gitea
 
 # Override the URL (self-hosted instance)
 sh ./confusio.com -p 8080 -- gitea https://my-gitea.example.com
-```
-
-**Config file (`.confusio.lua`):**
-
-```lua
-confusio = {
-  backend  = "gitea",
-  base_url = "https://my-gitea.example.com",
-}
-```
-
-The config file is plain Lua, so secrets backends work naturally:
-
-```lua
-confusio = {
-  backend  = "gitea",
-  base_url = vault_read("secret/gitea-url"),
-}
 ```
 
 ## Providers
