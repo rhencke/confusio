@@ -68,7 +68,7 @@ local function translate_harness_repo(r)
     stargazers_count = r.num_stars or 0,
     watchers_count = 0,
     language = nil,
-    has_issues = true,
+    has_issues = false,
     has_wiki = false,
     forks_count = r.num_forks or 0,
     archived = false,
@@ -611,6 +611,12 @@ backend_impl = {
       }
     end, fetch_json(base() .. "/user"))
   end,
+
+  -- Issues -----------------------------------------------------------------------
+  -- Harness Code has no native issue tracker.
+  -- Issue management in the Harness platform is handled via Jira integration.
+  -- All issues, labels, milestones, and assignees endpoints fall back to the
+  -- default empty-list / 404 handlers defined in .init.lua.
 
   -- PATCH /user
   patch_user = function()
