@@ -10,12 +10,12 @@ Built with [Redbean](https://redbean.dev): a self-contained web server + Lua int
 
 | Command | What it does |
 |---------|-------------|
-| `make build` | Produces `confusio.com` (app) |
-| `make test-unit` | Unit tests against mock backends, no network |
-| `make test-integration` | Integration tests against live gitea.com |
-| `make test` | Both of the above |
-| `make validate-mock` | Run `test/gitea-api-version.hurl` against both the mock and a real Gitea instance to check they agree |
-| `make site` | Build GitHub Pages site into `_site/` (generates matrix from CSV) |
+| `make -j build` | Produces `confusio.com` (app) |
+| `make -j test-unit` | Unit tests against mock backends, no network |
+| `make -j test-integration` | Integration tests against live gitea.com |
+| `make -j test` | Both of the above |
+| `make -j validate-mock` | Run `test/gitea-api-version.hurl` against both the mock and a real Gitea instance to check they agree |
+| `make -j site` | Build GitHub Pages site into `_site/` (generates matrix from CSV) |
 
 **Before any commit: run `make -j test-unit`.** `make -j test-integration` requires network and is acceptable to defer to CI.
 
