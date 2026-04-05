@@ -42,14 +42,14 @@ Security Advisories,,,,,,,,,,,,,,,,,,,,,
 GET /advisories,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/security-advisories,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 Issues,,,,,,,,,,,,,,,,,,,,,
-GET /repos/{owner}/{repo}/issues,n,n,n,y,y,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-POST /repos/{owner}/{repo}/issues,n,n,n,y,y,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/issues/{issue_number},n,n,n,y,y,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-PATCH /repos/{owner}/{repo}/issues/{issue_number},n,n,n,y,y,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/issues/{issue_number}/comments,n,n,n,y,y,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-POST /repos/{owner}/{repo}/issues/{issue_number}/comments,n,n,n,y,y,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/issues/{issue_number}/labels,n,n,n,y,y,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-POST /repos/{owner}/{repo}/issues/{issue_number}/labels,n,n,n,y,y,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/labels,n,n,n,y,y,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/milestones,n,n,n,y,y,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/assignees,n,n,n,y,y,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/issues,n,y,n,y,y,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n
+POST /repos/{owner}/{repo}/issues,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/issues/{issue_number},n,y,n,y,y,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n
+PATCH /repos/{owner}/{repo}/issues/{issue_number},n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/issues/{issue_number}/comments,n,y,n,y,y,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n
+POST /repos/{owner}/{repo}/issues/{issue_number}/comments,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/issues/{issue_number}/labels,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
+POST /repos/{owner}/{repo}/issues/{issue_number}/labels,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/labels,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,~stub only,n,n,n,n,n
+GET /repos/{owner}/{repo}/milestones,n,y,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/assignees,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n

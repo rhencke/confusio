@@ -57,6 +57,12 @@ gitea_HURL  = test/gitea-root-auth.hurl test/gitea-repos.hurl \
               test/gitea-issues.hurl
 gitlab_HURL = test/gitlab-repos.hurl test/gitlab-users.hurl \
               test/gitlab-issues.hurl
+gitbucket_HURL = test/gitbucket-repos.hurl test/gitbucket-users.hurl \
+                 test/gitbucket-issues.hurl
+bitbucket_HURL = test/bitbucket-repos.hurl test/bitbucket-users.hurl \
+                 test/bitbucket-issues.hurl
+pagure_HURL = test/pagure-repos.hurl test/pagure-users.hurl \
+              test/pagure-issues.hurl
 
 # Stub providers share the same mock and split their tests across per-category files.
 STUB_HURL = test/$(1)-repos.hurl test/$(1)-teams.hurl test/$(1)-security-advisories.hurl test/$(1)-users.hurl

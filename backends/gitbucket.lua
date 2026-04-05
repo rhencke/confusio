@@ -609,6 +609,159 @@ backend_impl = {
       PAGES)
   end),
 
+  -- Issues (GitHub-compatible passthrough) -------------------------------------
+
+  get_repo_issues = proxy_handler(nil, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/issues", PAGES)
+  end),
+
+  post_repo_issues = function(owner, repo_name)
+    proxy_json_created(nil,
+      fetch_json(base().."/repos/"..owner.."/"..repo_name.."/issues", "POST", GetBody()))
+  end,
+
+  get_repo_issue = proxy_handler(nil, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/issues/"..n
+  end),
+
+  patch_repo_issue = function(owner, repo_name, issue_number)
+    proxy_json(nil,
+      fetch_json(base().."/repos/"..owner.."/"..repo_name.."/issues/"..issue_number,
+        "PATCH", GetBody()))
+  end,
+
+  get_repo_issue_comments = proxy_handler(nil, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/issues/comments", PAGES)
+  end),
+
+  get_repo_issue_comment = proxy_handler(nil, function(o, r, comment_id)
+    return base().."/repos/"..o.."/"..r.."/issues/comments/"..comment_id
+  end),
+
+  patch_repo_issue_comment = function(owner, repo_name, comment_id)
+    proxy_json(nil,
+      fetch_json(base().."/repos/"..owner.."/"..repo_name.."/issues/comments/"..comment_id,
+        "PATCH", GetBody()))
+  end,
+
+  delete_repo_issue_comment = function(owner, repo_name, comment_id)
+    local ok, status = fetch_json(
+      base().."/repos/"..owner.."/"..repo_name.."/issues/comments/"..comment_id, "DELETE")
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  get_repo_issue_events = proxy_handler(nil, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/issues/events", PAGES)
+  end),
+
+  get_issue_comments = proxy_handler(nil, function(o, r, n)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/issues/"..n.."/comments", PAGES)
+  end),
+
+  post_issue_comment = function(owner, repo_name, issue_number)
+    proxy_json_created(nil,
+      fetch_json(base().."/repos/"..owner.."/"..repo_name.."/issues/"..issue_number..
+        "/comments", "POST", GetBody()))
+  end,
+
+  get_issue_events = proxy_handler(nil, function(o, r, n)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/issues/"..n.."/events", PAGES)
+  end),
+
+  get_issue_timeline = proxy_handler(nil, function(o, r, n)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/issues/"..n.."/timeline", PAGES)
+  end),
+
+  get_issue_labels = proxy_handler(nil, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/issues/"..n.."/labels"
+  end),
+
+  post_issue_labels = function(owner, repo_name, issue_number)
+    proxy_json(nil,
+      fetch_json(base().."/repos/"..owner.."/"..repo_name.."/issues/"..issue_number..
+        "/labels", "POST", GetBody()))
+  end,
+
+  put_issue_labels = function(owner, repo_name, issue_number)
+    proxy_json(nil,
+      fetch_json(base().."/repos/"..owner.."/"..repo_name.."/issues/"..issue_number..
+        "/labels", "PUT", GetBody()))
+  end,
+
+  delete_issue_labels = function(owner, repo_name, issue_number)
+    local ok, status = fetch_json(
+      base().."/repos/"..owner.."/"..repo_name.."/issues/"..issue_number.."/labels", "DELETE")
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  delete_issue_label = function(owner, repo_name, issue_number, label_name)
+    local ok, status = fetch_json(
+      base().."/repos/"..owner.."/"..repo_name.."/issues/"..issue_number..
+        "/labels/"..label_name, "DELETE")
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  post_issue_assignees = function(owner, repo_name, issue_number)
+    proxy_json(nil,
+      fetch_json(base().."/repos/"..owner.."/"..repo_name.."/issues/"..issue_number..
+        "/assignees", "POST", GetBody()))
+  end,
+
+  delete_issue_assignees = function(owner, repo_name, issue_number)
+    proxy_json(nil,
+      fetch_json(base().."/repos/"..owner.."/"..repo_name.."/issues/"..issue_number..
+        "/assignees", "DELETE", GetBody()))
+  end,
+
+  get_repo_assignees = proxy_handler(nil, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/assignees", PAGES)
+  end),
+
+  get_repo_labels = proxy_handler(nil, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/labels", PAGES)
+  end),
+
+  post_repo_labels = function(owner, repo_name)
+    proxy_json_created(nil,
+      fetch_json(base().."/repos/"..owner.."/"..repo_name.."/labels", "POST", GetBody()))
+  end,
+
+  get_repo_label = proxy_handler(nil, function(o, r, name)
+    return base().."/repos/"..o.."/"..r.."/labels/"..name
+  end),
+
+  patch_repo_label = function(owner, repo_name, label_name)
+    proxy_json(nil,
+      fetch_json(base().."/repos/"..owner.."/"..repo_name.."/labels/"..label_name,
+        "PATCH", GetBody()))
+  end,
+
+  delete_repo_label = function(owner, repo_name, label_name)
+    local ok, status = fetch_json(
+      base().."/repos/"..owner.."/"..repo_name.."/labels/"..label_name, "DELETE")
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  get_repo_milestones = proxy_handler(nil, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/milestones", PAGES)
+  end),
+
+  get_repo_milestone = proxy_handler(nil, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/milestones/"..n
+  end),
+
+  get_repo_milestone_labels = proxy_handler(nil, function(o, r, n)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/milestones/"..n.."/labels", PAGES)
+  end),
+
   -- Legacy team-by-id API (/teams/{team_id}) ------------------------------------
 
   get_user_teams = proxy_handler(nil, function()

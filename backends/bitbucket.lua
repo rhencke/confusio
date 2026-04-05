@@ -177,6 +177,71 @@ end
 
 local proxy_handler = make_proxy_handler(fetch_json)
 
+-- Translate a Bitbucket issue to GitHub format.
+-- Bitbucket states: "open", "resolved", "wontfix", "invalid", "duplicate", "on hold", "closed"
+local function translate_bb_issue(i)
+  if not i then return {} end
+  local content = (i.content or {}).raw or ""
+  local state = (i.state == "open") and "open" or "closed"
+  local reporter = translate_bb_user(i.reporter)
+  local assignees = {}
+  if i.assignee then assignees[1] = translate_bb_user(i.assignee) end
+  local ms = nil
+  if i.milestone and i.milestone.name then
+    ms = {
+      id         = i.milestone.id or 0,
+      number     = i.milestone.id or 0,
+      title      = i.milestone.name,
+      state      = "open",
+      created_at = "",
+      updated_at = "",
+    }
+  end
+  return {
+    id         = i.id or 0,
+    number     = i.id or 0,
+    title      = i.title or "",
+    body       = content,
+    state      = state,
+    user       = reporter,
+    assignees  = assignees,
+    labels     = {},
+    milestone  = ms,
+    created_at = i.created_on or "",
+    updated_at = i.updated_on or "",
+    closed_at  = nil,
+    html_url   = (i.links and i.links.html and i.links.html.href) or "",
+  }
+end
+
+-- Translate a Bitbucket issue comment to GitHub format.
+local function translate_bb_issue_comment(c)
+  if not c then return {} end
+  local content = (c.content or {}).raw or ""
+  return {
+    id         = c.id or 0,
+    body       = content,
+    user       = translate_bb_user(c.author),
+    created_at = c.created_on or "",
+    updated_at = c.updated_on or "",
+    html_url   = (c.links and c.links.html and c.links.html.href) or "",
+  }
+end
+
+-- Translate a Bitbucket milestone to GitHub format.
+-- Bitbucket milestone: { id, name, resource_uri }
+local function translate_bb_milestone(m)
+  if not m then return {} end
+  return {
+    id         = m.id or 0,
+    number     = m.id or 0,
+    title      = m.name or "",
+    state      = "open",
+    created_at = "",
+    updated_at = "",
+  }
+end
+
 local function translate_bb_hook_req(body_str)
   local req = DecodeJson(body_str or "{}")
   local bb_events = {}
@@ -569,4 +634,44 @@ backend_impl = {
   get_users_username = proxy_handler(translate_bb_user, function(username)
     return base().."/users/"..username
   end),
+
+  -- Issues --------------------------------------------------------------------
+
+  get_repo_issues = function(owner, repo_name)
+    proxy_json(
+      function(data)
+        local issues = data.values or {}
+        for i, iss in ipairs(issues) do issues[i] = translate_bb_issue(iss) end
+        return issues
+      end,
+      fetch_json(append_page_params(
+        base().."/repositories/"..owner.."/"..repo_name.."/issues", PAGES)))
+  end,
+
+  get_repo_issue = function(owner, repo_name, issue_number)
+    proxy_json(translate_bb_issue,
+      fetch_json(base().."/repositories/"..owner.."/"..repo_name.."/issues/"..issue_number))
+  end,
+
+  get_issue_comments = function(owner, repo_name, issue_number)
+    proxy_json(
+      function(data)
+        local comments = data.values or {}
+        for i, c in ipairs(comments) do comments[i] = translate_bb_issue_comment(c) end
+        return comments
+      end,
+      fetch_json(append_page_params(
+        base().."/repositories/"..owner.."/"..repo_name.."/issues/"..issue_number.."/comments",
+        PAGES)))
+  end,
+
+  get_repo_milestones = function(owner, repo_name)
+    proxy_json(
+      function(data)
+        local ms = data.values or {}
+        for i, m in ipairs(ms) do ms[i] = translate_bb_milestone(m) end
+        return ms
+      end,
+      fetch_json(base().."/repositories/"..owner.."/"..repo_name.."/milestones"))
+  end,
 }
