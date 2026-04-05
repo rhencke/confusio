@@ -2698,9 +2698,6 @@ backend_impl = {
   -- GET /search/users — maps to GitLab GET /users?search=<q>
   search_users = function()
     local q = GetParam("q") or ""
-    proxy_search_gl(
-      translate_gl_user,
-      append_page_params(base() .. "/users?search=" .. q, PAGES)
-    )
+    proxy_search_gl(translate_gl_user, append_page_params(base() .. "/users?search=" .. q, PAGES))
   end,
 }
