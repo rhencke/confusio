@@ -86,7 +86,6 @@ end
 -- Translate a Pagure commit object to GitHub format.
 -- Pagure: { id, message, date, date_utc, author: { name, email } }
 local proxy_handler = make_proxy_handler(fetch_json)
-local proxy_handler_created = make_proxy_handler(fetch_json, proxy_json_created)
 
 -- Translate a Pagure user to GitHub format.
 local function translate_pagure_user(u)
@@ -577,7 +576,7 @@ backend_impl = {
     respond_json(200, "OK", comments)
   end,
 
-  get_repo_labels = function(owner, repo_name)
+  get_repo_labels = function(_owner, _repo_name)
     -- Pagure has no repo-level label list endpoint; return empty list
     respond_json(200, "OK", {})
   end,

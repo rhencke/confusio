@@ -210,7 +210,6 @@ local function translate_bb_hook(h)
 end
 
 local proxy_handler = make_proxy_handler(fetch_json)
-local proxy_handler_created = make_proxy_handler(fetch_json, proxy_json_created)
 
 -- Translate a Bitbucket issue to GitHub format.
 -- Bitbucket states: "open", "resolved", "wontfix", "invalid", "duplicate", "on hold", "closed"

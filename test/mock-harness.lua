@@ -8,11 +8,6 @@ function OnHttpRequest()
     Write(body)
   end
 
-  local function raw(body)
-    SetHeader("Content-Type", "text/plain")
-    Write(body)
-  end
-
   local REPO = '{"id":1,"path":"octocat/hello-world","description":"My first repo",'
     .. '"is_public":true,"default_branch":"main","num_stars":80,"num_forks":9,'
     .. '"git_url":"http://localhost/octocat/hello-world.git"}'

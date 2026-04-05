@@ -1078,7 +1078,7 @@ backend_impl = {
     local body = EncodeJson({
       title = req.title,
       key = req.key,
-      can_push = not (req.read_only ~= false),
+      can_push = req.read_only == false,
     })
     proxy_json_created(
       nil,
@@ -1948,19 +1948,19 @@ backend_impl = {
   end),
 
   -- GET /repos/{owner}/{repo}/issues/comments/{comment_id}
-  get_repo_issue_comment = function(owner, repo_name, comment_id)
+  get_repo_issue_comment = function(_owner, _repo_name, _comment_id)
     -- GitLab requires the issue IID; without it we cannot fetch a note directly.
     -- Return 404 as there's no cross-issue comment lookup endpoint.
     respond_json(404, "Not Found", { message = "Not Found" })
   end,
 
   -- PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}
-  patch_repo_issue_comment = function(owner, repo_name, comment_id)
+  patch_repo_issue_comment = function(_owner, _repo_name, _comment_id)
     respond_json(404, "Not Found", { message = "Not Found" })
   end,
 
   -- DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}
-  delete_repo_issue_comment = function(owner, repo_name, comment_id)
+  delete_repo_issue_comment = function(_owner, _repo_name, _comment_id)
     respond_json(404, "Not Found", { message = "Not Found" })
   end,
 

@@ -221,7 +221,7 @@ backend_impl = {
     return base() .. "/~" .. owner .. "/repos/" .. repo_name .. "/refs"
   end),
 
-  get_repo_branch = proxy_handler(function(data, owner, repo_name, branch)
+  get_repo_branch = proxy_handler(function(data, _owner, _repo_name, branch)
     for _, ref in ipairs(data.results or {}) do
       if ref.name == "refs/heads/" .. branch then
         return translate_srht_branch(ref)

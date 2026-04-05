@@ -2,7 +2,6 @@
 -- confusio translates Bitbucket responses to GitHub format.
 function OnHttpRequest()
   local path = GetPath()
-  local method = GetMethod()
 
   local function json(body)
     SetHeader("Content-Type", "application/json")
