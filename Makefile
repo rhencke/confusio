@@ -47,7 +47,9 @@ else
 endif
 
 stylua: .stylua-version
-	curl -sL $(STYLUA_URL) | unzip -p - stylua > stylua
+	curl -fsSL $(STYLUA_URL) -o /tmp/stylua-download.zip
+	unzip -p /tmp/stylua-download.zip stylua > stylua
+	rm /tmp/stylua-download.zip
 	chmod +x stylua
 
 .luarocks/bin/luacheck: .luacheck-version
