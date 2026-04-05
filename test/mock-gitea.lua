@@ -385,6 +385,10 @@ function OnHttpRequest()
       200,
       "[" .. REVIEW_COMMENT .. "]",
     },
+
+    -- Search
+    ["/api/v1/repos/search"] = { 200, '{"data":[' .. REPO .. '],"ok":true}' },
+    ["/api/v1/users/search"] = { 200, '{"data":[' .. USER .. '],"ok":true}' },
   }
 
   local entry = routes[method .. " " .. path] or routes[path]

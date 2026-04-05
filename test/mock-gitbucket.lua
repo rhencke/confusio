@@ -540,6 +540,16 @@ function OnHttpRequest()
         .. '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",'
         .. '"html_url":"","pull_request_url":"","url":""}]'
     )
+  -- Search (GitHub-compatible) -----------------------------------------------
+  elseif path == "/api/v3/search/repositories" then
+    SetStatus(200, "OK")
+    json('{"total_count":1,"incomplete_results":false,"items":[' .. REPO .. "]}")
+  elseif path == "/api/v3/search/users" then
+    SetStatus(200, "OK")
+    json(
+      '{"total_count":1,"incomplete_results":false,"items":'
+        .. '[{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User"}]}'
+    )
   else
     SetStatus(404, "Not Found")
   end

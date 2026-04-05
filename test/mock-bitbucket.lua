@@ -286,6 +286,15 @@ function OnHttpRequest()
       '{"account_id":"abc123","nickname":"octocat","display_name":"The Octocat",'
         .. '"links":{"avatar":{"href":""},"html":{"href":"http://bitbucket.org/octocat"}}}'
     )
+
+  -- Workspaces (used by search_users) ----------------------------------------
+  elseif path == "/2.0/workspaces" then
+    SetStatus(200, "OK")
+    json(
+      '{"values":[{"uuid":"{5678}","slug":"octocat","name":"Octocat","type":"workspace",'
+        .. '"links":{"avatar":{"href":""},"html":{"href":"https://bitbucket.org/octocat"}}}],'
+        .. '"pagelen":30,"size":1,"page":1}'
+    )
   else
     SetStatus(404, "Not Found")
   end
