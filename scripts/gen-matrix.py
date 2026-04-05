@@ -65,8 +65,8 @@ def generate_table(rows, providers):
     tbody_rows = []
     for row in rows:
         endpoint = row["endpoint"]
-        if endpoint.startswith("## "):
-            section = endpoint[3:]
+        if all(row.get(p, "") == "" for p in providers):
+            section = endpoint
             tbody_rows.append(
                 f'        <tr><td colspan="{num_cols}" class="section-hdr">{section}</td></tr>'
             )

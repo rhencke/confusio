@@ -1,5 +1,5 @@
 endpoint,azuredevops,bitbucket,bitbucket_datacenter,codeberg,forgejo,gerrit,gitbucket,gitea,gitlab,gogs,harness,kallithea,launchpad,notabug,onedev,pagure,phabricator,radicle,rhodecode,sourceforge,sourcehut
-## Repositories
+Repositories,,,,,,,,,,,,,,,,,,,,,
 GET /repos/{owner}/{repo},n,y,y,y,y,n,y,y,y,y,y,n,n,y,y,y,n,y,n,n,y
 PATCH /repos/{owner}/{repo},n,y,y,y,y,n,y,y,y,y,y,n,n,y,y,y,n,y,n,n,y
 DELETE /repos/{owner}/{repo},n,y,y,y,y,n,y,y,y,y,y,n,n,y,y,y,n,n,n,n,y
@@ -7,7 +7,7 @@ GET/POST /user/repos,n,y,~,y,y,n,y,y,y,y,y,n,n,y,y,y,n,y,n,n,y
 GET/POST /orgs/{org}/repos,n,y,y,y,y,n,y,y,y,y,y,n,n,y,y,y,n,n,n,n,n
 GET /users/{username}/repos,n,n,y,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n
 GET /repositories,n,y,y,n,n,y,y,y,y,n,n,n,n,n,n,y,n,y,n,n,n
-## Repo Content & Metadata
+Repo Content & Metadata,,,,,,,,,,,,,,,,,,,,,
 GET /repos/…/tags,n,n,y,y,y,n,n,y,y,y,y,n,n,y,y,y,n,y,n,n,y
 GET/PUT /repos/…/topics,n,n,n,y,y,n,n,y,y,y,n,n,n,y,n,y,n,n,n,n,n
 GET /repos/…/languages,n,n,n,y,y,n,y,y,y,y,y,n,n,y,n,n,n,n,n,n,n
@@ -19,16 +19,16 @@ GET/POST /repos/…/forks,n,n,y,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n
 GET /repos/…/releases,n,n,n,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n
 GET /repos/…/keys,n,n,y,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n
 GET /repos/…/hooks,n,n,y,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n
-## Users
+Users,,,,,,,,,,,,,,,,,,,,,
 GET/PATCH /user,n,y,n,y,y,y,y,y,y,y,y,n,n,y,n,y,n,n,n,n,y
 GET /users,n,n,y,y,y,y,y,y,y,y,n,n,n,y,y,y,n,n,n,n,n
 GET /users/{username},n,y,y,y,y,y,y,y,y,y,n,n,n,y,y,y,n,n,n,n,n
 GET /user/followers, /user/following,n,n,n,y,y,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n
 GET /user/keys, /user/gpg_keys,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
 GET /user/emails,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-## Teams
+Teams,,,,,,,,,,,,,,,,,,,,,
 GET /orgs/{org}/teams,y,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
 GET /user/teams,y,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-## Security Advisories
+Security Advisories,,,,,,,,,,,,,,,,,,,,,
 GET /advisories,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /repos/…/security-advisories,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
