@@ -69,6 +69,44 @@ function OnHttpRequest()
     .. ',"content":"",'
     .. '"created":"2020-01-01T00:00:00Z"}'
 
+  local PR_BRANCH_HEAD = '{"label":"feature","ref":"feature","sha":"abc123abc123",'
+    .. '"repo":'
+    .. REPO
+    .. "}"
+
+  local PR_BRANCH_BASE = '{"label":"main","ref":"main","sha":"def456def456",'
+    .. '"repo":'
+    .. REPO
+    .. "}"
+
+  local PR = '{"id":1,"number":1,"state":"open","title":"A great PR",'
+    .. '"body":"PR description",'
+    .. '"user":'
+    .. USER
+    .. ',"head":'
+    .. PR_BRANCH_HEAD
+    .. ',"base":'
+    .. PR_BRANCH_BASE
+    .. ',"draft":false,"mergeable":true,'
+    .. '"created":"2020-01-01T00:00:00Z","updated":"2020-01-02T00:00:00Z",'
+    .. '"closed":null,"merged":null,"merge_commit_sha":null,'
+    .. '"diff_url":"http://localhost/octocat/hello-world/pulls/1.diff",'
+    .. '"patch_url":"http://localhost/octocat/hello-world/pulls/1.patch",'
+    .. '"html_url":"http://localhost/octocat/hello-world/pulls/1"}'
+
+  local REVIEW = '{"id":1,"type":"APPROVED","state":"APPROVED","body":"Looks good!",'
+    .. '"submitted_at":"2020-01-01T00:00:00Z","user":'
+    .. USER
+    .. ',"stale":false,"official":false,"dismissed":false,"comments_count":1}'
+
+  local REVIEW_COMMENT = '{"id":1,"body":"Nice change here","path":"README.md",'
+    .. '"diff_hunk":"@@ -1,3 +1,4 @@","line":2,"original_line":2,'
+    .. '"commit_id":"abc123abc123","original_commit_id":"abc123abc123","user":'
+    .. USER
+    .. ',"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z"}'
+
+  local REQUESTED_REVIEWERS = '{"users":[' .. USER .. '],"teams":[]}'
+
   -- Table-driven dispatch. Keys: exact path (any method) or "METHOD /path".
   -- Values: {status, body} — body nil means no body (e.g. 204).
   local routes = {
@@ -326,6 +364,23 @@ function OnHttpRequest()
 
     -- Assignees
     ["/api/v1/repos/octocat/hello-world/assignees"] = { 200, "[" .. USER .. "]" },
+
+    -- Pull Requests
+    ["/api/v1/repos/octocat/hello-world/pulls"] = { 200, "[" .. PR .. "]" },
+    ["/api/v1/repos/octocat/hello-world/pulls/1"] = { 200, PR },
+    ["/api/v1/repos/octocat/hello-world/pulls/1/commits"] = { 200, "[]" },
+    ["/api/v1/repos/octocat/hello-world/pulls/1/files"] = { 200, "[]" },
+    ["/api/v1/repos/octocat/hello-world/pulls/1/merge"] = { 204, nil },
+    ["/api/v1/repos/octocat/hello-world/pulls/1/requested_reviewers"] = {
+      200,
+      REQUESTED_REVIEWERS,
+    },
+    ["/api/v1/repos/octocat/hello-world/pulls/1/reviews"] = { 200, "[" .. REVIEW .. "]" },
+    ["/api/v1/repos/octocat/hello-world/pulls/1/reviews/1"] = { 200, REVIEW },
+    ["/api/v1/repos/octocat/hello-world/pulls/1/reviews/1/comments"] = {
+      200,
+      "[" .. REVIEW_COMMENT .. "]",
+    },
   }
 
   local entry = routes[method .. " " .. path] or routes[path]
