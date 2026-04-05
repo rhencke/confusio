@@ -77,9 +77,14 @@ endef
 
 $(foreach b,$(BACKENDS),$(eval $(call BACKEND_RULE,$(b))))
 
-.PHONY: build test test-unit test-unit-backends test-integration validate-mock clean
+.PHONY: build site test test-unit test-unit-backends test-integration validate-mock clean
 
 build: confusio.com
+
+site:
+	mkdir -p _site
+	cp -r site/. _site/
+	python3 scripts/gen-matrix.py site/compatibility.csv site/index.html _site/index.html
 
 test: test-unit test-integration
 
@@ -99,3 +104,4 @@ validate-mock: mock-gitea.com
 
 clean:
 	rm -f redbean.com confusio.com $(MOCKS) hurl
+	rm -rf _site

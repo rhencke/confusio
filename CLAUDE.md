@@ -15,6 +15,7 @@ Built with [Redbean](https://redbean.dev): a self-contained web server + Lua int
 | `make test-integration` | Integration tests against live gitea.com |
 | `make test` | Both of the above |
 | `make validate-mock` | Run `test/gitea-api-version.hurl` against both the mock and a real Gitea instance to check they agree |
+| `make site` | Build GitHub Pages site into `_site/` (generates matrix from CSV) |
 
 **Before any commit: run `make -j test-unit`.** `make -j test-integration` requires network and is acceptable to defer to CI.
 
@@ -31,6 +32,12 @@ Only spelunk the output if the exit code is non-zero.
 Makefile                     — build, test, and download targets
 .redbean-version             — pinned Redbean version (wget'd by make)
 .hurl-version                — pinned Hurl version (curl'd by make)
+site/
+  index.html                 — GitHub Pages template (contains <!-- COMPAT_MATRIX --> placeholder)
+  compatibility.csv          — compatibility matrix source data (one row per route group, one column per provider)
+scripts/
+  gen-matrix.py              — generates the HTML table from compatibility.csv into the template
+_site/                       — generated output (gitignored; produced by `make site` or the Pages workflow)
 test/
   test-unit.sh               — unit test harness (starts confusio + mock, runs hurl)
   test-integration.sh        — integration test harness (live gitea.com)
@@ -41,6 +48,7 @@ test/
   mock-gitea.lua             — Redbean handler for the mock Gitea server
 .github/
   workflows/ci.yml           — CI: parallel test-unit and test-integration jobs
+  workflows/pages.yml        — GitHub Pages build: generates matrix from CSV, deploys _site/
   actions/setup/action.yml   — composite action: cache redbean.com and hurl
 vendor/
   github-rest-api-description/
@@ -96,7 +104,7 @@ When implementing a new endpoint, check the spec for:
 4. If any backend behaves differently, add an override in `backends/<name>.lua`.
    Parametric captures are passed positionally: `repo = function(owner, repo) ... end`
 5. Add a hurl assertion file in `test/` and wire it into `test/test-unit.sh` (mock) and `test/test-integration.sh` (live).
-6. Update the compatibility matrix in `README.md`.
+6. Update `site/compatibility.csv`: add a row (or update an existing row) for the new endpoint. Values: `y` = native support, `~` = partial/stub, `n` = returns 404/501. The GitHub Pages site is regenerated automatically from this CSV in CI — never edit the generated HTML.
 
 ## Adding a new backend
 
@@ -105,6 +113,7 @@ When implementing a new endpoint, check the spec for:
    `config.backend == "<name>"` — no changes to `.init.lua` needed.
 2. Add mock server as `test/mock-<newbackend>.lua` and build it in the `Makefile` (copy pattern from `mock-gitea.com`).
 3. Add a `test/test-mock-validate.sh`-equivalent for the new backend if its spec differs meaningfully.
+4. Add a column for the new backend in `site/compatibility.csv` and fill in support values for every row.
 
 ## Redbean API notes
 
