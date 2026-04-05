@@ -111,6 +111,10 @@ function OnHttpRequest()
   -- Values: {status, body} — body nil means no body (e.g. 204).
   local routes = {
     ["/api/v1/version"] = { 200, '{"version":"1.20.0"}' },
+    ["/api/v1/rate_limit"] = {
+      200,
+      '{"rate":{"limit":5000,"used":0,"remaining":5000,"reset":9999999999}}',
+    },
 
     -- Repos
     ["/api/v1/repos/octocat/hello-world"] = { 200, REPO },

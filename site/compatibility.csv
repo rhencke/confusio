@@ -69,4 +69,4 @@ GET /repos/{owner}/{repo}/pulls/comments,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/pulls/comments/{comment_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 
 Rate Limits,,,,,,,,,,,,,,,,,,,,,
-GET /rate_limit,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y
+GET /rate_limit,~unlimited stub,~unlimited stub,~unlimited stub,y,y,~unlimited stub,y,y,~unlimited stub,y,~unlimited stub,~unlimited stub,~unlimited stub,y,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub

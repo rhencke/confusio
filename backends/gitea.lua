@@ -376,6 +376,12 @@ backend_impl = {
     end
   end,
 
+  get_rate_limit = proxy_handler(function(data)
+    return { rate = data.rate or data }
+  end, function()
+    return base() .. "/rate_limit"
+  end),
+
   -- GET /repos/{owner}/{repo}
   get_repo = function(owner, repo_name)
     proxy_json(translate_repo, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name))

@@ -1,1 +1,1 @@
-rate-limit.hurl
+gitea-rate-limit.hurl
