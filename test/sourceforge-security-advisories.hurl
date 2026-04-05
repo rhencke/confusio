@@ -1,0 +1,1 @@
+stub-security-advisories.hurl

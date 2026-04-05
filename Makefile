@@ -55,6 +55,14 @@ MOCKS    = $(addprefix mock-,$(addsuffix .com,$(BACKENDS)))
 gitea_HURL = test/gitea-root-auth.hurl test/gitea-repos.hurl \
              test/gitea-repos-ext.hurl test/gitea-users.hurl
 
+# Stub providers share the same mock and split their tests across per-category files.
+STUB_HURL = test/$(1)-repos.hurl test/$(1)-teams.hurl test/$(1)-security-advisories.hurl test/$(1)-users.hurl
+kallithea_HURL   = $(call STUB_HURL,kallithea)
+launchpad_HURL   = $(call STUB_HURL,launchpad)
+phabricator_HURL = $(call STUB_HURL,phabricator)
+rhodecode_HURL   = $(call STUB_HURL,rhodecode)
+sourceforge_HURL = $(call STUB_HURL,sourceforge)
+
 $(eval _p := 18080)
 $(foreach b,$(BACKENDS),$(eval $(b)_CPORT := $(_p))$(eval $(b)_MPORT := $(shell expr $(_p) + 1))$(eval _p := $(shell expr $(_p) + 2)))
 

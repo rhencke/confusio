@@ -233,6 +233,21 @@ for _, ep in ipairs({
   if not backend_impl[ep] then backend_impl[ep] = teams_empty end
 end
 
+-- Security advisory defaults: most providers have no native equivalent.
+-- List endpoints return [] (no advisories); individual/mutating endpoints → 404 (nil handler).
+local function security_advisories_empty()
+  SetStatus(200, "OK")
+  SetHeader("Content-Type", "application/json; charset=utf-8")
+  Write("[]")
+end
+for _, ep in ipairs({
+  "get_global_advisories",
+  "get_org_security_advisories",
+  "get_repo_security_advisories",
+}) do
+  if not backend_impl[ep] then backend_impl[ep] = security_advisories_empty end
+end
+
 -- Handlers resolved once at startup; backend is fixed for the program's lifetime.
 -- Registered routes not implemented by the backend return 404.
 local handle = backend_impl
@@ -487,6 +502,18 @@ local routes = {
   ["PUT /teams/{team_id}/repos/{owner}/{repo}"]                                    = "put_team_repo",
   ["DELETE /teams/{team_id}/repos/{owner}/{repo}"]                                 = "delete_team_repo",
   ["GET /teams/{team_id}/teams"]                                                   = "get_team_children",
+
+  -- Security advisories (https://docs.github.com/en/rest/security-advisories)
+  ["GET /advisories"]                                                              = "get_global_advisories",
+  ["GET /advisories/{ghsa_id}"]                                                   = "get_global_advisory",
+  ["GET /orgs/{org}/security-advisories"]                                          = "get_org_security_advisories",
+  ["GET /repos/{owner}/{repo}/security-advisories"]                                = "get_repo_security_advisories",
+  ["POST /repos/{owner}/{repo}/security-advisories"]                               = "post_repo_security_advisory",
+  ["POST /repos/{owner}/{repo}/security-advisories/reports"]                       = "post_repo_security_advisory_report",
+  ["GET /repos/{owner}/{repo}/security-advisories/{ghsa_id}"]                      = "get_repo_security_advisory",
+  ["PATCH /repos/{owner}/{repo}/security-advisories/{ghsa_id}"]                    = "patch_repo_security_advisory",
+  ["POST /repos/{owner}/{repo}/security-advisories/{ghsa_id}/cve"]                 = "post_repo_security_advisory_cve",
+  ["POST /repos/{owner}/{repo}/security-advisories/{ghsa_id}/forks"]               = "post_repo_security_advisory_fork",
 
   -- Users (https://docs.github.com/en/rest/users)
   ["GET /user"]                                                                    = "get_user",
