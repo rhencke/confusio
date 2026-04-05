@@ -71,32 +71,11 @@ mock-%.com: redbean.com test/mock-%.lua
 # Backend test configuration.
 # To add a backend: append to BACKENDS (ports auto-assigned from 18080).
 # Each backend needs test/mock-<name>.lua (symlink ok) and
-# test/<name>-repos.hurl + test/<name>-users.hurl (symlinks ok).
+# at least one test/<name>-*.hurl file (symlinks ok — used by wildcard discovery).
 BACKENDS = azuredevops bitbucket bitbucket_datacenter codeberg forgejo gerrit gitbucket gitea gitlab gogs \
            harness kallithea launchpad notabug onedev pagure phabricator radicle \
            rhodecode sourceforge sourcehut
 MOCKS    = $(addprefix mock-,$(addsuffix .com,$(BACKENDS)))
-
-gitea_HURL            = test/gitea-root-auth.hurl test/gitea-repos.hurl \
-                        test/gitea-repos-ext.hurl test/gitea-users.hurl \
-                        test/gitea-issues.hurl test/gitea-pulls.hurl
-bitbucket_datacenter_HURL = test/bitbucket_datacenter-repos.hurl \
-                             test/bitbucket_datacenter-users.hurl \
-                             test/bitbucket_datacenter-pulls.hurl
-pagure_HURL           = test/pagure-repos.hurl test/pagure-users.hurl \
-                        test/pagure-issues.hurl
-
-# Gitea-like backends: repos, repos-ext, users, pulls
-HURL_REPOS_EXT_USERS_PULLS = test/$(1)-repos.hurl test/$(1)-repos-ext.hurl test/$(1)-users.hurl test/$(1)-pulls.hurl
-$(foreach b,codeberg forgejo gogs notabug,$(eval $(b)_HURL = $(call HURL_REPOS_EXT_USERS_PULLS,$(b))))
-
-# GitLab-like backends: repos, users, issues, pulls
-HURL_REPOS_USERS_ISSUES_PULLS = test/$(1)-repos.hurl test/$(1)-users.hurl test/$(1)-issues.hurl test/$(1)-pulls.hurl
-$(foreach b,gitlab gitbucket bitbucket,$(eval $(b)_HURL = $(call HURL_REPOS_USERS_ISSUES_PULLS,$(b))))
-
-# Stub providers share the same mock and split their tests across per-category files.
-STUB_HURL = test/$(1)-repos.hurl test/$(1)-teams.hurl test/$(1)-security-advisories.hurl test/$(1)-users.hurl
-$(foreach b,kallithea launchpad phabricator rhodecode sourceforge,$(eval $(b)_HURL = $(call STUB_HURL,$(b))))
 
 $(eval _p := 18080)
 $(foreach b,$(BACKENDS),$(eval $(b)_CPORT := $(_p))$(eval $(b)_MPORT := $(shell expr $(_p) + 1))$(eval _p := $(shell expr $(_p) + 2)))
@@ -107,7 +86,7 @@ test-unit-$(1): confusio.com mock-$(1).com hurl
 	bash test/run-backend.sh mock-$(1).com \
 	  $($(1)_CPORT) $($(1)_MPORT) \
 	  "-- $(1) http://127.0.0.1:$($(1)_MPORT)" \
-	  $(or $($(1)_HURL),test/$(1)-repos.hurl test/$(1)-users.hurl)
+	  $(wildcard test/$(1)-*.hurl)
 endef
 
 $(foreach b,$(BACKENDS),$(eval $(call BACKEND_RULE,$(b))))

@@ -16,7 +16,7 @@ Built with [Redbean](https://redbean.dev): a self-contained web server + Lua int
 | `make -j test` | Both of the above |
 | `make -j test-format` | Check StyLua formatting (no changes — fails if any file needs reformatting) |
 | `make -j test-lint` | Run luacheck linting |
-| `make -j validate-mock` | Run `test/gitea-api-version.hurl` against both the mock and a real Gitea instance to check they agree |
+| `make -j validate-mock` | Run `test/validate/gitea-api-version.hurl` against both the mock and a real Gitea instance to check they agree |
 | `make -j site` | Build GitHub Pages site into `_site/` (generates matrix from CSV) |
 
 **Before any commit: run `make -j test-unit`.** `make -j test-integration` requires network and is acceptable to defer to CI.
@@ -48,7 +48,8 @@ test/
   test-mock-validate.sh      — validate mock response structure vs real instance
   root.hurl                  — hurl assertions for GET / (no backend)
   gitea-root.hurl            — hurl assertions for GET / (gitea backend)
-  gitea-api-version.hurl     — hurl assertions for /api/v1/version (used by validate-mock)
+  validate/
+    gitea-api-version.hurl   — hurl assertions for /api/v1/version (used by validate-mock only)
   mock-gitea.lua             — Redbean handler for the mock Gitea server
 .github/
   workflows/ci.yml           — CI: parallel test-unit and test-integration jobs
