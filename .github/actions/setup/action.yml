@@ -1,5 +1,5 @@
 name: Cache dependencies
-description: Restore cached redbean and hurl binaries
+description: Restore cached redbean, hurl, and stylua binaries
 runs:
   using: composite
   steps:
@@ -11,3 +11,7 @@ runs:
       with:
         path: hurl
         key: hurl-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.hurl-version') }}
+    - uses: actions/cache@v4
+      with:
+        path: stylua
+        key: stylua-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.stylua-version') }}

@@ -13,9 +13,8 @@ function OnHttpRequest()
     Write(body)
   end
 
-  local PROJECT =
-    '{"id":1,"path":"octocat/hello-world","name":"hello-world",' ..
-    '"description":"My first repo","public":true,"defaultBranch":"main"}'
+  local PROJECT = '{"id":1,"path":"octocat/hello-world","name":"hello-world",'
+    .. '"description":"My first repo","public":true,"defaultBranch":"main"}'
 
   if path == "/~api/server-version" then
     SetStatus(200, "OK")
@@ -27,10 +26,10 @@ function OnHttpRequest()
     local q = GetParam("query") or ""
     if q ~= "" and not q:find("octocat/hello-world", 1, true) then
       SetStatus(200, "OK")
-      json('[]')
+      json("[]")
     else
       SetStatus(200, "OK")
-      json('[' .. PROJECT .. ']')
+      json("[" .. PROJECT .. "]")
     end
 
   -- Single project ---------------------------------------------------------
@@ -51,15 +50,18 @@ function OnHttpRequest()
   -- Commits ----------------------------------------------------------------
   elseif path == "/~api/projects/1/commits/abc123" then
     SetStatus(200, "OK")
-    json('{"hash":"abc123def456","message":"Initial commit",' ..
-      '"author":{"name":"Octocat","emailAddress":"octocat@github.com","date":"2011-01-26T19:01:12Z"},' ..
-      '"committer":{"name":"Octocat","emailAddress":"octocat@github.com","date":"2011-01-26T19:01:12Z"}}')
-
+    json(
+      '{"hash":"abc123def456","message":"Initial commit",'
+        .. '"author":{"name":"Octocat","emailAddress":"octocat@github.com","date":"2011-01-26T19:01:12Z"},'
+        .. '"committer":{"name":"Octocat","emailAddress":"octocat@github.com","date":"2011-01-26T19:01:12Z"}}'
+    )
   elseif path == "/~api/projects/1/commits" then
     SetStatus(200, "OK")
-    json('[{"hash":"abc123def456","message":"Initial commit",' ..
-      '"author":{"name":"Octocat","emailAddress":"octocat@github.com","date":"2011-01-26T19:01:12Z"},' ..
-      '"committer":{"name":"Octocat","emailAddress":"octocat@github.com","date":"2011-01-26T19:01:12Z"}}]')
+    json(
+      '[{"hash":"abc123def456","message":"Initial commit",'
+        .. '"author":{"name":"Octocat","emailAddress":"octocat@github.com","date":"2011-01-26T19:01:12Z"},'
+        .. '"committer":{"name":"Octocat","emailAddress":"octocat@github.com","date":"2011-01-26T19:01:12Z"}}]'
+    )
 
   -- Contents ---------------------------------------------------------------
   elseif path:find("^/~api/blobs/1/") then
@@ -70,7 +72,6 @@ function OnHttpRequest()
   elseif path == "/~api/users" then
     SetStatus(200, "OK")
     json('[{"id":1,"name":"octocat","fullName":"The Octocat","email":"octocat@github.com"}]')
-
   else
     SetStatus(404, "Not Found")
   end

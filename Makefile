@@ -17,6 +17,18 @@ HURL_PLATFORM  = $(HURL_ARCH)-unknown-linux-gnu
 HURL_URL       = https://github.com/Orange-OpenSource/hurl/releases/download/$(HURL_VERSION)/hurl-$(HURL_VERSION)-$(HURL_PLATFORM).tar.gz
 endif
 
+STYLUA_VERSION  := $(shell cat .stylua-version)
+STYLUA_OS       := $(shell uname -s)
+STYLUA_RAW_ARCH := $(shell uname -m)
+STYLUA_ARCH     := $(if $(filter arm64,$(STYLUA_RAW_ARCH)),aarch64,$(STYLUA_RAW_ARCH))
+
+ifeq ($(STYLUA_OS),Darwin)
+STYLUA_PLATFORM = macos-$(STYLUA_ARCH)
+else
+STYLUA_PLATFORM = linux-$(STYLUA_ARCH)
+endif
+STYLUA_URL = https://github.com/JohnnyMorganz/StyLua/releases/download/v$(STYLUA_VERSION)/stylua-$(STYLUA_PLATFORM).zip
+
 redbean.com: .redbean-version
 	curl -fsSL $(REDBEAN_URL) -o redbean.com
 	chmod +x redbean.com
@@ -31,6 +43,10 @@ else
 	curl -sL $(HURL_URL) | tar -xz --strip-components=2 hurl-$(HURL_VERSION)-$(HURL_PLATFORM)/bin/hurl
 	chmod +x hurl
 endif
+
+stylua: .stylua-version
+	curl -sL $(STYLUA_URL) | unzip -p - stylua > stylua
+	chmod +x stylua
 
 confusio.com: redbean.com .init.lua $(wildcard backends/*.lua)
 	cp redbean.com confusio.com
@@ -77,7 +93,7 @@ endef
 
 $(foreach b,$(BACKENDS),$(eval $(call BACKEND_RULE,$(b))))
 
-.PHONY: build site test test-unit test-unit-backends test-integration validate-mock clean
+.PHONY: build site test test-unit test-unit-backends test-integration validate-mock test-format clean
 
 build: confusio.com
 
@@ -102,6 +118,9 @@ test-integration: confusio.com hurl
 validate-mock: mock-gitea.com
 	bash test/test-mock-validate.sh
 
+test-format: stylua
+	./stylua --check .
+
 clean:
-	rm -f redbean.com confusio.com $(MOCKS) hurl
+	rm -f redbean.com confusio.com $(MOCKS) hurl stylua
 	rm -rf _site

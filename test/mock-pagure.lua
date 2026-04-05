@@ -13,15 +13,14 @@ function OnHttpRequest()
     Write(body)
   end
 
-  local REPO =
-    '{"id":1,"name":"hello-world","fullname":"octocat/hello-world",' ..
-    '"namespace":"","user":{"name":"octocat","url_path":"user/octocat"},' ..
-    '"description":"My first repo","private":false,"default_branch":"main",' ..
-    '"stars":5,"forks_count":2,' ..
-    '"date_created":"2011-01-26T19:01:12Z","date_modified":"2011-01-26T19:14:43Z",' ..
-    '"url_path":"octocat/hello-world",' ..
-    '"full_url":"http://localhost/octocat/hello-world.git",' ..
-    '"tags":["lua","api"],"forks":[]}'
+  local REPO = '{"id":1,"name":"hello-world","fullname":"octocat/hello-world",'
+    .. '"namespace":"","user":{"name":"octocat","url_path":"user/octocat"},'
+    .. '"description":"My first repo","private":false,"default_branch":"main",'
+    .. '"stars":5,"forks_count":2,'
+    .. '"date_created":"2011-01-26T19:01:12Z","date_modified":"2011-01-26T19:14:43Z",'
+    .. '"url_path":"octocat/hello-world",'
+    .. '"full_url":"http://localhost/octocat/hello-world.git",'
+    .. '"tags":["lua","api"],"forks":[]}'
 
   local rp = "/api/0/octocat/hello-world"
 
@@ -57,10 +56,12 @@ function OnHttpRequest()
   -- Commits ----------------------------------------------------------------
   elseif path == rp .. "/commits" then
     SetStatus(200, "OK")
-    json('{"commits":[{"id":"abc123def456","message":"Initial commit",' ..
-      '"date":"2011-01-26T19:01:12+00:00","date_utc":"2011-01-26T19:01:12Z",' ..
-      '"author":{"name":"Octocat","email":"octocat@github.com"}}],' ..
-      '"total_commits":1}')
+    json(
+      '{"commits":[{"id":"abc123def456","message":"Initial commit",'
+        .. '"date":"2011-01-26T19:01:12+00:00","date_utc":"2011-01-26T19:01:12Z",'
+        .. '"author":{"name":"Octocat","email":"octocat@github.com"}}],'
+        .. '"total_commits":1}'
+    )
 
   -- Tags -------------------------------------------------------------------
   elseif path == rp .. "/git/tags" then
@@ -71,7 +72,6 @@ function OnHttpRequest()
   elseif path == rp .. "/raw/README.md" then
     SetStatus(200, "OK")
     raw("# Hello World\n")
-
   elseif path:find("^" .. rp:gsub("%-", "%%-") .. "/raw/") then
     SetStatus(200, "OK")
     raw("file content\n")
@@ -80,7 +80,6 @@ function OnHttpRequest()
   elseif path == "/api/0/user/octocat" then
     SetStatus(200, "OK")
     json('{"user":{"username":"octocat","fullname":"The Octocat","avatar_url":""}}')
-
   elseif path == "/api/0/users" then
     SetStatus(200, "OK")
     json('{"users":["octocat","hubot"],"total_users":2}')
@@ -94,7 +93,6 @@ function OnHttpRequest()
   elseif path == "/api/0/repos" then
     SetStatus(200, "OK")
     json('{"projects":[' .. REPO .. '],"total_projects":1}')
-
   else
     SetStatus(404, "Not Found")
   end
