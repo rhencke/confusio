@@ -945,6 +945,11 @@ backend_impl = {
     respond_json(200, "OK", result)
   end,
 
+  -- Issues -----------------------------------------------------------------------
+  -- Bitbucket Datacenter has no native issue tracker; it relies on Jira.
+  -- All issues, labels, milestones, and assignees endpoints fall back to the
+  -- default empty-list handlers defined in .init.lua.
+
   -- Search -----------------------------------------------------------------------
 
   -- GET /search/repositories — DC: GET /repos?name=<q>
