@@ -422,6 +422,44 @@ local function translate_gl_mr_note_to_review_comment(n)
   }
 end
 
+-- Returns a backend_impl handler for a GitLab search endpoint.
+-- scope: GitLab search scope ("projects", "users", etc.)
+-- translate_item: per-item translation fn
+-- GitLab returns results as a flat array; X-Total header carries the total count.
+local function gl_search_response(scope, translate_item)
+  return function()
+    local q = GetParam("q") or ""
+    local url = base() .. "/search?scope=" .. scope .. "&search=" .. q
+    local pp = GetParam("per_page")
+    local pg = GetParam("page")
+    if pp and pp ~= "" then
+      url = url .. "&per_page=" .. pp
+    end
+    if pg and pg ~= "" then
+      url = url .. "&page=" .. pg
+    end
+    local ok, status, headers, body = fetch_json(url)
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local raw = DecodeJson(body) or {}
+    local total = tonumber(headers and (headers["X-Total"] or headers["x-total"])) or #raw
+    local items = {}
+    for i, r in ipairs(raw) do
+      items[i] = translate_item(r)
+    end
+    local items_json = #items > 0 and EncodeJson(items) or "[]"
+    SetStatus(200, "OK")
+    SetHeader("Content-Type", "application/json; charset=utf-8")
+    Write('{"total_count":' .. total .. ',"incomplete_results":false,"items":' .. items_json .. "}")
+  end
+end
+
 -- Fetch inline MR notes (position-based) for a given MR.
 local function fetch_gl_mr_review_comments(owner, repo_name, pull_number)
   local ok, status, _, body = fetch_json(
@@ -2654,4 +2692,12 @@ backend_impl = {
     end
     respond_json(200, "OK", result)
   end,
+
+  -- Search ---------------------------------------------------------------------
+
+  -- GET /search/repositories → GitLab /search?scope=projects
+  search_repositories = gl_search_response("projects", translate_gl_repo),
+
+  -- GET /search/users → GitLab /search?scope=users
+  search_users = gl_search_response("users", translate_gl_user),
 }

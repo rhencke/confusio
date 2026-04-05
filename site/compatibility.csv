@@ -54,13 +54,13 @@ GET /repos/{owner}/{repo}/labels,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,~stub only,n,n,n,
 GET /repos/{owner}/{repo}/milestones,n,y,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/assignees,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
 Search,,,,,,,,,,,,,,,,,,,,,
-GET /search/repositories,n,n,n,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n
+GET /search/repositories,n,n,n,y,y,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n
 GET /search/code,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /search/commits,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /search/issues,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /search/labels,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /search/topics,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /search/users,n,n,n,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n
+GET /search/users,n,n,n,y,y,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n
 Pull Requests,,,,,,,,,,,,,,,,,,,,,
 GET /repos/{owner}/{repo}/pulls,n,y,y,y,y,n,y,y,y,y,n,n,n,n,n,n,n,n,n,n,n
 POST /repos/{owner}/{repo}/pulls,n,y,y,y,y,n,y,y,y,y,n,n,n,n,n,n,n,n,n,n,n

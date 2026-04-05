@@ -434,6 +434,24 @@ function OnHttpRequest()
         .. '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z"}]'
     )
 
+  -- Search -----------------------------------------------------------------
+  elseif path == "/api/v4/search" then
+    local scope = GetParam("scope") or ""
+    SetStatus(200, "OK")
+    if scope == "projects" then
+      SetHeader("X-Total", "1")
+      json("[" .. PROJECT .. "]")
+    elseif scope == "users" then
+      SetHeader("X-Total", "1")
+      json(
+        '[{"id":1,"username":"octocat","name":"The Octocat","avatar_url":"",'
+          .. '"web_url":"http://localhost/octocat","is_admin":false}]'
+      )
+    else
+      SetHeader("X-Total", "0")
+      json("[]")
+    end
+
   -- Labels -----------------------------------------------------------------
   elseif path == pb .. "/labels" then
     SetStatus(200, "OK")
