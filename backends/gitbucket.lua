@@ -28,7 +28,8 @@ local function set_204_or_error(method, url)
   else respond_json(503, "Service Unavailable", {}) end
 end
 
-local proxy_handler = make_proxy_handler(fetch_json)
+local proxy_handler         = make_proxy_handler(fetch_json)
+local proxy_handler_created = make_proxy_handler_created(fetch_json)
 
 backend_impl = {
   get_root = function()
@@ -615,20 +616,17 @@ backend_impl = {
     return append_page_params(base().."/repos/"..o.."/"..r.."/issues", PAGES)
   end),
 
-  post_repo_issues = function(owner, repo_name)
-    proxy_json_created(nil,
-      fetch_json(base().."/repos/"..owner.."/"..repo_name.."/issues", "POST", GetBody()))
-  end,
+  post_repo_issues = proxy_handler_created(nil, function(o, r)
+    return base().."/repos/"..o.."/"..r.."/issues", "POST", GetBody()
+  end),
 
   get_repo_issue = proxy_handler(nil, function(o, r, n)
     return base().."/repos/"..o.."/"..r.."/issues/"..n
   end),
 
-  patch_repo_issue = function(owner, repo_name, issue_number)
-    proxy_json(nil,
-      fetch_json(base().."/repos/"..owner.."/"..repo_name.."/issues/"..issue_number,
-        "PATCH", GetBody()))
-  end,
+  patch_repo_issue = proxy_handler(nil, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/issues/"..n, "PATCH", GetBody()
+  end),
 
   get_repo_issue_comments = proxy_handler(nil, function(o, r)
     return append_page_params(base().."/repos/"..o.."/"..r.."/issues/comments", PAGES)
@@ -638,11 +636,9 @@ backend_impl = {
     return base().."/repos/"..o.."/"..r.."/issues/comments/"..comment_id
   end),
 
-  patch_repo_issue_comment = function(owner, repo_name, comment_id)
-    proxy_json(nil,
-      fetch_json(base().."/repos/"..owner.."/"..repo_name.."/issues/comments/"..comment_id,
-        "PATCH", GetBody()))
-  end,
+  patch_repo_issue_comment = proxy_handler(nil, function(o, r, id)
+    return base().."/repos/"..o.."/"..r.."/issues/comments/"..id, "PATCH", GetBody()
+  end),
 
   delete_repo_issue_comment = function(owner, repo_name, comment_id)
     local ok, status = fetch_json(
@@ -660,11 +656,9 @@ backend_impl = {
     return append_page_params(base().."/repos/"..o.."/"..r.."/issues/"..n.."/comments", PAGES)
   end),
 
-  post_issue_comment = function(owner, repo_name, issue_number)
-    proxy_json_created(nil,
-      fetch_json(base().."/repos/"..owner.."/"..repo_name.."/issues/"..issue_number..
-        "/comments", "POST", GetBody()))
-  end,
+  post_issue_comment = proxy_handler_created(nil, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/issues/"..n.."/comments", "POST", GetBody()
+  end),
 
   get_issue_events = proxy_handler(nil, function(o, r, n)
     return append_page_params(base().."/repos/"..o.."/"..r.."/issues/"..n.."/events", PAGES)
@@ -678,17 +672,13 @@ backend_impl = {
     return base().."/repos/"..o.."/"..r.."/issues/"..n.."/labels"
   end),
 
-  post_issue_labels = function(owner, repo_name, issue_number)
-    proxy_json(nil,
-      fetch_json(base().."/repos/"..owner.."/"..repo_name.."/issues/"..issue_number..
-        "/labels", "POST", GetBody()))
-  end,
+  post_issue_labels = proxy_handler(nil, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/issues/"..n.."/labels", "POST", GetBody()
+  end),
 
-  put_issue_labels = function(owner, repo_name, issue_number)
-    proxy_json(nil,
-      fetch_json(base().."/repos/"..owner.."/"..repo_name.."/issues/"..issue_number..
-        "/labels", "PUT", GetBody()))
-  end,
+  put_issue_labels = proxy_handler(nil, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/issues/"..n.."/labels", "PUT", GetBody()
+  end),
 
   delete_issue_labels = function(owner, repo_name, issue_number)
     local ok, status = fetch_json(
@@ -707,17 +697,13 @@ backend_impl = {
     else respond_json(503, "Service Unavailable", {}) end
   end,
 
-  post_issue_assignees = function(owner, repo_name, issue_number)
-    proxy_json(nil,
-      fetch_json(base().."/repos/"..owner.."/"..repo_name.."/issues/"..issue_number..
-        "/assignees", "POST", GetBody()))
-  end,
+  post_issue_assignees = proxy_handler(nil, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/issues/"..n.."/assignees", "POST", GetBody()
+  end),
 
-  delete_issue_assignees = function(owner, repo_name, issue_number)
-    proxy_json(nil,
-      fetch_json(base().."/repos/"..owner.."/"..repo_name.."/issues/"..issue_number..
-        "/assignees", "DELETE", GetBody()))
-  end,
+  delete_issue_assignees = proxy_handler(nil, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/issues/"..n.."/assignees", "DELETE", GetBody()
+  end),
 
   get_repo_assignees = proxy_handler(nil, function(o, r)
     return append_page_params(base().."/repos/"..o.."/"..r.."/assignees", PAGES)
@@ -727,20 +713,17 @@ backend_impl = {
     return append_page_params(base().."/repos/"..o.."/"..r.."/labels", PAGES)
   end),
 
-  post_repo_labels = function(owner, repo_name)
-    proxy_json_created(nil,
-      fetch_json(base().."/repos/"..owner.."/"..repo_name.."/labels", "POST", GetBody()))
-  end,
+  post_repo_labels = proxy_handler_created(nil, function(o, r)
+    return base().."/repos/"..o.."/"..r.."/labels", "POST", GetBody()
+  end),
 
   get_repo_label = proxy_handler(nil, function(o, r, name)
     return base().."/repos/"..o.."/"..r.."/labels/"..name
   end),
 
-  patch_repo_label = function(owner, repo_name, label_name)
-    proxy_json(nil,
-      fetch_json(base().."/repos/"..owner.."/"..repo_name.."/labels/"..label_name,
-        "PATCH", GetBody()))
-  end,
+  patch_repo_label = proxy_handler(nil, function(o, r, name)
+    return base().."/repos/"..o.."/"..r.."/labels/"..name, "PATCH", GetBody()
+  end),
 
   delete_repo_label = function(owner, repo_name, label_name)
     local ok, status = fetch_json(

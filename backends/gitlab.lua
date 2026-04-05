@@ -119,7 +119,8 @@ local function translate_gl_users(users)
   return users
 end
 
-local proxy_handler = make_proxy_handler(fetch_json)
+local proxy_handler         = make_proxy_handler(fetch_json)
+local proxy_handler_created = make_proxy_handler_created(fetch_json)
 
 -- Look up a GitLab user ID by username. Returns nil on failure.
 local function gl_user_id(username)
@@ -246,6 +247,27 @@ local function translate_gl_note(c)
     created_at = c.created_at,
     updated_at = c.updated_at,
   }
+end
+
+local function translate_gl_issues(issues)
+  for i, iss in ipairs(issues) do issues[i] = translate_gl_issue(iss) end
+  return issues
+end
+local function translate_gl_notes(notes)
+  for i, n in ipairs(notes) do notes[i] = translate_gl_note(n) end
+  return notes
+end
+local function translate_gl_labels(labels)
+  for i, l in ipairs(labels) do labels[i] = translate_gl_label(l) end
+  return labels
+end
+local function translate_gl_milestones(milestones)
+  for i, m in ipairs(milestones) do milestones[i] = translate_gl_milestone(m) end
+  return milestones
+end
+local function translate_gl_members(members)
+  for i, m in ipairs(members) do members[i] = translate_gl_member(m) end
+  return members
 end
 
 -- Look up a GitLab label ID by name within a project.
@@ -1406,68 +1428,48 @@ backend_impl = {
   -- Issues -------------------------------------------------------------------
 
   -- GET /repos/{owner}/{repo}/issues
-  get_repo_issues = function(owner, repo_name)
-    local function tr(issues)
-      for i, iss in ipairs(issues) do issues[i] = translate_gl_issue(iss) end
-      return issues
-    end
-    proxy_json(tr, fetch_json(append_page_params(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues",
-      PAGES)))
-  end,
+  get_repo_issues = proxy_handler(translate_gl_issues, function(o, r)
+    return append_page_params(base().."/projects/"..project_id(o, r).."/issues", PAGES)
+  end),
 
   -- POST /repos/{owner}/{repo}/issues
-  post_repo_issues = function(owner, repo_name)
+  post_repo_issues = proxy_handler_created(translate_gl_issue, function(o, r)
     local req = DecodeJson(GetBody() or "{}")
     local gl = {}
-    if req.title       then gl.title       = req.title end
-    if req.body        then gl.description = req.body end
+    if req.title       then gl.title        = req.title end
+    if req.body        then gl.description  = req.body end
     if req.milestone   then gl.milestone_id = req.milestone end
-    proxy_json_created(translate_gl_issue,
-      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues",
-        "POST", EncodeJson(gl)))
-  end,
+    return base().."/projects/"..project_id(o, r).."/issues", "POST", EncodeJson(gl)
+  end),
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}
-  get_repo_issue = function(owner, repo_name, issue_number)
-    proxy_json(translate_gl_issue,
-      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
-        "/issues/" .. issue_number))
-  end,
+  get_repo_issue = proxy_handler(translate_gl_issue, function(o, r, n)
+    return base().."/projects/"..project_id(o, r).."/issues/"..n
+  end),
 
   -- PATCH /repos/{owner}/{repo}/issues/{issue_number}
-  patch_repo_issue = function(owner, repo_name, issue_number)
+  patch_repo_issue = proxy_handler(translate_gl_issue, function(o, r, n)
     local req = DecodeJson(GetBody() or "{}")
     local gl = {}
     if req.title       then gl.title        = req.title end
     if req.body        then gl.description  = req.body end
     if req.state       then gl.state_event  = req.state == "closed" and "close" or "reopen" end
     if req.milestone   then gl.milestone_id = req.milestone end
-    proxy_json(translate_gl_issue,
-      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
-        "/issues/" .. issue_number, "PUT", EncodeJson(gl)))
-  end,
+    return base().."/projects/"..project_id(o, r).."/issues/"..n, "PUT", EncodeJson(gl)
+  end),
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
-  get_issue_comments = function(owner, repo_name, issue_number)
-    local function tr(notes)
-      for i, n in ipairs(notes) do notes[i] = translate_gl_note(n) end
-      return notes
-    end
-    proxy_json(tr, fetch_json(append_page_params(
-      base() .. "/projects/" .. project_id(owner, repo_name) ..
-      "/issues/" .. issue_number .. "/notes",
-      PAGES)))
-  end,
+  get_issue_comments = proxy_handler(translate_gl_notes, function(o, r, n)
+    return append_page_params(
+      base().."/projects/"..project_id(o, r).."/issues/"..n.."/notes", PAGES)
+  end),
 
   -- POST /repos/{owner}/{repo}/issues/{issue_number}/comments
-  post_issue_comment = function(owner, repo_name, issue_number)
+  post_issue_comment = proxy_handler_created(translate_gl_note, function(o, r, n)
     local req = DecodeJson(GetBody() or "{}")
-    proxy_json_created(translate_gl_note,
-      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
-        "/issues/" .. issue_number .. "/notes",
-        "POST", EncodeJson({ body = req.body })))
-  end,
+    return base().."/projects/"..project_id(o, r).."/issues/"..n.."/notes",
+      "POST", EncodeJson({ body = req.body })
+  end),
 
   -- GET /repos/{owner}/{repo}/issues/comments/{comment_id}
   get_repo_issue_comment = function(owner, repo_name, comment_id)
@@ -1588,22 +1590,14 @@ backend_impl = {
   end,
 
   -- GET /repos/{owner}/{repo}/labels
-  get_repo_labels = function(owner, repo_name)
-    local function tr(labels)
-      for i, l in ipairs(labels) do labels[i] = translate_gl_label(l) end
-      return labels
-    end
-    proxy_json(tr, fetch_json(append_page_params(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/labels",
-      PAGES)))
-  end,
+  get_repo_labels = proxy_handler(translate_gl_labels, function(o, r)
+    return append_page_params(base().."/projects/"..project_id(o, r).."/labels", PAGES)
+  end),
 
   -- POST /repos/{owner}/{repo}/labels
-  post_repo_labels = function(owner, repo_name)
-    proxy_json_created(translate_gl_label,
-      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/labels",
-        "POST", GetBody()))
-  end,
+  post_repo_labels = proxy_handler_created(translate_gl_label, function(o, r)
+    return base().."/projects/"..project_id(o, r).."/labels", "POST", GetBody()
+  end),
 
   -- GET /repos/{owner}/{repo}/labels/{name}
   get_repo_label = function(owner, repo_name, label_name)
@@ -1637,47 +1631,35 @@ backend_impl = {
   -- Milestones ----------------------------------------------------------------
 
   -- GET /repos/{owner}/{repo}/milestones
-  get_repo_milestones = function(owner, repo_name)
-    local function tr(milestones)
-      for i, m in ipairs(milestones) do milestones[i] = translate_gl_milestone(m) end
-      return milestones
-    end
-    proxy_json(tr, fetch_json(append_page_params(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/milestones",
-      PAGES)))
-  end,
+  get_repo_milestones = proxy_handler(translate_gl_milestones, function(o, r)
+    return append_page_params(base().."/projects/"..project_id(o, r).."/milestones", PAGES)
+  end),
 
   -- POST /repos/{owner}/{repo}/milestones
-  post_repo_milestones = function(owner, repo_name)
+  post_repo_milestones = proxy_handler_created(translate_gl_milestone, function(o, r)
     local req = DecodeJson(GetBody() or "{}")
     local gl = {}
     if req.title       then gl.title       = req.title end
     if req.description then gl.description = req.description end
     if req.due_on      then gl.due_date    = req.due_on end
-    proxy_json_created(translate_gl_milestone,
-      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/milestones",
-        "POST", EncodeJson(gl)))
-  end,
+    return base().."/projects/"..project_id(o, r).."/milestones", "POST", EncodeJson(gl)
+  end),
 
   -- GET /repos/{owner}/{repo}/milestones/{milestone_number}
-  get_repo_milestone = function(owner, repo_name, milestone_number)
-    proxy_json(translate_gl_milestone,
-      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
-        "/milestones/" .. milestone_number))
-  end,
+  get_repo_milestone = proxy_handler(translate_gl_milestone, function(o, r, n)
+    return base().."/projects/"..project_id(o, r).."/milestones/"..n
+  end),
 
   -- PATCH /repos/{owner}/{repo}/milestones/{milestone_number}
-  patch_repo_milestone = function(owner, repo_name, milestone_number)
+  patch_repo_milestone = proxy_handler(translate_gl_milestone, function(o, r, n)
     local req = DecodeJson(GetBody() or "{}")
     local gl = {}
     if req.title       then gl.title       = req.title end
     if req.description then gl.description = req.description end
     if req.state       then gl.state_event = req.state == "closed" and "close" or "activate" end
     if req.due_on      then gl.due_date    = req.due_on end
-    proxy_json(translate_gl_milestone,
-      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
-        "/milestones/" .. milestone_number, "PUT", EncodeJson(gl)))
-  end,
+    return base().."/projects/"..project_id(o, r).."/milestones/"..n, "PUT", EncodeJson(gl)
+  end),
 
   -- DELETE /repos/{owner}/{repo}/milestones/{milestone_number}
   delete_repo_milestone = function(owner, repo_name, milestone_number)
@@ -1693,13 +1675,7 @@ backend_impl = {
   -- Assignees -----------------------------------------------------------------
 
   -- GET /repos/{owner}/{repo}/assignees  (users eligible for assignment)
-  get_repo_assignees = function(owner, repo_name)
-    local function tr(members)
-      for i, m in ipairs(members) do members[i] = translate_gl_member(m) end
-      return members
-    end
-    proxy_json(tr, fetch_json(append_page_params(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/members/all",
-      PAGES)))
-  end,
+  get_repo_assignees = proxy_handler(translate_gl_members, function(o, r)
+    return append_page_params(base().."/projects/"..project_id(o, r).."/members/all", PAGES)
+  end),
 }

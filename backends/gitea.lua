@@ -50,7 +50,8 @@ end
 -- Returns a handler function: defers fetch_json(url_fn(...)) to request time.
 -- xform receives (response_body, ...handler_args) so closures over handler args are not needed.
 -- Named translate functions that only take the response body work as-is (extra args ignored).
-local proxy_handler = make_proxy_handler(fetch_json)
+local proxy_handler         = make_proxy_handler(fetch_json)
+local proxy_handler_created = make_proxy_handler_created(fetch_json)
 
 local function filter_verified_emails(emails)
   local out = {}
@@ -158,6 +159,23 @@ local function translate_gitea_issue_comment(c)
     created_at = c.created,
     updated_at = c.updated,
   }
+end
+
+local function translate_gitea_issues(issues)
+  for i, iss in ipairs(issues) do issues[i] = translate_gitea_issue(iss) end
+  return issues
+end
+local function translate_gitea_issue_comments(comments)
+  for i, c in ipairs(comments) do comments[i] = translate_gitea_issue_comment(c) end
+  return comments
+end
+local function translate_gitea_labels(labels)
+  for i, l in ipairs(labels) do labels[i] = translate_gitea_label(l) end
+  return labels
+end
+local function translate_gitea_milestones(milestones)
+  for i, m in ipairs(milestones) do milestones[i] = translate_gitea_milestone(m) end
+  return milestones
 end
 
 -- Look up a Gitea label ID by name within a repo.
@@ -1037,61 +1055,39 @@ backend_impl = {
   -- Issues -------------------------------------------------------------------
 
   -- GET /repos/{owner}/{repo}/issues
-  get_repo_issues = function(owner, repo_name)
-    local function tr(issues)
-      for i, iss in ipairs(issues) do issues[i] = translate_gitea_issue(iss) end
-      return issues
-    end
-    proxy_json(tr, fetch_json(append_page_params(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues",
-      PAGES)))
-  end,
+  get_repo_issues = proxy_handler(translate_gitea_issues, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/issues", PAGES)
+  end),
 
   -- POST /repos/{owner}/{repo}/issues
-  post_repo_issues = function(owner, repo_name)
-    proxy_json_created(translate_gitea_issue,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues",
-        "POST", GetBody()))
-  end,
+  post_repo_issues = proxy_handler_created(translate_gitea_issue, function(o, r)
+    return base().."/repos/"..o.."/"..r.."/issues", "POST", GetBody()
+  end),
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}
-  get_repo_issue = function(owner, repo_name, issue_number)
-    proxy_json(translate_gitea_issue,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
-        "/issues/" .. issue_number))
-  end,
+  get_repo_issue = proxy_handler(translate_gitea_issue, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/issues/"..n
+  end),
 
   -- PATCH /repos/{owner}/{repo}/issues/{issue_number}
-  patch_repo_issue = function(owner, repo_name, issue_number)
-    proxy_json(translate_gitea_issue,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
-        "/issues/" .. issue_number, "PATCH", GetBody()))
-  end,
+  patch_repo_issue = proxy_handler(translate_gitea_issue, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/issues/"..n, "PATCH", GetBody()
+  end),
 
   -- GET /repos/{owner}/{repo}/issues/comments  (all issue comments in repo)
-  get_repo_issue_comments = function(owner, repo_name)
-    local function tr(comments)
-      for i, c in ipairs(comments) do comments[i] = translate_gitea_issue_comment(c) end
-      return comments
-    end
-    proxy_json(tr, fetch_json(append_page_params(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/comments",
-      PAGES)))
-  end,
+  get_repo_issue_comments = proxy_handler(translate_gitea_issue_comments, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/issues/comments", PAGES)
+  end),
 
   -- GET /repos/{owner}/{repo}/issues/comments/{comment_id}
-  get_repo_issue_comment = function(owner, repo_name, comment_id)
-    proxy_json(translate_gitea_issue_comment,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
-        "/issues/comments/" .. comment_id))
-  end,
+  get_repo_issue_comment = proxy_handler(translate_gitea_issue_comment, function(o, r, id)
+    return base().."/repos/"..o.."/"..r.."/issues/comments/"..id
+  end),
 
   -- PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}
-  patch_repo_issue_comment = function(owner, repo_name, comment_id)
-    proxy_json(translate_gitea_issue_comment,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
-        "/issues/comments/" .. comment_id, "PATCH", GetBody()))
-  end,
+  patch_repo_issue_comment = proxy_handler(translate_gitea_issue_comment, function(o, r, id)
+    return base().."/repos/"..o.."/"..r.."/issues/comments/"..id, "PATCH", GetBody()
+  end),
 
   -- DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}
   delete_repo_issue_comment = function(owner, repo_name, comment_id)
@@ -1104,65 +1100,39 @@ backend_impl = {
   end,
 
   -- GET /repos/{owner}/{repo}/issues/events  (all issue events in repo)
-  get_repo_issue_events = function(owner, repo_name)
-    proxy_json(nil, fetch_json(append_page_params(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/events",
-      PAGES)))
-  end,
+  get_repo_issue_events = proxy_handler(nil, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/issues/events", PAGES)
+  end),
 
   -- GET /repos/{owner}/{repo}/issues/events/{event_id}
-  get_repo_issue_event = function(owner, repo_name, event_id)
-    proxy_json(nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
-        "/issues/events/" .. event_id))
-  end,
+  get_repo_issue_event = proxy_handler(nil, function(o, r, id)
+    return base().."/repos/"..o.."/"..r.."/issues/events/"..id
+  end),
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
-  get_issue_comments = function(owner, repo_name, issue_number)
-    local function tr(comments)
-      for i, c in ipairs(comments) do comments[i] = translate_gitea_issue_comment(c) end
-      return comments
-    end
-    proxy_json(tr, fetch_json(append_page_params(
-      base() .. "/repos/" .. owner .. "/" .. repo_name ..
-      "/issues/" .. issue_number .. "/comments",
-      PAGES)))
-  end,
+  get_issue_comments = proxy_handler(translate_gitea_issue_comments, function(o, r, n)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/issues/"..n.."/comments", PAGES)
+  end),
 
   -- POST /repos/{owner}/{repo}/issues/{issue_number}/comments
-  post_issue_comment = function(owner, repo_name, issue_number)
-    proxy_json_created(translate_gitea_issue_comment,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
-        "/issues/" .. issue_number .. "/comments",
-        "POST", GetBody()))
-  end,
+  post_issue_comment = proxy_handler_created(translate_gitea_issue_comment, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/issues/"..n.."/comments", "POST", GetBody()
+  end),
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}/events
-  get_issue_events = function(owner, repo_name, issue_number)
-    proxy_json(nil, fetch_json(append_page_params(
-      base() .. "/repos/" .. owner .. "/" .. repo_name ..
-      "/issues/" .. issue_number .. "/events",
-      PAGES)))
-  end,
+  get_issue_events = proxy_handler(nil, function(o, r, n)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/issues/"..n.."/events", PAGES)
+  end),
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}/timeline
-  get_issue_timeline = function(owner, repo_name, issue_number)
-    proxy_json(nil, fetch_json(append_page_params(
-      base() .. "/repos/" .. owner .. "/" .. repo_name ..
-      "/issues/" .. issue_number .. "/timeline",
-      PAGES)))
-  end,
+  get_issue_timeline = proxy_handler(nil, function(o, r, n)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/issues/"..n.."/timeline", PAGES)
+  end),
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}/labels
-  get_issue_labels = function(owner, repo_name, issue_number)
-    local function tr(labels)
-      for i, l in ipairs(labels) do labels[i] = translate_gitea_label(l) end
-      return labels
-    end
-    proxy_json(tr,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
-        "/issues/" .. issue_number .. "/labels"))
-  end,
+  get_issue_labels = proxy_handler(translate_gitea_labels, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/issues/"..n.."/labels"
+  end),
 
   -- POST /repos/{owner}/{repo}/issues/{issue_number}/labels
   -- GitHub body: { labels: ["name1", ...] }; Gitea body: { labels: [id1, ...] }
@@ -1174,11 +1144,7 @@ backend_impl = {
       local id = gitea_find_label_id(owner, repo_name, name)
       if id then ids[#ids + 1] = id end
     end
-    local function tr(labels)
-      for i, l in ipairs(labels) do labels[i] = translate_gitea_label(l) end
-      return labels
-    end
-    proxy_json(tr,
+    proxy_json(translate_gitea_labels,
       fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
         "/issues/" .. issue_number .. "/labels",
         "POST", EncodeJson({ labels = ids })))
@@ -1192,11 +1158,7 @@ backend_impl = {
       local id = gitea_find_label_id(owner, repo_name, name)
       if id then ids[#ids + 1] = id end
     end
-    local function tr(labels)
-      for i, l in ipairs(labels) do labels[i] = translate_gitea_label(l) end
-      return labels
-    end
-    proxy_json(tr,
+    proxy_json(translate_gitea_labels,
       fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
         "/issues/" .. issue_number .. "/labels",
         "PUT", EncodeJson({ labels = ids })))
@@ -1247,20 +1209,14 @@ backend_impl = {
   end,
 
   -- POST /repos/{owner}/{repo}/issues/{issue_number}/assignees
-  post_issue_assignees = function(owner, repo_name, issue_number)
-    proxy_json(translate_gitea_issue,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
-        "/issues/" .. issue_number .. "/assignees",
-        "POST", GetBody()))
-  end,
+  post_issue_assignees = proxy_handler(translate_gitea_issue, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/issues/"..n.."/assignees", "POST", GetBody()
+  end),
 
   -- DELETE /repos/{owner}/{repo}/issues/{issue_number}/assignees
-  delete_issue_assignees = function(owner, repo_name, issue_number)
-    proxy_json(translate_gitea_issue,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
-        "/issues/" .. issue_number .. "/assignees",
-        "DELETE", GetBody()))
-  end,
+  delete_issue_assignees = proxy_handler(translate_gitea_issue, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/issues/"..n.."/assignees", "DELETE", GetBody()
+  end),
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}/assignees/{assignee}
   -- Gitea has no direct endpoint; check the issue's assignees list.
@@ -1280,32 +1236,21 @@ backend_impl = {
   -- Assignees -----------------------------------------------------------------
 
   -- GET /repos/{owner}/{repo}/assignees  (users eligible for assignment)
-  get_repo_assignees = function(owner, repo_name)
-    proxy_json(translate_users,
-      fetch_json(append_page_params(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/assignees",
-        PAGES)))
-  end,
+  get_repo_assignees = proxy_handler(translate_users, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/assignees", PAGES)
+  end),
 
   -- Labels (repo-level) -------------------------------------------------------
 
   -- GET /repos/{owner}/{repo}/labels
-  get_repo_labels = function(owner, repo_name)
-    local function tr(labels)
-      for i, l in ipairs(labels) do labels[i] = translate_gitea_label(l) end
-      return labels
-    end
-    proxy_json(tr, fetch_json(append_page_params(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/labels",
-      PAGES)))
-  end,
+  get_repo_labels = proxy_handler(translate_gitea_labels, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/labels", PAGES)
+  end),
 
   -- POST /repos/{owner}/{repo}/labels
-  post_repo_labels = function(owner, repo_name)
-    proxy_json_created(translate_gitea_label,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/labels",
-        "POST", GetBody()))
-  end,
+  post_repo_labels = proxy_handler_created(translate_gitea_label, function(o, r)
+    return base().."/repos/"..o.."/"..r.."/labels", "POST", GetBody()
+  end),
 
   -- GET /repos/{owner}/{repo}/labels/{name}
   -- GitHub uses label name in the URL; Gitea uses numeric ID.
@@ -1339,38 +1284,24 @@ backend_impl = {
   -- Milestones ----------------------------------------------------------------
 
   -- GET /repos/{owner}/{repo}/milestones
-  get_repo_milestones = function(owner, repo_name)
-    local function tr(milestones)
-      for i, m in ipairs(milestones) do
-        milestones[i] = translate_gitea_milestone(m)
-      end
-      return milestones
-    end
-    proxy_json(tr, fetch_json(append_page_params(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/milestones",
-      PAGES)))
-  end,
+  get_repo_milestones = proxy_handler(translate_gitea_milestones, function(o, r)
+    return append_page_params(base().."/repos/"..o.."/"..r.."/milestones", PAGES)
+  end),
 
   -- POST /repos/{owner}/{repo}/milestones
-  post_repo_milestones = function(owner, repo_name)
-    proxy_json_created(translate_gitea_milestone,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/milestones",
-        "POST", GetBody()))
-  end,
+  post_repo_milestones = proxy_handler_created(translate_gitea_milestone, function(o, r)
+    return base().."/repos/"..o.."/"..r.."/milestones", "POST", GetBody()
+  end),
 
   -- GET /repos/{owner}/{repo}/milestones/{milestone_number}
-  get_repo_milestone = function(owner, repo_name, milestone_number)
-    proxy_json(translate_gitea_milestone,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
-        "/milestones/" .. milestone_number))
-  end,
+  get_repo_milestone = proxy_handler(translate_gitea_milestone, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/milestones/"..n
+  end),
 
   -- PATCH /repos/{owner}/{repo}/milestones/{milestone_number}
-  patch_repo_milestone = function(owner, repo_name, milestone_number)
-    proxy_json(translate_gitea_milestone,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
-        "/milestones/" .. milestone_number, "PATCH", GetBody()))
-  end,
+  patch_repo_milestone = proxy_handler(translate_gitea_milestone, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/milestones/"..n, "PATCH", GetBody()
+  end),
 
   -- DELETE /repos/{owner}/{repo}/milestones/{milestone_number}
   delete_repo_milestone = function(owner, repo_name, milestone_number)
@@ -1383,15 +1314,9 @@ backend_impl = {
   end,
 
   -- GET /repos/{owner}/{repo}/milestones/{milestone_number}/labels
-  get_repo_milestone_labels = function(owner, repo_name, milestone_number)
-    local function tr(labels)
-      for i, l in ipairs(labels) do labels[i] = translate_gitea_label(l) end
-      return labels
-    end
-    proxy_json(tr,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name ..
-        "/milestones/" .. milestone_number .. "/labels"))
-  end,
+  get_repo_milestone_labels = proxy_handler(translate_gitea_labels, function(o, r, n)
+    return base().."/repos/"..o.."/"..r.."/milestones/"..n.."/labels"
+  end),
 
   -- GET /orgs/{org}/teams/{team_slug}/teams — Gitea has no nested teams
   get_org_team_children = function()

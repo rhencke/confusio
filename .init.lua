@@ -123,6 +123,19 @@ function make_proxy_handler(fetch_fn)
   end
 end
 
+-- Like make_proxy_handler but for create endpoints: responds 201 Created.
+-- Each backend calls: local proxy_handler_created = make_proxy_handler_created(fetch_json)
+function make_proxy_handler_created(fetch_fn)
+  return function(xform, url_fn)
+    return function(...)
+      local args = {...}
+      proxy_json_created(
+        type(xform) == "function" and function(r) return xform(r, table.unpack(args)) end or xform,
+        fetch_fn(url_fn(...)))
+    end
+  end
+end
+
 -- translate_repo is global: maps a Gitea-style repo object to GitHub field names.
 -- Called by any Gitea-API-compatible backend (gitea, forgejo, gogs, codeberg, notabug).
 function translate_repo(r)

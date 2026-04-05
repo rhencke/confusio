@@ -175,7 +175,8 @@ local function translate_bb_hook(h)
   }
 end
 
-local proxy_handler = make_proxy_handler(fetch_json)
+local proxy_handler         = make_proxy_handler(fetch_json)
+local proxy_handler_created = make_proxy_handler_created(fetch_json)
 
 -- Translate a Bitbucket issue to GitHub format.
 -- Bitbucket states: "open", "resolved", "wontfix", "invalid", "duplicate", "on hold", "closed"
@@ -240,6 +241,22 @@ local function translate_bb_milestone(m)
     created_at = "",
     updated_at = "",
   }
+end
+
+local function translate_bb_issues(data)
+  local issues = data.values or {}
+  for i, iss in ipairs(issues) do issues[i] = translate_bb_issue(iss) end
+  return issues
+end
+local function translate_bb_issue_comments_list(data)
+  local comments = data.values or {}
+  for i, c in ipairs(comments) do comments[i] = translate_bb_issue_comment(c) end
+  return comments
+end
+local function translate_bb_milestones(data)
+  local ms = data.values or {}
+  for i, m in ipairs(ms) do ms[i] = translate_bb_milestone(m) end
+  return ms
 end
 
 local function translate_bb_hook_req(body_str)
@@ -637,41 +654,20 @@ backend_impl = {
 
   -- Issues --------------------------------------------------------------------
 
-  get_repo_issues = function(owner, repo_name)
-    proxy_json(
-      function(data)
-        local issues = data.values or {}
-        for i, iss in ipairs(issues) do issues[i] = translate_bb_issue(iss) end
-        return issues
-      end,
-      fetch_json(append_page_params(
-        base().."/repositories/"..owner.."/"..repo_name.."/issues", PAGES)))
-  end,
+  get_repo_issues = proxy_handler(translate_bb_issues, function(o, r)
+    return append_page_params(base().."/repositories/"..o.."/"..r.."/issues", PAGES)
+  end),
 
-  get_repo_issue = function(owner, repo_name, issue_number)
-    proxy_json(translate_bb_issue,
-      fetch_json(base().."/repositories/"..owner.."/"..repo_name.."/issues/"..issue_number))
-  end,
+  get_repo_issue = proxy_handler(translate_bb_issue, function(o, r, n)
+    return base().."/repositories/"..o.."/"..r.."/issues/"..n
+  end),
 
-  get_issue_comments = function(owner, repo_name, issue_number)
-    proxy_json(
-      function(data)
-        local comments = data.values or {}
-        for i, c in ipairs(comments) do comments[i] = translate_bb_issue_comment(c) end
-        return comments
-      end,
-      fetch_json(append_page_params(
-        base().."/repositories/"..owner.."/"..repo_name.."/issues/"..issue_number.."/comments",
-        PAGES)))
-  end,
+  get_issue_comments = proxy_handler(translate_bb_issue_comments_list, function(o, r, n)
+    return append_page_params(
+      base().."/repositories/"..o.."/"..r.."/issues/"..n.."/comments", PAGES)
+  end),
 
-  get_repo_milestones = function(owner, repo_name)
-    proxy_json(
-      function(data)
-        local ms = data.values or {}
-        for i, m in ipairs(ms) do ms[i] = translate_bb_milestone(m) end
-        return ms
-      end,
-      fetch_json(base().."/repositories/"..owner.."/"..repo_name.."/milestones"))
-  end,
+  get_repo_milestones = proxy_handler(translate_bb_milestones, function(o, r)
+    return base().."/repositories/"..o.."/"..r.."/milestones"
+  end),
 }

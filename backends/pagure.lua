@@ -77,7 +77,8 @@ end
 
 -- Translate a Pagure commit object to GitHub format.
 -- Pagure: { id, message, date, date_utc, author: { name, email } }
-local proxy_handler = make_proxy_handler(fetch_json)
+local proxy_handler         = make_proxy_handler(fetch_json)
+local proxy_handler_created = make_proxy_handler_created(fetch_json)
 
 -- Translate a Pagure user to GitHub format.
 local function translate_pagure_user(u)
@@ -161,6 +162,12 @@ local function translate_pagure_commit(c)
     author    = { login = author.name or "", id = 0, avatar_url = "" },
     committer = { login = author.name or "", id = 0, avatar_url = "" },
   }
+end
+
+local function translate_pagure_issues(data)
+  local issues = data.issues or {}
+  for i, iss in ipairs(issues) do issues[i] = translate_pagure_issue(iss) end
+  return issues
 end
 
 backend_impl = {
@@ -479,22 +486,14 @@ backend_impl = {
 
   -- Issues --------------------------------------------------------------------
 
-  get_repo_issues = function(owner, repo_name)
-    proxy_json(
-      function(data)
-        local issues = data.issues or {}
-        for i, iss in ipairs(issues) do issues[i] = translate_pagure_issue(iss) end
-        return issues
-      end,
-      fetch_json(append_page_params(
-        base().."/"..owner.."/"..repo_name.."/issues", PAGES)))
-  end,
+  get_repo_issues = proxy_handler(translate_pagure_issues, function(o, r)
+    return append_page_params(base().."/"..o.."/"..r.."/issues", PAGES)
+  end),
 
   -- Pagure uses /issue/{id} (singular) for individual issues
-  get_repo_issue = function(owner, repo_name, issue_number)
-    proxy_json(translate_pagure_issue,
-      fetch_json(base().."/"..owner.."/"..repo_name.."/issue/"..issue_number))
-  end,
+  get_repo_issue = proxy_handler(translate_pagure_issue, function(o, r, n)
+    return base().."/"..o.."/"..r.."/issue/"..n
+  end),
 
   get_issue_comments = function(owner, repo_name, issue_number)
     -- Pagure returns comments embedded in the issue object
