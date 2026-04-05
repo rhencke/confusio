@@ -1067,7 +1067,7 @@ backend_impl = {
 
   -- Issues (Azure Boards work items) -----------------------------------------
 
-  get_repo_issues = function(owner, repo_name)
+  get_repo_issues = function(owner, _repo_name)
     local state = GetParam("state") or "open"
     local limit = tonumber(GetParam("per_page")) or 30
     local where = "[System.TeamProject] = '" .. owner .. "'"
@@ -1124,7 +1124,7 @@ backend_impl = {
     )
   end,
 
-  get_repo_issue = function(owner, repo_name, issue_number)
+  get_repo_issue = function(owner, _repo_name, issue_number)
     proxy_json(
       translate_ado_workitem,
       fetch_json(
@@ -1140,7 +1140,7 @@ backend_impl = {
     )
   end,
 
-  post_repo_issues = function(owner, repo_name)
+  post_repo_issues = function(owner, _repo_name)
     local req = DecodeJson(GetBody() or "{}")
     local patch = {
       { op = "add", path = "/fields/System.Title", value = req.title or "" },
@@ -1164,7 +1164,7 @@ backend_impl = {
     end
   end,
 
-  patch_repo_issue = function(owner, repo_name, issue_number)
+  patch_repo_issue = function(owner, _repo_name, issue_number)
     local req = DecodeJson(GetBody() or "{}")
     local patch = {}
     if req.title ~= nil then
@@ -1213,7 +1213,7 @@ backend_impl = {
     end
   end,
 
-  get_issue_comments = function(owner, repo_name, issue_number)
+  get_issue_comments = function(owner, _repo_name, issue_number)
     proxy_json(
       function(data)
         local result = {}
@@ -1230,7 +1230,7 @@ backend_impl = {
     )
   end,
 
-  post_issue_comment = function(owner, repo_name, issue_number)
+  post_issue_comment = function(owner, _repo_name, issue_number)
     local req = DecodeJson(GetBody() or "{}")
     proxy_json_created(
       translate_ado_workitem_comment,
