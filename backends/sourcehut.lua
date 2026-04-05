@@ -1,5 +1,6 @@
 -- Sourcehut backend handler overrides.
 -- Uses git.sr.ht REST API at /api/~{username}/repos/{name}.
+if config.base_url == "" then config.base_url = "https://git.sr.ht" end
 
 local base = function() return config.base_url .. "/api" end
 local auth = function() return make_fetch_opts("token") end

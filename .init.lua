@@ -1,7 +1,9 @@
 -- Config defaults (global: backends/<name>.lua can read at startup)
+-- base_url defaults to "" here; each backend sets its own default at load time
+-- (after SCRIPTARGS are applied) if the user hasn't provided an explicit value.
 config = {
   backend  = "",
-  base_url = "https://gitea.com",
+  base_url = "",
 }
 
 -- Config keys accepted by both .confusio.lua and SCRIPTARGS.

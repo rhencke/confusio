@@ -2,6 +2,7 @@
 -- Uses Radicle HTTP API at /api/v1/.
 -- Radicle repos are identified by their RID (Radicle ID), e.g. rad:z3gqcJUoA1n9HaHKufZs1.
 -- GitHub {owner}/{repo} maps to: owner = node DID (ignored), repo = RID.
+if config.base_url == "" then config.base_url = "http://127.0.0.1:8080" end
 
 local base = function() return config.base_url .. "/api/v1" end
 local auth = function() return make_fetch_opts("bearer") end

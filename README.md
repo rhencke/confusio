@@ -23,14 +23,14 @@ make build       # produces confusio.com
 **2. Run**
 
 ```bash
-# Gitea (or any Gitea-compatible host)
-sh ./confusio.com -p 8080 -- gitea https://gitea.com
+# Cloud-hosted providers — base URL defaults to the well-known public instance
+sh ./confusio.com -p 8080 -- gitea
+sh ./confusio.com -p 8080 -- gitlab
+sh ./confusio.com -p 8080 -- forgejo
 
-# GitLab
-sh ./confusio.com -p 8080 -- gitlab https://gitlab.com
-
-# Self-hosted instance
-sh ./confusio.com -p 8080 -- forgejo https://codeberg.org
+# Self-hosted instance — supply your own base URL
+sh ./confusio.com -p 8080 -- gitea https://my-gitea.example.com
+sh ./confusio.com -p 8080 -- gitlab https://gitlab.example.com
 ```
 
 **3. Point your tools at it**
@@ -75,7 +75,7 @@ confusio = {
 
 ## Providers
 
-| Provider | `backend` value | Example `base_url` | Auth: pass as `token` |
+| Provider | `backend` value | Default `base_url` | Auth: pass as `token` |
 |----------|----------------|--------------------|-----------------------|
 | [Gitea](https://gitea.com) | `gitea` | `https://gitea.com` | API token |
 | [Forgejo](https://forgejo.org) | `forgejo` | `https://codeberg.org` | API token |
@@ -83,21 +83,21 @@ confusio = {
 | [Codeberg](https://codeberg.org) | `codeberg` | `https://codeberg.org` | API token |
 | [NotABug](https://notabug.org) | `notabug` | `https://notabug.org` | API token |
 | [GitLab](https://gitlab.com) | `gitlab` | `https://gitlab.com` | Personal access token |
-| [Gitbucket](https://gitbucket.github.io) | `gitbucket` | `https://your-host` | API token |
+| [Gitbucket](https://gitbucket.github.io) | `gitbucket` | *(self-hosted — required)* | API token |
 | [Harness Code](https://harness.io) | `harness` | `https://app.harness.io` | API token |
 | [OneDev](https://onedev.io) | `onedev` | `https://code.onedev.io` | API token |
-| [RhodeCode](https://rhodecode.com) | `rhodecode` | `https://your-host` | API token |
-| [Kallithea](https://kallithea-scm.org) | `kallithea` | `https://your-host` | API token |
+| [RhodeCode](https://rhodecode.com) | `rhodecode` | *(self-hosted — required)* | API token |
+| [Kallithea](https://kallithea-scm.org) | `kallithea` | *(self-hosted — required)* | API token |
 | [Radicle](https://radicle.xyz) | `radicle` | `http://127.0.0.1:8080` | Bearer token |
-| [Azure DevOps](https://dev.azure.com) | `azuredevops` | `https://dev.azure.com/{org}` | Personal access token *(see note)* |
+| [Azure DevOps](https://dev.azure.com) | `azuredevops` | *(required: `https://dev.azure.com/{org}`)* | Personal access token *(see note)* |
 | [Bitbucket](https://bitbucket.org) | `bitbucket` | `https://api.bitbucket.org` | `user:app-password` *(see note)* |
-| [Bitbucket Datacenter](https://www.atlassian.com/software/bitbucket/enterprise) | `bitbucket_datacenter` | `https://your-host` | `user:password` *(see note)* |
-| [Gerrit](https://www.gerritcodereview.com) | `gerrit` | `https://gerrit.example.com` | `user:http-password` *(see note)* |
+| [Bitbucket Datacenter](https://www.atlassian.com/software/bitbucket/enterprise) | `bitbucket_datacenter` | *(self-hosted — required)* | `user:password` *(see note)* |
+| [Gerrit](https://www.gerritcodereview.com) | `gerrit` | *(self-hosted — required)* | `user:http-password` *(see note)* |
 | [Pagure](https://pagure.io) | `pagure` | `https://pagure.io` | API token |
 | [Sourcehut](https://sr.ht) | `sourcehut` | `https://git.sr.ht` | Personal access token |
 | [SourceForge](https://sourceforge.net) | `sourceforge` | `https://sourceforge.net` | *(public endpoints only)* |
 | [Launchpad](https://launchpad.net) | `launchpad` | `https://api.launchpad.net` | *(public endpoints only)* |
-| [Phabricator](https://www.phacility.com) | `phabricator` | `https://phab.example.com` | *(public endpoints only)* |
+| [Phabricator](https://www.phacility.com) | `phabricator` | *(self-hosted — required)* | *(public endpoints only)* |
 
 **Notes on auth format:**
 

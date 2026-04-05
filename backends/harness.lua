@@ -1,6 +1,7 @@
 -- Harness Code backend handler overrides.
 -- Uses Harness Code (Gitness) REST API via /gateway/code/api/v1/.
 -- repo_ref is owner/repo URL-encoded as owner%2Frepo.
+if config.base_url == "" then config.base_url = "https://app.harness.io" end
 
 local base = function() return config.base_url .. "/gateway/code/api/v1" end
 local auth = function() return make_fetch_opts("bearer") end

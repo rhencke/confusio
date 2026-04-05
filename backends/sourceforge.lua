@@ -1,4 +1,5 @@
 -- SourceForge backend handler overrides.
+if config.base_url == "" then config.base_url = "https://sourceforge.net" end
 backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, config.base_url .. "/rest/p")

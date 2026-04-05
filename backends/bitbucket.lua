@@ -1,5 +1,6 @@
 -- Bitbucket backend handler overrides.
 -- Uses Bitbucket REST API v2 at /2.0/.
+if config.base_url == "" then config.base_url = "https://api.bitbucket.org" end
 
 local base = function() return config.base_url .. "/2.0" end
 local auth = function() return make_fetch_opts("basic") end
