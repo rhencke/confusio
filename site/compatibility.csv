@@ -68,5 +68,14 @@ GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments,n,~in
 GET /repos/{owner}/{repo}/pulls/comments,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/pulls/comments/{comment_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 
+Search,,,,,,,,,,,,,,,,,,,,,
+GET /search/repositories,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /search/users,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /search/issues,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /search/commits,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /search/code,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /search/labels,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /search/topics,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+
 Rate Limits,,,,,,,,,,,,,,,,,,,,,
 GET /rate_limit,~unlimited stub,~unlimited stub,~unlimited stub,y,y,~unlimited stub,y,y,~unlimited stub,y,~unlimited stub,~unlimited stub,~unlimited stub,y,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub

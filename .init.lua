@@ -217,6 +217,14 @@ local function empty_list()
   Write("[]")
 end
 
+-- Default handler for search endpoints: backends without native support return an
+-- empty but valid GitHub search result envelope.
+local function search_empty()
+  SetStatus(200, "OK")
+  SetHeader("Content-Type", "application/json; charset=utf-8")
+  Write('{"total_count":0,"incomplete_results":false,"items":[]}')
+end
+
 -- Default handler for GET /rate_limit: no provider has a GitHub-compatible rate
 -- limit API, so confusio returns a partial response with just the `rate` key.
 -- limit=999999 means "effectively unlimited"; reset is set one hour ahead of now.
@@ -652,6 +660,15 @@ local routes = {
   ["GET /user/ssh_signing_keys/{ssh_signing_key_id}"]                              = "get_user_ssh_signing_key",
   ["DELETE /user/ssh_signing_keys/{ssh_signing_key_id}"]                           = "delete_user_ssh_signing_key",
   ["GET /users/{username}/ssh_signing_keys"]                                       = "get_users_ssh_signing_keys",
+
+  -- Search (https://docs.github.com/en/rest/search)
+  ["GET /search/code"]                                                             = { "search_code",         search_empty },
+  ["GET /search/commits"]                                                          = { "search_commits",      search_empty },
+  ["GET /search/issues"]                                                          = { "search_issues",       search_empty },
+  ["GET /search/labels"]                                                           = { "search_labels",       search_empty },
+  ["GET /search/repositories"]                                                     = { "search_repositories", search_empty },
+  ["GET /search/topics"]                                                           = { "search_topics",       search_empty },
+  ["GET /search/users"]                                                            = { "search_users",        search_empty },
 }
 for spec, v in pairs(routes) do
   if type(v) == "string" then route_add(spec, v)
