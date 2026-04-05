@@ -125,6 +125,48 @@ function OnHttpRequest()
     json('{"values":[{"uuid":"{1}","url":"https://example.com/hook",' ..
       '"events":["repo:push"],"active":true}],"pagelen":30,"size":1,"page":1}')
 
+  -- Issues -----------------------------------------------------------------
+  elseif path == rb .. "/issues/9999" then
+    SetStatus(404, "Not Found")
+    json('{"type":"error","error":{"message":"Issue #9999 does not exist"}}')
+
+  elseif path == rb .. "/issues/1/comments" then
+    SetStatus(200, "OK")
+    json('{"values":[{"id":1,"content":{"raw":"This is a comment"},' ..
+      '"author":{"nickname":"octocat","display_name":"The Octocat","account_id":"abc123",' ..
+      '"links":{"avatar":{"href":""},"html":{"href":""}}},' ..
+      '"created_on":"2020-01-01T00:00:00Z","updated_on":"2020-01-01T00:00:00Z",' ..
+      '"links":{"html":{"href":""}}}],"pagelen":30,"size":1,"page":1}')
+
+  elseif path == rb .. "/issues/1" then
+    SetStatus(200, "OK")
+    json('{"id":1,"title":"Found a bug","content":{"raw":"Bug description"},' ..
+      '"state":"open","priority":"major","kind":"bug",' ..
+      '"reporter":{"nickname":"octocat","display_name":"The Octocat","account_id":"abc123",' ..
+      '"type":"user","links":{"avatar":{"href":""},"html":{"href":""}}},' ..
+      '"assignee":null,' ..
+      '"milestone":{"id":1,"name":"v1.0"},' ..
+      '"created_on":"2020-01-01T00:00:00Z","updated_on":"2020-01-02T00:00:00Z",' ..
+      '"links":{"html":{"href":"http://bitbucket.org/octocat/hello-world/issues/1"}}}')
+
+  elseif path == rb .. "/issues" then
+    SetStatus(200, "OK")
+    json('{"values":[{"id":1,"title":"Found a bug","content":{"raw":"Bug description"},' ..
+      '"state":"open","priority":"major","kind":"bug",' ..
+      '"reporter":{"nickname":"octocat","display_name":"The Octocat","account_id":"abc123",' ..
+      '"type":"user","links":{"avatar":{"href":""},"html":{"href":""}}},' ..
+      '"assignee":null,' ..
+      '"milestone":{"id":1,"name":"v1.0"},' ..
+      '"created_on":"2020-01-01T00:00:00Z","updated_on":"2020-01-02T00:00:00Z",' ..
+      '"links":{"html":{"href":"http://bitbucket.org/octocat/hello-world/issues/1"}}}],' ..
+      '"pagelen":30,"size":1,"page":1}')
+
+  -- Milestones --------------------------------------------------------------
+  elseif path == rb .. "/milestones" then
+    SetStatus(200, "OK")
+    json('{"values":[{"id":1,"name":"v1.0","resource_uri":"/api/2.0/repositories/octocat/hello-world/milestones/1"}],' ..
+      '"pagelen":30,"size":1,"page":1}')
+
   -- Users ------------------------------------------------------------------
   elseif path == "/2.0/user" then
     SetStatus(200, "OK")

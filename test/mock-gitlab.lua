@@ -271,6 +271,70 @@ function OnHttpRequest()
     json('{"id":10,"name":"core","path":"core","description":"Core team",' ..
       '"visibility":"internal","web_url":"http://localhost/testorg/core"}')
 
+  -- Issues -----------------------------------------------------------------
+  elseif path == pb .. "/issues" then
+    SetStatus(200, "OK")
+    local LABEL_OBJ = '{"id":1,"name":"bug","color":"#d73a4a","description":"Something is not working"}'
+    local MILESTONE_OBJ = '{"id":1,"iid":1,"title":"v1.0","description":"First milestone","state":"active",' ..
+      '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",' ..
+      '"closed_at":null,"due_date":null}'
+    local USER_OBJ = '{"id":1,"username":"octocat","name":"The Octocat","avatar_url":"",' ..
+      '"web_url":"http://localhost/octocat"}'
+    json('[{"id":1,"iid":1,"title":"Found a bug","description":"Bug description",' ..
+      '"state":"opened","author":' .. USER_OBJ .. ',"assignees":[],' ..
+      '"labels":[' .. LABEL_OBJ .. '],"milestone":' .. MILESTONE_OBJ .. ',' ..
+      '"user_notes_count":1,' ..
+      '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-02T00:00:00Z",' ..
+      '"closed_at":null,"web_url":"http://localhost/octocat/hello-world/-/issues/1"}]')
+
+  elseif path == pb .. "/issues/1" then
+    SetStatus(200, "OK")
+    local LABEL_OBJ = '{"id":1,"name":"bug","color":"#d73a4a","description":"Something is not working"}'
+    local MILESTONE_OBJ = '{"id":1,"iid":1,"title":"v1.0","description":"First milestone","state":"active",' ..
+      '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",' ..
+      '"closed_at":null,"due_date":null}'
+    local USER_OBJ = '{"id":1,"username":"octocat","name":"The Octocat","avatar_url":"",' ..
+      '"web_url":"http://localhost/octocat"}'
+    json('{"id":1,"iid":1,"title":"Found a bug","description":"Bug description",' ..
+      '"state":"opened","author":' .. USER_OBJ .. ',"assignees":[],' ..
+      '"labels":[' .. LABEL_OBJ .. '],"milestone":' .. MILESTONE_OBJ .. ',' ..
+      '"user_notes_count":1,' ..
+      '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-02T00:00:00Z",' ..
+      '"closed_at":null,"web_url":"http://localhost/octocat/hello-world/-/issues/1"}')
+
+  elseif path == pb .. "/issues/9999" then
+    SetStatus(404, "Not Found")
+    json('{"message":"404 Issue Not Found"}')
+
+  elseif path == pb .. "/issues/1/notes" then
+    SetStatus(200, "OK")
+    local USER_OBJ = '{"id":1,"username":"octocat","name":"The Octocat","avatar_url":"",' ..
+      '"web_url":"http://localhost/octocat"}'
+    json('[{"id":1,"body":"This is a comment","author":' .. USER_OBJ .. ',' ..
+      '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z"}]')
+
+  -- Labels -----------------------------------------------------------------
+  elseif path == pb .. "/labels" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"name":"bug","color":"#d73a4a","description":"Something is not working"}]')
+
+  elseif path == pb .. "/labels/1" then
+    SetStatus(200, "OK")
+    json('{"id":1,"name":"bug","color":"#d73a4a","description":"Something is not working"}')
+
+  -- Milestones -------------------------------------------------------------
+  elseif path == pb .. "/milestones" then
+    SetStatus(200, "OK")
+    json('[{"id":1,"iid":1,"title":"v1.0","description":"First milestone","state":"active",' ..
+      '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",' ..
+      '"closed_at":null,"due_date":null}]')
+
+  elseif path == pb .. "/milestones/1" then
+    SetStatus(200, "OK")
+    json('{"id":1,"iid":1,"title":"v1.0","description":"First milestone","state":"active",' ..
+      '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",' ..
+      '"closed_at":null,"due_date":null}')
+
   else
     SetStatus(404, "Not Found")
   end
