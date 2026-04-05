@@ -218,28 +218,13 @@ local function empty_list()
 end
 
 -- Default handler for GET /rate_limit: no provider has a GitHub-compatible rate
--- limit API, so confusio returns a fixed unlimited response.  limit=999999 means
--- "effectively unlimited"; reset is set one hour ahead of now.
+-- limit API, so confusio returns a partial response with just the `rate` key.
+-- limit=999999 means "effectively unlimited"; reset is set one hour ahead of now.
 local function rate_limit_response()
   local limit = 999999
   local reset = os.time() + 3600
-  local unlimited = { limit = limit, used = 0, remaining = limit, reset = reset }
   respond_json(200, "OK", {
-    resources = {
-      core                        = unlimited,
-      search                      = unlimited,
-      graphql                     = unlimited,
-      integration_manifest        = unlimited,
-      source_import               = unlimited,
-      code_scanning_upload        = unlimited,
-      actions_runner_registration = unlimited,
-      scim                        = unlimited,
-      dependency_snapshots        = unlimited,
-      code_search                 = unlimited,
-      dependency_sbom             = unlimited,
-      code_scanning_autofix       = unlimited,
-    },
-    rate = unlimited,
+    rate = { limit = limit, used = 0, remaining = limit, reset = reset },
   })
 end
 
