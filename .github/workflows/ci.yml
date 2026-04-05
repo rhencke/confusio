@@ -10,7 +10,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
-      - run: make -j test-format
+      - run: sudo apt-get install -y lua-check
+      - run: make -j test-format test-lint
 
   test-unit:
     runs-on: ubuntu-latest

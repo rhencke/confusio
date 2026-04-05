@@ -93,7 +93,7 @@ endef
 
 $(foreach b,$(BACKENDS),$(eval $(call BACKEND_RULE,$(b))))
 
-.PHONY: build site test test-unit test-unit-backends test-integration validate-mock test-format clean
+.PHONY: build site test test-unit test-unit-backends test-integration validate-mock test-format test-lint clean
 
 build: confusio.com
 
@@ -120,6 +120,9 @@ validate-mock: mock-gitea.com
 
 test-format: stylua
 	./stylua --check .
+
+test-lint:
+	luacheck .
 
 clean:
 	rm -f redbean.com confusio.com $(MOCKS) hurl stylua
