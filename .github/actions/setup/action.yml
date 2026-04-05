@@ -17,5 +17,5 @@ runs:
         key: stylua-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.stylua-version') }}
     - uses: actions/cache@v4
       with:
-        path: .luarocks
-        key: luacheck-${{ runner.os }}-${{ hashFiles('.luacheck-version') }}
+        path: luacheck
+        key: luacheck-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.luacheck-version') }}
