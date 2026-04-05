@@ -162,6 +162,103 @@ local function translate_gl_member(m)
   }
 end
 
+-- Map a GitLab label object to GitHub format.
+-- GitLab color includes '#' prefix; GitHub does not.
+local function translate_gl_label(l)
+  if not l then return {} end
+  return {
+    id          = l.id,
+    node_id     = "",
+    url         = "",
+    name        = l.name,
+    color       = (l.color or ""):gsub("^#", ""),
+    description = l.description or "",
+    default     = false,
+  }
+end
+
+-- Map a GitLab milestone object to GitHub format.
+-- GitLab state: "active"/"closed" → GitHub: "open"/"closed"
+local function translate_gl_milestone(m)
+  if not m then return nil end
+  return {
+    id            = m.id,
+    node_id       = "",
+    number        = m.iid or m.id,
+    title         = m.title,
+    description   = m.description or "",
+    state         = m.state == "active" and "open" or "closed",
+    open_issues   = 0,
+    closed_issues = 0,
+    created_at    = m.created_at,
+    updated_at    = m.updated_at,
+    closed_at     = m.closed_at,
+    due_on        = m.due_date,
+  }
+end
+
+-- Map a GitLab issue object to GitHub format.
+-- GitLab uses iid (project-local number) and "opened"/"closed" states.
+local function translate_gl_issue(i)
+  if not i then return {} end
+  local labels, assignees = {}, {}
+  for _, l in ipairs(i.labels or {}) do
+    if type(l) == "table" then
+      labels[#labels + 1] = translate_gl_label(l)
+    else
+      labels[#labels + 1] = { id = 0, node_id = "", url = "", name = l, color = "", description = "", default = false }
+    end
+  end
+  for _, u in ipairs(i.assignees or {}) do
+    assignees[#assignees + 1] = translate_gl_user(u)
+  end
+  return {
+    id           = i.id,
+    node_id      = "",
+    number       = i.iid,
+    title        = i.title,
+    body         = i.description,
+    state        = i.state == "opened" and "open" or i.state,
+    user         = translate_gl_user(i.author),
+    assignees    = assignees,
+    labels       = labels,
+    milestone    = translate_gl_milestone(i.milestone),
+    comments     = i.user_notes_count or 0,
+    created_at   = i.created_at,
+    updated_at   = i.updated_at,
+    closed_at    = i.closed_at,
+    html_url     = i.web_url or "",
+    url          = i.web_url or "",
+    pull_request = nil,
+  }
+end
+
+-- Map a GitLab note (issue comment) to GitHub format.
+local function translate_gl_note(c)
+  if not c then return {} end
+  return {
+    id         = c.id,
+    node_id    = "",
+    url        = "",
+    html_url   = "",
+    body       = c.body,
+    user       = translate_gl_user(c.author),
+    created_at = c.created_at,
+    updated_at = c.updated_at,
+  }
+end
+
+-- Look up a GitLab label ID by name within a project.
+local function gl_find_label_id(owner, repo_name, label_name)
+  local ok, status, _, body = fetch_json(
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/labels?per_page=100")
+  if not ok or status ~= 200 then return nil end
+  for _, l in ipairs(DecodeJson(body) or {}) do
+    if l.name == label_name then return l.id end
+  end
+  return nil
+end
+
 backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, base() .. "/version", auth())
@@ -1304,5 +1401,305 @@ backend_impl = {
       end,
       fetch_json(append_page_params(base().."/groups/"..team_id.."/subgroups",
         PAGES)))
+  end,
+
+  -- Issues -------------------------------------------------------------------
+
+  -- GET /repos/{owner}/{repo}/issues
+  get_repo_issues = function(owner, repo_name)
+    local function tr(issues)
+      for i, iss in ipairs(issues) do issues[i] = translate_gl_issue(iss) end
+      return issues
+    end
+    proxy_json(tr, fetch_json(append_page_params(
+      base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues",
+      PAGES)))
+  end,
+
+  -- POST /repos/{owner}/{repo}/issues
+  post_repo_issues = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    local gl = {}
+    if req.title       then gl.title       = req.title end
+    if req.body        then gl.description = req.body end
+    if req.milestone   then gl.milestone_id = req.milestone end
+    proxy_json_created(translate_gl_issue,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues",
+        "POST", EncodeJson(gl)))
+  end,
+
+  -- GET /repos/{owner}/{repo}/issues/{issue_number}
+  get_repo_issue = function(owner, repo_name, issue_number)
+    proxy_json(translate_gl_issue,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/issues/" .. issue_number))
+  end,
+
+  -- PATCH /repos/{owner}/{repo}/issues/{issue_number}
+  patch_repo_issue = function(owner, repo_name, issue_number)
+    local req = DecodeJson(GetBody() or "{}")
+    local gl = {}
+    if req.title       then gl.title        = req.title end
+    if req.body        then gl.description  = req.body end
+    if req.state       then gl.state_event  = req.state == "closed" and "close" or "reopen" end
+    if req.milestone   then gl.milestone_id = req.milestone end
+    proxy_json(translate_gl_issue,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/issues/" .. issue_number, "PUT", EncodeJson(gl)))
+  end,
+
+  -- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
+  get_issue_comments = function(owner, repo_name, issue_number)
+    local function tr(notes)
+      for i, n in ipairs(notes) do notes[i] = translate_gl_note(n) end
+      return notes
+    end
+    proxy_json(tr, fetch_json(append_page_params(
+      base() .. "/projects/" .. project_id(owner, repo_name) ..
+      "/issues/" .. issue_number .. "/notes",
+      PAGES)))
+  end,
+
+  -- POST /repos/{owner}/{repo}/issues/{issue_number}/comments
+  post_issue_comment = function(owner, repo_name, issue_number)
+    local req = DecodeJson(GetBody() or "{}")
+    proxy_json_created(translate_gl_note,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/issues/" .. issue_number .. "/notes",
+        "POST", EncodeJson({ body = req.body })))
+  end,
+
+  -- GET /repos/{owner}/{repo}/issues/comments/{comment_id}
+  get_repo_issue_comment = function(owner, repo_name, comment_id)
+    -- GitLab requires the issue IID; without it we cannot fetch a note directly.
+    -- Return 404 as there's no cross-issue comment lookup endpoint.
+    respond_json(404, "Not Found", { message = "Not Found" })
+  end,
+
+  -- PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}
+  patch_repo_issue_comment = function(owner, repo_name, comment_id)
+    respond_json(404, "Not Found", { message = "Not Found" })
+  end,
+
+  -- DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}
+  delete_repo_issue_comment = function(owner, repo_name, comment_id)
+    respond_json(404, "Not Found", { message = "Not Found" })
+  end,
+
+  -- GET /repos/{owner}/{repo}/issues/{issue_number}/labels
+  get_issue_labels = function(owner, repo_name, issue_number)
+    -- Fetch the issue and extract its labels.
+    local ok, status, _, body = fetch_json(
+      base() .. "/projects/" .. project_id(owner, repo_name) ..
+      "/issues/" .. issue_number)
+    if not ok then respond_json(503, "Service Unavailable", {}); return end
+    if status ~= 200 then respond_json(status, "Error", {}); return end
+    local issue = DecodeJson(body) or {}
+    local labels = {}
+    for _, l in ipairs(issue.labels or {}) do
+      if type(l) == "table" then
+        labels[#labels + 1] = translate_gl_label(l)
+      else
+        labels[#labels + 1] = { id = 0, node_id = "", url = "", name = l, color = "", description = "", default = false }
+      end
+    end
+    respond_json(200, "OK", labels)
+  end,
+
+  -- POST /repos/{owner}/{repo}/issues/{issue_number}/labels
+  post_issue_labels = function(owner, repo_name, issue_number)
+    local req = DecodeJson(GetBody() or "{}")
+    local existing_ok, existing_status, _, existing_body = fetch_json(
+      base() .. "/projects/" .. project_id(owner, repo_name) ..
+      "/issues/" .. issue_number)
+    if not existing_ok or existing_status ~= 200 then
+      respond_json(404, "Not Found", { message = "Not Found" }); return
+    end
+    local issue = DecodeJson(existing_body) or {}
+    local all_labels = issue.labels or {}
+    for _, name in ipairs(req.labels or {}) do
+      all_labels[#all_labels + 1] = name
+    end
+    proxy_json(
+      function(i)
+        local labels = {}
+        for _, l in ipairs(i.labels or {}) do
+          if type(l) == "table" then
+            labels[#labels + 1] = translate_gl_label(l)
+          else
+            labels[#labels + 1] = { id = 0, node_id = "", url = "", name = l, color = "", description = "", default = false }
+          end
+        end
+        return labels
+      end,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/issues/" .. issue_number, "PUT", EncodeJson({ labels = all_labels })))
+  end,
+
+  -- PUT /repos/{owner}/{repo}/issues/{issue_number}/labels  (replace all)
+  put_issue_labels = function(owner, repo_name, issue_number)
+    local req = DecodeJson(GetBody() or "{}")
+    proxy_json(
+      function(i)
+        local labels = {}
+        for _, l in ipairs(i.labels or {}) do
+          if type(l) == "table" then
+            labels[#labels + 1] = translate_gl_label(l)
+          else
+            labels[#labels + 1] = { id = 0, node_id = "", url = "", name = l, color = "", description = "", default = false }
+          end
+        end
+        return labels
+      end,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/issues/" .. issue_number, "PUT", EncodeJson({ labels = req.labels or {} })))
+  end,
+
+  -- DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels  (remove all)
+  delete_issue_labels = function(owner, repo_name, issue_number)
+    local ok, status = fetch_json(
+      base() .. "/projects/" .. project_id(owner, repo_name) ..
+      "/issues/" .. issue_number, "PUT", EncodeJson({ labels = {} }))
+    if ok and (status == 200 or status == 204) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}
+  delete_issue_label = function(owner, repo_name, issue_number, label_name)
+    local ok, status, _, body = fetch_json(
+      base() .. "/projects/" .. project_id(owner, repo_name) ..
+      "/issues/" .. issue_number)
+    if not ok or status ~= 200 then
+      respond_json(404, "Not Found", { message = "Not Found" }); return
+    end
+    local issue = DecodeJson(body) or {}
+    local labels = {}
+    for _, l in ipairs(issue.labels or {}) do
+      local name = type(l) == "table" and l.name or l
+      if name ~= label_name then labels[#labels + 1] = name end
+    end
+    local upok, upstatus = fetch_json(
+      base() .. "/projects/" .. project_id(owner, repo_name) ..
+      "/issues/" .. issue_number, "PUT", EncodeJson({ labels = labels }))
+    if upok and (upstatus == 200 or upstatus == 204) then SetStatus(204, "No Content")
+    elseif upok then respond_json(upstatus, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- GET /repos/{owner}/{repo}/labels
+  get_repo_labels = function(owner, repo_name)
+    local function tr(labels)
+      for i, l in ipairs(labels) do labels[i] = translate_gl_label(l) end
+      return labels
+    end
+    proxy_json(tr, fetch_json(append_page_params(
+      base() .. "/projects/" .. project_id(owner, repo_name) .. "/labels",
+      PAGES)))
+  end,
+
+  -- POST /repos/{owner}/{repo}/labels
+  post_repo_labels = function(owner, repo_name)
+    proxy_json_created(translate_gl_label,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/labels",
+        "POST", GetBody()))
+  end,
+
+  -- GET /repos/{owner}/{repo}/labels/{name}
+  get_repo_label = function(owner, repo_name, label_name)
+    local id = gl_find_label_id(owner, repo_name, label_name)
+    if not id then respond_json(404, "Not Found", { message = "Label not found" }); return end
+    proxy_json(translate_gl_label,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/labels/" .. id))
+  end,
+
+  -- PATCH /repos/{owner}/{repo}/labels/{name}
+  patch_repo_label = function(owner, repo_name, label_name)
+    local id = gl_find_label_id(owner, repo_name, label_name)
+    if not id then respond_json(404, "Not Found", { message = "Label not found" }); return end
+    proxy_json(translate_gl_label,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/labels/" .. id,
+        "PUT", GetBody()))
+  end,
+
+  -- DELETE /repos/{owner}/{repo}/labels/{name}
+  delete_repo_label = function(owner, repo_name, label_name)
+    local id = gl_find_label_id(owner, repo_name, label_name)
+    if not id then respond_json(404, "Not Found", { message = "Label not found" }); return end
+    local dopts = auth() or {}; dopts.method = "DELETE"
+    local ok, status = pcall(Fetch,
+      base() .. "/projects/" .. project_id(owner, repo_name) .. "/labels/" .. id, dopts)
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- Milestones ----------------------------------------------------------------
+
+  -- GET /repos/{owner}/{repo}/milestones
+  get_repo_milestones = function(owner, repo_name)
+    local function tr(milestones)
+      for i, m in ipairs(milestones) do milestones[i] = translate_gl_milestone(m) end
+      return milestones
+    end
+    proxy_json(tr, fetch_json(append_page_params(
+      base() .. "/projects/" .. project_id(owner, repo_name) .. "/milestones",
+      PAGES)))
+  end,
+
+  -- POST /repos/{owner}/{repo}/milestones
+  post_repo_milestones = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    local gl = {}
+    if req.title       then gl.title       = req.title end
+    if req.description then gl.description = req.description end
+    if req.due_on      then gl.due_date    = req.due_on end
+    proxy_json_created(translate_gl_milestone,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/milestones",
+        "POST", EncodeJson(gl)))
+  end,
+
+  -- GET /repos/{owner}/{repo}/milestones/{milestone_number}
+  get_repo_milestone = function(owner, repo_name, milestone_number)
+    proxy_json(translate_gl_milestone,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/milestones/" .. milestone_number))
+  end,
+
+  -- PATCH /repos/{owner}/{repo}/milestones/{milestone_number}
+  patch_repo_milestone = function(owner, repo_name, milestone_number)
+    local req = DecodeJson(GetBody() or "{}")
+    local gl = {}
+    if req.title       then gl.title       = req.title end
+    if req.description then gl.description = req.description end
+    if req.state       then gl.state_event = req.state == "closed" and "close" or "activate" end
+    if req.due_on      then gl.due_date    = req.due_on end
+    proxy_json(translate_gl_milestone,
+      fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) ..
+        "/milestones/" .. milestone_number, "PUT", EncodeJson(gl)))
+  end,
+
+  -- DELETE /repos/{owner}/{repo}/milestones/{milestone_number}
+  delete_repo_milestone = function(owner, repo_name, milestone_number)
+    local dopts = auth() or {}; dopts.method = "DELETE"
+    local ok, status = pcall(Fetch,
+      base() .. "/projects/" .. project_id(owner, repo_name) ..
+      "/milestones/" .. milestone_number, dopts)
+    if ok and (status == 204 or status == 200) then SetStatus(204, "No Content")
+    elseif ok then respond_json(status, "Error", {})
+    else respond_json(503, "Service Unavailable", {}) end
+  end,
+
+  -- Assignees -----------------------------------------------------------------
+
+  -- GET /repos/{owner}/{repo}/assignees  (users eligible for assignment)
+  get_repo_assignees = function(owner, repo_name)
+    local function tr(members)
+      for i, m in ipairs(members) do members[i] = translate_gl_member(m) end
+      return members
+    end
+    proxy_json(tr, fetch_json(append_page_params(
+      base() .. "/projects/" .. project_id(owner, repo_name) .. "/members/all",
+      PAGES)))
   end,
 }

@@ -52,9 +52,11 @@ BACKENDS = azuredevops bitbucket bitbucket_datacenter codeberg forgejo gerrit gi
            rhodecode sourceforge sourcehut
 MOCKS    = $(addprefix mock-,$(addsuffix .com,$(BACKENDS)))
 
-gitea_HURL = test/gitea-root-auth.hurl test/gitea-repos.hurl \
-             test/gitea-repos-ext.hurl test/gitea-users.hurl \
-             test/gitea-issues.hurl
+gitea_HURL  = test/gitea-root-auth.hurl test/gitea-repos.hurl \
+              test/gitea-repos-ext.hurl test/gitea-users.hurl \
+              test/gitea-issues.hurl
+gitlab_HURL = test/gitlab-repos.hurl test/gitlab-users.hurl \
+              test/gitlab-issues.hurl
 
 # Stub providers share the same mock and split their tests across per-category files.
 STUB_HURL = test/$(1)-repos.hurl test/$(1)-teams.hurl test/$(1)-security-advisories.hurl test/$(1)-users.hurl
