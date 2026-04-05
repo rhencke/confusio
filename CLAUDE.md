@@ -63,8 +63,9 @@ vendor/
 # No backend (returns {} for GET /)
 sh ./confusio.com -p 8080
 
-# Gitea backend via CLI args
-sh ./confusio.com -p 8080 -- backend=gitea base_url=https://gitea.com
+# Gitea backend via CLI args (positional: backend [base_url])
+sh ./confusio.com -p 8080 -- gitea
+sh ./confusio.com -p 8080 -- gitea https://gitea.com
 
 # Gitea backend via config file (.confusio.lua in working directory)
 sh ./confusio.com -p 8080
@@ -73,17 +74,17 @@ sh ./confusio.com -p 8080
 
 ## Configuration system
 
-Config has two mechanisms with **structural parity** — both use the same key names, enforced by a single `CONFIG_KEYS` table in `.init.lua`:
+Config has two mechanisms:
 
 | Mechanism | Syntax |
 |-----------|--------|
-| SCRIPTARGS (highest precedence) | `sh ./confusio.com -- key=value key2=value2` |
-| `.confusio.lua` config file | `confusio = { key = "value" }` |
+| SCRIPTARGS (highest precedence) | `sh ./confusio.com -- <backend> [base_url]` |
+| `.confusio.lua` config file | `confusio = { backend = "...", base_url = "..." }` |
 | Defaults (lowest precedence) | hardcoded in `.init.lua` |
 
-Config file is Lua (not TOML/JSON) so it can call functions — useful for secrets backends (e.g., `base_url = vault_read("secret/gitea-url")`).
+SCRIPTARGS are positional: first arg = backend, second arg = base_url. Key=value form (`backend=gitea base_url=https://...`) is also accepted.
 
-**Adding a new config key**: add it to the `config` table defaults AND to `CONFIG_KEYS`. Both mechanisms pick it up automatically.
+Config file is Lua (not TOML/JSON) so it can call functions — useful for secrets backends (e.g., `base_url = vault_read("secret/gitea-url")`).
 
 ## GitHub API reference
 

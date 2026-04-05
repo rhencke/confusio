@@ -17,10 +17,19 @@ if pcall(dofile, ".confusio.lua") then
   confusio = nil
 end
 
--- SCRIPTARGS (key=value after --) override config file.
+-- SCRIPTARGS (positional or key=value after --) override config file.
+-- Positional: first non-key=value arg = backend, second = base_url.
+-- Key=value: backend=gitea base_url=https://... (also accepted).
+local positional_keys = { "backend", "base_url" }
+local pos_idx = 1
 for _, a in ipairs(arg or {}) do
   local k, v = a:match("^([%w_]+)=(.+)$")
-  if k and config[k] ~= nil then config[k] = v end
+  if k and config[k] ~= nil then
+    config[k] = v
+  elseif positional_keys[pos_idx] then
+    config[positional_keys[pos_idx]] = a
+    pos_idx = pos_idx + 1
+  end
 end
 
 config.base_url = config.base_url:gsub("/$", "")

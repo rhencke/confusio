@@ -24,13 +24,13 @@ make build       # produces confusio.com
 
 ```bash
 # Gitea (or any Gitea-compatible host)
-sh ./confusio.com -p 8080 -- backend=gitea base_url=https://gitea.com
+sh ./confusio.com -p 8080 -- gitea https://gitea.com
 
 # GitLab
-sh ./confusio.com -p 8080 -- backend=gitlab base_url=https://gitlab.com
+sh ./confusio.com -p 8080 -- gitlab https://gitlab.com
 
 # Self-hosted instance
-sh ./confusio.com -p 8080 -- backend=forgejo base_url=https://codeberg.org
+sh ./confusio.com -p 8080 -- forgejo https://codeberg.org
 ```
 
 **3. Point your tools at it**
@@ -39,17 +39,20 @@ Set your tool's GitHub API base URL to `http://localhost:8080` and provide your 
 
 ## Configuration
 
-Config can be supplied as CLI arguments after `--`, or in a `.confusio.lua` file in the working directory. CLI arguments take precedence.
+Config is supplied as positional CLI arguments after `--`, or in a `.confusio.lua` file in the working directory. CLI arguments take precedence.
 
-| Key | Description | Default |
-|-----|-------------|---------|
-| `backend` | Provider name (see table below) | *(none — returns `{}` for all requests)* |
-| `base_url` | Base URL of the target instance | `https://gitea.com` |
-
-**CLI arguments:**
+**CLI arguments (positional):**
 
 ```bash
-sh ./confusio.com -p 8080 -- backend=gitea base_url=https://my-gitea.example.com
+sh ./confusio.com -p 8080 -- <backend> [base_url]
+```
+
+```bash
+# Use provider default URL
+sh ./confusio.com -p 8080 -- gitea
+
+# Override the URL (self-hosted instance)
+sh ./confusio.com -p 8080 -- gitea https://my-gitea.example.com
 ```
 
 **Config file (`.confusio.lua`):**

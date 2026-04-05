@@ -55,7 +55,7 @@ run_mock_phase() {
   kill $PID 2>/dev/null || true; kill $MOCK_PID 2>/dev/null || true; sleep 0.3
 }
 
-MOCK_ARGS="-- backend=gitea base_url=http://127.0.0.1:$MOCK_PORT"
+MOCK_ARGS="-- gitea http://127.0.0.1:$MOCK_PORT"
 
 # Phase 1: no config
 run_phase test/root.hurl
