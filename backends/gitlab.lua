@@ -146,6 +146,35 @@ end
 local proxy_handler = make_proxy_handler(fetch_json)
 local proxy_handler_created = make_proxy_handler(fetch_json, proxy_json_created)
 
+-- Proxy a GitLab search response (plain JSON array) to the GitHub search
+-- envelope {"total_count":N,"incomplete_results":false,"items":[...]}.
+-- translate_item is applied to each element of the array.
+local function proxy_search_gl(translate_item, url)
+  local ok, status, _, body = fetch_json(url)
+  if not ok then
+    respond_json(503, "Service Unavailable", {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, "Error", {})
+    return
+  end
+  local raw = DecodeJson(body) or {}
+  local items = {}
+  for i, item in ipairs(raw) do
+    items[i] = translate_item(item)
+  end
+  SetStatus(200, "OK")
+  SetHeader("Content-Type", "application/json; charset=utf-8")
+  Write(
+    '{"total_count":'
+      .. #items
+      .. ',"incomplete_results":false,"items":'
+      .. (#items > 0 and EncodeJson(items) or "[]")
+      .. "}"
+  )
+end
+
 -- Look up a GitLab user ID by username. Returns nil on failure.
 local function gl_user_id(username)
   local ok, status, _, body = fetch_json(base() .. "/users?username=" .. username)
@@ -2653,5 +2682,25 @@ backend_impl = {
       return
     end
     respond_json(200, "OK", result)
+  end,
+
+  -- Search -----------------------------------------------------------------------
+
+  -- GET /search/repositories — maps to GitLab GET /projects?search=<q>
+  search_repositories = function()
+    local q = GetParam("q") or ""
+    proxy_search_gl(
+      translate_gl_repo,
+      append_page_params(base() .. "/projects?search=" .. q, PAGES)
+    )
+  end,
+
+  -- GET /search/users — maps to GitLab GET /users?search=<q>
+  search_users = function()
+    local q = GetParam("q") or ""
+    proxy_search_gl(
+      translate_gl_user,
+      append_page_params(base() .. "/users?search=" .. q, PAGES)
+    )
   end,
 }
