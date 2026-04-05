@@ -16,12 +16,13 @@ function OnHttpRequest()
   -- Use a simple RID for testing
   local rid = "testrid"
 
-  local REPO =
-    '{"rid":"' .. rid .. '",' ..
-    '"payloads":{"xyz.radicle.project":{' ..
-    '"name":"hello-world","description":"My first repo","defaultBranch":"main"}},' ..
-    '"delegates":[{"id":"did:key:z6MkGxABC123"}],' ..
-    '"private":false}'
+  local REPO = '{"rid":"'
+    .. rid
+    .. '",'
+    .. '"payloads":{"xyz.radicle.project":{'
+    .. '"name":"hello-world","description":"My first repo","defaultBranch":"main"}},'
+    .. '"delegates":[{"id":"did:key:z6MkGxABC123"}],'
+    .. '"private":false}'
 
   local rb = "/api/v1/repos/" .. rid
 
@@ -32,7 +33,7 @@ function OnHttpRequest()
   -- Repos list (user, public) -----------------------------------------------
   elseif path == "/api/v1/repos" then
     SetStatus(200, "OK")
-    json('[' .. REPO .. ']')
+    json("[" .. REPO .. "]")
 
   -- Single repo -------------------------------------------------------------
   elseif path == rb then
@@ -52,24 +53,25 @@ function OnHttpRequest()
   -- Commits -----------------------------------------------------------------
   elseif path == rb .. "/commits/abc123" then
     SetStatus(200, "OK")
-    json('{"id":"abc123def456","message":"Initial commit",' ..
-      '"author":{"name":"Octocat","email":"octocat@github.com"},' ..
-      '"committer":{"name":"Octocat","email":"octocat@github.com"}}')
-
+    json(
+      '{"id":"abc123def456","message":"Initial commit",'
+        .. '"author":{"name":"Octocat","email":"octocat@github.com"},'
+        .. '"committer":{"name":"Octocat","email":"octocat@github.com"}}'
+    )
   elseif path == rb .. "/commits" then
     SetStatus(200, "OK")
-    json('[{"id":"abc123def456","message":"Initial commit",' ..
-      '"author":{"name":"Octocat","email":"octocat@github.com"}}]')
+    json(
+      '[{"id":"abc123def456","message":"Initial commit",'
+        .. '"author":{"name":"Octocat","email":"octocat@github.com"}}]'
+    )
 
   -- Contents (raw bytes) ----------------------------------------------------
   elseif path == rb .. "/blob/HEAD/README.md" then
     SetStatus(200, "OK")
     raw("# Hello World\n")
-
   elseif path:find("^" .. rb:gsub("%-", "%%-") .. "/blob/") then
     SetStatus(200, "OK")
     raw("file content\n")
-
   else
     SetStatus(404, "Not Found")
   end

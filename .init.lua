@@ -47,7 +47,7 @@ end
 
 -- Like proxy_json but for create endpoints: upstream may return 200 or 201;
 -- confusio always responds 201 Created.
-function proxy_json_created(translate, ok, status, headers, body)
+function proxy_json_created(translate, ok, status, _headers, body)
   if ok and (status == 200 or status == 201) then
     local data = DecodeJson(body) or {}
     respond_json(201, "Created", translate and translate(data) or data)

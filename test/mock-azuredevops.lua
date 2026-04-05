@@ -3,7 +3,7 @@
 -- config.base_url = http://localhost:{port}
 -- GitHub {owner}/{repo} maps to ADO project/repository.
 function OnHttpRequest()
-  local path   = GetPath()
+  local path = GetPath()
   local method = GetMethod()
 
   local function json(body)
@@ -14,25 +14,24 @@ function OnHttpRequest()
   -- ADO-format repository object.
   -- id is a GUID used by delete_repo and get_repo_hooks to resolve the repo.
   local REPO_ID = "repo-abc123"
-  local REPO =
-    '{"id":"' .. REPO_ID .. '","name":"hello-world",' ..
-    '"defaultBranch":"refs/heads/main",' ..
-    '"remoteUrl":"http://localhost/octocat/hello-world.git",' ..
-    '"isPrivate":false,"isDisabled":false,"size":1024,' ..
-    '"project":{"id":"proj-abc123","name":"octocat","description":"Test project"}}'
+  local REPO = '{"id":"'
+    .. REPO_ID
+    .. '","name":"hello-world",'
+    .. '"defaultBranch":"refs/heads/main",'
+    .. '"remoteUrl":"http://localhost/octocat/hello-world.git",'
+    .. '"isPrivate":false,"isDisabled":false,"size":1024,'
+    .. '"project":{"id":"proj-abc123","name":"octocat","description":"Test project"}}'
 
-  local ORG_REPO =
-    '{"id":"repo-org-123","name":"org-repo",' ..
-    '"defaultBranch":"refs/heads/main",' ..
-    '"remoteUrl":"http://localhost/testorg/org-repo.git",' ..
-    '"isPrivate":false,"isDisabled":false,"size":0,' ..
-    '"project":{"id":"proj-testorg","name":"testorg","description":""}}'
+  local ORG_REPO = '{"id":"repo-org-123","name":"org-repo",'
+    .. '"defaultBranch":"refs/heads/main",'
+    .. '"remoteUrl":"http://localhost/testorg/org-repo.git",'
+    .. '"isPrivate":false,"isDisabled":false,"size":0,'
+    .. '"project":{"id":"proj-testorg","name":"testorg","description":""}}'
 
   -- ADO-format commit object.
-  local COMMIT =
-    '{"commitId":"abc123def456","comment":"Initial commit",' ..
-    '"author":{"name":"Octocat","email":"octocat@github.com","date":"2011-01-26T19:01:12Z"},' ..
-    '"committer":{"name":"Octocat","email":"octocat@github.com","date":"2011-01-26T19:01:12Z"}}'
+  local COMMIT = '{"commitId":"abc123def456","comment":"Initial commit",'
+    .. '"author":{"name":"Octocat","email":"octocat@github.com","date":"2011-01-26T19:01:12Z"},'
+    .. '"committer":{"name":"Octocat","email":"octocat@github.com","date":"2011-01-26T19:01:12Z"}}'
 
   local rb = "/octocat/_apis/git/repositories/hello-world"
 
@@ -44,20 +43,18 @@ function OnHttpRequest()
   -- All repos (get_user_repos: GET /_apis/git/repositories) ------------------
   elseif path == "/_apis/git/repositories" then
     SetStatus(200, "OK")
-    json('{"count":1,"value":[' .. REPO .. ']}')
+    json('{"count":1,"value":[' .. REPO .. "]}")
 
   -- Project repos (get_org_repos / get_users_repos) --------------------------
   elseif path == "/octocat/_apis/git/repositories" and method == "GET" then
     SetStatus(200, "OK")
-    json('{"count":1,"value":[' .. REPO .. ']}')
-
+    json('{"count":1,"value":[' .. REPO .. "]}")
   elseif path == "/testorg/_apis/git/repositories" and method == "GET" then
     SetStatus(200, "OK")
-    json('{"count":1,"value":[' .. ORG_REPO .. ']}')
+    json('{"count":1,"value":[' .. ORG_REPO .. "]}")
 
   -- POST new repo (post_org_repos / post_user_repos) -------------------------
-  elseif path == "/octocat/_apis/git/repositories" or
-         path == "/default/_apis/git/repositories" then
+  elseif path == "/octocat/_apis/git/repositories" or path == "/default/_apis/git/repositories" then
     SetStatus(201, "Created")
     json(REPO)
 
@@ -87,8 +84,7 @@ function OnHttpRequest()
   -- Commits ------------------------------------------------------------------
   elseif path == rb .. "/commits" then
     SetStatus(200, "OK")
-    json('{"count":1,"value":[' .. COMMIT .. ']}')
-
+    json('{"count":1,"value":[' .. COMMIT .. "]}")
   elseif path == rb .. "/commits/abc123" then
     SetStatus(200, "OK")
     json(COMMIT)
@@ -101,64 +97,69 @@ function OnHttpRequest()
   -- Forks -------------------------------------------------------------------
   elseif path == rb .. "/forks/octocat" then
     SetStatus(200, "OK")
-    json('{"count":1,"value":[' .. REPO .. ']}')
-
+    json('{"count":1,"value":[' .. REPO .. "]}")
   elseif path == rb .. "/forks" and method == "POST" then
     SetStatus(201, "Created")
     json(REPO)
 
   -- Teams --------------------------------------------------------------------
   -- ADO: /_apis/projects/{project}/teams
-
   elseif path == "/_apis/projects/testorg/teams" and method == "GET" then
     SetStatus(200, "OK")
-    json('{"count":1,"value":[' ..
-      '{"id":"team-abc123","name":"core","description":"Core team",' ..
-      '"url":"","identityUrl":"","projectId":"proj-testorg","projectName":"testorg"}' ..
-      ']}')
-
+    json(
+      '{"count":1,"value":['
+        .. '{"id":"team-abc123","name":"core","description":"Core team",'
+        .. '"url":"","identityUrl":"","projectId":"proj-testorg","projectName":"testorg"}'
+        .. "]}"
+    )
   elseif path == "/_apis/projects/testorg/teams" and method == "POST" then
     SetStatus(201, "Created")
-    json('{"id":"team-new-123","name":"newteam","description":"",' ..
-      '"url":"","identityUrl":"","projectId":"proj-testorg","projectName":"testorg"}')
-
+    json(
+      '{"id":"team-new-123","name":"newteam","description":"",'
+        .. '"url":"","identityUrl":"","projectId":"proj-testorg","projectName":"testorg"}'
+    )
   elseif path == "/_apis/projects/testorg/teams/team-abc123" and method == "PATCH" then
     SetStatus(200, "OK")
-    json('{"id":"team-abc123","name":"core","description":"Core team",' ..
-      '"url":"","identityUrl":"","projectId":"proj-testorg","projectName":"testorg"}')
-
+    json(
+      '{"id":"team-abc123","name":"core","description":"Core team",'
+        .. '"url":"","identityUrl":"","projectId":"proj-testorg","projectName":"testorg"}'
+    )
   elseif path == "/_apis/projects/testorg/teams/team-abc123" and method == "DELETE" then
     SetStatus(204, "No Content")
-
   elseif path == "/_apis/projects/testorg/teams/team-abc123/members" and method == "GET" then
     SetStatus(200, "OK")
-    json('{"count":1,"value":[{"isTeamAdmin":false,' ..
-      '"identity":{"id":"user-abc123","displayName":"The Octocat","uniqueName":"octocat",' ..
-      '"url":"","imageUrl":""}}]}')
-
+    json(
+      '{"count":1,"value":[{"isTeamAdmin":false,'
+        .. '"identity":{"id":"user-abc123","displayName":"The Octocat","uniqueName":"octocat",'
+        .. '"url":"","imageUrl":""}}]}'
+    )
   elseif path == "/_apis/projects/testorg/teams/team-abc123/members" and method == "POST" then
     SetStatus(200, "OK")
-    json('{}')
-
-  elseif path:find("^/_apis/projects/testorg/teams/team%-abc123/members/") and method == "DELETE" then
+    json("{}")
+  elseif
+    path:find("^/_apis/projects/testorg/teams/team%-abc123/members/") and method == "DELETE"
+  then
     SetStatus(204, "No Content")
 
   -- All teams (get_user_teams: GET /_apis/teams) -----------------------------
   elseif path == "/_apis/teams" and method == "GET" then
     SetStatus(200, "OK")
-    json('{"count":1,"value":[' ..
-      '{"id":"team-abc123","name":"core","description":"Core team",' ..
-      '"projectId":"proj-testorg","projectName":"testorg",' ..
-      '"url":"","identityUrl":""}' ..
-      ']}')
+    json(
+      '{"count":1,"value":['
+        .. '{"id":"team-abc123","name":"core","description":"Core team",'
+        .. '"projectId":"proj-testorg","projectName":"testorg",'
+        .. '"url":"","identityUrl":""}'
+        .. "]}"
+    )
 
   -- Single team by GUID (get_team: GET /_apis/teams/{team_id}) ---------------
   elseif path == "/_apis/teams/team-abc123" then
     SetStatus(200, "OK")
-    json('{"id":"team-abc123","name":"core","description":"Core team",' ..
-      '"projectId":"proj-testorg","projectName":"testorg",' ..
-      '"url":"","identityUrl":""}')
-
+    json(
+      '{"id":"team-abc123","name":"core","description":"Core team",'
+        .. '"projectId":"proj-testorg","projectName":"testorg",'
+        .. '"url":"","identityUrl":""}'
+    )
   elseif path:find("^/_apis/teams/") then
     SetStatus(404, "Not Found")
     json('{"message":"Not Found"}')
@@ -166,12 +167,13 @@ function OnHttpRequest()
   -- Webhooks subscriptions (get_repo_hooks second step) --------------------
   elseif path == "/_apis/hooks/subscriptions" then
     SetStatus(200, "OK")
-    json('{"count":1,"value":[' ..
-      '{"id":1,"status":"enabled","eventType":"git.push",' ..
-      '"consumerInputs":{"url":"https://example.com/hook"},' ..
-      '"createdDate":"2020-01-01T00:00:00Z","modifiedDate":"2020-01-01T00:00:00Z"}' ..
-      ']}')
-
+    json(
+      '{"count":1,"value":['
+        .. '{"id":1,"status":"enabled","eventType":"git.push",'
+        .. '"consumerInputs":{"url":"https://example.com/hook"},'
+        .. '"createdDate":"2020-01-01T00:00:00Z","modifiedDate":"2020-01-01T00:00:00Z"}'
+        .. "]}"
+    )
   else
     SetStatus(404, "Not Found")
   end
