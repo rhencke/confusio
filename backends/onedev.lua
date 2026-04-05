@@ -135,6 +135,51 @@ local function translate_onedev_user(u)
   }
 end
 
+-- Translate a OneDev issue object to GitHub format.
+-- OneDev: { id, number, title, state, description, project, submitter, submitDate, updateDate }
+local function translate_onedev_issue(i)
+  if not i then
+    return {}
+  end
+  local project = i.project or {}
+  local state = (i.state == "Open") and "open" or "closed"
+  local number = i.number or i.id or 0
+  return {
+    id = i.id or 0,
+    node_id = "",
+    number = number,
+    title = i.title or "",
+    body = i.description or "",
+    state = state,
+    user = translate_onedev_user(i.submitter or {}),
+    assignees = {},
+    labels = {},
+    milestone = nil,
+    created_at = i.submitDate or "",
+    updated_at = i.updateDate or i.submitDate or "",
+    closed_at = nil,
+    html_url = config.base_url .. "/" .. (project.path or "") .. "/issues/" .. number,
+  }
+end
+
+-- Translate a OneDev issue comment to GitHub format.
+-- OneDev: { id, issueId, user, content, date }
+local function translate_onedev_issue_comment(c)
+  if not c then
+    return {}
+  end
+  return {
+    id = c.id or 0,
+    node_id = "",
+    url = "",
+    body = c.content or "",
+    user = translate_onedev_user(c.user or {}),
+    created_at = c.date or "",
+    updated_at = c.date or "",
+    html_url = "",
+  }
+end
+
 -- Translate a OneDev branch object to GitHub format.
 -- OneDev: { name, commitHash }
 local function translate_onedev_branch(b)
@@ -494,4 +539,116 @@ backend_impl = {
   end, function(username)
     return base() .. "/users?query=name+is+%22" .. username .. "%22&count=1"
   end),
+
+  -- Issues --------------------------------------------------------------------
+  -- OneDev: GET /~api/issues?query="Project" is "owner/repo"&count=N&offset=O
+
+  get_repo_issues = function(owner, repo_name)
+    local path = owner ~= "" and (owner .. "/" .. repo_name) or repo_name
+    local count = tonumber(GetParam("per_page")) or 30
+    local page = tonumber(GetParam("page")) or 1
+    local state = GetParam("state") or "open"
+    local query = "%22Project%22+is+%22" .. path .. "%22"
+    if state == "closed" then
+      query = query .. "+%22State%22+is+%22Closed%22"
+    elseif state ~= "all" then
+      query = query .. "+%22State%22+is+%22Open%22"
+    end
+    proxy_json(function(issues)
+      issues = issues or {}
+      for i, iss in ipairs(issues) do
+        issues[i] = translate_onedev_issue(iss)
+      end
+      return issues
+    end, fetch_json(base() .. "/issues?query=" .. query .. "&count=" .. count .. "&offset=" .. ((page - 1) * count)))
+  end,
+
+  -- GET /repos/{owner}/{repo}/issues/{issue_number}
+  -- OneDev: query by project path + per-project number, take first result.
+  get_repo_issue = function(owner, repo_name, issue_number)
+    local path = owner ~= "" and (owner .. "/" .. repo_name) or repo_name
+    local query = "%22Project%22+is+%22" .. path .. "%22+%22Number%22+is+%22" .. issue_number .. "%22"
+    local ok, status, _, body = fetch_json(base() .. "/issues?query=" .. query .. "&count=1")
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local issues = DecodeJson(body) or {}
+    if not issues[1] then
+      respond_json(404, "Not Found", { message = "Not Found" })
+      return
+    end
+    respond_json(200, "OK", translate_onedev_issue(issues[1]))
+  end,
+
+  -- POST /repos/{owner}/{repo}/issues
+  post_repo_issues = function(owner, repo_name)
+    local id = resolve_project_id(owner, repo_name)
+    if not id then
+      respond_json(404, "Not Found", { message = "Not Found" })
+      return
+    end
+    local req = DecodeJson(GetBody() or "{}")
+    local od = { projectId = id, title = req.title or "", description = req.body or "" }
+    proxy_json_created(translate_onedev_issue, fetch_json(base() .. "/issues", "POST", EncodeJson(od)))
+  end,
+
+  -- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
+  -- OneDev: resolve global issue ID first, then query /~api/issue-comments.
+  get_issue_comments = function(owner, repo_name, issue_number)
+    local path = owner ~= "" and (owner .. "/" .. repo_name) or repo_name
+    local nq = "%22Project%22+is+%22" .. path .. "%22+%22Number%22+is+%22" .. issue_number .. "%22"
+    local ok, status, _, body = fetch_json(base() .. "/issues?query=" .. nq .. "&count=1")
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local issues = DecodeJson(body) or {}
+    if not issues[1] then
+      respond_json(404, "Not Found", { message = "Not Found" })
+      return
+    end
+    local issue_id = issues[1].id
+    local count = tonumber(GetParam("per_page")) or 30
+    local page = tonumber(GetParam("page")) or 1
+    local cq = "%22Issue%22+is+%22" .. issue_id .. "%22"
+    proxy_json(function(comments)
+      comments = comments or {}
+      for i, c in ipairs(comments) do
+        comments[i] = translate_onedev_issue_comment(c)
+      end
+      return comments
+    end, fetch_json(base() .. "/issue-comments?query=" .. cq .. "&count=" .. count .. "&offset=" .. ((page - 1) * count)))
+  end,
+
+  -- POST /repos/{owner}/{repo}/issues/{issue_number}/comments
+  post_issue_comment = function(owner, repo_name, issue_number)
+    local path = owner ~= "" and (owner .. "/" .. repo_name) or repo_name
+    local nq = "%22Project%22+is+%22" .. path .. "%22+%22Number%22+is+%22" .. issue_number .. "%22"
+    local ok, status, _, body = fetch_json(base() .. "/issues?query=" .. nq .. "&count=1")
+    if not ok or status ~= 200 then
+      respond_json(status or 503, "Error", {})
+      return
+    end
+    local issues = DecodeJson(body) or {}
+    if not issues[1] then
+      respond_json(404, "Not Found", { message = "Not Found" })
+      return
+    end
+    local issue_id = issues[1].id
+    local req = DecodeJson(GetBody() or "{}")
+    local od = { issueId = issue_id, content = req.body or "" }
+    proxy_json_created(
+      translate_onedev_issue_comment,
+      fetch_json(base() .. "/issue-comments", "POST", EncodeJson(od))
+    )
+  end,
 }
