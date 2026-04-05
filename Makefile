@@ -77,36 +77,26 @@ BACKENDS = azuredevops bitbucket bitbucket_datacenter codeberg forgejo gerrit gi
            rhodecode sourceforge sourcehut
 MOCKS    = $(addprefix mock-,$(addsuffix .com,$(BACKENDS)))
 
-gitea_HURL  = test/gitea-root-auth.hurl test/gitea-repos.hurl \
-              test/gitea-repos-ext.hurl test/gitea-users.hurl \
-              test/gitea-issues.hurl test/gitea-pulls.hurl
-codeberg_HURL = test/codeberg-repos.hurl test/codeberg-repos-ext.hurl \
-                test/codeberg-users.hurl test/codeberg-pulls.hurl
-forgejo_HURL = test/forgejo-repos.hurl test/forgejo-repos-ext.hurl \
-               test/forgejo-users.hurl test/forgejo-pulls.hurl
-gogs_HURL = test/gogs-repos.hurl test/gogs-repos-ext.hurl \
-            test/gogs-users.hurl test/gogs-pulls.hurl
-notabug_HURL = test/notabug-repos.hurl test/notabug-repos-ext.hurl \
-               test/notabug-users.hurl test/notabug-pulls.hurl
-gitlab_HURL = test/gitlab-repos.hurl test/gitlab-users.hurl \
-              test/gitlab-issues.hurl test/gitlab-pulls.hurl
-gitbucket_HURL = test/gitbucket-repos.hurl test/gitbucket-users.hurl \
-                 test/gitbucket-issues.hurl test/gitbucket-pulls.hurl
-bitbucket_HURL = test/bitbucket-repos.hurl test/bitbucket-users.hurl \
-                 test/bitbucket-issues.hurl test/bitbucket-pulls.hurl
+gitea_HURL            = test/gitea-root-auth.hurl test/gitea-repos.hurl \
+                        test/gitea-repos-ext.hurl test/gitea-users.hurl \
+                        test/gitea-issues.hurl test/gitea-pulls.hurl
 bitbucket_datacenter_HURL = test/bitbucket_datacenter-repos.hurl \
                              test/bitbucket_datacenter-users.hurl \
                              test/bitbucket_datacenter-pulls.hurl
-pagure_HURL = test/pagure-repos.hurl test/pagure-users.hurl \
-              test/pagure-issues.hurl
+pagure_HURL           = test/pagure-repos.hurl test/pagure-users.hurl \
+                        test/pagure-issues.hurl
+
+# Gitea-like backends: repos, repos-ext, users, pulls
+HURL_REPOS_EXT_USERS_PULLS = test/$(1)-repos.hurl test/$(1)-repos-ext.hurl test/$(1)-users.hurl test/$(1)-pulls.hurl
+$(foreach b,codeberg forgejo gogs notabug,$(eval $(b)_HURL = $(call HURL_REPOS_EXT_USERS_PULLS,$(b))))
+
+# GitLab-like backends: repos, users, issues, pulls
+HURL_REPOS_USERS_ISSUES_PULLS = test/$(1)-repos.hurl test/$(1)-users.hurl test/$(1)-issues.hurl test/$(1)-pulls.hurl
+$(foreach b,gitlab gitbucket bitbucket,$(eval $(b)_HURL = $(call HURL_REPOS_USERS_ISSUES_PULLS,$(b))))
 
 # Stub providers share the same mock and split their tests across per-category files.
 STUB_HURL = test/$(1)-repos.hurl test/$(1)-teams.hurl test/$(1)-security-advisories.hurl test/$(1)-users.hurl
-kallithea_HURL   = $(call STUB_HURL,kallithea)
-launchpad_HURL   = $(call STUB_HURL,launchpad)
-phabricator_HURL = $(call STUB_HURL,phabricator)
-rhodecode_HURL   = $(call STUB_HURL,rhodecode)
-sourceforge_HURL = $(call STUB_HURL,sourceforge)
+$(foreach b,kallithea launchpad phabricator rhodecode sourceforge,$(eval $(b)_HURL = $(call STUB_HURL,$(b))))
 
 $(eval _p := 18080)
 $(foreach b,$(BACKENDS),$(eval $(b)_CPORT := $(_p))$(eval $(b)_MPORT := $(shell expr $(_p) + 1))$(eval _p := $(shell expr $(_p) + 2)))
