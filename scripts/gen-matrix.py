@@ -39,11 +39,17 @@ PROVIDER_NAMES = {
     "sourcehut":           "Sourcehut",
 }
 
-CELL = {
-    "y": '<td class="yes">&#x2705;</td>',
-    "~": '<td class="partial">&#x26A0;&#xFE0F;</td>',
-    "n": '<td class="no">&#x274C;</td>',
-}
+def make_cell(val):
+    val = val.strip()
+    if val == "y":
+        return '<td class="yes">&#x2705;</td>'
+    if val == "n":
+        return '<td class="no">&#x274C;</td>'
+    # partial: bare "~" or "~explanation text"
+    explanation = val[1:].strip() if val.startswith("~") else ""
+    if explanation:
+        return f'<td class="partial" title="{explanation}">&#x26A0;&#xFE0F;</td>'
+    return '<td class="partial">&#x26A0;&#xFE0F;</td>'
 
 
 def generate_table(rows, providers):
@@ -67,8 +73,8 @@ def generate_table(rows, providers):
         else:
             cells = [f'<td class="ep">{endpoint}</td>']
             for p in providers:
-                val = row.get(p, "n").strip()
-                cells.append(CELL.get(val, CELL["n"]))
+                val = row.get(p, "n")
+                cells.append(make_cell(val))
             tbody_rows.append("        <tr>" + "".join(cells) + "</tr>")
 
     tbody = "      <tbody>\n" + "\n".join(tbody_rows) + "\n      </tbody>"

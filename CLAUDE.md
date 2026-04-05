@@ -96,7 +96,7 @@ When implementing a new endpoint, check the spec for:
 4. If any backend behaves differently, add an override in `backends/<name>.lua`.
    Parametric captures are passed positionally: `repo = function(owner, repo) ... end`
 5. Add a hurl assertion file in `test/` and wire it into `test/test-unit.sh` (mock) and `test/test-integration.sh` (live).
-6. Update `site/compatibility.csv`: add a row (or update an existing row) for the new endpoint. Values: `y` = native support, `~` = partial/stub, `n` = returns 404/501. The GitHub Pages site is regenerated automatically from this CSV in CI — never edit the generated HTML.
+6. Update `site/compatibility.csv`: add a row (or update an existing row) for the new endpoint. Values: `y` = native support, `~` = partial/stub, `~explanation` = partial with tooltip explanation, `n` = returns 404/501. The GitHub Pages site is regenerated automatically from this CSV in CI — never edit the generated HTML.
 
 ## Adding a new backend
 
