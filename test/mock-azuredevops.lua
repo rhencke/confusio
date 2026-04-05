@@ -11,6 +11,16 @@ function OnHttpRequest()
     Write(body)
   end
 
+  -- ADO work item fields use "System.*" keys.
+  local WORK_ITEM = '{"id":1,"rev":1,"fields":{'
+    .. '"System.Title":"Found a bug",'
+    .. '"System.State":"Active",'
+    .. '"System.Description":"Bug description",'
+    .. '"System.CreatedDate":"2020-01-01T00:00:00Z",'
+    .. '"System.ChangedDate":"2020-01-02T00:00:00Z",'
+    .. '"System.CreatedBy":{"displayName":"The Octocat","uniqueName":"octocat"}'
+    .. "}}"
+
   -- ADO-format repository object.
   -- id is a GUID used by delete_repo and get_repo_hooks to resolve the repo.
   local REPO_ID = "repo-abc123"
@@ -163,6 +173,52 @@ function OnHttpRequest()
   elseif path:find("^/_apis/teams/") then
     SetStatus(404, "Not Found")
     json('{"message":"Not Found"}')
+
+  -- Work items (issues via Azure Boards) -----------------------------------
+
+  -- WIQL query → list of work item refs (POST)
+  elseif path == "/octocat/_apis/wit/wiql" and method == "POST" then
+    SetStatus(200, "OK")
+    json('{"queryType":"flat","workItems":[{"id":1,"url":""}]}')
+
+  -- Batch fetch by IDs
+  elseif path == "/octocat/_apis/wit/workitems" and method == "GET" then
+    SetStatus(200, "OK")
+    json('{"count":1,"value":[' .. WORK_ITEM .. "]}")
+
+  -- Single work item by ID
+  elseif path == "/octocat/_apis/wit/workitems/1" then
+    SetStatus(200, "OK")
+    json(WORK_ITEM)
+  elseif path:find("^/octocat/_apis/wit/workitems/%d+$") and method == "GET" then
+    SetStatus(404, "Not Found")
+    json('{"message":"Work item not found"}')
+
+  -- Work item create (POST /$Issue, json-patch+json)
+  elseif path == "/octocat/_apis/wit/workitems/$Issue" and method == "POST" then
+    SetStatus(201, "Created")
+    json(WORK_ITEM)
+
+  -- Work item update (PATCH /{id}, json-patch+json)
+  elseif path == "/octocat/_apis/wit/workitems/1" and method == "PATCH" then
+    SetStatus(200, "OK")
+    json(WORK_ITEM)
+
+  -- Work item comments
+  elseif path == "/octocat/_apis/wit/workitems/1/comments" and method == "GET" then
+    SetStatus(200, "OK")
+    json(
+      '{"count":1,"value":[{"id":1,"text":"This is a comment",'
+        .. '"revisedDate":"2020-01-01T00:00:00Z",'
+        .. '"revisedBy":{"displayName":"The Octocat","uniqueName":"octocat"}}]}'
+    )
+  elseif path == "/octocat/_apis/wit/workitems/1/comments" and method == "POST" then
+    SetStatus(201, "Created")
+    json(
+      '{"id":2,"text":"New comment",'
+        .. '"revisedDate":"2020-01-03T00:00:00Z",'
+        .. '"revisedBy":{"displayName":"The Octocat","uniqueName":"octocat"}}'
+    )
 
   -- Webhooks subscriptions (get_repo_hooks second step) --------------------
   elseif path == "/_apis/hooks/subscriptions" then
