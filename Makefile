@@ -89,7 +89,7 @@ gogs_HURL = test/gogs-repos.hurl test/gogs-repos-ext.hurl \
 notabug_HURL = test/notabug-repos.hurl test/notabug-repos-ext.hurl \
                test/notabug-users.hurl test/notabug-pulls.hurl
 gitlab_HURL = test/gitlab-repos.hurl test/gitlab-users.hurl \
-              test/gitlab-issues.hurl
+              test/gitlab-issues.hurl test/gitlab-pulls.hurl
 gitbucket_HURL = test/gitbucket-repos.hurl test/gitbucket-users.hurl \
                  test/gitbucket-issues.hurl
 bitbucket_HURL = test/bitbucket-repos.hurl test/bitbucket-users.hurl \

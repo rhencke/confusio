@@ -296,6 +296,83 @@ function OnHttpRequest()
         .. '"visibility":"internal","web_url":"http://localhost/testorg/core"}'
     )
 
+  -- Merge Requests ---------------------------------------------------------
+  elseif path == pb .. "/merge_requests" then
+    SetStatus(200, "OK")
+    local MR_USER = '{"id":1,"username":"octocat","name":"The Octocat","avatar_url":"",'
+      .. '"web_url":"http://localhost/octocat"}'
+    local MR = '{"id":1,"iid":1,"state":"opened","title":"A great PR",'
+      .. '"description":"PR description",'
+      .. '"source_branch":"feature","target_branch":"main",'
+      .. '"author":'
+      .. MR_USER
+      .. ","
+      .. '"draft":false,'
+      .. '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-02T00:00:00Z",'
+      .. '"closed_at":null,"merged_at":"2020-01-03T00:00:00Z",'
+      .. '"merge_commit_sha":"abc123def456",'
+      .. '"diff_refs":{"base_sha":"base123","head_sha":"head456","start_sha":"start789"},'
+      .. '"merge_status":"can_be_merged","user_notes_count":0,"changes_count":"1",'
+      .. '"web_url":"http://localhost/octocat/hello-world/-/merge_requests/1"}'
+    json("[" .. MR .. "]")
+  elseif path == pb .. "/merge_requests/1" then
+    SetStatus(200, "OK")
+    local MR_USER = '{"id":1,"username":"octocat","name":"The Octocat","avatar_url":"",'
+      .. '"web_url":"http://localhost/octocat"}'
+    json(
+      '{"id":1,"iid":1,"state":"opened","title":"A great PR",'
+        .. '"description":"PR description",'
+        .. '"source_branch":"feature","target_branch":"main",'
+        .. '"author":'
+        .. MR_USER
+        .. ","
+        .. '"draft":false,'
+        .. '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-02T00:00:00Z",'
+        .. '"closed_at":null,"merged_at":"2020-01-03T00:00:00Z",'
+        .. '"merge_commit_sha":"abc123def456",'
+        .. '"diff_refs":{"base_sha":"base123","head_sha":"head456","start_sha":"start789"},'
+        .. '"merge_status":"can_be_merged","user_notes_count":0,"changes_count":"1",'
+        .. '"web_url":"http://localhost/octocat/hello-world/-/merge_requests/1"}'
+    )
+  elseif path == pb .. "/merge_requests/1/commits" then
+    SetStatus(200, "OK")
+    json("[]")
+  elseif path == pb .. "/merge_requests/1/changes" then
+    SetStatus(200, "OK")
+    json(
+      '{"id":1,"iid":1,"changes":[{"old_path":"README.md","new_path":"README.md",'
+        .. '"diff":"@@ -1 +1 @@\\n-old\\n+new","new_file":false,"deleted_file":false,'
+        .. '"renamed_file":false}]}'
+    )
+  elseif path == pb .. "/merge_requests/1/approvals" then
+    SetStatus(200, "OK")
+    local MR_USER = '{"id":1,"username":"octocat","name":"The Octocat","avatar_url":"",'
+      .. '"web_url":"http://localhost/octocat"}'
+    json(
+      '{"approved_by":[{"user":'
+        .. MR_USER
+        .. '}],"approved":true,'
+        .. '"created_at":"2020-01-01T00:00:00Z"}'
+    )
+  elseif path == pb .. "/merge_requests/1/reviewers" then
+    SetStatus(200, "OK")
+    local MR_USER = '{"id":1,"username":"octocat","name":"The Octocat","avatar_url":"",'
+      .. '"web_url":"http://localhost/octocat"}'
+    json("[" .. MR_USER .. "]")
+  elseif path == pb .. "/merge_requests/1/notes" then
+    SetStatus(200, "OK")
+    local MR_USER = '{"id":1,"username":"octocat","name":"The Octocat","avatar_url":"",'
+      .. '"web_url":"http://localhost/octocat"}'
+    json(
+      '[{"id":1,"body":"Nice change here","author":'
+        .. MR_USER
+        .. ","
+        .. '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",'
+        .. '"system":false,'
+        .. '"position":{"new_path":"README.md","old_path":"README.md","new_line":1,'
+        .. '"head_sha":"head456","base_sha":"base123"}}]'
+    )
+
   -- Issues -----------------------------------------------------------------
   elseif path == pb .. "/issues" then
     SetStatus(200, "OK")

@@ -319,6 +319,135 @@ local function translate_gl_members(members)
   return members
 end
 
+-- Map a GitLab MR (merge request) object to GitHub PR format.
+-- GitLab uses "opened"/"closed"/"merged"; GitHub uses "open"/"closed"/"merged".
+local function translate_gl_mr(mr)
+  if not mr then
+    return {}
+  end
+  local state = mr.state
+  if state == "opened" then
+    state = "open"
+  end
+  local diff_refs = mr.diff_refs or {}
+  return {
+    id = mr.id,
+    node_id = "",
+    number = mr.iid,
+    state = state,
+    locked = false,
+    title = mr.title,
+    body = mr.description,
+    user = translate_gl_user(mr.author),
+    head = {
+      label = mr.source_branch or "",
+      ref = mr.source_branch or "",
+      sha = diff_refs.head_sha or mr.sha or "",
+      repo = nil,
+    },
+    base = {
+      label = mr.target_branch or "",
+      ref = mr.target_branch or "",
+      sha = diff_refs.base_sha or "",
+      repo = nil,
+    },
+    draft = mr.draft or false,
+    created_at = mr.created_at,
+    updated_at = mr.updated_at,
+    closed_at = mr.closed_at,
+    merged_at = mr.merged_at,
+    merge_commit_sha = mr.merge_commit_sha,
+    merged_by = mr.merged_by and translate_gl_user(mr.merged_by) or nil,
+    diff_url = mr.web_url and (mr.web_url .. ".diff") or "",
+    patch_url = mr.web_url and (mr.web_url .. ".patch") or "",
+    html_url = mr.web_url or "",
+    url = mr.web_url or "",
+    mergeable = mr.merge_status == "can_be_merged",
+    comments = mr.user_notes_count or 0,
+    changed_files = mr.changes_count and tonumber(mr.changes_count) or 0,
+  }
+end
+
+local function translate_gl_mrs(mrs)
+  for i, mr in ipairs(mrs) do
+    mrs[i] = translate_gl_mr(mr)
+  end
+  return mrs
+end
+
+-- Map GitLab MR approvals to GitHub reviews (APPROVED state).
+-- GitLab uses an approvals object; GitHub uses an array of review objects.
+local function translate_gl_approvals_to_reviews(approvals)
+  if not approvals then
+    return {}
+  end
+  local result = {}
+  for i, a in ipairs(approvals.approved_by or {}) do
+    result[i] = {
+      id = i,
+      node_id = "",
+      user = translate_gl_user(a.user),
+      body = "",
+      state = "APPROVED",
+      submitted_at = approvals.created_at or "",
+      html_url = "",
+      pull_request_url = "",
+    }
+  end
+  return result
+end
+
+-- Map a GitLab MR inline note (position-based) to GitHub review comment format.
+local function translate_gl_mr_note_to_review_comment(n)
+  if not n then
+    return {}
+  end
+  local pos = n.position or {}
+  return {
+    id = n.id,
+    node_id = "",
+    path = pos.new_path or pos.old_path or "",
+    position = pos.new_line or pos.old_line,
+    original_position = pos.old_line,
+    commit_id = pos.head_sha or "",
+    original_commit_id = pos.base_sha or "",
+    diff_hunk = "",
+    body = n.body or "",
+    user = translate_gl_user(n.author),
+    created_at = n.created_at,
+    updated_at = n.updated_at,
+    html_url = "",
+    pull_request_url = "",
+    url = "",
+  }
+end
+
+-- Fetch inline MR notes (position-based) for a given MR.
+local function fetch_gl_mr_review_comments(owner, repo_name, pull_number)
+  local ok, status, _, body = fetch_json(
+    append_page_params(
+      base()
+        .. "/projects/"
+        .. project_id(owner, repo_name)
+        .. "/merge_requests/"
+        .. pull_number
+        .. "/notes",
+      PAGES
+    )
+  )
+  if not ok or status ~= 200 then
+    return nil, status
+  end
+  local notes = DecodeJson(body) or {}
+  local result = {}
+  for _, n in ipairs(notes) do
+    if not n.system and n.position then
+      result[#result + 1] = translate_gl_mr_note_to_review_comment(n)
+    end
+  end
+  return result, 200
+end
+
 -- Look up a GitLab label ID by name within a project.
 local function gl_find_label_id(owner, repo_name, label_name)
   local ok, status, _, body =
@@ -2253,4 +2382,276 @@ backend_impl = {
   get_repo_assignees = proxy_handler(translate_gl_members, function(o, r)
     return append_page_params(base() .. "/projects/" .. project_id(o, r) .. "/members/all", PAGES)
   end),
+
+  -- Pull Requests (mapped to GitLab Merge Requests) --------------------------
+
+  -- GET /repos/{owner}/{repo}/pulls
+  get_repo_pulls = proxy_handler(translate_gl_mrs, function(o, r)
+    return append_page_params(
+      base() .. "/projects/" .. project_id(o, r) .. "/merge_requests",
+      PAGES
+    )
+  end),
+
+  -- POST /repos/{owner}/{repo}/pulls
+  post_repo_pulls = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    local gl = {}
+    if req.title then
+      gl.title = req.title
+    end
+    if req.body then
+      gl.description = req.body
+    end
+    if req.head then
+      gl.source_branch = req.head
+    end
+    if req.base then
+      gl.target_branch = req.base
+    end
+    if req.draft ~= nil then
+      gl.draft = req.draft
+    end
+    proxy_json_created(
+      translate_gl_mr,
+      fetch_json(
+        base() .. "/projects/" .. project_id(owner, repo_name) .. "/merge_requests",
+        "POST",
+        EncodeJson(gl)
+      )
+    )
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}
+  get_repo_pull = proxy_handler(translate_gl_mr, function(o, r, n)
+    return base() .. "/projects/" .. project_id(o, r) .. "/merge_requests/" .. n
+  end),
+
+  -- PATCH /repos/{owner}/{repo}/pulls/{pull_number}
+  patch_repo_pull = function(owner, repo_name, pull_number)
+    local req = DecodeJson(GetBody() or "{}")
+    local gl = {}
+    if req.title then
+      gl.title = req.title
+    end
+    if req.body then
+      gl.description = req.body
+    end
+    if req.state then
+      gl.state_event = req.state == "closed" and "close" or "reopen"
+    end
+    if req.draft ~= nil then
+      gl.draft = req.draft
+    end
+    proxy_json(
+      translate_gl_mr,
+      fetch_json(
+        base() .. "/projects/" .. project_id(owner, repo_name) .. "/merge_requests/" .. pull_number,
+        "PUT",
+        EncodeJson(gl)
+      )
+    )
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/commits
+  get_pull_commits = proxy_handler(function(commits)
+    local result = {}
+    for _, c in ipairs(commits or {}) do
+      result[#result + 1] = {
+        sha = c.id,
+        html_url = c.web_url or "",
+        commit = {
+          message = c.message,
+          author = { name = c.author_name, email = c.author_email, date = c.authored_date },
+          committer = {
+            name = c.committer_name or c.author_name,
+            email = c.committer_email or c.author_email,
+            date = c.committed_date or c.authored_date,
+          },
+        },
+      }
+    end
+    return result
+  end, function(o, r, n)
+    return append_page_params(
+      base() .. "/projects/" .. project_id(o, r) .. "/merge_requests/" .. n .. "/commits",
+      PAGES
+    )
+  end),
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/files
+  -- GitLab uses /changes which wraps the diff list in a parent object.
+  get_pull_files = proxy_handler(function(mr)
+    local result = {}
+    for _, c in ipairs((mr or {}).changes or {}) do
+      local status = "modified"
+      if c.new_file then
+        status = "added"
+      elseif c.deleted_file then
+        status = "removed"
+      elseif c.renamed_file then
+        status = "renamed"
+      end
+      result[#result + 1] = {
+        sha = "",
+        filename = c.new_path or c.old_path or "",
+        status = status,
+        additions = 0,
+        deletions = 0,
+        changes = 0,
+        patch = c.diff,
+      }
+    end
+    return result
+  end, function(o, r, n)
+    return base() .. "/projects/" .. project_id(o, r) .. "/merge_requests/" .. n .. "/changes"
+  end),
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/merge
+  -- Returns 204 if the MR is merged, 404 if not.
+  get_pull_merge = function(owner, repo_name, pull_number)
+    local ok, status, _, body = fetch_json(
+      base() .. "/projects/" .. project_id(owner, repo_name) .. "/merge_requests/" .. pull_number
+    )
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local mr = DecodeJson(body) or {}
+    if mr.state == "merged" or mr.merged_at ~= nil then
+      SetStatus(204, "No Content")
+    else
+      respond_json(404, "Not Found", { message = "Pull Request is not merged" })
+    end
+  end,
+
+  -- PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge
+  put_pull_merge = function(owner, repo_name, pull_number)
+    local req = DecodeJson(GetBody() or "{}")
+    local gl = {}
+    if req.merge_method then
+      gl.merge_method = req.merge_method
+    end
+    local ok, status = fetch_json(
+      base()
+        .. "/projects/"
+        .. project_id(owner, repo_name)
+        .. "/merge_requests/"
+        .. pull_number
+        .. "/merge",
+      "PUT",
+      EncodeJson(gl)
+    )
+    if ok and status == 200 then
+      SetStatus(204, "No Content")
+    elseif ok then
+      respond_json(status, "Error", {})
+    else
+      respond_json(503, "Service Unavailable", {})
+    end
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
+  -- GitLab: reviewers assigned to the MR.
+  get_pull_requested_reviewers = function(owner, repo_name, pull_number)
+    local ok, status, _, body = fetch_json(
+      base()
+        .. "/projects/"
+        .. project_id(owner, repo_name)
+        .. "/merge_requests/"
+        .. pull_number
+        .. "/reviewers"
+    )
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local reviewers = DecodeJson(body) or {}
+    local users = {}
+    for _, u in ipairs(reviewers) do
+      users[#users + 1] = translate_gl_user(u)
+    end
+    respond_json(200, "OK", { users = users, teams = {} })
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews
+  -- GitLab: MR approvals mapped to GitHub reviews.
+  get_pull_reviews = function(owner, repo_name, pull_number)
+    local ok, status, _, body = fetch_json(
+      base()
+        .. "/projects/"
+        .. project_id(owner, repo_name)
+        .. "/merge_requests/"
+        .. pull_number
+        .. "/approvals"
+    )
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local approvals = DecodeJson(body) or {}
+    respond_json(200, "OK", translate_gl_approvals_to_reviews(approvals))
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
+  get_pull_review = function(owner, repo_name, pull_number, review_id)
+    local ok, status, _, body = fetch_json(
+      base()
+        .. "/projects/"
+        .. project_id(owner, repo_name)
+        .. "/merge_requests/"
+        .. pull_number
+        .. "/approvals"
+    )
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local approvals = DecodeJson(body) or {}
+    local reviews = translate_gl_approvals_to_reviews(approvals)
+    local rid = tonumber(review_id)
+    if rid and reviews[rid] then
+      respond_json(200, "OK", reviews[rid])
+    else
+      respond_json(404, "Not Found", { message = "Not Found" })
+    end
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments
+  -- GitLab has no per-review inline comments; return all inline MR notes.
+  get_pull_review_comments = function(owner, repo_name, pull_number)
+    local result, status = fetch_gl_mr_review_comments(owner, repo_name, pull_number)
+    if not result then
+      respond_json(status or 503, "Error", {})
+      return
+    end
+    respond_json(200, "OK", result)
+  end,
+
+  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/comments
+  -- GitLab: inline (position-based) MR notes.
+  get_pull_comments = function(owner, repo_name, pull_number)
+    local result, status = fetch_gl_mr_review_comments(owner, repo_name, pull_number)
+    if not result then
+      respond_json(status or 503, "Error", {})
+      return
+    end
+    respond_json(200, "OK", result)
+  end,
 }
