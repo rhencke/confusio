@@ -241,6 +241,26 @@ for _, ep in ipairs({
   if not backend_impl[ep] then backend_impl[ep] = security_advisories_empty end
 end
 
+-- Issues defaults: list endpoints return [] when the backend has no native issues support;
+-- individual/mutating endpoints fall through to 404 (nil handler).
+local function issues_empty()
+  SetStatus(200, "OK")
+  SetHeader("Content-Type", "application/json; charset=utf-8")
+  Write("[]")
+end
+for _, ep in ipairs({
+  "get_issues", "get_org_issues", "get_user_issues",
+  "get_repo_issues", "get_repo_issue_comments", "get_repo_issue_events",
+  "get_issue_comments", "get_issue_events", "get_issue_timeline",
+  "get_issue_labels",
+  "get_issue_deps_blocked_by", "get_issue_deps_blocking",
+  "get_issue_sub_issues", "get_issue_field_values",
+  "get_repo_assignees", "get_repo_labels",
+  "get_repo_milestones", "get_repo_milestone_labels",
+}) do
+  if not backend_impl[ep] then backend_impl[ep] = issues_empty end
+end
+
 -- Handlers resolved once at startup; backend is fixed for the program's lifetime.
 -- Registered routes not implemented by the backend return 404.
 local handle = backend_impl
@@ -507,6 +527,71 @@ local routes = {
   ["PATCH /repos/{owner}/{repo}/security-advisories/{ghsa_id}"]                    = "patch_repo_security_advisory",
   ["POST /repos/{owner}/{repo}/security-advisories/{ghsa_id}/cve"]                 = "post_repo_security_advisory_cve",
   ["POST /repos/{owner}/{repo}/security-advisories/{ghsa_id}/forks"]               = "post_repo_security_advisory_fork",
+
+  -- Issues (https://docs.github.com/en/rest/issues)
+  ["GET /issues"]                                                                  = "get_issues",
+  ["GET /orgs/{org}/issues"]                                                       = "get_org_issues",
+  ["GET /user/issues"]                                                             = "get_user_issues",
+  ["GET /repos/{owner}/{repo}/issues"]                                             = "get_repo_issues",
+  ["POST /repos/{owner}/{repo}/issues"]                                            = "post_repo_issues",
+  ["GET /repos/{owner}/{repo}/issues/comments"]                                    = "get_repo_issue_comments",
+  ["GET /repos/{owner}/{repo}/issues/comments/{comment_id}"]                       = "get_repo_issue_comment",
+  ["PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}"]                     = "patch_repo_issue_comment",
+  ["DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}"]                    = "delete_repo_issue_comment",
+  ["PUT /repos/{owner}/{repo}/issues/comments/{comment_id}/pin"]                   = "put_repo_issue_comment_pin",
+  ["DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}/pin"]                = "delete_repo_issue_comment_pin",
+  ["GET /repos/{owner}/{repo}/issues/events"]                                      = "get_repo_issue_events",
+  ["GET /repos/{owner}/{repo}/issues/events/{event_id}"]                           = "get_repo_issue_event",
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}"]                              = "get_repo_issue",
+  ["PATCH /repos/{owner}/{repo}/issues/{issue_number}"]                            = "patch_repo_issue",
+  ["POST /repos/{owner}/{repo}/issues/{issue_number}/assignees"]                   = "post_issue_assignees",
+  ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/assignees"]                 = "delete_issue_assignees",
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/assignees/{assignee}"]         = "get_issue_assignee",
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/comments"]                     = "get_issue_comments",
+  ["POST /repos/{owner}/{repo}/issues/{issue_number}/comments"]                    = "post_issue_comment",
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocked_by"]      = "get_issue_deps_blocked_by",
+  ["POST /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocked_by"]     = "post_issue_deps_blocked_by",
+  ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocked_by/{issue_id}"] = "delete_issue_dep_blocked_by",
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocking"]        = "get_issue_deps_blocking",
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/events"]                       = "get_issue_events",
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/issue-field-values"]           = "get_issue_field_values",
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/labels"]                       = "get_issue_labels",
+  ["POST /repos/{owner}/{repo}/issues/{issue_number}/labels"]                      = "post_issue_labels",
+  ["PUT /repos/{owner}/{repo}/issues/{issue_number}/labels"]                       = "put_issue_labels",
+  ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels"]                    = "delete_issue_labels",
+  ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}"]             = "delete_issue_label",
+  ["PUT /repos/{owner}/{repo}/issues/{issue_number}/lock"]                         = "put_issue_lock",
+  ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/lock"]                      = "delete_issue_lock",
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/parent"]                       = "get_issue_parent",
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/sub_issues"]                   = "get_issue_sub_issues",
+  ["POST /repos/{owner}/{repo}/issues/{issue_number}/sub_issues"]                  = "post_issue_sub_issues",
+  ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/sub_issue"]                 = "delete_issue_sub_issue",
+  ["PATCH /repos/{owner}/{repo}/issues/{issue_number}/sub_issues/priority"]        = "patch_issue_sub_issues_priority",
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/timeline"]                     = "get_issue_timeline",
+
+  -- Assignees (https://docs.github.com/en/rest/issues/assignees)
+  ["GET /repos/{owner}/{repo}/assignees"]                                          = "get_repo_assignees",
+  ["GET /repos/{owner}/{repo}/assignees/{assignee}"]                               = "get_repo_assignee",
+
+  -- Labels (https://docs.github.com/en/rest/issues/labels)
+  ["GET /repos/{owner}/{repo}/labels"]                                             = "get_repo_labels",
+  ["POST /repos/{owner}/{repo}/labels"]                                            = "post_repo_labels",
+  ["GET /repos/{owner}/{repo}/labels/{name}"]                                      = "get_repo_label",
+  ["PATCH /repos/{owner}/{repo}/labels/{name}"]                                    = "patch_repo_label",
+  ["DELETE /repos/{owner}/{repo}/labels/{name}"]                                   = "delete_repo_label",
+
+  -- Milestones (https://docs.github.com/en/rest/issues/milestones)
+  ["GET /repos/{owner}/{repo}/milestones"]                                         = "get_repo_milestones",
+  ["POST /repos/{owner}/{repo}/milestones"]                                        = "post_repo_milestones",
+  ["GET /repos/{owner}/{repo}/milestones/{milestone_number}"]                      = "get_repo_milestone",
+  ["PATCH /repos/{owner}/{repo}/milestones/{milestone_number}"]                    = "patch_repo_milestone",
+  ["DELETE /repos/{owner}/{repo}/milestones/{milestone_number}"]                   = "delete_repo_milestone",
+  ["GET /repos/{owner}/{repo}/milestones/{milestone_number}/labels"]               = "get_repo_milestone_labels",
+
+  -- Issue field values via repository_id (GitHub-specific)
+  ["POST /repositories/{repository_id}/issues/{issue_number}/issue-field-values"]  = "post_repository_issue_field_values",
+  ["PUT /repositories/{repository_id}/issues/{issue_number}/issue-field-values"]   = "put_repository_issue_field_values",
+  ["DELETE /repositories/{repository_id}/issues/{issue_number}/issue-field-values/{issue_field_id}"] = "delete_repository_issue_field_value",
 
   -- Users (https://docs.github.com/en/rest/users)
   ["GET /user"]                                                                    = "get_user",
