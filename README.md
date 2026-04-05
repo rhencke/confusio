@@ -122,6 +122,10 @@ Confusio never stores or logs tokens. The raw token value passes through unchang
 | Bitbucket, Gerrit, Bitbucket Datacenter | `Authorization: Basic base64(<value>)` |
 | SourceForge, Launchpad, Phabricator | *(no auth forwarded)* |
 
+## Status
+
+Early design stage.
+
 ## Compatibility
 
 See the [full compatibility matrix](https://rhencke.github.io/confusio/) on the project landing page.
