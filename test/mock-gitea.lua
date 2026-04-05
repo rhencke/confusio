@@ -41,6 +41,31 @@ function OnHttpRequest()
     '"draft":false,"prerelease":false,"created_at":"2020-01-01T00:00:00Z",' ..
     '"published_at":"2020-01-01T00:00:00Z","assets":[]}'
 
+  local LABEL =
+    '{"id":1,"name":"bug","color":"#d73a4a","description":"Something is not working","url":""}'
+
+  local MILESTONE =
+    '{"id":1,"title":"v1.0","description":"First milestone","state":"open",' ..
+    '"open_issues":1,"closed_issues":0,' ..
+    '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",' ..
+    '"due_on":null,"closed_at":null}'
+
+  local ISSUE =
+    '{"id":1,"number":1,"title":"Found a bug","body":"Bug description",' ..
+    '"state":"open","user":' .. USER .. ',"assignees":[],' ..
+    '"labels":[' .. LABEL .. '],"milestone":' .. MILESTONE .. ',"comments":1,' ..
+    '"created":"2020-01-01T00:00:00Z","updated":"2020-01-02T00:00:00Z",' ..
+    '"closed":null,"html_url":"http://localhost/octocat/hello-world/issues/1"}'
+
+  local ISSUE_COMMENT =
+    '{"id":1,"body":"This is a comment","user":' .. USER .. ',' ..
+    '"created":"2020-01-01T00:00:00Z","updated":"2020-01-01T00:00:00Z",' ..
+    '"html_url":"http://localhost/octocat/hello-world/issues/1#issuecomment-1"}'
+
+  local ISSUE_EVENT =
+    '{"id":1,"comment_type":"CLOSE_ISSUE","user":' .. USER .. ',"content":"",' ..
+    '"created":"2020-01-01T00:00:00Z"}'
+
   -- Table-driven dispatch. Keys: exact path (any method) or "METHOD /path".
   -- Values: {status, body} — body nil means no body (e.g. 204).
   local routes = {
@@ -206,6 +231,30 @@ function OnHttpRequest()
       '"forks_count":0,"archived":false,"open_issues_count":0,"default_branch":"main",' ..
       '"visibility":"public"}]'},
     ["GET /api/v1/teams/1/repos/testorg/hello-world"]            = {204, nil},
+
+    -- Issues
+    ["/api/v1/repos/octocat/hello-world/issues"]                = {200, "[" .. ISSUE .. "]"},
+    ["/api/v1/repos/octocat/hello-world/issues/1"]              = {200, ISSUE},
+    ["/api/v1/repos/octocat/hello-world/issues/comments"]       = {200, "[" .. ISSUE_COMMENT .. "]"},
+    ["/api/v1/repos/octocat/hello-world/issues/comments/1"]     = {200, ISSUE_COMMENT},
+    ["/api/v1/repos/octocat/hello-world/issues/events"]         = {200, "[" .. ISSUE_EVENT .. "]"},
+    ["/api/v1/repos/octocat/hello-world/issues/1/comments"]     = {200, "[" .. ISSUE_COMMENT .. "]"},
+    ["/api/v1/repos/octocat/hello-world/issues/1/events"]       = {200, "[" .. ISSUE_EVENT .. "]"},
+    ["/api/v1/repos/octocat/hello-world/issues/1/timeline"]     = {200, "[" .. ISSUE_EVENT .. "]"},
+    ["/api/v1/repos/octocat/hello-world/issues/1/labels"]       = {200, "[" .. LABEL .. "]"},
+
+    -- Labels
+    ["/api/v1/repos/octocat/hello-world/labels"]                = {200, "[" .. LABEL .. "]"},
+    ["/api/v1/repos/octocat/hello-world/labels?limit=50"]       = {200, "[" .. LABEL .. "]"},
+    ["/api/v1/repos/octocat/hello-world/labels/1"]              = {200, LABEL},
+
+    -- Milestones
+    ["/api/v1/repos/octocat/hello-world/milestones"]            = {200, "[" .. MILESTONE .. "]"},
+    ["/api/v1/repos/octocat/hello-world/milestones/1"]          = {200, MILESTONE},
+    ["/api/v1/repos/octocat/hello-world/milestones/1/labels"]   = {200, "[" .. LABEL .. "]"},
+
+    -- Assignees
+    ["/api/v1/repos/octocat/hello-world/assignees"]             = {200, "[" .. USER .. "]"},
   }
 
   local entry = routes[method .. " " .. path] or routes[path]
