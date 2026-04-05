@@ -448,7 +448,13 @@ backend_impl = {
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}
   get_repo_issue = function(owner, repo_name, issue_number)
-    local url = todo_base() .. "/~" .. owner .. "/trackers/" .. repo_name .. "/tickets/" .. issue_number
+    local url = todo_base()
+      .. "/~"
+      .. owner
+      .. "/trackers/"
+      .. repo_name
+      .. "/tickets/"
+      .. issue_number
     local ok, status, _, body = fetch_json(url)
     if not ok then
       respond_json(503, "Service Unavailable", {})

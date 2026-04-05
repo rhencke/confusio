@@ -79,7 +79,6 @@ function OnHttpRequest()
 
   -- todo.sr.ht Issues (tracker) --------------------------------------------
   -- Paths: /api/~octocat/trackers/hello-world/tickets[/{id}[/events]]
-
   elseif path == "/api/~octocat/trackers/hello-world/tickets" then
     SetStatus(200, "OK")
     json(
@@ -90,7 +89,6 @@ function OnHttpRequest()
         .. '"submitter":{"canonical_name":"~octocat","name":"octocat"}}],'
         .. '"total":1,"next":null}'
     )
-
   elseif path == "/api/~octocat/trackers/hello-world/tickets/1" then
     SetStatus(200, "OK")
     json(
@@ -100,11 +98,9 @@ function OnHttpRequest()
         .. '"status":"reported",'
         .. '"submitter":{"canonical_name":"~octocat","name":"octocat"}}'
     )
-
   elseif path == "/api/~octocat/trackers/hello-world/tickets/9999" then
     SetStatus(404, "Not Found")
     json('{"errors":[{"field":"ticket","reason":"not found"}]}')
-
   elseif path == "/api/~octocat/trackers/hello-world/tickets/1/events" then
     SetStatus(200, "OK")
     json(
@@ -115,7 +111,6 @@ function OnHttpRequest()
         .. '"author":{"canonical_name":"~octocat","name":"octocat"}}}],'
         .. '"total":1,"next":null}'
     )
-
   else
     SetStatus(404, "Not Found")
   end
