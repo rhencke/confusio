@@ -114,6 +114,7 @@ test-unit: test-unit-functions confusio.com $(MOCKS) hurl
 # Aggregate target — Make runs all prerequisites in parallel under -j
 test-unit-backends: $(addprefix test-unit-,$(BACKENDS))
 
+test-integration: | test-unit
 test-integration: confusio.com hurl
 	bash test/test-integration.sh
 
