@@ -174,6 +174,12 @@ function OnHttpRequest()
         .. '"draft":false,"prerelease":false,"created_at":"2020-01-01T00:00:00Z",'
         .. '"published_at":"2020-01-01T00:00:00Z","assets":[]}'
     )
+  elseif path == rb .. "/releases/1/assets" and method == "POST" then
+    SetStatus(201, "Created")
+    json(
+      '{"id":2,"name":"uploaded.zip","size":2048,"download_count":0,'
+        .. '"browser_download_url":"http://localhost/attachments/2"}'
+    )
   elseif path == rb .. "/releases/1/assets" then
     SetStatus(200, "OK")
     json(
