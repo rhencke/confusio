@@ -2,6 +2,13 @@
 -- Run from project root: sh redbean.com -i test/unit-init.lua
 -- ============================================================
 
+-- Enable luacov coverage tracing when COVERAGE=1.
+-- Requires: make luacov (downloads luacov source to ./luacov/).
+if os.getenv("COVERAGE") then
+  package.path = "luacov/?.lua;" .. package.path
+  require("luacov")
+end
+
 -- Stub state for the Redbean HTTP context APIs.
 local _last_status, _last_headers, _last_body
 local _req_headers, _req_path, _req_params, _req_method
