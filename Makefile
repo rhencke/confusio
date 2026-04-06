@@ -91,7 +91,7 @@ endef
 
 $(foreach b,$(BACKENDS),$(eval $(call BACKEND_RULE,$(b))))
 
-.PHONY: build site test test-unit test-unit-backends test-integration validate-mock test-format test-lint clean
+.PHONY: build site test test-unit test-unit-functions test-unit-backends test-integration validate-mock test-format test-lint clean
 
 build: confusio.com
 
@@ -102,14 +102,19 @@ site:
 
 test: test-unit test-integration test-format test-lint
 
+# Unit tests for .init.lua global functions (pure Lua, no HTTP server needed)
+test-unit-functions: redbean.com
+	./redbean.com -i test/unit-init.lua
+
 # Sequential preamble (boot-path checks), then all backends in parallel
-test-unit: confusio.com $(MOCKS) hurl
+test-unit: test-unit-functions confusio.com $(MOCKS) hurl
 	bash test/test-unit.sh
 	$(MAKE) -j$$(nproc) test-unit-backends
 
 # Aggregate target — Make runs all prerequisites in parallel under -j
 test-unit-backends: $(addprefix test-unit-,$(BACKENDS))
 
+test-integration: | test-unit
 test-integration: confusio.com hurl
 	bash test/test-integration.sh
 

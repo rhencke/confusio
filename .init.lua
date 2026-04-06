@@ -49,6 +49,41 @@ function respond_json(status, body)
   Write(EncodeJson(body))
 end
 
+-- rewrite_link_header is global: called by proxy_json when page_params are provided.
+-- Rewrites each URL in an upstream Link header to point back at confusio.
+--
+-- upstream_link: raw Link header value from the upstream response (may be nil)
+-- mapping: same { per_page = "upstream_name", page = "upstream_name" } as append_page_params
+--
+-- Returns a GitHub-style Link header value, or nil when there is nothing to emit.
+-- Only params present in the reverse mapping survive; unrecognised upstream params are dropped.
+function rewrite_link_header(upstream_link, mapping)
+  if not upstream_link or upstream_link == "" then return nil end
+
+  -- Reverse the caller-supplied mapping so we can translate upstream → GitHub param names.
+  local reverse = {}
+  for gh, up in pairs(mapping) do reverse[up] = gh end
+
+  local host  = GetHeader("Host") or "localhost"
+  local proto = GetHeader("X-Forwarded-Proto") or "http"
+  local self_base = proto .. "://" .. host .. GetPath()
+
+  local entries = {}
+  for url, rel in upstream_link:gmatch('<([^>]+)>%s*;%s*rel="([^"]+)"') do
+    local query = url:match("%?(.+)$") or ""
+    local params = {}
+    for k, v in query:gmatch("([^&=]+)=([^&]+)") do
+      local gh = reverse[k]
+      if gh then params[#params + 1] = gh .. "=" .. v end
+    end
+    local new_url = self_base
+    if #params > 0 then new_url = new_url .. "?" .. table.concat(params, "&") end
+    entries[#entries + 1] = '<' .. new_url .. '>; rel="' .. rel .. '"'
+  end
+
+  return #entries > 0 and table.concat(entries, ", ") or nil
+end
+
 -- proxy_json and proxy_json_created are globals: backends/<name>.lua uses them
 -- as the standard upstream-proxy response pattern.
 --
@@ -59,12 +94,31 @@ end
 -- expands its multiple return values correctly into ok/status/headers/body:
 --   proxy_json(translate_fn, fetch_json(url))
 --   proxy_json(nil, fetch_json(url))   -- passthrough, no translation
-function proxy_json(translate, ok, status, headers, body)
+--
+-- No Link header is emitted; use proxy_json_paged for paginated list endpoints.
+function proxy_json(translate, ok, status, _headers, body)
+  if ok and status == 200 then
+    local data = DecodeJson(body) or {}
+    respond_json(200, translate and translate(data) or data)
+  elseif ok then respond_json(status, {})
+  else respond_json(503, {}) end
+end
+
+-- proxy_json_paged: like proxy_json but rewrites the upstream Link header to point at confusio.
+-- page_params sits before the fetch result so fetch_json(...) can still be the last argument
+-- and Lua expands its multiple return values correctly:
+--   proxy_json_paged(translate_fn, PAGES, fetch_json(url))
+--   proxy_json_paged(nil,           PAGES, fetch_json(url))
+function proxy_json_paged(translate, page_params, ok, status, headers, body)
   if ok and status == 200 then
     local data = DecodeJson(body) or {}
     local link = headers and (headers["Link"] or headers["link"])
-    if link then SetHeader("Link", link) end
-    respond_json(200, translate and translate(data) or data)
+    local rewritten = rewrite_link_header(link, page_params)
+    -- set_preamble calls SetStatus which clears previously-set headers, so the Link
+    -- header must be set AFTER set_preamble, not before.
+    set_preamble(200)
+    if rewritten then SetHeader("Link", rewritten) end
+    Write(EncodeJson(translate and translate(data) or data))
   elseif ok then respond_json(status, {})
   else respond_json(503, {}) end
 end
