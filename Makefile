@@ -72,7 +72,7 @@ mock-%.com: redbean.com test/mock-%.lua
 # To add a backend: append to BACKENDS (ports auto-assigned from 18080).
 # Each backend needs test/mock-<name>.lua (symlink ok) and
 # at least one test/<name>-*.hurl file (symlinks ok — used by wildcard discovery).
-BACKENDS = azuredevops bitbucket bitbucket_datacenter codeberg forgejo gerrit gitblit gitbucket gitea gitlab gogs \
+BACKENDS = azuredevops bitbucket bitbucket_datacenter codeberg codecommit forgejo gerrit gitblit gitbucket gitea gitlab gogs \
            harness kallithea launchpad notabug onedev pagure phabricator radicle \
            rhodecode sourceforge sourcehut tuleap
 MOCKS    = $(addprefix mock-,$(addsuffix .com,$(BACKENDS)))
