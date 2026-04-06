@@ -11,4 +11,10 @@ backend_impl = {
       respond_json(503, "Service Unavailable", {})
     end
   end,
+
+  -- Issues -----------------------------------------------------------------------
+  -- SourceForge uses the Allura ticket tracker, whose REST API shape differs
+  -- significantly from GitHub Issues and is not currently mapped.
+  -- All issues, labels, milestones, and assignees endpoints fall back to the
+  -- default empty-list / 404 handlers defined in .init.lua.
 }

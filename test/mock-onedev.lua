@@ -68,6 +68,34 @@ function OnHttpRequest()
     SetStatus(200, "OK")
     raw("file content\n")
 
+  -- Issues -----------------------------------------------------------------
+  -- GET /~api/issues?query=... — return issue list or empty based on query.
+  elseif path == "/~api/issues" then
+    local q = GetParam("query") or ""
+    if q:find("9999", 1, true) then
+      SetStatus(200, "OK")
+      json("[]")
+    else
+      SetStatus(200, "OK")
+      json(
+        '[{"id":1,"number":1,"title":"Found a bug","state":"Open",'
+          .. '"description":"Bug description",'
+          .. '"project":{"id":1,"path":"octocat/hello-world"},'
+          .. '"submitter":{"id":1,"name":"octocat","fullName":"The Octocat"},'
+          .. '"submitDate":"2020-01-01T00:00:00.000+0000",'
+          .. '"updateDate":"2020-01-02T00:00:00.000+0000"}]'
+      )
+    end
+
+  -- Issue comments ---------------------------------------------------------
+  elseif path == "/~api/issue-comments" then
+    SetStatus(200, "OK")
+    json(
+      '[{"id":1,"issueId":1,'
+        .. '"user":{"id":1,"name":"octocat","fullName":"The Octocat"},'
+        .. '"content":"This is a comment","date":"2020-01-01T00:00:00.000+0000"}]'
+    )
+
   -- Users -------------------------------------------------------------------
   elseif path == "/~api/users" then
     SetStatus(200, "OK")

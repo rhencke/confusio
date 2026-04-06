@@ -122,6 +122,77 @@ local function translate_ado_tag(t)
   return { name = name, commit = { sha = t.objectId or "", url = "" } }
 end
 
+-- Work items (issues) ---------------------------------------------------------
+-- ADO Boards: work items are project-scoped.
+-- GitHub {owner}/{repo}/issues → ADO project {owner} work items (repo not used).
+-- List:   POST /{owner}/_apis/wit/wiql        → { workItems: [{id,url}] }
+-- Fetch:  GET  /{owner}/_apis/wit/workitems?ids=...&$expand=all
+-- Single: GET  /{owner}/_apis/wit/workitems/{id}?$expand=all
+-- Create: POST /{owner}/_apis/wit/workitems/$Issue  (json-patch+json)
+-- Comments: GET/POST /{owner}/_apis/wit/workitems/{id}/comments
+
+local function ado_state_to_github(state)
+  local s = (state or ""):lower()
+  if s == "closed" or s == "resolved" or s == "done" or s == "inactive" then
+    return "closed"
+  end
+  return "open"
+end
+
+local function translate_ado_workitem(w)
+  if not w then
+    return {}
+  end
+  local fields = w.fields or {}
+  local created_by = fields["System.CreatedBy"] or {}
+  local id = w.id or 0
+  return {
+    id = id,
+    node_id = "",
+    number = id,
+    title = fields["System.Title"] or "",
+    body = fields["System.Description"] or "",
+    state = ado_state_to_github(fields["System.State"]),
+    user = {
+      login = created_by.uniqueName or created_by.displayName or "",
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      type = "User",
+    },
+    assignees = {},
+    labels = {},
+    milestone = nil,
+    created_at = fields["System.CreatedDate"] or "",
+    updated_at = fields["System.ChangedDate"] or "",
+    closed_at = nil,
+    html_url = "",
+  }
+end
+
+local function translate_ado_workitem_comment(c)
+  if not c then
+    return {}
+  end
+  local revised_by = c.revisedBy or {}
+  return {
+    id = c.id or 0,
+    node_id = "",
+    url = "",
+    body = c.text or "",
+    user = {
+      login = revised_by.uniqueName or revised_by.displayName or "",
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      type = "User",
+    },
+    created_at = c.revisedDate or "",
+    updated_at = c.revisedDate or "",
+    html_url = "",
+  }
+end
+
 -- Teams -----------------------------------------------------------------------
 -- ADO: GET /_apis/projects/{project}/teams (project = GitHub org)
 
@@ -992,5 +1063,184 @@ backend_impl = {
   end,
   get_team_children = function()
     Write("[]")
+  end,
+
+  -- Issues (Azure Boards work items) -----------------------------------------
+
+  get_repo_issues = function(owner, _repo_name)
+    local state = GetParam("state") or "open"
+    local limit = tonumber(GetParam("per_page")) or 30
+    local where = "[System.TeamProject] = '" .. owner .. "'"
+    if state == "closed" then
+      where = where .. " AND [System.State] IN ('Closed','Resolved','Done')"
+    elseif state ~= "all" then
+      where = where .. " AND [System.State] NOT IN ('Closed','Resolved','Done')"
+    end
+    local wiql_body = EncodeJson({
+      query = "SELECT [System.Id] FROM WorkItems WHERE "
+        .. where
+        .. " ORDER BY [System.ChangedDate] DESC",
+    })
+    local ok, status, _, body = fetch_json(
+      ado_url(config.base_url .. "/" .. owner .. "/_apis/wit/wiql?$top=" .. limit),
+      "POST",
+      wiql_body
+    )
+    if not ok then
+      respond_json(503, "Service Unavailable", {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, "Error", {})
+      return
+    end
+    local refs = (DecodeJson(body) or {}).workItems or {}
+    if #refs == 0 then
+      Write("[]")
+      return
+    end
+    local ids = {}
+    for i = 1, math.min(limit, #refs) do
+      ids[#ids + 1] = tostring(refs[i].id or "")
+    end
+    proxy_json(
+      function(data)
+        local result = {}
+        for _, w in ipairs(data.value or {}) do
+          result[#result + 1] = translate_ado_workitem(w)
+        end
+        return result
+      end,
+      fetch_json(
+        ado_url(
+          config.base_url
+            .. "/"
+            .. owner
+            .. "/_apis/wit/workitems?ids="
+            .. table.concat(ids, ",")
+            .. "&$expand=all"
+        )
+      )
+    )
+  end,
+
+  get_repo_issue = function(owner, _repo_name, issue_number)
+    proxy_json(
+      translate_ado_workitem,
+      fetch_json(
+        ado_url(
+          config.base_url
+            .. "/"
+            .. owner
+            .. "/_apis/wit/workitems/"
+            .. issue_number
+            .. "?$expand=all"
+        )
+      )
+    )
+  end,
+
+  post_repo_issues = function(owner, _repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    local patch = {
+      { op = "add", path = "/fields/System.Title", value = req.title or "" },
+    }
+    if req.body then
+      patch[#patch + 1] = { op = "add", path = "/fields/System.Description", value = req.body }
+    end
+    local opts = auth() or {}
+    opts.method = "POST"
+    opts.body = EncodeJson(patch)
+    opts.headers = opts.headers or {}
+    opts.headers["Content-Type"] = "application/json-patch+json"
+    local cok, cstatus, _, cbody =
+      pcall(Fetch, ado_url(config.base_url .. "/" .. owner .. "/_apis/wit/workitems/$Issue"), opts)
+    if cok and (cstatus == 200 or cstatus == 201) then
+      respond_json(201, "Created", translate_ado_workitem(DecodeJson(cbody) or {}))
+    elseif cok then
+      respond_json(cstatus, "Error", {})
+    else
+      respond_json(503, "Service Unavailable", {})
+    end
+  end,
+
+  patch_repo_issue = function(owner, _repo_name, issue_number)
+    local req = DecodeJson(GetBody() or "{}")
+    local patch = {}
+    if req.title ~= nil then
+      patch[#patch + 1] = { op = "replace", path = "/fields/System.Title", value = req.title }
+    end
+    if req.body ~= nil then
+      patch[#patch + 1] = { op = "replace", path = "/fields/System.Description", value = req.body }
+    end
+    if req.state == "closed" then
+      patch[#patch + 1] = { op = "replace", path = "/fields/System.State", value = "Closed" }
+    elseif req.state == "open" then
+      patch[#patch + 1] = { op = "replace", path = "/fields/System.State", value = "Active" }
+    end
+    if #patch == 0 then
+      proxy_json(
+        translate_ado_workitem,
+        fetch_json(
+          ado_url(
+            config.base_url
+              .. "/"
+              .. owner
+              .. "/_apis/wit/workitems/"
+              .. issue_number
+              .. "?$expand=all"
+          )
+        )
+      )
+      return
+    end
+    local opts = auth() or {}
+    opts.method = "PATCH"
+    opts.body = EncodeJson(patch)
+    opts.headers = opts.headers or {}
+    opts.headers["Content-Type"] = "application/json-patch+json"
+    local pok, pstatus, _, pbody = pcall(
+      Fetch,
+      ado_url(config.base_url .. "/" .. owner .. "/_apis/wit/workitems/" .. issue_number),
+      opts
+    )
+    if pok and pstatus == 200 then
+      respond_json(200, "OK", translate_ado_workitem(DecodeJson(pbody) or {}))
+    elseif pok then
+      respond_json(pstatus, "Error", {})
+    else
+      respond_json(503, "Service Unavailable", {})
+    end
+  end,
+
+  get_issue_comments = function(owner, _repo_name, issue_number)
+    proxy_json(
+      function(data)
+        local result = {}
+        for _, c in ipairs(data.value or {}) do
+          result[#result + 1] = translate_ado_workitem_comment(c)
+        end
+        return result
+      end,
+      fetch_json(
+        ado_url(
+          config.base_url .. "/" .. owner .. "/_apis/wit/workitems/" .. issue_number .. "/comments"
+        )
+      )
+    )
+  end,
+
+  post_issue_comment = function(owner, _repo_name, issue_number)
+    local req = DecodeJson(GetBody() or "{}")
+    proxy_json_created(
+      translate_ado_workitem_comment,
+      fetch_json(
+        ado_url(
+          config.base_url .. "/" .. owner .. "/_apis/wit/workitems/" .. issue_number .. "/comments"
+        ),
+        "POST",
+        EncodeJson({ text = req.body or "" })
+      )
+    )
   end,
 }
