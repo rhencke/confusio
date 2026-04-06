@@ -2700,4 +2700,29 @@ backend_impl = {
     local q = GetParam("q") or ""
     proxy_search_gl(translate_gl_user, append_page_params(base() .. "/users?search=" .. q, PAGES))
   end,
+
+  -- Gitignore -----------------------------------------------------------------
+
+  -- GET /gitignore/templates → GitLab GET /api/v4/templates/gitignores
+  -- GitLab returns [{key,name}, ...]; GitHub returns ["Name", ...]
+  get_gitignore_templates = function()
+    proxy_json(function(list)
+      local names = {}
+      for i, t in ipairs(list or {}) do
+        names[i] = t.name
+      end
+      return names
+    end, fetch_json(base() .. "/templates/gitignores"))
+  end,
+
+  -- GET /gitignore/templates/{name} → GitLab GET /api/v4/templates/gitignores/{name}
+  -- GitLab returns {name, content}; GitHub returns {name, source}
+  get_gitignore_template = function(name)
+    proxy_json(function(t)
+      if not t then
+        return {}
+      end
+      return { name = t.name, source = t.content }
+    end, fetch_json(base() .. "/templates/gitignores/" .. name))
+  end,
 }

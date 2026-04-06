@@ -457,6 +457,16 @@ function OnHttpRequest()
         .. '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",'
         .. '"closed_at":null,"due_date":null}'
     )
+  -- Gitignore templates --------------------------------------------------------
+  elseif path == "/api/v4/templates/gitignores" then
+    SetStatus(200, "OK")
+    json('[{"key":"C","name":"C"},{"key":"Go","name":"Go"}]')
+  elseif path == "/api/v4/templates/gitignores/C" then
+    SetStatus(200, "OK")
+    json('{"name":"C","content":"# C gitignore\\n*.o\\n*.a\\n"}')
+  elseif path == "/api/v4/templates/gitignores/Nonexistent" then
+    SetStatus(404, "Not Found")
+    json('{"message":"404 Not Found"}')
   else
     SetStatus(404, "Not Found")
   end

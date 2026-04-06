@@ -76,7 +76,7 @@ GET /search/code,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /search/labels,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /search/topics,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 Gitignore,,,,,,,,,,,,,,,,,,,,,,,,
-GET /gitignore/templates,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,n,n,n,n,n,n,n,n,n
-GET /gitignore/templates/{name},n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,n,n,n,n,n,n,n,n,n
+GET /gitignore/templates,n,n,n,y,n,y,n,n,n,y,y,y,n,n,n,n,n,n,n,n,n,n,n,n
+GET /gitignore/templates/{name},n,n,n,y,n,y,n,n,n,y,y,y,n,n,n,n,n,n,n,n,n,n,n,n
 Rate Limits,,,,,,,,,,,,,,,,,,,,,,,,
 GET /rate_limit,~unlimited stub,~unlimited stub,~unlimited stub,y,~unlimited stub,y,~unlimited stub,~unlimited stub,y,y,~unlimited stub,y,~unlimited stub,~unlimited stub,~unlimited stub,y,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub
