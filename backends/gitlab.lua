@@ -145,12 +145,18 @@ end
 
 local proxy_handler = make_proxy_handler(fetch_json)
 local proxy_handler_created = make_proxy_handler(fetch_json, proxy_json_created)
+local proxy_handler_paged = make_proxy_handler(
+  fetch_json,
+  function(translate, ok, status, headers, body)
+    return proxy_json_paged(translate, PAGES, ok, status, headers, body)
+  end
+)
 
 -- Proxy a GitLab search response (plain JSON array) to the GitHub search
 -- envelope {"total_count":N,"incomplete_results":false,"items":[...]}.
 -- translate_item is applied to each element of the array.
 local function proxy_search_gl(translate_item, url)
-  local ok, status, _, body = fetch_json(url)
+  local ok, status, headers, body = fetch_json(url)
   if not ok then
     respond_json(503, {})
     return
@@ -163,6 +169,11 @@ local function proxy_search_gl(translate_item, url)
   local items = {}
   for i, item in ipairs(raw) do
     items[i] = translate_item(item)
+  end
+  local link = headers and (headers["Link"] or headers["link"])
+  local rewritten = rewrite_link_header(link, PAGES)
+  if rewritten then
+    SetHeader("Link", rewritten)
   end
   set_preamble()
   Write(
@@ -531,7 +542,7 @@ backend_impl = {
     end
   end,
 
-  get_user_repos = proxy_handler(translate_gl_projects, function()
+  get_user_repos = proxy_handler_paged(translate_gl_projects, function()
     return append_page_params(base() .. "/projects?owned=true&membership=true", PAGES)
   end),
 
@@ -542,7 +553,7 @@ backend_impl = {
     )
   end,
 
-  get_org_repos = proxy_handler(translate_gl_projects, function(org)
+  get_org_repos = proxy_handler_paged(translate_gl_projects, function(org)
     return append_page_params(base() .. "/groups/" .. org .. "/projects", PAGES)
   end),
 
@@ -577,7 +588,7 @@ backend_impl = {
     return base() .. "/projects/" .. project_id(owner, repo_name) .. "/languages"
   end),
 
-  get_repo_contributors = proxy_handler(function(contribs)
+  get_repo_contributors = proxy_handler_paged(function(contribs)
     for i, c in ipairs(contribs) do
       contribs[i] = { login = c.name, contributions = c.commits }
     end
@@ -589,7 +600,7 @@ backend_impl = {
     )
   end),
 
-  get_repo_tags = proxy_handler(function(tags)
+  get_repo_tags = proxy_handler_paged(function(tags)
     for i, t in ipairs(tags) do
       local c = t.commit or {}
       tags[i] = { name = t.name, commit = { sha = c.id, url = "" } }
@@ -609,7 +620,7 @@ backend_impl = {
 
   -- Branches ------------------------------------------------------------------
 
-  get_repo_branches = proxy_handler(function(branches)
+  get_repo_branches = proxy_handler_paged(function(branches)
     for _, b in ipairs(branches or {}) do
       if b.commit then
         b.commit.sha = b.commit.id
@@ -638,7 +649,7 @@ backend_impl = {
 
   -- Commits -------------------------------------------------------------------
 
-  get_repo_commits = proxy_handler(function(commits)
+  get_repo_commits = proxy_handler_paged(function(commits)
     local result = {}
     for _, c in ipairs(commits or {}) do
       result[#result + 1] = {
@@ -696,7 +707,7 @@ backend_impl = {
       failed = "failure",
       canceled = "error",
     }
-    proxy_json(
+    proxy_json_paged(
       function(statuses)
         local result = {}
         for _, s in ipairs(statuses or {}) do
@@ -712,6 +723,7 @@ backend_impl = {
         end
         return result
       end,
+      PAGES,
       fetch_json(
         append_page_params(
           base()
@@ -986,7 +998,7 @@ backend_impl = {
 
   -- Collaborators -------------------------------------------------------------
 
-  get_repo_collaborators = proxy_handler(function(members)
+  get_repo_collaborators = proxy_handler_paged(function(members)
     local result = {}
     for _, m in ipairs(members or {}) do
       result[#result + 1] = {
@@ -1118,7 +1130,7 @@ backend_impl = {
 
   -- Forks ---------------------------------------------------------------------
 
-  get_repo_forks = proxy_handler(translate_gl_projects, function(owner, repo_name)
+  get_repo_forks = proxy_handler_paged(translate_gl_projects, function(owner, repo_name)
     return append_page_params(
       base() .. "/projects/" .. project_id(owner, repo_name) .. "/forks",
       PAGES
@@ -1137,7 +1149,7 @@ backend_impl = {
   -- Releases ------------------------------------------------------------------
   -- GitLab releases use tag_name as identifier rather than an integer ID.
 
-  get_repo_releases = proxy_handler(function(rels)
+  get_repo_releases = proxy_handler_paged(function(rels)
     local result = {}
     for i, r in ipairs(rels or {}) do
       result[i] = {
@@ -1223,7 +1235,7 @@ backend_impl = {
 
   -- Deploy keys ---------------------------------------------------------------
 
-  get_repo_keys = proxy_handler(nil, function(owner, repo_name)
+  get_repo_keys = proxy_handler_paged(nil, function(owner, repo_name)
     return append_page_params(
       base() .. "/projects/" .. project_id(owner, repo_name) .. "/deploy_keys",
       PAGES
@@ -1267,7 +1279,7 @@ backend_impl = {
 
   -- Webhooks ------------------------------------------------------------------
 
-  get_repo_hooks = proxy_handler(nil, function(owner, repo_name)
+  get_repo_hooks = proxy_handler_paged(nil, function(owner, repo_name)
     return append_page_params(
       base() .. "/projects/" .. project_id(owner, repo_name) .. "/hooks",
       PAGES
@@ -1343,18 +1355,18 @@ backend_impl = {
   end,
 
   -- GET /users/{username}/repos -----------------------------------------------
-  get_users_repos = proxy_handler(translate_gl_projects, function(username)
+  get_users_repos = proxy_handler_paged(translate_gl_projects, function(username)
     return append_page_params(base() .. "/users/" .. username .. "/projects", PAGES)
   end),
 
   -- GET /repositories (all public projects) -----------------------------------
-  get_repositories = proxy_handler(translate_gl_projects, function()
+  get_repositories = proxy_handler_paged(translate_gl_projects, function()
     return append_page_params(base() .. "/projects?visibility=public", PAGES)
   end),
 
   -- Commit comments -----------------------------------------------------------
   -- GitLab uses notes on commits: /projects/{id}/repository/commits/{sha}/comments
-  get_commit_comments = proxy_handler(nil, function(owner, repo_name, commit_sha)
+  get_commit_comments = proxy_handler_paged(nil, function(owner, repo_name, commit_sha)
     return append_page_params(
       base()
         .. "/projects/"
@@ -1403,7 +1415,7 @@ backend_impl = {
   end),
 
   -- GET /users
-  get_users = proxy_handler(translate_gl_users, function()
+  get_users = proxy_handler_paged(translate_gl_users, function()
     return append_page_params(base() .. "/users", PAGES)
   end),
 
@@ -1429,7 +1441,7 @@ backend_impl = {
   -- SSH Keys ------------------------------------------------------------------
 
   -- GET /user/keys
-  get_user_keys = proxy_handler(nil, function()
+  get_user_keys = proxy_handler_paged(nil, function()
     return append_page_params(base() .. "/user/keys", PAGES)
   end),
 
@@ -1470,7 +1482,7 @@ backend_impl = {
   -- GPG Keys ------------------------------------------------------------------
 
   -- GET /user/gpg_keys
-  get_user_gpg_keys = proxy_handler(nil, function()
+  get_user_gpg_keys = proxy_handler_paged(nil, function()
     return append_page_params(base() .. "/user/gpg_keys", PAGES)
   end),
 
@@ -1514,12 +1526,14 @@ backend_impl = {
 
   -- GET /orgs/{org}/teams
   get_org_teams = function(org)
-    proxy_json(function(groups)
+    proxy_json_paged(function(groups)
       for i, g in ipairs(groups) do
         groups[i] = translate_gl_team(g)
       end
       return groups
-    end, fetch_json(append_page_params(base() .. "/groups/" .. org .. "/subgroups", PAGES)))
+    end, PAGES, fetch_json(
+      append_page_params(base() .. "/groups/" .. org .. "/subgroups", PAGES)
+    ))
   end,
 
   -- POST /orgs/{org}/teams
@@ -1599,13 +1613,13 @@ backend_impl = {
       return
     end
     local gid = (DecodeJson(body) or {}).id
-    proxy_json(function(members)
+    proxy_json_paged(function(members)
       local out = {}
       for _, m in ipairs(members) do
         out[#out + 1] = translate_gl_member(m)
       end
       return out
-    end, fetch_json(append_page_params(base() .. "/groups/" .. gid .. "/members", PAGES)))
+    end, PAGES, fetch_json(append_page_params(base() .. "/groups/" .. gid .. "/members", PAGES)))
   end,
 
   -- GET /orgs/{org}/teams/{team_slug}/memberships/{username}
@@ -1695,8 +1709,9 @@ backend_impl = {
       return
     end
     local gid = (DecodeJson(body) or {}).id
-    proxy_json(
+    proxy_json_paged(
       translate_gl_projects,
+      PAGES,
       fetch_json(append_page_params(base() .. "/groups/" .. gid .. "/projects", PAGES))
     )
   end,
@@ -1779,12 +1794,14 @@ backend_impl = {
       return
     end
     local gid = (DecodeJson(body) or {}).id
-    proxy_json(function(groups)
+    proxy_json_paged(function(groups)
       for i, g in ipairs(groups) do
         groups[i] = translate_gl_team(g)
       end
       return groups
-    end, fetch_json(append_page_params(base() .. "/groups/" .. gid .. "/subgroups", PAGES)))
+    end, PAGES, fetch_json(
+      append_page_params(base() .. "/groups/" .. gid .. "/subgroups", PAGES)
+    ))
   end,
 
   -- Legacy team-by-id API (/teams/{team_id}) ------------------------------------
@@ -1792,12 +1809,12 @@ backend_impl = {
 
   -- GET /user/teams — all groups the authenticated user belongs to
   get_user_teams = function()
-    proxy_json(function(groups)
+    proxy_json_paged(function(groups)
       for i, g in ipairs(groups) do
         groups[i] = translate_gl_team(g)
       end
       return groups
-    end, fetch_json(append_page_params(base() .. "/groups?min_access_level=10", PAGES)))
+    end, PAGES, fetch_json(append_page_params(base() .. "/groups?min_access_level=10", PAGES)))
   end,
 
   -- GET /teams/{team_id}
@@ -1843,13 +1860,17 @@ backend_impl = {
 
   -- GET /teams/{team_id}/members
   get_team_members = function(team_id)
-    proxy_json(function(members)
-      local out = {}
-      for _, m in ipairs(members) do
-        out[#out + 1] = translate_gl_member(m)
-      end
-      return out
-    end, fetch_json(append_page_params(base() .. "/groups/" .. team_id .. "/members", PAGES)))
+    proxy_json_paged(
+      function(members)
+        local out = {}
+        for _, m in ipairs(members) do
+          out[#out + 1] = translate_gl_member(m)
+        end
+        return out
+      end,
+      PAGES,
+      fetch_json(append_page_params(base() .. "/groups/" .. team_id .. "/members", PAGES))
+    )
   end,
 
   -- GET /teams/{team_id}/members/{username} — deprecated legacy, 204 if member
@@ -1972,8 +1993,9 @@ backend_impl = {
 
   -- GET /teams/{team_id}/repos
   get_team_repos = function(team_id)
-    proxy_json(
+    proxy_json_paged(
       translate_gl_projects,
+      PAGES,
       fetch_json(append_page_params(base() .. "/groups/" .. team_id .. "/projects", PAGES))
     )
   end,
@@ -2031,18 +2053,22 @@ backend_impl = {
 
   -- GET /teams/{team_id}/teams — sub-subgroups
   get_team_children = function(team_id)
-    proxy_json(function(groups)
-      for i, g in ipairs(groups) do
-        groups[i] = translate_gl_team(g)
-      end
-      return groups
-    end, fetch_json(append_page_params(base() .. "/groups/" .. team_id .. "/subgroups", PAGES)))
+    proxy_json_paged(
+      function(groups)
+        for i, g in ipairs(groups) do
+          groups[i] = translate_gl_team(g)
+        end
+        return groups
+      end,
+      PAGES,
+      fetch_json(append_page_params(base() .. "/groups/" .. team_id .. "/subgroups", PAGES))
+    )
   end,
 
   -- Issues -------------------------------------------------------------------
 
   -- GET /repos/{owner}/{repo}/issues
-  get_repo_issues = proxy_handler(translate_gl_issues, function(o, r)
+  get_repo_issues = proxy_handler_paged(translate_gl_issues, function(o, r)
     return append_page_params(base() .. "/projects/" .. project_id(o, r) .. "/issues", PAGES)
   end),
 
@@ -2087,7 +2113,7 @@ backend_impl = {
   end),
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
-  get_issue_comments = proxy_handler(translate_gl_notes, function(o, r, n)
+  get_issue_comments = proxy_handler_paged(translate_gl_notes, function(o, r, n)
     return append_page_params(
       base() .. "/projects/" .. project_id(o, r) .. "/issues/" .. n .. "/notes",
       PAGES
@@ -2275,7 +2301,7 @@ backend_impl = {
   end,
 
   -- GET /repos/{owner}/{repo}/labels
-  get_repo_labels = proxy_handler(translate_gl_labels, function(o, r)
+  get_repo_labels = proxy_handler_paged(translate_gl_labels, function(o, r)
     return append_page_params(base() .. "/projects/" .. project_id(o, r) .. "/labels", PAGES)
   end),
 
@@ -2340,7 +2366,7 @@ backend_impl = {
   -- Milestones ----------------------------------------------------------------
 
   -- GET /repos/{owner}/{repo}/milestones
-  get_repo_milestones = proxy_handler(translate_gl_milestones, function(o, r)
+  get_repo_milestones = proxy_handler_paged(translate_gl_milestones, function(o, r)
     return append_page_params(base() .. "/projects/" .. project_id(o, r) .. "/milestones", PAGES)
   end),
 
@@ -2405,14 +2431,14 @@ backend_impl = {
   -- Assignees -----------------------------------------------------------------
 
   -- GET /repos/{owner}/{repo}/assignees  (users eligible for assignment)
-  get_repo_assignees = proxy_handler(translate_gl_members, function(o, r)
+  get_repo_assignees = proxy_handler_paged(translate_gl_members, function(o, r)
     return append_page_params(base() .. "/projects/" .. project_id(o, r) .. "/members/all", PAGES)
   end),
 
   -- Pull Requests (mapped to GitLab Merge Requests) --------------------------
 
   -- GET /repos/{owner}/{repo}/pulls
-  get_repo_pulls = proxy_handler(translate_gl_mrs, function(o, r)
+  get_repo_pulls = proxy_handler_paged(translate_gl_mrs, function(o, r)
     return append_page_params(
       base() .. "/projects/" .. project_id(o, r) .. "/merge_requests",
       PAGES
@@ -2480,7 +2506,7 @@ backend_impl = {
   end,
 
   -- GET /repos/{owner}/{repo}/pulls/{pull_number}/commits
-  get_pull_commits = proxy_handler(function(commits)
+  get_pull_commits = proxy_handler_paged(function(commits)
     local result = {}
     for _, c in ipairs(commits or {}) do
       result[#result + 1] = {
