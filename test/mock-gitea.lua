@@ -403,12 +403,46 @@ function OnHttpRequest()
       200,
       '{"name":"C","source":"# Object files\\n*.o\\n\\n# Libraries\\n*.a\\n"}',
     },
+
+    -- Apps: Gitea has no GitHub Apps API; confusio returns 404 directly.
+    -- These routes document what the backend would return if ever proxied.
+    ["GET /app"] = { 404, nil },
+    ["GET /app/hook/config"] = { 404, nil },
+    ["PATCH /app/hook/config"] = { 404, nil },
+    ["GET /app/hook/deliveries"] = { 404, nil },
+    ["GET /app/hook/deliveries/1"] = { 404, nil },
+    ["POST /app/hook/deliveries/1/attempts"] = { 404, nil },
+    ["GET /app/installation-requests"] = { 404, nil },
+    ["GET /app/installations"] = { 404, nil },
+    ["GET /app/installations/1"] = { 404, nil },
+    ["DELETE /app/installations/1"] = { 404, nil },
+    ["POST /app/installations/1/access_tokens"] = { 404, nil },
+    ["PUT /app/installations/1/suspended"] = { 404, nil },
+    ["DELETE /app/installations/1/suspended"] = { 404, nil },
+    ["GET /apps/my-app"] = { 404, nil },
+    ["POST /app-manifests/abc123/conversions"] = { 404, nil },
+    ["GET /installation/repositories"] = { 404, nil },
+    ["DELETE /installation/token"] = { 404, nil },
+    ["POST /applications/myclientid/token"] = { 404, nil },
+    ["PATCH /applications/myclientid/token"] = { 404, nil },
+    ["DELETE /applications/myclientid/token"] = { 404, nil },
+    ["POST /applications/myclientid/token/scoped"] = { 404, nil },
+    ["DELETE /applications/myclientid/grant"] = { 404, nil },
+    ["GET /orgs/testorg/installation"] = { 404, nil },
+    ["GET /orgs/testorg/installations"] = { 404, nil },
+    ["GET /repos/octocat/hello-world/installation"] = { 404, nil },
+    ["GET /user/installations"] = { 404, nil },
+    ["GET /user/installations/1/repositories"] = { 404, nil },
+    ["PUT /user/installations/1/repositories/1"] = { 404, nil },
+    ["DELETE /user/installations/1/repositories/1"] = { 404, nil },
+    ["GET /users/octocat/installation"] = { 404, nil },
   }
 
   local entry = routes[method .. " " .. path] or routes[path]
   if entry then
     local status, body, extra_headers = entry[1], entry[2], entry[3]
-    SetStatus(status, status == 200 and "OK" or "No Content")
+    local reason = status == 200 and "OK" or status == 204 and "No Content" or "Not Found"
+    SetStatus(status, reason)
     if extra_headers then
       for k, v in pairs(extra_headers) do
         SetHeader(k, v)
