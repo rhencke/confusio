@@ -22,7 +22,19 @@ DELETE /repos/{owner}/{repo}/contents/{path},n,n,y,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n
 GET /repos/{owner}/{repo}/collaborators,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/forks,n,n,y,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 POST /repos/{owner}/{repo}/forks,n,n,y,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/releases,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+Releases,,,,,,,,,,,,,,,,,,,,,,,,
+GET /repos/{owner}/{repo}/releases,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+POST /repos/{owner}/{repo}/releases,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/releases/latest,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/releases/tags/{tag},n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/releases/{release_id},n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+PATCH /repos/{owner}/{repo}/releases/{release_id},n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+DELETE /repos/{owner}/{repo}/releases/{release_id},n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/releases/{release_id}/assets,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+POST /repos/{owner}/{repo}/releases/{release_id}/assets,n,n,n,y,n,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/releases/assets/{asset_id},n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+PATCH /repos/{owner}/{repo}/releases/assets/{asset_id},n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+DELETE /repos/{owner}/{repo}/releases/assets/{asset_id},n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/keys,n,n,y,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/hooks,n,n,y,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 Users,,,,,,,,,,,,,,,,,,,,,,,,

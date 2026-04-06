@@ -335,6 +335,23 @@ backend_impl = {
     )
   end),
 
+  post_repo_release_assets = function(owner, repo_name, release_id)
+    local url = base()
+      .. "/repos/"
+      .. owner
+      .. "/"
+      .. repo_name
+      .. "/releases/"
+      .. release_id
+      .. "/assets"
+    local opts = auth() or {}
+    opts.method = "POST"
+    opts.body = GetBody()
+    opts.headers = opts.headers or {}
+    opts.headers["Content-Type"] = GetHeader("Content-Type") or "application/octet-stream"
+    proxy_json_created(nil, pcall(Fetch, url, opts))
+  end,
+
   get_repo_release_asset = proxy_handler(nil, function(o, r, asset_id)
     return base() .. "/repos/" .. o .. "/" .. r .. "/releases/assets/" .. asset_id
   end),

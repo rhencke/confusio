@@ -252,6 +252,17 @@ HTTP 200
 header "Content-Type" == "application/json; charset=utf-8"
 jsonpath "$" isCollection
 
+# POST /repos/{owner}/{repo}/releases/{release_id}/assets — upload a release asset
+POST http://{{host}}/repos/octocat/hello-world/releases/1/assets
+Content-Type: application/octet-stream
+hex,deadbeef;
+
+HTTP 201
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$.id" isInteger
+jsonpath "$.name" isString
+
 # GET /repos/{owner}/{repo}/releases/assets/{asset_id}
 GET http://{{host}}/repos/octocat/hello-world/releases/assets/1
 

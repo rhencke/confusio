@@ -242,10 +242,67 @@ HTTP 200
 header "Content-Type" == "application/json; charset=utf-8"
 jsonpath "$.tag_name" == "v1.0"
 
-# GET /repos/{owner}/{repo}/releases/{release_id} — not implemented in GitLab
+# GET /repos/{owner}/{repo}/releases/{release_id}
 GET http://{{host}}/repos/octocat/hello-world/releases/1
 
-HTTP 404
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$.id" == 1
+jsonpath "$.tag_name" isString
+
+# PATCH /repos/{owner}/{repo}/releases/{release_id}
+PATCH http://{{host}}/repos/octocat/hello-world/releases/1
+Content-Type: application/json
+{"name": "Updated Release 1.0"}
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$.tag_name" isString
+
+# DELETE /repos/{owner}/{repo}/releases/{release_id}
+DELETE http://{{host}}/repos/octocat/hello-world/releases/1
+
+HTTP 204
+
+# GET /repos/{owner}/{repo}/releases/{release_id}/assets
+GET http://{{host}}/repos/octocat/hello-world/releases/1/assets
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$" isCollection
+
+# POST /repos/{owner}/{repo}/releases/{release_id}/assets
+POST http://{{host}}/repos/octocat/hello-world/releases/1/assets
+Content-Type: application/json
+{"name": "binary.zip", "url": "http://localhost/attachments/1"}
+
+HTTP 201
+
+# GET /repos/{owner}/{repo}/releases/assets/{asset_id}
+GET http://{{host}}/repos/octocat/hello-world/releases/assets/1
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$.id" isInteger
+
+# PATCH /repos/{owner}/{repo}/releases/assets/{asset_id}
+PATCH http://{{host}}/repos/octocat/hello-world/releases/assets/1
+Content-Type: application/json
+{"name": "updated.zip"}
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$.id" isInteger
+
+# DELETE /repos/{owner}/{repo}/releases/assets/{asset_id}
+DELETE http://{{host}}/repos/octocat/hello-world/releases/assets/1
+
+HTTP 204
 
 # GET /repos/{owner}/{repo}/keys — deploy keys passthrough
 GET http://{{host}}/repos/octocat/hello-world/keys

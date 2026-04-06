@@ -502,6 +502,85 @@ local function gl_find_label_id(owner, repo_name, label_name)
   return nil
 end
 
+-- Helper: resolve a GitHub integer release_id to a GitLab tag_name by fetching the
+-- releases list and returning the tag_name at the given index position.
+local function gl_tag_by_id(owner, repo_name, release_id)
+  local ok, status, _, body =
+    fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases")
+  if not ok or status ~= 200 then
+    return nil
+  end
+  local rels = DecodeJson(body)
+  local idx = tonumber(release_id)
+  if not rels or not idx or not rels[idx] then
+    return nil
+  end
+  return rels[idx].tag_name
+end
+
+-- Helper: translate a single GitLab release object to GitHub release format.
+local function translate_gl_release(r, idx)
+  return {
+    id = idx or 1,
+    tag_name = r.tag_name,
+    name = r.name,
+    body = r.description,
+    draft = false,
+    prerelease = false,
+    created_at = r.created_at,
+    published_at = r.released_at or r.created_at,
+    assets = {},
+  }
+end
+
+-- Helper: translate a GitLab release link to GitHub release asset format.
+local function translate_gl_link(l)
+  return {
+    id = l.id,
+    name = l.name,
+    label = l.name,
+    state = "uploaded",
+    content_type = "application/octet-stream",
+    size = 0,
+    download_count = 0,
+    created_at = l.created_at or "",
+    updated_at = l.updated_at or "",
+    browser_download_url = l.url,
+  }
+end
+
+-- Helper: scan all releases for the one containing a link with the given ID.
+-- Returns tag_name or nil. GitLab has no direct link-by-ID endpoint without tag_name.
+local function gl_find_link(owner, repo_name, asset_id)
+  local ok, status, _, body =
+    fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases")
+  if not ok or status ~= 200 then
+    return nil
+  end
+  local rels = DecodeJson(body)
+  if not rels then
+    return nil
+  end
+  for _, r in ipairs(rels) do
+    local ok2, s2, _, b2 = fetch_json(
+      base()
+        .. "/projects/"
+        .. project_id(owner, repo_name)
+        .. "/releases/"
+        .. r.tag_name
+        .. "/assets/links"
+    )
+    if ok2 and s2 == 200 then
+      for _, l in ipairs(DecodeJson(b2) or {}) do
+        if tostring(l.id) == tostring(asset_id) then
+          return r.tag_name
+        end
+      end
+    end
+  end
+  return nil
+end
+
 backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, base() .. "/version", auth())
@@ -1232,6 +1311,179 @@ backend_impl = {
   end, function(owner, repo_name, tag)
     return base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases/" .. tag
   end),
+
+  get_repo_release = function(owner, repo_name, release_id)
+    local tag = gl_tag_by_id(owner, repo_name, release_id)
+    if not tag then
+      respond_json(404, { message = "Not Found" })
+      return
+    end
+    proxy_json(function(r)
+      return translate_gl_release(r, tonumber(release_id))
+    end, fetch_json(
+      base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases/" .. tag
+    ))
+  end,
+
+  patch_repo_release = function(owner, repo_name, release_id)
+    local tag = gl_tag_by_id(owner, repo_name, release_id)
+    if not tag then
+      respond_json(404, { message = "Not Found" })
+      return
+    end
+    local req = DecodeJson(GetBody() or "{}")
+    local body = EncodeJson({ name = req.name, description = req.body })
+    proxy_json(
+      function(r)
+        return translate_gl_release(r, tonumber(release_id))
+      end,
+      fetch_json(
+        base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases/" .. tag,
+        "PUT",
+        body
+      )
+    )
+  end,
+
+  delete_repo_release = function(owner, repo_name, release_id)
+    local tag = gl_tag_by_id(owner, repo_name, release_id)
+    if not tag then
+      respond_json(404, { message = "Not Found" })
+      return
+    end
+    local ok, status = fetch_json(
+      base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases/" .. tag,
+      "DELETE"
+    )
+    if ok and (status == 200 or status == 204) then
+      SetStatus(204, "No Content")
+    elseif ok then
+      respond_json(status, {})
+    else
+      respond_json(503, {})
+    end
+  end,
+
+  get_repo_release_assets = function(owner, repo_name, release_id)
+    local tag = gl_tag_by_id(owner, repo_name, release_id)
+    if not tag then
+      respond_json(404, { message = "Not Found" })
+      return
+    end
+    proxy_json_paged(
+      function(links)
+        local result = {}
+        for i, l in ipairs(links or {}) do
+          result[i] = translate_gl_link(l)
+        end
+        return result
+      end,
+      PAGES,
+      fetch_json(
+        append_page_params(
+          base()
+            .. "/projects/"
+            .. project_id(owner, repo_name)
+            .. "/releases/"
+            .. tag
+            .. "/assets/links",
+          PAGES
+        )
+      )
+    )
+  end,
+
+  post_repo_release_assets = function(owner, repo_name, release_id)
+    local tag = gl_tag_by_id(owner, repo_name, release_id)
+    if not tag then
+      respond_json(404, { message = "Not Found" })
+      return
+    end
+    local req = DecodeJson(GetBody() or "{}")
+    local body = EncodeJson({ name = req.name, url = req.url or "" })
+    proxy_json_created(
+      translate_gl_link,
+      fetch_json(
+        base()
+          .. "/projects/"
+          .. project_id(owner, repo_name)
+          .. "/releases/"
+          .. tag
+          .. "/assets/links",
+        "POST",
+        body
+      )
+    )
+  end,
+
+  get_repo_release_asset = function(owner, repo_name, asset_id)
+    local tag = gl_find_link(owner, repo_name, asset_id)
+    if not tag then
+      respond_json(404, { message = "Not Found" })
+      return
+    end
+    proxy_json(
+      translate_gl_link,
+      fetch_json(
+        base()
+          .. "/projects/"
+          .. project_id(owner, repo_name)
+          .. "/releases/"
+          .. tag
+          .. "/assets/links/"
+          .. asset_id
+      )
+    )
+  end,
+
+  patch_repo_release_asset = function(owner, repo_name, asset_id)
+    local tag = gl_find_link(owner, repo_name, asset_id)
+    if not tag then
+      respond_json(404, { message = "Not Found" })
+      return
+    end
+    local req = DecodeJson(GetBody() or "{}")
+    local body = EncodeJson({ name = req.name })
+    proxy_json(
+      translate_gl_link,
+      fetch_json(
+        base()
+          .. "/projects/"
+          .. project_id(owner, repo_name)
+          .. "/releases/"
+          .. tag
+          .. "/assets/links/"
+          .. asset_id,
+        "PUT",
+        body
+      )
+    )
+  end,
+
+  delete_repo_release_asset = function(owner, repo_name, asset_id)
+    local tag = gl_find_link(owner, repo_name, asset_id)
+    if not tag then
+      respond_json(404, { message = "Not Found" })
+      return
+    end
+    local ok, status = fetch_json(
+      base()
+        .. "/projects/"
+        .. project_id(owner, repo_name)
+        .. "/releases/"
+        .. tag
+        .. "/assets/links/"
+        .. asset_id,
+      "DELETE"
+    )
+    if ok and (status == 200 or status == 204) then
+      SetStatus(204, "No Content")
+    elseif ok then
+      respond_json(status, {})
+    else
+      respond_json(503, {})
+    end
+  end,
 
   -- Deploy keys ---------------------------------------------------------------
 

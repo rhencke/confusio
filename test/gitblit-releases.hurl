@@ -1,0 +1,1 @@
+stub-releases.hurl

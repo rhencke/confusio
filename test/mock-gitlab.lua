@@ -136,6 +136,29 @@ function OnHttpRequest()
       '{"tag_name":"v1.0","name":"Release 1.0","description":"First release",'
         .. '"created_at":"2020-01-01T00:00:00Z","released_at":"2020-01-01T00:00:00Z"}'
     )
+  elseif path == pb .. "/releases/v1.0/assets/links/1" then
+    SetStatus(200, "OK")
+    json(
+      '{"id":1,"name":"binary.zip","url":"http://localhost/attachments/1",'
+        .. '"link_type":"other","created_at":"2020-01-01T00:00:00Z",'
+        .. '"updated_at":"2020-01-01T00:00:00Z"}'
+    )
+  elseif path == pb .. "/releases/v1.0/assets/links" then
+    if GetMethod() == "POST" then
+      SetStatus(201, "Created")
+      json(
+        '{"id":2,"name":"new-asset.zip","url":"http://localhost/new",'
+          .. '"link_type":"other","created_at":"2020-01-01T00:00:00Z",'
+          .. '"updated_at":"2020-01-01T00:00:00Z"}'
+      )
+    else
+      SetStatus(200, "OK")
+      json(
+        '[{"id":1,"name":"binary.zip","url":"http://localhost/attachments/1",'
+          .. '"link_type":"other","created_at":"2020-01-01T00:00:00Z",'
+          .. '"updated_at":"2020-01-01T00:00:00Z"}]'
+      )
+    end
   elseif path == pb .. "/releases/v1.0" then
     SetStatus(200, "OK")
     json(
