@@ -182,3 +182,22 @@ Hard-won insights from building this project. **Keep this section current**: whe
 
 - **Use Redbean itself as the mock server** — no Python/Node dependency, same binary already in the repo. Build `mock-<backend>.com` by copying `redbean.com` and zipping in a `.init.lua` handler. See `mock-gitea.com` target in `Makefile`.
 - **Mock validation via Hurl**: run the same `.hurl` assertion file against both the mock and the real endpoint. If both pass the same structural assertions, the mock is compatible. See `make validate-mock`.
+
+### Code coverage (luacov)
+
+- **Redbean ships Lua 5.4 with the full `debug` library** (`debug.sethook` is available), so
+  luacov's line-hook mechanism works without modification.
+- **`package.path` is restricted to `/zip/.lua/` by default.** To `require 'luacov'`, extend it
+  first: `package.path = 'path/to/luacov/?.lua;' .. package.path`. This must happen before
+  `require('luacov')` is called.
+- **luacov writes `luacov.stats.out` to the current working directory** (not the script directory).
+  The report generator reads the same file; both must run from the same `cwd`.
+- **luacov's `on_exit` cleanup fires via a `__gc` finalizer** on an anchor object. In Redbean `-i`
+  mode the GC runs on script end — stats are written automatically without an explicit
+  `runner.shutdown()` call.
+- **Unit tests achieve ~97% coverage of `.init.lua`** when run under luacov. Only ~14 lines are
+  missed (mainly the SCRIPTARGS parsing block which requires a real `arg` table).
+- **HTTP-level (Hurl) tests cannot contribute to luacov coverage directly** — Redbean runs as a
+  server process and the debug hook context does not survive across request dispatch. Coverage from
+  server-mode tests would require a different mechanism (e.g. patching `.init.lua` to emit stats on
+  a signal or request).
