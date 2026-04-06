@@ -14,6 +14,16 @@ local auth = function()
 end
 local PAGES = { per_page = "limit", page = "page" }
 
+-- Check if this Gitea instance allows anonymous access.
+-- Sets the global backend_allow_anonymous so OnHttpRequest can gate unauthenticated requests.
+do
+  local ok, status, _, body = pcall(Fetch, base() .. "/settings/api", nil)
+  if ok and status == 200 then
+    local settings = DecodeJson(body) or {}
+    backend_allow_anonymous = settings.require_signin_view ~= true
+  end
+end
+
 -- Thin wrappers that forward request body and headers for mutating calls.
 local function fetch_json(url, method, body)
   local opts = auth()

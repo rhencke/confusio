@@ -37,4 +37,5 @@ globals = {
   "translate_user",
   -- Set by backends/*.lua, read by .init.lua
   "backend_impl",
+  "backend_allow_anonymous",
 }
