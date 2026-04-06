@@ -132,8 +132,9 @@ backend_impl = {
     end
     local limit = GetParam("per_page") or "30"
     local offset = ((tonumber(GetParam("page")) or 1) - 1) * (tonumber(limit) or 30)
-    local ok, status, _, body =
-      fetch_json(base() .. "/projects/" .. project.id .. "/git?limit=" .. limit .. "&offset=" .. offset)
+    local ok, status, _, body = fetch_json(
+      base() .. "/projects/" .. project.id .. "/git?limit=" .. limit .. "&offset=" .. offset
+    )
     if not ok then
       respond_json(503, "Service Unavailable", {})
       return
