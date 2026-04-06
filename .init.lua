@@ -255,19 +255,19 @@ end
 -- Default handlers for GET /zen, GET /octocat, GET /versions, GET /meta.
 -- These endpoints are fully self-contained and do not call any backend.
 local ZEN_QUOTES = {
-  "Translate, don't transform.",
-  "Compatibility is not imitation.",
-  "The best interface is the one already known.",
-  "A proxy is only as good as its weakest backend.",
-  "Standards drift; adapters endure.",
-  "Abstract the difference, expose the familiar.",
-  "A well-placed shim outlasts the wall it fills.",
-  "Mapping is not loss.",
-  "The seam between systems is where bugs are born.",
-  "One fewer integration point is worth a thousand optimizations.",
-  "Meet the client where they are.",
-  "Normalize at the edge, not the core.",
-  "Confusion about the API is the API's fault.",
+  "A good dog does not need to understand the command.",
+  "Fetch once; cache twice.",
+  "The loyal dog returns what it is given.",
+  "Sit. Stay. Commit.",
+  "Every good boy deserves a response.",
+  "Bark less, ship more.",
+  "The dog who chases two rabbits catches neither.",
+  "A wagging tail costs nothing.",
+  "Treat the happy path as you would a good dog: reward it.",
+  "Even the best dog buries things it cannot yet use.",
+  "You cannot teach an old dog new protocols.",
+  "The dog does not judge the bone.",
+  "Roll over. Roll back.",
 }
 math.randomseed(os.time())
 local function zen_response()
