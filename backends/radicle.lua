@@ -112,9 +112,9 @@ backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, base(), auth())
     if ok and status == 200 then
-      respond_json(200, "OK", {})
+      respond_json(200, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -261,7 +261,7 @@ backend_impl = {
       local ok, status, _, body =
         fetch_json(base() .. "/repos/" .. rid .. "/blob/" .. ref .. "/" .. fname)
       if ok and status == 200 then
-        respond_json(200, "OK", {
+        respond_json(200, {
           type = "file",
           name = fname,
           path = fname,
@@ -273,7 +273,7 @@ backend_impl = {
         return
       end
     end
-    respond_json(404, "Not Found", { message = "Not Found" })
+    respond_json(404, { message = "Not Found" })
   end,
 
   get_repo_content = function(_, rid, path)
@@ -281,7 +281,7 @@ backend_impl = {
     local ok, status, _, body =
       fetch_json(base() .. "/repos/" .. rid .. "/blob/" .. ref .. "/" .. path)
     if ok and status == 200 then
-      respond_json(200, "OK", {
+      respond_json(200, {
         type = "file",
         name = path:match("[^/]+$") or path,
         path = path,
@@ -291,9 +291,9 @@ backend_impl = {
         content = EncodeBase64(body),
       })
     elseif ok then
-      respond_json(status, "Error", { message = "Error" })
+      respond_json(status, { message = "Error" })
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 

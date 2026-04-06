@@ -225,16 +225,16 @@ backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, base() .. "/server-version", auth())
     if ok and status == 200 then
-      respond_json(200, "OK", {})
+      respond_json(200, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
   get_repo = function(owner, repo_name)
     local id = resolve_project_id(owner, repo_name)
     if not id then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     proxy_json(translate_onedev_repo, fetch_json(base() .. "/projects/" .. id))
@@ -243,7 +243,7 @@ backend_impl = {
   patch_repo = function(owner, repo_name)
     local id = resolve_project_id(owner, repo_name)
     if not id then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     proxy_json(
@@ -255,7 +255,7 @@ backend_impl = {
   delete_repo = function(owner, repo_name)
     local id = resolve_project_id(owner, repo_name)
     if not id then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local dopts = auth() or {}
@@ -264,9 +264,9 @@ backend_impl = {
     if ok and (status == 200 or status == 204) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -326,7 +326,7 @@ backend_impl = {
   get_repo_branches = function(owner, repo_name)
     local id = resolve_project_id(owner, repo_name)
     if not id then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local count = tonumber(GetParam("per_page")) or 30
@@ -354,7 +354,7 @@ backend_impl = {
   get_repo_branch = function(owner, repo_name, branch)
     local id = resolve_project_id(owner, repo_name)
     if not id then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     -- OneDev: GET /~api/projects/{id}/branches?query=name+is+{branch}&count=1
@@ -375,7 +375,7 @@ backend_impl = {
   get_repo_commits = function(owner, repo_name)
     local id = resolve_project_id(owner, repo_name)
     if not id then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local ref = GetParam("sha") or ""
@@ -403,7 +403,7 @@ backend_impl = {
   get_repo_commit = function(owner, repo_name, ref)
     local id = resolve_project_id(owner, repo_name)
     if not id then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     proxy_json(
@@ -417,7 +417,7 @@ backend_impl = {
   get_repo_tags = function(owner, repo_name)
     local id = resolve_project_id(owner, repo_name)
     if not id then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     -- OneDev returns [{ name, commitHash }]
@@ -439,14 +439,14 @@ backend_impl = {
   get_repo_content = function(owner, repo_name, path)
     local id = resolve_project_id(owner, repo_name)
     if not id then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local ref = GetParam("ref") or "HEAD"
     local url = base() .. "/blobs/" .. id .. "/" .. ref .. "/" .. path
     local ok, status, _, body = fetch_json(url)
     if ok and status == 200 then
-      respond_json(200, "OK", {
+      respond_json(200, {
         type = "file",
         name = path:match("[^/]+$") or path,
         path = path,
@@ -456,9 +456,9 @@ backend_impl = {
         content = EncodeBase64(body),
       })
     elseif ok then
-      respond_json(status, "Error", { message = "Error" })
+      respond_json(status, { message = "Error" })
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -467,7 +467,7 @@ backend_impl = {
   post_repo_forks = function(owner, repo_name)
     local id = resolve_project_id(owner, repo_name)
     if not id then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     proxy_json_created(
@@ -585,26 +585,26 @@ backend_impl = {
       .. "%22"
     local ok, status, _, body = fetch_json(base() .. "/issues?query=" .. query .. "&count=1")
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local issues = DecodeJson(body) or {}
     if not issues[1] then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
-    respond_json(200, "OK", translate_onedev_issue(issues[1]))
+    respond_json(200, translate_onedev_issue(issues[1]))
   end,
 
   -- POST /repos/{owner}/{repo}/issues
   post_repo_issues = function(owner, repo_name)
     local id = resolve_project_id(owner, repo_name)
     if not id then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local req = DecodeJson(GetBody() or "{}")
@@ -622,16 +622,16 @@ backend_impl = {
     local nq = "%22Project%22+is+%22" .. path .. "%22+%22Number%22+is+%22" .. issue_number .. "%22"
     local ok, status, _, body = fetch_json(base() .. "/issues?query=" .. nq .. "&count=1")
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local issues = DecodeJson(body) or {}
     if not issues[1] then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local issue_id = issues[1].id
@@ -664,12 +664,12 @@ backend_impl = {
     local nq = "%22Project%22+is+%22" .. path .. "%22+%22Number%22+is+%22" .. issue_number .. "%22"
     local ok, status, _, body = fetch_json(base() .. "/issues?query=" .. nq .. "&count=1")
     if not ok or status ~= 200 then
-      respond_json(status or 503, "Error", {})
+      respond_json(status or 503, {})
       return
     end
     local issues = DecodeJson(body) or {}
     if not issues[1] then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local issue_id = issues[1].id

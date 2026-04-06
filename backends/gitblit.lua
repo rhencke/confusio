@@ -119,9 +119,9 @@ backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, rpc() .. "?req=LIST_REPOSITORIES", auth())
     if ok and status == 200 then
-      respond_json(200, "OK", {})
+      respond_json(200, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -129,74 +129,74 @@ backend_impl = {
     local gitblit_name = owner .. "/" .. repo_name .. ".git"
     local ok, status, _, body = fetch_rpc("GET_REPOSITORY", "&name=" .. gitblit_name)
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local r = DecodeJson(body) or {}
     if not r.name then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
-    respond_json(200, "OK", translate_repo(r))
+    respond_json(200, translate_repo(r))
   end,
 
   get_org_repos = function(org)
     local repos, status = list_repos_by_prefix(org .. "/")
     if not repos then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
-    respond_json(200, "OK", repos)
+    respond_json(200, repos)
   end,
 
   get_users_repos = function(username)
     local repos, status = list_repos_by_prefix(username .. "/")
     if not repos then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
-    respond_json(200, "OK", repos)
+    respond_json(200, repos)
   end,
 
   get_repositories = function()
     local repos, status = list_repos_by_prefix("")
     if not repos then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
-    respond_json(200, "OK", repos)
+    respond_json(200, repos)
   end,
 
   get_users_username = function(username)
     local ok, status, _, body = fetch_rpc("GET_USER", "&name=" .. username)
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local u = DecodeJson(body) or {}
     if not u.name then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
-    respond_json(200, "OK", translate_user(u))
+    respond_json(200, translate_user(u))
   end,
 
   get_users = function()
     local ok, status, _, body = fetch_rpc("LIST_USERS")
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local users = DecodeJson(body) or {}
@@ -204,14 +204,14 @@ backend_impl = {
     for _, u in ipairs(users) do
       result[#result + 1] = translate_user(u)
     end
-    respond_json(200, "OK", result)
+    respond_json(200, result)
   end,
 
   search_repositories = function()
     local q = (GetParam("q") or ""):lower()
     local repos, status = list_repos_by_prefix("")
     if not repos then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local items = repos
@@ -225,18 +225,18 @@ backend_impl = {
         end
       end
     end
-    respond_json(200, "OK", { total_count = #items, incomplete_results = false, items = items })
+    respond_json(200, { total_count = #items, incomplete_results = false, items = items })
   end,
 
   search_users = function()
     local q = (GetParam("q") or ""):lower()
     local ok, status, _, body = fetch_rpc("LIST_USERS")
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local users = DecodeJson(body) or {}
@@ -246,6 +246,6 @@ backend_impl = {
         items[#items + 1] = translate_user(u)
       end
     end
-    respond_json(200, "OK", { total_count = #items, incomplete_results = false, items = items })
+    respond_json(200, { total_count = #items, incomplete_results = false, items = items })
   end,
 }

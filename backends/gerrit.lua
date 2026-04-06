@@ -131,9 +131,9 @@ backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, config.base_url .. "/config/server/version", auth())
     if ok and status == 200 then
-      respond_json(200, "OK", {})
+      respond_json(200, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
   get_repo = proxy_handler(translate_gerrit_repo, function(owner, repo_name)
@@ -273,11 +273,11 @@ backend_impl = {
   get_user = function()
     local ok, status, _, body = fetch_json(base() .. "/accounts/self?o=DETAILS")
     if ok and status == 200 then
-      respond_json(200, "OK", translate_gerrit_user(gerrit_decode(body)))
+      respond_json(200, translate_gerrit_user(gerrit_decode(body)))
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -285,11 +285,11 @@ backend_impl = {
   get_users_username = function(username)
     local ok, status, _, body = fetch_json(base() .. "/accounts/" .. username .. "?o=DETAILS")
     if ok and status == 200 then
-      respond_json(200, "OK", translate_gerrit_user(gerrit_decode(body)))
+      respond_json(200, translate_gerrit_user(gerrit_decode(body)))
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -309,11 +309,11 @@ backend_impl = {
       for _, a in ipairs(accounts) do
         users[#users + 1] = translate_gerrit_user(a)
       end
-      respond_json(200, "OK", users)
+      respond_json(200, users)
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -338,7 +338,7 @@ backend_impl = {
     local ok, status, _, body = fetch_json(url)
     if ok and status == 200 then
       -- Gerrit returns already-base64-encoded content
-      respond_json(200, "OK", {
+      respond_json(200, {
         type = "file",
         name = path:match("[^/]+$") or path,
         path = path,
@@ -348,9 +348,9 @@ backend_impl = {
         content = body,
       })
     elseif ok then
-      respond_json(status, "Error", { message = "Error" })
+      respond_json(status, { message = "Error" })
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 }

@@ -152,9 +152,9 @@ backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, base() .. "/projects?limit=1", auth())
     if ok and status == 200 then
-      respond_json(200, "OK", {})
+      respond_json(200, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -163,33 +163,33 @@ backend_impl = {
   get_repo = function(owner, repo_name)
     local project = find_project(owner)
     if not project then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local ok, status, _, body = fetch_json(project_git_url(project.id))
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local repos = DecodeJson(body) or {}
     for _, r in ipairs(repos) do
       if r.name == repo_name then
-        respond_json(200, "OK", translate_tuleap_repo(r))
+        respond_json(200, translate_tuleap_repo(r))
         return
       end
     end
-    respond_json(404, "Not Found", { message = "Not Found" })
+    respond_json(404, { message = "Not Found" })
   end,
 
   -- GET /orgs/{org}/repos: org = project shortname; lists git repos in that project.
   get_org_repos = function(org)
     local project = find_project(org)
     if not project then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     proxy_json(function(repos)
@@ -206,21 +206,21 @@ backend_impl = {
     local url = base() .. '/users?query={"username":"' .. username .. '"}&limit=1'
     local ok, status, _, body = fetch_json(url)
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local users = DecodeJson(body) or {}
     for _, u in ipairs(users) do
       if u.username == username then
-        respond_json(200, "OK", translate_tuleap_user(u))
+        respond_json(200, translate_tuleap_user(u))
         return
       end
     end
-    respond_json(404, "Not Found", { message = "Not Found" })
+    respond_json(404, { message = "Not Found" })
   end,
 
   -- GET /users: list Tuleap users (search by ?q= if given).

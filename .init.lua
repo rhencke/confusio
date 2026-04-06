@@ -18,10 +18,27 @@ end
 
 config.base_url = config.base_url:gsub("/$", "")
 
+-- set_preamble is global: backends/<name>.lua uses it.
+-- Sets the HTTP status (with text looked up by code) and Content-Type header.
+-- content_type defaults to "application/json; charset=utf-8".
+local HTTP_STATUS_TEXT = {
+  [200] = "OK",
+  [201] = "Created",
+  [204] = "No Content",
+  [302] = "Found",
+  [404] = "Not Found",
+  [405] = "Method Not Allowed",
+  [422] = "Unprocessable Entity",
+  [503] = "Service Unavailable",
+}
+function set_preamble(status, content_type)
+  SetStatus(status, HTTP_STATUS_TEXT[status] or tostring(status))
+  SetHeader("Content-Type", content_type or "application/json; charset=utf-8")
+end
+
 -- respond_json is global: backends/<name>.lua uses it.
-function respond_json(status, reason, body)
-  SetStatus(status, reason)
-  SetHeader("Content-Type", "application/json; charset=utf-8")
+function respond_json(status, body)
+  set_preamble(status)
   Write(EncodeJson(body))
 end
 
@@ -40,9 +57,9 @@ function proxy_json(translate, ok, status, headers, body)
     local data = DecodeJson(body) or {}
     local link = headers and (headers["Link"] or headers["link"])
     if link then SetHeader("Link", link) end
-    respond_json(200, "OK", translate and translate(data) or data)
-  elseif ok then respond_json(status, "Error", {})
-  else respond_json(503, "Service Unavailable", {}) end
+    respond_json(200, translate and translate(data) or data)
+  elseif ok then respond_json(status, {})
+  else respond_json(503, {}) end
 end
 
 -- Like proxy_json but for create endpoints: upstream may return 200 or 201;
@@ -50,9 +67,9 @@ end
 function proxy_json_created(translate, ok, status, _headers, body)
   if ok and (status == 200 or status == 201) then
     local data = DecodeJson(body) or {}
-    respond_json(201, "Created", translate and translate(data) or data)
-  elseif ok then respond_json(status, "Error", {})
-  else respond_json(503, "Service Unavailable", {}) end
+    respond_json(201, translate and translate(data) or data)
+  elseif ok then respond_json(status, {})
+  else respond_json(503, {}) end
 end
 
 -- append_page_params appends translated pagination params to url.
@@ -212,16 +229,14 @@ local handle = backend_impl
 -- Default handler for list endpoints: backends without native support return [].
 -- Backends that implement the endpoint override it; others fall back to this default.
 local function empty_list()
-  SetStatus(200, "OK")
-  SetHeader("Content-Type", "application/json; charset=utf-8")
+  set_preamble(200)
   Write("[]")
 end
 
 -- Default handler for search endpoints: backends without native support return an
 -- empty but valid GitHub search result envelope.
 local function search_empty()
-  SetStatus(200, "OK")
-  SetHeader("Content-Type", "application/json; charset=utf-8")
+  set_preamble(200)
   Write('{"total_count":0,"incomplete_results":false,"items":[]}')
 end
 
@@ -231,7 +246,7 @@ end
 local function rate_limit_response()
   local limit = 999999
   local reset = os.time() + 3600
-  respond_json(200, "OK", {
+  respond_json(200, {
     rate = { limit = limit, used = 0, remaining = limit, reset = reset },
   })
 end
@@ -255,28 +270,24 @@ local ZEN_QUOTES = {
 }
 math.randomseed(os.time())
 local function zen_response()
-  SetStatus(200, "OK")
-  SetHeader("Content-Type", "text/plain;charset=utf-8")
+  set_preamble(200, "text/plain;charset=utf-8")
   Write(ZEN_QUOTES[math.random(#ZEN_QUOTES)])
 end
 
 local function octocat_response()
-  SetStatus(200, "OK")
-  SetHeader("Content-Type", "application/octocat-stream")
+  set_preamble(200, "application/octocat-stream")
   Write("🐙🐱")
 end
 
 local function versions_response()
-  SetStatus(200, "OK")
-  SetHeader("Content-Type", "application/json; charset=utf-8")
+  set_preamble(200)
   Write('["2022-11-28"]')
 end
 
 -- meta_response returns a minimal but valid GitHub /meta structure.
 -- IP range arrays are empty since confusio is not GitHub infrastructure.
 local function meta_response()
-  SetStatus(200, "OK")
-  SetHeader("Content-Type", "application/json; charset=utf-8")
+  set_preamble(200)
   Write(
     '{"verifiable_password_authentication":false'
       .. ',"ssh_key_fingerprints":{}'
@@ -381,7 +392,7 @@ end
 
 local routes = {
   -- Root
-  ["GET /"]                                                                    = { "get_root",    function() respond_json(200, "OK", {}) end },
+  ["GET /"]                                                                    = { "get_root",    function() respond_json(200, {}) end },
   -- Meta (https://docs.github.com/en/rest/meta)
   ["GET /meta"]                                                                = { "get_meta",    meta_response },
   ["GET /octocat"]                                                             = { "get_octocat", octocat_response },
@@ -747,10 +758,10 @@ function OnHttpRequest()
   if ep then
     local fn = handle[ep] or default_fn
     if fn then fn(table.unpack(caps))
-    else respond_json(404, "Not Found", { message = "Not Found" }) end
+    else respond_json(404, { message = "Not Found" }) end
   elseif path_known(GetPath()) then
-    respond_json(405, "Method Not Allowed", { message = "Method Not Allowed" })
+    respond_json(405, { message = "Method Not Allowed" })
   else
-    respond_json(404, "Not Found", { message = "Not Found" })
+    respond_json(404, { message = "Not Found" })
   end
 end
