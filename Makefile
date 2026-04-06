@@ -99,7 +99,7 @@ endef
 
 $(foreach b,$(BACKENDS),$(eval $(call BACKEND_RULE,$(b))))
 
-.PHONY: build site test test-unit test-unit-functions test-unit-backends test-integration validate-mock test-format test-lint clean
+.PHONY: build site test test-unit test-unit-functions test-unit-backends test-integration validate-mock test-format test-lint test-coverage clean
 
 build: confusio.com
 
@@ -134,6 +134,11 @@ test-format: stylua
 
 test-lint: luacheck
 	./luacheck . --exclude-files 'luacov'
+
+test-coverage: redbean.com luacov
+	rm -f luacov.stats.out luacov.report.out
+	COVERAGE=1 ./redbean.com -i test/unit-init.lua
+	./redbean.com -i scripts/luacov-report.lua
 
 clean:
 	rm -f redbean.com confusio.com $(MOCKS) hurl stylua luacheck
