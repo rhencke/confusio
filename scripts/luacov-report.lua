@@ -2,7 +2,7 @@
 -- Usage: ./redbean.com -i scripts/luacov-report.lua
 -- Requires luacov/ to exist (make luacov) and luacov.stats.out to exist (COVERAGE=1 run).
 
-local THRESHOLD = 97 -- percent
+local THRESHOLD = 100 -- percent
 
 package.path = "luacov/?.lua;" .. package.path
 local runner = require("luacov.runner")
