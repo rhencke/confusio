@@ -239,19 +239,19 @@ end
 -- Default handlers for GET /zen, GET /octocat, GET /versions, GET /meta.
 -- These endpoints are fully self-contained and do not call any backend.
 local ZEN_QUOTES = {
-  "Responsive is better than fast.",
-  "It's not fully shipped until it's fast.",
-  "Anything added dilutes everything else.",
-  "Practicality beats purity.",
-  "Approachable is better than simple.",
-  "Mind your words, they are important.",
-  "Speak like a human.",
-  "Half measures are as bad as nothing at all.",
-  "Encourage flow.",
-  "Non-blocking is better than blocking.",
-  "Imagine more creators.",
-  "Design for failure.",
-  "Keep it logically awesome.",
+  "Translate, don't transform.",
+  "Compatibility is not imitation.",
+  "The best interface is the one already known.",
+  "A proxy is only as good as its weakest backend.",
+  "Standards drift; adapters endure.",
+  "Abstract the difference, expose the familiar.",
+  "A well-placed shim outlasts the wall it fills.",
+  "Mapping is not loss.",
+  "The seam between systems is where bugs are born.",
+  "One fewer integration point is worth a thousand optimizations.",
+  "Meet the client where they are.",
+  "Normalize at the edge, not the core.",
+  "Confusion about the API is the API's fault.",
 }
 math.randomseed(os.time())
 local function zen_response()
