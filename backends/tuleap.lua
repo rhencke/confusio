@@ -95,6 +95,13 @@ local function translate_tuleap_user(u)
   }
 end
 
+-- Returns limit and offset query params for Tuleap pagination.
+local function pagination_params()
+  local limit = GetParam("per_page") or "30"
+  local offset = ((tonumber(GetParam("page")) or 1) - 1) * (tonumber(limit) or 30)
+  return limit, offset
+end
+
 -- Look up a Tuleap project by shortname.
 -- Returns the project table { id, shortname, ... } or nil on failure.
 local function find_project(shortname)
@@ -130,8 +137,7 @@ backend_impl = {
       respond_json(404, "Not Found", { message = "Not Found" })
       return
     end
-    local limit = GetParam("per_page") or "30"
-    local offset = ((tonumber(GetParam("page")) or 1) - 1) * (tonumber(limit) or 30)
+    local limit, offset = pagination_params()
     local ok, status, _, body = fetch_json(
       base() .. "/projects/" .. project.id .. "/git?limit=" .. limit .. "&offset=" .. offset
     )
@@ -160,8 +166,7 @@ backend_impl = {
       respond_json(404, "Not Found", { message = "Not Found" })
       return
     end
-    local limit = GetParam("per_page") or "30"
-    local offset = ((tonumber(GetParam("page")) or 1) - 1) * (tonumber(limit) or 30)
+    local limit, offset = pagination_params()
     local url = base()
       .. "/projects/"
       .. project.id
@@ -203,8 +208,7 @@ backend_impl = {
   -- GET /users: list Tuleap users (search by ?q= if given).
   get_users = function()
     local q = GetParam("q") or ""
-    local limit = GetParam("per_page") or "30"
-    local offset = ((tonumber(GetParam("page")) or 1) - 1) * (tonumber(limit) or 30)
+    local limit, offset = pagination_params()
     local url = base() .. "/users?limit=" .. limit .. "&offset=" .. offset
     if q ~= "" then
       url = url .. '&query={"username":"' .. q .. '"}'
@@ -221,8 +225,7 @@ backend_impl = {
   -- GET /search/repositories: search Tuleap projects by name.
   search_repositories = function()
     local q = GetParam("q") or ""
-    local limit = GetParam("per_page") or "30"
-    local offset = ((tonumber(GetParam("page")) or 1) - 1) * (tonumber(limit) or 30)
+    local limit, offset = pagination_params()
     local url = base() .. "/projects?limit=" .. limit .. "&offset=" .. offset
     if q ~= "" then
       url = url .. '&query={"name":"' .. q .. '"}'
@@ -251,8 +254,7 @@ backend_impl = {
   -- GET /search/users: search Tuleap users by username.
   search_users = function()
     local q = GetParam("q") or ""
-    local limit = GetParam("per_page") or "30"
-    local offset = ((tonumber(GetParam("page")) or 1) - 1) * (tonumber(limit) or 30)
+    local limit, offset = pagination_params()
     local url = base() .. "/users?limit=" .. limit .. "&offset=" .. offset
     if q ~= "" then
       url = url .. '&query={"username":"' .. q .. '"}'
