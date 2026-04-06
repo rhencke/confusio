@@ -153,7 +153,9 @@ backend_impl = {
   end,
 
   get_repositories = function()
-    if not check_page() then return end
+    if not check_page() then
+      return
+    end
     local per_page = tonumber(GetParam("per_page") or "") or nil
     local repos, _, status = list_repos_page(per_page)
     if not repos then
@@ -195,7 +197,9 @@ backend_impl = {
   end,
 
   search_repositories = function()
-    if not check_page() then return end
+    if not check_page() then
+      return
+    end
     local q = (GetParam("q") or ""):lower()
     local per_page = tonumber(GetParam("per_page") or "") or nil
     local repos, incomplete, status = list_repos_page(per_page)
@@ -210,6 +214,10 @@ backend_impl = {
         items[#items + 1] = translate_repo(r)
       end
     end
-    respond_json(200, "OK", { total_count = #items, incomplete_results = incomplete, items = items })
+    respond_json(
+      200,
+      "OK",
+      { total_count = #items, incomplete_results = incomplete, items = items }
+    )
   end,
 }
