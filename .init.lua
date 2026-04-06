@@ -18,10 +18,34 @@ end
 
 config.base_url = config.base_url:gsub("/$", "")
 
+-- set_preamble is global: backends/<name>.lua uses it.
+-- Sets the HTTP status (with text looked up by code) and Content-Type header.
+-- content_type defaults to "application/json; charset=utf-8".
+local HTTP_STATUS_TEXT = {
+  [200] = "OK",
+  [201] = "Created",
+  [204] = "No Content",
+  [302] = "Found",
+  [404] = "Not Found",
+  [405] = "Method Not Allowed",
+  [418] = "I'm a Teapot",
+  [422] = "Unprocessable Entity",
+  [503] = "Service Unavailable",
+}
+function set_preamble(status, content_type)
+  if type(status) == "string" then
+    content_type = status
+    status = 200
+  else
+    status = status or 200
+  end
+  SetStatus(status, HTTP_STATUS_TEXT[status] or tostring(status))
+  SetHeader("Content-Type", content_type or "application/json; charset=utf-8")
+end
+
 -- respond_json is global: backends/<name>.lua uses it.
-function respond_json(status, reason, body)
-  SetStatus(status, reason)
-  SetHeader("Content-Type", "application/json; charset=utf-8")
+function respond_json(status, body)
+  set_preamble(status)
   Write(EncodeJson(body))
 end
 
@@ -40,9 +64,9 @@ function proxy_json(translate, ok, status, headers, body)
     local data = DecodeJson(body) or {}
     local link = headers and (headers["Link"] or headers["link"])
     if link then SetHeader("Link", link) end
-    respond_json(200, "OK", translate and translate(data) or data)
-  elseif ok then respond_json(status, "Error", {})
-  else respond_json(503, "Service Unavailable", {}) end
+    respond_json(200, translate and translate(data) or data)
+  elseif ok then respond_json(status, {})
+  else respond_json(503, {}) end
 end
 
 -- Like proxy_json but for create endpoints: upstream may return 200 or 201;
@@ -50,9 +74,9 @@ end
 function proxy_json_created(translate, ok, status, _headers, body)
   if ok and (status == 200 or status == 201) then
     local data = DecodeJson(body) or {}
-    respond_json(201, "Created", translate and translate(data) or data)
-  elseif ok then respond_json(status, "Error", {})
-  else respond_json(503, "Service Unavailable", {}) end
+    respond_json(201, translate and translate(data) or data)
+  elseif ok then respond_json(status, {})
+  else respond_json(503, {}) end
 end
 
 -- append_page_params appends translated pagination params to url.
@@ -212,16 +236,14 @@ local handle = backend_impl
 -- Default handler for list endpoints: backends without native support return [].
 -- Backends that implement the endpoint override it; others fall back to this default.
 local function empty_list()
-  SetStatus(200, "OK")
-  SetHeader("Content-Type", "application/json; charset=utf-8")
+  set_preamble()
   Write("[]")
 end
 
 -- Default handler for search endpoints: backends without native support return an
 -- empty but valid GitHub search result envelope.
 local function search_empty()
-  SetStatus(200, "OK")
-  SetHeader("Content-Type", "application/json; charset=utf-8")
+  set_preamble()
   Write('{"total_count":0,"incomplete_results":false,"items":[]}')
 end
 
@@ -231,9 +253,69 @@ end
 local function rate_limit_response()
   local limit = 999999
   local reset = os.time() + 3600
-  respond_json(200, "OK", {
+  respond_json(200, {
     rate = { limit = limit, used = 0, remaining = limit, reset = reset },
   })
+end
+
+-- Default handlers for GET /zen, GET /octocat, GET /versions, GET /meta.
+-- These endpoints are fully self-contained and do not call any backend.
+local ZEN_QUOTES = {
+  "A good dog does not need to understand the command.",
+  "Fetch once; cache twice.",
+  "The loyal dog returns what it is given.",
+  "Sit. Stay. Commit.",
+  "Every good boy deserves a response.",
+  "Bark less, ship more.",
+  "The dog who chases two rabbits catches neither.",
+  "A wagging tail costs nothing.",
+  "Treat the happy path as you would a good dog: reward it.",
+  "Even the best dog buries things it cannot yet use.",
+  "You cannot teach an old dog new protocols.",
+  "The dog does not judge the bone.",
+  "Roll over. Roll back.",
+}
+math.randomseed(os.time())
+local function zen_response()
+  set_preamble("text/plain;charset=utf-8")
+  Write(ZEN_QUOTES[math.random(#ZEN_QUOTES)])
+end
+
+local function octocat_response()
+  set_preamble("application/octocat-stream")
+  Write("🐙🐱")
+end
+
+local function versions_response()
+  set_preamble()
+  Write('["2022-11-28"]')
+end
+
+-- meta_response returns a minimal but valid GitHub /meta structure.
+-- IP range arrays are empty since confusio is not GitHub infrastructure.
+local function meta_response()
+  set_preamble()
+  Write(
+    '{"verifiable_password_authentication":false'
+      .. ',"ssh_key_fingerprints":{}'
+      .. ',"ssh_keys":[]'
+      .. ',"hooks":[]'
+      .. ',"web":[]'
+      .. ',"api":[]'
+      .. ',"git":[]'
+      .. ',"packages":[]'
+      .. ',"pages":[]'
+      .. ',"importer":[]'
+      .. ',"actions":[]'
+      .. ',"dependabot":[]'
+      .. ',"github_enterprise_importer":[]'
+      .. ',"domains":{"website":[],"codespaces":[],"copilot":[],"packages":[]}}'
+  )
+end
+
+local function teapot_response()
+  set_preamble(418, "text/plain;charset=utf-8")
+  Write("I'm a teapot.")
 end
 
 -- ---------------------------------------------------------------------------
@@ -322,7 +404,13 @@ end
 
 local routes = {
   -- Root
-  ["GET /"]                                                                    = { "get_root", function() respond_json(200, "OK", {}) end },
+  ["GET /"]                                                                    = { "get_root",    function() respond_json(200, {}) end },
+  -- Meta (https://docs.github.com/en/rest/meta)
+  ["GET /meta"]                                                                = { "get_meta",    meta_response },
+  ["GET /octocat"]                                                             = { "get_octocat", octocat_response },
+  ["GET /teapot"]                                                              = { "get_teapot",  teapot_response },
+  ["GET /versions"]                                                            = { "get_versions", versions_response },
+  ["GET /zen"]                                                                 = { "get_zen",     zen_response },
   -- Emojis
   ["GET /emojis"]                                                              = "get_emojis",
   -- Gitignore templates (https://docs.github.com/en/rest/gitignore)
@@ -683,10 +771,10 @@ function OnHttpRequest()
   if ep then
     local fn = handle[ep] or default_fn
     if fn then fn(table.unpack(caps))
-    else respond_json(404, "Not Found", { message = "Not Found" }) end
+    else respond_json(404, { message = "Not Found" }) end
   elseif path_known(GetPath()) then
-    respond_json(405, "Method Not Allowed", { message = "Method Not Allowed" })
+    respond_json(405, { message = "Method Not Allowed" })
   else
-    respond_json(404, "Not Found", { message = "Not Found" })
+    respond_json(404, { message = "Not Found" })
   end
 end

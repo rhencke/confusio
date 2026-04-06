@@ -275,9 +275,9 @@ backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, ado_url(config.base_url .. "/_apis/connectionData"), auth())
     if ok and status == 200 then
-      respond_json(200, "OK", {})
+      respond_json(200, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
   get_repo = function(owner, repo_name)
@@ -303,7 +303,7 @@ backend_impl = {
     -- Must resolve repo ID first
     local ok, status, _, body = fetch_json(ado_url(repos_base(owner) .. "/" .. repo_name))
     if not ok or status ~= 200 then
-      respond_json(ok and status or 503, "Error", {})
+      respond_json(ok and status or 503, {})
       return
     end
     local repo = DecodeJson(body) or {}
@@ -314,9 +314,9 @@ backend_impl = {
     if dok and (dstatus == 204 or dstatus == 200) then
       SetStatus(204, "No Content")
     elseif dok then
-      respond_json(dstatus, "Error", {})
+      respond_json(dstatus, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -452,7 +452,7 @@ backend_impl = {
       )
       local ok, status, _, body = fetch_json(url)
       if ok and status == 200 then
-        respond_json(200, "OK", {
+        respond_json(200, {
           type = "file",
           name = fname,
           path = fname,
@@ -464,7 +464,7 @@ backend_impl = {
         return
       end
     end
-    respond_json(404, "Not Found", { message = "Not Found" })
+    respond_json(404, { message = "Not Found" })
   end,
 
   get_repo_content = function(owner, repo_name, path)
@@ -479,7 +479,7 @@ backend_impl = {
     )
     local ok, status, _, body = fetch_json(url)
     if ok and status == 200 then
-      respond_json(200, "OK", {
+      respond_json(200, {
         type = "file",
         name = path:match("[^/]+$") or path,
         path = path,
@@ -489,9 +489,9 @@ backend_impl = {
         content = EncodeBase64(body),
       })
     elseif ok then
-      respond_json(status, "Error", { message = "Error" })
+      respond_json(status, { message = "Error" })
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -560,7 +560,7 @@ backend_impl = {
     -- First resolve repo ID
     local ok, status, _, body = fetch_json(ado_url(repos_base(owner) .. "/" .. repo_name))
     if not ok or status ~= 200 then
-      respond_json(ok and status or 503, "Error", {})
+      respond_json(ok and status or 503, {})
       return
     end
     local repo_id = (DecodeJson(body) or {}).id or repo_name
@@ -623,16 +623,16 @@ backend_impl = {
   get_org_team = function(org, slug)
     local t = ado_find_team(org, slug)
     if not t then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
-    respond_json(200, "OK", translate_ado_team(t))
+    respond_json(200, translate_ado_team(t))
   end,
 
   patch_org_team = function(org, slug)
     local t = ado_find_team(org, slug)
     if not t then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local req = DecodeJson(GetBody() or "{}")
@@ -656,7 +656,7 @@ backend_impl = {
   delete_org_team = function(org, slug)
     local t = ado_find_team(org, slug)
     if not t then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local dopts = auth() or {}
@@ -669,9 +669,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -682,7 +682,7 @@ backend_impl = {
   get_org_team_members = function(org, slug)
     local t = ado_find_team(org, slug)
     if not t then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     proxy_json(
@@ -709,14 +709,14 @@ backend_impl = {
   get_org_team_membership = function(org, slug, username)
     local t = ado_find_team(org, slug)
     if not t then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local ok, status, _, body = fetch_json(
       ado_url(config.base_url .. "/_apis/projects/" .. org .. "/teams/" .. t.id .. "/members")
     )
     if not ok or status ~= 200 then
-      respond_json(ok and status or 503, "Error", {})
+      respond_json(ok and status or 503, {})
       return
     end
     for _, m in ipairs((DecodeJson(body) or {}).value or {}) do
@@ -724,7 +724,7 @@ backend_impl = {
       local name = ident.uniqueName or ident.displayName or ""
       local short = name:match("^([^@]+)") or name
       if name == username or short == username then
-        respond_json(200, "OK", {
+        respond_json(200, {
           url = "",
           role = m.isTeamAdmin and "maintainer" or "member",
           state = "active",
@@ -732,7 +732,7 @@ backend_impl = {
         return
       end
     end
-    respond_json(404, "Not Found", { message = "Not Found" })
+    respond_json(404, { message = "Not Found" })
   end,
 
   -- ADO team membership is managed through security groups (no simple add/remove
@@ -740,7 +740,7 @@ backend_impl = {
   put_org_team_membership = function(org, slug, username)
     local t = ado_find_team(org, slug)
     if not t then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local req = DecodeJson(GetBody() or "{}")
@@ -752,18 +752,18 @@ backend_impl = {
     )
     -- ADO may return 400/404 here if the username isn't an AAD object ID; surface gracefully.
     if ok and status == 200 then
-      respond_json(200, "OK", { url = "", role = role, state = "active" })
+      respond_json(200, { url = "", role = role, state = "active" })
     elseif ok and (status == 204 or status == 201) then
-      respond_json(200, "OK", { url = "", role = role, state = "active" })
+      respond_json(200, { url = "", role = role, state = "active" })
     else
-      respond_json(200, "OK", { url = "", role = role, state = "pending" })
+      respond_json(200, { url = "", role = role, state = "pending" })
     end
   end,
 
   delete_org_team_membership = function(org, slug, username)
     local t = ado_find_team(org, slug)
     if not t then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local dopts = auth() or {}
@@ -814,16 +814,16 @@ backend_impl = {
   get_team = function(team_id)
     local t = ado_get_team_by_id(team_id)
     if not t then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
-    respond_json(200, "OK", translate_ado_team(t))
+    respond_json(200, translate_ado_team(t))
   end,
 
   patch_team = function(team_id)
     local t = ado_get_team_by_id(team_id)
     if not t then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local req = DecodeJson(GetBody() or "{}")
@@ -849,7 +849,7 @@ backend_impl = {
   delete_team = function(team_id)
     local t = ado_get_team_by_id(team_id)
     if not t then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local dopts = auth() or {}
@@ -864,9 +864,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -877,12 +877,12 @@ backend_impl = {
   get_team_members = function(team_id)
     local t = ado_get_team_by_id(team_id)
     if not t then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local data = ado_fetch_team_members(t.projectName or "", team_id)
     if not data then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     local result = {}
@@ -896,18 +896,18 @@ backend_impl = {
         type = "User",
       }
     end
-    respond_json(200, "OK", result)
+    respond_json(200, result)
   end,
 
   get_team_member = function(team_id, username)
     local t = ado_get_team_by_id(team_id)
     if not t then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local data = ado_fetch_team_members(t.projectName or "", team_id)
     if not data then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     for _, m in ipairs(data.value or {}) do
@@ -919,13 +919,13 @@ backend_impl = {
         return
       end
     end
-    respond_json(404, "Not Found", { message = "Not Found" })
+    respond_json(404, { message = "Not Found" })
   end,
 
   put_team_member = function(team_id, username)
     local t = ado_get_team_by_id(team_id)
     if not t then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     fetch_json(
@@ -946,7 +946,7 @@ backend_impl = {
   delete_team_member = function(team_id, username)
     local t = ado_get_team_by_id(team_id)
     if not t then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local dopts = auth() or {}
@@ -970,12 +970,12 @@ backend_impl = {
   get_team_membership = function(team_id, username)
     local t = ado_get_team_by_id(team_id)
     if not t then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local data = ado_fetch_team_members(t.projectName or "", team_id)
     if not data then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     for _, m in ipairs(data.value or {}) do
@@ -983,7 +983,7 @@ backend_impl = {
       local name = ident.uniqueName or ident.displayName or ""
       local short = name:match("^([^@]+)") or name
       if name == username or short == username then
-        respond_json(200, "OK", {
+        respond_json(200, {
           url = "",
           role = m.isTeamAdmin and "maintainer" or "member",
           state = "active",
@@ -991,13 +991,13 @@ backend_impl = {
         return
       end
     end
-    respond_json(404, "Not Found", { message = "Not Found" })
+    respond_json(404, { message = "Not Found" })
   end,
 
   put_team_membership = function(team_id, username)
     local t = ado_get_team_by_id(team_id)
     if not t then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local req = DecodeJson(GetBody() or "{}")
@@ -1015,16 +1015,16 @@ backend_impl = {
       EncodeJson({ id = username })
     )
     if ok and (status == 200 or status == 201 or status == 204) then
-      respond_json(200, "OK", { url = "", role = role, state = "active" })
+      respond_json(200, { url = "", role = role, state = "active" })
     else
-      respond_json(200, "OK", { url = "", role = role, state = "pending" })
+      respond_json(200, { url = "", role = role, state = "pending" })
     end
   end,
 
   delete_team_membership = function(team_id, username)
     local t = ado_get_team_by_id(team_id)
     if not t then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local dopts = auth() or {}
@@ -1049,7 +1049,7 @@ backend_impl = {
     Write("[]")
   end,
   get_team_repo = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
+    respond_json(404, { message = "Not Found" })
   end,
   put_team_repo = function()
     respond_json(
@@ -1087,11 +1087,11 @@ backend_impl = {
       wiql_body
     )
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local refs = (DecodeJson(body) or {}).workItems or {}
@@ -1156,11 +1156,11 @@ backend_impl = {
     local cok, cstatus, _, cbody =
       pcall(Fetch, ado_url(config.base_url .. "/" .. owner .. "/_apis/wit/workitems/$Issue"), opts)
     if cok and (cstatus == 200 or cstatus == 201) then
-      respond_json(201, "Created", translate_ado_workitem(DecodeJson(cbody) or {}))
+      respond_json(201, translate_ado_workitem(DecodeJson(cbody) or {}))
     elseif cok then
-      respond_json(cstatus, "Error", {})
+      respond_json(cstatus, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1205,11 +1205,11 @@ backend_impl = {
       opts
     )
     if pok and pstatus == 200 then
-      respond_json(200, "OK", translate_ado_workitem(DecodeJson(pbody) or {}))
+      respond_json(200, translate_ado_workitem(DecodeJson(pbody) or {}))
     elseif pok then
-      respond_json(pstatus, "Error", {})
+      respond_json(pstatus, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 

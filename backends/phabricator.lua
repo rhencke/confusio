@@ -127,9 +127,9 @@ backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, config.base_url .. "/api/conduit.ping")
     if ok and status == 200 then
-      respond_json(200, "OK", {})
+      respond_json(200, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -140,7 +140,7 @@ backend_impl = {
   get_repo_issues = function(owner, repo_name)
     local phid = resolve_project_phid(owner, repo_name)
     if not phid then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local count = tonumber(GetParam("per_page")) or 30
@@ -167,14 +167,14 @@ backend_impl = {
     local ok, status, _, body = conduit("maniphest.search", params)
     local result, err = conduit_result(ok, status, nil, body)
     if not result then
-      respond_json(err or 503, "Error", {})
+      respond_json(err or 503, {})
       return
     end
     local issues = {}
     for _, t in ipairs(result.data or {}) do
       issues[#issues + 1] = translate_task(t)
     end
-    respond_json(200, "OK", issues)
+    respond_json(200, issues)
   end,
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}
@@ -187,15 +187,15 @@ backend_impl = {
     })
     local result, err = conduit_result(ok, status, nil, body)
     if not result then
-      respond_json(err or 503, "Error", {})
+      respond_json(err or 503, {})
       return
     end
     local t = (result.data or {})[1]
     if not t then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
-    respond_json(200, "OK", translate_task(t))
+    respond_json(200, translate_task(t))
   end,
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
@@ -215,7 +215,7 @@ backend_impl = {
     local ok, status, _, body = conduit("transaction.search", params)
     local result, err = conduit_result(ok, status, nil, body)
     if not result then
-      respond_json(err or 503, "Error", {})
+      respond_json(err or 503, {})
       return
     end
     local comments = {}
@@ -243,6 +243,6 @@ backend_impl = {
         }
       end
     end
-    respond_json(200, "OK", comments)
+    respond_json(200, comments)
   end,
 }

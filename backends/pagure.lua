@@ -203,9 +203,9 @@ backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, base() .. "/version", auth())
     if ok and status == 200 then
-      respond_json(200, "OK", {})
+      respond_json(200, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -237,9 +237,9 @@ backend_impl = {
     if ok and (status == 200 or status == 204) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -247,7 +247,7 @@ backend_impl = {
     -- Pagure: /api/0/projects?author={user} — need to know the authenticated user first
     local ok, status, _, ubody = fetch_json(base() .. "/-/whoami")
     if not ok or status ~= 200 then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     local me = DecodeJson(ubody)
@@ -386,7 +386,7 @@ backend_impl = {
       end
       local ok, status, _, body = fetch_json(url)
       if ok and status == 200 then
-        respond_json(200, "OK", {
+        respond_json(200, {
           type = "file",
           name = fname,
           path = fname,
@@ -398,7 +398,7 @@ backend_impl = {
         return
       end
     end
-    respond_json(404, "Not Found", { message = "Not Found" })
+    respond_json(404, { message = "Not Found" })
   end,
 
   get_repo_content = function(owner, repo_name, path)
@@ -409,7 +409,7 @@ backend_impl = {
     end
     local ok, status, _, body = fetch_json(url)
     if ok and status == 200 then
-      respond_json(200, "OK", {
+      respond_json(200, {
         type = "file",
         name = path:match("[^/]+$") or path,
         path = path,
@@ -419,9 +419,9 @@ backend_impl = {
         content = EncodeBase64(body),
       })
     elseif ok then
-      respond_json(status, "Error", { message = "Error" })
+      respond_json(status, { message = "Error" })
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -460,13 +460,13 @@ backend_impl = {
   get_user = function()
     local ok, status, _, ubody = fetch_json(base() .. "/-/whoami")
     if not ok or status ~= 200 then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     local me = DecodeJson(ubody) or {}
     local username = me.username or ""
     if username == "" then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     proxy_json(function(data)
@@ -561,11 +561,11 @@ backend_impl = {
     local ok, status, _, body =
       fetch_json(base() .. "/" .. owner .. "/" .. repo_name .. "/issue/" .. issue_number)
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local issue = DecodeJson(body or "{}") or {}
@@ -573,11 +573,11 @@ backend_impl = {
     for _, c in ipairs(issue.comments or {}) do
       comments[#comments + 1] = translate_pagure_comment(c)
     end
-    respond_json(200, "OK", comments)
+    respond_json(200, comments)
   end,
 
   get_repo_labels = function(_owner, _repo_name)
     -- Pagure has no repo-level label list endpoint; return empty list
-    respond_json(200, "OK", {})
+    respond_json(200, {})
   end,
 }

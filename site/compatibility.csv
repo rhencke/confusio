@@ -78,5 +78,11 @@ GET /search/topics,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 Gitignore,,,,,,,,,,,,,,,,,,,,,,,,
 GET /gitignore/templates,n,n,n,y,n,y,n,n,n,y,y,y,n,n,n,n,n,n,n,n,n,n,n,n
 GET /gitignore/templates/{name},n,n,n,y,n,y,n,n,n,y,y,y,n,n,n,n,n,n,n,n,n,n,n,n
+Meta,,,,,,,,,,,,,,,,,,,,,,,,
+GET /meta,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y
+GET /octocat,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y
+GET /versions,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y
+GET /teapot,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y
+GET /zen,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y
 Rate Limits,,,,,,,,,,,,,,,,,,,,,,,,
 GET /rate_limit,~unlimited stub,~unlimited stub,~unlimited stub,y,~unlimited stub,y,~unlimited stub,~unlimited stub,y,y,~unlimited stub,y,~unlimited stub,~unlimited stub,~unlimited stub,y,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub

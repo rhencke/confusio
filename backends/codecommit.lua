@@ -101,7 +101,7 @@ end
 local function check_page()
   local page = tonumber(GetParam("page") or "1") or 1
   if page > 1 then
-    respond_json(422, "Unprocessable Entity", {
+    respond_json(422, {
       message = "CodeCommit uses cursor-based pagination; only page=1 is supported",
     })
     return false
@@ -113,9 +113,9 @@ backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, base() .. "/repos", auth())
     if ok and status == 200 then
-      respond_json(200, "OK", {})
+      respond_json(200, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -124,32 +124,32 @@ backend_impl = {
   -- map that to 404 for GitHub compatibility.
   get_repo = function(owner, repo_name)
     if owner ~= "codecommit" then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local ok, status, _, body = fetch_json(base() .. "/repos/" .. repo_name)
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status == 400 then
       local err = DecodeJson(body) or {}
       if (err["__type"] or ""):find("DoesNotExist") then
-        respond_json(404, "Not Found", { message = "Not Found" })
+        respond_json(404, { message = "Not Found" })
         return
       end
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local data = DecodeJson(body) or {}
     local r = data.repositoryMetadata
     if not r then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
-    respond_json(200, "OK", translate_repo(r))
+    respond_json(200, translate_repo(r))
   end,
 
   get_repositories = function()
@@ -159,29 +159,29 @@ backend_impl = {
     local per_page = tonumber(GetParam("per_page") or "") or nil
     local repos, _, status = list_repos_page(per_page)
     if not repos then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local result = {}
     for _, r in ipairs(repos) do
       result[#result + 1] = translate_repo(r)
     end
-    respond_json(200, "OK", result)
+    respond_json(200, result)
   end,
 
   -- GET /repos/{owner}/{repo}/branches: owner must be "codecommit".
   get_repo_branches = function(owner, repo_name)
     if owner ~= "codecommit" then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local ok, status, _, body = fetch_json(base() .. "/repos/" .. repo_name .. "/branches")
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local data = DecodeJson(body) or {}
@@ -193,7 +193,7 @@ backend_impl = {
         protected = false,
       }
     end
-    respond_json(200, "OK", result)
+    respond_json(200, result)
   end,
 
   search_repositories = function()
@@ -204,7 +204,7 @@ backend_impl = {
     local per_page = tonumber(GetParam("per_page") or "") or nil
     local repos, incomplete, status = list_repos_page(per_page)
     if not repos then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local items = {}
@@ -214,10 +214,6 @@ backend_impl = {
         items[#items + 1] = translate_repo(r)
       end
     end
-    respond_json(
-      200,
-      "OK",
-      { total_count = #items, incomplete_results = incomplete, items = items }
-    )
+    respond_json(200, { total_count = #items, incomplete_results = incomplete, items = items })
   end,
 }

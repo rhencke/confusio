@@ -193,9 +193,9 @@ backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, config.base_url .. "/api/version", auth())
     if ok and status == 200 then
-      respond_json(200, "OK", {})
+      respond_json(200, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -223,9 +223,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -233,7 +233,7 @@ backend_impl = {
     -- Sourcehut: need to know the authenticated user. Use /api/user first.
     local ok, status, _, ubody = fetch_json(config.base_url .. "/api/user")
     if not ok or status ~= 200 then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     local user = DecodeJson(ubody)
@@ -255,7 +255,7 @@ backend_impl = {
     -- Sourcehut: create via POST /api/~{user}/repos — need user context
     local ok, status, _, ubody = fetch_json(config.base_url .. "/api/user")
     if not ok or status ~= 200 then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     local user = DecodeJson(ubody)
@@ -357,7 +357,7 @@ backend_impl = {
         .. fname
       local ok, status, _, body = fetch_json(url)
       if ok and status == 200 then
-        respond_json(200, "OK", {
+        respond_json(200, {
           type = "file",
           name = fname,
           path = fname,
@@ -369,7 +369,7 @@ backend_impl = {
         return
       end
     end
-    respond_json(404, "Not Found", { message = "Not Found" })
+    respond_json(404, { message = "Not Found" })
   end,
 
   get_repo_content = function(owner, repo_name, path)
@@ -377,7 +377,7 @@ backend_impl = {
     local url = base() .. "/~" .. owner .. "/repos/" .. repo_name .. "/blob/" .. ref .. "/" .. path
     local ok, status, _, body = fetch_json(url)
     if ok and status == 200 then
-      respond_json(200, "OK", {
+      respond_json(200, {
         type = "file",
         name = path:match("[^/]+$") or path,
         path = path,
@@ -387,9 +387,9 @@ backend_impl = {
         content = EncodeBase64(body),
       })
     elseif ok then
-      respond_json(status, "Error", { message = "Error" })
+      respond_json(status, { message = "Error" })
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -457,19 +457,19 @@ backend_impl = {
       .. issue_number
     local ok, status, _, body = fetch_json(url)
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status == 404 then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local ticket = DecodeJson(body)
-    respond_json(200, "OK", translate_srht_ticket(ticket))
+    respond_json(200, translate_srht_ticket(ticket))
   end,
 
   -- POST /repos/{owner}/{repo}/issues
@@ -482,15 +482,15 @@ backend_impl = {
       payload
     )
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 and status ~= 201 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local ticket = DecodeJson(body)
-    respond_json(201, "Created", translate_srht_ticket(ticket))
+    respond_json(201, translate_srht_ticket(ticket))
   end,
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
@@ -533,15 +533,15 @@ backend_impl = {
       .. "/events"
     local ok, status, _, body = fetch_json(url, "POST", payload)
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 and status ~= 201 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local event = DecodeJson(body)
     local comment = translate_srht_event_comment(event)
-    respond_json(201, "Created", comment or {})
+    respond_json(201, comment or {})
   end,
 }

@@ -203,9 +203,9 @@ backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, base(), auth())
     if ok and status == 200 then
-      respond_json(200, "OK", {})
+      respond_json(200, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -232,9 +232,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -450,9 +450,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -507,9 +507,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -528,9 +528,9 @@ backend_impl = {
     local ok, status, _, body = fetch_json(url)
     if not ok or status ~= 200 then
       if ok then
-        respond_json(status, "Error", {})
+        respond_json(status, {})
       else
-        respond_json(503, "Service Unavailable", {})
+        respond_json(503, {})
       end
       return
     end
@@ -552,9 +552,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 

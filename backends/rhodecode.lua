@@ -3,9 +3,9 @@ backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, config.base_url .. "/_admin/api", make_fetch_opts("bearer"))
     if ok and status == 200 then
-      respond_json(200, "OK", {})
+      respond_json(200, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 

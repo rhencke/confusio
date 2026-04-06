@@ -217,11 +217,11 @@ end
 local function proxy_search_bbs(translate_item, url)
   local ok, status, _, body = fetch_json(url)
   if not ok then
-    respond_json(503, "Service Unavailable", {})
+    respond_json(503, {})
     return
   end
   if status ~= 200 then
-    respond_json(status, "Error", {})
+    respond_json(status, {})
     return
   end
   local raw = DecodeJson(body) or {}
@@ -229,8 +229,7 @@ local function proxy_search_bbs(translate_item, url)
   for i, item in ipairs(raw.values or {}) do
     items[i] = translate_item(item)
   end
-  SetStatus(200, "OK")
-  SetHeader("Content-Type", "application/json; charset=utf-8")
+  set_preamble()
   Write(
     '{"total_count":'
       .. #items
@@ -404,9 +403,9 @@ backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, base() .. "/repos", auth())
     if ok and status == 200 then
-      respond_json(200, "OK", {})
+      respond_json(200, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -427,9 +426,9 @@ backend_impl = {
     if ok and (status == 202 or status == 204) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -547,7 +546,7 @@ backend_impl = {
       end
       local ok, status, _, body = fetch_json(url)
       if ok and status == 200 then
-        respond_json(200, "OK", {
+        respond_json(200, {
           type = "file",
           name = fname,
           path = fname,
@@ -559,7 +558,7 @@ backend_impl = {
         return
       end
     end
-    respond_json(404, "Not Found", { message = "Not Found" })
+    respond_json(404, { message = "Not Found" })
   end,
 
   get_repo_content = function(owner, repo_name, path)
@@ -570,7 +569,7 @@ backend_impl = {
     end
     local ok, status, _, body = fetch_json(url)
     if ok and status == 200 then
-      respond_json(200, "OK", {
+      respond_json(200, {
         type = "file",
         name = path:match("[^/]+$") or path,
         path = path,
@@ -580,9 +579,9 @@ backend_impl = {
         content = EncodeBase64(body),
       })
     elseif ok then
-      respond_json(status, "Error", { message = "Error" })
+      respond_json(status, { message = "Error" })
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -639,9 +638,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -690,9 +689,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -763,11 +762,11 @@ backend_impl = {
     local pr_url = repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number
     local ok, status, _, body = fetch_json(pr_url)
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local current = DecodeJson(body) or {}
@@ -815,18 +814,18 @@ backend_impl = {
     local ok, status, _, body =
       fetch_json(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number)
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local pr = DecodeJson(body) or {}
     if pr.state == "MERGED" then
       SetStatus(204, "No Content")
     else
-      respond_json(404, "Not Found", { message = "Pull Request is not merged" })
+      respond_json(404, { message = "Pull Request is not merged" })
     end
   end,
 
@@ -836,11 +835,11 @@ backend_impl = {
     local pr_url = repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number
     local ok, status, _, body = fetch_json(pr_url)
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local current = DecodeJson(body) or {}
@@ -853,9 +852,9 @@ backend_impl = {
     if mok and (mstatus == 200 or mstatus == 204) then
       SetStatus(204, "No Content")
     elseif mok then
-      respond_json(mstatus, "Error", {})
+      respond_json(mstatus, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -865,11 +864,11 @@ backend_impl = {
     local ok, status, _, body =
       fetch_json(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number)
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local pr = DecodeJson(body) or {}
@@ -879,7 +878,7 @@ backend_impl = {
         users[#users + 1] = translate_bbs_user(r.user)
       end
     end
-    respond_json(200, "OK", { users = users, teams = {} })
+    respond_json(200, { users = users, teams = {} })
   end,
 
   -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews
@@ -888,15 +887,15 @@ backend_impl = {
     local ok, status, _, body =
       fetch_json(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number)
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local pr = DecodeJson(body) or {}
-    respond_json(200, "OK", translate_bbs_reviewers_to_reviews(pr.reviewers))
+    respond_json(200, translate_bbs_reviewers_to_reviews(pr.reviewers))
   end,
 
   -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
@@ -904,20 +903,20 @@ backend_impl = {
     local ok, status, _, body =
       fetch_json(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number)
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local pr = DecodeJson(body) or {}
     local reviews = translate_bbs_reviewers_to_reviews(pr.reviewers)
     local rid = tonumber(review_id)
     if rid and reviews[rid] then
-      respond_json(200, "OK", reviews[rid])
+      respond_json(200, reviews[rid])
     else
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
     end
   end,
 
@@ -928,11 +927,11 @@ backend_impl = {
       bbs_page_url(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number .. "/comments")
     )
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local data = DecodeJson(body) or {}
@@ -942,7 +941,7 @@ backend_impl = {
         result[#result + 1] = translate_bbs_pr_comment(c)
       end
     end
-    respond_json(200, "OK", result)
+    respond_json(200, result)
   end,
 
   -- Issues -----------------------------------------------------------------------
@@ -971,11 +970,11 @@ backend_impl = {
       bbs_page_url(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number .. "/comments")
     )
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local data = DecodeJson(body) or {}
@@ -985,6 +984,6 @@ backend_impl = {
         result[#result + 1] = translate_bbs_pr_comment(c)
       end
     end
-    respond_json(200, "OK", result)
+    respond_json(200, result)
   end,
 }

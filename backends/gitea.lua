@@ -50,9 +50,9 @@ local function set_204_or_error(method, url)
   if ok and status == 204 then
     SetStatus(204, "No Content")
   elseif ok then
-    respond_json(status, "Error", {})
+    respond_json(status, {})
   else
-    respond_json(503, "Service Unavailable", {})
+    respond_json(503, {})
   end
 end
 
@@ -75,11 +75,11 @@ local proxy_handler_created = make_proxy_handler(fetch_json, proxy_json_created)
 local function proxy_search(translate_item, url)
   local ok, status, _, body = fetch_json(url)
   if not ok then
-    respond_json(503, "Service Unavailable", {})
+    respond_json(503, {})
     return
   end
   if status ~= 200 then
-    respond_json(status, "Error", {})
+    respond_json(status, {})
     return
   end
   local raw = (DecodeJson(body) or {}).data or {}
@@ -87,8 +87,7 @@ local function proxy_search(translate_item, url)
   for i, item in ipairs(raw) do
     items[i] = translate_item(item)
   end
-  SetStatus(200, "OK")
-  SetHeader("Content-Type", "application/json; charset=utf-8")
+  set_preamble()
   Write(
     '{"total_count":'
       .. #items
@@ -399,9 +398,9 @@ backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, base() .. "/version", auth())
     if ok and status == 200 then
-      respond_json(200, "OK", {})
+      respond_json(200, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -443,9 +442,9 @@ backend_impl = {
     if ok and status == 204 then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -720,9 +719,9 @@ backend_impl = {
     if ok and status == 204 then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Not Found", { message = "Not a collaborator" })
+      respond_json(status, { message = "Not a collaborator" })
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -736,9 +735,9 @@ backend_impl = {
     if ok and (status == 204 or status == 201) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -751,9 +750,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -859,9 +858,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -936,9 +935,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -977,9 +976,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1030,9 +1029,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1052,9 +1051,9 @@ backend_impl = {
     local ok, status, _, body = fetch_json(url)
     if not ok or status ~= 200 then
       if ok then
-        respond_json(status, "Error", {})
+        respond_json(status, {})
       else
-        respond_json(503, "Service Unavailable", {})
+        respond_json(503, {})
       end
       return
     end
@@ -1078,9 +1077,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1142,9 +1141,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1225,9 +1224,9 @@ backend_impl = {
     if ok and status == 204 then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(404, "Not Found", { message = "Not Following" })
+      respond_json(404, { message = "Not Following" })
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1274,9 +1273,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1308,9 +1307,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1342,9 +1341,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1387,7 +1386,7 @@ backend_impl = {
   get_org_team = function(org, slug)
     local id = gitea_find_team_id(org, slug)
     if not id then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     proxy_json(translate_gitea_team, fetch_json(base() .. "/teams/" .. id))
@@ -1397,7 +1396,7 @@ backend_impl = {
   patch_org_team = function(org, slug)
     local id = gitea_find_team_id(org, slug)
     if not id then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local req = DecodeJson(GetBody() or "{}")
@@ -1421,7 +1420,7 @@ backend_impl = {
   delete_org_team = function(org, slug)
     local id = gitea_find_team_id(org, slug)
     if not id then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local opts = auth() or {}
@@ -1430,16 +1429,15 @@ backend_impl = {
     if ok and status == 204 then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
   -- GET /orgs/{org}/teams/{team_slug}/invitations — Gitea has no invitations
   get_org_team_invitations = function()
-    SetStatus(200, "OK")
-    SetHeader("Content-Type", "application/json; charset=utf-8")
+    set_preamble()
     Write("[]")
   end,
 
@@ -1447,7 +1445,7 @@ backend_impl = {
   get_org_team_members = function(org, slug)
     local id = gitea_find_team_id(org, slug)
     if not id then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     proxy_json(
@@ -1460,16 +1458,16 @@ backend_impl = {
   get_org_team_membership = function(org, slug, username)
     local id = gitea_find_team_id(org, slug)
     if not id then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local ok, status = pcall(Fetch, base() .. "/teams/" .. id .. "/members/" .. username, auth())
     if ok and status == 204 then
-      respond_json(200, "OK", { url = "", role = "member", state = "active" })
+      respond_json(200, { url = "", role = "member", state = "active" })
     elseif ok then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1477,18 +1475,18 @@ backend_impl = {
   put_org_team_membership = function(org, slug, username)
     local id = gitea_find_team_id(org, slug)
     if not id then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local opts = auth() or {}
     opts.method = "PUT"
     local ok, status = pcall(Fetch, base() .. "/teams/" .. id .. "/members/" .. username, opts)
     if ok and (status == 204 or status == 200) then
-      respond_json(200, "OK", { url = "", role = "member", state = "active" })
+      respond_json(200, { url = "", role = "member", state = "active" })
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1496,7 +1494,7 @@ backend_impl = {
   delete_org_team_membership = function(org, slug, username)
     local id = gitea_find_team_id(org, slug)
     if not id then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local opts = auth() or {}
@@ -1505,9 +1503,9 @@ backend_impl = {
     if ok and status == 204 then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1515,7 +1513,7 @@ backend_impl = {
   get_org_team_repos = function(org, slug)
     local id = gitea_find_team_id(org, slug)
     if not id then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     proxy_json(function(repos)
@@ -1530,18 +1528,18 @@ backend_impl = {
   get_org_team_repo = function(org, slug, owner, repo_name)
     local id = gitea_find_team_id(org, slug)
     if not id then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local ok, status, _, body =
       fetch_json(base() .. "/teams/" .. id .. "/repos/" .. owner .. "/" .. repo_name)
     if ok and (status == 204 or status == 200) then
       local r = (status == 200 and DecodeJson(body)) or {}
-      respond_json(200, "OK", translate_repo(r))
+      respond_json(200, translate_repo(r))
     elseif ok then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1549,7 +1547,7 @@ backend_impl = {
   put_org_team_repo = function(org, slug, owner, repo_name)
     local id = gitea_find_team_id(org, slug)
     if not id then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local opts = auth() or {}
@@ -1559,9 +1557,9 @@ backend_impl = {
     if ok and status == 204 then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1569,7 +1567,7 @@ backend_impl = {
   delete_org_team_repo = function(org, slug, owner, repo_name)
     local id = gitea_find_team_id(org, slug)
     if not id then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local opts = auth() or {}
@@ -1579,9 +1577,9 @@ backend_impl = {
     if ok and status == 204 then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1631,9 +1629,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1732,9 +1730,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1743,7 +1741,7 @@ backend_impl = {
   delete_issue_label = function(owner, repo_name, issue_number, label_name)
     local id = gitea_find_label_id(owner, repo_name, label_name)
     if not id then
-      respond_json(404, "Not Found", { message = "Label not found" })
+      respond_json(404, { message = "Label not found" })
       return
     end
     local ok, status = fetch_json(
@@ -1761,9 +1759,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1782,9 +1780,9 @@ backend_impl = {
     if ok and status == 204 then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1816,11 +1814,11 @@ backend_impl = {
     local ok, status, _, body =
       fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number)
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local issue = DecodeJson(body) or {}
@@ -1830,7 +1828,7 @@ backend_impl = {
         return
       end
     end
-    respond_json(404, "Not Found", { message = "Not an assignee" })
+    respond_json(404, { message = "Not an assignee" })
   end,
 
   -- Assignees -----------------------------------------------------------------
@@ -1857,7 +1855,7 @@ backend_impl = {
   get_repo_label = function(owner, repo_name, label_name)
     local id = gitea_find_label_id(owner, repo_name, label_name)
     if not id then
-      respond_json(404, "Not Found", { message = "Label not found" })
+      respond_json(404, { message = "Label not found" })
       return
     end
     proxy_json(
@@ -1870,7 +1868,7 @@ backend_impl = {
   patch_repo_label = function(owner, repo_name, label_name)
     local id = gitea_find_label_id(owner, repo_name, label_name)
     if not id then
-      respond_json(404, "Not Found", { message = "Label not found" })
+      respond_json(404, { message = "Label not found" })
       return
     end
     proxy_json(
@@ -1887,7 +1885,7 @@ backend_impl = {
   delete_repo_label = function(owner, repo_name, label_name)
     local id = gitea_find_label_id(owner, repo_name, label_name)
     if not id then
-      respond_json(404, "Not Found", { message = "Label not found" })
+      respond_json(404, { message = "Label not found" })
       return
     end
     local ok, status =
@@ -1895,9 +1893,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1932,9 +1930,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1945,8 +1943,7 @@ backend_impl = {
 
   -- GET /orgs/{org}/teams/{team_slug}/teams — Gitea has no nested teams
   get_org_team_children = function()
-    SetStatus(200, "OK")
-    SetHeader("Content-Type", "application/json; charset=utf-8")
+    set_preamble()
     Write("[]")
   end,
 
@@ -2007,9 +2004,9 @@ backend_impl = {
     if ok and status == 204 then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -2021,9 +2018,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -2037,11 +2034,11 @@ backend_impl = {
     local ok, status =
       pcall(Fetch, base() .. "/teams/" .. team_id .. "/members/" .. username, auth())
     if ok and status == 204 then
-      respond_json(200, "OK", { url = "", role = "member", state = "active" })
+      respond_json(200, { url = "", role = "member", state = "active" })
     elseif ok then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -2051,11 +2048,11 @@ backend_impl = {
     opts.method = "PUT"
     local ok, status = pcall(Fetch, base() .. "/teams/" .. team_id .. "/members/" .. username, opts)
     if ok and (status == 204 or status == 200) then
-      respond_json(200, "OK", { url = "", role = "member", state = "active" })
+      respond_json(200, { url = "", role = "member", state = "active" })
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -2080,11 +2077,11 @@ backend_impl = {
       fetch_json(base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name)
     if ok and (status == 204 or status == 200) then
       local r = (status == 200 and DecodeJson(body)) or {}
-      respond_json(200, "OK", translate_repo(r))
+      respond_json(200, translate_repo(r))
     elseif ok then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -2097,9 +2094,9 @@ backend_impl = {
     if ok and status == 204 then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -2158,11 +2155,11 @@ backend_impl = {
     if ok and status == 204 then
       SetStatus(204, "No Content")
     elseif ok and status == 404 then
-      respond_json(404, "Not Found", { message = "Pull Request is not merged" })
+      respond_json(404, { message = "Pull Request is not merged" })
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -2177,9 +2174,9 @@ backend_impl = {
     if ok and status == 204 then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -2212,9 +2209,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -2253,9 +2250,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -2302,11 +2299,11 @@ backend_impl = {
       base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/reviews"
     )
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local reviews = DecodeJson(body) or {}
@@ -2330,7 +2327,7 @@ backend_impl = {
         end
       end
     end
-    respond_json(200, "OK", all_comments)
+    respond_json(200, all_comments)
   end,
 
   -- Search -----------------------------------------------------------------------

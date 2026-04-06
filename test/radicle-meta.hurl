@@ -1,8 +1,6 @@
-GET http://{{host}}/
-
-HTTP 200
-[Asserts]
-header "Content-Type" == "application/json; charset=utf-8"
+# Meta API assertions — shared across all backends.
+# All four meta endpoints are self-contained (no backend call) and return the same
+# response regardless of provider.
 
 # GET /meta
 GET http://{{host}}/meta
@@ -31,6 +29,13 @@ HTTP 200
 header "Content-Type" == "application/json; charset=utf-8"
 jsonpath "$" isCollection
 jsonpath "$[0]" isString
+
+# GET /teapot
+GET http://{{host}}/teapot
+
+HTTP 418
+[Asserts]
+header "Content-Type" startsWith "text/plain"
 
 # GET /zen
 GET http://{{host}}/zen

@@ -152,11 +152,11 @@ local proxy_handler_created = make_proxy_handler(fetch_json, proxy_json_created)
 local function proxy_search_gl(translate_item, url)
   local ok, status, _, body = fetch_json(url)
   if not ok then
-    respond_json(503, "Service Unavailable", {})
+    respond_json(503, {})
     return
   end
   if status ~= 200 then
-    respond_json(status, "Error", {})
+    respond_json(status, {})
     return
   end
   local raw = DecodeJson(body) or {}
@@ -164,8 +164,7 @@ local function proxy_search_gl(translate_item, url)
   for i, item in ipairs(raw) do
     items[i] = translate_item(item)
   end
-  SetStatus(200, "OK")
-  SetHeader("Content-Type", "application/json; charset=utf-8")
+  set_preamble()
   Write(
     '{"total_count":'
       .. #items
@@ -496,9 +495,9 @@ backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, base() .. "/version", auth())
     if ok and status == 200 then
-      respond_json(200, "OK", {})
+      respond_json(200, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -526,9 +525,9 @@ backend_impl = {
     if ok and (status == 202 or status == 204) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -605,7 +604,7 @@ backend_impl = {
 
   -- GitLab does not have a direct equivalent of GitHub's /teams endpoint for repos.
   get_repo_teams = function()
-    respond_json(404, "Not Found", { message = "Not Found" })
+    respond_json(404, { message = "Not Found" })
   end,
 
   -- Branches ------------------------------------------------------------------
@@ -1014,13 +1013,13 @@ backend_impl = {
     -- Resolve username to user ID, then check membership
     local ok, status, _, ubody = fetch_json(base() .. "/users?username=" .. username)
     if not ok or status ~= 200 then
-      respond_json(404, "Not Found", {})
+      respond_json(404, {})
       return
     end
     local users = DecodeJson(ubody) or {}
     local uid = users[1] and users[1].id
     if not uid then
-      respond_json(404, "Not Found", {})
+      respond_json(404, {})
       return
     end
     local ok2, status2 = pcall(
@@ -1031,20 +1030,20 @@ backend_impl = {
     if ok2 and status2 == 200 then
       SetStatus(204, "No Content")
     else
-      respond_json(404, "Not Found", { message = "Not a collaborator" })
+      respond_json(404, { message = "Not a collaborator" })
     end
   end,
 
   put_repo_collaborator = function(owner, repo_name, username)
     local ok, status, _, ubody = fetch_json(base() .. "/users?username=" .. username)
     if not ok or status ~= 200 then
-      respond_json(404, "Not Found", {})
+      respond_json(404, {})
       return
     end
     local users = DecodeJson(ubody) or {}
     local uid = users[1] and users[1].id
     if not uid then
-      respond_json(404, "Not Found", {})
+      respond_json(404, {})
       return
     end
     local req = DecodeJson(GetBody() or "{}")
@@ -1066,23 +1065,23 @@ backend_impl = {
       if ok3 and (status3 == 200 or status3 == 201) then
         SetStatus(204, "No Content")
       else
-        respond_json(status3 or 503, "Error", {})
+        respond_json(status3 or 503, {})
       end
     else
-      respond_json(status2 or 503, "Error", {})
+      respond_json(status2 or 503, {})
     end
   end,
 
   delete_repo_collaborator = function(owner, repo_name, username)
     local ok, status, _, ubody = fetch_json(base() .. "/users?username=" .. username)
     if not ok or status ~= 200 then
-      respond_json(404, "Not Found", {})
+      respond_json(404, {})
       return
     end
     local users = DecodeJson(ubody) or {}
     local uid = users[1] and users[1].id
     if not uid then
-      respond_json(404, "Not Found", {})
+      respond_json(404, {})
       return
     end
     local ok2, status2 = fetch_json(
@@ -1092,20 +1091,20 @@ backend_impl = {
     if ok2 and (status2 == 200 or status2 == 204) then
       SetStatus(204, "No Content")
     else
-      respond_json(status2 or 503, "Error", {})
+      respond_json(status2 or 503, {})
     end
   end,
 
   get_repo_collaborator_permission = function(owner, repo_name, username)
     local ok, status, _, ubody = fetch_json(base() .. "/users?username=" .. username)
     if not ok or status ~= 200 then
-      respond_json(404, "Not Found", {})
+      respond_json(404, {})
       return
     end
     local users = DecodeJson(ubody) or {}
     local uid = users[1] and users[1].id
     if not uid then
-      respond_json(404, "Not Found", {})
+      respond_json(404, {})
       return
     end
     proxy_json(function(m)
@@ -1260,9 +1259,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1310,9 +1309,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1328,9 +1327,9 @@ backend_impl = {
     local ok, status, _, body = fetch_json(url)
     if not ok or status ~= 200 then
       if ok then
-        respond_json(status, "Error", {})
+        respond_json(status, {})
       else
-        respond_json(503, "Service Unavailable", {})
+        respond_json(503, {})
       end
       return
     end
@@ -1424,7 +1423,7 @@ backend_impl = {
   delete_user_emails = function()
     -- GitLab requires DELETE /user/emails/{id}; without an ID we can't delete by address.
     -- Return 204 as a best-effort passthrough.
-    respond_json(404, "Not Found", { message = "Not Found" })
+    respond_json(404, { message = "Not Found" })
   end,
 
   -- SSH Keys ------------------------------------------------------------------
@@ -1452,9 +1451,9 @@ backend_impl = {
     if ok and status == 204 then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1462,7 +1461,7 @@ backend_impl = {
   get_users_keys = function(username)
     local uid = gl_user_id(username)
     if not uid then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     proxy_json(nil, fetch_json(base() .. "/users/" .. uid .. "/keys"))
@@ -1493,9 +1492,9 @@ backend_impl = {
     if ok and status == 204 then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1503,7 +1502,7 @@ backend_impl = {
   get_users_gpg_keys = function(username)
     local uid = gl_user_id(username)
     if not uid then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     proxy_json(nil, fetch_json(base() .. "/users/" .. uid .. "/gpg_keys"))
@@ -1528,7 +1527,7 @@ backend_impl = {
     local req = DecodeJson(GetBody() or "{}")
     local parent_ok, parent_status, _, parent_body = fetch_json(base() .. "/groups/" .. org)
     if not parent_ok or parent_status ~= 200 then
-      respond_json(parent_ok and parent_status or 503, "Error", {})
+      respond_json(parent_ok and parent_status or 503, {})
       return
     end
     local parent = DecodeJson(parent_body) or {}
@@ -1551,7 +1550,7 @@ backend_impl = {
   patch_org_team = function(org, slug)
     local ok, status, _, body = fetch_json(base() .. "/groups/" .. org .. "%2F" .. slug)
     if not ok or status ~= 200 then
-      respond_json(ok and status or 503, "Error", {})
+      respond_json(ok and status or 503, {})
       return
     end
     local gid = (DecodeJson(body) or {}).id
@@ -1570,7 +1569,7 @@ backend_impl = {
   delete_org_team = function(org, slug)
     local ok, status, _, body = fetch_json(base() .. "/groups/" .. org .. "%2F" .. slug)
     if not ok or status ~= 200 then
-      respond_json(ok and status or 503, "Error", {})
+      respond_json(ok and status or 503, {})
       return
     end
     local gid = (DecodeJson(body) or {}).id
@@ -1580,16 +1579,15 @@ backend_impl = {
     if dok and (dstatus == 202 or dstatus == 204) then
       SetStatus(204, "No Content")
     elseif dok then
-      respond_json(dstatus, "Error", {})
+      respond_json(dstatus, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
   -- GET /orgs/{org}/teams/{team_slug}/invitations — no concept in GitLab
   get_org_team_invitations = function()
-    SetStatus(200, "OK")
-    SetHeader("Content-Type", "application/json; charset=utf-8")
+    set_preamble()
     Write("[]")
   end,
 
@@ -1597,7 +1595,7 @@ backend_impl = {
   get_org_team_members = function(org, slug)
     local ok, status, _, body = fetch_json(base() .. "/groups/" .. org .. "%2F" .. slug)
     if not ok or status ~= 200 then
-      respond_json(ok and status or 503, "Error", {})
+      respond_json(ok and status or 503, {})
       return
     end
     local gid = (DecodeJson(body) or {}).id
@@ -1614,24 +1612,24 @@ backend_impl = {
   get_org_team_membership = function(org, slug, username)
     local ok, status, _, body = fetch_json(base() .. "/groups/" .. org .. "%2F" .. slug)
     if not ok or status ~= 200 then
-      respond_json(ok and status or 503, "Error", {})
+      respond_json(ok and status or 503, {})
       return
     end
     local gid = (DecodeJson(body) or {}).id
     local uid = gl_user_id(username)
     if not uid then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local mok, mstatus, _, mbody = fetch_json(base() .. "/groups/" .. gid .. "/members/" .. uid)
     if mok and mstatus == 200 then
       local m = DecodeJson(mbody) or {}
       local role = (m.access_level or 0) >= 50 and "maintainer" or "member"
-      respond_json(200, "OK", { url = "", role = role, state = "active" })
+      respond_json(200, { url = "", role = role, state = "active" })
     elseif mok then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1639,13 +1637,13 @@ backend_impl = {
   put_org_team_membership = function(org, slug, username)
     local ok, status, _, body = fetch_json(base() .. "/groups/" .. org .. "%2F" .. slug)
     if not ok or status ~= 200 then
-      respond_json(ok and status or 503, "Error", {})
+      respond_json(ok and status or 503, {})
       return
     end
     local gid = (DecodeJson(body) or {}).id
     local uid = gl_user_id(username)
     if not uid then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local req = DecodeJson(GetBody() or "{}")
@@ -1656,11 +1654,11 @@ backend_impl = {
       EncodeJson({ user_id = uid, access_level = level })
     )
     if mok and (mstatus == 200 or mstatus == 201) then
-      respond_json(200, "OK", { url = "", role = req.role or "member", state = "active" })
+      respond_json(200, { url = "", role = req.role or "member", state = "active" })
     elseif mok then
-      respond_json(mstatus, "Error", {})
+      respond_json(mstatus, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1668,13 +1666,13 @@ backend_impl = {
   delete_org_team_membership = function(org, slug, username)
     local ok, status, _, body = fetch_json(base() .. "/groups/" .. org .. "%2F" .. slug)
     if not ok or status ~= 200 then
-      respond_json(ok and status or 503, "Error", {})
+      respond_json(ok and status or 503, {})
       return
     end
     local gid = (DecodeJson(body) or {}).id
     local uid = gl_user_id(username)
     if not uid then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local dopts = auth() or {}
@@ -1683,9 +1681,9 @@ backend_impl = {
     if dok and (dstatus == 204 or dstatus == 200) then
       SetStatus(204, "No Content")
     elseif dok then
-      respond_json(dstatus, "Error", {})
+      respond_json(dstatus, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1693,7 +1691,7 @@ backend_impl = {
   get_org_team_repos = function(org, slug)
     local ok, status, _, body = fetch_json(base() .. "/groups/" .. org .. "%2F" .. slug)
     if not ok or status ~= 200 then
-      respond_json(ok and status or 503, "Error", {})
+      respond_json(ok and status or 503, {})
       return
     end
     local gid = (DecodeJson(body) or {}).id
@@ -1707,7 +1705,7 @@ backend_impl = {
   get_org_team_repo = function(org, slug, owner, repo_name)
     local ok, status, _, body = fetch_json(base() .. "/groups/" .. org .. "%2F" .. slug)
     if not ok or status ~= 200 then
-      respond_json(ok and status or 503, "Error", {})
+      respond_json(ok and status or 503, {})
       return
     end
     local gid = (DecodeJson(body) or {}).id
@@ -1715,23 +1713,23 @@ backend_impl = {
     -- Check if the project belongs to this subgroup
     local pok, pstatus, _, pbody = fetch_json(base() .. "/projects/" .. pid)
     if not pok or pstatus ~= 200 then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local proj = DecodeJson(pbody) or {}
     local ns = proj.namespace or {}
     if tostring(ns.id) ~= tostring(gid) then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
-    respond_json(200, "OK", translate_gl_repo(proj))
+    respond_json(200, translate_gl_repo(proj))
   end,
 
   -- PUT /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
   put_org_team_repo = function(org, slug, owner, repo_name)
     local ok, status, _, body = fetch_json(base() .. "/groups/" .. org .. "%2F" .. slug)
     if not ok or status ~= 200 then
-      respond_json(ok and status or 503, "Error", {})
+      respond_json(ok and status or 503, {})
       return
     end
     local gid = (DecodeJson(body) or {}).id
@@ -1746,9 +1744,9 @@ backend_impl = {
     if pok and (pstatus == 200 or pstatus == 201) then
       SetStatus(204, "No Content")
     elseif pok then
-      respond_json(pstatus, "Error", {})
+      respond_json(pstatus, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1756,7 +1754,7 @@ backend_impl = {
   delete_org_team_repo = function(org, slug, owner, repo_name)
     local ok, status, _, body = fetch_json(base() .. "/groups/" .. org .. "%2F" .. slug)
     if not ok or status ~= 200 then
-      respond_json(ok and status or 503, "Error", {})
+      respond_json(ok and status or 503, {})
       return
     end
     local gid = (DecodeJson(body) or {}).id
@@ -1767,9 +1765,9 @@ backend_impl = {
     if dok and (dstatus == 204 or dstatus == 200) then
       SetStatus(204, "No Content")
     elseif dok then
-      respond_json(dstatus, "Error", {})
+      respond_json(dstatus, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1777,7 +1775,7 @@ backend_impl = {
   get_org_team_children = function(org, slug)
     local ok, status, _, body = fetch_json(base() .. "/groups/" .. org .. "%2F" .. slug)
     if not ok or status ~= 200 then
-      respond_json(ok and status or 503, "Error", {})
+      respond_json(ok and status or 503, {})
       return
     end
     local gid = (DecodeJson(body) or {}).id
@@ -1831,16 +1829,15 @@ backend_impl = {
     if ok and (status == 202 or status == 204) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
   -- GET /teams/{team_id}/invitations — no concept in GitLab
   get_team_invitations = function()
-    SetStatus(200, "OK")
-    SetHeader("Content-Type", "application/json; charset=utf-8")
+    set_preamble()
     Write("[]")
   end,
 
@@ -1859,16 +1856,16 @@ backend_impl = {
   get_team_member = function(team_id, username)
     local uid = gl_user_id(username)
     if not uid then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local ok, status = pcall(Fetch, base() .. "/groups/" .. team_id .. "/members/" .. uid, auth())
     if ok and status == 200 then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1876,7 +1873,7 @@ backend_impl = {
   put_team_member = function(team_id, username)
     local uid = gl_user_id(username)
     if not uid then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local ok, status = fetch_json(
@@ -1887,9 +1884,9 @@ backend_impl = {
     if ok and (status == 200 or status == 201) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1897,7 +1894,7 @@ backend_impl = {
   delete_team_member = function(team_id, username)
     local uid = gl_user_id(username)
     if not uid then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local dopts = auth() or {}
@@ -1906,9 +1903,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1916,18 +1913,18 @@ backend_impl = {
   get_team_membership = function(team_id, username)
     local uid = gl_user_id(username)
     if not uid then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local ok, status, _, body = fetch_json(base() .. "/groups/" .. team_id .. "/members/" .. uid)
     if ok and status == 200 then
       local m = DecodeJson(body) or {}
       local role = (m.access_level or 0) >= 50 and "maintainer" or "member"
-      respond_json(200, "OK", { url = "", role = role, state = "active" })
+      respond_json(200, { url = "", role = role, state = "active" })
     elseif ok then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1935,7 +1932,7 @@ backend_impl = {
   put_team_membership = function(team_id, username)
     local uid = gl_user_id(username)
     if not uid then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local req = DecodeJson(GetBody() or "{}")
@@ -1946,11 +1943,11 @@ backend_impl = {
       EncodeJson({ user_id = uid, access_level = level })
     )
     if ok and (status == 200 or status == 201) then
-      respond_json(200, "OK", { url = "", role = req.role or "member", state = "active" })
+      respond_json(200, { url = "", role = req.role or "member", state = "active" })
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1958,7 +1955,7 @@ backend_impl = {
   delete_team_membership = function(team_id, username)
     local uid = gl_user_id(username)
     if not uid then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local dopts = auth() or {}
@@ -1967,9 +1964,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -1986,16 +1983,16 @@ backend_impl = {
     local pid = project_id(owner, repo_name)
     local ok, status, _, body = fetch_json(base() .. "/projects/" .. pid)
     if not ok or status ~= 200 then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local proj = DecodeJson(body) or {}
     local ns = proj.namespace or {}
     if tostring(ns.id) ~= tostring(team_id) then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
-    respond_json(200, "OK", translate_gl_repo(proj))
+    respond_json(200, translate_gl_repo(proj))
   end,
 
   -- PUT /teams/{team_id}/repos/{owner}/{repo}
@@ -2011,9 +2008,9 @@ backend_impl = {
     if ok and (status == 200 or status == 201) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -2026,9 +2023,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -2109,17 +2106,17 @@ backend_impl = {
   get_repo_issue_comment = function(_owner, _repo_name, _comment_id)
     -- GitLab requires the issue IID; without it we cannot fetch a note directly.
     -- Return 404 as there's no cross-issue comment lookup endpoint.
-    respond_json(404, "Not Found", { message = "Not Found" })
+    respond_json(404, { message = "Not Found" })
   end,
 
   -- PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}
   patch_repo_issue_comment = function(_owner, _repo_name, _comment_id)
-    respond_json(404, "Not Found", { message = "Not Found" })
+    respond_json(404, { message = "Not Found" })
   end,
 
   -- DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}
   delete_repo_issue_comment = function(_owner, _repo_name, _comment_id)
-    respond_json(404, "Not Found", { message = "Not Found" })
+    respond_json(404, { message = "Not Found" })
   end,
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}/labels
@@ -2129,11 +2126,11 @@ backend_impl = {
       base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number
     )
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local issue = DecodeJson(body) or {}
@@ -2153,7 +2150,7 @@ backend_impl = {
         }
       end
     end
-    respond_json(200, "OK", labels)
+    respond_json(200, labels)
   end,
 
   -- POST /repos/{owner}/{repo}/issues/{issue_number}/labels
@@ -2163,7 +2160,7 @@ backend_impl = {
       base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number
     )
     if not existing_ok or existing_status ~= 200 then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local issue = DecodeJson(existing_body) or {}
@@ -2240,9 +2237,9 @@ backend_impl = {
     if ok and (status == 200 or status == 204) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -2252,7 +2249,7 @@ backend_impl = {
       base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number
     )
     if not ok or status ~= 200 then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     local issue = DecodeJson(body) or {}
@@ -2271,9 +2268,9 @@ backend_impl = {
     if upok and (upstatus == 200 or upstatus == 204) then
       SetStatus(204, "No Content")
     elseif upok then
-      respond_json(upstatus, "Error", {})
+      respond_json(upstatus, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -2291,7 +2288,7 @@ backend_impl = {
   get_repo_label = function(owner, repo_name, label_name)
     local id = gl_find_label_id(owner, repo_name, label_name)
     if not id then
-      respond_json(404, "Not Found", { message = "Label not found" })
+      respond_json(404, { message = "Label not found" })
       return
     end
     proxy_json(
@@ -2304,7 +2301,7 @@ backend_impl = {
   patch_repo_label = function(owner, repo_name, label_name)
     local id = gl_find_label_id(owner, repo_name, label_name)
     if not id then
-      respond_json(404, "Not Found", { message = "Label not found" })
+      respond_json(404, { message = "Label not found" })
       return
     end
     proxy_json(
@@ -2321,7 +2318,7 @@ backend_impl = {
   delete_repo_label = function(owner, repo_name, label_name)
     local id = gl_find_label_id(owner, repo_name, label_name)
     if not id then
-      respond_json(404, "Not Found", { message = "Label not found" })
+      respond_json(404, { message = "Label not found" })
       return
     end
     local dopts = auth() or {}
@@ -2334,9 +2331,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -2399,9 +2396,9 @@ backend_impl = {
     if ok and (status == 204 or status == 200) then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -2543,18 +2540,18 @@ backend_impl = {
       base() .. "/projects/" .. project_id(owner, repo_name) .. "/merge_requests/" .. pull_number
     )
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local mr = DecodeJson(body) or {}
     if mr.state == "merged" or mr.merged_at ~= nil then
       SetStatus(204, "No Content")
     else
-      respond_json(404, "Not Found", { message = "Pull Request is not merged" })
+      respond_json(404, { message = "Pull Request is not merged" })
     end
   end,
 
@@ -2578,9 +2575,9 @@ backend_impl = {
     if ok and status == 200 then
       SetStatus(204, "No Content")
     elseif ok then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -2596,11 +2593,11 @@ backend_impl = {
         .. "/reviewers"
     )
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local reviewers = DecodeJson(body) or {}
@@ -2608,7 +2605,7 @@ backend_impl = {
     for _, u in ipairs(reviewers) do
       users[#users + 1] = translate_gl_user(u)
     end
-    respond_json(200, "OK", { users = users, teams = {} })
+    respond_json(200, { users = users, teams = {} })
   end,
 
   -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews
@@ -2623,15 +2620,15 @@ backend_impl = {
         .. "/approvals"
     )
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local approvals = DecodeJson(body) or {}
-    respond_json(200, "OK", translate_gl_approvals_to_reviews(approvals))
+    respond_json(200, translate_gl_approvals_to_reviews(approvals))
   end,
 
   -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
@@ -2645,20 +2642,20 @@ backend_impl = {
         .. "/approvals"
     )
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local approvals = DecodeJson(body) or {}
     local reviews = translate_gl_approvals_to_reviews(approvals)
     local rid = tonumber(review_id)
     if rid and reviews[rid] then
-      respond_json(200, "OK", reviews[rid])
+      respond_json(200, reviews[rid])
     else
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
     end
   end,
 
@@ -2667,10 +2664,10 @@ backend_impl = {
   get_pull_review_comments = function(owner, repo_name, pull_number)
     local result, status = fetch_gl_mr_review_comments(owner, repo_name, pull_number)
     if not result then
-      respond_json(status or 503, "Error", {})
+      respond_json(status or 503, {})
       return
     end
-    respond_json(200, "OK", result)
+    respond_json(200, result)
   end,
 
   -- GET /repos/{owner}/{repo}/pulls/{pull_number}/comments
@@ -2678,10 +2675,10 @@ backend_impl = {
   get_pull_comments = function(owner, repo_name, pull_number)
     local result, status = fetch_gl_mr_review_comments(owner, repo_name, pull_number)
     if not result then
-      respond_json(status or 503, "Error", {})
+      respond_json(status or 503, {})
       return
     end
-    respond_json(200, "OK", result)
+    respond_json(200, result)
   end,
 
   -- Search -----------------------------------------------------------------------

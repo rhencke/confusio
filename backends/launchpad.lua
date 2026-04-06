@@ -94,9 +94,9 @@ backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, config.base_url .. "/devel/")
     if ok and status == 200 then
-      respond_json(200, "OK", {})
+      respond_json(200, {})
     else
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
     end
   end,
 
@@ -138,15 +138,15 @@ backend_impl = {
   get_repo_issue = function(owner, repo_name, issue_number)
     local ok, status, _, body = fetch_json(config.base_url .. "/devel/bugs/" .. issue_number)
     if not ok then
-      respond_json(503, "Service Unavailable", {})
+      respond_json(503, {})
       return
     end
     if status == 404 then
-      respond_json(404, "Not Found", { message = "Not Found" })
+      respond_json(404, { message = "Not Found" })
       return
     end
     if status ~= 200 then
-      respond_json(status, "Error", {})
+      respond_json(status, {})
       return
     end
     local bug = DecodeJson(body)
@@ -159,7 +159,7 @@ backend_impl = {
       .. issue_number
     local ok2, status2, _, body2 = fetch_json(task_url)
     local task = (ok2 and status2 == 200) and DecodeJson(body2) or nil
-    respond_json(200, "OK", translate_lp_bug(bug, task))
+    respond_json(200, translate_lp_bug(bug, task))
   end,
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
