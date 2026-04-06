@@ -57,8 +57,9 @@ local function set_204_or_error(method, url)
 end
 
 local function proxy_users_follow_list(username, rel)
-  proxy_json(
+  proxy_json_paged(
     translate_users,
+    PAGES,
     fetch_json(append_page_params(base() .. "/users/" .. username .. "/" .. rel, PAGES))
   )
 end
@@ -68,6 +69,14 @@ end
 -- Named translate functions that only take the response body work as-is (extra args ignored).
 local proxy_handler = make_proxy_handler(fetch_json)
 local proxy_handler_created = make_proxy_handler(fetch_json, proxy_json_created)
+-- proxy_handler_paged: like proxy_handler but rewrites the upstream Link header.
+-- Use for endpoints whose url_fn calls append_page_params.
+local proxy_handler_paged = make_proxy_handler(
+  fetch_json,
+  function(translate, ok, status, headers, body)
+    proxy_json_paged(translate, PAGES, ok, status, headers, body)
+  end
+)
 
 -- Proxy a Gitea search response {"data":[...],"ok":true} to the GitHub search
 -- envelope {"total_count":N,"incomplete_results":false,"items":[...]}.
@@ -450,7 +459,11 @@ backend_impl = {
 
   -- GET /user/repos
   get_user_repos = function()
-    proxy_json(translate_repos, fetch_json(append_page_params(base() .. "/user/repos", PAGES)))
+    proxy_json_paged(
+      translate_repos,
+      PAGES,
+      fetch_json(append_page_params(base() .. "/user/repos", PAGES))
+    )
   end,
 
   -- POST /user/repos
@@ -460,8 +473,9 @@ backend_impl = {
 
   -- GET /orgs/{org}/repos
   get_org_repos = function(org)
-    proxy_json(
+    proxy_json_paged(
       translate_repos,
+      PAGES,
       fetch_json(append_page_params(base() .. "/orgs/" .. org .. "/repos", PAGES))
     )
   end,
@@ -505,8 +519,9 @@ backend_impl = {
   -- GET /repos/{owner}/{repo}/contributors
   -- Gitea uses "contributions"; GitHub uses "contributions" — same key, pass through.
   get_repo_contributors = function(owner, repo_name)
-    proxy_json(
+    proxy_json_paged(
       nil,
+      PAGES,
       fetch_json(
         append_page_params(
           base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contributors",
@@ -519,8 +534,9 @@ backend_impl = {
   -- GET /repos/{owner}/{repo}/tags
   -- Both Gitea and GitHub return [{ name, commit: { sha, url }, ... }] — pass through.
   get_repo_tags = function(owner, repo_name)
-    proxy_json(
+    proxy_json_paged(
       nil,
+      PAGES,
       fetch_json(
         append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/tags", PAGES)
       )
@@ -540,8 +556,9 @@ backend_impl = {
       end
       return branches or {}
     end
-    proxy_json(
+    proxy_json_paged(
       tr_branches,
+      PAGES,
       fetch_json(
         append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/branches", PAGES)
       )
@@ -562,8 +579,9 @@ backend_impl = {
 
   -- GET /repos/{owner}/{repo}/commits
   get_repo_commits = function(owner, repo_name)
-    proxy_json(
+    proxy_json_paged(
       nil,
+      PAGES,
       fetch_json(
         append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/commits", PAGES)
       )
@@ -582,8 +600,9 @@ backend_impl = {
 
   -- GET /repos/{owner}/{repo}/commits/{ref}/statuses
   get_commit_statuses = function(owner, repo_name, ref)
-    proxy_json(
+    proxy_json_paged(
       nil,
+      PAGES,
       fetch_json(
         append_page_params(
           base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. ref,
@@ -698,8 +717,9 @@ backend_impl = {
 
   -- GET /repos/{owner}/{repo}/collaborators
   get_repo_collaborators = function(owner, repo_name)
-    proxy_json(
+    proxy_json_paged(
       nil,
+      PAGES,
       fetch_json(
         append_page_params(
           base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators",
@@ -777,8 +797,9 @@ backend_impl = {
 
   -- GET /repos/{owner}/{repo}/forks
   get_repo_forks = function(owner, repo_name)
-    proxy_json(
+    proxy_json_paged(
       translate_repos,
+      PAGES,
       fetch_json(
         append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/forks", PAGES)
       )
@@ -797,8 +818,9 @@ backend_impl = {
 
   -- GET /repos/{owner}/{repo}/releases
   get_repo_releases = function(owner, repo_name)
-    proxy_json(
+    proxy_json_paged(
       nil,
+      PAGES,
       fetch_json(
         append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases", PAGES)
       )
@@ -866,8 +888,9 @@ backend_impl = {
 
   -- GET /repos/{owner}/{repo}/releases/{release_id}/assets
   get_repo_release_assets = function(owner, repo_name, release_id)
-    proxy_json(
+    proxy_json_paged(
       nil,
+      PAGES,
       fetch_json(
         append_page_params(
           base()
@@ -945,8 +968,9 @@ backend_impl = {
 
   -- GET /repos/{owner}/{repo}/keys
   get_repo_keys = function(owner, repo_name)
-    proxy_json(
+    proxy_json_paged(
       nil,
+      PAGES,
       fetch_json(
         append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys", PAGES)
       )
@@ -986,8 +1010,9 @@ backend_impl = {
 
   -- GET /repos/{owner}/{repo}/hooks
   get_repo_hooks = function(owner, repo_name)
-    proxy_json(
+    proxy_json_paged(
       nil,
+      PAGES,
       fetch_json(
         append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks", PAGES)
       )
@@ -1087,25 +1112,27 @@ backend_impl = {
 
   -- GET /users/{username}/repos
   get_users_repos = function(username)
-    proxy_json(
+    proxy_json_paged(
       translate_repos,
+      PAGES,
       fetch_json(append_page_params(base() .. "/users/" .. username .. "/repos", PAGES))
     )
   end,
 
   -- GET /repositories (public repos list) — use Gitea's repo search
   get_repositories = function()
-    proxy_json(function(data)
+    proxy_json_paged(function(data)
       return translate_repos(data.data or {})
-    end, fetch_json(append_page_params(base() .. "/repos/search", PAGES)))
+    end, PAGES, fetch_json(append_page_params(base() .. "/repos/search", PAGES)))
   end,
 
   -- Commit comments -----------------------------------------------------------
 
   -- GET /repos/{owner}/{repo}/comments
   get_repo_comments = function(owner, repo_name)
-    proxy_json(
+    proxy_json_paged(
       nil,
+      PAGES,
       fetch_json(
         append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments", PAGES)
       )
@@ -1149,8 +1176,9 @@ backend_impl = {
 
   -- GET /repos/{owner}/{repo}/commits/{commit_sha}/comments
   get_commit_comments = function(owner, repo_name, commit_sha)
-    proxy_json(
+    proxy_json_paged(
       nil,
+      PAGES,
       fetch_json(
         append_page_params(
           base()
@@ -1204,17 +1232,17 @@ backend_impl = {
   end),
 
   -- GET /users
-  get_users = proxy_handler(translate_users, function()
+  get_users = proxy_handler_paged(translate_users, function()
     return append_page_params(base() .. "/admin/users", PAGES)
   end),
 
   -- GET /user/followers
-  get_user_followers = proxy_handler(translate_users, function()
+  get_user_followers = proxy_handler_paged(translate_users, function()
     return append_page_params(base() .. "/user/followers", PAGES)
   end),
 
   -- GET /user/following
-  get_user_following = proxy_handler(translate_users, function()
+  get_user_following = proxy_handler_paged(translate_users, function()
     return append_page_params(base() .. "/user/following", PAGES)
   end),
 
@@ -1253,7 +1281,7 @@ backend_impl = {
   -- SSH Keys ------------------------------------------------------------------
 
   -- GET /user/keys
-  get_user_keys = proxy_handler(nil, function()
+  get_user_keys = proxy_handler_paged(nil, function()
     return append_page_params(base() .. "/user/keys", PAGES)
   end),
 
@@ -1280,14 +1308,14 @@ backend_impl = {
   end,
 
   -- GET /users/{username}/keys
-  get_users_keys = proxy_handler(nil, function(u)
+  get_users_keys = proxy_handler_paged(nil, function(u)
     return append_page_params(base() .. "/users/" .. u .. "/keys", PAGES)
   end),
 
   -- GPG Keys ------------------------------------------------------------------
 
   -- GET /user/gpg_keys
-  get_user_gpg_keys = proxy_handler(nil, function()
+  get_user_gpg_keys = proxy_handler_paged(nil, function()
     return append_page_params(base() .. "/user/gpg_keys", PAGES)
   end),
 
@@ -1314,7 +1342,7 @@ backend_impl = {
   end,
 
   -- GET /users/{username}/gpg_keys
-  get_users_gpg_keys = proxy_handler(nil, function(u)
+  get_users_gpg_keys = proxy_handler_paged(nil, function(u)
     return append_page_params(base() .. "/users/" .. u .. "/gpg_keys", PAGES)
   end),
 
@@ -1358,12 +1386,12 @@ backend_impl = {
 
   -- GET /orgs/{org}/teams
   get_org_teams = function(org)
-    proxy_json(function(teams)
+    proxy_json_paged(function(teams)
       for i, t in ipairs(teams) do
         teams[i] = translate_gitea_team(t)
       end
       return teams
-    end, fetch_json(append_page_params(base() .. "/orgs/" .. org .. "/teams", PAGES)))
+    end, PAGES, fetch_json(append_page_params(base() .. "/orgs/" .. org .. "/teams", PAGES)))
   end,
 
   -- POST /orgs/{org}/teams
@@ -1448,8 +1476,9 @@ backend_impl = {
       respond_json(404, { message = "Not Found" })
       return
     end
-    proxy_json(
+    proxy_json_paged(
       translate_users,
+      PAGES,
       fetch_json(append_page_params(base() .. "/teams/" .. id .. "/members", PAGES))
     )
   end,
@@ -1516,12 +1545,12 @@ backend_impl = {
       respond_json(404, { message = "Not Found" })
       return
     end
-    proxy_json(function(repos)
+    proxy_json_paged(function(repos)
       for i, r in ipairs(repos) do
         repos[i] = translate_repo(r)
       end
       return repos
-    end, fetch_json(append_page_params(base() .. "/teams/" .. id .. "/repos", PAGES)))
+    end, PAGES, fetch_json(append_page_params(base() .. "/teams/" .. id .. "/repos", PAGES)))
   end,
 
   -- GET /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
@@ -1586,7 +1615,7 @@ backend_impl = {
   -- Issues -------------------------------------------------------------------
 
   -- GET /repos/{owner}/{repo}/issues
-  get_repo_issues = proxy_handler(translate_gitea_issues, function(o, r)
+  get_repo_issues = proxy_handler_paged(translate_gitea_issues, function(o, r)
     return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/issues", PAGES)
   end),
 
@@ -1606,7 +1635,7 @@ backend_impl = {
   end),
 
   -- GET /repos/{owner}/{repo}/issues/comments  (all issue comments in repo)
-  get_repo_issue_comments = proxy_handler(translate_gitea_issue_comments, function(o, r)
+  get_repo_issue_comments = proxy_handler_paged(translate_gitea_issue_comments, function(o, r)
     return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments", PAGES)
   end),
 
@@ -1636,7 +1665,7 @@ backend_impl = {
   end,
 
   -- GET /repos/{owner}/{repo}/issues/events  (all issue events in repo)
-  get_repo_issue_events = proxy_handler(nil, function(o, r)
+  get_repo_issue_events = proxy_handler_paged(nil, function(o, r)
     return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/issues/events", PAGES)
   end),
 
@@ -1646,7 +1675,7 @@ backend_impl = {
   end),
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
-  get_issue_comments = proxy_handler(translate_gitea_issue_comments, function(o, r, n)
+  get_issue_comments = proxy_handler_paged(translate_gitea_issue_comments, function(o, r, n)
     return append_page_params(
       base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/comments",
       PAGES
@@ -1659,7 +1688,7 @@ backend_impl = {
   end),
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}/events
-  get_issue_events = proxy_handler(nil, function(o, r, n)
+  get_issue_events = proxy_handler_paged(nil, function(o, r, n)
     return append_page_params(
       base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/events",
       PAGES
@@ -1667,7 +1696,7 @@ backend_impl = {
   end),
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}/timeline
-  get_issue_timeline = proxy_handler(nil, function(o, r, n)
+  get_issue_timeline = proxy_handler_paged(nil, function(o, r, n)
     return append_page_params(
       base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/timeline",
       PAGES
@@ -1834,14 +1863,14 @@ backend_impl = {
   -- Assignees -----------------------------------------------------------------
 
   -- GET /repos/{owner}/{repo}/assignees  (users eligible for assignment)
-  get_repo_assignees = proxy_handler(translate_users, function(o, r)
+  get_repo_assignees = proxy_handler_paged(translate_users, function(o, r)
     return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/assignees", PAGES)
   end),
 
   -- Labels (repo-level) -------------------------------------------------------
 
   -- GET /repos/{owner}/{repo}/labels
-  get_repo_labels = proxy_handler(translate_gitea_labels, function(o, r)
+  get_repo_labels = proxy_handler_paged(translate_gitea_labels, function(o, r)
     return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/labels", PAGES)
   end),
 
@@ -1902,7 +1931,7 @@ backend_impl = {
   -- Milestones ----------------------------------------------------------------
 
   -- GET /repos/{owner}/{repo}/milestones
-  get_repo_milestones = proxy_handler(translate_gitea_milestones, function(o, r)
+  get_repo_milestones = proxy_handler_paged(translate_gitea_milestones, function(o, r)
     return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/milestones", PAGES)
   end),
 
@@ -1952,12 +1981,12 @@ backend_impl = {
 
   -- GET /user/teams
   get_user_teams = function()
-    proxy_json(function(teams)
+    proxy_json_paged(function(teams)
       for i, t in ipairs(teams) do
         teams[i] = translate_gitea_team(t)
       end
       return teams
-    end, fetch_json(append_page_params(base() .. "/user/teams", PAGES)))
+    end, PAGES, fetch_json(append_page_params(base() .. "/user/teams", PAGES)))
   end,
 
   -- GET /teams/{team_id}
@@ -1991,8 +2020,9 @@ backend_impl = {
 
   -- GET /teams/{team_id}/members
   get_team_members = function(team_id)
-    proxy_json(
+    proxy_json_paged(
       translate_users,
+      PAGES,
       fetch_json(append_page_params(base() .. "/teams/" .. team_id .. "/members", PAGES))
     )
   end,
@@ -2063,12 +2093,14 @@ backend_impl = {
 
   -- GET /teams/{team_id}/repos
   get_team_repos = function(team_id)
-    proxy_json(function(repos)
+    proxy_json_paged(function(repos)
       for i, r in ipairs(repos) do
         repos[i] = translate_repo(r)
       end
       return repos
-    end, fetch_json(append_page_params(base() .. "/teams/" .. team_id .. "/repos", PAGES)))
+    end, PAGES, fetch_json(
+      append_page_params(base() .. "/teams/" .. team_id .. "/repos", PAGES)
+    ))
   end,
 
   -- GET /teams/{team_id}/repos/{owner}/{repo}
@@ -2111,7 +2143,7 @@ backend_impl = {
   -- Pull Requests ---------------------------------------------------------------
 
   -- GET /repos/{owner}/{repo}/pulls
-  get_repo_pulls = proxy_handler(translate_gitea_pulls, function(o, r)
+  get_repo_pulls = proxy_handler_paged(translate_gitea_pulls, function(o, r)
     return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/pulls", PAGES)
   end),
 
@@ -2131,7 +2163,7 @@ backend_impl = {
   end),
 
   -- GET /repos/{owner}/{repo}/pulls/{pull_number}/commits
-  get_pull_commits = proxy_handler(nil, function(o, r, n)
+  get_pull_commits = proxy_handler_paged(nil, function(o, r, n)
     return append_page_params(
       base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/commits",
       PAGES
@@ -2139,7 +2171,7 @@ backend_impl = {
   end),
 
   -- GET /repos/{owner}/{repo}/pulls/{pull_number}/files
-  get_pull_files = proxy_handler(nil, function(o, r, n)
+  get_pull_files = proxy_handler_paged(nil, function(o, r, n)
     return append_page_params(
       base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/files",
       PAGES
@@ -2216,7 +2248,7 @@ backend_impl = {
   end,
 
   -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews
-  get_pull_reviews = proxy_handler(translate_gitea_reviews, function(o, r, n)
+  get_pull_reviews = proxy_handler_paged(translate_gitea_reviews, function(o, r, n)
     return append_page_params(
       base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/reviews",
       PAGES
