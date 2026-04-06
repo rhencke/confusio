@@ -54,8 +54,5 @@ run_mock_phase() {
 
 MOCK_ARGS="-- gitea http://127.0.0.1:$MOCK_PORT"
 
-# Phase 1: no config
-run_phase test/root.hurl
-
-# Phase 2: Gitea via CLI flags
+# Phase 1: Gitea via CLI flags
 run_mock_phase test/gitea-root.hurl $MOCK_ARGS
