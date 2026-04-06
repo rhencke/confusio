@@ -102,6 +102,12 @@ local function pagination_params()
   return limit, offset
 end
 
+-- Returns the Tuleap project git repos URL with pagination.
+local function project_git_url(project_id)
+  local limit, offset = pagination_params()
+  return base() .. "/projects/" .. project_id .. "/git?limit=" .. limit .. "&offset=" .. offset
+end
+
 -- Returns the Tuleap users URL with pagination and optional username query filter.
 local function users_url(q)
   local limit, offset = pagination_params()
@@ -147,10 +153,7 @@ backend_impl = {
       respond_json(404, "Not Found", { message = "Not Found" })
       return
     end
-    local limit, offset = pagination_params()
-    local ok, status, _, body = fetch_json(
-      base() .. "/projects/" .. project.id .. "/git?limit=" .. limit .. "&offset=" .. offset
-    )
+    local ok, status, _, body = fetch_json(project_git_url(project.id))
     if not ok then
       respond_json(503, "Service Unavailable", {})
       return
@@ -176,21 +179,13 @@ backend_impl = {
       respond_json(404, "Not Found", { message = "Not Found" })
       return
     end
-    local limit, offset = pagination_params()
-    local url = base()
-      .. "/projects/"
-      .. project.id
-      .. "/git?limit="
-      .. limit
-      .. "&offset="
-      .. offset
     proxy_json(function(repos)
       local result = {}
       for _, r in ipairs(repos or {}) do
         result[#result + 1] = translate_tuleap_repo(r)
       end
       return result
-    end, fetch_json(url))
+    end, fetch_json(project_git_url(project.id)))
   end,
 
   -- GET /users/{username}: find Tuleap user by username.
