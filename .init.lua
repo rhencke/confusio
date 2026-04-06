@@ -28,6 +28,7 @@ local HTTP_STATUS_TEXT = {
   [302] = "Found",
   [404] = "Not Found",
   [405] = "Method Not Allowed",
+  [418] = "I'm a Teapot",
   [422] = "Unprocessable Entity",
   [503] = "Service Unavailable",
 }
@@ -312,6 +313,11 @@ local function meta_response()
   )
 end
 
+local function teapot_response()
+  set_preamble(418, "text/plain;charset=utf-8")
+  Write("I'm a teapot.")
+end
+
 -- ---------------------------------------------------------------------------
 -- Segment-based radix trie router
 --
@@ -402,6 +408,7 @@ local routes = {
   -- Meta (https://docs.github.com/en/rest/meta)
   ["GET /meta"]                                                                = { "get_meta",    meta_response },
   ["GET /octocat"]                                                             = { "get_octocat", octocat_response },
+  ["GET /teapot"]                                                              = { "get_teapot",  teapot_response },
   ["GET /versions"]                                                            = { "get_versions", versions_response },
   ["GET /zen"]                                                                 = { "get_zen",     zen_response },
   -- Emojis

@@ -30,6 +30,13 @@ header "Content-Type" == "application/json; charset=utf-8"
 jsonpath "$" isCollection
 jsonpath "$[0]" isString
 
+# GET /teapot
+GET http://{{host}}/teapot
+
+HTTP 418
+[Asserts]
+header "Content-Type" startsWith "text/plain"
+
 # GET /zen
 GET http://{{host}}/zen
 
