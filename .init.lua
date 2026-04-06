@@ -32,6 +32,7 @@ local HTTP_STATUS_TEXT = {
   [503] = "Service Unavailable",
 }
 function set_preamble(status, content_type)
+  status = status or 200
   SetStatus(status, HTTP_STATUS_TEXT[status] or tostring(status))
   SetHeader("Content-Type", content_type or "application/json; charset=utf-8")
 end
