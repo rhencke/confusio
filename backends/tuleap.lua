@@ -102,6 +102,16 @@ local function pagination_params()
   return limit, offset
 end
 
+-- Returns the Tuleap users URL with pagination and optional username query filter.
+local function users_url(q)
+  local limit, offset = pagination_params()
+  local url = base() .. "/users?limit=" .. limit .. "&offset=" .. offset
+  if q and q ~= "" then
+    url = url .. '&query={"username":"' .. q .. '"}'
+  end
+  return url
+end
+
 -- Look up a Tuleap project by shortname.
 -- Returns the project table { id, shortname, ... } or nil on failure.
 local function find_project(shortname)
@@ -208,18 +218,13 @@ backend_impl = {
   -- GET /users: list Tuleap users (search by ?q= if given).
   get_users = function()
     local q = GetParam("q") or ""
-    local limit, offset = pagination_params()
-    local url = base() .. "/users?limit=" .. limit .. "&offset=" .. offset
-    if q ~= "" then
-      url = url .. '&query={"username":"' .. q .. '"}'
-    end
     proxy_json(function(users)
       local result = {}
       for _, u in ipairs(users or {}) do
         result[#result + 1] = translate_tuleap_user(u)
       end
       return result
-    end, fetch_json(url))
+    end, fetch_json(users_url(q)))
   end,
 
   -- GET /search/repositories: search Tuleap projects by name.
