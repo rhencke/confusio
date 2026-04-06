@@ -392,7 +392,10 @@ function OnHttpRequest()
 
     -- Gitignore templates
     ["/api/v1/gitignores"] = { 200, '["C","Go","Python"]' },
-    ["/api/v1/gitignores/C"] = { 200, '{"name":"C","source":"# Object files\\n*.o\\n\\n# Libraries\\n*.a\\n"}' },
+    ["/api/v1/gitignores/C"] = {
+      200,
+      '{"name":"C","source":"# Object files\\n*.o\\n\\n# Libraries\\n*.a\\n"}',
+    },
   }
 
   local entry = routes[method .. " " .. path] or routes[path]
