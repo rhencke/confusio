@@ -74,7 +74,7 @@ mock-%.com: redbean.com test/mock-%.lua
 # at least one test/<name>-*.hurl file (symlinks ok — used by wildcard discovery).
 BACKENDS = azuredevops bitbucket bitbucket_datacenter codeberg forgejo gerrit gitbucket gitea gitlab gogs \
            harness kallithea launchpad notabug onedev pagure phabricator radicle \
-           rhodecode sourceforge sourcehut
+           rhodecode sourceforge sourcehut tuleap
 MOCKS    = $(addprefix mock-,$(addsuffix .com,$(BACKENDS)))
 
 $(eval _p := 18080)

@@ -1,79 +1,79 @@
-endpoint,azuredevops,bitbucket,bitbucket_datacenter,codeberg,forgejo,gerrit,gitbucket,gitea,gitlab,gogs,harness,kallithea,launchpad,notabug,onedev,pagure,phabricator,radicle,rhodecode,sourceforge,sourcehut
-Repositories,,,,,,,,,,,,,,,,,,,,,
-GET /repos/{owner}/{repo},n,y,y,y,y,n,y,y,y,y,y,n,n,y,y,y,n,y,n,n,y
-PATCH /repos/{owner}/{repo},n,y,y,y,y,n,y,y,y,y,y,n,n,y,y,y,n,y,n,n,y
-DELETE /repos/{owner}/{repo},n,y,y,y,y,n,y,y,y,y,y,n,n,y,y,y,n,n,n,n,y
-GET /user/repos,n,y,~,y,y,n,y,y,y,y,y,n,n,y,y,y,n,y,n,n,y
-POST /user/repos,n,y,~,y,y,n,y,y,y,y,y,n,n,y,y,y,n,y,n,n,y
-GET /orgs/{org}/repos,n,y,y,y,y,n,y,y,y,y,y,n,n,y,y,y,n,n,n,n,n
-POST /orgs/{org}/repos,n,y,y,y,y,n,y,y,y,y,y,n,n,y,y,y,n,n,n,n,n
-GET /users/{username}/repos,n,n,y,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n
-GET /repositories,n,y,y,n,n,y,y,y,y,n,n,n,n,n,n,y,n,y,n,n,n
-Repo Content & Metadata,,,,,,,,,,,,,,,,,,,,,
-GET /repos/{owner}/{repo}/tags,n,n,y,y,y,n,n,y,y,y,y,n,n,y,y,y,n,y,n,n,y
-GET /repos/{owner}/{repo}/topics,n,n,n,y,y,n,n,y,y,y,n,n,n,y,n,y,n,n,n,n,n
-PUT /repos/{owner}/{repo}/topics,n,n,n,y,y,n,n,y,y,y,n,n,n,y,n,y,n,n,n,n,n
-GET /repos/{owner}/{repo}/languages,n,n,n,y,y,n,y,y,y,y,y,n,n,y,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/branches,n,n,y,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/commits,n,n,y,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/contents/{path},n,n,y,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n
-PUT /repos/{owner}/{repo}/contents/{path},n,n,y,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n
-DELETE /repos/{owner}/{repo}/contents/{path},n,n,y,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/collaborators,n,n,n,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/forks,n,n,y,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n
-POST /repos/{owner}/{repo}/forks,n,n,y,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/releases,n,n,n,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/keys,n,n,y,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/hooks,n,n,y,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n
-Users,,,,,,,,,,,,,,,,,,,,,
-GET /user,n,y,n,y,y,y,y,y,y,y,y,n,n,y,n,y,n,n,n,n,y
-PATCH /user,n,y,n,y,y,y,y,y,y,y,y,n,n,y,n,y,n,n,n,n,y
-GET /users,n,n,y,y,y,y,y,y,y,y,n,n,n,y,y,y,n,n,n,n,n
-GET /users/{username},n,y,y,y,y,y,y,y,y,y,n,n,n,y,y,y,n,n,n,n,n
-GET /user/followers,n,n,n,y,y,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n
-GET /user/following,n,n,n,y,y,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n
-GET /user/keys,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-GET /user/gpg_keys,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-GET /user/emails,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-Teams,,,,,,,,,,,,,,,,,,,,,
-GET /orgs/{org}/teams,y,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-GET /user/teams,y,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-Security Advisories,,,,,,,,,,,,,,,,,,,,,
-GET /advisories,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/security-advisories,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-Issues,,,,,,,,,,,,,,,,,,,,,
-GET /repos/{owner}/{repo}/issues,y,y,n,y,y,n,y,y,y,y,n,n,y,y,y,y,y,n,n,n,y
-POST /repos/{owner}/{repo}/issues,y,n,n,y,y,n,y,y,y,y,n,n,n,y,y,n,n,n,n,n,y
-GET /repos/{owner}/{repo}/issues/{issue_number},y,y,n,y,y,n,y,y,y,y,n,n,y,y,y,y,y,n,n,n,y
-PATCH /repos/{owner}/{repo}/issues/{issue_number},y,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/issues/{issue_number}/comments,y,y,n,y,y,n,y,y,y,y,n,n,y,y,y,y,y,n,n,n,y
-POST /repos/{owner}/{repo}/issues/{issue_number}/comments,y,n,n,y,y,n,y,y,y,y,n,n,n,y,y,n,n,n,n,n,y
-GET /repos/{owner}/{repo}/issues/{issue_number}/labels,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-POST /repos/{owner}/{repo}/issues/{issue_number}/labels,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/labels,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,~stub only,n,n,n,n,n
-GET /repos/{owner}/{repo}/milestones,n,y,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/assignees,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-Pull Requests,,,,,,,,,,,,,,,,,,,,,
-GET /repos/{owner}/{repo}/pulls,n,y,y,y,y,n,y,y,y,y,n,n,n,n,n,n,n,n,n,n,n
-POST /repos/{owner}/{repo}/pulls,n,y,y,y,y,n,y,y,y,y,n,n,n,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/pulls/{pull_number},n,y,y,y,y,n,y,y,y,y,n,n,n,n,n,n,n,n,n,n,n
-PATCH /repos/{owner}/{repo}/pulls/{pull_number},n,y,y,y,y,n,y,y,y,y,n,n,n,n,n,n,n,n,n,n,n
-PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge,n,y,y,y,y,n,y,y,y,y,n,n,n,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/pulls/{pull_number}/commits,n,y,y,y,y,n,y,y,y,y,n,n,n,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/pulls/{pull_number}/files,n,~via diffstat,~via /changes,y,y,n,y,y,y,y,n,n,n,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/pulls/{pull_number}/comments,n,~inline PR comments,~inline PR comments,~aggregated via reviews,~aggregated via reviews,n,y,~aggregated via reviews,~via MR notes,~aggregated via reviews,n,n,n,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews,n,~via participants,~via reviewers,y,y,n,y,y,~via MR approvals,y,n,n,n,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id},n,~via participants,~via reviewers,y,y,n,y,y,~via MR approvals,y,n,n,n,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments,n,~inline PR comments,~inline PR comments,y,y,n,y,y,~via MR notes,y,n,n,n,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/pulls/comments,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/pulls/comments/{comment_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-Search,,,,,,,,,,,,,,,,,,,,,
-GET /search/repositories,n,y,y,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-GET /search/users,n,y,y,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n
-GET /search/issues,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /search/commits,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /search/code,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /search/labels,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /search/topics,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-Rate Limits,,,,,,,,,,,,,,,,,,,,,
-GET /rate_limit,~unlimited stub,~unlimited stub,~unlimited stub,y,y,~unlimited stub,y,y,~unlimited stub,y,~unlimited stub,~unlimited stub,~unlimited stub,y,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub
+endpoint,azuredevops,bitbucket,bitbucket_datacenter,codeberg,forgejo,gerrit,gitbucket,gitea,gitlab,gogs,harness,kallithea,launchpad,notabug,onedev,pagure,phabricator,radicle,rhodecode,sourceforge,sourcehut,tuleap
+Repositories,,,,,,,,,,,,,,,,,,,,,,
+GET /repos/{owner}/{repo},n,y,y,y,y,n,y,y,y,y,y,n,n,y,y,y,n,y,n,n,y,~
+PATCH /repos/{owner}/{repo},n,y,y,y,y,n,y,y,y,y,y,n,n,y,y,y,n,y,n,n,y,n
+DELETE /repos/{owner}/{repo},n,y,y,y,y,n,y,y,y,y,y,n,n,y,y,y,n,n,n,n,y,n
+GET /user/repos,n,y,~,y,y,n,y,y,y,y,y,n,n,y,y,y,n,y,n,n,y,n
+POST /user/repos,n,y,~,y,y,n,y,y,y,y,y,n,n,y,y,y,n,y,n,n,y,n
+GET /orgs/{org}/repos,n,y,y,y,y,n,y,y,y,y,y,n,n,y,y,y,n,n,n,n,n,~
+POST /orgs/{org}/repos,n,y,y,y,y,n,y,y,y,y,y,n,n,y,y,y,n,n,n,n,n,n
+GET /users/{username}/repos,n,n,y,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repositories,n,y,y,n,n,y,y,y,y,n,n,n,n,n,n,y,n,y,n,n,n,n
+Repo Content & Metadata,,,,,,,,,,,,,,,,,,,,,,
+GET /repos/{owner}/{repo}/tags,n,n,y,y,y,n,n,y,y,y,y,n,n,y,y,y,n,y,n,n,y,n
+GET /repos/{owner}/{repo}/topics,n,n,n,y,y,n,n,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
+PUT /repos/{owner}/{repo}/topics,n,n,n,y,y,n,n,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/languages,n,n,n,y,y,n,y,y,y,y,y,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/branches,n,n,y,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/commits,n,n,y,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/contents/{path},n,n,y,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+PUT /repos/{owner}/{repo}/contents/{path},n,n,y,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+DELETE /repos/{owner}/{repo}/contents/{path},n,n,y,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/collaborators,n,n,n,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/forks,n,n,y,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+POST /repos/{owner}/{repo}/forks,n,n,y,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/releases,n,n,n,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/keys,n,n,y,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/hooks,n,n,y,y,y,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+Users,,,,,,,,,,,,,,,,,,,,,,
+GET /user,n,y,n,y,y,y,y,y,y,y,y,n,n,y,n,y,n,n,n,n,y,n
+PATCH /user,n,y,n,y,y,y,y,y,y,y,y,n,n,y,n,y,n,n,n,n,y,n
+GET /users,n,n,y,y,y,y,y,y,y,y,n,n,n,y,y,y,n,n,n,n,n,~
+GET /users/{username},n,y,y,y,y,y,y,y,y,y,n,n,n,y,y,y,n,n,n,n,n,~
+GET /user/followers,n,n,n,y,y,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /user/following,n,n,n,y,y,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /user/keys,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /user/gpg_keys,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /user/emails,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+Teams,,,,,,,,,,,,,,,,,,,,,,
+GET /orgs/{org}/teams,y,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /user/teams,y,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+Security Advisories,,,,,,,,,,,,,,,,,,,,,,
+GET /advisories,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/security-advisories,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+Issues,,,,,,,,,,,,,,,,,,,,,,
+GET /repos/{owner}/{repo}/issues,y,y,n,y,y,n,y,y,y,y,n,n,y,y,y,y,y,n,n,n,y,n
+POST /repos/{owner}/{repo}/issues,y,n,n,y,y,n,y,y,y,y,n,n,n,y,y,n,n,n,n,n,y,n
+GET /repos/{owner}/{repo}/issues/{issue_number},y,y,n,y,y,n,y,y,y,y,n,n,y,y,y,y,y,n,n,n,y,n
+PATCH /repos/{owner}/{repo}/issues/{issue_number},y,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/issues/{issue_number}/comments,y,y,n,y,y,n,y,y,y,y,n,n,y,y,y,y,y,n,n,n,y,n
+POST /repos/{owner}/{repo}/issues/{issue_number}/comments,y,n,n,y,y,n,y,y,y,y,n,n,n,y,y,n,n,n,n,n,y,n
+GET /repos/{owner}/{repo}/issues/{issue_number}/labels,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+POST /repos/{owner}/{repo}/issues/{issue_number}/labels,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/labels,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,~stub only,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/milestones,n,y,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/assignees,n,n,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+Pull Requests,,,,,,,,,,,,,,,,,,,,,,
+GET /repos/{owner}/{repo}/pulls,n,y,y,y,y,n,y,y,y,y,n,n,n,n,n,n,n,n,n,n,n,n
+POST /repos/{owner}/{repo}/pulls,n,y,y,y,y,n,y,y,y,y,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/pulls/{pull_number},n,y,y,y,y,n,y,y,y,y,n,n,n,n,n,n,n,n,n,n,n,n
+PATCH /repos/{owner}/{repo}/pulls/{pull_number},n,y,y,y,y,n,y,y,y,y,n,n,n,n,n,n,n,n,n,n,n,n
+PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge,n,y,y,y,y,n,y,y,y,y,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/pulls/{pull_number}/commits,n,y,y,y,y,n,y,y,y,y,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/pulls/{pull_number}/files,n,~via diffstat,~via /changes,y,y,n,y,y,y,y,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/pulls/{pull_number}/comments,n,~inline PR comments,~inline PR comments,~aggregated via reviews,~aggregated via reviews,n,y,~aggregated via reviews,~via MR notes,~aggregated via reviews,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews,n,~via participants,~via reviewers,y,y,n,y,y,~via MR approvals,y,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id},n,~via participants,~via reviewers,y,y,n,y,y,~via MR approvals,y,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments,n,~inline PR comments,~inline PR comments,y,y,n,y,y,~via MR notes,y,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/pulls/comments,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/pulls/comments/{comment_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+Search,,,,,,,,,,,,,,,,,,,,,,
+GET /search/repositories,n,y,y,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,~via projects API
+GET /search/users,n,y,y,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,~
+GET /search/issues,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /search/commits,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /search/code,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /search/labels,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /search/topics,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+Rate Limits,,,,,,,,,,,,,,,,,,,,,,
+GET /rate_limit,~unlimited stub,~unlimited stub,~unlimited stub,y,y,~unlimited stub,y,y,~unlimited stub,y,~unlimited stub,~unlimited stub,~unlimited stub,y,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub
