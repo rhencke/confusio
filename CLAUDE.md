@@ -13,19 +13,17 @@ Built with [Redbean](https://redbean.dev): a self-contained web server + Lua int
 | `make -j build` | Produces `confusio.com` (app) |
 | `make -j test-unit` | Unit tests against mock backends, no network |
 | `make -j test-integration` | Integration tests against live gitea.com |
-| `make -j test` | Both of the above |
-| `make -j test-format` | Check StyLua formatting (no changes — fails if any file needs reformatting) |
-| `make -j test-lint` | Run luacheck linting |
+| `make -j test` | Unit tests, integration tests, format check, and lint — all checks |
+| `make -j test-format` | Check StyLua formatting only (no changes — fails if any file needs reformatting) |
+| `make -j test-lint` | Run luacheck linting only |
 | `make -j validate-mock` | Run `test/validate/gitea-api-version.hurl` against both the mock and a real Gitea instance to check they agree |
 | `make -j site` | Build GitHub Pages site into `_site/` (generates matrix from CSV) |
 
-**Before any commit: run `make -j test-unit`.** `make -j test-integration` requires network and is acceptable to defer to CI.
-
-**Before any push: also run `make -j test-format test-lint`.** These check formatting and linting. Fix any failures before pushing — CI enforces both.
+**Before any commit and before any push: run `make -j test`.** This runs unit tests, integration tests, format check, and lint in one shot. CI enforces all of these — fix any failures before pushing.
 
 **Checking test results:** Use the exit code, not stdout parsing. The output is noisy (redbean logs prefixed with `I2026-`). The correct pattern:
 ```bash
-make -j test-unit; echo "EXIT: $?"
+make -j test; echo "EXIT: $?"
 ```
 Only spelunk the output if the exit code is non-zero.
 
@@ -136,9 +134,7 @@ fi
 
 ## Commit discipline
 
-Every commit must pass `make -j test-unit`. No exceptions.
-
-Before pushing, also run `make -j test-format test-lint`. CI enforces both — fix failures before pushing.
+Every commit and every push must pass `make -j test`. No exceptions. This covers unit tests, integration tests, format, and lint in one command.
 
 ## Lessons learned
 

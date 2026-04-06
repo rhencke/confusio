@@ -100,7 +100,7 @@ site:
 	cp -r site/. _site/
 	python3 scripts/gen-matrix.py site/compatibility.csv site/index.html _site/index.html
 
-test: test-unit test-integration
+test: test-unit test-integration test-format test-lint
 
 # Sequential preamble (boot-path checks), then all backends in parallel
 test-unit: confusio.com $(MOCKS) hurl
