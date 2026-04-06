@@ -229,8 +229,7 @@ backend_impl = {
   -- GET /search/repositories: search Tuleap projects by name.
   search_repositories = function()
     local q = GetParam("q") or ""
-    local limit, offset = pagination_params()
-    local url = base() .. "/projects?limit=" .. limit .. "&offset=" .. offset
+    local url = base() .. "/projects" .. pagination_suffix()
     if q ~= "" then
       url = url .. '&query={"name":"' .. q .. '"}'
     end
