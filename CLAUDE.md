@@ -195,9 +195,23 @@ Hard-won insights from building this project. **Keep this section current**: whe
 - **luacov's `on_exit` cleanup fires via a `__gc` finalizer** on an anchor object. In Redbean `-i`
   mode the GC runs on script end — stats are written automatically without an explicit
   `runner.shutdown()` call.
-- **Unit tests achieve ~97% coverage of `.init.lua`** when run under luacov. Only ~14 lines are
-  missed (mainly the SCRIPTARGS parsing block which requires a real `arg` table).
-- **HTTP-level (Hurl) tests cannot contribute to luacov coverage directly** — Redbean runs as a
-  server process and the debug hook context does not survive across request dispatch. Coverage from
-  server-mode tests would require a different mechanism (e.g. patching `.init.lua` to emit stats on
-  a signal or request).
+- **Unit tests achieve 97.4% coverage of `.init.lua`** (527 executable lines hit, 14 missed).
+  The 14 missed lines are: the SCRIPTARGS parsing block (requires a real `arg` table), four static
+  response handler bodies (`get_emojis`, `get_repositories`, `octocat_response`,
+  `versions_response`), and the coverage-bootstrap block in `test/unit-init.lua` itself.
+- **HTTP-level (Hurl) tests CAN contribute coverage in Redbean uniprocess mode (`-u`).**
+  The debug hook installed by `require('luacov')` IS active during `OnHttpRequest()` — the original
+  assumption that "the hook doesn't survive request dispatch" was wrong. Verified empirically: a
+  three-request session covers 381 lines of `.init.lua`, including request-handling code.
+  The real obstacles are:
+  1. **Flush**: SIGTERM kills the process before the GC `__gc` finalizer can write stats. You must
+     call `luacov.runner.shutdown()` explicitly before the server exits — e.g. via a special HTTP
+     endpoint or a SIGUSR1 handler patched into `.init.lua`.
+  2. **Path mismatch**: server mode records source as `/zip/.init.lua`; unit tests record `.init.lua`.
+     Merging both into one report requires normalising the filename key.
+  3. **`runner.init()` vs `require('luacov')`**: use `runner.init()` in server mode so you hold a
+     reference to the runner and can call `runner.shutdown()` later.
+  **Practical verdict — not worth it**: unit tests already cover 97.4% and exercise every request
+  dispatch path via direct Lua calls. HTTP tests would cover at most the 14 missed lines
+  (SCRIPTARGS block + four static handlers), adding roughly 1.5 percentage points. The flush and
+  path-normalisation machinery is not justified for that marginal gain.
