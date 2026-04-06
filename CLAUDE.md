@@ -169,6 +169,14 @@ Hard-won insights from building this project. **Keep this section current**: whe
   scope so locals from `.init.lua` are not visible to backend files.
 - **`/zip/` prefix for dofile**: Redbean's `dofile` resolves paths on the real filesystem by
   default. Files inside the zip must be accessed as `dofile("/zip/backends/gitea.lua")`.
+- **`SetStatus` clears all previously-set response headers.** Any `SetHeader` call made before
+  `SetStatus` (or before `set_preamble`, which calls `SetStatus`) is silently discarded. Always
+  call `SetStatus` / `set_preamble` first, then set additional headers like `Link`. This is why
+  `proxy_json_paged` calls `set_preamble(200)` before `SetHeader("Link", rewritten)` rather than
+  using the `respond_json` helper (which would call `SetStatus` last).
+- **Mock route entries support an optional third element for extra headers**: `{status, body,
+  {HeaderName = value, ...}}`. The dispatch loop iterates `entry[3]` and calls `SetHeader` for
+  each pair, allowing mock routes to return headers like `Link` for pagination testing.
 
 ### Mock server design
 

@@ -114,8 +114,11 @@ function proxy_json_paged(translate, page_params, ok, status, headers, body)
     local data = DecodeJson(body) or {}
     local link = headers and (headers["Link"] or headers["link"])
     local rewritten = rewrite_link_header(link, page_params)
+    -- set_preamble calls SetStatus which clears previously-set headers, so the Link
+    -- header must be set AFTER set_preamble, not before.
+    set_preamble(200)
     if rewritten then SetHeader("Link", rewritten) end
-    respond_json(200, translate and translate(data) or data)
+    Write(EncodeJson(translate and translate(data) or data))
   elseif ok then respond_json(status, {})
   else respond_json(503, {}) end
 end

@@ -172,10 +172,10 @@ local function proxy_search_gl(translate_item, url)
   end
   local link = headers and (headers["Link"] or headers["link"])
   local rewritten = rewrite_link_header(link, PAGES)
+  set_preamble()
   if rewritten then
     SetHeader("Link", rewritten)
   end
-  set_preamble()
   Write(
     '{"total_count":'
       .. #items

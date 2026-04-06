@@ -118,7 +118,14 @@ function OnHttpRequest()
 
     -- Repos
     ["/api/v1/repos/octocat/hello-world"] = { 200, REPO },
-    ["/api/v1/user/repos"] = { 200, "[" .. REPO .. "]" },
+    ["/api/v1/user/repos"] = {
+      200,
+      "[" .. REPO .. "]",
+      {
+        Link = '<http://upstream.example.com/api/v1/user/repos?page=2&limit=1>; rel="next",'
+          .. ' <http://upstream.example.com/api/v1/user/repos?page=5&limit=1>; rel="last"',
+      },
+    },
     ["/api/v1/users/octocat/repos"] = { 200, "[" .. REPO .. "]" },
     ["/api/v1/orgs/testorg/repos"] = {
       200,
@@ -400,8 +407,13 @@ function OnHttpRequest()
 
   local entry = routes[method .. " " .. path] or routes[path]
   if entry then
-    local status, body = entry[1], entry[2]
+    local status, body, extra_headers = entry[1], entry[2], entry[3]
     SetStatus(status, status == 200 and "OK" or "No Content")
+    if extra_headers then
+      for k, v in pairs(extra_headers) do
+        SetHeader(k, v)
+      end
+    end
     if body then
       json(body)
     end
