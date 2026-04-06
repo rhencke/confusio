@@ -76,33 +76,37 @@ local function translate_repo(r)
   }
 end
 
--- Fetch all repository summaries from /v1/repos, following nextToken pagination.
--- Returns a list of summary objects or nil + status code on failure.
-local function list_all_repos()
-  local result = {}
-  local token = nil
-  while true do
-    local url = base() .. "/repos"
-    if token then
-      url = url .. "?nextToken=" .. token
-    end
-    local ok, status, _, body = fetch_json(url)
-    if not ok then
-      return nil, 503
-    end
-    if status ~= 200 then
-      return nil, status
-    end
-    local data = DecodeJson(body) or {}
-    for _, r in ipairs(data.repositories or {}) do
-      result[#result + 1] = r
-    end
-    if not data.nextToken or data.nextToken == "" then
-      break
-    end
-    token = data.nextToken
+-- Fetch one page of repository summaries from /v1/repos.
+-- max_results: optional integer to pass as maxResults to CodeCommit.
+-- Returns repos list, incomplete (bool), and status code.
+local function list_repos_page(max_results)
+  local url = base() .. "/repos"
+  if max_results then
+    url = url .. "?maxResults=" .. max_results
   end
-  return result, 200
+  local ok, status, _, body = fetch_json(url)
+  if not ok then
+    return nil, false, 503
+  end
+  if status ~= 200 then
+    return nil, false, status
+  end
+  local data = DecodeJson(body) or {}
+  local incomplete = data.nextToken ~= nil and data.nextToken ~= ""
+  return data.repositories or {}, incomplete, 200
+end
+
+-- Error if the caller requested page > 1 (CodeCommit uses cursor-based pagination;
+-- arbitrary page offsets are not supported).
+local function check_page()
+  local page = tonumber(GetParam("page") or "1") or 1
+  if page > 1 then
+    respond_json(422, "Unprocessable Entity", {
+      message = "CodeCommit uses cursor-based pagination; only page=1 is supported",
+    })
+    return false
+  end
+  return true
 end
 
 backend_impl = {
@@ -149,7 +153,9 @@ backend_impl = {
   end,
 
   get_repositories = function()
-    local repos, status = list_all_repos()
+    if not check_page() then return end
+    local per_page = tonumber(GetParam("per_page") or "") or nil
+    local repos, _, status = list_repos_page(per_page)
     if not repos then
       respond_json(status, "Error", {})
       return
@@ -189,8 +195,10 @@ backend_impl = {
   end,
 
   search_repositories = function()
+    if not check_page() then return end
     local q = (GetParam("q") or ""):lower()
-    local repos, status = list_all_repos()
+    local per_page = tonumber(GetParam("per_page") or "") or nil
+    local repos, incomplete, status = list_repos_page(per_page)
     if not repos then
       respond_json(status, "Error", {})
       return
@@ -202,6 +210,6 @@ backend_impl = {
         items[#items + 1] = translate_repo(r)
       end
     end
-    respond_json(200, "OK", { total_count = #items, incomplete_results = false, items = items })
+    respond_json(200, "OK", { total_count = #items, incomplete_results = incomplete, items = items })
   end,
 }

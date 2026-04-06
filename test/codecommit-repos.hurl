@@ -33,6 +33,11 @@ header "Content-Type" == "application/json; charset=utf-8"
 jsonpath "$" isCollection
 jsonpath "$[0].name" isString
 
+# page > 1 is not supported (CodeCommit uses cursor-based pagination)
+GET http://{{host}}/repositories?page=2
+
+HTTP 422
+
 # GET /repos/{owner}/{repo}/branches — list branches
 GET http://{{host}}/repos/codecommit/hello-world/branches
 

@@ -11,6 +11,11 @@ jsonpath "$.incomplete_results" == false
 jsonpath "$.items" isCollection
 jsonpath "$.items[0].name" isString
 
+# page > 1 is not supported (CodeCommit uses cursor-based pagination)
+GET http://{{host}}/search/repositories?q=hello&page=2
+
+HTTP 422
+
 # Unsupported search endpoints return empty envelope
 GET http://{{host}}/search/users?q=octocat
 
