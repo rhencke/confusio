@@ -32,6 +32,9 @@ STYLUA_URL = https://github.com/JohnnyMorganz/StyLua/releases/download/v$(STYLUA
 LUACHECK_VERSION := $(shell cat .luacheck-version)
 LUACHECK_URL = https://github.com/lunarmodules/luacheck/releases/download/v$(LUACHECK_VERSION)/luacheck
 
+LUACOV_VERSION := $(shell cat .luacov-version)
+LUACOV_URL = https://github.com/lunarmodules/luacov/archive/refs/tags/v$(LUACOV_VERSION).tar.gz
+
 redbean.com: .redbean-version
 	curl -fsSL $(REDBEAN_URL) -o redbean.com
 	chmod +x redbean.com
@@ -56,6 +59,11 @@ stylua: .stylua-version
 luacheck: .luacheck-version
 	curl -fsSL $(LUACHECK_URL) -o luacheck
 	chmod +x luacheck
+
+luacov: .luacov-version
+	rm -rf luacov
+	mkdir -p luacov
+	curl -fsSL $(LUACOV_URL) | tar -xz --strip-components=2 -C luacov luacov-$(LUACOV_VERSION)/src
 
 confusio.com: redbean.com .init.lua $(wildcard backends/*.lua)
 	cp redbean.com confusio.com
@@ -91,7 +99,7 @@ endef
 
 $(foreach b,$(BACKENDS),$(eval $(call BACKEND_RULE,$(b))))
 
-.PHONY: build site test test-unit test-unit-functions test-unit-backends test-integration validate-mock test-format test-lint clean
+.PHONY: build site test test-unit test-unit-functions test-unit-backends test-integration validate-mock test-format test-lint test-coverage clean
 
 build: confusio.com
 
@@ -125,8 +133,13 @@ test-format: stylua
 	./stylua --check .
 
 test-lint: luacheck
-	./luacheck .
+	./luacheck . --exclude-files 'luacov'
+
+test-coverage: redbean.com luacov
+	rm -f luacov.stats.out luacov.report.out
+	COVERAGE=1 ./redbean.com -i test/unit-init.lua
+	./redbean.com -i scripts/luacov-report.lua
 
 clean:
 	rm -f redbean.com confusio.com $(MOCKS) hurl stylua luacheck
-	rm -rf _site
+	rm -rf _site luacov

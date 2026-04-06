@@ -2,6 +2,13 @@
 -- Run from project root: sh redbean.com -i test/unit-init.lua
 -- ============================================================
 
+-- Enable luacov coverage tracing when COVERAGE=1.
+-- Requires: make luacov (downloads luacov source to ./luacov/).
+if os.getenv("COVERAGE") then
+  package.path = "luacov/?.lua;" .. package.path
+  require("luacov")
+end
+
 -- Stub state for the Redbean HTTP context APIs.
 local _last_status, _last_headers, _last_body
 local _req_headers, _req_path, _req_params, _req_method
@@ -59,8 +66,9 @@ function dofile(path) -- luacheck: globals dofile
   return _real_dofile(path)
 end
 
--- Suppress arg so SCRIPTARGS parsing is a no-op.
-arg = {} -- luacheck: globals arg
+-- Provide one SCRIPTARGS entry so the loop body executes.
+-- The dofile stub above silently drops the backend file load.
+arg = { "testbackend" } -- luacheck: globals arg
 
 -- Load the module under test.
 _real_dofile(".init.lua")
@@ -588,6 +596,30 @@ reset_response()
 reset_request({ method = "GET", path = "/rate_limit" })
 OnHttpRequest()
 eq(_last_status, 200, "OnHttpRequest: GET /rate_limit → 200")
+
+-- GET /octocat — built-in, no backend needed
+reset_response()
+reset_request({ method = "GET", path = "/octocat" })
+OnHttpRequest()
+eq(_last_status, 200, "OnHttpRequest: GET /octocat → 200")
+
+-- GET /versions — built-in
+reset_response()
+reset_request({ method = "GET", path = "/versions" })
+OnHttpRequest()
+eq(_last_status, 200, "OnHttpRequest: GET /versions → 200")
+
+-- GET /issues — default empty_list fallback
+reset_response()
+reset_request({ method = "GET", path = "/issues" })
+OnHttpRequest()
+eq(_last_status, 200, "OnHttpRequest: GET /issues → 200 (empty_list default)")
+
+-- GET /search/code — default search_empty fallback
+reset_response()
+reset_request({ method = "GET", path = "/search/code" })
+OnHttpRequest()
+eq(_last_status, 200, "OnHttpRequest: GET /search/code → 200 (search_empty default)")
 
 -- GET /repos/{owner}/{repo} — no backend → 404 (no default_fn)
 reset_response()
