@@ -1,8 +1,8 @@
 # AWS CodeCommit backend repos API assertions.
-# CodeCommit has no owner concept; {owner} is ignored in single-repo lookups.
+# {owner} must always be "codecommit"; any other value returns 404.
 
-# GET /repos/{owner}/{repo}: owner ignored, looks up repo by name
-GET http://{{host}}/repos/ignored-owner/hello-world
+# GET /repos/{owner}/{repo}: owner must be "codecommit"
+GET http://{{host}}/repos/codecommit/hello-world
 
 HTTP 200
 [Asserts]
@@ -13,9 +13,14 @@ jsonpath "$.description" isString
 jsonpath "$.private" == true
 jsonpath "$.default_branch" isString
 
+# Wrong owner → 404
+GET http://{{host}}/repos/wrong-owner/hello-world
+
+HTTP 404
+
 # Repo not found → 404 (CodeCommit returns 400 RepositoryDoesNotExistException;
 # confusio maps this to 404)
-GET http://{{host}}/repos/ignored-owner/no-such-repo
+GET http://{{host}}/repos/codecommit/no-such-repo
 
 HTTP 404
 
@@ -29,7 +34,7 @@ jsonpath "$" isCollection
 jsonpath "$[0].name" isString
 
 # GET /repos/{owner}/{repo}/branches — list branches
-GET http://{{host}}/repos/ignored-owner/hello-world/branches
+GET http://{{host}}/repos/codecommit/hello-world/branches
 
 HTTP 200
 [Asserts]
@@ -38,3 +43,8 @@ jsonpath "$" isCollection
 jsonpath "$[0].name" isString
 jsonpath "$[0].commit" isCollection
 jsonpath "$[0].protected" isBoolean
+
+# Wrong owner → 404
+GET http://{{host}}/repos/wrong-owner/hello-world/branches
+
+HTTP 404

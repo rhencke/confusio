@@ -1,7 +1,7 @@
 -- AWS CodeCommit backend handler overrides.
 -- Uses AWS CodeCommit REST API v1.
--- CodeCommit has no owner/org concept; the GitHub {owner} segment is ignored
--- when looking up individual repos. All repos are scoped to an AWS account.
+-- CodeCommit has no owner/org concept; the GitHub {owner} segment must always
+-- be "codecommit". All repos are scoped to an AWS account.
 if config.base_url == "" then
   config.base_url = "https://codecommit.us-east-1.amazonaws.com"
 end
@@ -115,10 +115,14 @@ backend_impl = {
     end
   end,
 
-  -- GET /repos/{owner}/{repo}: owner is ignored; CodeCommit has no owner concept.
+  -- GET /repos/{owner}/{repo}: owner must be "codecommit".
   -- CodeCommit returns 400 (RepositoryDoesNotExistException) for unknown repos;
   -- map that to 404 for GitHub compatibility.
-  get_repo = function(_, repo_name)
+  get_repo = function(owner, repo_name)
+    if owner ~= "codecommit" then
+      respond_json(404, "Not Found", { message = "Not Found" })
+      return
+    end
     local ok, status, _, body = fetch_json(base() .. "/repos/" .. repo_name)
     if not ok then
       respond_json(503, "Service Unavailable", {})
@@ -157,8 +161,12 @@ backend_impl = {
     respond_json(200, "OK", result)
   end,
 
-  -- GET /repos/{owner}/{repo}/branches: owner is ignored.
-  get_repo_branches = function(_, repo_name)
+  -- GET /repos/{owner}/{repo}/branches: owner must be "codecommit".
+  get_repo_branches = function(owner, repo_name)
+    if owner ~= "codecommit" then
+      respond_json(404, "Not Found", { message = "Not Found" })
+      return
+    end
     local ok, status, _, body = fetch_json(base() .. "/repos/" .. repo_name .. "/branches")
     if not ok then
       respond_json(503, "Service Unavailable", {})
