@@ -260,34 +260,10 @@ local function zen_response()
   Write(ZEN_QUOTES[math.random(#ZEN_QUOTES)])
 end
 
--- OCTOCAT is the ASCII art returned by GET /octocat.
-local OCTOCAT = [=[
-             MMM.           .MMM
-             MMMMMMMMMMMMMMMMMMM
-             MMMMMMMMMMMMMMMMMMM      ___________________________________
-            MMMMMMMMMMMMMMMMMMMMM    |                                   |
-           MMMMMMMMMMMMMMMMMMMMMMM   | Design for failure.               |
-          MMMMMMMMMMMMMMMMMMMMMMMM   |_   _______________________________|
-          MMMM::- -:::::::- -::MMMM    |/
-           MM~:~ 00~:::::~ 00~:~MM
-        .. MMMMM::.00:::+:::.00::MMMMM ..
-              .MM::::: ._. :::::MM.
-                 MMMM;:::::;MMMM
-          -MM        MMMMMMM
-          ^  M+     MMMMMMMMM
-              MMMMMMM MM MM MM
-                   MM MM MM MM
-                   MM MM MM MM
-                .~~MM~MM~MM~MM~~.
-             ~~~~MM:~MM~~~MM~:MM~~~~
-            ~~~~~~==~==~~~==~==~~~~~~
-             ~~~~~~==~==~==~==~~~~~~
-                 :~==~==~==~==~~
-]=]
 local function octocat_response()
   SetStatus(200, "OK")
   SetHeader("Content-Type", "application/octocat-stream")
-  Write(OCTOCAT)
+  Write("🐙🐱")
 end
 
 local function versions_response()
