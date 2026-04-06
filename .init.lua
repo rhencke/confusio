@@ -32,7 +32,12 @@ local HTTP_STATUS_TEXT = {
   [503] = "Service Unavailable",
 }
 function set_preamble(status, content_type)
-  status = status or 200
+  if type(status) == "string" then
+    content_type = status
+    status = 200
+  else
+    status = status or 200
+  end
   SetStatus(status, HTTP_STATUS_TEXT[status] or tostring(status))
   SetHeader("Content-Type", content_type or "application/json; charset=utf-8")
 end
@@ -230,14 +235,14 @@ local handle = backend_impl
 -- Default handler for list endpoints: backends without native support return [].
 -- Backends that implement the endpoint override it; others fall back to this default.
 local function empty_list()
-  set_preamble(200)
+  set_preamble()
   Write("[]")
 end
 
 -- Default handler for search endpoints: backends without native support return an
 -- empty but valid GitHub search result envelope.
 local function search_empty()
-  set_preamble(200)
+  set_preamble()
   Write('{"total_count":0,"incomplete_results":false,"items":[]}')
 end
 
@@ -271,24 +276,24 @@ local ZEN_QUOTES = {
 }
 math.randomseed(os.time())
 local function zen_response()
-  set_preamble(200, "text/plain;charset=utf-8")
+  set_preamble("text/plain;charset=utf-8")
   Write(ZEN_QUOTES[math.random(#ZEN_QUOTES)])
 end
 
 local function octocat_response()
-  set_preamble(200, "application/octocat-stream")
+  set_preamble("application/octocat-stream")
   Write("🐙🐱")
 end
 
 local function versions_response()
-  set_preamble(200)
+  set_preamble()
   Write('["2022-11-28"]')
 end
 
 -- meta_response returns a minimal but valid GitHub /meta structure.
 -- IP range arrays are empty since confusio is not GitHub infrastructure.
 local function meta_response()
-  set_preamble(200)
+  set_preamble()
   Write(
     '{"verifiable_password_authentication":false'
       .. ',"ssh_key_fingerprints":{}'

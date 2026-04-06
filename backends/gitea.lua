@@ -87,7 +87,7 @@ local function proxy_search(translate_item, url)
   for i, item in ipairs(raw) do
     items[i] = translate_item(item)
   end
-  set_preamble(200)
+  set_preamble()
   Write(
     '{"total_count":'
       .. #items
@@ -1437,7 +1437,7 @@ backend_impl = {
 
   -- GET /orgs/{org}/teams/{team_slug}/invitations — Gitea has no invitations
   get_org_team_invitations = function()
-    set_preamble(200)
+    set_preamble()
     Write("[]")
   end,
 
@@ -1943,7 +1943,7 @@ backend_impl = {
 
   -- GET /orgs/{org}/teams/{team_slug}/teams — Gitea has no nested teams
   get_org_team_children = function()
-    set_preamble(200)
+    set_preamble()
     Write("[]")
   end,
 

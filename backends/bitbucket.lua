@@ -129,7 +129,7 @@ local function proxy_search_bb(translate_item, url)
   for i, item in ipairs(raw.values or {}) do
     items[i] = translate_item(item)
   end
-  set_preamble(200)
+  set_preamble()
   Write(
     '{"total_count":'
       .. #items
