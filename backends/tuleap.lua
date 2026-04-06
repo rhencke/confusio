@@ -259,17 +259,12 @@ backend_impl = {
   -- GET /search/users: search Tuleap users by username.
   search_users = function()
     local q = GetParam("q") or ""
-    local limit, offset = pagination_params()
-    local url = base() .. "/users?limit=" .. limit .. "&offset=" .. offset
-    if q ~= "" then
-      url = url .. '&query={"username":"' .. q .. '"}'
-    end
     proxy_json(function(users)
       local items = {}
       for _, u in ipairs(users or {}) do
         items[#items + 1] = translate_tuleap_user(u)
       end
       return { total_count = #items, incomplete_results = false, items = items }
-    end, fetch_json(url))
+    end, fetch_json(users_url(q)))
   end,
 }
