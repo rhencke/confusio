@@ -236,6 +236,89 @@ local function rate_limit_response()
   })
 end
 
+-- Default handlers for GET /zen, GET /octocat, GET /versions, GET /meta.
+-- These endpoints are fully self-contained and do not call any backend.
+local ZEN_QUOTES = {
+  "Responsive is better than fast.",
+  "It's not fully shipped until it's fast.",
+  "Anything added dilutes everything else.",
+  "Practicality beats purity.",
+  "Approachable is better than simple.",
+  "Mind your words, they are important.",
+  "Speak like a human.",
+  "Half measures are as bad as nothing at all.",
+  "Encourage flow.",
+  "Non-blocking is better than blocking.",
+  "Imagine more creators.",
+  "Design for failure.",
+  "Keep it logically awesome.",
+}
+math.randomseed(os.time())
+local function zen_response()
+  SetStatus(200, "OK")
+  SetHeader("Content-Type", "text/plain;charset=utf-8")
+  Write(ZEN_QUOTES[math.random(#ZEN_QUOTES)])
+end
+
+-- OCTOCAT is the ASCII art returned by GET /octocat.
+local OCTOCAT = [=[
+             MMM.           .MMM
+             MMMMMMMMMMMMMMMMMMM
+             MMMMMMMMMMMMMMMMMMM      ___________________________________
+            MMMMMMMMMMMMMMMMMMMMM    |                                   |
+           MMMMMMMMMMMMMMMMMMMMMMM   | Design for failure.               |
+          MMMMMMMMMMMMMMMMMMMMMMMM   |_   _______________________________|
+          MMMM::- -:::::::- -::MMMM    |/
+           MM~:~ 00~:::::~ 00~:~MM
+        .. MMMMM::.00:::+:::.00::MMMMM ..
+              .MM::::: ._. :::::MM.
+                 MMMM;:::::;MMMM
+          -MM        MMMMMMM
+          ^  M+     MMMMMMMMM
+              MMMMMMM MM MM MM
+                   MM MM MM MM
+                   MM MM MM MM
+                .~~MM~MM~MM~MM~~.
+             ~~~~MM:~MM~~~MM~:MM~~~~
+            ~~~~~~==~==~~~==~==~~~~~~
+             ~~~~~~==~==~==~==~~~~~~
+                 :~==~==~==~==~~
+]=]
+local function octocat_response()
+  SetStatus(200, "OK")
+  SetHeader("Content-Type", "application/octocat-stream")
+  Write(OCTOCAT)
+end
+
+local function versions_response()
+  SetStatus(200, "OK")
+  SetHeader("Content-Type", "application/json; charset=utf-8")
+  Write('["2022-11-28"]')
+end
+
+-- meta_response returns a minimal but valid GitHub /meta structure.
+-- IP range arrays are empty since confusio is not GitHub infrastructure.
+local function meta_response()
+  SetStatus(200, "OK")
+  SetHeader("Content-Type", "application/json; charset=utf-8")
+  Write(
+    '{"verifiable_password_authentication":false'
+      .. ',"ssh_key_fingerprints":{}'
+      .. ',"ssh_keys":[]'
+      .. ',"hooks":[]'
+      .. ',"web":[]'
+      .. ',"api":[]'
+      .. ',"git":[]'
+      .. ',"packages":[]'
+      .. ',"pages":[]'
+      .. ',"importer":[]'
+      .. ',"actions":[]'
+      .. ',"dependabot":[]'
+      .. ',"github_enterprise_importer":[]'
+      .. ',"domains":{"website":[],"codespaces":[],"copilot":[],"packages":[]}}'
+  )
+end
+
 -- ---------------------------------------------------------------------------
 -- Segment-based radix trie router
 --
@@ -322,7 +405,12 @@ end
 
 local routes = {
   -- Root
-  ["GET /"]                                                                    = { "get_root", function() respond_json(200, "OK", {}) end },
+  ["GET /"]                                                                    = { "get_root",    function() respond_json(200, "OK", {}) end },
+  -- Meta (https://docs.github.com/en/rest/meta)
+  ["GET /meta"]                                                                = { "get_meta",    meta_response },
+  ["GET /octocat"]                                                             = { "get_octocat", octocat_response },
+  ["GET /versions"]                                                            = { "get_versions", versions_response },
+  ["GET /zen"]                                                                 = { "get_zen",     zen_response },
   -- Emojis
   ["GET /emojis"]                                                              = "get_emojis",
   -- Gitignore templates (https://docs.github.com/en/rest/gitignore)

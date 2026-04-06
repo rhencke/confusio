@@ -1,8 +1,6 @@
-GET http://{{host}}/
-
-HTTP 200
-[Asserts]
-header "Content-Type" == "application/json; charset=utf-8"
+# Meta API assertions — Gitea backend.
+# All four meta endpoints are self-contained (no backend call) and return the same
+# response regardless of provider.
 
 # GET /meta
 GET http://{{host}}/meta
