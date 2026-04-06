@@ -48,7 +48,7 @@ def make_cell(val):
     # partial: bare "~" or "~explanation text"
     explanation = val[1:].strip() if val.startswith("~") else ""
     if explanation:
-        return f'<td class="partial" title="{explanation}">&#x26A0;&#xFE0F;</td>'
+        return f'<td class="partial" title="{explanation}" tabindex="0">&#x26A0;&#xFE0F;</td>'
     return '<td class="partial">&#x26A0;&#xFE0F;</td>'
 
 
