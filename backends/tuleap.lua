@@ -102,16 +102,20 @@ local function pagination_params()
   return limit, offset
 end
 
+-- Returns the ?limit=...&offset=... query suffix for Tuleap pagination.
+local function pagination_suffix()
+  local limit, offset = pagination_params()
+  return "?limit=" .. limit .. "&offset=" .. offset
+end
+
 -- Returns the Tuleap project git repos URL with pagination.
 local function project_git_url(project_id)
-  local limit, offset = pagination_params()
-  return base() .. "/projects/" .. project_id .. "/git?limit=" .. limit .. "&offset=" .. offset
+  return base() .. "/projects/" .. project_id .. "/git" .. pagination_suffix()
 end
 
 -- Returns the Tuleap users URL with pagination and optional username query filter.
 local function users_url(q)
-  local limit, offset = pagination_params()
-  local url = base() .. "/users?limit=" .. limit .. "&offset=" .. offset
+  local url = base() .. "/users" .. pagination_suffix()
   if q and q ~= "" then
     url = url .. '&query={"username":"' .. q .. '"}'
   end
