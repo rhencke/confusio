@@ -411,6 +411,16 @@ backend_impl = {
     return base() .. "/rate_limit"
   end),
 
+  -- GET /gitignore/templates
+  get_gitignore_templates = function()
+    proxy_json(nil, fetch_json(base() .. "/gitignores"))
+  end,
+
+  -- GET /gitignore/templates/{name}
+  get_gitignore_template = function(name)
+    proxy_json(nil, fetch_json(base() .. "/gitignores/" .. name))
+  end,
+
   -- GET /repos/{owner}/{repo}
   get_repo = function(owner, repo_name)
     proxy_json(translate_repo, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name))

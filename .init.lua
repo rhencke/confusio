@@ -325,6 +325,9 @@ local routes = {
   ["GET /"]                                                                    = { "get_root", function() respond_json(200, "OK", {}) end },
   -- Emojis
   ["GET /emojis"]                                                              = "get_emojis",
+  -- Gitignore templates (https://docs.github.com/en/rest/gitignore)
+  ["GET /gitignore/templates"]                                                 = "get_gitignore_templates",
+  ["GET /gitignore/templates/{name}"]                                          = "get_gitignore_template",
   -- Rate Limits (https://docs.github.com/en/rest/rate-limit)
   ["GET /rate_limit"]                                                          = { "get_rate_limit", rate_limit_response },
 
