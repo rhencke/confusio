@@ -8,4 +8,9 @@ backend_impl = {
       respond_json(503, "Service Unavailable", {})
     end
   end,
+
+  -- Issues -----------------------------------------------------------------------
+  -- RhodeCode has no native issue tracker; it integrates with external trackers
+  -- such as JIRA. All issues, labels, milestones, and assignees endpoints fall
+  -- back to the default empty-list / 404 handlers defined in .init.lua.
 }

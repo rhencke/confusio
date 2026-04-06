@@ -245,6 +245,12 @@ backend_impl = {
     end, fetch_json(base() .. "/repos/" .. rid .. "/commits/" .. ref))
   end,
 
+  -- Issues -----------------------------------------------------------------------
+  -- Radicle has a decentralized issues system (rad issue) but it uses a
+  -- peer-to-peer protocol not compatible with the GitHub Issues REST API shape.
+  -- All issues, labels, milestones, and assignees endpoints fall back to the
+  -- default empty-list / 404 handlers defined in .init.lua.
+
   -- Contents ------------------------------------------------------------------
   -- Radicle: GET /api/v1/repos/{rid}/blob/{commit}/{path} — raw bytes
 

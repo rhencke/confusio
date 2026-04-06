@@ -317,6 +317,11 @@ backend_impl = {
     end
   end,
 
+  -- Issues -----------------------------------------------------------------------
+  -- Gerrit has no native issue tracker; it is a code-review system only.
+  -- All issues, labels, milestones, and assignees endpoints fall back to the
+  -- default empty-list / 404 handlers defined in .init.lua.
+
   -- Contents ------------------------------------------------------------------
   -- Gerrit returns raw base64-encoded content at /branches/{branch}/files/{path}/content
 
