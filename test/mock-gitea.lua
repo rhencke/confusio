@@ -389,6 +389,13 @@ function OnHttpRequest()
     -- Search
     ["/api/v1/repos/search"] = { 200, '{"data":[' .. REPO .. '],"ok":true}' },
     ["/api/v1/users/search"] = { 200, '{"data":[' .. USER .. '],"ok":true}' },
+
+    -- Gitignore templates
+    ["/api/v1/gitignores"] = { 200, '["C","Go","Python"]' },
+    ["/api/v1/gitignores/C"] = {
+      200,
+      '{"name":"C","source":"# Object files\\n*.o\\n\\n# Libraries\\n*.a\\n"}',
+    },
   }
 
   local entry = routes[method .. " " .. path] or routes[path]
