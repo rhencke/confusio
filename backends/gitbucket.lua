@@ -162,6 +162,229 @@ backend_impl = {
     )
   end,
 
+  -- Checks (via GitBucket commit statuses) ------------------------------------
+  --
+  -- GitBucket exposes a GitHub-compatible commit statuses API at /api/v3/,
+  -- so the translation is identical to Gitea: state is "pending", "success",
+  -- "failure", or "error".
+  --
+  -- GitHub → GitBucket state:
+  --   queued/in_progress      → pending
+  --   completed/success|neutral|skipped → success
+  --   completed/failure       → failure
+  --   completed/(other)       → error
+  --
+  -- GitBucket → GitHub:
+  --   pending  → status=in_progress, conclusion=nil
+  --   success  → status=completed,   conclusion=success
+  --   failure  → status=completed,   conclusion=failure
+  --   error    → status=completed,   conclusion=failure
+  --   warning  → status=completed,   conclusion=neutral
+
+  post_check_runs = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}") or {}
+    local sha = req.head_sha or ""
+    local status = req.status or "queued"
+    local conclusion = req.conclusion
+    local gh_conclusion_to_gb = {
+      success = "success",
+      neutral = "success",
+      skipped = "success",
+      failure = "failure",
+    }
+    local gb_state = status == "completed" and (gh_conclusion_to_gb[conclusion] or "error")
+      or "pending"
+    local function translate(s)
+      if not s then
+        return {}
+      end
+      local state = s.state or "pending"
+      local gb_to_gh = {
+        pending = { status = "in_progress", conclusion = nil },
+        success = { status = "completed", conclusion = "success" },
+        warning = { status = "completed", conclusion = "neutral" },
+      }
+      local mapped = gb_to_gh[state] or { status = "completed", conclusion = "failure" }
+      local gh_status, gh_conclusion = mapped.status, mapped.conclusion
+      return {
+        id = s.id or 0,
+        node_id = "",
+        head_sha = sha,
+        name = s.context or req.name or "",
+        status = gh_status,
+        conclusion = gh_conclusion,
+        started_at = s.created_at or s.updated_at,
+        completed_at = gh_status == "completed" and (s.updated_at or s.created_at) or nil,
+        output = {
+          title = s.description or "",
+          summary = s.description or "",
+          text = "",
+          annotations_count = 0,
+          annotations_url = "",
+        },
+        url = "",
+        html_url = s.target_url or "",
+        details_url = s.target_url or "",
+      }
+    end
+    proxy_json_created(
+      translate,
+      fetch_json(
+        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. sha,
+        "POST",
+        EncodeJson({
+          state = gb_state,
+          target_url = req.details_url or "",
+          description = (req.output and req.output.summary) or req.name or "",
+          context = req.name or "",
+        })
+      )
+    )
+  end,
+
+  get_check_run = function(_owner, _repo_name, check_run_id)
+    respond_json(200, {
+      id = tonumber(check_run_id) or 0,
+      node_id = "",
+      head_sha = "",
+      name = "",
+      status = "completed",
+      conclusion = "success",
+      started_at = nil,
+      completed_at = nil,
+      output = { title = "", summary = "", text = "", annotations_count = 0, annotations_url = "" },
+      url = "",
+      html_url = "",
+      details_url = "",
+    })
+  end,
+
+  patch_check_run = function(_owner, _repo_name, check_run_id)
+    respond_json(200, {
+      id = tonumber(check_run_id) or 0,
+      node_id = "",
+      head_sha = "",
+      name = "",
+      status = "completed",
+      conclusion = "success",
+      started_at = nil,
+      completed_at = nil,
+      output = { title = "", summary = "", text = "", annotations_count = 0, annotations_url = "" },
+      url = "",
+      html_url = "",
+      details_url = "",
+    })
+  end,
+
+  get_check_run_annotations = function(_owner, _repo_name, _check_run_id)
+    set_preamble()
+    Write("[]")
+  end,
+
+  post_check_run_rerequest = function(_owner, _repo_name, _check_run_id)
+    SetStatus(201, "Created")
+    Write("")
+  end,
+
+  get_commit_check_runs = function(owner, repo_name, ref)
+    local ok, status, _, body = fetch_json(
+      append_page_params(
+        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. ref,
+        PAGES
+      )
+    )
+    if not ok then
+      respond_json(503, {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, {})
+      return
+    end
+    local statuses = DecodeJson(body) or {}
+    local runs = {}
+    for i, s in ipairs(statuses) do
+      local state = s.state or "pending"
+      local gb_to_gh = {
+        pending = { status = "in_progress", conclusion = nil },
+        success = { status = "completed", conclusion = "success" },
+        warning = { status = "completed", conclusion = "neutral" },
+      }
+      local mapped = gb_to_gh[state] or { status = "completed", conclusion = "failure" }
+      local gh_status, gh_conclusion = mapped.status, mapped.conclusion
+      runs[i] = {
+        id = s.id or i,
+        node_id = "",
+        head_sha = ref,
+        name = s.context or "",
+        status = gh_status,
+        conclusion = gh_conclusion,
+        started_at = s.created_at or s.updated_at,
+        completed_at = gh_status == "completed" and (s.updated_at or s.created_at) or nil,
+        output = {
+          title = s.description or "",
+          summary = s.description or "",
+          text = "",
+          annotations_count = 0,
+          annotations_url = "",
+        },
+        url = "",
+        html_url = s.target_url or "",
+        details_url = s.target_url or "",
+      }
+    end
+    respond_json(200, { total_count = #runs, check_runs = runs })
+  end,
+
+  -- Check suites have no GitBucket equivalent; all suite endpoints are stubs.
+
+  post_check_suites = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}") or {}
+    respond_json(201, {
+      id = 1,
+      node_id = "",
+      head_sha = req.head_sha or "",
+      status = "completed",
+      conclusion = "success",
+      url = "",
+      app = {},
+      repository = { full_name = owner .. "/" .. repo_name },
+    })
+  end,
+
+  patch_check_suites_preferences = function(_owner, _repo_name) -- luacheck: ignore 212
+    local req = DecodeJson(GetBody() or "{}") or {}
+    respond_json(200, {
+      preferences = req.auto_trigger_checks or {},
+    })
+  end,
+
+  get_check_suite = function(owner, repo_name, check_suite_id)
+    respond_json(200, {
+      id = tonumber(check_suite_id) or 0,
+      node_id = "",
+      head_sha = "",
+      status = "completed",
+      conclusion = "success",
+      url = "",
+      app = {},
+      repository = { full_name = owner .. "/" .. repo_name },
+    })
+  end,
+
+  get_check_suite_check_runs = function(_owner, _repo_name, _check_suite_id)
+    respond_json(200, { total_count = 0, check_runs = {} })
+  end,
+
+  post_check_suite_rerequest = function(_owner, _repo_name, _check_suite_id)
+    SetStatus(201, "Created")
+    Write("")
+  end,
+
+  get_commit_check_suites = function(_owner, _repo_name, _ref)
+    respond_json(200, { total_count = 0, check_suites = {} })
+  end,
+
   -- Contents ------------------------------------------------------------------
   get_repo_readme = proxy_handler(nil, function(o, r)
     return base() .. "/repos/" .. o .. "/" .. r .. "/readme"

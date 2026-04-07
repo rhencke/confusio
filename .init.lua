@@ -868,6 +868,20 @@ local routes = {
   ["DELETE /user/installations/{installation_id}/repositories/{repository_id}"]    = "delete_user_installation_repository",
   ["GET /users/{username}/installation"]                                           = "get_users_installation",
 
+  -- Checks (https://docs.github.com/en/rest/checks)
+  ["POST /repos/{owner}/{repo}/check-runs"]                                          = "post_check_runs",
+  ["GET /repos/{owner}/{repo}/check-runs/{check_run_id}"]                            = "get_check_run",
+  ["PATCH /repos/{owner}/{repo}/check-runs/{check_run_id}"]                          = "patch_check_run",
+  ["GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations"]                = "get_check_run_annotations",
+  ["POST /repos/{owner}/{repo}/check-runs/{check_run_id}/rerequest"]                 = "post_check_run_rerequest",
+  ["POST /repos/{owner}/{repo}/check-suites"]                                        = "post_check_suites",
+  ["PATCH /repos/{owner}/{repo}/check-suites/preferences"]                           = "patch_check_suites_preferences",
+  ["GET /repos/{owner}/{repo}/check-suites/{check_suite_id}"]                        = "get_check_suite",
+  ["GET /repos/{owner}/{repo}/check-suites/{check_suite_id}/check-runs"]             = "get_check_suite_check_runs",
+  ["POST /repos/{owner}/{repo}/check-suites/{check_suite_id}/rerequest"]             = "post_check_suite_rerequest",
+  ["GET /repos/{owner}/{repo}/commits/{ref}/check-runs"]                             = "get_commit_check_runs",
+  ["GET /repos/{owner}/{repo}/commits/{ref}/check-suites"]                           = "get_commit_check_suites",
+
   -- Interactions (https://docs.github.com/en/rest/interactions)
   ["GET /orgs/{org}/interaction-limits"]                                            = { "get_org_interaction_limits",    interaction_limits_empty },
   ["PUT /orgs/{org}/interaction-limits"]                                            = { "put_org_interaction_limits",    interaction_limits_put },

@@ -412,6 +412,122 @@ local function gitea_find_team_id(org, slug)
   return nil
 end
 
+-- Checks (via Gitea commit statuses) ------------------------------------------
+--
+-- GitHub Check Runs map onto Gitea commit statuses.  Gitea does not have a
+-- concept of a check run independent of a commit SHA, so:
+--   • create/list/list-by-ref work natively.
+--   • GET/PATCH by check_run_id cannot be reversed without the SHA;
+--     those endpoints return a minimal stub.
+--   • Check Suites have no Gitea equivalent; all suite endpoints are stubs.
+--   • Annotations are always empty.
+--
+-- Status mapping (GitHub → Gitea):
+--   queued            → pending
+--   in_progress       → pending
+--   completed/success → success
+--   completed/failure → failure
+--   completed/neutral → success
+--   completed/skipped → success
+--   completed/(other) → error
+--
+-- Status mapping (Gitea → GitHub):
+--   pending → status=in_progress, conclusion=null
+--   success → status=completed,   conclusion=success
+--   failure → status=completed,   conclusion=failure
+--   error   → status=completed,   conclusion=failure
+--   warning → status=completed,   conclusion=neutral
+
+-- Translate a Gitea commit status object to a GitHub check run object.
+-- id is taken from the Gitea status.id field (used as check_run_id).
+local function translate_gitea_status_to_check_run(s)
+  if not s then
+    return {}
+  end
+  local gitea_state = s.state or "pending"
+  local gitea_to_gh = {
+    pending = { status = "in_progress", conclusion = nil },
+    success = { status = "completed", conclusion = "success" },
+    failure = { status = "completed", conclusion = "failure" },
+    warning = { status = "completed", conclusion = "neutral" },
+  }
+  local mapped = gitea_to_gh[gitea_state] or { status = "completed", conclusion = "failure" }
+  local gh_status, gh_conclusion = mapped.status, mapped.conclusion
+  return {
+    id = s.id,
+    node_id = "",
+    head_sha = s.context or "",
+    name = s.context or "",
+    status = gh_status,
+    conclusion = gh_conclusion,
+    started_at = s.created or s.updated,
+    completed_at = gh_status == "completed" and (s.updated or s.created) or nil,
+    output = {
+      title = s.description or "",
+      summary = s.description or "",
+      text = "",
+      annotations_count = 0,
+      annotations_url = "",
+    },
+    url = s.url or "",
+    html_url = s.url or "",
+    details_url = s.target_url or "",
+  }
+end
+
+-- Translate a list of Gitea statuses to GitHub check runs.
+local function translate_gitea_statuses_to_check_runs(statuses)
+  local runs = {}
+  for i, s in ipairs(statuses) do
+    runs[i] = translate_gitea_status_to_check_run(s)
+  end
+  return runs
+end
+
+-- Map a GitHub check run request body to a Gitea commit status body.
+local function gh_check_run_to_gitea_status(req)
+  local status = req.status or "queued"
+  local conclusion = req.conclusion
+  local gh_conclusion_to_gitea = {
+    success = "success",
+    neutral = "success",
+    skipped = "success",
+    failure = "failure",
+  }
+  local gitea_state = status == "completed" and (gh_conclusion_to_gitea[conclusion] or "error")
+    or "pending"
+  return EncodeJson({
+    state = gitea_state,
+    target_url = req.details_url or "",
+    description = (req.output and req.output.summary) or req.name or "",
+    context = req.name or "",
+  })
+end
+
+-- Minimal stub check run response (used when the full context is unavailable).
+local function minimal_check_run_stub(check_run_id)
+  return {
+    id = tonumber(check_run_id) or 0,
+    node_id = "",
+    head_sha = "",
+    name = "",
+    status = "completed",
+    conclusion = "success",
+    started_at = nil,
+    completed_at = nil,
+    output = {
+      title = "",
+      summary = "",
+      text = "",
+      annotations_count = 0,
+      annotations_url = "",
+    },
+    url = "",
+    html_url = "",
+    details_url = "",
+  }
+end
+
 backend_impl = {
   -- Health check
   get_root = function()
@@ -2370,6 +2486,124 @@ backend_impl = {
       end
     end
     respond_json(200, all_comments)
+  end,
+
+  -- Checks (via Gitea commit statuses) ------------------------------------------
+
+  -- POST /repos/{owner}/{repo}/check-runs
+  -- Maps to Gitea POST /api/v1/repos/{owner}/{repo}/statuses/{sha}.
+  post_check_runs = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}") or {}
+    local sha = req.head_sha or ""
+    local gitea_body = gh_check_run_to_gitea_status(req)
+    proxy_json_created(
+      translate_gitea_status_to_check_run,
+      fetch_json(
+        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. sha,
+        "POST",
+        gitea_body
+      )
+    )
+  end,
+
+  -- GET /repos/{owner}/{repo}/check-runs/{check_run_id}
+  -- Gitea has no endpoint to look up a status by ID without the SHA.
+  -- Return a minimal stub.
+  get_check_run = function(_owner, _repo_name, check_run_id)
+    respond_json(200, minimal_check_run_stub(check_run_id))
+  end,
+
+  -- PATCH /repos/{owner}/{repo}/check-runs/{check_run_id}
+  -- Cannot update without SHA. Return a stub.
+  patch_check_run = function(_owner, _repo_name, check_run_id)
+    respond_json(200, minimal_check_run_stub(check_run_id))
+  end,
+
+  -- GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations
+  -- Gitea has no annotations; always return [].
+  get_check_run_annotations = function(_owner, _repo_name, _check_run_id)
+    set_preamble()
+    Write("[]")
+  end,
+
+  -- POST /repos/{owner}/{repo}/check-runs/{check_run_id}/rerequest
+  -- No Gitea equivalent; return 201 stub.
+  post_check_run_rerequest = function(_owner, _repo_name, _check_run_id)
+    respond_json(201, {})
+  end,
+
+  -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
+  -- Maps to Gitea GET /api/v1/repos/{owner}/{repo}/statuses/{ref}.
+  get_commit_check_runs = function(owner, repo_name, ref)
+    local ok, status, _, body = fetch_json(
+      append_page_params(
+        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. ref,
+        PAGES
+      )
+    )
+    if ok and status == 200 then
+      local statuses = DecodeJson(body) or {}
+      local runs = translate_gitea_statuses_to_check_runs(statuses)
+      respond_json(200, {
+        total_count = #runs,
+        check_runs = runs,
+      })
+    elseif ok then
+      respond_json(status, {})
+    else
+      respond_json(503, {})
+    end
+  end,
+
+  -- Check Suites — no Gitea equivalent; all are stubs --------------------
+
+  -- POST /repos/{owner}/{repo}/check-suites
+  post_check_suites = function(owner, repo_name)
+    respond_json(201, {
+      id = 1,
+      node_id = "",
+      head_sha = "",
+      status = "completed",
+      conclusion = "success",
+      app = { id = 0, slug = "", name = "" },
+      repository = { full_name = owner .. "/" .. repo_name },
+    })
+  end,
+
+  -- PATCH /repos/{owner}/{repo}/check-suites/preferences
+  patch_check_suites_preferences = function(_owner, _repo_name) -- luacheck: ignore 212
+    local req = DecodeJson(GetBody() or "{}") or {}
+    respond_json(200, {
+      preferences = req.auto_trigger_checks or {},
+    })
+  end,
+
+  -- GET /repos/{owner}/{repo}/check-suites/{check_suite_id}
+  get_check_suite = function(owner, repo_name, check_suite_id)
+    respond_json(200, {
+      id = tonumber(check_suite_id) or 0,
+      node_id = "",
+      head_sha = "",
+      status = "completed",
+      conclusion = "success",
+      app = { id = 0, slug = "", name = "" },
+      repository = { full_name = owner .. "/" .. repo_name },
+    })
+  end,
+
+  -- GET /repos/{owner}/{repo}/check-suites/{check_suite_id}/check-runs
+  get_check_suite_check_runs = function(_owner, _repo_name, _check_suite_id)
+    respond_json(200, { total_count = 0, check_runs = {} })
+  end,
+
+  -- POST /repos/{owner}/{repo}/check-suites/{check_suite_id}/rerequest
+  post_check_suite_rerequest = function(_owner, _repo_name, _check_suite_id)
+    respond_json(201, {})
+  end,
+
+  -- GET /repos/{owner}/{repo}/commits/{ref}/check-suites
+  get_commit_check_suites = function(_owner, _repo_name, _ref)
+    respond_json(200, { total_count = 0, check_suites = {} })
   end,
 
   -- Search -----------------------------------------------------------------------

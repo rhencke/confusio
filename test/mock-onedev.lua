@@ -101,6 +101,22 @@ function OnHttpRequest()
     SetStatus(200, "OK")
     json('[{"id":1,"name":"octocat","fullName":"The Octocat","email":"octocat@github.com"}]')
 
+  -- Builds (CI) -------------------------------------------------------------
+  -- GET /~api/builds?query=... — return builds for known project+commit, else [].
+  elseif path == "/~api/builds" then
+    local q = GetParam("query") or ""
+    if q:find("octocat/hello-world", 1, true) and q:find("abc123", 1, true) then
+      SetStatus(200, "OK")
+      json(
+        '[{"id":1,"number":1,"jobName":"CI Build","status":"SUCCESSFUL",'
+          .. '"commitHash":"abc123def456","refName":"refs/heads/main",'
+          .. '"project":{"id":1,"path":"octocat/hello-world"}}]'
+      )
+    else
+      SetStatus(200, "OK")
+      json("[]")
+    end
+
   -- Interactions ------------------------------------------------------------
   -- OneDev has no native GitHub Interactions API; confusio returns stubs directly.
   -- These routes document what the backend would return if ever proxied.

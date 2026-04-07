@@ -193,6 +193,102 @@ local function translate_ado_workitem_comment(c)
   }
 end
 
+-- Checks (via ADO git commit statuses) ---------------------------------------
+--
+-- GitHub Check Runs map onto ADO git commit statuses.  ADO does not have a
+-- concept of a check run independent of a commit SHA, so:
+--   • POST check-runs and GET commits/{ref}/check-runs work natively.
+--   • GET/PATCH by check_run_id cannot be reversed without the SHA;
+--     those endpoints return a minimal stub.
+--   • Check Suites have no ADO equivalent; all suite endpoints are stubs.
+--   • Annotations are always empty.
+--
+-- Status mapping (GitHub → ADO):
+--   queued/in_progress       → pending
+--   completed/success        → succeeded
+--   completed/failure        → failed
+--   completed/neutral/skipped → succeeded
+--   completed/(other)        → error
+--
+-- Status mapping (ADO → GitHub):
+--   pending        → status=in_progress, conclusion=null
+--   succeeded      → status=completed,   conclusion=success
+--   failed         → status=completed,   conclusion=failure
+--   error          → status=completed,   conclusion=failure
+--   notApplicable  → status=completed,   conclusion=neutral
+
+local function translate_ado_status_to_check_run(s)
+  if not s then
+    return {}
+  end
+  local state = s.state or "pending"
+  local ado_to_gh = {
+    pending = { status = "in_progress", conclusion = nil },
+    succeeded = { status = "completed", conclusion = "success" },
+    failed = { status = "completed", conclusion = "failure" },
+    notApplicable = { status = "completed", conclusion = "neutral" },
+  }
+  local mapped = ado_to_gh[state] or { status = "completed", conclusion = "failure" }
+  local gh_status, gh_conclusion = mapped.status, mapped.conclusion
+  local ctx = s.context or {}
+  return {
+    id = s.id or 0,
+    node_id = "",
+    head_sha = "",
+    name = ctx.name or "",
+    status = gh_status,
+    conclusion = gh_conclusion,
+    started_at = s.creationDate,
+    completed_at = gh_status == "completed" and (s.updatedDate or s.creationDate) or nil,
+    output = {
+      title = s.description or "",
+      summary = s.description or "",
+      text = "",
+      annotations_count = 0,
+      annotations_url = "",
+    },
+    url = s.targetUrl or "",
+    html_url = s.targetUrl or "",
+    details_url = s.targetUrl or "",
+  }
+end
+
+local function gh_check_run_to_ado_status(req)
+  local status = req.status or "queued"
+  local conclusion = req.conclusion
+  local gh_conclusion_to_ado = {
+    success = "succeeded",
+    neutral = "succeeded",
+    skipped = "succeeded",
+    failure = "failed",
+  }
+  local ado_state = status == "completed" and (gh_conclusion_to_ado[conclusion] or "error")
+    or "pending"
+  return EncodeJson({
+    state = ado_state,
+    description = (req.output and req.output.summary) or req.name or "",
+    targetUrl = req.details_url or "",
+    context = { name = req.name or "", genre = "continuous-integration" },
+  })
+end
+
+local function minimal_ado_check_run_stub(check_run_id)
+  return {
+    id = tonumber(check_run_id) or 0,
+    node_id = "",
+    head_sha = "",
+    name = "",
+    status = "completed",
+    conclusion = "success",
+    started_at = nil,
+    completed_at = nil,
+    output = { title = "", summary = "", text = "", annotations_count = 0, annotations_url = "" },
+    url = "",
+    html_url = "",
+    details_url = "",
+  }
+end
+
 -- Teams -----------------------------------------------------------------------
 -- ADO: GET /_apis/projects/{project}/teams (project = GitHub org)
 
@@ -1242,5 +1338,115 @@ backend_impl = {
         EncodeJson({ text = req.body or "" })
       )
     )
+  end,
+
+  -- Checks (via ADO git commit statuses) -------------------------------------
+
+  -- POST /repos/{owner}/{repo}/check-runs
+  post_check_runs = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    local sha = req.head_sha or ""
+    proxy_json_created(
+      translate_ado_status_to_check_run,
+      fetch_json(
+        ado_url(repos_base(owner) .. "/" .. repo_name .. "/commits/" .. sha .. "/statuses"),
+        "POST",
+        gh_check_run_to_ado_status(req)
+      )
+    )
+  end,
+
+  -- GET /repos/{owner}/{repo}/check-runs/{check_run_id}
+  get_check_run = function(_owner, _repo_name, check_run_id)
+    respond_json(200, minimal_ado_check_run_stub(check_run_id))
+  end,
+
+  -- PATCH /repos/{owner}/{repo}/check-runs/{check_run_id}
+  patch_check_run = function(_owner, _repo_name, check_run_id)
+    respond_json(200, minimal_ado_check_run_stub(check_run_id))
+  end,
+
+  -- GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations
+  -- ADO has no annotations concept; always return [].
+  get_check_run_annotations = function(_owner, _repo_name, _check_run_id)
+    set_preamble()
+    Write("[]")
+  end,
+
+  -- POST /repos/{owner}/{repo}/check-runs/{check_run_id}/rerequest
+  post_check_run_rerequest = function(_owner, _repo_name, _check_run_id)
+    SetStatus(201, "Created")
+    Write("")
+  end,
+
+  -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
+  get_commit_check_runs = function(owner, repo_name, ref)
+    local ok, status, _, body = fetch_json(
+      ado_url(repos_base(owner) .. "/" .. repo_name .. "/commits/" .. ref .. "/statuses")
+    )
+    if not ok then
+      respond_json(503, {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, {})
+      return
+    end
+    local data = DecodeJson(body) or {}
+    local list = data.value or {}
+    local runs = {}
+    for _, s in ipairs(list) do
+      runs[#runs + 1] = translate_ado_status_to_check_run(s)
+    end
+    respond_json(200, { total_count = #runs, check_runs = runs })
+  end,
+
+  -- POST /repos/{owner}/{repo}/check-suites
+  post_check_suites = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    respond_json(201, {
+      id = 0,
+      node_id = "",
+      head_sha = req.head_sha or "",
+      status = "queued",
+      conclusion = nil,
+      url = "",
+      repository = { id = 0, name = repo_name, full_name = owner .. "/" .. repo_name },
+    })
+  end,
+
+  -- PATCH /repos/{owner}/{repo}/check-suites/preferences
+  patch_check_suites_preferences = function(_owner, _repo_name) -- luacheck: ignore 212
+    local req = DecodeJson(GetBody() or "{}")
+    respond_json(200, { preferences = req.auto_trigger_checks or {} })
+  end,
+
+  -- GET /repos/{owner}/{repo}/check-suites/{check_suite_id}
+  get_check_suite = function(owner, repo_name, check_suite_id)
+    respond_json(200, {
+      id = tonumber(check_suite_id) or 0,
+      node_id = "",
+      head_sha = "",
+      status = "completed",
+      conclusion = "success",
+      url = "",
+      repository = { id = 0, name = repo_name, full_name = owner .. "/" .. repo_name },
+    })
+  end,
+
+  -- GET /repos/{owner}/{repo}/check-suites/{check_suite_id}/check-runs
+  get_check_suite_check_runs = function(_owner, _repo_name, _check_suite_id)
+    respond_json(200, { total_count = 0, check_runs = {} })
+  end,
+
+  -- POST /repos/{owner}/{repo}/check-suites/{check_suite_id}/rerequest
+  post_check_suite_rerequest = function(_owner, _repo_name, _check_suite_id)
+    SetStatus(201, "Created")
+    Write("")
+  end,
+
+  -- GET /repos/{owner}/{repo}/commits/{ref}/check-suites
+  get_commit_check_suites = function(_owner, _repo_name, _ref)
+    respond_json(200, { total_count = 0, check_suites = {} })
   end,
 }

@@ -986,4 +986,236 @@ backend_impl = {
     end
     respond_json(200, result)
   end,
+
+  -- Checks (via Bitbucket DC build status API) ------------------------------------
+  --
+  -- Bitbucket DC has a dedicated build status REST API at:
+  --   POST /rest/build-status/1.0/commits/{sha}  — create/update a build status
+  --   GET  /rest/build-status/1.0/commits/{sha}  — list build statuses for a commit
+  --
+  -- GitHub Check Runs map onto DC build statuses:
+  --   • POST check-runs → POST /rest/build-status/1.0/commits/{sha}
+  --   • GET check-runs/{id} → minimal stub (no reverse lookup by ID)
+  --   • PATCH check-runs/{id} → minimal stub
+  --   • GET commits/{ref}/check-runs → build statuses list
+  --   • Check Suites have no DC equivalent; all suite endpoints are stubs.
+  --   • Annotations are always empty.
+  --
+  -- Status mapping (GitHub → DC):
+  --   queued/in_progress     → INPROGRESS
+  --   completed/success      → SUCCESSFUL
+  --   completed/failure      → FAILED
+  --   completed/neutral      → SUCCESSFUL
+  --   completed/skipped      → SUCCESSFUL
+  --   completed/cancelled    → STOPPED
+  --   completed/(other)      → FAILED
+  --
+  -- Status mapping (DC → GitHub):
+  --   INPROGRESS  → status=in_progress, conclusion=null
+  --   SUCCESSFUL  → status=completed,   conclusion=success
+  --   FAILED      → status=completed,   conclusion=failure
+  --   STOPPED     → status=completed,   conclusion=cancelled
+  --   other       → status=completed,   conclusion=failure
+
+  post_check_runs = function(owner, repo_name) -- luacheck: ignore 212
+    local req = DecodeJson(GetBody() or "{}")
+    local sha = req.head_sha or ""
+    local gh_status = req.status or "queued"
+    local conclusion = req.conclusion
+    local gh_conclusion_to_dc = {
+      success = "SUCCESSFUL",
+      neutral = "SUCCESSFUL",
+      skipped = "SUCCESSFUL",
+      cancelled = "STOPPED",
+    }
+    local dc_state = gh_status == "completed" and (gh_conclusion_to_dc[conclusion] or "FAILED")
+      or "INPROGRESS"
+    local dc_to_gh = {
+      INPROGRESS = { status = "in_progress", conclusion = nil },
+      SUCCESSFUL = { status = "completed", conclusion = "success" },
+      FAILED = { status = "completed", conclusion = "failure" },
+      STOPPED = { status = "completed", conclusion = "cancelled" },
+    }
+    local dc_body = EncodeJson({
+      state = dc_state,
+      key = req.name or "",
+      url = req.details_url or "",
+      name = req.name or "",
+      description = (req.output and req.output.summary) or req.name or "",
+    })
+    -- DC POST returns 204 No Content on success (no body); synthesise a GitHub response.
+    local ok, up_status =
+      fetch_json(config.base_url .. "/rest/build-status/1.0/commits/" .. sha, "POST", dc_body)
+    if not ok then
+      respond_json(503, {})
+      return
+    end
+    if up_status ~= 204 and up_status ~= 200 and up_status ~= 201 then
+      respond_json(up_status, {})
+      return
+    end
+    local mapped = dc_to_gh[dc_state] or { status = "completed", conclusion = "failure" }
+    respond_json(201, {
+      id = 0,
+      node_id = "",
+      head_sha = sha,
+      name = req.name or "",
+      status = mapped.status,
+      conclusion = mapped.conclusion,
+      started_at = nil,
+      completed_at = mapped.status == "completed" and "" or nil,
+      output = {
+        title = (req.output and req.output.title) or req.name or "",
+        summary = (req.output and req.output.summary) or req.name or "",
+        text = "",
+        annotations_count = 0,
+        annotations_url = "",
+      },
+      url = "",
+      html_url = req.details_url or "",
+      details_url = req.details_url or "",
+    })
+  end,
+
+  get_check_run = function(_owner, _repo_name, check_run_id)
+    respond_json(200, {
+      id = tonumber(check_run_id) or 0,
+      node_id = "",
+      head_sha = "",
+      name = "",
+      status = "completed",
+      conclusion = "success",
+      started_at = nil,
+      completed_at = nil,
+      output = { title = "", summary = "", text = "", annotations_count = 0, annotations_url = "" },
+      url = "",
+      html_url = "",
+      details_url = "",
+    })
+  end,
+
+  patch_check_run = function(_owner, _repo_name, check_run_id)
+    respond_json(200, {
+      id = tonumber(check_run_id) or 0,
+      node_id = "",
+      head_sha = "",
+      name = "",
+      status = "completed",
+      conclusion = "success",
+      started_at = nil,
+      completed_at = nil,
+      output = { title = "", summary = "", text = "", annotations_count = 0, annotations_url = "" },
+      url = "",
+      html_url = "",
+      details_url = "",
+    })
+  end,
+
+  get_check_run_annotations = function(_owner, _repo_name, _check_run_id)
+    set_preamble()
+    Write("[]")
+  end,
+
+  post_check_run_rerequest = function(_owner, _repo_name, _check_run_id)
+    SetStatus(201, "Created")
+    Write("")
+  end,
+
+  -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
+  -- Uses DC build status API.
+  get_commit_check_runs = function(_owner, _repo_name, ref)
+    local ok, status, _, body =
+      fetch_json(config.base_url .. "/rest/build-status/1.0/commits/" .. ref)
+    if not ok then
+      respond_json(503, {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, {})
+      return
+    end
+    local data = DecodeJson(body) or {}
+    local dc_to_gh = {
+      INPROGRESS = { status = "in_progress", conclusion = nil },
+      SUCCESSFUL = { status = "completed", conclusion = "success" },
+      FAILED = { status = "completed", conclusion = "failure" },
+      STOPPED = { status = "completed", conclusion = "cancelled" },
+    }
+    local runs = {}
+    for i, s in ipairs(data.values or {}) do
+      local mapped = dc_to_gh[s.state] or { status = "completed", conclusion = "failure" }
+      runs[i] = {
+        id = i,
+        node_id = "",
+        head_sha = ref,
+        name = s.key or s.name or "",
+        status = mapped.status,
+        conclusion = mapped.conclusion,
+        started_at = nil,
+        completed_at = mapped.status == "completed" and "" or nil,
+        output = {
+          title = s.description or "",
+          summary = s.description or "",
+          text = "",
+          annotations_count = 0,
+          annotations_url = "",
+        },
+        url = "",
+        html_url = s.url or "",
+        details_url = s.url or "",
+      }
+    end
+    respond_json(200, { total_count = #runs, check_runs = runs })
+  end,
+
+  -- Check suites have no DC equivalent; all suite endpoints are stubs.
+
+  post_check_suites = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    respond_json(201, {
+      id = 1,
+      node_id = "",
+      head_sha = req.head_sha or "",
+      status = "completed",
+      conclusion = "success",
+      url = "",
+      before = nil,
+      after = nil,
+      app = {},
+      repository = { full_name = owner .. "/" .. repo_name },
+    })
+  end,
+
+  patch_check_suites_preferences = function(_owner, _repo_name) -- luacheck: ignore 212
+    local req = DecodeJson(GetBody() or "{}")
+    respond_json(200, {
+      preferences = req.auto_trigger_checks or {},
+    })
+  end,
+
+  get_check_suite = function(owner, repo_name, check_suite_id)
+    respond_json(200, {
+      id = tonumber(check_suite_id) or 0,
+      node_id = "",
+      head_sha = "",
+      status = "completed",
+      conclusion = "success",
+      url = "",
+      app = {},
+      repository = { full_name = owner .. "/" .. repo_name },
+    })
+  end,
+
+  get_check_suite_check_runs = function(_owner, _repo_name, _check_suite_id)
+    respond_json(200, { total_count = 0, check_runs = {} })
+  end,
+
+  post_check_suite_rerequest = function(_owner, _repo_name, _check_suite_id)
+    SetStatus(201, "Created")
+    Write("")
+  end,
+
+  get_commit_check_suites = function(_owner, _repo_name, _ref)
+    respond_json(200, { total_count = 0, check_suites = {} })
+  end,
 }

@@ -612,6 +612,196 @@ backend_impl = {
     end, fetch_json(base() .. "/user"))
   end,
 
+  -- Checks (via Harness Code /check/commits/{sha}) --------------------------------
+  --
+  -- Harness Code stores CI results as check statuses on commit SHAs.  Each check
+  -- entry has id, status, check_suite_name, started, and ended fields.
+  --   • GET commits/{ref}/check-runs → GET /check/commits/{sha}
+  --   • POST check-runs               → POST /check/commits/{sha} (stub)
+  --   • GET/PATCH by check_run_id    → minimal stub (no reverse lookup)
+  --   • Check Suites have no native equivalent; all suite endpoints are stubs.
+  --   • Annotations are always empty.
+  --
+  -- Status mapping (Harness → GitHub):
+  --   running/pending → status=in_progress, conclusion=null
+  --   success         → status=completed,   conclusion=success
+  --   failure/error   → status=completed,   conclusion=failure
+  --   cancelled       → status=completed,   conclusion=cancelled
+
+  -- POST /repos/{owner}/{repo}/check-runs
+  post_check_runs = function(_owner, _repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    respond_json(201, {
+      id = 0,
+      node_id = "",
+      head_sha = req.head_sha or "",
+      name = req.name or "",
+      status = req.status or "queued",
+      conclusion = req.conclusion,
+      started_at = nil,
+      completed_at = nil,
+      output = {
+        title = (req.output and req.output.title) or "",
+        summary = (req.output and req.output.summary) or "",
+        text = "",
+        annotations_count = 0,
+        annotations_url = "",
+      },
+      url = "",
+      html_url = "",
+      details_url = req.details_url or "",
+    })
+  end,
+
+  -- GET /repos/{owner}/{repo}/check-runs/{check_run_id}
+  get_check_run = function(_owner, _repo_name, check_run_id)
+    respond_json(200, {
+      id = tonumber(check_run_id) or 0,
+      node_id = "",
+      head_sha = "",
+      name = "",
+      status = "completed",
+      conclusion = "success",
+      started_at = nil,
+      completed_at = nil,
+      output = { title = "", summary = "", text = "", annotations_count = 0, annotations_url = "" },
+      url = "",
+      html_url = "",
+      details_url = "",
+    })
+  end,
+
+  -- PATCH /repos/{owner}/{repo}/check-runs/{check_run_id}
+  patch_check_run = function(_owner, _repo_name, check_run_id)
+    respond_json(200, {
+      id = tonumber(check_run_id) or 0,
+      node_id = "",
+      head_sha = "",
+      name = "",
+      status = "completed",
+      conclusion = "success",
+      started_at = nil,
+      completed_at = nil,
+      output = { title = "", summary = "", text = "", annotations_count = 0, annotations_url = "" },
+      url = "",
+      html_url = "",
+      details_url = "",
+    })
+  end,
+
+  -- GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations
+  -- Harness Code has no annotations concept; always return [].
+  get_check_run_annotations = function(_owner, _repo_name, _check_run_id)
+    set_preamble()
+    Write("[]")
+  end,
+
+  -- POST /repos/{owner}/{repo}/check-runs/{check_run_id}/rerequest
+  post_check_run_rerequest = function(_owner, _repo_name, _check_run_id)
+    respond_json(201, {})
+  end,
+
+  -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
+  -- Maps to Harness Code GET /check/commits/{sha}.
+  get_commit_check_runs = function(owner, repo_name, ref)
+    local ok, status, _, body =
+      fetch_json(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/check/commits/" .. ref)
+    if not ok then
+      respond_json(503, {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, {})
+      return
+    end
+    local list = DecodeJson(body) or {}
+    local runs = {}
+    for _, c in ipairs(list) do
+      local s = c.status or "pending"
+      local harness_to_gh = {
+        success = { status = "completed", conclusion = "success" },
+        failure = { status = "completed", conclusion = "failure" },
+        error = { status = "completed", conclusion = "failure" },
+        cancelled = { status = "completed", conclusion = "cancelled" },
+      }
+      local mapped = harness_to_gh[s] or { status = "in_progress", conclusion = nil }
+      local gh_status, gh_conclusion = mapped.status, mapped.conclusion
+      runs[#runs + 1] = {
+        id = c.id or 0,
+        node_id = "",
+        head_sha = ref,
+        name = c.check_suite_name or tostring(c.id or 0),
+        status = gh_status,
+        conclusion = gh_conclusion,
+        started_at = c.started,
+        completed_at = gh_status == "completed" and (c.ended or c.started) or nil,
+        output = {
+          title = c.check_suite_name or "",
+          summary = c.check_suite_name or "",
+          text = "",
+          annotations_count = 0,
+          annotations_url = "",
+        },
+        url = "",
+        html_url = "",
+        details_url = "",
+      }
+    end
+    respond_json(200, { total_count = #runs, check_runs = runs })
+  end,
+
+  -- Check Suites — no Harness Code equivalent; all are stubs -------------------
+
+  -- POST /repos/{owner}/{repo}/check-suites
+  post_check_suites = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    respond_json(201, {
+      id = 0,
+      node_id = "",
+      head_sha = req.head_sha or "",
+      status = "completed",
+      conclusion = "success",
+      app = { id = 0, slug = "", name = "" },
+      repository = { full_name = owner .. "/" .. repo_name },
+    })
+  end,
+
+  -- PATCH /repos/{owner}/{repo}/check-suites/preferences
+  patch_check_suites_preferences = function(_owner, _repo_name) -- luacheck: ignore 212
+    local req = DecodeJson(GetBody() or "{}") or {}
+    respond_json(200, {
+      preferences = req.auto_trigger_checks or {},
+    })
+  end,
+
+  -- GET /repos/{owner}/{repo}/check-suites/{check_suite_id}
+  get_check_suite = function(owner, repo_name, check_suite_id)
+    respond_json(200, {
+      id = tonumber(check_suite_id) or 0,
+      node_id = "",
+      head_sha = "",
+      status = "completed",
+      conclusion = "success",
+      app = { id = 0, slug = "", name = "" },
+      repository = { full_name = owner .. "/" .. repo_name },
+    })
+  end,
+
+  -- GET /repos/{owner}/{repo}/check-suites/{check_suite_id}/check-runs
+  get_check_suite_check_runs = function(_owner, _repo_name, _check_suite_id)
+    respond_json(200, { total_count = 0, check_runs = {} })
+  end,
+
+  -- POST /repos/{owner}/{repo}/check-suites/{check_suite_id}/rerequest
+  post_check_suite_rerequest = function(_owner, _repo_name, _check_suite_id)
+    respond_json(201, {})
+  end,
+
+  -- GET /repos/{owner}/{repo}/commits/{ref}/check-suites
+  get_commit_check_suites = function(_owner, _repo_name, _ref)
+    respond_json(200, { total_count = 0, check_suites = {} })
+  end,
+
   -- Issues -----------------------------------------------------------------------
   -- Harness Code has no native issue tracker.
   -- Issue management in the Harness platform is handled via Jira integration.

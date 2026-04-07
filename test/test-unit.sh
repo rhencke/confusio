@@ -59,3 +59,6 @@ run_mock_phase test/gitea-root.hurl $MOCK_ARGS
 
 # Phase 2: Anonymous access (backend_allow_anonymous=true, no Authorization header)
 run_mock_phase test/gitea-anon.hurl $MOCK_ARGS
+
+# Phase 3: Checks API (check runs + check suites via Gitea commit statuses)
+run_mock_phase test/gitea-checks.hurl $MOCK_ARGS

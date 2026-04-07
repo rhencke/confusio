@@ -3000,4 +3000,245 @@ backend_impl = {
       return { name = t.name, source = t.content }
     end, fetch_json(base() .. "/templates/gitignores/" .. name))
   end,
+
+  -- Checks (via GitLab commit statuses and pipelines) -------------------------
+  --
+  -- GitHub Check Runs map onto GitLab commit statuses.  GitLab has no concept
+  -- of a check run independent of a commit SHA, so:
+  --   • POST check-runs → POST /projects/{id}/statuses/{sha}
+  --   • GET check-runs/{id} → minimal stub (no reverse lookup by ID)
+  --   • PATCH check-runs/{id} → minimal stub
+  --   • GET commits/{ref}/check-runs → commit statuses list
+  --   • Check Suites have no GitLab equivalent; all suite endpoints are stubs.
+  --   • Annotations are always empty.
+  --
+  -- Status mapping (GitHub → GitLab):
+  --   queued/in_progress     → running
+  --   completed/success      → success
+  --   completed/failure      → failed
+  --   completed/neutral      → success
+  --   completed/skipped      → success
+  --   completed/(other)      → failed
+  --
+  -- Status mapping (GitLab → GitHub):
+  --   pending → status=queued,      conclusion=null
+  --   running → status=in_progress, conclusion=null
+  --   success → status=completed,   conclusion=success
+  --   failed  → status=completed,   conclusion=failure
+  --   canceled→ status=completed,   conclusion=cancelled
+  --   other   → status=completed,   conclusion=failure
+
+  -- Translate a GitLab commit status object to a GitHub check run object.
+  -- id is taken from the GitLab status.id field (used as check_run_id).
+  post_check_runs = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    local sha = req.head_sha or ""
+    local status = req.status or "queued"
+    local conclusion = req.conclusion
+    local gh_conclusion_to_gl = {
+      success = "success",
+      neutral = "success",
+      skipped = "success",
+    }
+    local gl_state = status == "completed" and (gh_conclusion_to_gl[conclusion] or "failed")
+      or "running"
+    local gl_body = EncodeJson({
+      state = gl_state,
+      target_url = req.details_url or "",
+      description = (req.output and req.output.summary) or req.name or "",
+      name = req.name or "",
+      context = req.name or "",
+      ref = sha,
+    })
+    local function translate(s)
+      if not s then
+        return {}
+      end
+      local gl_to_gh = {
+        pending = { status = "queued", conclusion = nil },
+        running = { status = "in_progress", conclusion = nil },
+        success = { status = "completed", conclusion = "success" },
+        failed = { status = "completed", conclusion = "failure" },
+        canceled = { status = "completed", conclusion = "cancelled" },
+      }
+      local mapped = gl_to_gh[s.status] or { status = "completed", conclusion = "failure" }
+      return {
+        id = s.id,
+        node_id = "",
+        head_sha = sha,
+        name = s.name or "",
+        status = mapped.status,
+        conclusion = mapped.conclusion,
+        started_at = s.created_at,
+        completed_at = mapped.status == "completed" and s.updated_at or nil,
+        output = {
+          title = s.description or "",
+          summary = s.description or "",
+          text = "",
+          annotations_count = 0,
+          annotations_url = "",
+        },
+        url = "",
+        html_url = s.target_url or "",
+        details_url = s.target_url or "",
+      }
+    end
+    proxy_json_created(
+      translate,
+      fetch_json(
+        base() .. "/projects/" .. project_id(owner, repo_name) .. "/statuses/" .. sha,
+        "POST",
+        gl_body
+      )
+    )
+  end,
+
+  get_check_run = function(_owner, _repo_name, check_run_id)
+    respond_json(200, {
+      id = tonumber(check_run_id) or 0,
+      node_id = "",
+      head_sha = "",
+      name = "",
+      status = "completed",
+      conclusion = "success",
+      started_at = nil,
+      completed_at = nil,
+      output = { title = "", summary = "", text = "", annotations_count = 0, annotations_url = "" },
+      url = "",
+      html_url = "",
+      details_url = "",
+    })
+  end,
+
+  patch_check_run = function(_owner, _repo_name, check_run_id)
+    respond_json(200, {
+      id = tonumber(check_run_id) or 0,
+      node_id = "",
+      head_sha = "",
+      name = "",
+      status = "completed",
+      conclusion = "success",
+      started_at = nil,
+      completed_at = nil,
+      output = { title = "", summary = "", text = "", annotations_count = 0, annotations_url = "" },
+      url = "",
+      html_url = "",
+      details_url = "",
+    })
+  end,
+
+  get_check_run_annotations = function(_owner, _repo_name, _check_run_id)
+    set_preamble()
+    Write("[]")
+  end,
+
+  post_check_run_rerequest = function(_owner, _repo_name, _check_run_id)
+    SetStatus(201, "Created")
+    Write("")
+  end,
+
+  -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
+  -- Uses GitLab commit statuses.
+  get_commit_check_runs = function(owner, repo_name, ref)
+    local ok, status, _, body = fetch_json(
+      base()
+        .. "/projects/"
+        .. project_id(owner, repo_name)
+        .. "/repository/commits/"
+        .. ref
+        .. "/statuses"
+    )
+    if not ok then
+      respond_json(503, {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, {})
+      return
+    end
+    local statuses = DecodeJson(body) or {}
+    local gl_to_gh = {
+      pending = { status = "queued", conclusion = nil },
+      running = { status = "in_progress", conclusion = nil },
+      success = { status = "completed", conclusion = "success" },
+      failed = { status = "completed", conclusion = "failure" },
+      canceled = { status = "completed", conclusion = "cancelled" },
+    }
+    local runs = {}
+    for i, s in ipairs(statuses) do
+      local mapped = gl_to_gh[s.status] or { status = "completed", conclusion = "failure" }
+      runs[i] = {
+        id = s.id,
+        node_id = "",
+        head_sha = ref,
+        name = s.name or "",
+        status = mapped.status,
+        conclusion = mapped.conclusion,
+        started_at = s.created_at,
+        completed_at = mapped.status == "completed" and s.updated_at or nil,
+        output = {
+          title = s.description or "",
+          summary = s.description or "",
+          text = "",
+          annotations_count = 0,
+          annotations_url = "",
+        },
+        url = "",
+        html_url = s.target_url or "",
+        details_url = s.target_url or "",
+      }
+    end
+    respond_json(200, { total_count = #runs, check_runs = runs })
+  end,
+
+  -- Check suites have no GitLab equivalent; all suite endpoints are stubs.
+
+  post_check_suites = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    respond_json(201, {
+      id = 1,
+      node_id = "",
+      head_sha = req.head_sha or "",
+      status = "completed",
+      conclusion = "success",
+      url = "",
+      before = nil,
+      after = nil,
+      app = {},
+      repository = { full_name = owner .. "/" .. repo_name },
+    })
+  end,
+
+  patch_check_suites_preferences = function(_owner, _repo_name) -- luacheck: ignore 212
+    local req = DecodeJson(GetBody() or "{}")
+    respond_json(200, {
+      preferences = req.auto_trigger_checks or {},
+    })
+  end,
+
+  get_check_suite = function(owner, repo_name, check_suite_id)
+    respond_json(200, {
+      id = tonumber(check_suite_id) or 0,
+      node_id = "",
+      head_sha = "",
+      status = "completed",
+      conclusion = "success",
+      url = "",
+      app = {},
+      repository = { full_name = owner .. "/" .. repo_name },
+    })
+  end,
+
+  get_check_suite_check_runs = function(_owner, _repo_name, _check_suite_id)
+    respond_json(200, { total_count = 0, check_runs = {} })
+  end,
+
+  post_check_suite_rerequest = function(_owner, _repo_name, _check_suite_id)
+    SetStatus(201, "Created")
+    Write("")
+  end,
+
+  get_commit_check_suites = function(_owner, _repo_name, _ref)
+    respond_json(200, { total_count = 0, check_suites = {} })
+  end,
 }

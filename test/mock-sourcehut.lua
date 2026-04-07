@@ -111,6 +111,21 @@ function OnHttpRequest()
         .. '"author":{"canonical_name":"~octocat","name":"octocat"}}}],'
         .. '"total":1,"next":null}'
     )
+
+  -- builds.sr.ht Jobs (checks) -------------------------------------------------
+  -- GET /api/jobs?filter[tags]=...
+  elseif path == "/api/jobs" then
+    SetStatus(200, "OK")
+    json(
+      '{"results":['
+        .. '{"id":42,"status":"success","note":"ci/test",'
+        .. '"created":"2011-01-26T19:01:12Z","updated":"2011-01-26T19:14:43Z",'
+        .. '"tags":{"git.sr.ht/~octocat/hello-world":"abc123"}},'
+        .. '{"id":43,"status":"running","note":"ci/lint",'
+        .. '"created":"2011-01-26T19:01:12Z","updated":"2011-01-26T19:01:12Z",'
+        .. '"tags":{"git.sr.ht/~octocat/hello-world":"abc123"}}'
+        .. '],"total":2,"cursor":null}'
+    )
   else
     SetStatus(404, "Not Found")
   end

@@ -232,6 +232,25 @@ function OnHttpRequest()
   then
     SetStatus(404, "Not Found")
 
+  -- Commit statuses (used by Checks API) ------------------------------------
+  -- POST returns 201 with the created status object.
+  elseif path == rb .. "/commits/abc123/statuses" and method == "POST" then
+    SetStatus(201, "Created")
+    json(
+      '{"id":1,"state":"pending","description":"Build started",'
+        .. '"targetUrl":"https://ci.example.com/build/1",'
+        .. '"context":{"name":"ci/test","genre":"continuous-integration"},'
+        .. '"creationDate":"2020-01-01T00:00:00Z","updatedDate":"2020-01-01T00:00:00Z"}'
+    )
+  elseif path == rb .. "/commits/abc123/statuses" and method == "GET" then
+    SetStatus(200, "OK")
+    json(
+      '{"count":1,"value":[{"id":1,"state":"succeeded","description":"Build passed",'
+        .. '"targetUrl":"https://ci.example.com/build/1",'
+        .. '"context":{"name":"ci/test","genre":"continuous-integration"},'
+        .. '"creationDate":"2020-01-01T00:00:00Z","updatedDate":"2020-01-01T00:00:00Z"}]}'
+    )
+
   -- Webhooks subscriptions (get_repo_hooks second step) --------------------
   elseif path == "/_apis/hooks/subscriptions" then
     SetStatus(200, "OK")

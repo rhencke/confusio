@@ -438,6 +438,16 @@ function OnHttpRequest()
     ["DELETE /user/installations/1/repositories/1"] = { 404, nil },
     ["GET /users/octocat/installation"] = { 404, nil },
 
+    -- Commit statuses (used by Checks API)
+    -- POST returns 201 with a single status object; the existing GET route at
+    -- ["/api/v1/repos/octocat/hello-world/statuses/abc123"] covers the list case.
+    ["POST /api/v1/repos/octocat/hello-world/statuses/abc123"] = {
+      201,
+      '{"id":42,"state":"pending","description":"Build started","context":"ci/test",'
+        .. '"target_url":"https://ci.example.com/build/1",'
+        .. '"created":"2020-01-01T00:00:00Z","updated":"2020-01-01T00:00:00Z"}',
+    },
+
     -- Interactions: Gitea has no GitHub Interactions API; confusio returns stubs directly.
     -- These routes document what the backend would return if ever proxied.
     ["GET /orgs/testorg/interaction-limits"] = { 404, nil },

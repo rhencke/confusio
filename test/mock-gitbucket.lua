@@ -79,6 +79,14 @@ function OnHttpRequest()
     json('[{"name":"main","commit":{"sha":"abc123def456","url":""},"protected":false}]')
 
   -- Commits ----------------------------------------------------------------
+  elseif path == rb .. "/statuses/abc123" and method == "POST" then
+    -- post_commit_status / post_check_runs POSTs here; returns 201 with a single status object
+    SetStatus(201, "Created")
+    json(
+      '{"id":42,"state":"pending","description":"Build started","context":"ci/test",'
+        .. '"target_url":"https://ci.example.com/build/1",'
+        .. '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z"}'
+    )
   elseif path == rb .. "/statuses/abc123" then
     -- get_commit_statuses uses /statuses/{sha}
     SetStatus(200, "OK")
