@@ -1449,4 +1449,247 @@ backend_impl = {
   get_commit_check_suites = function(_owner, _repo_name, _ref)
     respond_json(200, { total_count = 0, check_suites = {} })
   end,
+
+  -- Code Scanning (via ADO Advanced Security / GHAzDO) ------------------------
+  --
+  -- Azure DevOps Advanced Security provides code scanning alerts at the
+  -- repository level via:
+  --   GET  /{owner}/_apis/advancedsecurity/alerts/{repo}?alertType=code
+  --   GET  /{owner}/_apis/advancedsecurity/alerts/{repo}/{alertId}
+  --   PATCH /{owner}/_apis/advancedsecurity/alerts/{repo}/{alertId}
+  --   GET  /{owner}/_apis/advancedsecurity/analyses/{repo}
+  --   POST /{owner}/_apis/advancedsecurity/sarifs/{repo}
+  --
+  -- Org-level alert listing is not natively supported; returns empty list.
+  -- CodeQL databases, variant analyses, default-setup, and per-analysis
+  -- detail/delete have no direct ADO equivalent and fall back to 501.
+  --
+  -- ADO alert state mapping:
+  --   active    → open
+  --   dismissed → dismissed
+  --   fixed     → fixed
+  --
+  -- ADO dismissal reason mapping:
+  --   falsePositive  → false positive
+  --   wontFix        → won't fix
+  --   (other)        → used in tests
 }
+
+local ADVSEC_API_VER = "api-version=7.2-preview.1"
+
+local function advsec_url(path)
+  return path .. (path:find("?") and "&" or "?") .. ADVSEC_API_VER
+end
+
+local function advsec_base(owner)
+  return config.base_url .. "/" .. owner .. "/_apis/advancedsecurity"
+end
+
+local ADO_STATE_TO_GH = {
+  active = "open",
+  dismissed = "dismissed",
+  fixed = "fixed",
+}
+
+local ADO_DISMISS_REASON_TO_GH = {
+  falsePositive = "false positive",
+  wontFix = "won't fix",
+  usedInTests = "used in tests",
+}
+
+local GH_STATE_TO_ADO = {
+  open = "active",
+  dismissed = "dismissed",
+}
+
+local GH_DISMISS_REASON_TO_ADO = {
+  ["false positive"] = "falsePositive",
+  ["won't fix"] = "wontFix",
+  ["used in tests"] = "usedInTests",
+}
+
+local function translate_ado_alert(a)
+  if not a then
+    return {}
+  end
+  local state = ADO_STATE_TO_GH[a.state or ""] or "open"
+  local dismissal = a.dismissal or {}
+  local dismissed_reason = ADO_DISMISS_REASON_TO_GH[dismissal.dismissalType or ""]
+  local rule = a.rule or {}
+  local locations = a.physicalLocations or {}
+  local loc = locations[1] or {}
+  local region = loc.region or {}
+  return {
+    number = a.alertId or 0,
+    state = state,
+    fixed_at = a.fixedDate,
+    dismissed_at = a.dismissedDate,
+    dismissed_reason = dismissed_reason,
+    dismissed_comment = dismissal.message or nil,
+    rule = {
+      id = rule.id or "",
+      name = rule.name or "",
+      severity = (a.severity or ""):lower(),
+      description = rule.description or "",
+      full_description = { text = rule.description or "" },
+      help = { text = "" },
+      help_uri = "",
+      tags = {},
+    },
+    tool = { name = "Advanced Security", guid = nil, version = nil },
+    most_recent_instance = {
+      ref = "",
+      analysis_key = "",
+      environment = "{}",
+      state = state,
+      commit_sha = "",
+      location = {
+        path = loc.physicalLocation and (loc.physicalLocation.artifactLocation or {}).uri or "",
+        start_line = region.startLine or 0,
+        end_line = region.endLine or region.startLine or 0,
+        start_column = region.startColumn or 0,
+        end_column = region.endColumn or region.startColumn or 0,
+      },
+      classifications = {},
+    },
+    created_at = a.firstSeenDate or "",
+    updated_at = a.firstSeenDate or "",
+    url = "",
+    html_url = "",
+    instances_url = "",
+  }
+end
+
+local function translate_ado_analysis(an)
+  if not an then
+    return {}
+  end
+  return {
+    ref = an.branch or "",
+    commit_sha = an.commitId or "",
+    analysis_key = tostring(an.analysisId or 0),
+    environment = "{}",
+    category = "",
+    error = "",
+    created_at = an.createdDate or "",
+    results_count = an.resultCount or 0,
+    rules_count = 0,
+    id = an.analysisId or 0,
+    url = "",
+    sarif_id = "",
+    tool = { name = "Advanced Security", guid = nil, version = nil },
+    deletable = false,
+    warning = "",
+  }
+end
+
+-- Patch backend_impl with code scanning handlers.
+-- (backend_impl was already assigned above; we extend it here to keep the
+-- check-suite section self-contained and avoid one giant table.)
+local _b = backend_impl
+
+_b.list_org_code_scanning_alerts = function(_org)
+  -- ADO has no org-level code scanning list endpoint; return empty.
+  respond_json(200, {})
+end
+
+_b.list_repo_code_scanning_alerts = function(owner, repo_name)
+  local alert_type = GetParam("tool_name") or "code"
+  local url =
+    advsec_url(advsec_base(owner) .. "/alerts/" .. repo_name .. "?alertType=" .. alert_type)
+  local ok, status, _, body = fetch_json(url)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local data = DecodeJson(body) or {}
+  local result = {}
+  for _, a in ipairs(data.value or {}) do
+    result[#result + 1] = translate_ado_alert(a)
+  end
+  respond_json(200, result)
+end
+
+_b.get_code_scanning_alert = function(owner, repo_name, alert_number)
+  local url = advsec_url(advsec_base(owner) .. "/alerts/" .. repo_name .. "/" .. alert_number)
+  local ok, status, _, body = fetch_json(url)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  respond_json(200, translate_ado_alert(DecodeJson(body) or {}))
+end
+
+_b.update_code_scanning_alert = function(owner, repo_name, alert_number)
+  local req = DecodeJson(GetBody() or "{}")
+  local ado_state = GH_STATE_TO_ADO[req.state or ""] or "active"
+  local patch = { state = ado_state }
+  if req.dismissed_reason then
+    patch.dismissal = {
+      dismissalType = GH_DISMISS_REASON_TO_ADO[req.dismissed_reason] or "wontFix",
+      message = req.dismissed_comment or "",
+    }
+  end
+  local url = advsec_url(advsec_base(owner) .. "/alerts/" .. repo_name .. "/" .. alert_number)
+  local ok, status, _, body = fetch_json(url, "PATCH", EncodeJson(patch))
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  respond_json(200, translate_ado_alert(DecodeJson(body) or {}))
+end
+
+_b.list_code_scanning_alert_instances = function(_owner, _repo_name, _alert_number)
+  -- ADO alerts don't expose per-instance breakdowns; return empty list.
+  respond_json(200, {})
+end
+
+_b.list_code_scanning_analyses = function(owner, repo_name)
+  local url = advsec_url(advsec_base(owner) .. "/analyses/" .. repo_name)
+  local ok, status, _, body = fetch_json(url)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local data = DecodeJson(body) or {}
+  local result = {}
+  for _, an in ipairs(data.value or {}) do
+    result[#result + 1] = translate_ado_analysis(an)
+  end
+  respond_json(200, result)
+end
+
+_b.upload_code_scanning_sarif = function(owner, repo_name)
+  local body = GetBody() or "{}"
+  local url = advsec_url(advsec_base(owner) .. "/sarifs/" .. repo_name)
+  local ok, status, _, rbody = fetch_json(url, "POST", body)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status == 200 or status == 202 then
+    local data = DecodeJson(rbody) or {}
+    respond_json(202, {
+      id = tostring(data.sarif_id or data.sarifId or ""),
+      url = "",
+    })
+  else
+    respond_json(status, {})
+  end
+end

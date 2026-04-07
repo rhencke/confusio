@@ -261,6 +261,53 @@ function OnHttpRequest()
         .. '"createdDate":"2020-01-01T00:00:00Z","modifiedDate":"2020-01-01T00:00:00Z"}'
         .. "]}"
     )
+
+  -- Advanced Security — alert list (list_repo_code_scanning_alerts) ----------
+  elseif path == "/octocat/_apis/advancedsecurity/alerts/hello-world" and method == "GET" then
+    SetStatus(200, "OK")
+    json(
+      '{"count":1,"value":[{"alertId":1,"alertType":"code","state":"active",'
+        .. '"severity":"high","firstSeenDate":"2024-01-01T00:00:00Z",'
+        .. '"rule":{"id":"CS001","name":"SQL Injection","description":"Untrusted input"},'
+        .. '"physicalLocations":[{"physicalLocation":{"artifactLocation":{"uri":"src/app.js"}},'
+        .. '"region":{"startLine":42,"endLine":42,"startColumn":5,"endColumn":20}}]}]}'
+    )
+
+  -- Advanced Security — single alert (get_code_scanning_alert) ---------------
+  elseif path == "/octocat/_apis/advancedsecurity/alerts/hello-world/1" and method == "GET" then
+    SetStatus(200, "OK")
+    json(
+      '{"alertId":1,"alertType":"code","state":"active",'
+        .. '"severity":"high","firstSeenDate":"2024-01-01T00:00:00Z",'
+        .. '"rule":{"id":"CS001","name":"SQL Injection","description":"Untrusted input"},'
+        .. '"physicalLocations":[{"physicalLocation":{"artifactLocation":{"uri":"src/app.js"}},'
+        .. '"region":{"startLine":42,"endLine":42,"startColumn":5,"endColumn":20}}]}'
+    )
+
+  -- Advanced Security — update alert (update_code_scanning_alert) ------------
+  elseif path == "/octocat/_apis/advancedsecurity/alerts/hello-world/1" and method == "PATCH" then
+    SetStatus(200, "OK")
+    json(
+      '{"alertId":1,"alertType":"code","state":"dismissed",'
+        .. '"severity":"high","firstSeenDate":"2024-01-01T00:00:00Z",'
+        .. '"dismissedDate":"2024-01-02T00:00:00Z",'
+        .. '"dismissal":{"dismissalType":"wontFix","message":"Not exploitable"},'
+        .. '"rule":{"id":"CS001","name":"SQL Injection","description":"Untrusted input"},'
+        .. '"physicalLocations":[]}'
+    )
+
+  -- Advanced Security — analyses list (list_code_scanning_analyses) -----------
+  elseif path == "/octocat/_apis/advancedsecurity/analyses/hello-world" and method == "GET" then
+    SetStatus(200, "OK")
+    json(
+      '{"count":1,"value":[{"analysisId":10,"branch":"refs/heads/main",'
+        .. '"commitId":"abc123def456","createdDate":"2024-01-01T00:00:00Z","resultCount":5}]}'
+    )
+
+  -- Advanced Security — SARIF upload (upload_code_scanning_sarif) -------------
+  elseif path == "/octocat/_apis/advancedsecurity/sarifs/hello-world" and method == "POST" then
+    SetStatus(202, "Accepted")
+    json('{"sarifId":"sarif-abc123"}')
   else
     SetStatus(404, "Not Found")
   end
