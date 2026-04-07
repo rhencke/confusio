@@ -32,8 +32,8 @@ function OnHttpRequest()
 
   local rp = "/a/projects/octocat/hello-world"
 
-  -- Health check ---------------------------------------------------------------
-  if path == "/a/config/server/version" then
+  -- Health check — authenticated (/a/) and unauthenticated (no prefix) --------
+  if path == "/config/server/version" or path == "/a/config/server/version" then
     SetStatus(200, "OK")
     json('{"version":"3.10.0"}')
 

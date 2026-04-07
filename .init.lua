@@ -277,6 +277,9 @@ end
 
 -- backend_impl is global: set by backends/<name>.lua at startup.
 backend_impl = {}
+-- backend_allow_anonymous is global: backends that require sign-in set this to false
+-- at startup (after checking the provider's API settings). Default: allow.
+backend_allow_anonymous = true
 if config.backend ~= "" then
   assert(config.backend:match("^[%a][%w_]*$"),
     "invalid backend name: " .. config.backend)
@@ -853,6 +856,10 @@ for spec, v in pairs(routes) do
 end
 
 function OnHttpRequest()
+  if not backend_allow_anonymous and not GetHeader("Authorization") then
+    respond_json(401, { message = "This instance requires authentication." })
+    return
+  end
   local ep, caps, default_fn = route_match(GetMethod(), GetPath())
   if ep then
     local fn = handle[ep] or default_fn

@@ -56,3 +56,6 @@ MOCK_ARGS="-- gitea http://127.0.0.1:$MOCK_PORT"
 
 # Phase 1: Gitea via CLI flags
 run_mock_phase test/gitea-root.hurl $MOCK_ARGS
+
+# Phase 2: Anonymous access (backend_allow_anonymous=true, no Authorization header)
+run_mock_phase test/gitea-anon.hurl $MOCK_ARGS
