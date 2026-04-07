@@ -1,1 +1,1 @@
-stub-code-scanning.hurl
+gitea-code-scanning.hurl
