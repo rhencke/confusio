@@ -194,6 +194,16 @@ function OnHttpRequest()
         .. '"isLastPage":true}'
     )
 
+  -- Build statuses (Checks API) -----------------------------------------------
+  elseif path == "/rest/build-status/1.0/commits/abc123" and GetMethod() == "POST" then
+    SetStatus(204, "No Content")
+  elseif path == "/rest/build-status/1.0/commits/abc123" then
+    SetStatus(200, "OK")
+    json(
+      '{"values":[{"state":"SUCCESSFUL","key":"ci/test","description":"Build passed",'
+        .. '"url":"https://ci.example.com/build/1"}],"isLastPage":true,"start":0,"limit":25}'
+    )
+
   -- Interactions --------------------------------------------------------------
   -- Bitbucket Datacenter has no native GitHub Interactions API; confusio returns stubs directly.
   -- These routes document what the backend would return if ever proxied.
