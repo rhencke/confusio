@@ -448,6 +448,89 @@ function OnHttpRequest()
         .. '"created":"2020-01-01T00:00:00Z","updated":"2020-01-01T00:00:00Z"}',
     },
 
+    -- Packages
+    ["/api/v1/packages/testorg"] = {
+      200,
+      '[{"id":1,"owner":'
+        .. USER
+        .. ',"repository":null,"creator":'
+        .. USER
+        .. ',"type":"container","name":"web-app","version":"1.0.0",'
+        .. '"created_at":"2024-01-01T00:00:00Z","html_url":"http://localhost/testorg/-/packages/container/web-app/1.0.0"},'
+        .. '{"id":2,"owner":'
+        .. USER
+        .. ',"repository":null,"creator":'
+        .. USER
+        .. ',"type":"container","name":"web-app","version":"2.0.0",'
+        .. '"created_at":"2024-02-01T00:00:00Z","html_url":"http://localhost/testorg/-/packages/container/web-app/2.0.0"},'
+        .. '{"id":3,"owner":'
+        .. USER
+        .. ',"repository":null,"creator":'
+        .. USER
+        .. ',"type":"npm","name":"my-lib","version":"0.1.0",'
+        .. '"created_at":"2024-03-01T00:00:00Z","html_url":"http://localhost/testorg/-/packages/npm/my-lib/0.1.0"}]',
+    },
+    ["/api/v1/packages/testorg?type=container&q=web-app&limit=50"] = {
+      200,
+      '[{"id":1,"owner":'
+        .. USER
+        .. ',"repository":null,"creator":'
+        .. USER
+        .. ',"type":"container","name":"web-app","version":"1.0.0",'
+        .. '"created_at":"2024-01-01T00:00:00Z","html_url":"http://localhost/testorg/-/packages/container/web-app/1.0.0"},'
+        .. '{"id":2,"owner":'
+        .. USER
+        .. ',"repository":null,"creator":'
+        .. USER
+        .. ',"type":"container","name":"web-app","version":"2.0.0",'
+        .. '"created_at":"2024-02-01T00:00:00Z","html_url":"http://localhost/testorg/-/packages/container/web-app/2.0.0"}]',
+    },
+    ["/api/v1/packages/testorg?type=container&q=web-app"] = {
+      200,
+      '[{"id":1,"owner":'
+        .. USER
+        .. ',"repository":null,"creator":'
+        .. USER
+        .. ',"type":"container","name":"web-app","version":"1.0.0",'
+        .. '"created_at":"2024-01-01T00:00:00Z","html_url":"http://localhost/testorg/-/packages/container/web-app/1.0.0"},'
+        .. '{"id":2,"owner":'
+        .. USER
+        .. ',"repository":null,"creator":'
+        .. USER
+        .. ',"type":"container","name":"web-app","version":"2.0.0",'
+        .. '"created_at":"2024-02-01T00:00:00Z","html_url":"http://localhost/testorg/-/packages/container/web-app/2.0.0"}]',
+    },
+    ["DELETE /api/v1/packages/testorg/container/web-app/1.0.0"] = { 204, nil },
+    ["DELETE /api/v1/packages/testorg/container/web-app/2.0.0"] = { 204, nil },
+    ["/api/v1/packages/octocat"] = {
+      200,
+      '[{"id":10,"owner":'
+        .. USER
+        .. ',"repository":null,"creator":'
+        .. USER
+        .. ',"type":"npm","name":"my-lib","version":"0.1.0",'
+        .. '"created_at":"2024-03-01T00:00:00Z","html_url":"http://localhost/octocat/-/packages/npm/my-lib/0.1.0"}]',
+    },
+    ["/api/v1/packages/octocat?type=npm&q=my-lib&limit=50"] = {
+      200,
+      '[{"id":10,"owner":'
+        .. USER
+        .. ',"repository":null,"creator":'
+        .. USER
+        .. ',"type":"npm","name":"my-lib","version":"0.1.0",'
+        .. '"created_at":"2024-03-01T00:00:00Z","html_url":"http://localhost/octocat/-/packages/npm/my-lib/0.1.0"}]',
+    },
+    ["/api/v1/packages/octocat?type=npm&q=my-lib"] = {
+      200,
+      '[{"id":10,"owner":'
+        .. USER
+        .. ',"repository":null,"creator":'
+        .. USER
+        .. ',"type":"npm","name":"my-lib","version":"0.1.0",'
+        .. '"created_at":"2024-03-01T00:00:00Z","html_url":"http://localhost/octocat/-/packages/npm/my-lib/0.1.0"}]',
+    },
+    ["DELETE /api/v1/packages/octocat/npm/my-lib/0.1.0"] = { 204, nil },
+
     -- Interactions: Gitea has no GitHub Interactions API; confusio returns stubs directly.
     -- These routes document what the backend would return if ever proxied.
     ["GET /orgs/testorg/interaction-limits"] = { 404, nil },
