@@ -70,6 +70,47 @@ function OnHttpRequest()
       conduit_ok('{"data":[],"cursor":{"limit":30,"after":null,"before":null,"order":null}}')
     end
 
+  -- diffusion.commit.search ----------------------------------------------------
+  -- Returns a commit PHID for SHA "abc123".
+  elseif path == "/api/diffusion.commit.search" then
+    local id_param = GetParam("constraints[identifiers][0]") or ""
+    if id_param == "abc123" then
+      conduit_ok(
+        '{"data":[{'
+          .. '"id":42,'
+          .. '"type":"CMIT",'
+          .. '"phid":"PHID-CMIT-abc123",'
+          .. '"fields":{"identifier":"abc123","repositoryPHID":"PHID-REPO-testrepository"}'
+          .. "}],"
+          .. '"cursor":{"limit":1,"after":null,"before":null,"order":null}}'
+      )
+    else
+      conduit_ok('{"data":[],"cursor":{"limit":1,"after":null,"before":null,"order":null}}')
+    end
+
+  -- harbormaster.build.search --------------------------------------------------
+  -- Returns one build for commits linked to PHID-CMIT-abc123.
+  elseif path == "/api/harbormaster.build.search" then
+    local buildable_param = GetParam("constraints[buildables][0]") or ""
+    if buildable_param == "PHID-CMIT-abc123" then
+      conduit_ok(
+        '{"data":[{'
+          .. '"id":1,'
+          .. '"type":"HMBD",'
+          .. '"phid":"PHID-HMBD-testbuild",'
+          .. '"fields":{'
+          .. '"buildStatus":{"value":"passed","name":"Passed","color.ansi":"green"},'
+          .. '"buildPlan":{"phid":"PHID-HMCP-testplan","name":"ci/test"},'
+          .. '"buildable":{"phid":"PHID-HMBB-testbuildable","objectPHID":"PHID-CMIT-abc123"},'
+          .. '"dateCreated":1577836800,'
+          .. '"dateModified":1577923200'
+          .. "}}],"
+          .. '"cursor":{"limit":100,"after":null,"before":null,"order":null}}'
+      )
+    else
+      conduit_ok('{"data":[],"cursor":{"limit":100,"after":null,"before":null,"order":null}}')
+    end
+
   -- transaction.search ---------------------------------------------------------
   -- Returns one comment transaction for T1.
   elseif path == "/api/transaction.search" then

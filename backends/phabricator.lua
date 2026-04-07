@@ -3,6 +3,7 @@
 -- Issues: maniphest.search (tasks linked to projects via project PHID).
 -- Projects: project.search (find by slug = owner/repo or just repo).
 -- Comments: transaction.search (type = comment, objectIdentifier = T{N}).
+-- Checks: diffusion.commit.search + harbormaster.build.search (Harbormaster builds).
 if config.base_url == "" then
   config.base_url = "https://phabricator.example.com"
 end
@@ -121,6 +122,86 @@ local function resolve_project_phid(owner, repo_name)
     end
   end
   return nil
+end
+
+-- Checks (via Harbormaster builds) -------------------------------------------
+--
+-- Phabricator Harbormaster stores CI builds linked to Diffusion commits.
+--   • GET commits/{ref}/check-runs:
+--       1. diffusion.commit.search (constraints[identifiers][0]=sha) → commit PHID
+--       2. harbormaster.build.search (constraints[buildables][0]=commit PHID) → builds
+--   • POST check-runs / GET|PATCH by id → stubs (no write API equivalent)
+--   • Check Suites have no Harbormaster equivalent; all suite endpoints are stubs.
+--   • Annotations are always empty.
+--
+-- Status mapping (Harbormaster → GitHub):
+--   building/paused  → status=in_progress, conclusion=null
+--   passed           → status=completed,   conclusion=success
+--   failed/aborted/unexpected/deadlocked → status=completed, conclusion=failure
+
+-- Look up a commit PHID from a SHA via diffusion.commit.search.
+-- Returns the PHID string on success, nil on failure.
+local function resolve_commit_phid(sha)
+  local ok, status, _, body = conduit("diffusion.commit.search", {
+    ["constraints[identifiers][0]"] = sha,
+    ["limit"] = 1,
+  })
+  local result = conduit_result(ok, status, nil, body)
+  if result and result.data and result.data[1] then
+    return result.data[1].phid
+  end
+  return nil
+end
+
+-- Translate a Harbormaster build object to a GitHub check run object.
+local function translate_harbormaster_build(b, ref)
+  if not b then
+    return {}
+  end
+  local f = b.fields or {}
+  local hs = f.buildStatus or {}
+  local raw_status = hs.value or "building"
+  local gh_status, gh_conclusion
+  if raw_status == "passed" then
+    gh_status = "completed"
+    gh_conclusion = "success"
+  elseif
+    raw_status == "failed"
+    or raw_status == "aborted"
+    or raw_status == "unexpected"
+    or raw_status == "deadlocked"
+  then
+    gh_status = "completed"
+    gh_conclusion = "failure"
+  else
+    -- building, paused, or unknown
+    gh_status = "in_progress"
+    gh_conclusion = nil
+  end
+  local plan = f.buildPlan or {}
+  local name = plan.name or ("build/" .. tostring(b.id or 0))
+  local date_created = ts(f.dateCreated)
+  local date_modified = ts(f.dateModified)
+  return {
+    id = b.id or 0,
+    node_id = b.phid or "",
+    head_sha = ref,
+    name = name,
+    status = gh_status,
+    conclusion = gh_conclusion,
+    started_at = date_created,
+    completed_at = gh_status == "completed" and date_modified or nil,
+    output = {
+      title = name,
+      summary = raw_status,
+      text = "",
+      annotations_count = 0,
+      annotations_url = "",
+    },
+    url = "",
+    html_url = config.base_url .. "/B" .. tostring(b.id or ""),
+    details_url = "",
+  }
 end
 
 backend_impl = {
@@ -244,5 +325,156 @@ backend_impl = {
       end
     end
     respond_json(200, comments)
+  end,
+
+  -- Checks (via Harbormaster) -------------------------------------------------
+
+  -- POST /repos/{owner}/{repo}/check-runs — stub (no Harbormaster write API)
+  post_check_runs = function(_owner, _repo_name)
+    local req = DecodeJson(GetBody() or "{}") or {}
+    respond_json(201, {
+      id = 0,
+      node_id = "",
+      head_sha = req.head_sha or "",
+      name = req.name or "",
+      status = req.status or "queued",
+      conclusion = req.conclusion,
+      started_at = nil,
+      completed_at = nil,
+      output = {
+        title = (req.output and req.output.title) or "",
+        summary = (req.output and req.output.summary) or "",
+        text = "",
+        annotations_count = 0,
+        annotations_url = "",
+      },
+      url = "",
+      html_url = "",
+      details_url = req.details_url or "",
+    })
+  end,
+
+  -- GET /repos/{owner}/{repo}/check-runs/{check_run_id} — stub
+  get_check_run = function(_owner, _repo_name, check_run_id)
+    respond_json(200, {
+      id = tonumber(check_run_id) or 0,
+      node_id = "",
+      head_sha = "",
+      name = "",
+      status = "completed",
+      conclusion = "success",
+      started_at = nil,
+      completed_at = nil,
+      output = { title = "", summary = "", text = "", annotations_count = 0, annotations_url = "" },
+      url = "",
+      html_url = "",
+      details_url = "",
+    })
+  end,
+
+  -- PATCH /repos/{owner}/{repo}/check-runs/{check_run_id} — stub
+  patch_check_run = function(_owner, _repo_name, check_run_id)
+    respond_json(200, {
+      id = tonumber(check_run_id) or 0,
+      node_id = "",
+      head_sha = "",
+      name = "",
+      status = "completed",
+      conclusion = "success",
+      started_at = nil,
+      completed_at = nil,
+      output = { title = "", summary = "", text = "", annotations_count = 0, annotations_url = "" },
+      url = "",
+      html_url = "",
+      details_url = "",
+    })
+  end,
+
+  -- GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations — always []
+  get_check_run_annotations = function(_owner, _repo_name, _check_run_id)
+    set_preamble()
+    Write("[]")
+  end,
+
+  -- POST /repos/{owner}/{repo}/check-runs/{check_run_id}/rerequest — stub
+  post_check_run_rerequest = function(_owner, _repo_name, _check_run_id)
+    respond_json(201, {})
+  end,
+
+  -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
+  -- 1. Resolve commit PHID via diffusion.commit.search.
+  -- 2. List Harbormaster builds for that commit's buildable.
+  get_commit_check_runs = function(_owner, _repo_name, ref)
+    local commit_phid = resolve_commit_phid(ref)
+    if not commit_phid then
+      respond_json(200, { total_count = 0, check_runs = {} })
+      return
+    end
+    local ok, status, _, body = conduit("harbormaster.build.search", {
+      ["constraints[buildables][0]"] = commit_phid,
+      ["limit"] = 100,
+    })
+    local result, err = conduit_result(ok, status, nil, body)
+    if not result then
+      respond_json(err or 503, {})
+      return
+    end
+    local runs = {}
+    for _, b in ipairs(result.data or {}) do
+      runs[#runs + 1] = translate_harbormaster_build(b, ref)
+    end
+    respond_json(200, { total_count = #runs, check_runs = runs })
+  end,
+
+  -- Check Suites — no Harbormaster equivalent; all are stubs ------------------
+
+  -- POST /repos/{owner}/{repo}/check-suites
+  post_check_suites = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}") or {}
+    respond_json(201, {
+      id = 0,
+      node_id = "",
+      head_sha = req.head_sha or "",
+      status = "completed",
+      conclusion = "success",
+      app = { id = 0, slug = "", name = "" },
+      repository = { full_name = owner .. "/" .. repo_name },
+    })
+  end,
+
+  -- PATCH /repos/{owner}/{repo}/check-suites/preferences
+  patch_check_suites_preferences = function(_owner, _repo_name) -- luacheck: ignore 212
+    local req = DecodeJson(GetBody() or "{}") or {}
+    respond_json(200, {
+      preferences = req.auto_trigger_checks or {},
+    })
+  end,
+
+  -- GET /repos/{owner}/{repo}/check-suites/{check_suite_id}
+  get_check_suite = function(owner, repo_name, check_suite_id)
+    respond_json(200, {
+      id = tonumber(check_suite_id) or 0,
+      node_id = "",
+      head_sha = "",
+      status = "completed",
+      conclusion = "success",
+      app = { id = 0, slug = "", name = "" },
+      repository = { full_name = owner .. "/" .. repo_name },
+    })
+  end,
+
+  -- GET /repos/{owner}/{repo}/check-suites/{check_suite_id}/check-runs
+  get_check_suite_check_runs = function(_owner, _repo_name, _check_suite_id)
+    respond_json(200, { total_count = 0, check_runs = {} })
+  end,
+
+  -- POST /repos/{owner}/{repo}/check-suites/{check_suite_id}/rerequest
+  post_check_suite_rerequest = function(_owner, _repo_name, _check_suite_id)
+    respond_json(201, {})
+  end,
+
+  -- GET /repos/{owner}/{repo}/commits/{ref}/check-suites
+  get_commit_check_suites = function(_owner, _repo_name, _ref)
+    respond_json(200, { total_count = 0, check_suites = {} })
   end,
 }
