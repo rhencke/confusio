@@ -295,6 +295,18 @@ function OnHttpRequest()
         .. '"links":{"avatar":{"href":""},"html":{"href":"https://bitbucket.org/octocat"}}}],'
         .. '"pagelen":30,"size":1,"page":1}'
     )
+
+  -- Interactions --------------------------------------------------------------
+  -- Bitbucket has no native GitHub Interactions API; confusio returns stubs directly.
+  -- These routes document what the backend would return if ever proxied.
+  elseif
+    (
+      path == "/orgs/testorg/interaction-limits"
+      or path == "/repos/octocat/hello-world/interaction-limits"
+      or path == "/user/interaction-limits"
+    ) and (GetMethod() == "GET" or GetMethod() == "PUT" or GetMethod() == "DELETE")
+  then
+    SetStatus(404, "Not Found")
   else
     SetStatus(404, "Not Found")
   end
