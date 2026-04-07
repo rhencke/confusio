@@ -2,7 +2,7 @@
 -- base_url defaults to "" here; each backend sets its own default at load time
 -- (after SCRIPTARGS are applied) if the user hasn't provided an explicit value.
 config = {
-  backend  = "",
+  backend = "",
   base_url = "",
 }
 
@@ -26,10 +26,12 @@ local HTTP_STATUS_TEXT = {
   [201] = "Created",
   [204] = "No Content",
   [302] = "Found",
+  [401] = "Unauthorized",
   [404] = "Not Found",
   [405] = "Method Not Allowed",
   [418] = "I'm a Teapot",
   [422] = "Unprocessable Entity",
+  [501] = "Not Implemented",
   [503] = "Service Unavailable",
 }
 function set_preamble(status, content_type)
@@ -58,13 +60,17 @@ end
 -- Returns a GitHub-style Link header value, or nil when there is nothing to emit.
 -- Only params present in the reverse mapping survive; unrecognised upstream params are dropped.
 function rewrite_link_header(upstream_link, mapping)
-  if not upstream_link or upstream_link == "" then return nil end
+  if not upstream_link or upstream_link == "" then
+    return nil
+  end
 
   -- Reverse the caller-supplied mapping so we can translate upstream → GitHub param names.
   local reverse = {}
-  for gh, up in pairs(mapping) do reverse[up] = gh end
+  for gh, up in pairs(mapping) do
+    reverse[up] = gh
+  end
 
-  local host  = GetHeader("Host") or "localhost"
+  local host = GetHeader("Host") or "localhost"
   local proto = GetHeader("X-Forwarded-Proto") or "http"
   local self_base = proto .. "://" .. host .. GetPath()
 
@@ -74,11 +80,15 @@ function rewrite_link_header(upstream_link, mapping)
     local params = {}
     for k, v in query:gmatch("([^&=]+)=([^&]+)") do
       local gh = reverse[k]
-      if gh then params[#params + 1] = gh .. "=" .. v end
+      if gh then
+        params[#params + 1] = gh .. "=" .. v
+      end
     end
     local new_url = self_base
-    if #params > 0 then new_url = new_url .. "?" .. table.concat(params, "&") end
-    entries[#entries + 1] = '<' .. new_url .. '>; rel="' .. rel .. '"'
+    if #params > 0 then
+      new_url = new_url .. "?" .. table.concat(params, "&")
+    end
+    entries[#entries + 1] = "<" .. new_url .. '>; rel="' .. rel .. '"'
   end
 
   return #entries > 0 and table.concat(entries, ", ") or nil
@@ -100,8 +110,11 @@ function proxy_json(translate, ok, status, _headers, body)
   if ok and status == 200 then
     local data = DecodeJson(body) or {}
     respond_json(200, translate and translate(data) or data)
-  elseif ok then respond_json(status, {})
-  else respond_json(503, {}) end
+  elseif ok then
+    respond_json(status, {})
+  else
+    respond_json(503, {})
+  end
 end
 
 -- proxy_json_paged: like proxy_json but rewrites the upstream Link header to point at confusio.
@@ -117,10 +130,15 @@ function proxy_json_paged(translate, page_params, ok, status, headers, body)
     -- set_preamble calls SetStatus which clears previously-set headers, so the Link
     -- header must be set AFTER set_preamble, not before.
     set_preamble(200)
-    if rewritten then SetHeader("Link", rewritten) end
+    if rewritten then
+      SetHeader("Link", rewritten)
+    end
     Write(EncodeJson(translate and translate(data) or data))
-  elseif ok then respond_json(status, {})
-  else respond_json(503, {}) end
+  elseif ok then
+    respond_json(status, {})
+  else
+    respond_json(503, {})
+  end
 end
 
 -- Like proxy_json but for create endpoints: upstream may return 200 or 201;
@@ -129,8 +147,11 @@ function proxy_json_created(translate, ok, status, _headers, body)
   if ok and (status == 200 or status == 201) then
     local data = DecodeJson(body) or {}
     respond_json(201, translate and translate(data) or data)
-  elseif ok then respond_json(status, {})
-  else respond_json(503, {}) end
+  elseif ok then
+    respond_json(status, {})
+  else
+    respond_json(503, {})
+  end
 end
 
 -- append_page_params appends translated pagination params to url.
@@ -149,7 +170,9 @@ function append_page_params(url, mapping)
   if pg and pg ~= "" and mapping.page then
     parts[#parts + 1] = mapping.page .. "=" .. pg
   end
-  if #parts == 0 then return url end
+  if #parts == 0 then
+    return url
+  end
   return url .. sep .. table.concat(parts, "&")
 end
 
@@ -167,7 +190,9 @@ end
 --   "basic"       → Authorization: Basic base64(tok)   (client passes user:pass as tok)
 function make_fetch_opts(scheme)
   local h = GetHeader("Authorization")
-  if not h or h == "" then return nil end
+  if not h or h == "" then
+    return nil
+  end
   local tok = h:match("^[Tt]oken%s+(.+)$") or h:match("^[Bb]earer%s+(.+)$") or h
   local hdr
   if scheme == "token" then
@@ -195,10 +220,10 @@ function make_proxy_handler(fetch_fn, proxy_fn)
   proxy_fn = proxy_fn or proxy_json
   return function(xform, url_fn)
     return function(...)
-      local args = {...}
-      proxy_fn(
-        type(xform) == "function" and function(r) return xform(r, table.unpack(args)) end or xform,
-        fetch_fn(url_fn(...)))
+      local args = { ... }
+      proxy_fn(type(xform) == "function" and function(r)
+        return xform(r, table.unpack(args))
+      end or xform, fetch_fn(url_fn(...)))
     end
   end
 end
@@ -206,71 +231,75 @@ end
 -- translate_repo is global: maps a Gitea-style repo object to GitHub field names.
 -- Called by any Gitea-API-compatible backend (gitea, forgejo, gogs, codeberg, notabug).
 function translate_repo(r)
-  if not r then return {} end
+  if not r then
+    return {}
+  end
   local owner = r.owner or {}
   return {
-    id               = r.id,
-    node_id          = "",
-    name             = r.name,
-    full_name        = r.full_name,
-    private          = r.private,
-    owner            = {
-      login      = owner.login,
-      id         = owner.id,
-      node_id    = "",
+    id = r.id,
+    node_id = "",
+    name = r.name,
+    full_name = r.full_name,
+    private = r.private,
+    owner = {
+      login = owner.login,
+      id = owner.id,
+      node_id = "",
       avatar_url = owner.avatar_url,
-      url        = owner.url,
-      html_url   = owner.html_url,
-      type       = owner.type or (owner.is_admin and "Admin" or "User"),
+      url = owner.url,
+      html_url = owner.html_url,
+      type = owner.type or (owner.is_admin and "Admin" or "User"),
     },
-    html_url          = r.html_url,
-    description       = r.description,
-    fork              = r.fork,
-    url               = r.url,
-    git_url           = r.ssh_url,
-    ssh_url           = r.ssh_url,
-    clone_url         = r.clone_url,
-    homepage          = r.website,
-    size              = r.size,
-    stargazers_count  = r.stars_count,
-    watchers_count    = r.watchers_count,
-    language          = r.language,
-    has_issues        = r.has_issues,
-    has_wiki          = r.has_wiki,
-    forks_count       = r.forks_count,
-    archived          = r.archived,
-    disabled          = false,
+    html_url = r.html_url,
+    description = r.description,
+    fork = r.fork,
+    url = r.url,
+    git_url = r.ssh_url,
+    ssh_url = r.ssh_url,
+    clone_url = r.clone_url,
+    homepage = r.website,
+    size = r.size,
+    stargazers_count = r.stars_count,
+    watchers_count = r.watchers_count,
+    language = r.language,
+    has_issues = r.has_issues,
+    has_wiki = r.has_wiki,
+    forks_count = r.forks_count,
+    archived = r.archived,
+    disabled = false,
     open_issues_count = r.open_issues_count,
-    default_branch    = r.default_branch,
-    visibility        = r.visibility or (r.private and "private" or "public"),
-    forks             = r.forks_count,
-    open_issues       = r.open_issues_count,
-    watchers          = r.watchers_count,
-    created_at        = r.created,
-    updated_at        = r.updated,
-    pushed_at         = r.updated,
-    permissions       = r.permissions,
+    default_branch = r.default_branch,
+    visibility = r.visibility or (r.private and "private" or "public"),
+    forks = r.forks_count,
+    open_issues = r.open_issues_count,
+    watchers = r.watchers_count,
+    created_at = r.created,
+    updated_at = r.updated,
+    pushed_at = r.updated,
+    permissions = r.permissions,
   }
 end
 
 -- translate_user is global: maps a Gitea-style user object to GitHub field names.
 -- Called by any Gitea-API-compatible backend (gitea, forgejo, gogs, codeberg, notabug).
 function translate_user(u)
-  if not u then return {} end
+  if not u then
+    return {}
+  end
   return {
-    login      = u.login,
-    id         = u.id,
-    node_id    = "",
+    login = u.login,
+    id = u.id,
+    node_id = "",
     avatar_url = u.avatar_url,
-    html_url   = u.html_url,
-    type       = "User",
+    html_url = u.html_url,
+    type = "User",
     site_admin = u.is_admin or false,
-    name       = u.full_name,
-    email      = u.email,
-    location   = u.location,
-    blog       = u.website,
-    followers  = u.followers_count or 0,
-    following  = u.following_count or 0,
+    name = u.full_name,
+    email = u.email,
+    location = u.location,
+    blog = u.website,
+    followers = u.followers_count or 0,
+    following = u.following_count or 0,
     created_at = u.created,
   }
 end
@@ -281,8 +310,7 @@ backend_impl = {}
 -- at startup (after checking the provider's API settings). Default: allow.
 backend_allow_anonymous = true
 if config.backend ~= "" then
-  assert(config.backend:match("^[%a][%w_]*$"),
-    "invalid backend name: " .. config.backend)
+  assert(config.backend:match("^[%a][%w_]*$"), "invalid backend name: " .. config.backend)
   dofile("/zip/backends/" .. config.backend .. ".lua")
 end
 
@@ -331,6 +359,12 @@ end
 
 local function interaction_limits_delete()
   set_preamble(204)
+end
+
+-- Default handler for code-scanning endpoints: no backend has a native code scanning API.
+-- Returns 501 Not Implemented with a descriptive message.
+local function code_scanning_not_implemented()
+  respond_json(501, { message = "Code scanning is not supported by this backend." })
 end
 
 -- Default handlers for GET /zen, GET /octocat, GET /versions, GET /meta.
@@ -408,8 +442,10 @@ end
 -- 404. Unknown paths return JSON 404 directly; Route() is no longer called.
 -- ---------------------------------------------------------------------------
 
-local function new_node() return { static = {}, param = nil, handler = nil } end
-local trie      = new_node()
+local function new_node()
+  return { static = {}, param = nil, handler = nil }
+end
+local trie = new_node()
 local path_trie = new_node()
 
 local function _trie_insert(t, key)
@@ -458,7 +494,9 @@ end
 
 local function route_match(method, path)
   local node, caps = _trie_walk(trie, method .. path)
-  if node then return node.handler, caps, node.default end
+  if node then
+    return node.handler, caps, node.default
+  end
   return nil, nil, nil
 end
 
@@ -479,423 +517,571 @@ end
 
 local routes = {
   -- Root
-  ["GET /"]                                                                    = { "get_root",    function() respond_json(200, {}) end },
+  ["GET /"] = {
+    "get_root",
+    function()
+      respond_json(200, {})
+    end,
+  },
   -- Meta (https://docs.github.com/en/rest/meta)
-  ["GET /meta"]                                                                = { "get_meta",    meta_response },
-  ["GET /octocat"]                                                             = { "get_octocat", octocat_response },
-  ["GET /teapot"]                                                              = { "get_teapot",  teapot_response },
-  ["GET /versions"]                                                            = { "get_versions", versions_response },
-  ["GET /zen"]                                                                 = { "get_zen",     zen_response },
+  ["GET /meta"] = { "get_meta", meta_response },
+  ["GET /octocat"] = { "get_octocat", octocat_response },
+  ["GET /teapot"] = { "get_teapot", teapot_response },
+  ["GET /versions"] = { "get_versions", versions_response },
+  ["GET /zen"] = { "get_zen", zen_response },
   -- Emojis
-  ["GET /emojis"]                                                              = "get_emojis",
+  ["GET /emojis"] = "get_emojis",
   -- Gitignore templates (https://docs.github.com/en/rest/gitignore)
-  ["GET /gitignore/templates"]                                                 = "get_gitignore_templates",
-  ["GET /gitignore/templates/{name}"]                                          = "get_gitignore_template",
+  ["GET /gitignore/templates"] = "get_gitignore_templates",
+  ["GET /gitignore/templates/{name}"] = "get_gitignore_template",
   -- Rate Limits (https://docs.github.com/en/rest/rate-limit)
-  ["GET /rate_limit"]                                                          = { "get_rate_limit", rate_limit_response },
+  ["GET /rate_limit"] = { "get_rate_limit", rate_limit_response },
 
   -- Repos core (https://docs.github.com/en/rest/repos/repos)
-  ["GET /repos/{owner}/{repo}"]                                                = "get_repo",
-  ["PATCH /repos/{owner}/{repo}"]                                              = "patch_repo",
-  ["DELETE /repos/{owner}/{repo}"]                                             = "delete_repo",
-  ["GET /user/repos"]                                                          = "get_user_repos",
-  ["POST /user/repos"]                                                         = "post_user_repos",
-  ["GET /orgs/{org}/repos"]                                                    = "get_org_repos",
-  ["POST /orgs/{org}/repos"]                                                   = "post_org_repos",
-  ["GET /users/{username}/repos"]                                              = "get_users_repos",
-  ["GET /repositories"]                                                        = "get_repositories",
+  ["GET /repos/{owner}/{repo}"] = "get_repo",
+  ["PATCH /repos/{owner}/{repo}"] = "patch_repo",
+  ["DELETE /repos/{owner}/{repo}"] = "delete_repo",
+  ["GET /user/repos"] = "get_user_repos",
+  ["POST /user/repos"] = "post_user_repos",
+  ["GET /orgs/{org}/repos"] = "get_org_repos",
+  ["POST /orgs/{org}/repos"] = "post_org_repos",
+  ["GET /users/{username}/repos"] = "get_users_repos",
+  ["GET /repositories"] = "get_repositories",
 
   -- Topics / languages / contributors / tags / teams
-  ["GET /repos/{owner}/{repo}/topics"]                                         = "get_repo_topics",
-  ["PUT /repos/{owner}/{repo}/topics"]                                         = "put_repo_topics",
-  ["GET /repos/{owner}/{repo}/languages"]                                      = "get_repo_languages",
-  ["GET /repos/{owner}/{repo}/contributors"]                                   = "get_repo_contributors",
-  ["GET /repos/{owner}/{repo}/tags"]                                           = "get_repo_tags",
-  ["GET /repos/{owner}/{repo}/teams"]                                          = "get_repo_teams",
+  ["GET /repos/{owner}/{repo}/topics"] = "get_repo_topics",
+  ["PUT /repos/{owner}/{repo}/topics"] = "put_repo_topics",
+  ["GET /repos/{owner}/{repo}/languages"] = "get_repo_languages",
+  ["GET /repos/{owner}/{repo}/contributors"] = "get_repo_contributors",
+  ["GET /repos/{owner}/{repo}/tags"] = "get_repo_tags",
+  ["GET /repos/{owner}/{repo}/teams"] = "get_repo_teams",
 
   -- Branches (https://docs.github.com/en/rest/branches)
-  ["GET /repos/{owner}/{repo}/branches"]                                       = "get_repo_branches",
-  ["GET /repos/{owner}/{repo}/branches/{branch}"]                              = "get_repo_branch",
+  ["GET /repos/{owner}/{repo}/branches"] = "get_repo_branches",
+  ["GET /repos/{owner}/{repo}/branches/{branch}"] = "get_repo_branch",
 
   -- Commits (https://docs.github.com/en/rest/commits)
-  ["GET /repos/{owner}/{repo}/commits"]                                        = "get_repo_commits",
-  ["GET /repos/{owner}/{repo}/commits/{ref}"]                                  = "get_repo_commit",
+  ["GET /repos/{owner}/{repo}/commits"] = "get_repo_commits",
+  ["GET /repos/{owner}/{repo}/commits/{ref}"] = "get_repo_commit",
 
   -- Commit comments
-  ["GET /repos/{owner}/{repo}/comments"]                                       = "get_repo_comments",
-  ["GET /repos/{owner}/{repo}/comments/{comment_id}"]                          = "get_repo_comment",
-  ["PATCH /repos/{owner}/{repo}/comments/{comment_id}"]                        = "patch_repo_comment",
-  ["DELETE /repos/{owner}/{repo}/comments/{comment_id}"]                       = "delete_repo_comment",
-  ["GET /repos/{owner}/{repo}/commits/{commit_sha}/comments"]                  = "get_commit_comments",
-  ["POST /repos/{owner}/{repo}/commits/{commit_sha}/comments"]                 = "post_commit_comment",
+  ["GET /repos/{owner}/{repo}/comments"] = "get_repo_comments",
+  ["GET /repos/{owner}/{repo}/comments/{comment_id}"] = "get_repo_comment",
+  ["PATCH /repos/{owner}/{repo}/comments/{comment_id}"] = "patch_repo_comment",
+  ["DELETE /repos/{owner}/{repo}/comments/{comment_id}"] = "delete_repo_comment",
+  ["GET /repos/{owner}/{repo}/commits/{commit_sha}/comments"] = "get_commit_comments",
+  ["POST /repos/{owner}/{repo}/commits/{commit_sha}/comments"] = "post_commit_comment",
 
   -- Statuses
-  ["GET /repos/{owner}/{repo}/commits/{ref}/statuses"]                         = "get_commit_statuses",
-  ["GET /repos/{owner}/{repo}/commits/{ref}/status"]                           = "get_commit_combined_status",
-  ["POST /repos/{owner}/{repo}/statuses/{sha}"]                                = "post_commit_status",
+  ["GET /repos/{owner}/{repo}/commits/{ref}/statuses"] = "get_commit_statuses",
+  ["GET /repos/{owner}/{repo}/commits/{ref}/status"] = "get_commit_combined_status",
+  ["POST /repos/{owner}/{repo}/statuses/{sha}"] = "post_commit_status",
 
   -- Contents (https://docs.github.com/en/rest/repos/contents)
-  ["GET /repos/{owner}/{repo}/readme"]                                         = "get_repo_readme",
-  ["GET /repos/{owner}/{repo}/readme/{dir}"]                                   = "get_repo_readme_dir",
-  ["GET /repos/{owner}/{repo}/contents/{path}"]                                = "get_repo_content",
-  ["PUT /repos/{owner}/{repo}/contents/{path}"]                                = "put_repo_content",
-  ["DELETE /repos/{owner}/{repo}/contents/{path}"]                             = "delete_repo_content",
-  ["GET /repos/{owner}/{repo}/tarball/{ref}"]                                  = "get_repo_tarball",
-  ["GET /repos/{owner}/{repo}/zipball/{ref}"]                                  = "get_repo_zipball",
+  ["GET /repos/{owner}/{repo}/readme"] = "get_repo_readme",
+  ["GET /repos/{owner}/{repo}/readme/{dir}"] = "get_repo_readme_dir",
+  ["GET /repos/{owner}/{repo}/contents/{path}"] = "get_repo_content",
+  ["PUT /repos/{owner}/{repo}/contents/{path}"] = "put_repo_content",
+  ["DELETE /repos/{owner}/{repo}/contents/{path}"] = "delete_repo_content",
+  ["GET /repos/{owner}/{repo}/tarball/{ref}"] = "get_repo_tarball",
+  ["GET /repos/{owner}/{repo}/zipball/{ref}"] = "get_repo_zipball",
 
   -- Compare
-  ["GET /repos/{owner}/{repo}/compare/{basehead}"]                             = "get_repo_compare",
+  ["GET /repos/{owner}/{repo}/compare/{basehead}"] = "get_repo_compare",
 
   -- Collaborators (https://docs.github.com/en/rest/collaborators)
-  ["GET /repos/{owner}/{repo}/collaborators"]                                  = "get_repo_collaborators",
-  ["GET /repos/{owner}/{repo}/collaborators/{username}"]                       = "get_repo_collaborator",
-  ["PUT /repos/{owner}/{repo}/collaborators/{username}"]                       = "put_repo_collaborator",
-  ["DELETE /repos/{owner}/{repo}/collaborators/{username}"]                    = "delete_repo_collaborator",
-  ["GET /repos/{owner}/{repo}/collaborators/{username}/permission"]            = "get_repo_collaborator_permission",
+  ["GET /repos/{owner}/{repo}/collaborators"] = "get_repo_collaborators",
+  ["GET /repos/{owner}/{repo}/collaborators/{username}"] = "get_repo_collaborator",
+  ["PUT /repos/{owner}/{repo}/collaborators/{username}"] = "put_repo_collaborator",
+  ["DELETE /repos/{owner}/{repo}/collaborators/{username}"] = "delete_repo_collaborator",
+  ["GET /repos/{owner}/{repo}/collaborators/{username}/permission"] = "get_repo_collaborator_permission",
 
   -- Forks (https://docs.github.com/en/rest/repos/forks)
-  ["GET /repos/{owner}/{repo}/forks"]                                          = "get_repo_forks",
-  ["POST /repos/{owner}/{repo}/forks"]                                         = "post_repo_forks",
+  ["GET /repos/{owner}/{repo}/forks"] = "get_repo_forks",
+  ["POST /repos/{owner}/{repo}/forks"] = "post_repo_forks",
 
   -- Merges (https://docs.github.com/en/rest/branches/merging)
-  ["POST /repos/{owner}/{repo}/merges"]                                        = "post_repo_merges",
-  ["POST /repos/{owner}/{repo}/merge-upstream"]                                = "post_repo_merge_upstream",
+  ["POST /repos/{owner}/{repo}/merges"] = "post_repo_merges",
+  ["POST /repos/{owner}/{repo}/merge-upstream"] = "post_repo_merge_upstream",
 
   -- Releases (https://docs.github.com/en/rest/releases)
-  ["GET /repos/{owner}/{repo}/releases"]                                       = "get_repo_releases",
-  ["POST /repos/{owner}/{repo}/releases"]                                      = "post_repo_releases",
-  ["GET /repos/{owner}/{repo}/releases/latest"]                                = "get_repo_release_latest",
-  ["GET /repos/{owner}/{repo}/releases/tags/{tag}"]                            = "get_repo_release_by_tag",
-  ["GET /repos/{owner}/{repo}/releases/{release_id}"]                          = "get_repo_release",
-  ["PATCH /repos/{owner}/{repo}/releases/{release_id}"]                        = "patch_repo_release",
-  ["DELETE /repos/{owner}/{repo}/releases/{release_id}"]                       = "delete_repo_release",
-  ["GET /repos/{owner}/{repo}/releases/{release_id}/assets"]                   = "get_repo_release_assets",
-  ["POST /repos/{owner}/{repo}/releases/{release_id}/assets"]                  = "post_repo_release_assets",
-  ["GET /repos/{owner}/{repo}/releases/assets/{asset_id}"]                     = "get_repo_release_asset",
-  ["PATCH /repos/{owner}/{repo}/releases/assets/{asset_id}"]                   = "patch_repo_release_asset",
-  ["DELETE /repos/{owner}/{repo}/releases/assets/{asset_id}"]                  = "delete_repo_release_asset",
+  ["GET /repos/{owner}/{repo}/releases"] = "get_repo_releases",
+  ["POST /repos/{owner}/{repo}/releases"] = "post_repo_releases",
+  ["GET /repos/{owner}/{repo}/releases/latest"] = "get_repo_release_latest",
+  ["GET /repos/{owner}/{repo}/releases/tags/{tag}"] = "get_repo_release_by_tag",
+  ["GET /repos/{owner}/{repo}/releases/{release_id}"] = "get_repo_release",
+  ["PATCH /repos/{owner}/{repo}/releases/{release_id}"] = "patch_repo_release",
+  ["DELETE /repos/{owner}/{repo}/releases/{release_id}"] = "delete_repo_release",
+  ["GET /repos/{owner}/{repo}/releases/{release_id}/assets"] = "get_repo_release_assets",
+  ["POST /repos/{owner}/{repo}/releases/{release_id}/assets"] = "post_repo_release_assets",
+  ["GET /repos/{owner}/{repo}/releases/assets/{asset_id}"] = "get_repo_release_asset",
+  ["PATCH /repos/{owner}/{repo}/releases/assets/{asset_id}"] = "patch_repo_release_asset",
+  ["DELETE /repos/{owner}/{repo}/releases/assets/{asset_id}"] = "delete_repo_release_asset",
 
   -- Deploy keys (https://docs.github.com/en/rest/deploy-keys)
-  ["GET /repos/{owner}/{repo}/keys"]                                           = "get_repo_keys",
-  ["POST /repos/{owner}/{repo}/keys"]                                          = "post_repo_keys",
-  ["GET /repos/{owner}/{repo}/keys/{key_id}"]                                  = "get_repo_key",
-  ["DELETE /repos/{owner}/{repo}/keys/{key_id}"]                               = "delete_repo_key",
+  ["GET /repos/{owner}/{repo}/keys"] = "get_repo_keys",
+  ["POST /repos/{owner}/{repo}/keys"] = "post_repo_keys",
+  ["GET /repos/{owner}/{repo}/keys/{key_id}"] = "get_repo_key",
+  ["DELETE /repos/{owner}/{repo}/keys/{key_id}"] = "delete_repo_key",
 
   -- Webhooks (https://docs.github.com/en/rest/repos/webhooks)
-  ["GET /repos/{owner}/{repo}/hooks"]                                          = "get_repo_hooks",
-  ["POST /repos/{owner}/{repo}/hooks"]                                         = "post_repo_hooks",
-  ["GET /repos/{owner}/{repo}/hooks/{hook_id}"]                                = "get_repo_hook",
-  ["PATCH /repos/{owner}/{repo}/hooks/{hook_id}"]                              = "patch_repo_hook",
-  ["DELETE /repos/{owner}/{repo}/hooks/{hook_id}"]                             = "delete_repo_hook",
-  ["GET /repos/{owner}/{repo}/hooks/{hook_id}/config"]                         = "get_repo_hook_config",
-  ["PATCH /repos/{owner}/{repo}/hooks/{hook_id}/config"]                       = "patch_repo_hook_config",
-  ["POST /repos/{owner}/{repo}/hooks/{hook_id}/pings"]                         = "post_repo_hook_ping",
-  ["POST /repos/{owner}/{repo}/hooks/{hook_id}/tests"]                         = "post_repo_hook_test",
+  ["GET /repos/{owner}/{repo}/hooks"] = "get_repo_hooks",
+  ["POST /repos/{owner}/{repo}/hooks"] = "post_repo_hooks",
+  ["GET /repos/{owner}/{repo}/hooks/{hook_id}"] = "get_repo_hook",
+  ["PATCH /repos/{owner}/{repo}/hooks/{hook_id}"] = "patch_repo_hook",
+  ["DELETE /repos/{owner}/{repo}/hooks/{hook_id}"] = "delete_repo_hook",
+  ["GET /repos/{owner}/{repo}/hooks/{hook_id}/config"] = "get_repo_hook_config",
+  ["PATCH /repos/{owner}/{repo}/hooks/{hook_id}/config"] = "patch_repo_hook_config",
+  ["POST /repos/{owner}/{repo}/hooks/{hook_id}/pings"] = "post_repo_hook_ping",
+  ["POST /repos/{owner}/{repo}/hooks/{hook_id}/tests"] = "post_repo_hook_test",
 
   -- Statistics (https://docs.github.com/en/rest/metrics/statistics)
-  ["GET /repos/{owner}/{repo}/stats/code_frequency"]                           = "get_repo_stats_code_frequency",
-  ["GET /repos/{owner}/{repo}/stats/commit_activity"]                          = "get_repo_stats_commit_activity",
-  ["GET /repos/{owner}/{repo}/stats/contributors"]                             = "get_repo_stats_contributors",
-  ["GET /repos/{owner}/{repo}/stats/participation"]                            = "get_repo_stats_participation",
-  ["GET /repos/{owner}/{repo}/stats/punch_card"]                               = "get_repo_stats_punch_card",
+  ["GET /repos/{owner}/{repo}/stats/code_frequency"] = "get_repo_stats_code_frequency",
+  ["GET /repos/{owner}/{repo}/stats/commit_activity"] = "get_repo_stats_commit_activity",
+  ["GET /repos/{owner}/{repo}/stats/contributors"] = "get_repo_stats_contributors",
+  ["GET /repos/{owner}/{repo}/stats/participation"] = "get_repo_stats_participation",
+  ["GET /repos/{owner}/{repo}/stats/punch_card"] = "get_repo_stats_punch_card",
 
   -- Traffic (https://docs.github.com/en/rest/metrics/traffic)
-  ["GET /repos/{owner}/{repo}/traffic/clones"]                                 = "get_repo_traffic_clones",
-  ["GET /repos/{owner}/{repo}/traffic/popular/paths"]                          = "get_repo_traffic_paths",
-  ["GET /repos/{owner}/{repo}/traffic/popular/referrers"]                      = "get_repo_traffic_referrers",
-  ["GET /repos/{owner}/{repo}/traffic/views"]                                  = "get_repo_traffic_views",
+  ["GET /repos/{owner}/{repo}/traffic/clones"] = "get_repo_traffic_clones",
+  ["GET /repos/{owner}/{repo}/traffic/popular/paths"] = "get_repo_traffic_paths",
+  ["GET /repos/{owner}/{repo}/traffic/popular/referrers"] = "get_repo_traffic_referrers",
+  ["GET /repos/{owner}/{repo}/traffic/views"] = "get_repo_traffic_views",
 
   -- Invitations (https://docs.github.com/en/rest/collaborators/invitations)
-  ["GET /repos/{owner}/{repo}/invitations"]                                    = "get_repo_invitations",
-  ["PATCH /repos/{owner}/{repo}/invitations/{invitation_id}"]                  = "patch_repo_invitation",
-  ["DELETE /repos/{owner}/{repo}/invitations/{invitation_id}"]                 = "delete_repo_invitation",
-  ["GET /user/repository_invitations"]                                         = "get_user_repo_invitations",
-  ["PATCH /user/repository_invitations/{invitation_id}"]                       = "patch_user_repo_invitation",
-  ["DELETE /user/repository_invitations/{invitation_id}"]                      = "delete_user_repo_invitation",
+  ["GET /repos/{owner}/{repo}/invitations"] = "get_repo_invitations",
+  ["PATCH /repos/{owner}/{repo}/invitations/{invitation_id}"] = "patch_repo_invitation",
+  ["DELETE /repos/{owner}/{repo}/invitations/{invitation_id}"] = "delete_repo_invitation",
+  ["GET /user/repository_invitations"] = "get_user_repo_invitations",
+  ["PATCH /user/repository_invitations/{invitation_id}"] = "patch_user_repo_invitation",
+  ["DELETE /user/repository_invitations/{invitation_id}"] = "delete_user_repo_invitation",
 
   -- Deployments (https://docs.github.com/en/rest/deployments)
-  ["GET /repos/{owner}/{repo}/deployments"]                                    = "get_repo_deployments",
-  ["POST /repos/{owner}/{repo}/deployments"]                                   = "post_repo_deployments",
-  ["GET /repos/{owner}/{repo}/deployments/{deployment_id}"]                    = "get_repo_deployment",
-  ["DELETE /repos/{owner}/{repo}/deployments/{deployment_id}"]                 = "delete_repo_deployment",
-  ["GET /repos/{owner}/{repo}/deployments/{deployment_id}/statuses"]           = "get_repo_deployment_statuses",
-  ["POST /repos/{owner}/{repo}/deployments/{deployment_id}/statuses"]          = "post_repo_deployment_status",
+  ["GET /repos/{owner}/{repo}/deployments"] = "get_repo_deployments",
+  ["POST /repos/{owner}/{repo}/deployments"] = "post_repo_deployments",
+  ["GET /repos/{owner}/{repo}/deployments/{deployment_id}"] = "get_repo_deployment",
+  ["DELETE /repos/{owner}/{repo}/deployments/{deployment_id}"] = "delete_repo_deployment",
+  ["GET /repos/{owner}/{repo}/deployments/{deployment_id}/statuses"] = "get_repo_deployment_statuses",
+  ["POST /repos/{owner}/{repo}/deployments/{deployment_id}/statuses"] = "post_repo_deployment_status",
   ["GET /repos/{owner}/{repo}/deployments/{deployment_id}/statuses/{status_id}"] = "get_repo_deployment_status",
 
   -- Teams (https://docs.github.com/en/rest/teams)
-  ["GET /orgs/{org}/teams"]                                                       = { "get_org_teams", empty_list },
-  ["POST /orgs/{org}/teams"]                                                      = "post_org_teams",
-  ["GET /orgs/{org}/teams/{team_slug}"]                                           = "get_org_team",
-  ["PATCH /orgs/{org}/teams/{team_slug}"]                                         = "patch_org_team",
-  ["DELETE /orgs/{org}/teams/{team_slug}"]                                        = "delete_org_team",
-  ["GET /orgs/{org}/teams/{team_slug}/invitations"]                               = { "get_org_team_invitations", empty_list },
-  ["GET /orgs/{org}/teams/{team_slug}/members"]                                   = { "get_org_team_members", empty_list },
-  ["GET /orgs/{org}/teams/{team_slug}/memberships/{username}"]                    = "get_org_team_membership",
-  ["PUT /orgs/{org}/teams/{team_slug}/memberships/{username}"]                    = "put_org_team_membership",
-  ["DELETE /orgs/{org}/teams/{team_slug}/memberships/{username}"]                 = "delete_org_team_membership",
-  ["GET /orgs/{org}/teams/{team_slug}/repos"]                                     = { "get_org_team_repos", empty_list },
-  ["GET /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}"]                      = "get_org_team_repo",
-  ["PUT /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}"]                      = "put_org_team_repo",
-  ["DELETE /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}"]                   = "delete_org_team_repo",
-  ["GET /orgs/{org}/teams/{team_slug}/teams"]                                     = { "get_org_team_children", empty_list },
+  ["GET /orgs/{org}/teams"] = { "get_org_teams", empty_list },
+  ["POST /orgs/{org}/teams"] = "post_org_teams",
+  ["GET /orgs/{org}/teams/{team_slug}"] = "get_org_team",
+  ["PATCH /orgs/{org}/teams/{team_slug}"] = "patch_org_team",
+  ["DELETE /orgs/{org}/teams/{team_slug}"] = "delete_org_team",
+  ["GET /orgs/{org}/teams/{team_slug}/invitations"] = { "get_org_team_invitations", empty_list },
+  ["GET /orgs/{org}/teams/{team_slug}/members"] = { "get_org_team_members", empty_list },
+  ["GET /orgs/{org}/teams/{team_slug}/memberships/{username}"] = "get_org_team_membership",
+  ["PUT /orgs/{org}/teams/{team_slug}/memberships/{username}"] = "put_org_team_membership",
+  ["DELETE /orgs/{org}/teams/{team_slug}/memberships/{username}"] = "delete_org_team_membership",
+  ["GET /orgs/{org}/teams/{team_slug}/repos"] = { "get_org_team_repos", empty_list },
+  ["GET /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}"] = "get_org_team_repo",
+  ["PUT /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}"] = "put_org_team_repo",
+  ["DELETE /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}"] = "delete_org_team_repo",
+  ["GET /orgs/{org}/teams/{team_slug}/teams"] = { "get_org_team_children", empty_list },
 
   -- Legacy team endpoints (team_id-based) — deprecated in favour of slug-based above
-  ["GET /user/teams"]                                                              = { "get_user_teams", empty_list },
-  ["GET /teams/{team_id}"]                                                         = "get_team",
-  ["PATCH /teams/{team_id}"]                                                       = "patch_team",
-  ["DELETE /teams/{team_id}"]                                                      = "delete_team",
-  ["GET /teams/{team_id}/invitations"]                                             = { "get_team_invitations", empty_list },
-  ["GET /teams/{team_id}/members"]                                                 = { "get_team_members", empty_list },
-  ["GET /teams/{team_id}/members/{username}"]                                      = "get_team_member",
-  ["PUT /teams/{team_id}/members/{username}"]                                      = "put_team_member",
-  ["DELETE /teams/{team_id}/members/{username}"]                                   = "delete_team_member",
-  ["GET /teams/{team_id}/memberships/{username}"]                                  = "get_team_membership",
-  ["PUT /teams/{team_id}/memberships/{username}"]                                  = "put_team_membership",
-  ["DELETE /teams/{team_id}/memberships/{username}"]                               = "delete_team_membership",
-  ["GET /teams/{team_id}/repos"]                                                   = { "get_team_repos", empty_list },
-  ["GET /teams/{team_id}/repos/{owner}/{repo}"]                                    = "get_team_repo",
-  ["PUT /teams/{team_id}/repos/{owner}/{repo}"]                                    = "put_team_repo",
-  ["DELETE /teams/{team_id}/repos/{owner}/{repo}"]                                 = "delete_team_repo",
-  ["GET /teams/{team_id}/teams"]                                                   = { "get_team_children", empty_list },
+  ["GET /user/teams"] = { "get_user_teams", empty_list },
+  ["GET /teams/{team_id}"] = "get_team",
+  ["PATCH /teams/{team_id}"] = "patch_team",
+  ["DELETE /teams/{team_id}"] = "delete_team",
+  ["GET /teams/{team_id}/invitations"] = { "get_team_invitations", empty_list },
+  ["GET /teams/{team_id}/members"] = { "get_team_members", empty_list },
+  ["GET /teams/{team_id}/members/{username}"] = "get_team_member",
+  ["PUT /teams/{team_id}/members/{username}"] = "put_team_member",
+  ["DELETE /teams/{team_id}/members/{username}"] = "delete_team_member",
+  ["GET /teams/{team_id}/memberships/{username}"] = "get_team_membership",
+  ["PUT /teams/{team_id}/memberships/{username}"] = "put_team_membership",
+  ["DELETE /teams/{team_id}/memberships/{username}"] = "delete_team_membership",
+  ["GET /teams/{team_id}/repos"] = { "get_team_repos", empty_list },
+  ["GET /teams/{team_id}/repos/{owner}/{repo}"] = "get_team_repo",
+  ["PUT /teams/{team_id}/repos/{owner}/{repo}"] = "put_team_repo",
+  ["DELETE /teams/{team_id}/repos/{owner}/{repo}"] = "delete_team_repo",
+  ["GET /teams/{team_id}/teams"] = { "get_team_children", empty_list },
 
   -- Security advisories (https://docs.github.com/en/rest/security-advisories)
-  ["GET /advisories"]                                                              = { "get_global_advisories", empty_list },
-  ["GET /advisories/{ghsa_id}"]                                                   = "get_global_advisory",
-  ["GET /orgs/{org}/security-advisories"]                                          = { "get_org_security_advisories", empty_list },
-  ["GET /repos/{owner}/{repo}/security-advisories"]                                = { "get_repo_security_advisories", empty_list },
-  ["POST /repos/{owner}/{repo}/security-advisories"]                               = "post_repo_security_advisory",
-  ["POST /repos/{owner}/{repo}/security-advisories/reports"]                       = "post_repo_security_advisory_report",
-  ["GET /repos/{owner}/{repo}/security-advisories/{ghsa_id}"]                      = "get_repo_security_advisory",
-  ["PATCH /repos/{owner}/{repo}/security-advisories/{ghsa_id}"]                    = "patch_repo_security_advisory",
-  ["POST /repos/{owner}/{repo}/security-advisories/{ghsa_id}/cve"]                 = "post_repo_security_advisory_cve",
-  ["POST /repos/{owner}/{repo}/security-advisories/{ghsa_id}/forks"]               = "post_repo_security_advisory_fork",
+  ["GET /advisories"] = { "get_global_advisories", empty_list },
+  ["GET /advisories/{ghsa_id}"] = "get_global_advisory",
+  ["GET /orgs/{org}/security-advisories"] = { "get_org_security_advisories", empty_list },
+  ["GET /repos/{owner}/{repo}/security-advisories"] = { "get_repo_security_advisories", empty_list },
+  ["POST /repos/{owner}/{repo}/security-advisories"] = "post_repo_security_advisory",
+  ["POST /repos/{owner}/{repo}/security-advisories/reports"] = "post_repo_security_advisory_report",
+  ["GET /repos/{owner}/{repo}/security-advisories/{ghsa_id}"] = "get_repo_security_advisory",
+  ["PATCH /repos/{owner}/{repo}/security-advisories/{ghsa_id}"] = "patch_repo_security_advisory",
+  ["POST /repos/{owner}/{repo}/security-advisories/{ghsa_id}/cve"] = "post_repo_security_advisory_cve",
+  ["POST /repos/{owner}/{repo}/security-advisories/{ghsa_id}/forks"] = "post_repo_security_advisory_fork",
 
   -- Issues (https://docs.github.com/en/rest/issues)
-  ["GET /issues"]                                                                  = { "get_issues", empty_list },
-  ["GET /orgs/{org}/issues"]                                                       = { "get_org_issues", empty_list },
-  ["GET /user/issues"]                                                             = { "get_user_issues", empty_list },
-  ["GET /repos/{owner}/{repo}/issues"]                                             = { "get_repo_issues", empty_list },
-  ["POST /repos/{owner}/{repo}/issues"]                                            = "post_repo_issues",
-  ["GET /repos/{owner}/{repo}/issues/comments"]                                    = { "get_repo_issue_comments", empty_list },
-  ["GET /repos/{owner}/{repo}/issues/comments/{comment_id}"]                       = "get_repo_issue_comment",
-  ["PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}"]                     = "patch_repo_issue_comment",
-  ["DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}"]                    = "delete_repo_issue_comment",
-  ["PUT /repos/{owner}/{repo}/issues/comments/{comment_id}/pin"]                   = "put_repo_issue_comment_pin",
-  ["DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}/pin"]                = "delete_repo_issue_comment_pin",
-  ["GET /repos/{owner}/{repo}/issues/events"]                                      = { "get_repo_issue_events", empty_list },
-  ["GET /repos/{owner}/{repo}/issues/events/{event_id}"]                           = "get_repo_issue_event",
-  ["GET /repos/{owner}/{repo}/issues/{issue_number}"]                              = "get_repo_issue",
-  ["PATCH /repos/{owner}/{repo}/issues/{issue_number}"]                            = "patch_repo_issue",
-  ["POST /repos/{owner}/{repo}/issues/{issue_number}/assignees"]                   = "post_issue_assignees",
-  ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/assignees"]                 = "delete_issue_assignees",
-  ["GET /repos/{owner}/{repo}/issues/{issue_number}/assignees/{assignee}"]         = "get_issue_assignee",
-  ["GET /repos/{owner}/{repo}/issues/{issue_number}/comments"]                     = { "get_issue_comments", empty_list },
-  ["POST /repos/{owner}/{repo}/issues/{issue_number}/comments"]                    = "post_issue_comment",
-  ["GET /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocked_by"]      = { "get_issue_deps_blocked_by", empty_list },
-  ["POST /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocked_by"]     = "post_issue_deps_blocked_by",
+  ["GET /issues"] = { "get_issues", empty_list },
+  ["GET /orgs/{org}/issues"] = { "get_org_issues", empty_list },
+  ["GET /user/issues"] = { "get_user_issues", empty_list },
+  ["GET /repos/{owner}/{repo}/issues"] = { "get_repo_issues", empty_list },
+  ["POST /repos/{owner}/{repo}/issues"] = "post_repo_issues",
+  ["GET /repos/{owner}/{repo}/issues/comments"] = { "get_repo_issue_comments", empty_list },
+  ["GET /repos/{owner}/{repo}/issues/comments/{comment_id}"] = "get_repo_issue_comment",
+  ["PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}"] = "patch_repo_issue_comment",
+  ["DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}"] = "delete_repo_issue_comment",
+  ["PUT /repos/{owner}/{repo}/issues/comments/{comment_id}/pin"] = "put_repo_issue_comment_pin",
+  ["DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}/pin"] = "delete_repo_issue_comment_pin",
+  ["GET /repos/{owner}/{repo}/issues/events"] = { "get_repo_issue_events", empty_list },
+  ["GET /repos/{owner}/{repo}/issues/events/{event_id}"] = "get_repo_issue_event",
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}"] = "get_repo_issue",
+  ["PATCH /repos/{owner}/{repo}/issues/{issue_number}"] = "patch_repo_issue",
+  ["POST /repos/{owner}/{repo}/issues/{issue_number}/assignees"] = "post_issue_assignees",
+  ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/assignees"] = "delete_issue_assignees",
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/assignees/{assignee}"] = "get_issue_assignee",
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/comments"] = {
+    "get_issue_comments",
+    empty_list,
+  },
+  ["POST /repos/{owner}/{repo}/issues/{issue_number}/comments"] = "post_issue_comment",
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocked_by"] = {
+    "get_issue_deps_blocked_by",
+    empty_list,
+  },
+  ["POST /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocked_by"] = "post_issue_deps_blocked_by",
   ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocked_by/{issue_id}"] = "delete_issue_dep_blocked_by",
-  ["GET /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocking"]        = { "get_issue_deps_blocking", empty_list },
-  ["GET /repos/{owner}/{repo}/issues/{issue_number}/events"]                       = { "get_issue_events", empty_list },
-  ["GET /repos/{owner}/{repo}/issues/{issue_number}/issue-field-values"]           = { "get_issue_field_values", empty_list },
-  ["GET /repos/{owner}/{repo}/issues/{issue_number}/labels"]                       = { "get_issue_labels", empty_list },
-  ["POST /repos/{owner}/{repo}/issues/{issue_number}/labels"]                      = "post_issue_labels",
-  ["PUT /repos/{owner}/{repo}/issues/{issue_number}/labels"]                       = "put_issue_labels",
-  ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels"]                    = "delete_issue_labels",
-  ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}"]             = "delete_issue_label",
-  ["PUT /repos/{owner}/{repo}/issues/{issue_number}/lock"]                         = "put_issue_lock",
-  ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/lock"]                      = "delete_issue_lock",
-  ["GET /repos/{owner}/{repo}/issues/{issue_number}/parent"]                       = "get_issue_parent",
-  ["GET /repos/{owner}/{repo}/issues/{issue_number}/sub_issues"]                   = { "get_issue_sub_issues", empty_list },
-  ["POST /repos/{owner}/{repo}/issues/{issue_number}/sub_issues"]                  = "post_issue_sub_issues",
-  ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/sub_issue"]                 = "delete_issue_sub_issue",
-  ["PATCH /repos/{owner}/{repo}/issues/{issue_number}/sub_issues/priority"]        = "patch_issue_sub_issues_priority",
-  ["GET /repos/{owner}/{repo}/issues/{issue_number}/timeline"]                     = { "get_issue_timeline", empty_list },
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocking"] = {
+    "get_issue_deps_blocking",
+    empty_list,
+  },
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/events"] = { "get_issue_events", empty_list },
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/issue-field-values"] = {
+    "get_issue_field_values",
+    empty_list,
+  },
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/labels"] = { "get_issue_labels", empty_list },
+  ["POST /repos/{owner}/{repo}/issues/{issue_number}/labels"] = "post_issue_labels",
+  ["PUT /repos/{owner}/{repo}/issues/{issue_number}/labels"] = "put_issue_labels",
+  ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels"] = "delete_issue_labels",
+  ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}"] = "delete_issue_label",
+  ["PUT /repos/{owner}/{repo}/issues/{issue_number}/lock"] = "put_issue_lock",
+  ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/lock"] = "delete_issue_lock",
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/parent"] = "get_issue_parent",
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/sub_issues"] = {
+    "get_issue_sub_issues",
+    empty_list,
+  },
+  ["POST /repos/{owner}/{repo}/issues/{issue_number}/sub_issues"] = "post_issue_sub_issues",
+  ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/sub_issue"] = "delete_issue_sub_issue",
+  ["PATCH /repos/{owner}/{repo}/issues/{issue_number}/sub_issues/priority"] = "patch_issue_sub_issues_priority",
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/timeline"] = {
+    "get_issue_timeline",
+    empty_list,
+  },
 
   -- Assignees (https://docs.github.com/en/rest/issues/assignees)
-  ["GET /repos/{owner}/{repo}/assignees"]                                          = { "get_repo_assignees", empty_list },
-  ["GET /repos/{owner}/{repo}/assignees/{assignee}"]                               = "get_repo_assignee",
+  ["GET /repos/{owner}/{repo}/assignees"] = { "get_repo_assignees", empty_list },
+  ["GET /repos/{owner}/{repo}/assignees/{assignee}"] = "get_repo_assignee",
 
   -- Labels (https://docs.github.com/en/rest/issues/labels)
-  ["GET /repos/{owner}/{repo}/labels"]                                             = { "get_repo_labels", empty_list },
-  ["POST /repos/{owner}/{repo}/labels"]                                            = "post_repo_labels",
-  ["GET /repos/{owner}/{repo}/labels/{name}"]                                      = "get_repo_label",
-  ["PATCH /repos/{owner}/{repo}/labels/{name}"]                                    = "patch_repo_label",
-  ["DELETE /repos/{owner}/{repo}/labels/{name}"]                                   = "delete_repo_label",
+  ["GET /repos/{owner}/{repo}/labels"] = { "get_repo_labels", empty_list },
+  ["POST /repos/{owner}/{repo}/labels"] = "post_repo_labels",
+  ["GET /repos/{owner}/{repo}/labels/{name}"] = "get_repo_label",
+  ["PATCH /repos/{owner}/{repo}/labels/{name}"] = "patch_repo_label",
+  ["DELETE /repos/{owner}/{repo}/labels/{name}"] = "delete_repo_label",
 
   -- Milestones (https://docs.github.com/en/rest/issues/milestones)
-  ["GET /repos/{owner}/{repo}/milestones"]                                         = { "get_repo_milestones", empty_list },
-  ["POST /repos/{owner}/{repo}/milestones"]                                        = "post_repo_milestones",
-  ["GET /repos/{owner}/{repo}/milestones/{milestone_number}"]                      = "get_repo_milestone",
-  ["PATCH /repos/{owner}/{repo}/milestones/{milestone_number}"]                    = "patch_repo_milestone",
-  ["DELETE /repos/{owner}/{repo}/milestones/{milestone_number}"]                   = "delete_repo_milestone",
-  ["GET /repos/{owner}/{repo}/milestones/{milestone_number}/labels"]               = { "get_repo_milestone_labels", empty_list },
+  ["GET /repos/{owner}/{repo}/milestones"] = { "get_repo_milestones", empty_list },
+  ["POST /repos/{owner}/{repo}/milestones"] = "post_repo_milestones",
+  ["GET /repos/{owner}/{repo}/milestones/{milestone_number}"] = "get_repo_milestone",
+  ["PATCH /repos/{owner}/{repo}/milestones/{milestone_number}"] = "patch_repo_milestone",
+  ["DELETE /repos/{owner}/{repo}/milestones/{milestone_number}"] = "delete_repo_milestone",
+  ["GET /repos/{owner}/{repo}/milestones/{milestone_number}/labels"] = {
+    "get_repo_milestone_labels",
+    empty_list,
+  },
 
   -- Issue field values via repository_id (GitHub-specific)
-  ["POST /repositories/{repository_id}/issues/{issue_number}/issue-field-values"]  = "post_repository_issue_field_values",
-  ["PUT /repositories/{repository_id}/issues/{issue_number}/issue-field-values"]   = "put_repository_issue_field_values",
+  ["POST /repositories/{repository_id}/issues/{issue_number}/issue-field-values"] = "post_repository_issue_field_values",
+  ["PUT /repositories/{repository_id}/issues/{issue_number}/issue-field-values"] = "put_repository_issue_field_values",
   ["DELETE /repositories/{repository_id}/issues/{issue_number}/issue-field-values/{issue_field_id}"] = "delete_repository_issue_field_value",
 
   -- Pull Requests (https://docs.github.com/en/rest/pulls)
-  ["GET /repos/{owner}/{repo}/pulls"]                                              = { "get_repo_pulls", empty_list },
-  ["POST /repos/{owner}/{repo}/pulls"]                                             = "post_repo_pulls",
-  ["GET /repos/{owner}/{repo}/pulls/comments"]                                     = { "get_repo_pull_comments", empty_list },
-  ["GET /repos/{owner}/{repo}/pulls/comments/{comment_id}"]                        = "get_repo_pull_comment",
-  ["PATCH /repos/{owner}/{repo}/pulls/comments/{comment_id}"]                      = "patch_repo_pull_comment",
-  ["DELETE /repos/{owner}/{repo}/pulls/comments/{comment_id}"]                     = "delete_repo_pull_comment",
-  ["GET /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions"]              = { "get_repo_pull_comment_reactions", empty_list },
-  ["POST /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions"]             = "post_repo_pull_comment_reaction",
+  ["GET /repos/{owner}/{repo}/pulls"] = { "get_repo_pulls", empty_list },
+  ["POST /repos/{owner}/{repo}/pulls"] = "post_repo_pulls",
+  ["GET /repos/{owner}/{repo}/pulls/comments"] = { "get_repo_pull_comments", empty_list },
+  ["GET /repos/{owner}/{repo}/pulls/comments/{comment_id}"] = "get_repo_pull_comment",
+  ["PATCH /repos/{owner}/{repo}/pulls/comments/{comment_id}"] = "patch_repo_pull_comment",
+  ["DELETE /repos/{owner}/{repo}/pulls/comments/{comment_id}"] = "delete_repo_pull_comment",
+  ["GET /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions"] = {
+    "get_repo_pull_comment_reactions",
+    empty_list,
+  },
+  ["POST /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions"] = "post_repo_pull_comment_reaction",
   ["DELETE /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions/{reaction_id}"] = "delete_repo_pull_comment_reaction",
-  ["GET /repos/{owner}/{repo}/pulls/{pull_number}"]                                = "get_repo_pull",
-  ["PATCH /repos/{owner}/{repo}/pulls/{pull_number}"]                              = "patch_repo_pull",
-  ["GET /repos/{owner}/{repo}/pulls/{pull_number}/codespaces"]                     = { "get_pull_codespaces", empty_list },
-  ["GET /repos/{owner}/{repo}/pulls/{pull_number}/comments"]                       = { "get_pull_comments", empty_list },
-  ["POST /repos/{owner}/{repo}/pulls/{pull_number}/comments"]                      = "post_pull_comment",
+  ["GET /repos/{owner}/{repo}/pulls/{pull_number}"] = "get_repo_pull",
+  ["PATCH /repos/{owner}/{repo}/pulls/{pull_number}"] = "patch_repo_pull",
+  ["GET /repos/{owner}/{repo}/pulls/{pull_number}/codespaces"] = {
+    "get_pull_codespaces",
+    empty_list,
+  },
+  ["GET /repos/{owner}/{repo}/pulls/{pull_number}/comments"] = { "get_pull_comments", empty_list },
+  ["POST /repos/{owner}/{repo}/pulls/{pull_number}/comments"] = "post_pull_comment",
   ["POST /repos/{owner}/{repo}/pulls/{pull_number}/comments/{comment_id}/replies"] = "post_pull_comment_reply",
-  ["GET /repos/{owner}/{repo}/pulls/{pull_number}/commits"]                        = { "get_pull_commits", empty_list },
-  ["GET /repos/{owner}/{repo}/pulls/{pull_number}/files"]                          = { "get_pull_files", empty_list },
-  ["GET /repos/{owner}/{repo}/pulls/{pull_number}/merge"]                          = "get_pull_merge",
-  ["PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge"]                          = "put_pull_merge",
-  ["GET /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers"]            = { "get_pull_requested_reviewers", empty_list },
-  ["POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers"]           = "post_pull_requested_reviewers",
-  ["DELETE /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers"]         = "delete_pull_requested_reviewers",
-  ["GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews"]                        = { "get_pull_reviews", empty_list },
-  ["POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews"]                       = "post_pull_review",
-  ["GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}"]            = "get_pull_review",
-  ["PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}"]            = "put_pull_review",
-  ["DELETE /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}"]         = "delete_pull_review",
-  ["GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments"]   = { "get_pull_review_comments", empty_list },
+  ["GET /repos/{owner}/{repo}/pulls/{pull_number}/commits"] = { "get_pull_commits", empty_list },
+  ["GET /repos/{owner}/{repo}/pulls/{pull_number}/files"] = { "get_pull_files", empty_list },
+  ["GET /repos/{owner}/{repo}/pulls/{pull_number}/merge"] = "get_pull_merge",
+  ["PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge"] = "put_pull_merge",
+  ["GET /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers"] = {
+    "get_pull_requested_reviewers",
+    empty_list,
+  },
+  ["POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers"] = "post_pull_requested_reviewers",
+  ["DELETE /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers"] = "delete_pull_requested_reviewers",
+  ["GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews"] = { "get_pull_reviews", empty_list },
+  ["POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews"] = "post_pull_review",
+  ["GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}"] = "get_pull_review",
+  ["PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}"] = "put_pull_review",
+  ["DELETE /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}"] = "delete_pull_review",
+  ["GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments"] = {
+    "get_pull_review_comments",
+    empty_list,
+  },
   ["PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/dismissals"] = "put_pull_review_dismissal",
-  ["POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/events"]    = "post_pull_review_event",
-  ["POST /repos/{owner}/{repo}/pulls/{pull_number}/update-branch"]                 = "post_pull_update_branch",
-  ["GET /repos/{owner}/{repo}/commits/{commit_sha}/pulls"]                         = { "get_commit_pulls", empty_list },
+  ["POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/events"] = "post_pull_review_event",
+  ["POST /repos/{owner}/{repo}/pulls/{pull_number}/update-branch"] = "post_pull_update_branch",
+  ["GET /repos/{owner}/{repo}/commits/{commit_sha}/pulls"] = { "get_commit_pulls", empty_list },
 
   -- Users (https://docs.github.com/en/rest/users)
-  ["GET /user"]                                                                    = "get_user",
-  ["PATCH /user"]                                                                  = "patch_user",
-  ["GET /user/{account_id}"]                                                       = "get_user_by_id",
-  ["GET /users"]                                                                   = "get_users",
-  ["GET /users/{username}"]                                                        = "get_users_username",
-  ["GET /users/{username}/hovercard"]                                              = "get_users_hovercard",
+  ["GET /user"] = "get_user",
+  ["PATCH /user"] = "patch_user",
+  ["GET /user/{account_id}"] = "get_user_by_id",
+  ["GET /users"] = "get_users",
+  ["GET /users/{username}"] = "get_users_username",
+  ["GET /users/{username}/hovercard"] = "get_users_hovercard",
 
   -- Blocking
-  ["GET /user/blocks"]                                                             = "get_user_blocks",
-  ["GET /user/blocks/{username}"]                                                  = "get_user_block",
-  ["PUT /user/blocks/{username}"]                                                  = "put_user_block",
-  ["DELETE /user/blocks/{username}"]                                               = "delete_user_block",
+  ["GET /user/blocks"] = "get_user_blocks",
+  ["GET /user/blocks/{username}"] = "get_user_block",
+  ["PUT /user/blocks/{username}"] = "put_user_block",
+  ["DELETE /user/blocks/{username}"] = "delete_user_block",
 
   -- Emails
-  ["GET /user/emails"]                                                             = "get_user_emails",
-  ["POST /user/emails"]                                                            = "post_user_emails",
-  ["DELETE /user/emails"]                                                          = "delete_user_emails",
-  ["PATCH /user/email/visibility"]                                                 = "patch_user_email_visibility",
-  ["GET /user/public_emails"]                                                      = "get_user_public_emails",
+  ["GET /user/emails"] = "get_user_emails",
+  ["POST /user/emails"] = "post_user_emails",
+  ["DELETE /user/emails"] = "delete_user_emails",
+  ["PATCH /user/email/visibility"] = "patch_user_email_visibility",
+  ["GET /user/public_emails"] = "get_user_public_emails",
 
   -- Followers
-  ["GET /user/followers"]                                                          = "get_user_followers",
-  ["GET /user/following"]                                                          = "get_user_following",
-  ["GET /user/following/{username}"]                                               = "get_user_is_following",
-  ["PUT /user/following/{username}"]                                               = "put_user_following",
-  ["DELETE /user/following/{username}"]                                            = "delete_user_following",
-  ["GET /users/{username}/followers"]                                              = "get_users_followers",
-  ["GET /users/{username}/following"]                                              = "get_users_following",
-  ["GET /users/{username}/following/{target_user}"]                                = "get_users_is_following",
+  ["GET /user/followers"] = "get_user_followers",
+  ["GET /user/following"] = "get_user_following",
+  ["GET /user/following/{username}"] = "get_user_is_following",
+  ["PUT /user/following/{username}"] = "put_user_following",
+  ["DELETE /user/following/{username}"] = "delete_user_following",
+  ["GET /users/{username}/followers"] = "get_users_followers",
+  ["GET /users/{username}/following"] = "get_users_following",
+  ["GET /users/{username}/following/{target_user}"] = "get_users_is_following",
 
   -- GPG Keys
-  ["GET /user/gpg_keys"]                                                           = "get_user_gpg_keys",
-  ["POST /user/gpg_keys"]                                                          = "post_user_gpg_keys",
-  ["GET /user/gpg_keys/{gpg_key_id}"]                                              = "get_user_gpg_key",
-  ["DELETE /user/gpg_keys/{gpg_key_id}"]                                           = "delete_user_gpg_key",
-  ["GET /users/{username}/gpg_keys"]                                               = "get_users_gpg_keys",
+  ["GET /user/gpg_keys"] = "get_user_gpg_keys",
+  ["POST /user/gpg_keys"] = "post_user_gpg_keys",
+  ["GET /user/gpg_keys/{gpg_key_id}"] = "get_user_gpg_key",
+  ["DELETE /user/gpg_keys/{gpg_key_id}"] = "delete_user_gpg_key",
+  ["GET /users/{username}/gpg_keys"] = "get_users_gpg_keys",
 
   -- SSH Keys
-  ["GET /user/keys"]                                                               = "get_user_keys",
-  ["POST /user/keys"]                                                              = "post_user_keys",
-  ["GET /user/keys/{key_id}"]                                                      = "get_user_key",
-  ["DELETE /user/keys/{key_id}"]                                                   = "delete_user_key",
-  ["GET /users/{username}/keys"]                                                   = "get_users_keys",
+  ["GET /user/keys"] = "get_user_keys",
+  ["POST /user/keys"] = "post_user_keys",
+  ["GET /user/keys/{key_id}"] = "get_user_key",
+  ["DELETE /user/keys/{key_id}"] = "delete_user_key",
+  ["GET /users/{username}/keys"] = "get_users_keys",
 
   -- Social Accounts
-  ["GET /user/social_accounts"]                                                    = "get_user_social_accounts",
-  ["POST /user/social_accounts"]                                                   = "post_user_social_accounts",
-  ["DELETE /user/social_accounts"]                                                 = "delete_user_social_accounts",
-  ["GET /users/{username}/social_accounts"]                                        = "get_users_social_accounts",
+  ["GET /user/social_accounts"] = "get_user_social_accounts",
+  ["POST /user/social_accounts"] = "post_user_social_accounts",
+  ["DELETE /user/social_accounts"] = "delete_user_social_accounts",
+  ["GET /users/{username}/social_accounts"] = "get_users_social_accounts",
 
   -- SSH Signing Keys
-  ["GET /user/ssh_signing_keys"]                                                   = "get_user_ssh_signing_keys",
-  ["POST /user/ssh_signing_keys"]                                                  = "post_user_ssh_signing_keys",
-  ["GET /user/ssh_signing_keys/{ssh_signing_key_id}"]                              = "get_user_ssh_signing_key",
-  ["DELETE /user/ssh_signing_keys/{ssh_signing_key_id}"]                           = "delete_user_ssh_signing_key",
-  ["GET /users/{username}/ssh_signing_keys"]                                       = "get_users_ssh_signing_keys",
+  ["GET /user/ssh_signing_keys"] = "get_user_ssh_signing_keys",
+  ["POST /user/ssh_signing_keys"] = "post_user_ssh_signing_keys",
+  ["GET /user/ssh_signing_keys/{ssh_signing_key_id}"] = "get_user_ssh_signing_key",
+  ["DELETE /user/ssh_signing_keys/{ssh_signing_key_id}"] = "delete_user_ssh_signing_key",
+  ["GET /users/{username}/ssh_signing_keys"] = "get_users_ssh_signing_keys",
 
   -- Search (https://docs.github.com/en/rest/search)
-  ["GET /search/code"]                                                             = { "search_code",         search_empty },
-  ["GET /search/commits"]                                                          = { "search_commits",      search_empty },
-  ["GET /search/issues"]                                                          = { "search_issues",       search_empty },
-  ["GET /search/labels"]                                                           = { "search_labels",       search_empty },
-  ["GET /search/repositories"]                                                     = { "search_repositories", search_empty },
-  ["GET /search/topics"]                                                           = { "search_topics",       search_empty },
-  ["GET /search/users"]                                                            = { "search_users",        search_empty },
+  ["GET /search/code"] = { "search_code", search_empty },
+  ["GET /search/commits"] = { "search_commits", search_empty },
+  ["GET /search/issues"] = { "search_issues", search_empty },
+  ["GET /search/labels"] = { "search_labels", search_empty },
+  ["GET /search/repositories"] = { "search_repositories", search_empty },
+  ["GET /search/topics"] = { "search_topics", search_empty },
+  ["GET /search/users"] = { "search_users", search_empty },
 
   -- Apps (https://docs.github.com/en/rest/apps)
-  ["GET /app"]                                                                     = "get_app",
-  ["GET /app/hook/config"]                                                         = "get_app_hook_config",
-  ["PATCH /app/hook/config"]                                                       = "patch_app_hook_config",
-  ["GET /app/hook/deliveries"]                                                     = "get_app_hook_deliveries",
-  ["GET /app/hook/deliveries/{delivery_id}"]                                       = "get_app_hook_delivery",
-  ["POST /app/hook/deliveries/{delivery_id}/attempts"]                             = "post_app_hook_delivery_attempt",
-  ["GET /app/installation-requests"]                                               = "get_app_installation_requests",
-  ["GET /app/installations"]                                                       = "get_app_installations",
-  ["GET /app/installations/{installation_id}"]                                     = "get_app_installation",
-  ["DELETE /app/installations/{installation_id}"]                                  = "delete_app_installation",
-  ["POST /app/installations/{installation_id}/access_tokens"]                      = "post_app_installation_access_tokens",
-  ["PUT /app/installations/{installation_id}/suspended"]                           = "put_app_installation_suspended",
-  ["DELETE /app/installations/{installation_id}/suspended"]                        = "delete_app_installation_suspended",
-  ["GET /apps/{app_slug}"]                                                         = "get_apps_app_slug",
-  ["POST /app-manifests/{code}/conversions"]                                       = "post_app_manifest_conversions",
-  ["GET /installation/repositories"]                                               = "get_installation_repositories",
-  ["DELETE /installation/token"]                                                   = "delete_installation_token",
-  ["POST /applications/{client_id}/token"]                                         = "post_applications_token",
-  ["PATCH /applications/{client_id}/token"]                                        = "patch_applications_token",
-  ["DELETE /applications/{client_id}/token"]                                       = "delete_applications_token",
-  ["POST /applications/{client_id}/token/scoped"]                                  = "post_applications_token_scoped",
-  ["DELETE /applications/{client_id}/grant"]                                       = "delete_applications_grant",
-  ["GET /orgs/{org}/installation"]                                                 = "get_org_installation",
-  ["GET /orgs/{org}/installations"]                                                = "get_org_installations",
-  ["GET /repos/{owner}/{repo}/installation"]                                       = "get_repo_installation",
-  ["GET /user/installations"]                                                      = "get_user_installations",
-  ["GET /user/installations/{installation_id}/repositories"]                       = "get_user_installation_repositories",
-  ["PUT /user/installations/{installation_id}/repositories/{repository_id}"]       = "put_user_installation_repository",
-  ["DELETE /user/installations/{installation_id}/repositories/{repository_id}"]    = "delete_user_installation_repository",
-  ["GET /users/{username}/installation"]                                           = "get_users_installation",
+  ["GET /app"] = "get_app",
+  ["GET /app/hook/config"] = "get_app_hook_config",
+  ["PATCH /app/hook/config"] = "patch_app_hook_config",
+  ["GET /app/hook/deliveries"] = "get_app_hook_deliveries",
+  ["GET /app/hook/deliveries/{delivery_id}"] = "get_app_hook_delivery",
+  ["POST /app/hook/deliveries/{delivery_id}/attempts"] = "post_app_hook_delivery_attempt",
+  ["GET /app/installation-requests"] = "get_app_installation_requests",
+  ["GET /app/installations"] = "get_app_installations",
+  ["GET /app/installations/{installation_id}"] = "get_app_installation",
+  ["DELETE /app/installations/{installation_id}"] = "delete_app_installation",
+  ["POST /app/installations/{installation_id}/access_tokens"] = "post_app_installation_access_tokens",
+  ["PUT /app/installations/{installation_id}/suspended"] = "put_app_installation_suspended",
+  ["DELETE /app/installations/{installation_id}/suspended"] = "delete_app_installation_suspended",
+  ["GET /apps/{app_slug}"] = "get_apps_app_slug",
+  ["POST /app-manifests/{code}/conversions"] = "post_app_manifest_conversions",
+  ["GET /installation/repositories"] = "get_installation_repositories",
+  ["DELETE /installation/token"] = "delete_installation_token",
+  ["POST /applications/{client_id}/token"] = "post_applications_token",
+  ["PATCH /applications/{client_id}/token"] = "patch_applications_token",
+  ["DELETE /applications/{client_id}/token"] = "delete_applications_token",
+  ["POST /applications/{client_id}/token/scoped"] = "post_applications_token_scoped",
+  ["DELETE /applications/{client_id}/grant"] = "delete_applications_grant",
+  ["GET /orgs/{org}/installation"] = "get_org_installation",
+  ["GET /orgs/{org}/installations"] = "get_org_installations",
+  ["GET /repos/{owner}/{repo}/installation"] = "get_repo_installation",
+  ["GET /user/installations"] = "get_user_installations",
+  ["GET /user/installations/{installation_id}/repositories"] = "get_user_installation_repositories",
+  ["PUT /user/installations/{installation_id}/repositories/{repository_id}"] = "put_user_installation_repository",
+  ["DELETE /user/installations/{installation_id}/repositories/{repository_id}"] = "delete_user_installation_repository",
+  ["GET /users/{username}/installation"] = "get_users_installation",
 
   -- Checks (https://docs.github.com/en/rest/checks)
-  ["POST /repos/{owner}/{repo}/check-runs"]                                          = "post_check_runs",
-  ["GET /repos/{owner}/{repo}/check-runs/{check_run_id}"]                            = "get_check_run",
-  ["PATCH /repos/{owner}/{repo}/check-runs/{check_run_id}"]                          = "patch_check_run",
-  ["GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations"]                = "get_check_run_annotations",
-  ["POST /repos/{owner}/{repo}/check-runs/{check_run_id}/rerequest"]                 = "post_check_run_rerequest",
-  ["POST /repos/{owner}/{repo}/check-suites"]                                        = "post_check_suites",
-  ["PATCH /repos/{owner}/{repo}/check-suites/preferences"]                           = "patch_check_suites_preferences",
-  ["GET /repos/{owner}/{repo}/check-suites/{check_suite_id}"]                        = "get_check_suite",
-  ["GET /repos/{owner}/{repo}/check-suites/{check_suite_id}/check-runs"]             = "get_check_suite_check_runs",
-  ["POST /repos/{owner}/{repo}/check-suites/{check_suite_id}/rerequest"]             = "post_check_suite_rerequest",
-  ["GET /repos/{owner}/{repo}/commits/{ref}/check-runs"]                             = "get_commit_check_runs",
-  ["GET /repos/{owner}/{repo}/commits/{ref}/check-suites"]                           = "get_commit_check_suites",
+  ["POST /repos/{owner}/{repo}/check-runs"] = "post_check_runs",
+  ["GET /repos/{owner}/{repo}/check-runs/{check_run_id}"] = "get_check_run",
+  ["PATCH /repos/{owner}/{repo}/check-runs/{check_run_id}"] = "patch_check_run",
+  ["GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations"] = "get_check_run_annotations",
+  ["POST /repos/{owner}/{repo}/check-runs/{check_run_id}/rerequest"] = "post_check_run_rerequest",
+  ["POST /repos/{owner}/{repo}/check-suites"] = "post_check_suites",
+  ["PATCH /repos/{owner}/{repo}/check-suites/preferences"] = "patch_check_suites_preferences",
+  ["GET /repos/{owner}/{repo}/check-suites/{check_suite_id}"] = "get_check_suite",
+  ["GET /repos/{owner}/{repo}/check-suites/{check_suite_id}/check-runs"] = "get_check_suite_check_runs",
+  ["POST /repos/{owner}/{repo}/check-suites/{check_suite_id}/rerequest"] = "post_check_suite_rerequest",
+  ["GET /repos/{owner}/{repo}/commits/{ref}/check-runs"] = "get_commit_check_runs",
+  ["GET /repos/{owner}/{repo}/commits/{ref}/check-suites"] = "get_commit_check_suites",
+
+  -- Code Scanning (https://docs.github.com/en/rest/code-scanning)
+  ["GET /orgs/{org}/code-scanning/alerts"] = {
+    "list_org_code_scanning_alerts",
+    code_scanning_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/code-scanning/alerts"] = {
+    "list_repo_code_scanning_alerts",
+    code_scanning_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}"] = {
+    "get_code_scanning_alert",
+    code_scanning_not_implemented,
+  },
+  ["PATCH /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}"] = {
+    "update_code_scanning_alert",
+    code_scanning_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/autofix"] = {
+    "get_code_scanning_autofix",
+    code_scanning_not_implemented,
+  },
+  ["POST /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/autofix"] = {
+    "create_code_scanning_autofix",
+    code_scanning_not_implemented,
+  },
+  ["POST /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/autofix/commits"] = {
+    "commit_code_scanning_autofix",
+    code_scanning_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/instances"] = {
+    "list_code_scanning_alert_instances",
+    code_scanning_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/code-scanning/analyses"] = {
+    "list_code_scanning_analyses",
+    code_scanning_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/code-scanning/analyses/{analysis_id}"] = {
+    "get_code_scanning_analysis",
+    code_scanning_not_implemented,
+  },
+  ["DELETE /repos/{owner}/{repo}/code-scanning/analyses/{analysis_id}"] = {
+    "delete_code_scanning_analysis",
+    code_scanning_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/code-scanning/codeql/databases"] = {
+    "list_codeql_databases",
+    code_scanning_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/code-scanning/codeql/databases/{language}"] = {
+    "get_codeql_database",
+    code_scanning_not_implemented,
+  },
+  ["DELETE /repos/{owner}/{repo}/code-scanning/codeql/databases/{language}"] = {
+    "delete_codeql_database",
+    code_scanning_not_implemented,
+  },
+  ["POST /repos/{owner}/{repo}/code-scanning/codeql/variant-analyses"] = {
+    "create_codeql_variant_analysis",
+    code_scanning_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/code-scanning/codeql/variant-analyses/{codeql_variant_analysis_id}"] = {
+    "get_codeql_variant_analysis",
+    code_scanning_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/code-scanning/codeql/variant-analyses/{codeql_variant_analysis_id}/repos/{repo_owner}/{repo_name}"] = {
+    "get_codeql_variant_analysis_repo_task",
+    code_scanning_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/code-scanning/default-setup"] = {
+    "get_code_scanning_default_setup",
+    code_scanning_not_implemented,
+  },
+  ["PATCH /repos/{owner}/{repo}/code-scanning/default-setup"] = {
+    "update_code_scanning_default_setup",
+    code_scanning_not_implemented,
+  },
+  ["POST /repos/{owner}/{repo}/code-scanning/sarifs"] = {
+    "upload_code_scanning_sarif",
+    code_scanning_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/code-scanning/sarifs/{sarif_id}"] = {
+    "get_code_scanning_sarif",
+    code_scanning_not_implemented,
+  },
 
   -- Interactions (https://docs.github.com/en/rest/interactions)
-  ["GET /orgs/{org}/interaction-limits"]                                            = { "get_org_interaction_limits",    interaction_limits_empty },
-  ["PUT /orgs/{org}/interaction-limits"]                                            = { "put_org_interaction_limits",    interaction_limits_put },
-  ["DELETE /orgs/{org}/interaction-limits"]                                         = { "delete_org_interaction_limits", interaction_limits_delete },
-  ["GET /repos/{owner}/{repo}/interaction-limits"]                                  = { "get_repo_interaction_limits",   interaction_limits_empty },
-  ["PUT /repos/{owner}/{repo}/interaction-limits"]                                  = { "put_repo_interaction_limits",   interaction_limits_put },
-  ["DELETE /repos/{owner}/{repo}/interaction-limits"]                               = { "delete_repo_interaction_limits", interaction_limits_delete },
-  ["GET /user/interaction-limits"]                                                  = { "get_user_interaction_limits",   interaction_limits_empty },
-  ["PUT /user/interaction-limits"]                                                  = { "put_user_interaction_limits",   interaction_limits_put },
-  ["DELETE /user/interaction-limits"]                                               = { "delete_user_interaction_limits", interaction_limits_delete },
+  ["GET /orgs/{org}/interaction-limits"] = {
+    "get_org_interaction_limits",
+    interaction_limits_empty,
+  },
+  ["PUT /orgs/{org}/interaction-limits"] = {
+    "put_org_interaction_limits",
+    interaction_limits_put,
+  },
+  ["DELETE /orgs/{org}/interaction-limits"] = {
+    "delete_org_interaction_limits",
+    interaction_limits_delete,
+  },
+  ["GET /repos/{owner}/{repo}/interaction-limits"] = {
+    "get_repo_interaction_limits",
+    interaction_limits_empty,
+  },
+  ["PUT /repos/{owner}/{repo}/interaction-limits"] = {
+    "put_repo_interaction_limits",
+    interaction_limits_put,
+  },
+  ["DELETE /repos/{owner}/{repo}/interaction-limits"] = {
+    "delete_repo_interaction_limits",
+    interaction_limits_delete,
+  },
+  ["GET /user/interaction-limits"] = { "get_user_interaction_limits", interaction_limits_empty },
+  ["PUT /user/interaction-limits"] = { "put_user_interaction_limits", interaction_limits_put },
+  ["DELETE /user/interaction-limits"] = {
+    "delete_user_interaction_limits",
+    interaction_limits_delete,
+  },
 }
 for spec, v in pairs(routes) do
-  if type(v) == "string" then route_add(spec, v)
-  else route_add(spec, v[1], v[2]) end
+  if type(v) == "string" then
+    route_add(spec, v)
+  else
+    route_add(spec, v[1], v[2])
+  end
 end
 
 function OnHttpRequest()
@@ -906,8 +1092,11 @@ function OnHttpRequest()
   local ep, caps, default_fn = route_match(GetMethod(), GetPath())
   if ep then
     local fn = handle[ep] or default_fn
-    if fn then fn(table.unpack(caps))
-    else respond_json(404, { message = "Not Found" }) end
+    if fn then
+      fn(table.unpack(caps))
+    else
+      respond_json(404, { message = "Not Found" })
+    end
   elseif path_known(GetPath()) then
     respond_json(405, { message = "Method Not Allowed" })
   else
