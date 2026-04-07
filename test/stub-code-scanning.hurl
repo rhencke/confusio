@@ -1,23 +1,21 @@
-# Code Scanning API — 501 Not Implemented for all backends.
-# No backend has a native code scanning API equivalent.
+# Code Scanning API — minimal stubs for backends without native code scanning.
+# List endpoints return empty collections (200); per-resource endpoints return 501.
 
 # GET /orgs/{org}/code-scanning/alerts
 GET http://{{host}}/orgs/testorg/code-scanning/alerts
 Authorization: token testtoken
 
-HTTP 501
+HTTP 200
 [Asserts]
 header "Content-Type" == "application/json; charset=utf-8"
-jsonpath "$.message" isString
 
 # GET /repos/{owner}/{repo}/code-scanning/alerts
 GET http://{{host}}/repos/octocat/hello-world/code-scanning/alerts
 Authorization: token testtoken
 
-HTTP 501
+HTTP 200
 [Asserts]
 header "Content-Type" == "application/json; charset=utf-8"
-jsonpath "$.message" isString
 
 # GET /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}
 GET http://{{host}}/repos/octocat/hello-world/code-scanning/alerts/1
@@ -74,19 +72,17 @@ jsonpath "$.message" isString
 GET http://{{host}}/repos/octocat/hello-world/code-scanning/alerts/1/instances
 Authorization: token testtoken
 
-HTTP 501
+HTTP 200
 [Asserts]
 header "Content-Type" == "application/json; charset=utf-8"
-jsonpath "$.message" isString
 
 # GET /repos/{owner}/{repo}/code-scanning/analyses
 GET http://{{host}}/repos/octocat/hello-world/code-scanning/analyses
 Authorization: token testtoken
 
-HTTP 501
+HTTP 200
 [Asserts]
 header "Content-Type" == "application/json; charset=utf-8"
-jsonpath "$.message" isString
 
 # GET /repos/{owner}/{repo}/code-scanning/analyses/{analysis_id}
 GET http://{{host}}/repos/octocat/hello-world/code-scanning/analyses/1

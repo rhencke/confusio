@@ -1588,11 +1588,6 @@ end
 -- check-suite section self-contained and avoid one giant table.)
 local _b = backend_impl
 
-_b.list_org_code_scanning_alerts = function(_org)
-  -- ADO has no org-level code scanning list endpoint; return empty.
-  respond_json(200, {})
-end
-
 _b.list_repo_code_scanning_alerts = function(owner, repo_name)
   local alert_type = GetParam("tool_name") or "code"
   local url =
@@ -1649,11 +1644,6 @@ _b.update_code_scanning_alert = function(owner, repo_name, alert_number)
     return
   end
   respond_json(200, translate_ado_alert(DecodeJson(body) or {}))
-end
-
-_b.list_code_scanning_alert_instances = function(_owner, _repo_name, _alert_number)
-  -- ADO alerts don't expose per-instance breakdowns; return empty list.
-  respond_json(200, {})
 end
 
 _b.list_code_scanning_analyses = function(owner, repo_name)

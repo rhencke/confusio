@@ -1354,11 +1354,6 @@ end
 
 local _b = backend_impl
 
-_b.list_org_code_scanning_alerts = function(_org)
-  -- BBS has no org-level code insights view; return empty list.
-  respond_json(200, {})
-end
-
 _b.list_repo_code_scanning_alerts = function(owner, repo_name)
   local sha = resolve_ref_sha(owner, repo_name)
   if not sha then
@@ -1381,11 +1376,6 @@ _b.list_repo_code_scanning_alerts = function(owner, repo_name)
     result[i] = translate_bbs_annotation(ann, i)
   end
   respond_json(200, result)
-end
-
-_b.list_code_scanning_alert_instances = function(_owner, _repo_name, _alert_number)
-  -- BBS annotations have no per-instance breakdown; return empty list.
-  respond_json(200, {})
 end
 
 _b.list_code_scanning_analyses = function(owner, repo_name)

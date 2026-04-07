@@ -764,4 +764,5 @@ backend_impl = {
 }
 
 -- Code scanning: Sourcehut has no native code scanning API.
--- All code scanning endpoints fall back to the default 501 handlers in .init.lua.
+-- All code scanning endpoints fall back to the default handlers in .init.lua:
+-- list endpoints return 200 empty, per-resource endpoints return 501.

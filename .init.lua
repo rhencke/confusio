@@ -367,6 +367,12 @@ local function code_scanning_not_implemented()
   respond_json(501, { message = "Code scanning is not supported by this backend." })
 end
 
+-- Default handler for code-scanning list endpoints: returns an empty collection (200).
+-- Per-resource endpoints use code_scanning_not_implemented (501) as their default.
+local function code_scanning_list_empty()
+  respond_json(200, {})
+end
+
 -- Default handlers for GET /zen, GET /octocat, GET /versions, GET /meta.
 -- These endpoints are fully self-contained and do not call any backend.
 local ZEN_QUOTES = {
@@ -961,11 +967,11 @@ local routes = {
   -- Code Scanning (https://docs.github.com/en/rest/code-scanning)
   ["GET /orgs/{org}/code-scanning/alerts"] = {
     "list_org_code_scanning_alerts",
-    code_scanning_not_implemented,
+    code_scanning_list_empty,
   },
   ["GET /repos/{owner}/{repo}/code-scanning/alerts"] = {
     "list_repo_code_scanning_alerts",
-    code_scanning_not_implemented,
+    code_scanning_list_empty,
   },
   ["GET /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}"] = {
     "get_code_scanning_alert",
@@ -989,11 +995,11 @@ local routes = {
   },
   ["GET /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/instances"] = {
     "list_code_scanning_alert_instances",
-    code_scanning_not_implemented,
+    code_scanning_list_empty,
   },
   ["GET /repos/{owner}/{repo}/code-scanning/analyses"] = {
     "list_code_scanning_analyses",
-    code_scanning_not_implemented,
+    code_scanning_list_empty,
   },
   ["GET /repos/{owner}/{repo}/code-scanning/analyses/{analysis_id}"] = {
     "get_code_scanning_analysis",
