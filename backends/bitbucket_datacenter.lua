@@ -1219,3 +1219,195 @@ backend_impl = {
     respond_json(200, { total_count = 0, check_suites = {} })
   end,
 }
+
+-- Code Scanning via Bitbucket DC Code Insights API.
+-- BBS Code Insights (/rest/insights/1.0) stores per-commit analysis reports
+-- and annotations. Alerts map to annotations on the HEAD commit; analyses map
+-- to Insights reports.
+--
+-- Endpoint            BBS equivalent
+-- ──────────────────────────────────────────────────────────────────────────
+-- list alerts         GET /rest/insights/1.0/{proj}/{repo}/commits/{sha}/annotations
+-- list analyses       GET /rest/insights/1.0/{proj}/{repo}/commits/{sha}/reports
+-- everything else     501 (no native equivalent)
+--
+-- The SARIF upload endpoint is not implemented: GitHub's SARIF format is
+-- gzip+base64 encoded and BBS Insights has no SARIF import endpoint — the
+-- translation would require decompression and parsing that is not feasible
+-- inside Redbean's Lua environment.
+
+local function insights_base(owner, repo_name)
+  return config.base_url .. "/rest/insights/1.0/projects/" .. owner .. "/repos/" .. repo_name
+end
+
+-- Resolve the HEAD SHA for the ref in the request (defaults to default branch).
+-- Returns the SHA string, or nil on failure.
+local function resolve_ref_sha(owner, repo_name)
+  local ref = GetParam("ref") or ""
+  if ref ~= "" then
+    -- Strip refs/heads/ prefix if present
+    local branch = ref:match("^refs/heads/(.+)$") or ref
+    local url = repo_path(owner, repo_name) .. "/branches?filterText=" .. branch .. "&limit=1"
+    local ok, status, _, body = fetch_json(url)
+    if ok and status == 200 then
+      local data = DecodeJson(body) or {}
+      local first = (data.values or {})[1]
+      if first then
+        return first.latestCommit or first.latestChangeset
+      end
+    end
+    return nil
+  end
+  -- No ref specified: use the default branch.
+  local url = repo_path(owner, repo_name) .. "/branches?limit=25"
+  local ok, status, _, body = fetch_json(url)
+  if not ok or status ~= 200 then
+    return nil
+  end
+  local data = DecodeJson(body) or {}
+  for _, b in ipairs(data.values or {}) do
+    if b.isDefault then
+      return b.latestCommit or b.latestChangeset
+    end
+  end
+  -- Fall back to first branch if no default found.
+  local first = (data.values or {})[1]
+  return first and (first.latestCommit or first.latestChangeset)
+end
+
+-- Translate a BBS Code Insights annotation to a GitHub code-scanning alert.
+-- BBS annotation: { reportKey, externalId, message, path, line, severity, type, link }
+local function translate_bbs_annotation(ann, idx)
+  local severity = ann.severity or "MEDIUM"
+  local gh_severity = severity == "CRITICAL" and "critical"
+    or severity == "HIGH" and "high"
+    or severity == "MEDIUM" and "medium"
+    or "low"
+  return {
+    number = idx,
+    state = "open",
+    dismissed_by = nil,
+    dismissed_at = nil,
+    dismissed_reason = nil,
+    dismissed_comment = nil,
+    fixed_at = nil,
+    rule = {
+      id = ann.reportKey or "",
+      name = ann.reportKey or "",
+      description = ann.message or "",
+      severity = gh_severity,
+    },
+    tool = {
+      name = ann.reportKey or "",
+      guid = nil,
+      version = nil,
+    },
+    most_recent_instance = {
+      ref = "",
+      analysis_key = ann.reportKey or "",
+      state = "open",
+      commit_sha = "",
+      location = {
+        path = ann.path or "",
+        start_line = ann.line or 1,
+        end_line = ann.line or 1,
+        start_column = nil,
+        end_column = nil,
+      },
+      message = { text = ann.message or "" },
+    },
+    instances_url = "",
+    html_url = "",
+    url = "",
+    created_at = "",
+    updated_at = "",
+  }
+end
+
+-- Translate a BBS Code Insights report to a GitHub code-scanning analysis.
+-- BBS report: { key, title, reporter, result, createdDate, updatedDate }
+local function translate_bbs_report(rpt, idx, sha)
+  local ts = rpt.createdDate
+  local created = ts and os.date("!%Y-%m-%dT%H:%M:%SZ", math.floor(ts / 1000)) or ""
+  return {
+    ref = "",
+    commit_sha = sha or "",
+    analysis_key = rpt.key or "",
+    environment = "{}",
+    category = rpt.key or "",
+    error = "",
+    created_at = created,
+    results_count = 0,
+    rules_count = 0,
+    id = idx,
+    url = "",
+    sarif_id = "",
+    tool = {
+      name = rpt.reporter or rpt.title or rpt.key or "",
+      guid = nil,
+      version = nil,
+    },
+    deletable = false,
+    warning = "",
+  }
+end
+
+local _b = backend_impl
+
+_b.list_org_code_scanning_alerts = function(_org)
+  -- BBS has no org-level code insights view; return empty list.
+  respond_json(200, {})
+end
+
+_b.list_repo_code_scanning_alerts = function(owner, repo_name)
+  local sha = resolve_ref_sha(owner, repo_name)
+  if not sha then
+    respond_json(200, {})
+    return
+  end
+  local url = insights_base(owner, repo_name) .. "/commits/" .. sha .. "/annotations"
+  local ok, status, _, body = fetch_json(url)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(200, {})
+    return
+  end
+  local data = DecodeJson(body) or {}
+  local result = {}
+  for i, ann in ipairs(data.annotations or data.values or {}) do
+    result[i] = translate_bbs_annotation(ann, i)
+  end
+  respond_json(200, result)
+end
+
+_b.list_code_scanning_alert_instances = function(_owner, _repo_name, _alert_number)
+  -- BBS annotations have no per-instance breakdown; return empty list.
+  respond_json(200, {})
+end
+
+_b.list_code_scanning_analyses = function(owner, repo_name)
+  local sha = resolve_ref_sha(owner, repo_name)
+  if not sha then
+    respond_json(200, {})
+    return
+  end
+  local url = insights_base(owner, repo_name) .. "/commits/" .. sha .. "/reports"
+  local ok, status, _, body = fetch_json(url)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(200, {})
+    return
+  end
+  local data = DecodeJson(body) or {}
+  local result = {}
+  for i, rpt in ipairs(data.reports or data.values or {}) do
+    result[i] = translate_bbs_report(rpt, i, sha)
+  end
+  respond_json(200, result)
+end

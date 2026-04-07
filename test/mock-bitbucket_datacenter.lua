@@ -204,6 +204,34 @@ function OnHttpRequest()
         .. '"url":"https://ci.example.com/build/1"}],"isLastPage":true,"start":0,"limit":25}'
     )
 
+  -- Code Insights — annotations list (list_repo_code_scanning_alerts) -----------
+  elseif
+    path
+      == "/rest/insights/1.0/projects/octocat/repos/hello-world/commits/abc123def456/annotations"
+    and GetMethod() == "GET"
+  then
+    SetStatus(200, "OK")
+    json(
+      '{"annotations":[{"reportKey":"my-scanner","externalId":"CS001",'
+        .. '"message":"SQL Injection detected","path":"src/app.js","line":42,'
+        .. '"severity":"HIGH","type":"VULNERABILITY",'
+        .. '"link":"https://scanner.example.com/rules/CS001"}],'
+        .. '"pagelen":25,"page":1,"size":1}'
+    )
+
+  -- Code Insights — reports list (list_code_scanning_analyses) ------------------
+  elseif
+    path == "/rest/insights/1.0/projects/octocat/repos/hello-world/commits/abc123def456/reports"
+    and GetMethod() == "GET"
+  then
+    SetStatus(200, "OK")
+    json(
+      '{"values":[{"key":"my-scanner","title":"My Scanner Report",'
+        .. '"reporter":"My Scanner v1.0","result":"FAIL",'
+        .. '"createdDate":1704067200000,"updatedDate":1704067200000}],'
+        .. '"isLastPage":true}'
+    )
+
   -- Interactions --------------------------------------------------------------
   -- Bitbucket Datacenter has no native GitHub Interactions API; confusio returns stubs directly.
   -- These routes document what the backend would return if ever proxied.
