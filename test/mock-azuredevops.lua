@@ -220,6 +220,18 @@ function OnHttpRequest()
         .. '"revisedBy":{"displayName":"The Octocat","uniqueName":"octocat"}}'
     )
 
+  -- Interactions --------------------------------------------------------------
+  -- Azure DevOps has no native GitHub Interactions API; confusio returns stubs directly.
+  -- These routes document what the backend would return if ever proxied.
+  elseif
+    (
+      path == "/orgs/testorg/interaction-limits"
+      or path == "/repos/octocat/hello-world/interaction-limits"
+      or path == "/user/interaction-limits"
+    ) and (method == "GET" or method == "PUT" or method == "DELETE")
+  then
+    SetStatus(404, "Not Found")
+
   -- Webhooks subscriptions (get_repo_hooks second step) --------------------
   elseif path == "/_apis/hooks/subscriptions" then
     SetStatus(200, "OK")
