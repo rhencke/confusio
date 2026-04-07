@@ -315,6 +315,24 @@ local function rate_limit_response()
   })
 end
 
+-- Default handlers for interaction-limits: no backend has a native interactions API.
+-- GET returns {} (no restrictions in effect).
+-- PUT echoes the provided limit back (acknowledged but not enforced).
+-- DELETE returns 204 (no restrictions to remove).
+local function interaction_limits_empty()
+  set_preamble()
+  Write("{}")
+end
+
+local function interaction_limits_put()
+  local body = DecodeJson(GetBody() or "{}") or {}
+  respond_json(200, body)
+end
+
+local function interaction_limits_delete()
+  set_preamble(204)
+end
+
 -- Default handlers for GET /zen, GET /octocat, GET /versions, GET /meta.
 -- These endpoints are fully self-contained and do not call any backend.
 local ZEN_QUOTES = {
@@ -849,6 +867,17 @@ local routes = {
   ["PUT /user/installations/{installation_id}/repositories/{repository_id}"]       = "put_user_installation_repository",
   ["DELETE /user/installations/{installation_id}/repositories/{repository_id}"]    = "delete_user_installation_repository",
   ["GET /users/{username}/installation"]                                           = "get_users_installation",
+
+  -- Interactions (https://docs.github.com/en/rest/interactions)
+  ["GET /orgs/{org}/interaction-limits"]                                            = { "get_org_interaction_limits",    interaction_limits_empty },
+  ["PUT /orgs/{org}/interaction-limits"]                                            = { "put_org_interaction_limits",    interaction_limits_put },
+  ["DELETE /orgs/{org}/interaction-limits"]                                         = { "delete_org_interaction_limits", interaction_limits_delete },
+  ["GET /repos/{owner}/{repo}/interaction-limits"]                                  = { "get_repo_interaction_limits",   interaction_limits_empty },
+  ["PUT /repos/{owner}/{repo}/interaction-limits"]                                  = { "put_repo_interaction_limits",   interaction_limits_put },
+  ["DELETE /repos/{owner}/{repo}/interaction-limits"]                               = { "delete_repo_interaction_limits", interaction_limits_delete },
+  ["GET /user/interaction-limits"]                                                  = { "get_user_interaction_limits",   interaction_limits_empty },
+  ["PUT /user/interaction-limits"]                                                  = { "put_user_interaction_limits",   interaction_limits_put },
+  ["DELETE /user/interaction-limits"]                                               = { "delete_user_interaction_limits", interaction_limits_delete },
 }
 for spec, v in pairs(routes) do
   if type(v) == "string" then route_add(spec, v)
