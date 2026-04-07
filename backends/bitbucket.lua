@@ -1339,4 +1339,247 @@ backend_impl = {
       append_page_params(base() .. '/workspaces?q=slug~"' .. q .. '"', PAGES)
     )
   end,
+
+  -- Checks (via Bitbucket commit statuses) ----------------------------------------
+  --
+  -- GitHub Check Runs map onto Bitbucket commit build statuses.  Bitbucket has
+  -- no concept of a check run independent of a commit SHA, so:
+  --   • POST check-runs → POST /repositories/{w}/{r}/commit/{sha}/statuses/build
+  --   • GET check-runs/{id} → minimal stub (no reverse lookup by ID)
+  --   • PATCH check-runs/{id} → minimal stub
+  --   • GET commits/{ref}/check-runs → commit statuses list
+  --   • Check Suites have no Bitbucket equivalent; all suite endpoints are stubs.
+  --   • Annotations are always empty.
+  --
+  -- Status mapping (GitHub → Bitbucket):
+  --   queued/in_progress     → INPROGRESS
+  --   completed/success      → SUCCESSFUL
+  --   completed/failure      → FAILED
+  --   completed/neutral      → SUCCESSFUL
+  --   completed/skipped      → SUCCESSFUL
+  --   completed/(other)      → FAILED
+  --
+  -- Status mapping (Bitbucket → GitHub):
+  --   INPROGRESS  → status=in_progress, conclusion=null
+  --   SUCCESSFUL  → status=completed,   conclusion=success
+  --   FAILED      → status=completed,   conclusion=failure
+  --   STOPPED     → status=completed,   conclusion=cancelled
+  --   other       → status=completed,   conclusion=failure
+
+  post_check_runs = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    local sha = req.head_sha or ""
+    local status = req.status or "queued"
+    local conclusion = req.conclusion
+    local bb_state
+    if status == "completed" then
+      if conclusion == "success" or conclusion == "neutral" or conclusion == "skipped" then
+        bb_state = "SUCCESSFUL"
+      elseif conclusion == "cancelled" then
+        bb_state = "STOPPED"
+      else
+        bb_state = "FAILED"
+      end
+    else
+      -- queued or in_progress
+      bb_state = "INPROGRESS"
+    end
+    local bb_to_gh = {
+      INPROGRESS = { status = "in_progress", conclusion = nil },
+      SUCCESSFUL = { status = "completed", conclusion = "success" },
+      FAILED = { status = "completed", conclusion = "failure" },
+      STOPPED = { status = "completed", conclusion = "cancelled" },
+    }
+    local bb_body = EncodeJson({
+      state = bb_state,
+      key = req.name or "",
+      url = req.details_url or "",
+      name = req.name or "",
+      description = (req.output and req.output.summary) or req.name or "",
+    })
+    local function translate(s)
+      if not s then
+        return {}
+      end
+      local mapped = bb_to_gh[s.state] or { status = "completed", conclusion = "failure" }
+      return {
+        id = 0,
+        node_id = "",
+        head_sha = sha,
+        name = s.key or s.name or "",
+        status = mapped.status,
+        conclusion = mapped.conclusion,
+        started_at = s.created_on,
+        completed_at = mapped.status == "completed" and s.updated_on or nil,
+        output = {
+          title = s.description or "",
+          summary = s.description or "",
+          text = "",
+          annotations_count = 0,
+          annotations_url = "",
+        },
+        url = "",
+        html_url = s.url or "",
+        details_url = s.url or "",
+      }
+    end
+    proxy_json_created(
+      translate,
+      fetch_json(
+        base()
+          .. "/repositories/"
+          .. owner
+          .. "/"
+          .. repo_name
+          .. "/commit/"
+          .. sha
+          .. "/statuses/build",
+        "POST",
+        bb_body
+      )
+    )
+  end,
+
+  get_check_run = function(_owner, _repo_name, check_run_id)
+    respond_json(200, {
+      id = tonumber(check_run_id) or 0,
+      node_id = "",
+      head_sha = "",
+      name = "",
+      status = "completed",
+      conclusion = "success",
+      started_at = nil,
+      completed_at = nil,
+      output = { title = "", summary = "", text = "", annotations_count = 0, annotations_url = "" },
+      url = "",
+      html_url = "",
+      details_url = "",
+    })
+  end,
+
+  patch_check_run = function(_owner, _repo_name, check_run_id)
+    respond_json(200, {
+      id = tonumber(check_run_id) or 0,
+      node_id = "",
+      head_sha = "",
+      name = "",
+      status = "completed",
+      conclusion = "success",
+      started_at = nil,
+      completed_at = nil,
+      output = { title = "", summary = "", text = "", annotations_count = 0, annotations_url = "" },
+      url = "",
+      html_url = "",
+      details_url = "",
+    })
+  end,
+
+  get_check_run_annotations = function(_owner, _repo_name, _check_run_id)
+    set_preamble()
+    Write("[]")
+  end,
+
+  post_check_run_rerequest = function(_owner, _repo_name, _check_run_id)
+    SetStatus(201, "Created")
+    Write("")
+  end,
+
+  -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
+  -- Uses Bitbucket commit statuses.
+  get_commit_check_runs = function(owner, repo_name, ref)
+    local ok, status, _, body = fetch_json(
+      base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/commit/" .. ref .. "/statuses"
+    )
+    if not ok then
+      respond_json(503, {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, {})
+      return
+    end
+    local data = DecodeJson(body) or {}
+    local bb_to_gh = {
+      INPROGRESS = { status = "in_progress", conclusion = nil },
+      SUCCESSFUL = { status = "completed", conclusion = "success" },
+      FAILED = { status = "completed", conclusion = "failure" },
+      STOPPED = { status = "completed", conclusion = "cancelled" },
+    }
+    local runs = {}
+    for i, s in ipairs(data.values or {}) do
+      local mapped = bb_to_gh[s.state] or { status = "completed", conclusion = "failure" }
+      runs[i] = {
+        id = i,
+        node_id = "",
+        head_sha = ref,
+        name = s.key or s.name or "",
+        status = mapped.status,
+        conclusion = mapped.conclusion,
+        started_at = s.created_on,
+        completed_at = mapped.status == "completed" and s.updated_on or nil,
+        output = {
+          title = s.description or "",
+          summary = s.description or "",
+          text = "",
+          annotations_count = 0,
+          annotations_url = "",
+        },
+        url = "",
+        html_url = s.url or "",
+        details_url = s.url or "",
+      }
+    end
+    respond_json(200, { total_count = #runs, check_runs = runs })
+  end,
+
+  -- Check suites have no Bitbucket equivalent; all suite endpoints are stubs.
+
+  post_check_suites = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    respond_json(201, {
+      id = 1,
+      node_id = "",
+      head_sha = req.head_sha or "",
+      status = "completed",
+      conclusion = "success",
+      url = "",
+      before = nil,
+      after = nil,
+      app = {},
+      repository = { full_name = owner .. "/" .. repo_name },
+    })
+  end,
+
+  patch_check_suites_preferences = function(_owner, _repo_name) -- luacheck: ignore 212
+    local req = DecodeJson(GetBody() or "{}")
+    respond_json(200, {
+      preferences = req.auto_trigger_checks or {},
+    })
+  end,
+
+  get_check_suite = function(owner, repo_name, check_suite_id)
+    respond_json(200, {
+      id = tonumber(check_suite_id) or 0,
+      node_id = "",
+      head_sha = "",
+      status = "completed",
+      conclusion = "success",
+      url = "",
+      app = {},
+      repository = { full_name = owner .. "/" .. repo_name },
+    })
+  end,
+
+  get_check_suite_check_runs = function(_owner, _repo_name, _check_suite_id)
+    respond_json(200, { total_count = 0, check_runs = {} })
+  end,
+
+  post_check_suite_rerequest = function(_owner, _repo_name, _check_suite_id)
+    SetStatus(201, "Created")
+    Write("")
+  end,
+
+  get_commit_check_suites = function(_owner, _repo_name, _ref)
+    respond_json(200, { total_count = 0, check_suites = {} })
+  end,
 }

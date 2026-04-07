@@ -84,6 +84,13 @@ function OnHttpRequest()
     )
 
   -- Commit statuses --------------------------------------------------------
+  elseif path == rb .. "/commit/abc123/statuses/build" and GetMethod() == "POST" then
+    SetStatus(200, "OK")
+    json(
+      '{"state":"INPROGRESS","key":"ci/test","description":"Build started",'
+        .. '"url":"https://ci.example.com/build/1",'
+        .. '"created_on":"2020-01-01T00:00:00Z","updated_on":"2020-01-01T00:00:00Z"}'
+    )
   elseif path == rb .. "/commit/abc123/statuses" then
     SetStatus(200, "OK")
     json(
