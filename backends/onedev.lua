@@ -680,4 +680,225 @@ backend_impl = {
       fetch_json(base() .. "/issue-comments", "POST", EncodeJson(od))
     )
   end,
+
+  -- Checks (via OneDev CI builds) -----------------------------------------------
+  --
+  -- OneDev CI builds are the natural mapping for GitHub Check Runs.
+  --   • GET commits/{ref}/check-runs → query /~api/builds by project + commit hash.
+  --   • POST check-runs              → stub (no API to push an external check status).
+  --   • GET/PATCH by check_run_id   → minimal stub (would need a reverse-lookup).
+  --   • Check Suites have no OneDev equivalent; all suite endpoints are stubs.
+  --   • Annotations are always empty.
+  --
+  -- OneDev build status → GitHub status/conclusion mapping:
+  --   WAITING    → status=queued,      conclusion=null
+  --   RUNNING    → status=in_progress, conclusion=null
+  --   SUCCESSFUL → status=completed,   conclusion=success
+  --   FAILED     → status=completed,   conclusion=failure
+  --   CANCELLED  → status=completed,   conclusion=cancelled
+  --   TIMED_OUT  → status=completed,   conclusion=timed_out
+
+  -- POST /repos/{owner}/{repo}/check-runs
+  -- OneDev has no external check-status push API; return a minimal stub.
+  post_check_runs = function(_owner, _repo_name)
+    local req = DecodeJson(GetBody() or "{}") or {}
+    respond_json(201, {
+      id = 0,
+      node_id = "",
+      head_sha = req.head_sha or "",
+      name = req.name or "",
+      status = req.status or "queued",
+      conclusion = req.conclusion,
+      started_at = nil,
+      completed_at = nil,
+      output = {
+        title = "",
+        summary = "",
+        text = "",
+        annotations_count = 0,
+        annotations_url = "",
+      },
+      url = "",
+      html_url = "",
+      details_url = req.details_url or "",
+    })
+  end,
+
+  -- GET /repos/{owner}/{repo}/check-runs/{check_run_id}
+  -- No reverse-lookup by ID without the commit SHA; return a minimal stub.
+  get_check_run = function(_owner, _repo_name, check_run_id)
+    respond_json(200, {
+      id = tonumber(check_run_id) or 0,
+      node_id = "",
+      head_sha = "",
+      name = "",
+      status = "completed",
+      conclusion = "success",
+      started_at = nil,
+      completed_at = nil,
+      output = { title = "", summary = "", text = "", annotations_count = 0, annotations_url = "" },
+      url = "",
+      html_url = "",
+      details_url = "",
+    })
+  end,
+
+  -- PATCH /repos/{owner}/{repo}/check-runs/{check_run_id}
+  -- Cannot update by ID alone; return a stub.
+  patch_check_run = function(_owner, _repo_name, check_run_id)
+    respond_json(200, {
+      id = tonumber(check_run_id) or 0,
+      node_id = "",
+      head_sha = "",
+      name = "",
+      status = "completed",
+      conclusion = "success",
+      started_at = nil,
+      completed_at = nil,
+      output = { title = "", summary = "", text = "", annotations_count = 0, annotations_url = "" },
+      url = "",
+      html_url = "",
+      details_url = "",
+    })
+  end,
+
+  -- GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations
+  -- OneDev has no annotations concept; always return [].
+  get_check_run_annotations = function(_owner, _repo_name, _check_run_id)
+    set_preamble()
+    Write("[]")
+  end,
+
+  -- POST /repos/{owner}/{repo}/check-runs/{check_run_id}/rerequest
+  -- No OneDev equivalent; return 201 stub.
+  post_check_run_rerequest = function(_owner, _repo_name, _check_run_id)
+    respond_json(201, {})
+  end,
+
+  -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
+  -- Maps to OneDev GET /~api/builds?query="Project" is "owner/repo" "Commit" is "{ref}".
+  -- OneDev build objects: { id, number, jobName, status, commitHash, refName, project }
+  get_commit_check_runs = function(owner, repo_name, ref)
+    local path = owner ~= "" and (owner .. "/" .. repo_name) or repo_name
+    local query = "%22Project%22+is+%22" .. path .. "%22+%22Commit%22+is+%22" .. ref .. "%22"
+    local count = tonumber(GetParam("per_page")) or 30
+    local page = tonumber(GetParam("page")) or 1
+    local ok, status, _, body = fetch_json(
+      base()
+        .. "/builds?query="
+        .. query
+        .. "&count="
+        .. count
+        .. "&offset="
+        .. ((page - 1) * count)
+    )
+    if not ok then
+      respond_json(503, {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, {})
+      return
+    end
+    local builds = DecodeJson(body) or {}
+    local runs = {}
+    for _, b in ipairs(builds) do
+      local od_status = b.status or "WAITING"
+      local gh_status, gh_conclusion
+      if od_status == "WAITING" then
+        gh_status = "queued"
+        gh_conclusion = nil
+      elseif od_status == "RUNNING" then
+        gh_status = "in_progress"
+        gh_conclusion = nil
+      elseif od_status == "SUCCESSFUL" then
+        gh_status = "completed"
+        gh_conclusion = "success"
+      elseif od_status == "CANCELLED" then
+        gh_status = "completed"
+        gh_conclusion = "cancelled"
+      elseif od_status == "TIMED_OUT" then
+        gh_status = "completed"
+        gh_conclusion = "timed_out"
+      else
+        -- FAILED or unknown
+        gh_status = "completed"
+        gh_conclusion = "failure"
+      end
+      runs[#runs + 1] = {
+        id = b.id or 0,
+        node_id = "",
+        head_sha = b.commitHash or ref,
+        name = b.jobName or tostring(b.number or b.id or 0),
+        status = gh_status,
+        conclusion = gh_conclusion,
+        started_at = nil,
+        completed_at = gh_status == "completed" and "" or nil,
+        output = {
+          title = b.jobName or "",
+          summary = b.jobName or "",
+          text = "",
+          annotations_count = 0,
+          annotations_url = "",
+        },
+        url = "",
+        html_url = b.id and (config.base_url .. "/" .. path .. "/~builds/" .. (b.number or b.id))
+          or "",
+        details_url = "",
+      }
+    end
+    respond_json(200, { total_count = #runs, check_runs = runs })
+  end,
+
+  -- Check Suites — no OneDev equivalent; all are stubs --------------------------
+
+  -- POST /repos/{owner}/{repo}/check-suites
+  post_check_suites = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}") or {}
+    respond_json(201, {
+      id = 0,
+      node_id = "",
+      head_sha = req.head_sha or "",
+      status = "completed",
+      conclusion = "success",
+      app = { id = 0, slug = "", name = "" },
+      repository = { full_name = owner .. "/" .. repo_name },
+    })
+  end,
+
+  -- PATCH /repos/{owner}/{repo}/check-suites/preferences
+  patch_check_suites_preferences = function(_owner, _repo_name) -- luacheck: ignore 212
+    local req = DecodeJson(GetBody() or "{}") or {}
+    respond_json(200, {
+      preferences = req.auto_trigger_checks or {},
+    })
+  end,
+
+  -- GET /repos/{owner}/{repo}/check-suites/{check_suite_id}
+  get_check_suite = function(owner, repo_name, check_suite_id)
+    respond_json(200, {
+      id = tonumber(check_suite_id) or 0,
+      node_id = "",
+      head_sha = "",
+      status = "completed",
+      conclusion = "success",
+      app = { id = 0, slug = "", name = "" },
+      repository = { full_name = owner .. "/" .. repo_name },
+    })
+  end,
+
+  -- GET /repos/{owner}/{repo}/check-suites/{check_suite_id}/check-runs
+  get_check_suite_check_runs = function(_owner, _repo_name, _check_suite_id)
+    respond_json(200, { total_count = 0, check_runs = {} })
+  end,
+
+  -- POST /repos/{owner}/{repo}/check-suites/{check_suite_id}/rerequest
+  post_check_suite_rerequest = function(_owner, _repo_name, _check_suite_id)
+    respond_json(201, {})
+  end,
+
+  -- GET /repos/{owner}/{repo}/commits/{ref}/check-suites
+  get_commit_check_suites = function(_owner, _repo_name, _ref)
+    respond_json(200, { total_count = 0, check_suites = {} })
+  end,
 }
