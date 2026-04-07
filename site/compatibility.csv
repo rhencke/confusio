@@ -98,6 +98,16 @@ GET /teapot,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y
 GET /zen,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y
 Rate Limits,,,,,,,,,,,,,,,,,,,,,,,,
 GET /rate_limit,~unlimited stub,~unlimited stub,~unlimited stub,y,~unlimited stub,y,~unlimited stub,~unlimited stub,y,y,~unlimited stub,y,~unlimited stub,~unlimited stub,~unlimited stub,y,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub,~unlimited stub
+Interaction Limits,,,,,,,,,,,,,,,,,,,,,,,,
+GET /orgs/{org}/interaction-limits,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~
+PUT /orgs/{org}/interaction-limits,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~
+DELETE /orgs/{org}/interaction-limits,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~
+GET /repos/{owner}/{repo}/interaction-limits,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~
+PUT /repos/{owner}/{repo}/interaction-limits,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~
+DELETE /repos/{owner}/{repo}/interaction-limits,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~
+GET /user/interaction-limits,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~
+PUT /user/interaction-limits,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~
+DELETE /user/interaction-limits,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~
 GitHub Apps,,,,,,,,,,,,,,,,,,,,,,,,
 GET /app,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /app/hook/config,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
