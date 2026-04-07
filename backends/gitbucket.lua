@@ -186,37 +186,26 @@ backend_impl = {
     local sha = req.head_sha or ""
     local status = req.status or "queued"
     local conclusion = req.conclusion
-    local gb_state
-    if status == "completed" then
-      if conclusion == "success" or conclusion == "neutral" or conclusion == "skipped" then
-        gb_state = "success"
-      elseif conclusion == "failure" then
-        gb_state = "failure"
-      else
-        gb_state = "error"
-      end
-    else
-      gb_state = "pending"
-    end
+    local gh_conclusion_to_gb = {
+      success = "success",
+      neutral = "success",
+      skipped = "success",
+      failure = "failure",
+    }
+    local gb_state = status == "completed" and (gh_conclusion_to_gb[conclusion] or "error")
+      or "pending"
     local function translate(s)
       if not s then
         return {}
       end
       local state = s.state or "pending"
-      local gh_status, gh_conclusion
-      if state == "pending" then
-        gh_status = "in_progress"
-        gh_conclusion = nil
-      elseif state == "success" then
-        gh_status = "completed"
-        gh_conclusion = "success"
-      elseif state == "warning" then
-        gh_status = "completed"
-        gh_conclusion = "neutral"
-      else
-        gh_status = "completed"
-        gh_conclusion = "failure"
-      end
+      local gb_to_gh = {
+        pending = { status = "in_progress", conclusion = nil },
+        success = { status = "completed", conclusion = "success" },
+        warning = { status = "completed", conclusion = "neutral" },
+      }
+      local mapped = gb_to_gh[state] or { status = "completed", conclusion = "failure" }
+      local gh_status, gh_conclusion = mapped.status, mapped.conclusion
       return {
         id = s.id or 0,
         node_id = "",
@@ -316,20 +305,13 @@ backend_impl = {
     local runs = {}
     for i, s in ipairs(statuses) do
       local state = s.state or "pending"
-      local gh_status, gh_conclusion
-      if state == "pending" then
-        gh_status = "in_progress"
-        gh_conclusion = nil
-      elseif state == "success" then
-        gh_status = "completed"
-        gh_conclusion = "success"
-      elseif state == "warning" then
-        gh_status = "completed"
-        gh_conclusion = "neutral"
-      else
-        gh_status = "completed"
-        gh_conclusion = "failure"
-      end
+      local gb_to_gh = {
+        pending = { status = "in_progress", conclusion = nil },
+        success = { status = "completed", conclusion = "success" },
+        warning = { status = "completed", conclusion = "neutral" },
+      }
+      local mapped = gb_to_gh[state] or { status = "completed", conclusion = "failure" }
+      local gh_status, gh_conclusion = mapped.status, mapped.conclusion
       runs[i] = {
         id = s.id or i,
         node_id = "",

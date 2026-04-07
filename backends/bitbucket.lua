@@ -194,28 +194,14 @@ local function translate_bb_commit(c)
   }
 end
 
+local BB_TO_GITHUB_STATE = { SUCCESSFUL = "success", FAILED = "failure", INPROGRESS = "pending" }
 local function bb_state_to_github(state)
-  if state == "SUCCESSFUL" then
-    return "success"
-  elseif state == "FAILED" then
-    return "failure"
-  elseif state == "INPROGRESS" then
-    return "pending"
-  else
-    return "error"
-  end
+  return BB_TO_GITHUB_STATE[state] or "error"
 end
 
+local GITHUB_TO_BB_STATE = { success = "SUCCESSFUL", failure = "FAILED", pending = "INPROGRESS" }
 local function github_state_to_bb(state)
-  if state == "success" then
-    return "SUCCESSFUL"
-  elseif state == "failure" then
-    return "FAILED"
-  elseif state == "pending" then
-    return "INPROGRESS"
-  else
-    return "FAILED"
-  end
+  return GITHUB_TO_BB_STATE[state] or "FAILED"
 end
 
 local function translate_bb_status(s)
@@ -1371,19 +1357,14 @@ backend_impl = {
     local sha = req.head_sha or ""
     local status = req.status or "queued"
     local conclusion = req.conclusion
-    local bb_state
-    if status == "completed" then
-      if conclusion == "success" or conclusion == "neutral" or conclusion == "skipped" then
-        bb_state = "SUCCESSFUL"
-      elseif conclusion == "cancelled" then
-        bb_state = "STOPPED"
-      else
-        bb_state = "FAILED"
-      end
-    else
-      -- queued or in_progress
-      bb_state = "INPROGRESS"
-    end
+    local gh_conclusion_to_bb = {
+      success = "SUCCESSFUL",
+      neutral = "SUCCESSFUL",
+      skipped = "SUCCESSFUL",
+      cancelled = "STOPPED",
+    }
+    local bb_state = status == "completed" and (gh_conclusion_to_bb[conclusion] or "FAILED")
+      or "INPROGRESS"
     local bb_to_gh = {
       INPROGRESS = { status = "in_progress", conclusion = nil },
       SUCCESSFUL = { status = "completed", conclusion = "success" },

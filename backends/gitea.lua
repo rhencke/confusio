@@ -445,24 +445,14 @@ local function translate_gitea_status_to_check_run(s)
     return {}
   end
   local gitea_state = s.state or "pending"
-  local gh_status, gh_conclusion
-  if gitea_state == "pending" then
-    gh_status = "in_progress"
-    gh_conclusion = nil
-  elseif gitea_state == "success" then
-    gh_status = "completed"
-    gh_conclusion = "success"
-  elseif gitea_state == "failure" then
-    gh_status = "completed"
-    gh_conclusion = "failure"
-  elseif gitea_state == "warning" then
-    gh_status = "completed"
-    gh_conclusion = "neutral"
-  else
-    -- error or unknown
-    gh_status = "completed"
-    gh_conclusion = "failure"
-  end
+  local gitea_to_gh = {
+    pending = { status = "in_progress", conclusion = nil },
+    success = { status = "completed", conclusion = "success" },
+    failure = { status = "completed", conclusion = "failure" },
+    warning = { status = "completed", conclusion = "neutral" },
+  }
+  local mapped = gitea_to_gh[gitea_state] or { status = "completed", conclusion = "failure" }
+  local gh_status, gh_conclusion = mapped.status, mapped.conclusion
   return {
     id = s.id,
     node_id = "",
@@ -498,20 +488,14 @@ end
 local function gh_check_run_to_gitea_status(req)
   local status = req.status or "queued"
   local conclusion = req.conclusion
-  local gitea_state
-  if status == "completed" then
-    if conclusion == "success" or conclusion == "neutral" or conclusion == "skipped" then
-      gitea_state = "success"
-    elseif conclusion == "failure" then
-      gitea_state = "failure"
-    else
-      -- cancelled, timed_out, action_required, stale, etc.
-      gitea_state = "error"
-    end
-  else
-    -- queued or in_progress
-    gitea_state = "pending"
-  end
+  local gh_conclusion_to_gitea = {
+    success = "success",
+    neutral = "success",
+    skipped = "success",
+    failure = "failure",
+  }
+  local gitea_state = status == "completed" and (gh_conclusion_to_gitea[conclusion] or "error")
+    or "pending"
   return EncodeJson({
     state = gitea_state,
     target_url = req.details_url or "",

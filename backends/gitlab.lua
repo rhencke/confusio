@@ -3035,19 +3035,13 @@ backend_impl = {
     local sha = req.head_sha or ""
     local status = req.status or "queued"
     local conclusion = req.conclusion
-    local gl_state
-    if status == "completed" then
-      if conclusion == "success" or conclusion == "neutral" or conclusion == "skipped" then
-        gl_state = "success"
-      elseif conclusion == "failure" then
-        gl_state = "failed"
-      else
-        gl_state = "failed"
-      end
-    else
-      -- queued or in_progress
-      gl_state = "running"
-    end
+    local gh_conclusion_to_gl = {
+      success = "success",
+      neutral = "success",
+      skipped = "success",
+    }
+    local gl_state = status == "completed" and (gh_conclusion_to_gl[conclusion] or "failed")
+      or "running"
     local gl_body = EncodeJson({
       state = gl_state,
       target_url = req.details_url or "",

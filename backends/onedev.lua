@@ -804,27 +804,15 @@ backend_impl = {
     local runs = {}
     for _, b in ipairs(builds) do
       local od_status = b.status or "WAITING"
-      local gh_status, gh_conclusion
-      if od_status == "WAITING" then
-        gh_status = "queued"
-        gh_conclusion = nil
-      elseif od_status == "RUNNING" then
-        gh_status = "in_progress"
-        gh_conclusion = nil
-      elseif od_status == "SUCCESSFUL" then
-        gh_status = "completed"
-        gh_conclusion = "success"
-      elseif od_status == "CANCELLED" then
-        gh_status = "completed"
-        gh_conclusion = "cancelled"
-      elseif od_status == "TIMED_OUT" then
-        gh_status = "completed"
-        gh_conclusion = "timed_out"
-      else
-        -- FAILED or unknown
-        gh_status = "completed"
-        gh_conclusion = "failure"
-      end
+      local od_to_gh = {
+        WAITING = { status = "queued", conclusion = nil },
+        RUNNING = { status = "in_progress", conclusion = nil },
+        SUCCESSFUL = { status = "completed", conclusion = "success" },
+        CANCELLED = { status = "completed", conclusion = "cancelled" },
+        TIMED_OUT = { status = "completed", conclusion = "timed_out" },
+      }
+      local mapped = od_to_gh[od_status] or { status = "completed", conclusion = "failure" }
+      local gh_status, gh_conclusion = mapped.status, mapped.conclusion
       runs[#runs + 1] = {
         id = b.id or 0,
         node_id = "",

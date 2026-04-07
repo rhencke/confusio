@@ -1022,18 +1022,14 @@ backend_impl = {
     local sha = req.head_sha or ""
     local gh_status = req.status or "queued"
     local conclusion = req.conclusion
-    local dc_state
-    if gh_status == "completed" then
-      if conclusion == "success" or conclusion == "neutral" or conclusion == "skipped" then
-        dc_state = "SUCCESSFUL"
-      elseif conclusion == "cancelled" then
-        dc_state = "STOPPED"
-      else
-        dc_state = "FAILED"
-      end
-    else
-      dc_state = "INPROGRESS"
-    end
+    local gh_conclusion_to_dc = {
+      success = "SUCCESSFUL",
+      neutral = "SUCCESSFUL",
+      skipped = "SUCCESSFUL",
+      cancelled = "STOPPED",
+    }
+    local dc_state = gh_status == "completed" and (gh_conclusion_to_dc[conclusion] or "FAILED")
+      or "INPROGRESS"
     local dc_to_gh = {
       INPROGRESS = { status = "in_progress", conclusion = nil },
       SUCCESSFUL = { status = "completed", conclusion = "success" },

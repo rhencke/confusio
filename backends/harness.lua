@@ -718,21 +718,14 @@ backend_impl = {
     local runs = {}
     for _, c in ipairs(list) do
       local s = c.status or "pending"
-      local gh_status, gh_conclusion
-      if s == "success" then
-        gh_status = "completed"
-        gh_conclusion = "success"
-      elseif s == "failure" or s == "error" then
-        gh_status = "completed"
-        gh_conclusion = "failure"
-      elseif s == "cancelled" then
-        gh_status = "completed"
-        gh_conclusion = "cancelled"
-      else
-        -- running, pending, or unknown
-        gh_status = "in_progress"
-        gh_conclusion = nil
-      end
+      local harness_to_gh = {
+        success = { status = "completed", conclusion = "success" },
+        failure = { status = "completed", conclusion = "failure" },
+        error = { status = "completed", conclusion = "failure" },
+        cancelled = { status = "completed", conclusion = "cancelled" },
+      }
+      local mapped = harness_to_gh[s] or { status = "in_progress", conclusion = nil }
+      local gh_status, gh_conclusion = mapped.status, mapped.conclusion
       runs[#runs + 1] = {
         id = c.id or 0,
         node_id = "",

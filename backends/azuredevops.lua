@@ -222,24 +222,14 @@ local function translate_ado_status_to_check_run(s)
     return {}
   end
   local state = s.state or "pending"
-  local gh_status, gh_conclusion
-  if state == "pending" then
-    gh_status = "in_progress"
-    gh_conclusion = nil
-  elseif state == "succeeded" then
-    gh_status = "completed"
-    gh_conclusion = "success"
-  elseif state == "failed" then
-    gh_status = "completed"
-    gh_conclusion = "failure"
-  elseif state == "notApplicable" then
-    gh_status = "completed"
-    gh_conclusion = "neutral"
-  else
-    -- error or unknown
-    gh_status = "completed"
-    gh_conclusion = "failure"
-  end
+  local ado_to_gh = {
+    pending = { status = "in_progress", conclusion = nil },
+    succeeded = { status = "completed", conclusion = "success" },
+    failed = { status = "completed", conclusion = "failure" },
+    notApplicable = { status = "completed", conclusion = "neutral" },
+  }
+  local mapped = ado_to_gh[state] or { status = "completed", conclusion = "failure" }
+  local gh_status, gh_conclusion = mapped.status, mapped.conclusion
   local ctx = s.context or {}
   return {
     id = s.id or 0,
@@ -266,18 +256,14 @@ end
 local function gh_check_run_to_ado_status(req)
   local status = req.status or "queued"
   local conclusion = req.conclusion
-  local ado_state
-  if status == "completed" then
-    if conclusion == "success" or conclusion == "neutral" or conclusion == "skipped" then
-      ado_state = "succeeded"
-    elseif conclusion == "failure" then
-      ado_state = "failed"
-    else
-      ado_state = "error"
-    end
-  else
-    ado_state = "pending"
-  end
+  local gh_conclusion_to_ado = {
+    success = "succeeded",
+    neutral = "succeeded",
+    skipped = "succeeded",
+    failure = "failed",
+  }
+  local ado_state = status == "completed" and (gh_conclusion_to_ado[conclusion] or "error")
+    or "pending"
   return EncodeJson({
     state = ado_state,
     description = (req.output and req.output.summary) or req.name or "",

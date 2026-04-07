@@ -609,20 +609,15 @@ backend_impl = {
     local sha = req.head_sha or ""
     local status = req.status or "queued"
     local conclusion = req.conclusion
-    local pg_status
-    if status == "completed" then
-      if conclusion == "success" or conclusion == "neutral" or conclusion == "skipped" then
-        pg_status = "success"
-      elseif conclusion == "cancelled" then
-        pg_status = "canceled"
-      elseif conclusion == "failure" then
-        pg_status = "failure"
-      else
-        pg_status = "error"
-      end
-    else
-      pg_status = "pending"
-    end
+    local gh_conclusion_to_pagure = {
+      success = "success",
+      neutral = "success",
+      skipped = "success",
+      cancelled = "canceled",
+      failure = "failure",
+    }
+    local pg_status = status == "completed" and (gh_conclusion_to_pagure[conclusion] or "error")
+      or "pending"
     local url = base() .. "/" .. owner .. "/" .. repo_name .. "/c/" .. sha .. "/flag"
     local flag = {
       username = req.name or "",
@@ -637,20 +632,13 @@ backend_impl = {
         return {}
       end
       local s = f.status or "pending"
-      local gh_status, gh_conclusion
-      if s == "pending" then
-        gh_status = "in_progress"
-        gh_conclusion = nil
-      elseif s == "success" then
-        gh_status = "completed"
-        gh_conclusion = "success"
-      elseif s == "canceled" then
-        gh_status = "completed"
-        gh_conclusion = "cancelled"
-      else
-        gh_status = "completed"
-        gh_conclusion = "failure"
-      end
+      local pagure_to_gh = {
+        pending = { status = "in_progress", conclusion = nil },
+        success = { status = "completed", conclusion = "success" },
+        canceled = { status = "completed", conclusion = "cancelled" },
+      }
+      local mapped = pagure_to_gh[s] or { status = "completed", conclusion = "failure" }
+      local gh_status, gh_conclusion = mapped.status, mapped.conclusion
       return {
         id = 1,
         node_id = "",
@@ -747,20 +735,13 @@ backend_impl = {
     local runs = {}
     for i, f in ipairs(flags) do
       local s = f.status or "pending"
-      local gh_status, gh_conclusion
-      if s == "pending" then
-        gh_status = "in_progress"
-        gh_conclusion = nil
-      elseif s == "success" then
-        gh_status = "completed"
-        gh_conclusion = "success"
-      elseif s == "canceled" then
-        gh_status = "completed"
-        gh_conclusion = "cancelled"
-      else
-        gh_status = "completed"
-        gh_conclusion = "failure"
-      end
+      local pagure_to_gh = {
+        pending = { status = "in_progress", conclusion = nil },
+        success = { status = "completed", conclusion = "success" },
+        canceled = { status = "completed", conclusion = "cancelled" },
+      }
+      local mapped = pagure_to_gh[s] or { status = "completed", conclusion = "failure" }
+      local gh_status, gh_conclusion = mapped.status, mapped.conclusion
       runs[i] = {
         id = i,
         node_id = "",

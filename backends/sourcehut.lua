@@ -201,21 +201,14 @@ local function translate_srht_job_to_check_run(j)
     return {}
   end
   local srht_status = j.status or "pending"
-  local gh_status, gh_conclusion
-  if srht_status == "success" then
-    gh_status = "completed"
-    gh_conclusion = "success"
-  elseif srht_status == "failed" or srht_status == "timeout" then
-    gh_status = "completed"
-    gh_conclusion = "failure"
-  elseif srht_status == "cancelled" then
-    gh_status = "completed"
-    gh_conclusion = "cancelled"
-  else
-    -- pending, queued, running
-    gh_status = "in_progress"
-    gh_conclusion = nil
-  end
+  local srht_to_gh = {
+    success = { status = "completed", conclusion = "success" },
+    failed = { status = "completed", conclusion = "failure" },
+    timeout = { status = "completed", conclusion = "failure" },
+    cancelled = { status = "completed", conclusion = "cancelled" },
+  }
+  local mapped = srht_to_gh[srht_status] or { status = "in_progress", conclusion = nil }
+  local gh_status, gh_conclusion = mapped.status, mapped.conclusion
   -- Job name: use note field or fall back to id
   local name = j.note or (tostring(j.id or 0))
   return {
