@@ -74,6 +74,14 @@ function OnHttpRequest()
         .. '"target_url":"http://ci.example.com","created_at":"2020-01-01T00:00:00Z",'
         .. '"updated_at":"2020-01-01T00:00:00Z"}]'
     )
+  elseif path == "/api/v4/projects/octocat/hello-world/statuses/abc123" then
+    -- POST /projects/{id}/statuses/{sha} — used by post_check_runs
+    SetStatus(201, "Created")
+    json(
+      '{"id":2,"status":"running","description":"Build started","name":"ci/test",'
+        .. '"target_url":"https://ci.example.com/build/1","created_at":"2020-01-01T00:00:00Z",'
+        .. '"updated_at":"2020-01-01T00:00:00Z"}'
+    )
   elseif path == pb .. "/repository/commits/abc123" then
     SetStatus(200, "OK")
     json(
