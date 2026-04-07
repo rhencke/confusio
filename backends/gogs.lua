@@ -3,3 +3,11 @@ if config.base_url == "" then
   config.base_url = "https://try.gogs.io"
 end
 dofile("/zip/backends/gitea.lua")
+
+-- Gogs does not have a packages API; clear inherited Gitea handlers so the
+-- routes fall back to their .init.lua defaults (empty list or 404).
+for k in pairs(backend_impl) do
+  if k:find("_package") then
+    backend_impl[k] = nil
+  end
+end
