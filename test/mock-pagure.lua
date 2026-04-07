@@ -125,6 +125,26 @@ function OnHttpRequest()
   elseif path == "/api/0/repos" then
     SetStatus(200, "OK")
     json('{"projects":[' .. REPO .. '],"total_projects":1}')
+
+  -- Commit flags (Checks API) ----------------------------------------------
+  elseif path:find("^" .. rp:gsub("%-", "%%-") .. "/c/[^/]+/flag$") then
+    local method = GetMethod()
+    if method == "POST" then
+      SetStatus(201, "Created")
+      json(
+        '{"flag":{"uid":"ci/test","username":"ci/test","percent":0,'
+          .. '"comment":"Build started","url":"https://ci.example.com/build/1",'
+          .. '"status":"pending","date_created":"1577836800","date_updated":"1577836800"},'
+          .. '"message":"Flag added"}'
+      )
+    else
+      SetStatus(200, "OK")
+      json(
+        '{"flags":[{"uid":"ci/test","username":"ci/test","percent":100,'
+          .. '"comment":"Build passed","url":"https://ci.example.com/build/1",'
+          .. '"status":"success","date_created":"1577836800","date_updated":"1577923200"}]}'
+      )
+    end
   else
     SetStatus(404, "Not Found")
   end

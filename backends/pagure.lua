@@ -580,4 +580,257 @@ backend_impl = {
     -- Pagure has no repo-level label list endpoint; return empty list
     respond_json(200, {})
   end,
+
+  -- Checks (via Pagure commit flags) ------------------------------------------
+  --
+  -- Pagure exposes a flags API for CI status at:
+  --   GET  /api/0/{owner}/{repo}/c/{commit}/flag  — list flags on a commit
+  --   POST /api/0/{owner}/{repo}/c/{commit}/flag  — create/update a flag
+  --
+  -- Pagure flag fields: uid, username, percent, comment, url, status,
+  --   date_created, date_updated
+  -- Pagure flag statuses: "success", "failure", "error", "pending", "canceled"
+  --
+  -- GitHub → Pagure state:
+  --   queued/in_progress          → pending
+  --   completed/success|neutral|skipped → success
+  --   completed/failure           → failure
+  --   completed/(other)           → error
+  --
+  -- Pagure → GitHub:
+  --   pending   → status=in_progress, conclusion=nil
+  --   success   → status=completed,   conclusion=success
+  --   failure   → status=completed,   conclusion=failure
+  --   error     → status=completed,   conclusion=failure
+  --   canceled  → status=completed,   conclusion=cancelled
+
+  post_check_runs = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}") or {}
+    local sha = req.head_sha or ""
+    local status = req.status or "queued"
+    local conclusion = req.conclusion
+    local pg_status
+    if status == "completed" then
+      if conclusion == "success" or conclusion == "neutral" or conclusion == "skipped" then
+        pg_status = "success"
+      elseif conclusion == "cancelled" then
+        pg_status = "canceled"
+      elseif conclusion == "failure" then
+        pg_status = "failure"
+      else
+        pg_status = "error"
+      end
+    else
+      pg_status = "pending"
+    end
+    local url = base() .. "/" .. owner .. "/" .. repo_name .. "/c/" .. sha .. "/flag"
+    local flag = {
+      username = req.name or "",
+      percent = (pg_status == "success") and 100 or (pg_status == "pending" and 0 or 0),
+      comment = (req.output and req.output.summary) or req.name or "",
+      url = req.details_url or "",
+      uid = req.name or sha,
+      status = pg_status,
+    }
+    local function translate(f)
+      if not f then
+        return {}
+      end
+      local s = f.status or "pending"
+      local gh_status, gh_conclusion
+      if s == "pending" then
+        gh_status = "in_progress"
+        gh_conclusion = nil
+      elseif s == "success" then
+        gh_status = "completed"
+        gh_conclusion = "success"
+      elseif s == "canceled" then
+        gh_status = "completed"
+        gh_conclusion = "cancelled"
+      else
+        gh_status = "completed"
+        gh_conclusion = "failure"
+      end
+      return {
+        id = 1,
+        node_id = "",
+        head_sha = sha,
+        name = f.username or req.name or "",
+        status = gh_status,
+        conclusion = gh_conclusion,
+        started_at = f.date_created,
+        completed_at = gh_status == "completed" and f.date_updated or nil,
+        output = {
+          title = f.comment or "",
+          summary = f.comment or "",
+          text = "",
+          annotations_count = 0,
+          annotations_url = "",
+        },
+        url = "",
+        html_url = f.url or "",
+        details_url = f.url or "",
+      }
+    end
+    local ok, pg_status_code, _, body = fetch_json(url, "POST", EncodeJson(flag))
+    if not ok then
+      respond_json(503, {})
+      return
+    end
+    -- Pagure returns the created flag object
+    local resp = DecodeJson(body or "{}") or {}
+    local flag_obj = resp.flag or flag
+    if pg_status_code == 200 or pg_status_code == 201 then
+      respond_json(201, translate(flag_obj))
+    else
+      respond_json(pg_status_code, {})
+    end
+  end,
+
+  get_check_run = function(_owner, _repo_name, check_run_id)
+    respond_json(200, {
+      id = tonumber(check_run_id) or 0,
+      node_id = "",
+      head_sha = "",
+      name = "",
+      status = "completed",
+      conclusion = "success",
+      started_at = nil,
+      completed_at = nil,
+      output = { title = "", summary = "", text = "", annotations_count = 0, annotations_url = "" },
+      url = "",
+      html_url = "",
+      details_url = "",
+    })
+  end,
+
+  patch_check_run = function(_owner, _repo_name, check_run_id)
+    respond_json(200, {
+      id = tonumber(check_run_id) or 0,
+      node_id = "",
+      head_sha = "",
+      name = "",
+      status = "completed",
+      conclusion = "success",
+      started_at = nil,
+      completed_at = nil,
+      output = { title = "", summary = "", text = "", annotations_count = 0, annotations_url = "" },
+      url = "",
+      html_url = "",
+      details_url = "",
+    })
+  end,
+
+  get_check_run_annotations = function(_owner, _repo_name, _check_run_id)
+    set_preamble()
+    Write("[]")
+  end,
+
+  post_check_run_rerequest = function(_owner, _repo_name, _check_run_id)
+    SetStatus(201, "Created")
+    Write("")
+  end,
+
+  get_commit_check_runs = function(owner, repo_name, ref)
+    local url = base() .. "/" .. owner .. "/" .. repo_name .. "/c/" .. ref .. "/flag"
+    local ok, status, _, body = fetch_json(url)
+    if not ok then
+      respond_json(503, {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, {})
+      return
+    end
+    local data = DecodeJson(body or "{}") or {}
+    local flags = data.flags or {}
+    local runs = {}
+    for i, f in ipairs(flags) do
+      local s = f.status or "pending"
+      local gh_status, gh_conclusion
+      if s == "pending" then
+        gh_status = "in_progress"
+        gh_conclusion = nil
+      elseif s == "success" then
+        gh_status = "completed"
+        gh_conclusion = "success"
+      elseif s == "canceled" then
+        gh_status = "completed"
+        gh_conclusion = "cancelled"
+      else
+        gh_status = "completed"
+        gh_conclusion = "failure"
+      end
+      runs[i] = {
+        id = i,
+        node_id = "",
+        head_sha = ref,
+        name = f.username or "",
+        status = gh_status,
+        conclusion = gh_conclusion,
+        started_at = f.date_created,
+        completed_at = gh_status == "completed" and f.date_updated or nil,
+        output = {
+          title = f.comment or "",
+          summary = f.comment or "",
+          text = "",
+          annotations_count = 0,
+          annotations_url = "",
+        },
+        url = "",
+        html_url = f.url or "",
+        details_url = f.url or "",
+      }
+    end
+    respond_json(200, { total_count = #runs, check_runs = runs })
+  end,
+
+  -- Check suites have no Pagure equivalent; all suite endpoints are stubs.
+
+  post_check_suites = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}") or {}
+    respond_json(201, {
+      id = 1,
+      node_id = "",
+      head_sha = req.head_sha or "",
+      status = "completed",
+      conclusion = "success",
+      url = "",
+      app = {},
+      repository = { full_name = owner .. "/" .. repo_name },
+    })
+  end,
+
+  patch_check_suites_preferences = function(_owner, _repo_name) -- luacheck: ignore 212
+    local req = DecodeJson(GetBody() or "{}") or {}
+    respond_json(200, {
+      preferences = req.auto_trigger_checks or {},
+    })
+  end,
+
+  get_check_suite = function(owner, repo_name, check_suite_id)
+    respond_json(200, {
+      id = tonumber(check_suite_id) or 0,
+      node_id = "",
+      head_sha = "",
+      status = "completed",
+      conclusion = "success",
+      url = "",
+      app = {},
+      repository = { full_name = owner .. "/" .. repo_name },
+    })
+  end,
+
+  get_check_suite_check_runs = function(_owner, _repo_name, _check_suite_id)
+    respond_json(200, { total_count = 0, check_runs = {} })
+  end,
+
+  post_check_suite_rerequest = function(_owner, _repo_name, _check_suite_id)
+    SetStatus(201, "Created")
+    Write("")
+  end,
+
+  get_commit_check_suites = function(_owner, _repo_name, _ref)
+    respond_json(200, { total_count = 0, check_suites = {} })
+  end,
 }
