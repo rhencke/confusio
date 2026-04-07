@@ -678,6 +678,22 @@ eq(
 )
 backend_allow_anonymous = true
 
+-- GET /orgs/{org}/code-scanning/alerts — code_scanning_list_empty default → 200
+reset_response()
+reset_request({ method = "GET", path = "/orgs/myorg/code-scanning/alerts" })
+OnHttpRequest()
+eq(_last_status, 200, "OnHttpRequest: GET /orgs/{org}/code-scanning/alerts → 200 (empty list)")
+
+-- GET /repos/{owner}/{repo}/code-scanning/alerts/{alert_number} — code_scanning_not_implemented default → 501
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/code-scanning/alerts/1" })
+OnHttpRequest()
+eq(
+  _last_status,
+  501,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/code-scanning/alerts/{alert_number} → 501 (not implemented)"
+)
+
 -- ============================================================
 -- Summary
 -- ============================================================

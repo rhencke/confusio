@@ -149,3 +149,7 @@ backend_impl = {
     respond_json(200, { total_count = 0, check_suites = {} })
   end,
 }
+
+-- Code scanning: SourceForge has no native code scanning API.
+-- All code scanning endpoints fall back to the default handlers in .init.lua:
+-- list endpoints return 200 empty, per-resource endpoints return 501.
