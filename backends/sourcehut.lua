@@ -762,3 +762,6 @@ backend_impl = {
     respond_json(200, { total_count = 0, check_suites = {} })
   end,
 }
+
+-- Code scanning: Sourcehut has no native code scanning API.
+-- All code scanning endpoints fall back to the default 501 handlers in .init.lua.
