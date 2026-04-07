@@ -500,6 +500,21 @@ function OnHttpRequest()
   then
     SetStatus(404, "Not Found")
 
+  -- Packages ------------------------------------------------------------------
+  elseif path == "/api/v4/groups/testorg/packages" then
+    local GL_PKG_LIST = '[{"id":1,"name":"web-app","version":"1.0.0","package_type":"npm",'
+      .. '"created_at":"2024-01-01T00:00:00Z","project_id":1,'
+      .. '"_links":{"web_path":"/testorg/proj/-/packages/1"}},'
+      .. '{"id":2,"name":"web-app","version":"2.0.0","package_type":"npm",'
+      .. '"created_at":"2024-02-01T00:00:00Z","project_id":1,'
+      .. '"_links":{"web_path":"/testorg/proj/-/packages/2"}}]'
+    SetStatus(200, "OK")
+    json(GL_PKG_LIST)
+  elseif path == "/api/v4/projects/1/packages/1" and GetMethod() == "DELETE" then
+    SetStatus(204, "No Content")
+  elseif path == "/api/v4/projects/1/packages/2" and GetMethod() == "DELETE" then
+    SetStatus(204, "No Content")
+
   -- Gitignore templates --------------------------------------------------------
   elseif path == "/api/v4/templates/gitignores" then
     SetStatus(200, "OK")
