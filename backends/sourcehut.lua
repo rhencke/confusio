@@ -1,6 +1,7 @@
 -- Sourcehut backend handler overrides.
 -- Uses git.sr.ht REST API at /api/~{username}/repos/{name}.
 -- Issues use todo.sr.ht REST API at /api/~{username}/trackers/{name}/tickets.
+-- Checks use builds.sr.ht REST API at /api/jobs (filtered by tag).
 if config.base_url == "" then
   config.base_url = "https://git.sr.ht"
 end
@@ -14,6 +15,13 @@ end
 -- In tests (IP:PORT): unchanged, same mock server handles both API path prefixes.
 local todo_base = function()
   return config.base_url:gsub("git%.sr%.ht", "todo.sr.ht") .. "/api"
+end
+
+-- Derive the builds.sr.ht base URL from the git.sr.ht base URL.
+-- In production: https://git.sr.ht → https://builds.sr.ht
+-- In tests (IP:PORT): unchanged, same mock server handles both API path prefixes.
+local builds_base = function()
+  return config.base_url:gsub("git%.sr%.ht", "builds.sr.ht") .. "/api"
 end
 local auth = function()
   return make_fetch_opts("token")
@@ -171,6 +179,89 @@ end
 -- Translate a Sourcehut log entry to GitHub commit format.
 -- Sourcehut: { id, message, timestamp, author: { name, email } }
 local proxy_handler = make_proxy_handler(fetch_json)
+
+-- Checks (via builds.sr.ht jobs) -----------------------------------------------
+--
+-- GitHub Check Runs map onto builds.sr.ht jobs.  Each job is tagged with the
+-- git repository and commit SHA it was triggered by, so:
+--   • GET commits/{ref}/check-runs → GET /api/jobs?filter[tags]=git.sr.ht/~owner/repo=sha
+--   • POST check-runs → POST /api/jobs (stub; Sourcehut jobs are triggered by .build.yml)
+--   • GET/PATCH by check_run_id → minimal stub (no reverse lookup by ID)
+--   • Check Suites have no builds.sr.ht equivalent; all suite endpoints are stubs.
+--   • Annotations are always empty.
+--
+-- Status mapping (builds.sr.ht → GitHub):
+--   pending/queued/running → status=in_progress, conclusion=null
+--   success                → status=completed,   conclusion=success
+--   failed/timeout         → status=completed,   conclusion=failure
+--   cancelled              → status=completed,   conclusion=cancelled
+
+local function translate_srht_job_to_check_run(j)
+  if not j then
+    return {}
+  end
+  local srht_status = j.status or "pending"
+  local gh_status, gh_conclusion
+  if srht_status == "success" then
+    gh_status = "completed"
+    gh_conclusion = "success"
+  elseif srht_status == "failed" or srht_status == "timeout" then
+    gh_status = "completed"
+    gh_conclusion = "failure"
+  elseif srht_status == "cancelled" then
+    gh_status = "completed"
+    gh_conclusion = "cancelled"
+  else
+    -- pending, queued, running
+    gh_status = "in_progress"
+    gh_conclusion = nil
+  end
+  -- Job name: use note field or fall back to id
+  local name = j.note or (tostring(j.id or 0))
+  return {
+    id = j.id or 0,
+    node_id = "",
+    head_sha = "",
+    name = name,
+    status = gh_status,
+    conclusion = gh_conclusion,
+    started_at = j.created,
+    completed_at = gh_status == "completed" and (j.updated or j.created) or nil,
+    output = {
+      title = name,
+      summary = name,
+      text = "",
+      annotations_count = 0,
+      annotations_url = "",
+    },
+    url = "",
+    html_url = "",
+    details_url = "",
+  }
+end
+
+local function minimal_srht_check_run_stub(check_run_id)
+  return {
+    id = tonumber(check_run_id) or 0,
+    node_id = "",
+    head_sha = "",
+    name = "",
+    status = "completed",
+    conclusion = "success",
+    started_at = nil,
+    completed_at = nil,
+    output = {
+      title = "",
+      summary = "",
+      text = "",
+      annotations_count = 0,
+      annotations_url = "",
+    },
+    url = "",
+    html_url = "",
+    details_url = "",
+  }
+end
 
 local function translate_srht_commit(c)
   if not c then
@@ -543,5 +634,138 @@ backend_impl = {
     local event = DecodeJson(body)
     local comment = translate_srht_event_comment(event)
     respond_json(201, comment or {})
+  end,
+
+  -- Checks (via builds.sr.ht jobs) --------------------------------------------
+
+  -- POST /repos/{owner}/{repo}/check-runs
+  -- builds.sr.ht jobs are triggered by .build.yml pushes, not via API.
+  -- Return a minimal stub.
+  post_check_runs = function(_owner, _repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    respond_json(201, {
+      id = 0,
+      node_id = "",
+      head_sha = req.head_sha or "",
+      name = req.name or "",
+      status = req.status or "queued",
+      conclusion = req.conclusion,
+      started_at = nil,
+      completed_at = nil,
+      output = {
+        title = (req.output and req.output.title) or "",
+        summary = (req.output and req.output.summary) or "",
+        text = "",
+        annotations_count = 0,
+        annotations_url = "",
+      },
+      url = "",
+      html_url = "",
+      details_url = req.details_url or "",
+    })
+  end,
+
+  -- GET /repos/{owner}/{repo}/check-runs/{check_run_id}
+  -- No reverse lookup by ID in builds.sr.ht; return a stub.
+  get_check_run = function(_owner, _repo_name, check_run_id)
+    respond_json(200, minimal_srht_check_run_stub(check_run_id))
+  end,
+
+  -- PATCH /repos/{owner}/{repo}/check-runs/{check_run_id}
+  -- Cannot update without job ID context; return a stub.
+  patch_check_run = function(_owner, _repo_name, check_run_id)
+    respond_json(200, minimal_srht_check_run_stub(check_run_id))
+  end,
+
+  -- GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations
+  -- builds.sr.ht has no annotations; always return [].
+  get_check_run_annotations = function(_owner, _repo_name, _check_run_id)
+    set_preamble()
+    Write("[]")
+  end,
+
+  -- POST /repos/{owner}/{repo}/check-runs/{check_run_id}/rerequest
+  -- No builds.sr.ht equivalent; return 201 stub.
+  post_check_run_rerequest = function(_owner, _repo_name, _check_run_id)
+    respond_json(201, {})
+  end,
+
+  -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
+  -- Maps to builds.sr.ht GET /api/jobs filtered by the git repo tag and commit SHA.
+  -- builds.sr.ht jobs are tagged with "git.sr.ht/~owner/repo=sha" when triggered
+  -- from a git push.
+  get_commit_check_runs = function(owner, repo_name, ref)
+    -- Derive the git.sr.ht hostname from the config base URL for the tag filter.
+    local git_host = config.base_url:match("^https?://([^/]+)") or "git.sr.ht"
+    local tag = git_host .. "/~" .. owner .. "/" .. repo_name .. "=" .. ref
+    local url = builds_base() .. "/jobs?filter[tags]=" .. tag
+    local ok, status, _, body = fetch_json(url)
+    if not ok then
+      respond_json(503, {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, {})
+      return
+    end
+    local data = DecodeJson(body) or {}
+    local jobs = data.results or {}
+    local runs = {}
+    for _, j in ipairs(jobs) do
+      runs[#runs + 1] = translate_srht_job_to_check_run(j)
+    end
+    respond_json(200, { total_count = #runs, check_runs = runs })
+  end,
+
+  -- Check Suites — no builds.sr.ht equivalent; all are stubs ------------------
+
+  -- POST /repos/{owner}/{repo}/check-suites
+  post_check_suites = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    respond_json(201, {
+      id = 0,
+      node_id = "",
+      head_sha = req.head_sha or "",
+      status = "completed",
+      conclusion = "success",
+      app = { id = 0, slug = "", name = "" },
+      repository = { full_name = owner .. "/" .. repo_name },
+    })
+  end,
+
+  -- PATCH /repos/{owner}/{repo}/check-suites/preferences
+  patch_check_suites_preferences = function(_owner, _repo_name) -- luacheck: ignore 212
+    local req = DecodeJson(GetBody() or "{}") or {}
+    respond_json(200, {
+      preferences = req.auto_trigger_checks or {},
+    })
+  end,
+
+  -- GET /repos/{owner}/{repo}/check-suites/{check_suite_id}
+  get_check_suite = function(owner, repo_name, check_suite_id)
+    respond_json(200, {
+      id = tonumber(check_suite_id) or 0,
+      node_id = "",
+      head_sha = "",
+      status = "completed",
+      conclusion = "success",
+      app = { id = 0, slug = "", name = "" },
+      repository = { full_name = owner .. "/" .. repo_name },
+    })
+  end,
+
+  -- GET /repos/{owner}/{repo}/check-suites/{check_suite_id}/check-runs
+  get_check_suite_check_runs = function(_owner, _repo_name, _check_suite_id)
+    respond_json(200, { total_count = 0, check_runs = {} })
+  end,
+
+  -- POST /repos/{owner}/{repo}/check-suites/{check_suite_id}/rerequest
+  post_check_suite_rerequest = function(_owner, _repo_name, _check_suite_id)
+    respond_json(201, {})
+  end,
+
+  -- GET /repos/{owner}/{repo}/commits/{ref}/check-suites
+  get_commit_check_suites = function(_owner, _repo_name, _ref)
+    respond_json(200, { total_count = 0, check_suites = {} })
   end,
 }
