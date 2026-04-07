@@ -1050,6 +1050,41 @@ local routes = {
     code_scanning_not_implemented,
   },
 
+  -- Packages (https://docs.github.com/en/rest/packages)
+  ["GET /orgs/{org}/packages"] = { "get_org_packages", empty_list },
+  ["GET /orgs/{org}/packages/{package_type}/{package_name}"] = "get_org_package",
+  ["DELETE /orgs/{org}/packages/{package_type}/{package_name}"] = "delete_org_package",
+  ["POST /orgs/{org}/packages/{package_type}/{package_name}/restore"] = "restore_org_package",
+  ["GET /orgs/{org}/packages/{package_type}/{package_name}/versions"] = {
+    "get_org_package_versions",
+    empty_list,
+  },
+  ["GET /orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}"] = "get_org_package_version",
+  ["DELETE /orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}"] = "delete_org_package_version",
+  ["POST /orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}/restore"] = "restore_org_package_version",
+  ["GET /user/packages"] = { "get_user_packages", empty_list },
+  ["GET /user/packages/{package_type}/{package_name}"] = "get_user_package",
+  ["DELETE /user/packages/{package_type}/{package_name}"] = "delete_user_package",
+  ["POST /user/packages/{package_type}/{package_name}/restore"] = "restore_user_package",
+  ["GET /user/packages/{package_type}/{package_name}/versions"] = {
+    "get_user_package_versions",
+    empty_list,
+  },
+  ["GET /user/packages/{package_type}/{package_name}/versions/{package_version_id}"] = "get_user_package_version",
+  ["DELETE /user/packages/{package_type}/{package_name}/versions/{package_version_id}"] = "delete_user_package_version",
+  ["POST /user/packages/{package_type}/{package_name}/versions/{package_version_id}/restore"] = "restore_user_package_version",
+  ["GET /users/{username}/packages"] = { "get_users_packages", empty_list },
+  ["GET /users/{username}/packages/{package_type}/{package_name}"] = "get_users_package",
+  ["DELETE /users/{username}/packages/{package_type}/{package_name}"] = "delete_users_package",
+  ["POST /users/{username}/packages/{package_type}/{package_name}/restore"] = "restore_users_package",
+  ["GET /users/{username}/packages/{package_type}/{package_name}/versions"] = {
+    "get_users_package_versions",
+    empty_list,
+  },
+  ["GET /users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}"] = "get_users_package_version",
+  ["DELETE /users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}"] = "delete_users_package_version",
+  ["POST /users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}/restore"] = "restore_users_package_version",
+
   -- Interactions (https://docs.github.com/en/rest/interactions)
   ["GET /orgs/{org}/interaction-limits"] = {
     "get_org_interaction_limits",

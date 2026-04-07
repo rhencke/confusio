@@ -3241,4 +3241,210 @@ backend_impl = {
   get_commit_check_suites = function(_owner, _repo_name, _ref)
     respond_json(200, { total_count = 0, check_suites = {} })
   end,
+
+  -- Packages (org via GitLab group packages API) --------------------------------
+
+  get_org_packages = function(org)
+    local pkg_type = GetParam("package_type") or ""
+    local url = base() .. "/groups/" .. org .. "/packages"
+    if pkg_type ~= "" then
+      url = url .. "?package_type=" .. pkg_type
+    end
+    url = append_page_params(url, PAGES)
+    proxy_json_paged(function(entries)
+      local pkgs = {}
+      for i, p in ipairs(entries) do
+        pkgs[i] = {
+          id = p.id,
+          name = p.name or "",
+          package_type = p.package_type or "",
+          url = "",
+          html_url = p._links and p._links.web_path or "",
+          version_count = 1,
+          visibility = "public",
+          owner = nil,
+          repository = nil,
+          created_at = p.created_at,
+          updated_at = p.created_at,
+        }
+      end
+      return pkgs
+    end, PAGES, fetch_json(url))
+  end,
+
+  get_org_package = function(org, pkg_type, pkg_name)
+    local url = base()
+      .. "/groups/"
+      .. org
+      .. "/packages?package_type="
+      .. pkg_type
+      .. "&package_name="
+      .. pkg_name
+      .. "&per_page=100"
+    local ok, status, _, body = fetch_json(url)
+    if not ok then
+      respond_json(503, {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, {})
+      return
+    end
+    local entries = DecodeJson(body) or {}
+    if #entries == 0 then
+      respond_json(404, { message = "Not Found" })
+      return
+    end
+    local p = entries[1]
+    respond_json(200, {
+      id = p.id,
+      name = p.name or "",
+      package_type = p.package_type or "",
+      url = "",
+      html_url = p._links and p._links.web_path or "",
+      version_count = #entries,
+      visibility = "public",
+      owner = nil,
+      repository = nil,
+      created_at = p.created_at,
+      updated_at = p.created_at,
+    })
+  end,
+
+  delete_org_package = function(org, pkg_type, pkg_name)
+    local url = base()
+      .. "/groups/"
+      .. org
+      .. "/packages?package_type="
+      .. pkg_type
+      .. "&package_name="
+      .. pkg_name
+      .. "&per_page=100"
+    local ok, status, _, body = fetch_json(url)
+    if not ok then
+      respond_json(503, {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, {})
+      return
+    end
+    local entries = DecodeJson(body) or {}
+    if #entries == 0 then
+      respond_json(404, { message = "Not Found" })
+      return
+    end
+    for _, p in ipairs(entries) do
+      fetch_json(base() .. "/projects/" .. p.project_id .. "/packages/" .. p.id, "DELETE")
+    end
+    set_preamble(204)
+  end,
+
+  get_org_package_versions = function(org, pkg_type, pkg_name)
+    local url = base()
+      .. "/groups/"
+      .. org
+      .. "/packages?package_type="
+      .. pkg_type
+      .. "&package_name="
+      .. pkg_name
+    url = append_page_params(url, PAGES)
+    proxy_json_paged(function(entries)
+      local versions = {}
+      for i, p in ipairs(entries) do
+        versions[i] = {
+          id = p.id,
+          name = p.version or "",
+          url = "",
+          package_html_url = "",
+          html_url = p._links and p._links.web_path or "",
+          license = "",
+          description = "",
+          created_at = p.created_at,
+          updated_at = p.created_at,
+          deleted_at = nil,
+          metadata = { package_type = p.package_type or "" },
+        }
+      end
+      return versions
+    end, PAGES, fetch_json(url))
+  end,
+
+  get_org_package_version = function(org, pkg_type, pkg_name, version_id)
+    local url = base()
+      .. "/groups/"
+      .. org
+      .. "/packages?package_type="
+      .. pkg_type
+      .. "&package_name="
+      .. pkg_name
+      .. "&per_page=100"
+    local ok, status, _, body = fetch_json(url)
+    if not ok then
+      respond_json(503, {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, {})
+      return
+    end
+    local vid = tonumber(version_id)
+    for _, p in ipairs(DecodeJson(body) or {}) do
+      if p.id == vid then
+        respond_json(200, {
+          id = p.id,
+          name = p.version or "",
+          url = "",
+          package_html_url = "",
+          html_url = p._links and p._links.web_path or "",
+          license = "",
+          description = "",
+          created_at = p.created_at,
+          updated_at = p.created_at,
+          deleted_at = nil,
+          metadata = { package_type = p.package_type or "" },
+        })
+        return
+      end
+    end
+    respond_json(404, { message = "Not Found" })
+  end,
+
+  delete_org_package_version = function(org, pkg_type, pkg_name, version_id)
+    local url = base()
+      .. "/groups/"
+      .. org
+      .. "/packages?package_type="
+      .. pkg_type
+      .. "&package_name="
+      .. pkg_name
+      .. "&per_page=100"
+    local ok, status, _, body = fetch_json(url)
+    if not ok then
+      respond_json(503, {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, {})
+      return
+    end
+    local vid = tonumber(version_id)
+    for _, p in ipairs(DecodeJson(body) or {}) do
+      if p.id == vid then
+        local dopts = auth() or {}
+        dopts.method = "DELETE"
+        local dok, dstatus =
+          pcall(Fetch, base() .. "/projects/" .. p.project_id .. "/packages/" .. p.id, dopts)
+        if dok and dstatus == 204 then
+          set_preamble(204)
+        elseif dok then
+          respond_json(dstatus, {})
+        else
+          respond_json(503, {})
+        end
+        return
+      end
+    end
+    respond_json(404, { message = "Not Found" })
+  end,
 }

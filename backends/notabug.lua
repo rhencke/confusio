@@ -11,3 +11,11 @@ end
 backend_impl.get_gitignore_template = function(_name)
   respond_json(404, { message = "Not Found" })
 end
+
+-- Gogs does not have a packages API; clear inherited Gitea handlers so the
+-- routes fall back to their .init.lua defaults (empty list or 404).
+for k in pairs(backend_impl) do
+  if k:find("_package") then
+    backend_impl[k] = nil
+  end
+end

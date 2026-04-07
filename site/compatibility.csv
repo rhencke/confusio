@@ -79,6 +79,31 @@ GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id},n,~via partici
 GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments,n,~inline PR comments,~inline PR comments,y,n,y,n,n,y,y,~via MR notes,y,n,n,n,n,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/pulls/comments,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/pulls/comments/{comment_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+Packages,,,,,,,,,,,,,,,,,,,,,,,,
+GET /orgs/{org}/packages,n,n,n,y,n,y,n,n,n,y,y,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /orgs/{org}/packages/{package_type}/{package_name},n,n,n,y,n,y,n,n,n,y,y,n,n,n,n,n,n,n,n,n,n,n,n,n
+DELETE /orgs/{org}/packages/{package_type}/{package_name},n,n,n,y,n,y,n,n,n,y,y,n,n,n,n,n,n,n,n,n,n,n,n,n
+POST /orgs/{org}/packages/{package_type}/{package_name}/restore,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /orgs/{org}/packages/{package_type}/{package_name}/versions,n,n,n,y,n,y,n,n,n,y,y,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id},n,n,n,y,n,y,n,n,n,y,y,n,n,n,n,n,n,n,n,n,n,n,n,n
+DELETE /orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id},n,n,n,y,n,y,n,n,n,y,y,n,n,n,n,n,n,n,n,n,n,n,n,n
+POST /orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}/restore,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /user/packages,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /user/packages/{package_type}/{package_name},n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+DELETE /user/packages/{package_type}/{package_name},n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+POST /user/packages/{package_type}/{package_name}/restore,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /user/packages/{package_type}/{package_name}/versions,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /user/packages/{package_type}/{package_name}/versions/{package_version_id},n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+DELETE /user/packages/{package_type}/{package_name}/versions/{package_version_id},n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+POST /user/packages/{package_type}/{package_name}/versions/{package_version_id}/restore,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /users/{username}/packages,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /users/{username}/packages/{package_type}/{package_name},n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+DELETE /users/{username}/packages/{package_type}/{package_name},n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+POST /users/{username}/packages/{package_type}/{package_name}/restore,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /users/{username}/packages/{package_type}/{package_name}/versions,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id},n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+DELETE /users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id},n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+POST /users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}/restore,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 Search,,,,,,,,,,,,,,,,,,,,,,,,
 GET /search/repositories,n,y,y,y,~via list filtering,y,n,y,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,~via projects API
 GET /search/users,n,y,y,y,n,y,n,y,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,~

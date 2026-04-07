@@ -528,6 +528,219 @@ local function minimal_check_run_stub(check_run_id)
   }
 end
 
+-- Packages --------------------------------------------------------------------
+
+-- Map a Gitea package entry to a GitHub Package object.
+-- version_count overrides the default of 1 when the caller has aggregated versions.
+local function translate_gitea_package(p, version_count)
+  if not p then
+    return {}
+  end
+  return {
+    id = p.id,
+    name = p.name or "",
+    package_type = p.type or "",
+    url = "",
+    html_url = p.html_url or "",
+    version_count = version_count or 1,
+    visibility = "public",
+    owner = p.owner and translate_user(p.owner) or nil,
+    repository = p.repository and translate_repo(p.repository) or nil,
+    created_at = p.created_at,
+    updated_at = p.created_at,
+  }
+end
+
+-- Map a Gitea package entry to a GitHub PackageVersion object.
+local function translate_gitea_package_version(p)
+  if not p then
+    return {}
+  end
+  return {
+    id = p.id,
+    name = p.version or "",
+    url = "",
+    package_html_url = "",
+    html_url = p.html_url or "",
+    license = "",
+    description = "",
+    created_at = p.created_at,
+    updated_at = p.created_at,
+    deleted_at = nil,
+    metadata = { package_type = p.type or "" },
+  }
+end
+
+-- Resolve the authenticated user's login name for /user/packages endpoints.
+local function resolve_user_login()
+  local ok, status, _, body = fetch_json(base() .. "/user")
+  if ok and status == 200 then
+    return (DecodeJson(body) or {}).login
+  end
+  return nil
+end
+
+-- List packages for an owner, translating each entry to a GitHub Package object.
+local function pkg_list(owner)
+  local pkg_type = GetParam("package_type") or ""
+  local url = base() .. "/packages/" .. owner
+  if pkg_type ~= "" then
+    url = url .. "?type=" .. pkg_type
+  end
+  url = append_page_params(url, PAGES)
+  proxy_json_paged(function(entries)
+    local pkgs = {}
+    for i, p in ipairs(entries) do
+      pkgs[i] = translate_gitea_package(p)
+    end
+    return pkgs
+  end, PAGES, fetch_json(url))
+end
+
+-- Get a single package by listing versions and aggregating.
+local function pkg_get(owner, pkg_type, pkg_name)
+  local url = base()
+    .. "/packages/"
+    .. owner
+    .. "?type="
+    .. pkg_type
+    .. "&q="
+    .. pkg_name
+    .. "&limit=50"
+  local ok, status, _, body = fetch_json(url)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local entries = {}
+  for _, p in ipairs(DecodeJson(body) or {}) do
+    if p.name == pkg_name then
+      entries[#entries + 1] = p
+    end
+  end
+  if #entries == 0 then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  respond_json(200, translate_gitea_package(entries[1], #entries))
+end
+
+-- Delete all versions of a package.
+local function pkg_delete(owner, pkg_type, pkg_name)
+  local url = base()
+    .. "/packages/"
+    .. owner
+    .. "?type="
+    .. pkg_type
+    .. "&q="
+    .. pkg_name
+    .. "&limit=50"
+  local ok, status, _, body = fetch_json(url)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local found = false
+  for _, p in ipairs(DecodeJson(body) or {}) do
+    if p.name == pkg_name then
+      found = true
+      fetch_json(
+        base() .. "/packages/" .. owner .. "/" .. pkg_type .. "/" .. pkg_name .. "/" .. p.version,
+        "DELETE"
+      )
+    end
+  end
+  if not found then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  set_preamble(204)
+end
+
+-- List versions of a specific package.
+local function pkg_versions(owner, pkg_type, pkg_name)
+  local url = base() .. "/packages/" .. owner .. "?type=" .. pkg_type .. "&q=" .. pkg_name
+  url = append_page_params(url, PAGES)
+  proxy_json_paged(function(entries)
+    local versions = {}
+    for _, p in ipairs(entries) do
+      if p.name == pkg_name then
+        versions[#versions + 1] = translate_gitea_package_version(p)
+      end
+    end
+    return versions
+  end, PAGES, fetch_json(url))
+end
+
+-- Get a single package version by ID.
+local function pkg_get_version(owner, pkg_type, pkg_name, version_id)
+  local url = base()
+    .. "/packages/"
+    .. owner
+    .. "?type="
+    .. pkg_type
+    .. "&q="
+    .. pkg_name
+    .. "&limit=50"
+  local ok, status, _, body = fetch_json(url)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local vid = tonumber(version_id)
+  for _, p in ipairs(DecodeJson(body) or {}) do
+    if p.id == vid and p.name == pkg_name then
+      respond_json(200, translate_gitea_package_version(p))
+      return
+    end
+  end
+  respond_json(404, { message = "Not Found" })
+end
+
+-- Delete a single package version by ID.
+local function pkg_delete_version(owner, pkg_type, pkg_name, version_id)
+  local url = base()
+    .. "/packages/"
+    .. owner
+    .. "?type="
+    .. pkg_type
+    .. "&q="
+    .. pkg_name
+    .. "&limit=50"
+  local ok, status, _, body = fetch_json(url)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local vid = tonumber(version_id)
+  for _, p in ipairs(DecodeJson(body) or {}) do
+    if p.id == vid and p.name == pkg_name then
+      set_204_or_error(
+        "DELETE",
+        base() .. "/packages/" .. owner .. "/" .. pkg_type .. "/" .. pkg_name .. "/" .. p.version
+      )
+      return
+    end
+  end
+  respond_json(404, { message = "Not Found" })
+end
+
 backend_impl = {
   -- Health check
   get_root = function()
@@ -2618,5 +2831,98 @@ backend_impl = {
   search_users = function()
     local q = GetParam("q") or ""
     proxy_search(translate_user, append_page_params(base() .. "/users/search?q=" .. q, PAGES))
+  end,
+
+  -- Packages (org) ---------------------------------------------------------------
+
+  get_org_packages = function(org)
+    pkg_list(org)
+  end,
+  get_org_package = function(org, pkg_type, pkg_name)
+    pkg_get(org, pkg_type, pkg_name)
+  end,
+  delete_org_package = function(org, pkg_type, pkg_name)
+    pkg_delete(org, pkg_type, pkg_name)
+  end,
+  get_org_package_versions = function(org, pkg_type, pkg_name)
+    pkg_versions(org, pkg_type, pkg_name)
+  end,
+  get_org_package_version = function(org, pkg_type, pkg_name, version_id)
+    pkg_get_version(org, pkg_type, pkg_name, version_id)
+  end,
+  delete_org_package_version = function(org, pkg_type, pkg_name, version_id)
+    pkg_delete_version(org, pkg_type, pkg_name, version_id)
+  end,
+
+  -- Packages (authenticated user) ------------------------------------------------
+
+  get_user_packages = function()
+    local login = resolve_user_login()
+    if not login then
+      respond_json(401, { message = "Requires authentication" })
+      return
+    end
+    pkg_list(login)
+  end,
+  get_user_package = function(pkg_type, pkg_name)
+    local login = resolve_user_login()
+    if not login then
+      respond_json(401, { message = "Requires authentication" })
+      return
+    end
+    pkg_get(login, pkg_type, pkg_name)
+  end,
+  delete_user_package = function(pkg_type, pkg_name)
+    local login = resolve_user_login()
+    if not login then
+      respond_json(401, { message = "Requires authentication" })
+      return
+    end
+    pkg_delete(login, pkg_type, pkg_name)
+  end,
+  get_user_package_versions = function(pkg_type, pkg_name)
+    local login = resolve_user_login()
+    if not login then
+      respond_json(401, { message = "Requires authentication" })
+      return
+    end
+    pkg_versions(login, pkg_type, pkg_name)
+  end,
+  get_user_package_version = function(pkg_type, pkg_name, version_id)
+    local login = resolve_user_login()
+    if not login then
+      respond_json(401, { message = "Requires authentication" })
+      return
+    end
+    pkg_get_version(login, pkg_type, pkg_name, version_id)
+  end,
+  delete_user_package_version = function(pkg_type, pkg_name, version_id)
+    local login = resolve_user_login()
+    if not login then
+      respond_json(401, { message = "Requires authentication" })
+      return
+    end
+    pkg_delete_version(login, pkg_type, pkg_name, version_id)
+  end,
+
+  -- Packages (public user) -------------------------------------------------------
+
+  get_users_packages = function(username)
+    pkg_list(username)
+  end,
+  get_users_package = function(username, pkg_type, pkg_name)
+    pkg_get(username, pkg_type, pkg_name)
+  end,
+  delete_users_package = function(username, pkg_type, pkg_name)
+    pkg_delete(username, pkg_type, pkg_name)
+  end,
+  get_users_package_versions = function(username, pkg_type, pkg_name)
+    pkg_versions(username, pkg_type, pkg_name)
+  end,
+  get_users_package_version = function(username, pkg_type, pkg_name, version_id)
+    pkg_get_version(username, pkg_type, pkg_name, version_id)
+  end,
+  delete_users_package_version = function(username, pkg_type, pkg_name, version_id)
+    pkg_delete_version(username, pkg_type, pkg_name, version_id)
   end,
 }
