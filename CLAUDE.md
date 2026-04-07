@@ -178,6 +178,14 @@ Hard-won insights from building this project. **Keep this section current**: whe
   {HeaderName = value, ...}}`. The dispatch loop iterates `entry[3]` and calls `SetHeader` for
   each pair, allowing mock routes to return headers like `Link` for pagination testing.
 
+### Anonymous access
+
+- **`backend_allow_anonymous` is a global boolean** defaulting to `true`. `OnHttpRequest()` checks it on every request: if `false` and no `Authorization` header is present, confusio returns `401 { message = "This instance requires authentication." }` immediately, before routing.
+- **Only Gitea probes its backend at startup.** The Gitea backend calls `GET /api/v1/settings/api` and sets `backend_allow_anonymous = (settings.require_signin_view ~= true)`. If the probe fails (network error or non-200), the default `true` is preserved and anonymous requests are allowed.
+- **All other backends leave the default `true`.** They neither probe nor set `backend_allow_anonymous`, so anonymous access is always permitted regardless of the upstream's actual configuration.
+- **`dofile`'d backends (forgejo, gogs, codeberg, notabug) inherit Gitea's probe** because they `dofile` `backends/gitea.lua`, which includes the probe block.
+- **Test pattern**: `*-anon.hurl` files verify that unauthenticated requests succeed when the mock advertises anonymous access. The mock's `/api/v1/settings/api` route returns `{"require_signin_view": false}` to simulate an open instance. Closed-instance (401) behavior is covered by unit tests that set `backend_allow_anonymous = false` directly.
+
 ### Mock server design
 
 - **Use Redbean itself as the mock server** — no Python/Node dependency, same binary already in the repo. Build `mock-<backend>.com` by copying `redbean.com` and zipping in a `.init.lua` handler. See `mock-gitea.com` target in `Makefile`.
