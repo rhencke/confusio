@@ -100,6 +100,18 @@ function OnHttpRequest()
   elseif path == "/~api/users" then
     SetStatus(200, "OK")
     json('[{"id":1,"name":"octocat","fullName":"The Octocat","email":"octocat@github.com"}]')
+
+  -- Interactions ------------------------------------------------------------
+  -- OneDev has no native GitHub Interactions API; confusio returns stubs directly.
+  -- These routes document what the backend would return if ever proxied.
+  elseif
+    (
+      path == "/orgs/testorg/interaction-limits"
+      or path == "/repos/octocat/hello-world/interaction-limits"
+      or path == "/user/interaction-limits"
+    ) and (GetMethod() == "GET" or GetMethod() == "PUT" or GetMethod() == "DELETE")
+  then
+    SetStatus(404, "Not Found")
   else
     SetStatus(404, "Not Found")
   end
