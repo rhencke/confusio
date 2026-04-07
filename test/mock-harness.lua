@@ -147,6 +147,18 @@ function OnHttpRequest()
       '{"id":1,"uid":"octocat","display_name":"The Octocat","email":"octocat@github.com",'
         .. '"admin":false,"url":""}'
     )
+
+  -- Interactions ------------------------------------------------------------
+  -- Harness Code has no native GitHub Interactions API; confusio returns stubs directly.
+  -- These routes document what the backend would return if ever proxied.
+  elseif
+    (
+      path == "/orgs/testorg/interaction-limits"
+      or path == "/repos/octocat/hello-world/interaction-limits"
+      or path == "/user/interaction-limits"
+    ) and (GetMethod() == "GET" or GetMethod() == "PUT" or GetMethod() == "DELETE")
+  then
+    SetStatus(404, "Not Found")
   else
     SetStatus(404, "Not Found")
   end

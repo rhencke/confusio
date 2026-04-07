@@ -2,6 +2,7 @@
 -- Repository names follow the pattern "owner/repo.git".
 function OnHttpRequest()
   local path = GetPath()
+  local method = GetMethod()
   local req = GetParam("req") or ""
   local name = GetParam("name") or ""
 
@@ -16,6 +17,20 @@ function OnHttpRequest()
 
   local USER = '{"name":"octocat","displayName":"The Octocat",'
     .. '"emailAddress":"octocat@github.com","disabled":false}'
+
+  -- Interactions ---------------------------------------------------------------
+  -- Gitblit has no native GitHub Interactions API; confusio returns stubs directly.
+  -- These routes document what the backend would return if ever proxied.
+  if
+    (
+      path == "/orgs/testorg/interaction-limits"
+      or path == "/repos/octocat/hello-world/interaction-limits"
+      or path == "/user/interaction-limits"
+    ) and (method == "GET" or method == "PUT" or method == "DELETE")
+  then
+    SetStatus(404, "Not Found")
+    return
+  end
 
   if path ~= "/rpc" then
     SetStatus(404, "Not Found")

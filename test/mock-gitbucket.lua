@@ -546,6 +546,18 @@ function OnHttpRequest()
         .. '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",'
         .. '"html_url":"","pull_request_url":"","url":""}]'
     )
+  -- Interactions --------------------------------------------------------------
+  -- GitBucket has no native GitHub Interactions API; confusio returns stubs directly.
+  -- These routes document what the backend would return if ever proxied.
+  elseif
+    (
+      path == "/orgs/testorg/interaction-limits"
+      or path == "/repos/octocat/hello-world/interaction-limits"
+      or path == "/user/interaction-limits"
+    ) and (method == "GET" or method == "PUT" or method == "DELETE")
+  then
+    SetStatus(404, "Not Found")
+
   -- Search (GitHub-compatible) -----------------------------------------------
   elseif path == "/api/v3/search/repositories" then
     SetStatus(200, "OK")

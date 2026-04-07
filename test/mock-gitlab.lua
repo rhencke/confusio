@@ -480,6 +480,18 @@ function OnHttpRequest()
         .. '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",'
         .. '"closed_at":null,"due_date":null}'
     )
+  -- Interactions --------------------------------------------------------------
+  -- GitLab has no native GitHub Interactions API; confusio returns stubs directly.
+  -- These routes document what the backend would return if ever proxied.
+  elseif
+    (
+      path == "/orgs/testorg/interaction-limits"
+      or path == "/repos/octocat/hello-world/interaction-limits"
+      or path == "/user/interaction-limits"
+    ) and (GetMethod() == "GET" or GetMethod() == "PUT" or GetMethod() == "DELETE")
+  then
+    SetStatus(404, "Not Found")
+
   -- Gitignore templates --------------------------------------------------------
   elseif path == "/api/v4/templates/gitignores" then
     SetStatus(200, "OK")

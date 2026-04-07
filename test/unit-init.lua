@@ -11,7 +11,7 @@ end
 
 -- Stub state for the Redbean HTTP context APIs.
 local _last_status, _last_headers, _last_body
-local _req_headers, _req_path, _req_params, _req_method
+local _req_headers, _req_path, _req_params, _req_method, _req_body
 
 local function reset_response()
   _last_status = nil
@@ -25,6 +25,7 @@ local function reset_request(opts)
   _req_path = opts.path or "/"
   _req_params = opts.params or {}
   _req_method = opts.method or "GET"
+  _req_body = opts.body or nil
 end
 
 reset_response()
@@ -32,7 +33,7 @@ reset_request()
 
 -- Override Redbean HTTP context built-ins before loading .init.lua.
 -- luacheck: push
--- luacheck: globals SetStatus SetHeader Write GetHeader GetPath GetParam GetMethod Route
+-- luacheck: globals SetStatus SetHeader Write GetHeader GetPath GetParam GetMethod GetBody Route
 SetStatus = function(code, _reason)
   _last_status = code
 end
@@ -55,6 +56,9 @@ GetMethod = function()
   return _req_method
 end
 Route = function() end
+GetBody = function()
+  return _req_body
+end
 -- luacheck: pop
 
 -- Prevent backend file loading (config.backend will be "" anyway, but be safe).
@@ -620,6 +624,33 @@ reset_response()
 reset_request({ method = "GET", path = "/search/code" })
 OnHttpRequest()
 eq(_last_status, 200, "OnHttpRequest: GET /search/code → 200 (search_empty default)")
+
+-- GET /user/interaction-limits — default interaction_limits_empty
+reset_response()
+reset_request({ method = "GET", path = "/user/interaction-limits" })
+OnHttpRequest()
+eq(_last_status, 200, "OnHttpRequest: GET /user/interaction-limits → 200")
+eq(_last_body, "{}", "OnHttpRequest: GET /user/interaction-limits → empty object body")
+
+-- PUT /user/interaction-limits — default interaction_limits_put echoes body
+reset_response()
+reset_request({
+  method = "PUT",
+  path = "/user/interaction-limits",
+  body = '{"limit":"collaborators_only","expiry":"one_day"}',
+})
+OnHttpRequest()
+eq(_last_status, 200, "OnHttpRequest: PUT /user/interaction-limits → 200")
+ok(
+  _last_body:find("collaborators_only") ~= nil,
+  "OnHttpRequest: PUT /user/interaction-limits → echoes body"
+)
+
+-- DELETE /user/interaction-limits — default interaction_limits_delete returns 204
+reset_response()
+reset_request({ method = "DELETE", path = "/user/interaction-limits" })
+OnHttpRequest()
+eq(_last_status, 204, "OnHttpRequest: DELETE /user/interaction-limits → 204")
 
 -- GET /repos/{owner}/{repo} — no backend → 404 (no default_fn)
 reset_response()

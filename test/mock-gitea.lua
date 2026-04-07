@@ -437,6 +437,18 @@ function OnHttpRequest()
     ["PUT /user/installations/1/repositories/1"] = { 404, nil },
     ["DELETE /user/installations/1/repositories/1"] = { 404, nil },
     ["GET /users/octocat/installation"] = { 404, nil },
+
+    -- Interactions: Gitea has no GitHub Interactions API; confusio returns stubs directly.
+    -- These routes document what the backend would return if ever proxied.
+    ["GET /orgs/testorg/interaction-limits"] = { 404, nil },
+    ["PUT /orgs/testorg/interaction-limits"] = { 404, nil },
+    ["DELETE /orgs/testorg/interaction-limits"] = { 404, nil },
+    ["GET /repos/octocat/hello-world/interaction-limits"] = { 404, nil },
+    ["PUT /repos/octocat/hello-world/interaction-limits"] = { 404, nil },
+    ["DELETE /repos/octocat/hello-world/interaction-limits"] = { 404, nil },
+    ["GET /user/interaction-limits"] = { 404, nil },
+    ["PUT /user/interaction-limits"] = { 404, nil },
+    ["DELETE /user/interaction-limits"] = { 404, nil },
   }
 
   local entry = routes[method .. " " .. path] or routes[path]
