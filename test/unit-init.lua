@@ -678,6 +678,12 @@ eq(
 )
 backend_allow_anonymous = true
 
+-- GET /orgs/{org}/code-scanning/alerts — code_scanning_not_implemented default → 501
+reset_response()
+reset_request({ method = "GET", path = "/orgs/myorg/code-scanning/alerts" })
+OnHttpRequest()
+eq(_last_status, 501, "OnHttpRequest: GET /orgs/{org}/code-scanning/alerts → 501")
+
 -- ============================================================
 -- Summary
 -- ============================================================
