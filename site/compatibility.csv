@@ -122,15 +122,15 @@ POST /repos/{owner}/{repo}/check-suites/{check_suite_id}/rerequest,~stub only,~s
 GET /repos/{owner}/{repo}/commits/{ref}/check-runs,y,y,y,y,~stub only,y,~stub only,~stub only,y,y,y,y,y,~stub only,~stub only,y,y,y,y,~stub only,~stub only,~stub only,y,~stub only
 GET /repos/{owner}/{repo}/commits/{ref}/check-suites,~stub only,~stub only,~stub only,~stub only,~stub only,~stub only,~stub only,~stub only,~stub only,~stub only,~stub only,~stub only,~stub only,~stub only,~stub only,~stub only,~stub only,~stub only,~stub only,~stub only,~stub only,~stub only,~stub only,~stub only
 Code Scanning,,,,,,,,,,,,,,,,,,,,,,,,
-GET /orgs/{org}/code-scanning/alerts,~empty list,n,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,n,~empty list,~empty list,~empty list,n,n,n,~empty list,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/code-scanning/alerts,y,n,~via Code Insights annotations,~empty list,~empty list,~empty list,~empty list,~empty list,n,~empty list,~empty list,~empty list,n,n,n,~empty list,n,n,n,n,n,n,n,n
+GET /orgs/{org}/code-scanning/alerts,~empty list,n,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,n,~empty list,~empty list,~empty list,~empty list,n,n,~empty list,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/code-scanning/alerts,y,n,~via Code Insights annotations,~empty list,~empty list,~empty list,~empty list,~empty list,n,~empty list,~empty list,~empty list,~empty list,n,n,~empty list,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/code-scanning/alerts/{alert_number},y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 PATCH /repos/{owner}/{repo}/code-scanning/alerts/{alert_number},y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/autofix,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 POST /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/autofix,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 POST /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/autofix/commits,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/instances,~empty list,n,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,n,~empty list,~empty list,~empty list,n,n,n,~empty list,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/code-scanning/analyses,y,n,~via Code Insights reports,~empty list,~empty list,~empty list,~empty list,~empty list,n,~empty list,~empty list,~empty list,n,n,n,~empty list,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/instances,~empty list,n,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,n,~empty list,~empty list,~empty list,~empty list,n,n,~empty list,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/code-scanning/analyses,y,n,~via Code Insights reports,~empty list,~empty list,~empty list,~empty list,~empty list,n,~empty list,~empty list,~empty list,~empty list,n,n,~empty list,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/code-scanning/analyses/{analysis_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 DELETE /repos/{owner}/{repo}/code-scanning/analyses/{analysis_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/code-scanning/codeql/databases,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
