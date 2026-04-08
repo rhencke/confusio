@@ -127,6 +127,19 @@ GET /repos/{owner}/{repo}/import/authors,~stub; returns 410 Gone,~stub; returns 
 PATCH /repos/{owner}/{repo}/import/authors/{author_id},~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone
 GET /repos/{owner}/{repo}/import/large_files,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone
 PATCH /repos/{owner}/{repo}/import/lfs,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone,~stub; returns 410 Gone
+Pages,,,,,,,,,,,,,,,,,,,,,,,,
+GET /repos/{owner}/{repo}/pages,n,n,n,~inferred from gh-pages branch,n,~inferred from gh-pages branch,n,n,n,~inferred from gh-pages branch,n,~inferred from gh-pages branch,n,n,n,~inferred from gh-pages branch,n,n,n,n,n,n,n,n
+POST /repos/{owner}/{repo}/pages,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+PUT /repos/{owner}/{repo}/pages,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+DELETE /repos/{owner}/{repo}/pages,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/pages/builds,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
+POST /repos/{owner}/{repo}/pages/builds,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/pages/builds/latest,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/pages/builds/{build_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+POST /repos/{owner}/{repo}/pages/deployments,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/pages/deployments/{pages_deployment_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+POST /repos/{owner}/{repo}/pages/deployments/{pages_deployment_id}/cancel,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/pages/health,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 Search,,,,,,,,,,,,,,,,,,,,,,,,
 GET /search/repositories,n,y,y,y,~via list filtering,y,n,y,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,~via projects API
 GET /search/users,n,y,y,y,n,y,n,y,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,~
