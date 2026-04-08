@@ -561,6 +561,8 @@ function OnHttpRequest()
     -- get_repo_pages probes for a "gh-pages" branch; all other Pages endpoints
     -- fall back to pages_not_implemented (501) without calling Gitea.
     ["/api/v1/repos/octocat/hello-world/branches/gh-pages"] = { 404, nil },
+    -- pages-repo has a gh-pages branch → confusio synthesizes a 200 Pages response.
+    ["/api/v1/repos/octocat/pages-repo/branches/gh-pages"] = { 200, '{"name":"gh-pages"}' },
 
     -- Interactions: Gitea has no GitHub Interactions API; confusio returns stubs directly.
     -- These routes document what the backend would return if ever proxied.
