@@ -29,6 +29,7 @@ local HTTP_STATUS_TEXT = {
   [401] = "Unauthorized",
   [404] = "Not Found",
   [405] = "Method Not Allowed",
+  [410] = "Gone",
   [418] = "I'm a Teapot",
   [422] = "Unprocessable Entity",
   [501] = "Not Implemented",
@@ -359,6 +360,17 @@ end
 
 local function interaction_limits_delete()
   set_preamble(204)
+end
+
+-- Default handlers for migrations: no backend exposes GitHub-compatible migration APIs.
+-- POST (start migration) returns 501 Not Implemented.
+-- Source import endpoints were deprecated by GitHub in May 2023; returns 410 Gone.
+local function migrations_not_supported()
+  respond_json(501, { message = "Migrations are not supported by this backend." })
+end
+
+local function source_import_gone()
+  respond_json(410, { message = "Importing via GitHub API is deprecated." })
 end
 
 -- Default handler for code-scanning endpoints: no backend has a native code scanning API.
@@ -1116,6 +1128,45 @@ local routes = {
     "delete_user_interaction_limits",
     interaction_limits_delete,
   },
+
+  -- Migrations (https://docs.github.com/en/rest/migrations)
+  -- Organization migrations
+  ["GET /orgs/{org}/migrations"] = { "get_org_migrations", empty_list },
+  ["POST /orgs/{org}/migrations"] = { "post_org_migrations", migrations_not_supported },
+  ["GET /orgs/{org}/migrations/{migration_id}"] = "get_org_migration",
+  ["GET /orgs/{org}/migrations/{migration_id}/archive"] = "get_org_migration_archive",
+  ["DELETE /orgs/{org}/migrations/{migration_id}/archive"] = "delete_org_migration_archive",
+  ["DELETE /orgs/{org}/migrations/{migration_id}/repos/{repo_name}/lock"] = "delete_org_migration_repo_lock",
+  ["GET /orgs/{org}/migrations/{migration_id}/repositories"] = {
+    "get_org_migration_repos",
+    empty_list,
+  },
+  -- User migrations
+  ["GET /user/migrations"] = { "get_user_migrations", empty_list },
+  ["POST /user/migrations"] = { "post_user_migrations", migrations_not_supported },
+  ["GET /user/migrations/{migration_id}"] = "get_user_migration",
+  ["GET /user/migrations/{migration_id}/archive"] = "get_user_migration_archive",
+  ["DELETE /user/migrations/{migration_id}/archive"] = "delete_user_migration_archive",
+  ["DELETE /user/migrations/{migration_id}/repos/{repo_name}/lock"] = "delete_user_migration_repo_lock",
+  ["GET /user/migrations/{migration_id}/repositories"] = {
+    "get_user_migration_repos",
+    empty_list,
+  },
+  -- Source imports (deprecated May 2023 — returns 410 Gone)
+  ["GET /repos/{owner}/{repo}/import"] = { "get_repo_import", source_import_gone },
+  ["PUT /repos/{owner}/{repo}/import"] = { "put_repo_import", source_import_gone },
+  ["PATCH /repos/{owner}/{repo}/import"] = { "patch_repo_import", source_import_gone },
+  ["DELETE /repos/{owner}/{repo}/import"] = { "delete_repo_import", source_import_gone },
+  ["GET /repos/{owner}/{repo}/import/authors"] = { "get_repo_import_authors", source_import_gone },
+  ["PATCH /repos/{owner}/{repo}/import/authors/{author_id}"] = {
+    "patch_repo_import_author",
+    source_import_gone,
+  },
+  ["GET /repos/{owner}/{repo}/import/large_files"] = {
+    "get_repo_import_large_files",
+    source_import_gone,
+  },
+  ["PATCH /repos/{owner}/{repo}/import/lfs"] = { "patch_repo_import_lfs", source_import_gone },
 }
 for spec, v in pairs(routes) do
   if type(v) == "string" then
