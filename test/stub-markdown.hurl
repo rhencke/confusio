@@ -15,7 +15,7 @@ jsonpath "$.message" isString
 POST http://{{host}}/markdown/raw
 Authorization: token testtoken
 Content-Type: text/plain
-Hello **world**
+`Hello **world**`
 
 HTTP 501
 [Asserts]
