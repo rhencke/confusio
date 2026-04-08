@@ -2905,6 +2905,36 @@ backend_impl = {
     pkg_delete_version(login, pkg_type, pkg_name, version_id)
   end,
 
+  -- Pages (https://docs.github.com/en/rest/pages) ---------------------------------
+  -- Gitea has no native GitHub Pages API.  We synthesize a minimal GET response
+  -- by checking whether the repo has a "gh-pages" branch.  Write, build, and
+  -- deployment endpoints have no Gitea equivalent and fall back to the default
+  -- pages_not_implemented (501) handler.
+
+  get_repo_pages = function(owner, repo_name)
+    local ok, status, _, _ =
+      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/branches/gh-pages")
+    if not ok then
+      respond_json(503, {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, {})
+      return
+    end
+    respond_json(200, {
+      url = "",
+      status = "built",
+      cname = nil,
+      custom_404 = false,
+      html_url = config.base_url .. "/" .. owner .. "/" .. repo_name,
+      source = { branch = "gh-pages", path = "/" },
+      public = true,
+      https_enforced = false,
+      build_type = "legacy",
+    })
+  end,
+
   -- Packages (public user) -------------------------------------------------------
 
   get_users_packages = function(username)

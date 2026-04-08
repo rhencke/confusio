@@ -385,6 +385,12 @@ local function code_scanning_list_empty()
   respond_json(200, {})
 end
 
+-- Default handler for Pages endpoints: no backend has a native GitHub Pages API.
+-- Returns 501 Not Implemented with a descriptive message.
+local function pages_not_implemented()
+  respond_json(501, { message = "Pages is not supported by this backend." })
+end
+
 -- Default handlers for GET /zen, GET /octocat, GET /versions, GET /meta.
 -- These endpoints are fully self-contained and do not call any backend.
 local ZEN_QUOTES = {
@@ -1152,6 +1158,35 @@ local routes = {
     "get_user_migration_repos",
     empty_list,
   },
+  -- Pages (https://docs.github.com/en/rest/pages)
+  ["GET /repos/{owner}/{repo}/pages"] = { "get_repo_pages", pages_not_implemented },
+  ["POST /repos/{owner}/{repo}/pages"] = { "post_repo_pages", pages_not_implemented },
+  ["PUT /repos/{owner}/{repo}/pages"] = { "put_repo_pages", pages_not_implemented },
+  ["DELETE /repos/{owner}/{repo}/pages"] = { "delete_repo_pages", pages_not_implemented },
+  ["GET /repos/{owner}/{repo}/pages/builds"] = { "get_repo_pages_builds", empty_list },
+  ["POST /repos/{owner}/{repo}/pages/builds"] = { "post_repo_pages_builds", pages_not_implemented },
+  ["GET /repos/{owner}/{repo}/pages/builds/latest"] = {
+    "get_repo_pages_build_latest",
+    pages_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/pages/builds/{build_id}"] = {
+    "get_repo_pages_build",
+    pages_not_implemented,
+  },
+  ["POST /repos/{owner}/{repo}/pages/deployments"] = {
+    "post_repo_pages_deployments",
+    pages_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/pages/deployments/{pages_deployment_id}"] = {
+    "get_repo_pages_deployment",
+    pages_not_implemented,
+  },
+  ["POST /repos/{owner}/{repo}/pages/deployments/{pages_deployment_id}/cancel"] = {
+    "post_repo_pages_deployment_cancel",
+    pages_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/pages/health"] = { "get_repo_pages_health", pages_not_implemented },
+
   -- Source imports (deprecated May 2023 — returns 410 Gone)
   ["GET /repos/{owner}/{repo}/import"] = { "get_repo_import", source_import_gone },
   ["PUT /repos/{owner}/{repo}/import"] = { "put_repo_import", source_import_gone },
