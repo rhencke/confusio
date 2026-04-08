@@ -391,6 +391,12 @@ local function pages_not_implemented()
   respond_json(501, { message = "Pages is not supported by this backend." })
 end
 
+-- Default handler for Markdown endpoints: backends that support native markdown
+-- rendering override these. Falls back to 501 Not Implemented.
+local function markdown_not_implemented()
+  respond_json(501, { message = "Markdown rendering is not supported by this backend." })
+end
+
 -- Default handlers for GET /zen, GET /octocat, GET /versions, GET /meta.
 -- These endpoints are fully self-contained and do not call any backend.
 local ZEN_QUOTES = {
@@ -1202,6 +1208,10 @@ local routes = {
     source_import_gone,
   },
   ["PATCH /repos/{owner}/{repo}/import/lfs"] = { "patch_repo_import_lfs", source_import_gone },
+
+  -- Markdown (https://docs.github.com/en/rest/markdown)
+  ["POST /markdown"] = { "render_markdown", markdown_not_implemented },
+  ["POST /markdown/raw"] = { "render_markdown_raw", markdown_not_implemented },
 }
 for spec, v in pairs(routes) do
   if type(v) == "string" then
