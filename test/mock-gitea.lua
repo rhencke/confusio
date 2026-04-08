@@ -531,6 +531,32 @@ function OnHttpRequest()
     },
     ["DELETE /api/v1/packages/octocat/npm/my-lib/0.1.0"] = { 204, nil },
 
+    -- Migrations: Gitea has no GitHub Migrations API; confusio returns defaults directly.
+    -- These routes document what the backend would return if ever proxied.
+    ["GET /orgs/testorg/migrations"] = { 404, nil },
+    ["POST /orgs/testorg/migrations"] = { 404, nil },
+    ["GET /orgs/testorg/migrations/1"] = { 404, nil },
+    ["GET /orgs/testorg/migrations/1/archive"] = { 404, nil },
+    ["DELETE /orgs/testorg/migrations/1/archive"] = { 404, nil },
+    ["DELETE /orgs/testorg/migrations/1/repos/hello-world/lock"] = { 404, nil },
+    ["GET /orgs/testorg/migrations/1/repositories"] = { 404, nil },
+    ["GET /user/migrations"] = { 404, nil },
+    ["POST /user/migrations"] = { 404, nil },
+    ["GET /user/migrations/1"] = { 404, nil },
+    ["GET /user/migrations/1/archive"] = { 404, nil },
+    ["DELETE /user/migrations/1/archive"] = { 404, nil },
+    ["DELETE /user/migrations/1/repos/hello-world/lock"] = { 404, nil },
+    ["GET /user/migrations/1/repositories"] = { 404, nil },
+    -- Source imports: deprecated May 2023; confusio returns 410 directly without proxying.
+    ["GET /repos/octocat/hello-world/import"] = { 404, nil },
+    ["PUT /repos/octocat/hello-world/import"] = { 404, nil },
+    ["PATCH /repos/octocat/hello-world/import"] = { 404, nil },
+    ["DELETE /repos/octocat/hello-world/import"] = { 404, nil },
+    ["GET /repos/octocat/hello-world/import/authors"] = { 404, nil },
+    ["PATCH /repos/octocat/hello-world/import/authors/1"] = { 404, nil },
+    ["GET /repos/octocat/hello-world/import/large_files"] = { 404, nil },
+    ["PATCH /repos/octocat/hello-world/import/lfs"] = { 404, nil },
+
     -- Interactions: Gitea has no GitHub Interactions API; confusio returns stubs directly.
     -- These routes document what the backend would return if ever proxied.
     ["GET /orgs/testorg/interaction-limits"] = { 404, nil },
