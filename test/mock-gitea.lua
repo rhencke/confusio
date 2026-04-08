@@ -557,6 +557,11 @@ function OnHttpRequest()
     ["GET /repos/octocat/hello-world/import/large_files"] = { 404, nil },
     ["PATCH /repos/octocat/hello-world/import/lfs"] = { 404, nil },
 
+    -- Pages: Gitea has no native GitHub Pages API.
+    -- get_repo_pages probes for a "gh-pages" branch; all other Pages endpoints
+    -- fall back to pages_not_implemented (501) without calling Gitea.
+    ["/api/v1/repos/octocat/hello-world/branches/gh-pages"] = { 404, nil },
+
     -- Interactions: Gitea has no GitHub Interactions API; confusio returns stubs directly.
     -- These routes document what the backend would return if ever proxied.
     ["GET /orgs/testorg/interaction-limits"] = { 404, nil },
