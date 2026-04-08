@@ -694,6 +694,24 @@ eq(
   "OnHttpRequest: GET /repos/{owner}/{repo}/code-scanning/alerts/{alert_number} → 501 (not implemented)"
 )
 
+-- POST /orgs/{org}/migrations — migrations_not_supported default → 501
+reset_response()
+reset_request({ method = "POST", path = "/orgs/myorg/migrations" })
+OnHttpRequest()
+eq(_last_status, 501, "OnHttpRequest: POST /orgs/{org}/migrations → 501 (not supported)")
+
+-- POST /user/migrations — migrations_not_supported default → 501
+reset_response()
+reset_request({ method = "POST", path = "/user/migrations" })
+OnHttpRequest()
+eq(_last_status, 501, "OnHttpRequest: POST /user/migrations → 501 (not supported)")
+
+-- GET /repos/{owner}/{repo}/import — source_import_gone default → 410
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/import" })
+OnHttpRequest()
+eq(_last_status, 410, "OnHttpRequest: GET /repos/{owner}/{repo}/import → 410 (deprecated)")
+
 -- ============================================================
 -- Summary
 -- ============================================================
