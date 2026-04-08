@@ -2955,4 +2955,42 @@ backend_impl = {
   delete_users_package_version = function(username, pkg_type, pkg_name, version_id)
     pkg_delete_version(username, pkg_type, pkg_name, version_id)
   end,
+
+  -- Markdown -------------------------------------------------------------------
+
+  -- POST /markdown → POST /api/v1/markdown
+  -- Gitea accepts the same JSON body as GitHub and returns rendered HTML.
+  render_markdown = function()
+    local opts = auth() or {}
+    opts.method = "POST"
+    opts.body = GetBody()
+    opts.headers = opts.headers or {}
+    opts.headers["Content-Type"] = GetHeader("Content-Type") or "application/json"
+    local ok, status, headers, body = pcall(Fetch, base() .. "/markdown", opts)
+    if not ok then
+      respond_json(503, {})
+      return
+    end
+    local ct = (headers and (headers["Content-Type"] or headers["content-type"])) or "text/html"
+    set_preamble(status, ct)
+    Write(body or "")
+  end,
+
+  -- POST /markdown/raw → POST /api/v1/markdown/raw
+  -- Gitea accepts raw markdown text and returns rendered HTML.
+  render_markdown_raw = function()
+    local opts = auth() or {}
+    opts.method = "POST"
+    opts.body = GetBody()
+    opts.headers = opts.headers or {}
+    opts.headers["Content-Type"] = "text/plain"
+    local ok, status, headers, body = pcall(Fetch, base() .. "/markdown/raw", opts)
+    if not ok then
+      respond_json(503, {})
+      return
+    end
+    local ct = (headers and (headers["Content-Type"] or headers["content-type"])) or "text/html"
+    set_preamble(status, ct)
+    Write(body or "")
+  end,
 }
