@@ -722,6 +722,18 @@ eq(
   "OnHttpRequest: GET /repos/{owner}/{repo}/pages → 501 (pages not implemented)"
 )
 
+-- POST /markdown — markdown_not_implemented default → 501
+reset_response()
+reset_request({ method = "POST", path = "/markdown" })
+OnHttpRequest()
+eq(_last_status, 501, "OnHttpRequest: POST /markdown → 501 (markdown not implemented)")
+
+-- POST /markdown/raw — markdown_not_implemented default → 501
+reset_response()
+reset_request({ method = "POST", path = "/markdown/raw" })
+OnHttpRequest()
+eq(_last_status, 501, "OnHttpRequest: POST /markdown/raw → 501 (markdown not implemented)")
+
 -- ============================================================
 -- Summary
 -- ============================================================

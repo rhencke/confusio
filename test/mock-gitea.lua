@@ -590,6 +590,14 @@ function OnHttpRequest()
     if body then
       json(body)
     end
+  elseif method == "POST" and path == "/api/v1/markdown" then
+    SetStatus(200, "OK")
+    SetHeader("Content-Type", "text/html; charset=UTF-8")
+    Write("<p>Hello <strong>world</strong></p>\n")
+  elseif method == "POST" and path == "/api/v1/markdown/raw" then
+    SetStatus(200, "OK")
+    SetHeader("Content-Type", "text/html; charset=UTF-8")
+    Write("<p>Hello <strong>world</strong></p>\n")
   elseif path:find("^/api/v1/repos/octocat/hello%-world/contents/") then
     local file = path:match("^/api/v1/repos/octocat/hello%-world/contents/(.+)$") or "file"
     SetStatus(200, "OK")

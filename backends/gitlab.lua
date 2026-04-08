@@ -3447,4 +3447,46 @@ backend_impl = {
     end
     respond_json(404, { message = "Not Found" })
   end,
+
+  -- Markdown -------------------------------------------------------------------
+
+  -- POST /markdown → POST /api/v4/markdown
+  -- GitLab returns {"html": "..."} JSON; extract the html field.
+  render_markdown = function()
+    local incoming = DecodeJson(GetBody() or "{}") or {}
+    local payload = EncodeJson({ text = incoming.text or "", gfm = true })
+    local opts = auth() or {}
+    opts.method = "POST"
+    opts.body = payload
+    opts.headers = opts.headers or {}
+    opts.headers["Content-Type"] = "application/json"
+    local ok, status, _, body = pcall(Fetch, base() .. "/markdown", opts)
+    if not ok then
+      respond_json(503, {})
+      return
+    end
+    local parsed = DecodeJson(body or "{}") or {}
+    set_preamble(status, "text/html; charset=utf-8")
+    Write(parsed.html or "")
+  end,
+
+  -- POST /markdown/raw → POST /api/v4/markdown
+  -- GitLab has no separate raw endpoint; wrap the plain-text body in JSON.
+  render_markdown_raw = function()
+    local raw = GetBody() or ""
+    local payload = EncodeJson({ text = raw, gfm = true })
+    local opts = auth() or {}
+    opts.method = "POST"
+    opts.body = payload
+    opts.headers = opts.headers or {}
+    opts.headers["Content-Type"] = "application/json"
+    local ok, status, _, body = pcall(Fetch, base() .. "/markdown", opts)
+    if not ok then
+      respond_json(503, {})
+      return
+    end
+    local parsed = DecodeJson(body or "{}") or {}
+    set_preamble(status, "text/html; charset=utf-8")
+    Write(parsed.html or "")
+  end,
 }

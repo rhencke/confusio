@@ -515,6 +515,12 @@ function OnHttpRequest()
   elseif path == "/api/v4/projects/1/packages/2" and GetMethod() == "DELETE" then
     SetStatus(204, "No Content")
 
+  -- Markdown ------------------------------------------------------------------
+  elseif path == "/api/v4/markdown" and GetMethod() == "POST" then
+    SetStatus(200, "OK")
+    SetHeader("Content-Type", "application/json")
+    Write('{"html":"<p>Hello <strong>world</strong></p>"}')
+
   -- Gitignore templates --------------------------------------------------------
   elseif path == "/api/v4/templates/gitignores" then
     SetStatus(200, "OK")
