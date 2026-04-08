@@ -236,5 +236,5 @@ PUT /user/installations/{installation_id}/repositories/{repository_id},n,n,n,n,n
 DELETE /user/installations/{installation_id}/repositories/{repository_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /users/{username}/installation,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 Markdown,,,,,,,,,,,,,,,,,,,,,,,,
-POST /markdown,n,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-POST /markdown/raw,n,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+POST /markdown,n,n,n,n,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+POST /markdown/raw,n,n,n,n,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
