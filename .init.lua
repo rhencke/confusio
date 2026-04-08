@@ -373,6 +373,17 @@ local function code_scanning_list_empty()
   respond_json(200, {})
 end
 
+-- Default handlers for migration endpoints: no backend has a native migration API.
+-- Organization and user migration exports return 501 for single-resource endpoints.
+-- Source imports (deprecated) also return 501.
+local function migrations_not_supported()
+  respond_json(501, { message = "Migrations are not supported by this backend." })
+end
+
+local function source_imports_not_supported()
+  respond_json(501, { message = "Source imports are not supported by this backend." })
+end
+
 -- Default handlers for GET /zen, GET /octocat, GET /versions, GET /meta.
 -- These endpoints are fully self-contained and do not call any backend.
 local ZEN_QUOTES = {
@@ -1115,6 +1126,85 @@ local routes = {
   ["DELETE /user/interaction-limits"] = {
     "delete_user_interaction_limits",
     interaction_limits_delete,
+  },
+
+  -- Migrations — Organization (https://docs.github.com/en/rest/migrations/orgs)
+  ["GET /orgs/{org}/migrations"] = { "get_org_migrations", empty_list },
+  ["POST /orgs/{org}/migrations"] = { "post_org_migrations", migrations_not_supported },
+  ["GET /orgs/{org}/migrations/{migration_id}"] = {
+    "get_org_migration",
+    migrations_not_supported,
+  },
+  ["GET /orgs/{org}/migrations/{migration_id}/archive"] = {
+    "get_org_migration_archive",
+    migrations_not_supported,
+  },
+  ["DELETE /orgs/{org}/migrations/{migration_id}/archive"] = {
+    "delete_org_migration_archive",
+    migrations_not_supported,
+  },
+  ["DELETE /orgs/{org}/migrations/{migration_id}/repos/{repo_name}/lock"] = {
+    "delete_org_migration_repo_lock",
+    migrations_not_supported,
+  },
+  ["GET /orgs/{org}/migrations/{migration_id}/repositories"] = {
+    "get_org_migration_repos",
+    empty_list,
+  },
+
+  -- Migrations — Source imports (https://docs.github.com/en/rest/migrations/source-imports)
+  ["GET /repos/{owner}/{repo}/import"] = {
+    "get_repo_import",
+    source_imports_not_supported,
+  },
+  ["PUT /repos/{owner}/{repo}/import"] = {
+    "put_repo_import",
+    source_imports_not_supported,
+  },
+  ["PATCH /repos/{owner}/{repo}/import"] = {
+    "patch_repo_import",
+    source_imports_not_supported,
+  },
+  ["DELETE /repos/{owner}/{repo}/import"] = {
+    "delete_repo_import",
+    source_imports_not_supported,
+  },
+  ["GET /repos/{owner}/{repo}/import/authors"] = { "get_repo_import_authors", empty_list },
+  ["PATCH /repos/{owner}/{repo}/import/authors/{author_id}"] = {
+    "patch_repo_import_author",
+    source_imports_not_supported,
+  },
+  ["GET /repos/{owner}/{repo}/import/large_files"] = {
+    "get_repo_import_large_files",
+    empty_list,
+  },
+  ["PATCH /repos/{owner}/{repo}/import/lfs"] = {
+    "patch_repo_import_lfs",
+    source_imports_not_supported,
+  },
+
+  -- Migrations — User (https://docs.github.com/en/rest/migrations/users)
+  ["GET /user/migrations"] = { "get_user_migrations", empty_list },
+  ["POST /user/migrations"] = { "post_user_migrations", migrations_not_supported },
+  ["GET /user/migrations/{migration_id}"] = {
+    "get_user_migration",
+    migrations_not_supported,
+  },
+  ["GET /user/migrations/{migration_id}/archive"] = {
+    "get_user_migration_archive",
+    migrations_not_supported,
+  },
+  ["DELETE /user/migrations/{migration_id}/archive"] = {
+    "delete_user_migration_archive",
+    migrations_not_supported,
+  },
+  ["DELETE /user/migrations/{migration_id}/repos/{repo_name}/lock"] = {
+    "delete_user_migration_repo_lock",
+    migrations_not_supported,
+  },
+  ["GET /user/migrations/{migration_id}/repositories"] = {
+    "get_user_migration_repos",
+    empty_list,
   },
 }
 for spec, v in pairs(routes) do
