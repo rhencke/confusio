@@ -712,6 +712,16 @@ reset_request({ method = "GET", path = "/repos/alice/myrepo/import" })
 OnHttpRequest()
 eq(_last_status, 410, "OnHttpRequest: GET /repos/{owner}/{repo}/import → 410 (deprecated)")
 
+-- GET /repos/{owner}/{repo}/pages — pages_not_implemented default → 501
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/pages" })
+OnHttpRequest()
+eq(
+  _last_status,
+  501,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/pages → 501 (pages not implemented)"
+)
+
 -- ============================================================
 -- Summary
 -- ============================================================
