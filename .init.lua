@@ -654,9 +654,20 @@ local function path_known(path)
 end
 
 -- ---------------------------------------------------------------------------
+-- Route defaults
+--
+-- Maps handler_name -> default_fn for handlers that return a static stub
+-- when no backend implements them. The registration loop below consults this
+-- table so the route registry only needs handler names, not inline functions.
+-- ---------------------------------------------------------------------------
+
+local route_defaults = {}
+
+-- ---------------------------------------------------------------------------
 -- Route registry
 --
--- Each entry: { "VERB /path", handler_name }.
+-- Each entry: handler_name string (or { handler_name, override_fn } for the
+-- rare case where the default cannot be expressed in route_defaults).
 -- The HTTP method is part of the route string; each verb+path gets its own
 -- named handler in defaults (and optionally an override in backends/<name>.lua).
 -- Parametric captures are passed positionally to the handler:
@@ -2141,7 +2152,7 @@ local routes = {
 }
 for spec, v in pairs(routes) do
   if type(v) == "string" then
-    route_add(spec, v)
+    route_add(spec, v, route_defaults[v])
   else
     route_add(spec, v[1], v[2])
   end
