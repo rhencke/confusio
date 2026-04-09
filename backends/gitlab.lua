@@ -3001,6 +3001,76 @@ backend_impl = {
     end, fetch_json(base() .. "/templates/gitignores/" .. name))
   end,
 
+  -- Licenses -----------------------------------------------------------------
+
+  -- GET /licenses → GitLab GET /api/v4/templates/licenses
+  -- GitLab returns [{key,name,...}]; GitHub returns [{key,name,...}] (license-simple)
+  get_licenses = function()
+    proxy_json(function(list)
+      local result = {}
+      for i, t in ipairs(list or {}) do
+        result[i] = { key = t.key, name = t.name }
+      end
+      return result
+    end, fetch_json(base() .. "/templates/licenses"))
+  end,
+
+  -- GET /licenses/{license} → GitLab GET /api/v4/templates/licenses/{key}
+  -- GitLab returns {key,name,content,description,conditions,permissions,limitations,html_url}
+  -- GitHub returns {key,name,body,description,conditions,permissions,limitations,html_url,...}
+  get_license = function(license_name)
+    proxy_json(function(t)
+      if not t then
+        return {}
+      end
+      return {
+        key = t.key,
+        name = t.name,
+        html_url = t.html_url,
+        description = t.description,
+        body = t.content,
+        permissions = t.permissions or {},
+        conditions = t.conditions or {},
+        limitations = t.limitations or {},
+      }
+    end, fetch_json(base() .. "/templates/licenses/" .. license_name))
+  end,
+
+  -- GET /repos/{owner}/{repo}/license
+  -- Combines /repository/files/LICENSE content with project license metadata.
+  get_repo_license = function(owner, repo_name)
+    local pid = project_id(owner, repo_name)
+    local ok, status, _, body =
+      fetch_json(base() .. "/projects/" .. pid .. "/repository/files/LICENSE?ref=HEAD")
+    if not ok then
+      respond_json(503, {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, {})
+      return
+    end
+    local f = DecodeJson(body) or {}
+    local rok, rstatus, _, rbody = fetch_json(base() .. "/projects/" .. pid)
+    local license_meta = nil
+    if rok and rstatus == 200 then
+      local lic = (DecodeJson(rbody) or {}).license
+      if lic then
+        license_meta = { key = lic.key, name = lic.name }
+      end
+    end
+    respond_json(200, {
+      name = f.file_name,
+      path = f.file_path,
+      sha = f.blob_id,
+      size = f.size,
+      type = "file",
+      content = f.content,
+      encoding = f.encoding,
+      license = license_meta,
+    })
+  end,
+
   -- Checks (via GitLab commit statuses and pipelines) -------------------------
   --
   -- GitHub Check Runs map onto GitLab commit statuses.  GitLab has no concept

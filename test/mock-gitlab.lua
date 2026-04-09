@@ -21,7 +21,8 @@ function OnHttpRequest()
     .. '"open_issues_count":0,"issues_enabled":true,"wiki_enabled":false,'
     .. '"archived":false,"default_branch":"main",'
     .. '"created_at":"2011-01-26T19:01:12Z","last_activity_at":"2011-01-26T19:14:43Z",'
-    .. '"topics":["lua","api"]}'
+    .. '"topics":["lua","api"],'
+    .. '"license":{"key":"mit","name":"MIT License"}}'
 
   if path == "/api/v4/version" then
     SetStatus(200, "OK")
@@ -539,6 +540,33 @@ function OnHttpRequest()
   elseif path == "/api/v4/templates/gitignores/Nonexistent" then
     SetStatus(404, "Not Found")
     json('{"message":"404 Not Found"}')
+
+  -- License templates ----------------------------------------------------------
+  elseif path == "/api/v4/templates/licenses" then
+    SetStatus(200, "OK")
+    json('[{"key":"mit","name":"MIT License"},{"key":"apache-2.0","name":"Apache License 2.0"}]')
+  elseif path == "/api/v4/templates/licenses/mit" then
+    SetStatus(200, "OK")
+    json(
+      '{"key":"mit","name":"MIT License",'
+        .. '"html_url":"http://choosealicense.com/licenses/mit/",'
+        .. '"description":"A permissive license.",'
+        .. '"content":"MIT License\\n\\nCopyright (c) [year] [fullname]",'
+        .. '"permissions":["commercial-use","modifications","distribution","private-use"],'
+        .. '"conditions":["include-copyright"],'
+        .. '"limitations":["liability","warranty"]}'
+    )
+  elseif path == "/api/v4/templates/licenses/Nonexistent" then
+    SetStatus(404, "Not Found")
+    json('{"message":"404 Not Found"}')
+
+  -- Repo license file ----------------------------------------------------------
+  elseif path == pb .. "/repository/files/LICENSE" then
+    SetStatus(200, "OK")
+    json(
+      '{"file_name":"LICENSE","file_path":"LICENSE","blob_id":"abc123",'
+        .. '"size":100,"encoding":"base64","content":"SGVsbG8gV29ybGQ="}'
+    )
 
   -- Migrations: GitLab has per-project export, not GitHub-style org/user migrations.
   -- confusio returns fixed responses without proxying, but routes are documented here.
