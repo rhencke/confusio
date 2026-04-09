@@ -435,55 +435,19 @@ local function markdown_not_implemented()
 end
 
 -- Default handlers for Actions endpoints: no backend has a native GitHub Actions-compatible API.
--- List endpoints return empty but valid GitHub Actions collections.
+-- List endpoints use make_empty_collection to return a valid GitHub Actions envelope.
 -- Per-resource and mutation endpoints return 501 Not Implemented.
 local function actions_not_implemented()
   respond_json(501, { message = "Actions is not supported by this backend." })
 end
 
-local function actions_runs_empty()
-  set_preamble()
-  Write('{"total_count":0,"workflow_runs":[]}')
-end
-
-local function actions_artifacts_empty()
-  set_preamble()
-  Write('{"total_count":0,"artifacts":[]}')
-end
-
-local function actions_jobs_empty()
-  set_preamble()
-  Write('{"total_count":0,"jobs":[]}')
-end
-
-local function actions_runners_empty()
-  set_preamble()
-  Write('{"total_count":0,"runners":[]}')
-end
-
-local function actions_runner_groups_empty()
-  set_preamble()
-  Write('{"total_count":0,"runner_groups":[]}')
-end
-
-local function actions_secrets_empty()
-  set_preamble()
-  Write('{"total_count":0,"secrets":[]}')
-end
-
-local function actions_variables_empty()
-  set_preamble()
-  Write('{"total_count":0,"variables":[]}')
-end
-
-local function actions_caches_empty()
-  set_preamble()
-  Write('{"total_count":0,"actions_caches":[]}')
-end
-
-local function actions_workflows_empty()
-  set_preamble()
-  Write('{"total_count":0,"workflows":[]}')
+-- Factory for Actions list endpoints: returns a handler that writes
+-- {"total_count":0,"<key>":[]}, where key is the GitHub API collection name.
+local function make_empty_collection(key)
+  return function()
+    set_preamble()
+    Write('{"total_count":0,"' .. key .. '":[]}')
+  end
 end
 
 -- Default handler for Git database endpoints: backends that have a native low-level
@@ -827,7 +791,7 @@ local route_defaults = {
   get_org_actions_cache_usage = actions_not_implemented,
   get_org_actions_cache_usage_by_repo = actions_not_implemented,
   -- Actions: organization hosted runners
-  get_org_actions_hosted_runners = actions_runners_empty,
+  get_org_actions_hosted_runners = make_empty_collection("runners"),
   post_org_actions_hosted_runner = actions_not_implemented,
   get_org_actions_hosted_runner_custom_images = empty_list,
   get_org_actions_hosted_runner_custom_image = actions_not_implemented,
@@ -873,22 +837,22 @@ local route_defaults = {
   get_org_actions_default_workflow_perms = actions_not_implemented,
   put_org_actions_default_workflow_perms = actions_not_implemented,
   -- Actions: organization runner groups
-  get_org_actions_runner_groups = actions_runner_groups_empty,
+  get_org_actions_runner_groups = make_empty_collection("runner_groups"),
   post_org_actions_runner_group = actions_not_implemented,
   get_org_actions_runner_group = actions_not_implemented,
   patch_org_actions_runner_group = actions_not_implemented,
   delete_org_actions_runner_group = actions_not_implemented,
-  get_org_actions_runner_group_hosted_runners = actions_runners_empty,
+  get_org_actions_runner_group_hosted_runners = make_empty_collection("runners"),
   get_org_actions_runner_group_repos = empty_list,
   put_org_actions_runner_group_repos = actions_not_implemented,
   put_org_actions_runner_group_repo = actions_not_implemented,
   delete_org_actions_runner_group_repo = actions_not_implemented,
-  get_org_actions_runner_group_runners = actions_runners_empty,
+  get_org_actions_runner_group_runners = make_empty_collection("runners"),
   put_org_actions_runner_group_runners = actions_not_implemented,
   put_org_actions_runner_group_runner = actions_not_implemented,
   delete_org_actions_runner_group_runner = actions_not_implemented,
   -- Actions: organization runners
-  get_org_actions_runners = actions_runners_empty,
+  get_org_actions_runners = make_empty_collection("runners"),
   get_org_actions_runner_downloads = empty_list,
   post_org_actions_runner_jitconfig = actions_not_implemented,
   post_org_actions_runner_registration_token = actions_not_implemented,
@@ -901,7 +865,7 @@ local route_defaults = {
   delete_org_actions_runner_labels = actions_not_implemented,
   delete_org_actions_runner_label = actions_not_implemented,
   -- Actions: organization secrets
-  get_org_actions_secrets = actions_secrets_empty,
+  get_org_actions_secrets = make_empty_collection("secrets"),
   get_org_actions_secrets_public_key = actions_not_implemented,
   get_org_actions_secret = actions_not_implemented,
   put_org_actions_secret = actions_not_implemented,
@@ -911,7 +875,7 @@ local route_defaults = {
   put_org_actions_secret_repo = actions_not_implemented,
   delete_org_actions_secret_repo = actions_not_implemented,
   -- Actions: organization variables
-  get_org_actions_variables = actions_variables_empty,
+  get_org_actions_variables = make_empty_collection("variables"),
   post_org_actions_variable = actions_not_implemented,
   get_org_actions_variable = actions_not_implemented,
   patch_org_actions_variable = actions_not_implemented,
@@ -921,7 +885,7 @@ local route_defaults = {
   put_org_actions_variable_repo = actions_not_implemented,
   delete_org_actions_variable_repo = actions_not_implemented,
   -- Actions: repository artifacts
-  get_repo_actions_artifacts = actions_artifacts_empty,
+  get_repo_actions_artifacts = make_empty_collection("artifacts"),
   get_repo_actions_artifact = actions_not_implemented,
   delete_repo_actions_artifact = actions_not_implemented,
   get_repo_actions_artifact_archive = actions_not_implemented,
@@ -931,7 +895,7 @@ local route_defaults = {
   get_repo_actions_cache_storage_limit = actions_not_implemented,
   put_repo_actions_cache_storage_limit = actions_not_implemented,
   get_repo_actions_cache_usage = actions_not_implemented,
-  get_repo_actions_caches = actions_caches_empty,
+  get_repo_actions_caches = make_empty_collection("actions_caches"),
   delete_repo_actions_caches = actions_not_implemented,
   delete_repo_actions_cache = actions_not_implemented,
   -- Actions: repository jobs
@@ -942,8 +906,8 @@ local route_defaults = {
   get_repo_actions_oidc_sub = actions_not_implemented,
   put_repo_actions_oidc_sub = actions_not_implemented,
   -- Actions: repository org secrets/variables
-  get_repo_actions_org_secrets = actions_secrets_empty,
-  get_repo_actions_org_variables = actions_variables_empty,
+  get_repo_actions_org_secrets = make_empty_collection("secrets"),
+  get_repo_actions_org_variables = make_empty_collection("variables"),
   -- Actions: repository permissions
   get_repo_actions_permissions = actions_not_implemented,
   put_repo_actions_permissions = actions_not_implemented,
@@ -960,7 +924,7 @@ local route_defaults = {
   get_repo_actions_default_workflow_perms = actions_not_implemented,
   put_repo_actions_default_workflow_perms = actions_not_implemented,
   -- Actions: repository runners
-  get_repo_actions_runners = actions_runners_empty,
+  get_repo_actions_runners = make_empty_collection("runners"),
   get_repo_actions_runner_downloads = empty_list,
   post_repo_actions_runner_jitconfig = actions_not_implemented,
   post_repo_actions_runner_registration_token = actions_not_implemented,
@@ -973,19 +937,19 @@ local route_defaults = {
   delete_repo_actions_runner_labels = actions_not_implemented,
   delete_repo_actions_runner_label = actions_not_implemented,
   -- Actions: repository workflow runs
-  get_repo_actions_runs = actions_runs_empty,
+  get_repo_actions_runs = make_empty_collection("workflow_runs"),
   get_repo_actions_run = actions_not_implemented,
   delete_repo_actions_run = actions_not_implemented,
   get_repo_actions_run_approvals = empty_list,
   post_repo_actions_run_approve = actions_not_implemented,
-  get_repo_actions_run_artifacts = actions_artifacts_empty,
+  get_repo_actions_run_artifacts = make_empty_collection("artifacts"),
   get_repo_actions_run_attempt = actions_not_implemented,
-  get_repo_actions_run_attempt_jobs = actions_jobs_empty,
+  get_repo_actions_run_attempt_jobs = make_empty_collection("jobs"),
   get_repo_actions_run_attempt_logs = actions_not_implemented,
   post_repo_actions_run_cancel = actions_not_implemented,
   post_repo_actions_run_deployment_prot = actions_not_implemented,
   post_repo_actions_run_force_cancel = actions_not_implemented,
-  get_repo_actions_run_jobs = actions_jobs_empty,
+  get_repo_actions_run_jobs = make_empty_collection("jobs"),
   get_repo_actions_run_logs = actions_not_implemented,
   delete_repo_actions_run_logs = actions_not_implemented,
   get_repo_actions_run_pending_deployments = empty_list,
@@ -994,24 +958,24 @@ local route_defaults = {
   post_repo_actions_run_rerun_failed = actions_not_implemented,
   get_repo_actions_run_timing = actions_not_implemented,
   -- Actions: repository secrets
-  get_repo_actions_secrets = actions_secrets_empty,
+  get_repo_actions_secrets = make_empty_collection("secrets"),
   get_repo_actions_secrets_public_key = actions_not_implemented,
   get_repo_actions_secret = actions_not_implemented,
   put_repo_actions_secret = actions_not_implemented,
   delete_repo_actions_secret = actions_not_implemented,
   -- Actions: repository variables
-  get_repo_actions_variables = actions_variables_empty,
+  get_repo_actions_variables = make_empty_collection("variables"),
   post_repo_actions_variable = actions_not_implemented,
   get_repo_actions_variable = actions_not_implemented,
   patch_repo_actions_variable = actions_not_implemented,
   delete_repo_actions_variable = actions_not_implemented,
   -- Actions: repository workflows
-  get_repo_actions_workflows = actions_workflows_empty,
+  get_repo_actions_workflows = make_empty_collection("workflows"),
   get_repo_actions_workflow = actions_not_implemented,
   put_repo_actions_workflow_disable = actions_not_implemented,
   post_repo_actions_workflow_dispatch = actions_not_implemented,
   put_repo_actions_workflow_enable = actions_not_implemented,
-  get_repo_actions_workflow_runs = actions_runs_empty,
+  get_repo_actions_workflow_runs = make_empty_collection("workflow_runs"),
   get_repo_actions_workflow_timing = actions_not_implemented,
   -- Git database
   create_git_blob = git_not_implemented,
