@@ -576,6 +576,12 @@ function OnHttpRequest()
       '{"total_count":1,"incomplete_results":false,"items":'
         .. '[{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User"}]}'
     )
+
+  -- Migrations ----------------------------------------------------------------
+  -- GitBucket has no GitHub-style org/user migration API; confusio
+  -- returns fixed responses without proxying. Routes documented here for reference.
+  elseif path:match("^/orgs/[^/]+/migrations") or path:match("^/user/migrations") then
+    SetStatus(404, "Not Found")
   else
     SetStatus(404, "Not Found")
   end

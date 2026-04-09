@@ -39,6 +39,12 @@ function OnHttpRequest()
   elseif path == "/v1/repos/hello-world/branches" and method == "GET" then
     SetStatus(200, "OK")
     json('{"branches":["main","dev"]}')
+
+  -- Migrations ----------------------------------------------------------------
+  -- CodeCommit has no GitHub-style org/user migration API; confusio
+  -- returns fixed responses without proxying. Routes documented here for reference.
+  elseif path:match("^/orgs/[^/]+/migrations") or path:match("^/user/migrations") then
+    SetStatus(404, "Not Found")
   else
     SetStatus(404, "Not Found")
   end

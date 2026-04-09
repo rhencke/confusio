@@ -1449,7 +1449,6 @@ backend_impl = {
   get_commit_check_suites = function(_owner, _repo_name, _ref)
     respond_json(200, { total_count = 0, check_suites = {} })
   end,
-
   -- Code Scanning (via ADO Advanced Security / GHAzDO) ------------------------
   --
   -- Azure DevOps Advanced Security provides code scanning alerts at the

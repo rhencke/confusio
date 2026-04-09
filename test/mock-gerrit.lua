@@ -104,6 +104,12 @@ function OnHttpRequest()
   elseif path == "/a/accounts/" then
     SetStatus(200, "OK")
     json("[" .. ACCOUNT .. "]")
+
+  -- Migrations ----------------------------------------------------------------
+  -- Gerrit has no GitHub-style org/user migration API; confusio
+  -- returns fixed responses without proxying. Routes documented here for reference.
+  elseif path:match("^/orgs/[^/]+/migrations") or path:match("^/user/migrations") then
+    SetStatus(404, "Not Found")
   else
     SetStatus(404, "Not Found")
   end

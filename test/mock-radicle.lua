@@ -72,6 +72,12 @@ function OnHttpRequest()
   elseif path:find("^" .. rb:gsub("%-", "%%-") .. "/blob/") then
     SetStatus(200, "OK")
     raw("file content\n")
+
+  -- Migrations ----------------------------------------------------------------
+  -- Radicle has no GitHub-style org/user migration API; confusio
+  -- returns fixed responses without proxying. Routes documented here for reference.
+  elseif path:match("^/orgs/[^/]+/migrations") or path:match("^/user/migrations") then
+    SetStatus(404, "Not Found")
   else
     SetStatus(404, "Not Found")
   end
