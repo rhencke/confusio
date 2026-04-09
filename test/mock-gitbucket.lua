@@ -577,6 +577,67 @@ function OnHttpRequest()
         .. '[{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User"}]}'
     )
 
+  -- Git database (GitHub-compatible passthrough) -----------------------------
+  elseif path == rb .. "/git/blobs/3a0f86fb8db8eea7ccbb9a95f325ddbedfb25e15" then
+    SetStatus(200, "OK")
+    json(
+      '{"sha":"3a0f86fb8db8eea7ccbb9a95f325ddbedfb25e15","size":19,'
+        .. '"encoding":"base64","content":"Q29udGVudCBvZiBibG9i\\n",'
+        .. '"url":"","node_id":""}'
+    )
+  elseif path == rb .. "/git/commits/abc123" then
+    SetStatus(200, "OK")
+    json(
+      '{"sha":"abc123def456","message":"Initial commit",'
+        .. '"author":{"name":"Octocat","email":"octocat@github.com","date":"2011-01-26T19:01:12Z"},'
+        .. '"committer":{"name":"Octocat","email":"octocat@github.com","date":"2011-01-26T19:01:12Z"},'
+        .. '"tree":{"sha":"9fb037999f264ba9a7fc6274d15fa3ae2ab98312","url":""},'
+        .. '"parents":[],"url":"","node_id":""}'
+    )
+  elseif path == rb .. "/git/matching-refs/heads/main" then
+    SetStatus(200, "OK")
+    json(
+      '[{"ref":"refs/heads/main","node_id":"","url":"",'
+        .. '"object":{"type":"commit","sha":"abc123def456","url":""}}]'
+    )
+  elseif path == rb .. "/git/ref/heads/main" then
+    SetStatus(200, "OK")
+    json(
+      '{"ref":"refs/heads/main","node_id":"","url":"",'
+        .. '"object":{"type":"commit","sha":"abc123def456","url":""}}'
+    )
+  elseif path == rb .. "/git/refs" and method == "POST" then
+    SetStatus(201, "Created")
+    json(
+      '{"ref":"refs/heads/feature","node_id":"","url":"",'
+        .. '"object":{"type":"commit","sha":"abc123def456","url":""}}'
+    )
+  elseif path == rb .. "/git/refs/heads/feature" and method == "DELETE" then
+    SetStatus(204, "No Content")
+  elseif path == rb .. "/git/tags/940bd336248efae0f9ee5bc7b2d5c985887b16ac" then
+    SetStatus(200, "OK")
+    json(
+      '{"sha":"940bd336248efae0f9ee5bc7b2d5c985887b16ac","tag":"v1.0",'
+        .. '"message":"First release","tagger":{"name":"Octocat","email":"octocat@github.com","date":"2011-01-26T19:01:12Z"},'
+        .. '"object":{"type":"commit","sha":"abc123def456","url":""},'
+        .. '"url":"","node_id":""}'
+    )
+  elseif path == rb .. "/git/tags" and method == "POST" then
+    SetStatus(201, "Created")
+    json(
+      '{"sha":"940bd336248efae0f9ee5bc7b2d5c985887b16ac","tag":"v2.0",'
+        .. '"message":"Second release","tagger":{"name":"Octocat","email":"octocat@github.com","date":"2011-01-26T19:01:12Z"},'
+        .. '"object":{"type":"commit","sha":"abc123def456","url":""},'
+        .. '"url":"","node_id":""}'
+    )
+  elseif path == rb .. "/git/trees/9fb037999f264ba9a7fc6274d15fa3ae2ab98312" then
+    SetStatus(200, "OK")
+    json(
+      '{"sha":"9fb037999f264ba9a7fc6274d15fa3ae2ab98312","url":"","truncated":false,'
+        .. '"tree":[{"path":"README.md","mode":"100644","type":"blob",'
+        .. '"sha":"3a0f86fb8db8eea7ccbb9a95f325ddbedfb25e15","size":19,"url":""}]}'
+    )
+
   -- Migrations ----------------------------------------------------------------
   -- GitBucket has no GitHub-style org/user migration API; confusio
   -- returns fixed responses without proxying. Routes documented here for reference.

@@ -1437,4 +1437,51 @@ backend_impl = {
     local q = GetParam("q") or ""
     return append_page_params(base() .. "/search/users?q=" .. q, PAGES)
   end),
+
+  -- Git database --------------------------------------------------------------
+
+  get_git_blob = proxy_handler(nil, function(o, r, sha)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/git/blobs/" .. sha
+  end),
+
+  get_git_commit = proxy_handler(nil, function(o, r, sha)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/git/commits/" .. sha
+  end),
+
+  list_git_matching_refs = proxy_handler(nil, function(o, r, ref)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/git/matching-refs/" .. ref
+  end),
+
+  get_git_ref = proxy_handler(nil, function(o, r, ref)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/git/ref/" .. ref
+  end),
+
+  create_git_ref = function(owner, repo_name)
+    proxy_json_created(
+      nil,
+      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs", "POST", GetBody())
+    )
+  end,
+
+  delete_git_ref = function(owner, repo_name, ref)
+    set_204_or_error(
+      "DELETE",
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs/" .. ref
+    )
+  end,
+
+  get_git_tag = proxy_handler(nil, function(o, r, sha)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/git/tags/" .. sha
+  end),
+
+  create_git_tag = function(owner, repo_name)
+    proxy_json_created(
+      nil,
+      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/tags", "POST", GetBody())
+    )
+  end,
+
+  get_git_tree = proxy_handler(nil, function(o, r, sha)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/git/trees/" .. sha
+  end),
 }
