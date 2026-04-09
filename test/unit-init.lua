@@ -927,6 +927,26 @@ ok(
   "OnHttpRequest: GET /repos/{owner}/{repo}/actions/workflows → body contains workflows"
 )
 
+-- git_not_implemented: any git database route → 501
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/git/blobs/abc123" })
+OnHttpRequest()
+eq(
+  _last_status,
+  501,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/git/blobs/{file_sha} → 501 (git database not implemented)"
+)
+
+-- greedy param trie walk: route with {ref+} matches multi-segment ref
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/git/ref/heads/main" })
+OnHttpRequest()
+eq(
+  _last_status,
+  501,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/git/ref/{ref+} with multi-segment ref → 501"
+)
+
 -- ============================================================
 -- Summary
 -- ============================================================
