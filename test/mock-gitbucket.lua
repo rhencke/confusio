@@ -638,6 +638,34 @@ function OnHttpRequest()
         .. '"sha":"3a0f86fb8db8eea7ccbb9a95f325ddbedfb25e15","size":19,"url":""}]}'
     )
 
+  -- License templates ---------------------------------------------------------
+  elseif path == "/api/v3/licenses" then
+    SetStatus(200, "OK")
+    json(
+      '[{"key":"mit","name":"MIT License","spdx_id":"MIT","url":"https://api.github.com/licenses/mit","node_id":"MDc6TGljZW5zZW1pdA=="}]'
+    )
+  elseif path == "/api/v3/licenses/mit" then
+    SetStatus(200, "OK")
+    json(
+      '{"key":"mit","name":"MIT License","spdx_id":"MIT",'
+        .. '"url":"https://api.github.com/licenses/mit","node_id":"MDc6TGljZW5zZW1pdA==",'
+        .. '"html_url":"http://choosealicense.com/licenses/mit/",'
+        .. '"description":"A permissive license.",'
+        .. '"implementation":"Create a LICENSE file.",'
+        .. '"body":"MIT License\\n\\nCopyright (c) [year] [fullname]",'
+        .. '"permissions":["commercial-use","modifications","distribution","private-use"],'
+        .. '"conditions":["include-copyright"],'
+        .. '"limitations":["liability","warranty"]}'
+    )
+  elseif path == rb .. "/license" then
+    SetStatus(200, "OK")
+    json(
+      '{"name":"LICENSE","path":"LICENSE","sha":"abc123","size":100,'
+        .. '"type":"file","encoding":"base64","content":"SGVsbG8gV29ybGQ=",'
+        .. '"license":{"key":"mit","name":"MIT License","spdx_id":"MIT",'
+        .. '"url":"https://api.github.com/licenses/mit","node_id":"MDc6TGljZW5zZW1pdA=="}}'
+    )
+
   -- Migrations ----------------------------------------------------------------
   -- GitBucket has no GitHub-style org/user migration API; confusio
   -- returns fixed responses without proxying. Routes documented here for reference.
