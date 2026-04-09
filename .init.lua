@@ -396,9 +396,14 @@ end
 
 -- Default handlers for migrations: no backend exposes GitHub-compatible migration APIs.
 -- POST (start migration) returns 501 Not Implemented.
+-- Per-resource endpoints (GET/DELETE on a specific migration) return 404.
 -- Source import endpoints were deprecated by GitHub in May 2023; returns 410 Gone.
 local function migrations_not_supported()
   respond_json(501, { message = "Migrations are not supported by this backend." })
+end
+
+local function migration_not_found()
+  respond_json(404, { message = "Not Found" })
 end
 
 local function source_import_gone()
@@ -1177,10 +1182,19 @@ local routes = {
   -- Organization migrations
   ["GET /orgs/{org}/migrations"] = { "get_org_migrations", empty_list },
   ["POST /orgs/{org}/migrations"] = { "post_org_migrations", migrations_not_supported },
-  ["GET /orgs/{org}/migrations/{migration_id}"] = "get_org_migration",
-  ["GET /orgs/{org}/migrations/{migration_id}/archive"] = "get_org_migration_archive",
-  ["DELETE /orgs/{org}/migrations/{migration_id}/archive"] = "delete_org_migration_archive",
-  ["DELETE /orgs/{org}/migrations/{migration_id}/repos/{repo_name}/lock"] = "delete_org_migration_repo_lock",
+  ["GET /orgs/{org}/migrations/{migration_id}"] = { "get_org_migration", migration_not_found },
+  ["GET /orgs/{org}/migrations/{migration_id}/archive"] = {
+    "get_org_migration_archive",
+    migration_not_found,
+  },
+  ["DELETE /orgs/{org}/migrations/{migration_id}/archive"] = {
+    "delete_org_migration_archive",
+    migration_not_found,
+  },
+  ["DELETE /orgs/{org}/migrations/{migration_id}/repos/{repo_name}/lock"] = {
+    "delete_org_migration_repo_lock",
+    migration_not_found,
+  },
   ["GET /orgs/{org}/migrations/{migration_id}/repositories"] = {
     "get_org_migration_repos",
     empty_list,
@@ -1188,10 +1202,19 @@ local routes = {
   -- User migrations
   ["GET /user/migrations"] = { "get_user_migrations", empty_list },
   ["POST /user/migrations"] = { "post_user_migrations", migrations_not_supported },
-  ["GET /user/migrations/{migration_id}"] = "get_user_migration",
-  ["GET /user/migrations/{migration_id}/archive"] = "get_user_migration_archive",
-  ["DELETE /user/migrations/{migration_id}/archive"] = "delete_user_migration_archive",
-  ["DELETE /user/migrations/{migration_id}/repos/{repo_name}/lock"] = "delete_user_migration_repo_lock",
+  ["GET /user/migrations/{migration_id}"] = { "get_user_migration", migration_not_found },
+  ["GET /user/migrations/{migration_id}/archive"] = {
+    "get_user_migration_archive",
+    migration_not_found,
+  },
+  ["DELETE /user/migrations/{migration_id}/archive"] = {
+    "delete_user_migration_archive",
+    migration_not_found,
+  },
+  ["DELETE /user/migrations/{migration_id}/repos/{repo_name}/lock"] = {
+    "delete_user_migration_repo_lock",
+    migration_not_found,
+  },
   ["GET /user/migrations/{migration_id}/repositories"] = {
     "get_user_migration_repos",
     empty_list,
