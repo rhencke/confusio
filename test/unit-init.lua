@@ -398,6 +398,63 @@ eq(tu_minimal.following, 0, "translate_user: following defaults to 0")
 ok(type(translate_user(nil)) == "table", "translate_user(nil): returns empty table")
 
 -- ============================================================
+-- translate_migration
+-- ============================================================
+
+local fake_migration = {
+  id = 7,
+  node_id = "MDEy1234",
+  owner = { login = "alice" },
+  guid = "abc-123",
+  state = "exported",
+  lock_repositories = true,
+  exclude_metadata = true,
+  exclude_git_data = false,
+  exclude_attachments = false,
+  exclude_releases = false,
+  exclude_owner_projects = false,
+  org_metadata_only = false,
+  repositories = { { id = 1 } },
+  url = "https://example.com/migrations/7",
+  created_at = "2024-01-01T00:00:00Z",
+  updated_at = "2024-06-01T00:00:00Z",
+  archive_url = "https://example.com/migrations/7/archive.tar.gz",
+  exclude = { "repositories" },
+}
+local tm = translate_migration(fake_migration)
+eq(tm.id, 7, "translate_migration: id")
+eq(tm.node_id, "MDEy1234", "translate_migration: node_id")
+eq(tm.owner.login, "alice", "translate_migration: owner")
+eq(tm.guid, "abc-123", "translate_migration: guid")
+eq(tm.state, "exported", "translate_migration: state")
+eq(tm.lock_repositories, true, "translate_migration: lock_repositories")
+eq(tm.exclude_metadata, true, "translate_migration: exclude_metadata")
+eq(tm.exclude_git_data, false, "translate_migration: exclude_git_data")
+eq(tm.exclude_attachments, false, "translate_migration: exclude_attachments")
+eq(tm.exclude_releases, false, "translate_migration: exclude_releases")
+eq(tm.exclude_owner_projects, false, "translate_migration: exclude_owner_projects")
+eq(tm.org_metadata_only, false, "translate_migration: org_metadata_only")
+eq(tm.repositories[1].id, 1, "translate_migration: repositories")
+eq(tm.url, "https://example.com/migrations/7", "translate_migration: url")
+eq(tm.created_at, "2024-01-01T00:00:00Z", "translate_migration: created_at")
+eq(tm.updated_at, "2024-06-01T00:00:00Z", "translate_migration: updated_at")
+eq(
+  tm.archive_url,
+  "https://example.com/migrations/7/archive.tar.gz",
+  "translate_migration: archive_url"
+)
+eq(tm.exclude[1], "repositories", "translate_migration: exclude")
+
+local tm_minimal = translate_migration({ id = 1 })
+eq(tm_minimal.node_id, "", "translate_migration: node_id defaults to empty string")
+eq(tm_minimal.guid, "", "translate_migration: guid defaults to empty string")
+eq(tm_minimal.state, "pending", "translate_migration: state defaults to pending")
+eq(tm_minimal.lock_repositories, false, "translate_migration: lock_repositories defaults to false")
+eq(tm_minimal.url, "", "translate_migration: url defaults to empty string")
+
+ok(type(translate_migration(nil)) == "table", "translate_migration(nil): returns empty table")
+
+-- ============================================================
 -- proxy_json
 -- ============================================================
 
