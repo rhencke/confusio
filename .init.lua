@@ -305,6 +305,38 @@ function translate_user(u)
   }
 end
 
+-- translate_migration is global: maps a backend migration object to GitHub field names.
+-- The GitHub migration schema: https://docs.github.com/en/rest/migrations
+-- Required fields: id, node_id, owner, guid, state, lock_repositories,
+--   exclude_metadata, exclude_git_data, exclude_attachments, exclude_releases,
+--   exclude_owner_projects, org_metadata_only, repositories, url, created_at, updated_at.
+-- Optional fields: archive_url, exclude.
+function translate_migration(m)
+  if not m then
+    return {}
+  end
+  return {
+    id = m.id,
+    node_id = m.node_id or "",
+    owner = m.owner,
+    guid = m.guid or "",
+    state = m.state or "pending",
+    lock_repositories = m.lock_repositories or false,
+    exclude_metadata = m.exclude_metadata or false,
+    exclude_git_data = m.exclude_git_data or false,
+    exclude_attachments = m.exclude_attachments or false,
+    exclude_releases = m.exclude_releases or false,
+    exclude_owner_projects = m.exclude_owner_projects or false,
+    org_metadata_only = m.org_metadata_only or false,
+    repositories = m.repositories or {},
+    url = m.url or "",
+    created_at = m.created_at or "",
+    updated_at = m.updated_at or "",
+    archive_url = m.archive_url,
+    exclude = m.exclude or {},
+  }
+end
+
 -- backend_impl is global: set by backends/<name>.lua at startup.
 backend_impl = {}
 -- backend_allow_anonymous is global: backends that require sign-in set this to false

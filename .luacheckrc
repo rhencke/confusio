@@ -35,6 +35,7 @@ globals = {
   "make_proxy_handler",
   "translate_repo",
   "translate_user",
+  "translate_migration",
   -- Set by backends/*.lua, read by .init.lua
   "backend_impl",
   "backend_allow_anonymous",
