@@ -23,7 +23,8 @@ function OnHttpRequest()
     .. '"open_issues_count":0,"default_branch":"main","visibility":"public",'
     .. '"forks":9,"open_issues":0,"watchers":80,'
     .. '"created_at":"2011-01-26T19:01:12Z","updated_at":"2011-01-26T19:14:43Z",'
-    .. '"pushed_at":"2011-01-26T19:06:43Z"}'
+    .. '"pushed_at":"2011-01-26T19:06:43Z",'
+    .. '"license":{"key":"mit","name":"MIT License","spdx_id":"MIT","url":"https://api.github.com/licenses/mit"}}'
 
   local USER = '{"login":"octocat","id":1,"avatar_url":"","html_url":"http://localhost/octocat",'
     .. '"full_name":"The Octocat","email":"octocat@github.com","is_admin":false,'
@@ -403,6 +404,24 @@ function OnHttpRequest()
     ["/api/v1/gitignores/C"] = {
       200,
       '{"name":"C","source":"# Object files\\n*.o\\n\\n# Libraries\\n*.a\\n"}',
+    },
+
+    -- License templates
+    ["/api/v1/licenses"] = {
+      200,
+      '[{"key":"mit","name":"MIT License","spdx_id":"MIT","url":"https://api.github.com/licenses/mit"}]',
+    },
+    ["/api/v1/licenses/mit"] = {
+      200,
+      '{"key":"mit","name":"MIT License","spdx_id":"MIT",'
+        .. '"url":"https://api.github.com/licenses/mit",'
+        .. '"html_url":"http://choosealicense.com/licenses/mit/",'
+        .. '"description":"A permissive license.",'
+        .. '"implementation":"Create a LICENSE file.",'
+        .. '"body":"MIT License\\n\\nCopyright (c) [year] [fullname]",'
+        .. '"permissions":["commercial-use","modifications","distribution","private-use"],'
+        .. '"conditions":["include-copyright"],'
+        .. '"limitations":["liability","warranty"]}',
     },
 
     -- Apps: Gitea has no GitHub Apps API; confusio returns 404 directly.

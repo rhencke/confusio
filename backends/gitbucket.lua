@@ -385,6 +385,19 @@ backend_impl = {
     respond_json(200, { total_count = 0, check_suites = {} })
   end,
 
+  -- Licenses ------------------------------------------------------------------
+  get_licenses = proxy_handler(nil, function()
+    return base() .. "/licenses"
+  end),
+
+  get_license = proxy_handler(nil, function(license_name)
+    return base() .. "/licenses/" .. license_name
+  end),
+
+  get_repo_license = proxy_handler(nil, function(o, r)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/license"
+  end),
+
   -- Contents ------------------------------------------------------------------
   get_repo_readme = proxy_handler(nil, function(o, r)
     return base() .. "/repos/" .. o .. "/" .. r .. "/readme"

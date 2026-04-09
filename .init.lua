@@ -492,6 +492,12 @@ local function git_not_implemented()
   respond_json(501, { message = "Git database API is not supported by this backend." })
 end
 
+-- Default handler for Licenses endpoints: backends that have a native license
+-- template API override these. Falls back to 501 Not Implemented.
+local function licenses_not_implemented()
+  respond_json(501, { message = "Licenses API is not supported by this backend." })
+end
+
 -- Default handlers for GET /zen, GET /octocat, GET /versions, GET /meta.
 -- These endpoints are fully self-contained and do not call any backend.
 local ZEN_QUOTES = {
@@ -676,6 +682,9 @@ local routes = {
   -- Gitignore templates (https://docs.github.com/en/rest/gitignore)
   ["GET /gitignore/templates"] = "get_gitignore_templates",
   ["GET /gitignore/templates/{name}"] = "get_gitignore_template",
+  -- Licenses (https://docs.github.com/en/rest/licenses)
+  ["GET /licenses"] = { "get_licenses", licenses_not_implemented },
+  ["GET /licenses/{license}"] = { "get_license", licenses_not_implemented },
   -- Rate Limits (https://docs.github.com/en/rest/rate-limit)
   ["GET /rate_limit"] = { "get_rate_limit", rate_limit_response },
 
@@ -727,6 +736,8 @@ local routes = {
   ["DELETE /repos/{owner}/{repo}/contents/{path}"] = "delete_repo_content",
   ["GET /repos/{owner}/{repo}/tarball/{ref}"] = "get_repo_tarball",
   ["GET /repos/{owner}/{repo}/zipball/{ref}"] = "get_repo_zipball",
+  -- Repo license (https://docs.github.com/en/rest/licenses)
+  ["GET /repos/{owner}/{repo}/license"] = { "get_repo_license", licenses_not_implemented },
 
   -- Compare
   ["GET /repos/{owner}/{repo}/compare/{basehead}"] = "get_repo_compare",
