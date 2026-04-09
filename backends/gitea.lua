@@ -830,6 +830,37 @@ backend_impl = {
     proxy_json(nil, fetch_json(base() .. "/gitignores/" .. name))
   end,
 
+  -- GET /licenses
+  get_licenses = function()
+    proxy_json(nil, fetch_json(base() .. "/licenses"))
+  end,
+
+  -- GET /licenses/{license}
+  get_license = function(license_name)
+    proxy_json(nil, fetch_json(base() .. "/licenses/" .. license_name))
+  end,
+
+  -- GET /repos/{owner}/{repo}/license
+  -- Gitea has no dedicated endpoint; combine contents/LICENSE with repo license metadata.
+  get_repo_license = function(owner, repo_name)
+    local ok, status, _, body =
+      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/LICENSE")
+    if not ok then
+      respond_json(503, {})
+      return
+    end
+    if status ~= 200 then
+      respond_json(status, {})
+      return
+    end
+    local content = DecodeJson(body) or {}
+    local rok, rstatus, _, rbody = fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name)
+    if rok and rstatus == 200 then
+      content.license = (DecodeJson(rbody) or {}).license
+    end
+    respond_json(200, content)
+  end,
+
   -- GET /repos/{owner}/{repo}
   get_repo = function(owner, repo_name)
     proxy_json(translate_repo, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name))
