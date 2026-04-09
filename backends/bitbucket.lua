@@ -846,6 +846,36 @@ backend_impl = {
     end
   end,
 
+  -- GET /repos/{owner}/{repo}/license
+  -- Bitbucket has no license template API; fetch the LICENSE file via src endpoint.
+  get_repo_license = function(owner, repo_name)
+    local repo_url = base() .. "/repositories/" .. owner .. "/" .. repo_name
+    local ok, status, _, body = fetch_json(repo_url)
+    if not ok or status ~= 200 then
+      respond_json(404, {})
+      return
+    end
+    local repo = DecodeJson(body or "{}")
+    local ref = (repo.mainbranch and repo.mainbranch.name) or "HEAD"
+    for _, name in ipairs({ "LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING" }) do
+      local ok2, status2, _, body2 = fetch_json(repo_url .. "/src/" .. ref .. "/" .. name)
+      if ok2 and status2 == 200 then
+        respond_json(200, {
+          type = "file",
+          encoding = "base64",
+          content = EncodeBase64(body2 or ""),
+          name = name,
+          path = name,
+          sha = "",
+          size = #(body2 or ""),
+          license = nil,
+        })
+        return
+      end
+    end
+    respond_json(404, { message = "License file not found" })
+  end,
+
   -- Forks ---------------------------------------------------------------------
 
   get_repo_forks = function(owner, repo_name)
