@@ -58,7 +58,21 @@ function OnHttpRequest()
   elseif path == rb .. "/refs/branches/main" then
     SetStatus(200, "OK")
     json('{"name":"main","target":{"hash":"abc123def456","type":"commit"},"type":"branch"}')
+  elseif path == rb .. "/refs/branches/feature" and GetMethod() == "DELETE" then
+    SetStatus(204, "No Content")
+  elseif path == rb .. "/refs/branches" and GetMethod() == "POST" then
+    SetStatus(201, "Created")
+    json('{"name":"feature","target":{"hash":"abc123def456","type":"commit"},"type":"branch"}')
   elseif path == rb .. "/refs/branches" then
+    SetStatus(200, "OK")
+    json(
+      '{"values":[{"name":"main","target":{"hash":"abc123def456","type":"commit"},'
+        .. '"type":"branch"}],"pagelen":30,"size":1,"page":1}'
+    )
+
+  -- Git database -----------------------------------------------------------
+  elseif path == rb .. "/refs" then
+    -- list_git_matching_refs with no heads/tags prefix (q param ignored in mock)
     SetStatus(200, "OK")
     json(
       '{"values":[{"name":"main","target":{"hash":"abc123def456","type":"commit"},'

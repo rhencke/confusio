@@ -488,6 +488,17 @@ local function translate_bb_hook_req(body_str)
   })
 end
 
+local function translate_bb_ref(r)
+  local ref_type = r.type == "tag" and "tags" or "heads"
+  local sha = (r.target and r.target.hash) or ""
+  return {
+    ref = "refs/" .. ref_type .. "/" .. (r.name or ""),
+    node_id = "",
+    url = "",
+    object = { type = "commit", sha = sha, url = "" },
+  }
+end
+
 backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, base() .. "/user", auth())
@@ -1562,5 +1573,119 @@ backend_impl = {
 
   get_commit_check_suites = function(_owner, _repo_name, _ref)
     respond_json(200, { total_count = 0, check_suites = {} })
+  end,
+
+  -- Git database (refs only; blobs/commits/tags/trees have no Bitbucket equivalent) ----
+
+  list_git_matching_refs = function(owner, repo_name, ref)
+    local kind, prefix
+    if ref:sub(1, 6) == "heads/" then
+      kind = "branches"
+      prefix = ref:sub(7)
+    elseif ref:sub(1, 5) == "tags/" then
+      kind = "tags"
+      prefix = ref:sub(6)
+    else
+      kind = nil
+      prefix = ref
+    end
+    local endpoint = kind and ("/refs/" .. kind) or "/refs"
+    local url = append_page_params(
+      base()
+        .. "/repositories/"
+        .. owner
+        .. "/"
+        .. repo_name
+        .. endpoint
+        .. '?q=name~"'
+        .. prefix
+        .. '"',
+      PAGES
+    )
+    proxy_json(function(data)
+      local refs = data.values or {}
+      for i, r in ipairs(refs) do
+        refs[i] = translate_bb_ref(r)
+      end
+      return refs
+    end, fetch_json(url))
+  end,
+
+  get_git_ref = function(owner, repo_name, ref)
+    local kind, name
+    if ref:sub(1, 6) == "heads/" then
+      kind = "branches"
+      name = ref:sub(7)
+    elseif ref:sub(1, 5) == "tags/" then
+      kind = "tags"
+      name = ref:sub(6)
+    else
+      respond_json(422, { message = "Invalid ref format" })
+      return
+    end
+    proxy_json(
+      translate_bb_ref,
+      fetch_json(
+        base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/refs/" .. kind .. "/" .. name
+      )
+    )
+  end,
+
+  create_git_ref = function(owner, repo_name)
+    local req = DecodeJson(GetBody() or "{}")
+    local full_ref = req.ref or ""
+    local sha = req.sha or ""
+    local kind, name
+    if full_ref:sub(1, 11) == "refs/heads/" then
+      kind = "branches"
+      name = full_ref:sub(12)
+    elseif full_ref:sub(1, 10) == "refs/tags/" then
+      kind = "tags"
+      name = full_ref:sub(11)
+    else
+      respond_json(422, { message = "Invalid ref format" })
+      return
+    end
+    proxy_json_created(
+      translate_bb_ref,
+      fetch_json(
+        base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/refs/" .. kind,
+        "POST",
+        EncodeJson({ name = name, target = { hash = sha } })
+      )
+    )
+  end,
+
+  delete_git_ref = function(owner, repo_name, ref)
+    local kind, name
+    if ref:sub(1, 6) == "heads/" then
+      kind = "branches"
+      name = ref:sub(7)
+    elseif ref:sub(1, 5) == "tags/" then
+      kind = "tags"
+      name = ref:sub(6)
+    else
+      respond_json(422, { message = "Invalid ref format" })
+      return
+    end
+    local url = base()
+      .. "/repositories/"
+      .. owner
+      .. "/"
+      .. repo_name
+      .. "/refs/"
+      .. kind
+      .. "/"
+      .. name
+    local dopts = auth() or {}
+    dopts.method = "DELETE"
+    local ok, status = pcall(Fetch, url, dopts)
+    if ok and (status == 204 or status == 200) then
+      SetStatus(204, "No Content")
+    elseif ok then
+      respond_json(status, {})
+    else
+      respond_json(503, {})
+    end
   end,
 }
