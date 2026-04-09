@@ -576,6 +576,30 @@ backend_impl = {
     respond_json(404, { message = "Not Found" })
   end,
 
+  -- GET /repos/{owner}/{repo}/license
+  -- ADO has no license template API; fetch the LICENSE file via the items endpoint.
+  get_repo_license = function(owner, repo_name)
+    local candidates = { "LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING" }
+    for _, fname in ipairs(candidates) do
+      local url = ado_url(repos_base(owner) .. "/" .. repo_name .. "/items?path=/" .. fname)
+      local ok, status, _, body = fetch_json(url)
+      if ok and status == 200 then
+        respond_json(200, {
+          type = "file",
+          name = fname,
+          path = fname,
+          sha = "",
+          size = #body,
+          encoding = "base64",
+          content = EncodeBase64(body),
+          license = nil,
+        })
+        return
+      end
+    end
+    respond_json(404, { message = "License file not found" })
+  end,
+
   get_repo_content = function(owner, repo_name, path)
     local ref = GetParam("ref") or ""
     local url = ado_url(

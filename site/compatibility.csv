@@ -19,7 +19,7 @@ GET /repos/{owner}/{repo}/commits,n,n,y,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,
 GET /repos/{owner}/{repo}/contents/{path},n,n,y,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 PUT /repos/{owner}/{repo}/contents/{path},n,n,y,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 DELETE /repos/{owner}/{repo}/contents/{path},n,n,y,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/license,n,y,y,y,n,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/license,y,y,y,y,n,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/collaborators,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/forks,n,n,y,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 POST /repos/{owner}/{repo}/forks,n,n,y,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
