@@ -2993,4 +2993,56 @@ backend_impl = {
     set_preamble(status, ct)
     Write(body or "")
   end,
+
+  -- Migrations (https://docs.github.com/en/rest/migrations) ----------------------
+  -- Gitea has no GitHub Migrations export API.  All migration endpoints return the
+  -- same responses as the global defaults, but are listed explicitly here so the
+  -- behaviour is intentional rather than a fall-through.
+
+  get_org_migrations = function()
+    set_preamble()
+    Write("[]")
+  end,
+  post_org_migrations = function()
+    respond_json(501, { message = "Migrations are not supported by this backend." })
+  end,
+  get_org_migration = function()
+    respond_json(404, { message = "Not Found" })
+  end,
+  get_org_migration_archive = function()
+    respond_json(404, { message = "Not Found" })
+  end,
+  delete_org_migration_archive = function()
+    respond_json(404, { message = "Not Found" })
+  end,
+  delete_org_migration_repo_lock = function()
+    respond_json(404, { message = "Not Found" })
+  end,
+  get_org_migration_repos = function()
+    set_preamble()
+    Write("[]")
+  end,
+  get_user_migrations = function()
+    set_preamble()
+    Write("[]")
+  end,
+  post_user_migrations = function()
+    respond_json(501, { message = "Migrations are not supported by this backend." })
+  end,
+  get_user_migration = function()
+    respond_json(404, { message = "Not Found" })
+  end,
+  get_user_migration_archive = function()
+    respond_json(404, { message = "Not Found" })
+  end,
+  delete_user_migration_archive = function()
+    respond_json(404, { message = "Not Found" })
+  end,
+  delete_user_migration_repo_lock = function()
+    respond_json(404, { message = "Not Found" })
+  end,
+  get_user_migration_repos = function()
+    set_preamble()
+    Write("[]")
+  end,
 }
