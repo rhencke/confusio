@@ -133,6 +133,12 @@ function OnHttpRequest()
     else
       conduit_ok('{"data":[],"cursor":{"limit":30,"after":null,"before":null,"order":null}}')
     end
+
+  -- Migrations ----------------------------------------------------------------
+  -- Phabricator has no GitHub-style org/user migration API; confusio
+  -- returns fixed responses without proxying. Routes documented here for reference.
+  elseif path:match("^/orgs/[^/]+/migrations") or path:match("^/user/migrations") then
+    SetStatus(404, "Not Found")
   else
     SetStatus(404, "Not Found")
   end
