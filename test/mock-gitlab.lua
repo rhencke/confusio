@@ -49,6 +49,14 @@ function OnHttpRequest()
     SetStatus(200, "OK")
     json('[{"name":"octocat","email":"octocat@github.com","commits":100}]')
 
+  -- Git database blobs -----------------------------------------------------
+  elseif path == pb .. "/repository/blobs/3a0f86fb8db8eea7ccbb9a95f325ddbedfb25e15" then
+    SetStatus(200, "OK")
+    json(
+      '{"size":19,"encoding":"base64","content":"Q29udGVudCBvZiBibG9i\\n",'
+        .. '"sha":"3a0f86fb8db8eea7ccbb9a95f325ddbedfb25e15"}'
+    )
+
   -- Tags -------------------------------------------------------------------
   elseif path == pb .. "/repository/tags" then
     SetStatus(200, "OK")

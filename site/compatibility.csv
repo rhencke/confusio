@@ -349,7 +349,7 @@ POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches,n,n,n,n,n,
 PUT /repos/{owner}/{repo}/actions/workflows/{workflow_id}/enable,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 Git Database,,,,,,,,,,,,,,,,,,,,,,,,
-GET /repos/{owner}/{repo}/git/blobs/{file_sha},n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/git/blobs/{file_sha},n,n,n,y,n,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 POST /repos/{owner}/{repo}/git/blobs,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/git/commits/{commit_sha},n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 POST /repos/{owner}/{repo}/git/commits,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n

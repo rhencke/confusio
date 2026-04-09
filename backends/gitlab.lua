@@ -3470,6 +3470,29 @@ backend_impl = {
     Write(parsed.html or "")
   end,
 
+  -- Git database (https://docs.github.com/en/rest/git) -----------------------
+
+  -- GET /repos/{owner}/{repo}/git/blobs/{file_sha}
+  -- GitLab: GET /projects/:id/repository/blobs/:sha
+  -- Returns {size, encoding, content, sha} — translate to GitHub blob shape.
+  get_git_blob = function(owner, repo_name, file_sha)
+    proxy_json(
+      function(b)
+        return {
+          content = b.content,
+          encoding = b.encoding,
+          url = "",
+          sha = b.sha,
+          size = b.size,
+          node_id = "",
+        }
+      end,
+      fetch_json(
+        base() .. "/projects/" .. project_id(owner, repo_name) .. "/repository/blobs/" .. file_sha
+      )
+    )
+  end,
+
   -- POST /markdown/raw → POST /api/v4/markdown
   -- GitLab has no separate raw endpoint; wrap the plain-text body in JSON.
   render_markdown_raw = function()
