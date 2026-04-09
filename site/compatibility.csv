@@ -287,7 +287,7 @@ GET /orgs/{org}/actions/secrets/{secret_name},n,n,n,~list and delete only,n,~lis
 PUT /orgs/{org}/actions/secrets/{secret_name},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 DELETE /orgs/{org}/actions/secrets/{secret_name},n,n,n,~list and delete only,n,~list and delete only,n,n,n,~list and delete only,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /orgs/{org}/actions/secrets/{secret_name}/repositories,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-Actions — Org variables,,,,,,,,,,,,,,,,n,,,,,,,,
+Actions — Org variables,,,,,,,,,,,,,,,,,,,,,,,,
 GET /orgs/{org}/actions/variables,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 POST /orgs/{org}/actions/variables,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /orgs/{org}/actions/variables/{name},n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
