@@ -308,6 +308,12 @@ function OnHttpRequest()
   elseif path == "/octocat/_apis/advancedsecurity/sarifs/hello-world" and method == "POST" then
     SetStatus(202, "Accepted")
     json('{"sarifId":"sarif-abc123"}')
+
+  -- Migrations ----------------------------------------------------------------
+  -- Azure DevOps has no GitHub-style org/user migration API; confusio
+  -- returns fixed responses without proxying. Routes documented here for reference.
+  elseif path:match("^/orgs/[^/]+/migrations") or path:match("^/user/migrations") then
+    SetStatus(404, "Not Found")
   else
     SetStatus(404, "Not Found")
   end
