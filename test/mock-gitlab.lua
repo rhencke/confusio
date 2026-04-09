@@ -531,6 +531,20 @@ function OnHttpRequest()
   elseif path == "/api/v4/templates/gitignores/Nonexistent" then
     SetStatus(404, "Not Found")
     json('{"message":"404 Not Found"}')
+
+  -- Migrations: GitLab has per-project export, not GitHub-style org/user migrations.
+  -- confusio returns fixed responses without proxying, but routes are documented here.
+  -- POST /projects/:id/export → 202 Accepted (starts export asynchronously)
+  elseif path == pb .. "/export" and GetMethod() == "POST" then
+    SetStatus(202, "Accepted")
+  -- GET /projects/:id/export → export status
+  elseif path == pb .. "/export" then
+    SetStatus(200, "OK")
+    json('{"export_status":"finished"}')
+  -- GET /projects/:id/export/download → redirect to archive
+  elseif path == pb .. "/export/download" then
+    SetStatus(302, "Found")
+    SetHeader("Location", "https://storage.example.com/octocat-hello-world-export.tar.gz")
   else
     SetStatus(404, "Not Found")
   end
