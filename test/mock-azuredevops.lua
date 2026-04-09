@@ -77,7 +77,12 @@ function OnHttpRequest()
   elseif path == "/octocat/_apis/git/repositories/" .. REPO_ID and method == "DELETE" then
     SetStatus(204, "No Content")
 
-  -- Refs — branches and tags (filter param distinguishes) -------------------
+  -- Refs — branches and tags (filter param distinguishes; POST for create/delete) ----
+  elseif path == rb .. "/refs" and method == "POST" then
+    SetStatus(200, "OK")
+    json(
+      '{"count":1,"value":[{"name":"refs/heads/feature","objectId":"abc123def456","updateStatus":"succeeded"}]}'
+    )
   elseif path == rb .. "/refs" then
     local filter = GetParam("filter") or ""
     if filter:find("^heads") then
