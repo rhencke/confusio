@@ -927,6 +927,28 @@ ok(
   "OnHttpRequest: GET /repos/{owner}/{repo}/actions/workflows → body contains workflows"
 )
 
+-- licenses_not_implemented: GET /licenses → 501
+reset_response()
+reset_request({ method = "GET", path = "/licenses" })
+OnHttpRequest()
+eq(_last_status, 501, "OnHttpRequest: GET /licenses → 501 (licenses not implemented)")
+
+-- licenses_not_implemented: GET /licenses/{license} → 501
+reset_response()
+reset_request({ method = "GET", path = "/licenses/mit" })
+OnHttpRequest()
+eq(_last_status, 501, "OnHttpRequest: GET /licenses/{license} → 501 (licenses not implemented)")
+
+-- licenses_not_implemented: GET /repos/{owner}/{repo}/license → 501
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/license" })
+OnHttpRequest()
+eq(
+  _last_status,
+  501,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/license → 501 (licenses not implemented)"
+)
+
 -- git_not_implemented: any git database route → 501
 reset_response()
 reset_request({ method = "GET", path = "/repos/alice/myrepo/git/blobs/abc123" })
