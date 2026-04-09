@@ -126,6 +126,12 @@ function OnHttpRequest()
         .. '"tags":{"git.sr.ht/~octocat/hello-world":"abc123"}}'
         .. '],"total":2,"cursor":null}'
     )
+
+  -- Migrations ----------------------------------------------------------------
+  -- Sourcehut has no GitHub-style org/user migration API; confusio
+  -- returns fixed responses without proxying. Routes documented here for reference.
+  elseif path:match("^/orgs/[^/]+/migrations") or path:match("^/user/migrations") then
+    SetStatus(404, "Not Found")
   else
     SetStatus(404, "Not Found")
   end
