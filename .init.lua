@@ -434,6 +434,58 @@ local function markdown_not_implemented()
   respond_json(501, { message = "Markdown rendering is not supported by this backend." })
 end
 
+-- Default handlers for Actions endpoints: no backend has a native GitHub Actions-compatible API.
+-- List endpoints return empty but valid GitHub Actions collections.
+-- Per-resource and mutation endpoints return 501 Not Implemented.
+local function actions_not_implemented()
+  respond_json(501, { message = "Actions is not supported by this backend." })
+end
+
+local function actions_runs_empty()
+  set_preamble()
+  Write('{"total_count":0,"workflow_runs":[]}')
+end
+
+local function actions_artifacts_empty()
+  set_preamble()
+  Write('{"total_count":0,"artifacts":[]}')
+end
+
+local function actions_jobs_empty()
+  set_preamble()
+  Write('{"total_count":0,"jobs":[]}')
+end
+
+local function actions_runners_empty()
+  set_preamble()
+  Write('{"total_count":0,"runners":[]}')
+end
+
+local function actions_runner_groups_empty()
+  set_preamble()
+  Write('{"total_count":0,"runner_groups":[]}')
+end
+
+local function actions_secrets_empty()
+  set_preamble()
+  Write('{"total_count":0,"secrets":[]}')
+end
+
+local function actions_variables_empty()
+  set_preamble()
+  Write('{"total_count":0,"variables":[]}')
+end
+
+local function actions_caches_empty()
+  set_preamble()
+  Write('{"total_count":0,"actions_caches":[]}')
+end
+
+local function actions_workflows_empty()
+  set_preamble()
+  Write('{"total_count":0,"workflows":[]}')
+end
+
 -- Default handlers for GET /zen, GET /octocat, GET /versions, GET /meta.
 -- These endpoints are fully self-contained and do not call any backend.
 local ZEN_QUOTES = {
@@ -1267,6 +1319,771 @@ local routes = {
   -- Markdown (https://docs.github.com/en/rest/markdown)
   ["POST /markdown"] = { "render_markdown", markdown_not_implemented },
   ["POST /markdown/raw"] = { "render_markdown_raw", markdown_not_implemented },
+
+  -- Actions (https://docs.github.com/en/rest/actions)
+
+  -- Enterprise-level cache limits
+  ["GET /enterprises/{enterprise}/actions/cache/retention-limit"] = {
+    "get_enterprise_actions_cache_retention_limit",
+    actions_not_implemented,
+  },
+  ["PUT /enterprises/{enterprise}/actions/cache/retention-limit"] = {
+    "put_enterprise_actions_cache_retention_limit",
+    actions_not_implemented,
+  },
+  ["GET /enterprises/{enterprise}/actions/cache/storage-limit"] = {
+    "get_enterprise_actions_cache_storage_limit",
+    actions_not_implemented,
+  },
+  ["PUT /enterprises/{enterprise}/actions/cache/storage-limit"] = {
+    "put_enterprise_actions_cache_storage_limit",
+    actions_not_implemented,
+  },
+
+  -- Enterprise-level OIDC
+  ["GET /enterprises/{enterprise}/actions/oidc/customization/properties/repo"] = {
+    "get_enterprise_actions_oidc_custom_props",
+    empty_list,
+  },
+  ["POST /enterprises/{enterprise}/actions/oidc/customization/properties/repo"] = {
+    "post_enterprise_actions_oidc_custom_prop",
+    actions_not_implemented,
+  },
+  ["DELETE /enterprises/{enterprise}/actions/oidc/customization/properties/repo/{custom_property_name}"] = {
+    "delete_enterprise_actions_oidc_custom_prop",
+    actions_not_implemented,
+  },
+
+  -- Organization-level cache limits (via /organizations/ alias path)
+  ["GET /organizations/{org}/actions/cache/retention-limit"] = {
+    "get_org_actions_cache_retention_limit_v2",
+    actions_not_implemented,
+  },
+  ["PUT /organizations/{org}/actions/cache/retention-limit"] = {
+    "put_org_actions_cache_retention_limit_v2",
+    actions_not_implemented,
+  },
+  ["GET /organizations/{org}/actions/cache/storage-limit"] = {
+    "get_org_actions_cache_storage_limit_v2",
+    actions_not_implemented,
+  },
+  ["PUT /organizations/{org}/actions/cache/storage-limit"] = {
+    "put_org_actions_cache_storage_limit_v2",
+    actions_not_implemented,
+  },
+
+  -- Organization cache
+  ["GET /orgs/{org}/actions/cache/usage"] = {
+    "get_org_actions_cache_usage",
+    actions_not_implemented,
+  },
+  ["GET /orgs/{org}/actions/cache/usage-by-repository"] = {
+    "get_org_actions_cache_usage_by_repo",
+    actions_not_implemented,
+  },
+
+  -- Organization hosted runners
+  ["GET /orgs/{org}/actions/hosted-runners"] = {
+    "get_org_actions_hosted_runners",
+    actions_runners_empty,
+  },
+  ["POST /orgs/{org}/actions/hosted-runners"] = {
+    "post_org_actions_hosted_runner",
+    actions_not_implemented,
+  },
+  ["GET /orgs/{org}/actions/hosted-runners/images/custom"] = {
+    "get_org_actions_hosted_runner_custom_images",
+    empty_list,
+  },
+  ["GET /orgs/{org}/actions/hosted-runners/images/custom/{image_definition_id}"] = {
+    "get_org_actions_hosted_runner_custom_image",
+    actions_not_implemented,
+  },
+  ["DELETE /orgs/{org}/actions/hosted-runners/images/custom/{image_definition_id}"] = {
+    "delete_org_actions_hosted_runner_custom_image",
+    actions_not_implemented,
+  },
+  ["GET /orgs/{org}/actions/hosted-runners/images/custom/{image_definition_id}/versions"] = {
+    "get_org_actions_hosted_runner_custom_image_versions",
+    empty_list,
+  },
+  ["GET /orgs/{org}/actions/hosted-runners/images/custom/{image_definition_id}/versions/{version}"] = {
+    "get_org_actions_hosted_runner_custom_image_version",
+    actions_not_implemented,
+  },
+  ["DELETE /orgs/{org}/actions/hosted-runners/images/custom/{image_definition_id}/versions/{version}"] = {
+    "delete_org_actions_hosted_runner_custom_image_version",
+    actions_not_implemented,
+  },
+  ["GET /orgs/{org}/actions/hosted-runners/images/github-owned"] = {
+    "get_org_actions_hosted_runner_github_images",
+    empty_list,
+  },
+  ["GET /orgs/{org}/actions/hosted-runners/images/partner"] = {
+    "get_org_actions_hosted_runner_partner_images",
+    empty_list,
+  },
+  ["GET /orgs/{org}/actions/hosted-runners/limits"] = {
+    "get_org_actions_hosted_runner_limits",
+    actions_not_implemented,
+  },
+  ["GET /orgs/{org}/actions/hosted-runners/machine-sizes"] = {
+    "get_org_actions_hosted_runner_machine_sizes",
+    empty_list,
+  },
+  ["GET /orgs/{org}/actions/hosted-runners/platforms"] = {
+    "get_org_actions_hosted_runner_platforms",
+    empty_list,
+  },
+  ["GET /orgs/{org}/actions/hosted-runners/{hosted_runner_id}"] = {
+    "get_org_actions_hosted_runner",
+    actions_not_implemented,
+  },
+  ["PATCH /orgs/{org}/actions/hosted-runners/{hosted_runner_id}"] = {
+    "patch_org_actions_hosted_runner",
+    actions_not_implemented,
+  },
+  ["DELETE /orgs/{org}/actions/hosted-runners/{hosted_runner_id}"] = {
+    "delete_org_actions_hosted_runner",
+    actions_not_implemented,
+  },
+
+  -- Organization OIDC
+  ["GET /orgs/{org}/actions/oidc/customization/properties/repo"] = {
+    "get_org_actions_oidc_custom_props",
+    empty_list,
+  },
+  ["POST /orgs/{org}/actions/oidc/customization/properties/repo"] = {
+    "post_org_actions_oidc_custom_prop",
+    actions_not_implemented,
+  },
+  ["DELETE /orgs/{org}/actions/oidc/customization/properties/repo/{custom_property_name}"] = {
+    "delete_org_actions_oidc_custom_prop",
+    actions_not_implemented,
+  },
+  ["GET /orgs/{org}/actions/oidc/customization/sub"] = {
+    "get_org_actions_oidc_sub",
+    actions_not_implemented,
+  },
+  ["PUT /orgs/{org}/actions/oidc/customization/sub"] = {
+    "put_org_actions_oidc_sub",
+    actions_not_implemented,
+  },
+
+  -- Organization permissions
+  ["GET /orgs/{org}/actions/permissions"] = {
+    "get_org_actions_permissions",
+    actions_not_implemented,
+  },
+  ["PUT /orgs/{org}/actions/permissions"] = {
+    "put_org_actions_permissions",
+    actions_not_implemented,
+  },
+  ["GET /orgs/{org}/actions/permissions/artifact-and-log-retention"] = {
+    "get_org_actions_artifact_log_retention",
+    actions_not_implemented,
+  },
+  ["PUT /orgs/{org}/actions/permissions/artifact-and-log-retention"] = {
+    "put_org_actions_artifact_log_retention",
+    actions_not_implemented,
+  },
+  ["GET /orgs/{org}/actions/permissions/fork-pr-contributor-approval"] = {
+    "get_org_actions_fork_pr_approval",
+    actions_not_implemented,
+  },
+  ["PUT /orgs/{org}/actions/permissions/fork-pr-contributor-approval"] = {
+    "put_org_actions_fork_pr_approval",
+    actions_not_implemented,
+  },
+  ["GET /orgs/{org}/actions/permissions/fork-pr-workflows-private-repos"] = {
+    "get_org_actions_fork_pr_private_repos",
+    actions_not_implemented,
+  },
+  ["PUT /orgs/{org}/actions/permissions/fork-pr-workflows-private-repos"] = {
+    "put_org_actions_fork_pr_private_repos",
+    actions_not_implemented,
+  },
+  ["GET /orgs/{org}/actions/permissions/repositories"] = {
+    "get_org_actions_perm_repos",
+    empty_list,
+  },
+  ["PUT /orgs/{org}/actions/permissions/repositories"] = {
+    "put_org_actions_perm_repos",
+    actions_not_implemented,
+  },
+  ["PUT /orgs/{org}/actions/permissions/repositories/{repository_id}"] = {
+    "put_org_actions_perm_repo",
+    actions_not_implemented,
+  },
+  ["DELETE /orgs/{org}/actions/permissions/repositories/{repository_id}"] = {
+    "delete_org_actions_perm_repo",
+    actions_not_implemented,
+  },
+  ["GET /orgs/{org}/actions/permissions/selected-actions"] = {
+    "get_org_actions_selected_actions",
+    actions_not_implemented,
+  },
+  ["PUT /orgs/{org}/actions/permissions/selected-actions"] = {
+    "put_org_actions_selected_actions",
+    actions_not_implemented,
+  },
+  ["GET /orgs/{org}/actions/permissions/self-hosted-runners"] = {
+    "get_org_actions_self_hosted_runners_perm",
+    actions_not_implemented,
+  },
+  ["PUT /orgs/{org}/actions/permissions/self-hosted-runners"] = {
+    "put_org_actions_self_hosted_runners_perm",
+    actions_not_implemented,
+  },
+  ["GET /orgs/{org}/actions/permissions/self-hosted-runners/repositories"] = {
+    "get_org_actions_self_hosted_runner_repos",
+    empty_list,
+  },
+  ["PUT /orgs/{org}/actions/permissions/self-hosted-runners/repositories"] = {
+    "put_org_actions_self_hosted_runner_repos",
+    actions_not_implemented,
+  },
+  ["PUT /orgs/{org}/actions/permissions/self-hosted-runners/repositories/{repository_id}"] = {
+    "put_org_actions_self_hosted_runner_repo",
+    actions_not_implemented,
+  },
+  ["DELETE /orgs/{org}/actions/permissions/self-hosted-runners/repositories/{repository_id}"] = {
+    "delete_org_actions_self_hosted_runner_repo",
+    actions_not_implemented,
+  },
+  ["GET /orgs/{org}/actions/permissions/workflow"] = {
+    "get_org_actions_default_workflow_perms",
+    actions_not_implemented,
+  },
+  ["PUT /orgs/{org}/actions/permissions/workflow"] = {
+    "put_org_actions_default_workflow_perms",
+    actions_not_implemented,
+  },
+
+  -- Organization runner groups
+  ["GET /orgs/{org}/actions/runner-groups"] = {
+    "get_org_actions_runner_groups",
+    actions_runner_groups_empty,
+  },
+  ["POST /orgs/{org}/actions/runner-groups"] = {
+    "post_org_actions_runner_group",
+    actions_not_implemented,
+  },
+  ["GET /orgs/{org}/actions/runner-groups/{runner_group_id}"] = {
+    "get_org_actions_runner_group",
+    actions_not_implemented,
+  },
+  ["PATCH /orgs/{org}/actions/runner-groups/{runner_group_id}"] = {
+    "patch_org_actions_runner_group",
+    actions_not_implemented,
+  },
+  ["DELETE /orgs/{org}/actions/runner-groups/{runner_group_id}"] = {
+    "delete_org_actions_runner_group",
+    actions_not_implemented,
+  },
+  ["GET /orgs/{org}/actions/runner-groups/{runner_group_id}/hosted-runners"] = {
+    "get_org_actions_runner_group_hosted_runners",
+    actions_runners_empty,
+  },
+  ["GET /orgs/{org}/actions/runner-groups/{runner_group_id}/repositories"] = {
+    "get_org_actions_runner_group_repos",
+    empty_list,
+  },
+  ["PUT /orgs/{org}/actions/runner-groups/{runner_group_id}/repositories"] = {
+    "put_org_actions_runner_group_repos",
+    actions_not_implemented,
+  },
+  ["PUT /orgs/{org}/actions/runner-groups/{runner_group_id}/repositories/{repository_id}"] = {
+    "put_org_actions_runner_group_repo",
+    actions_not_implemented,
+  },
+  ["DELETE /orgs/{org}/actions/runner-groups/{runner_group_id}/repositories/{repository_id}"] = {
+    "delete_org_actions_runner_group_repo",
+    actions_not_implemented,
+  },
+  ["GET /orgs/{org}/actions/runner-groups/{runner_group_id}/runners"] = {
+    "get_org_actions_runner_group_runners",
+    actions_runners_empty,
+  },
+  ["PUT /orgs/{org}/actions/runner-groups/{runner_group_id}/runners"] = {
+    "put_org_actions_runner_group_runners",
+    actions_not_implemented,
+  },
+  ["PUT /orgs/{org}/actions/runner-groups/{runner_group_id}/runners/{runner_id}"] = {
+    "put_org_actions_runner_group_runner",
+    actions_not_implemented,
+  },
+  ["DELETE /orgs/{org}/actions/runner-groups/{runner_group_id}/runners/{runner_id}"] = {
+    "delete_org_actions_runner_group_runner",
+    actions_not_implemented,
+  },
+
+  -- Organization runners
+  ["GET /orgs/{org}/actions/runners"] = { "get_org_actions_runners", actions_runners_empty },
+  ["GET /orgs/{org}/actions/runners/downloads"] = {
+    "get_org_actions_runner_downloads",
+    empty_list,
+  },
+  ["POST /orgs/{org}/actions/runners/generate-jitconfig"] = {
+    "post_org_actions_runner_jitconfig",
+    actions_not_implemented,
+  },
+  ["POST /orgs/{org}/actions/runners/registration-token"] = {
+    "post_org_actions_runner_registration_token",
+    actions_not_implemented,
+  },
+  ["POST /orgs/{org}/actions/runners/remove-token"] = {
+    "post_org_actions_runner_remove_token",
+    actions_not_implemented,
+  },
+  ["GET /orgs/{org}/actions/runners/{runner_id}"] = {
+    "get_org_actions_runner",
+    actions_not_implemented,
+  },
+  ["DELETE /orgs/{org}/actions/runners/{runner_id}"] = {
+    "delete_org_actions_runner",
+    actions_not_implemented,
+  },
+  ["GET /orgs/{org}/actions/runners/{runner_id}/labels"] = {
+    "get_org_actions_runner_labels",
+    empty_list,
+  },
+  ["POST /orgs/{org}/actions/runners/{runner_id}/labels"] = {
+    "post_org_actions_runner_labels",
+    actions_not_implemented,
+  },
+  ["PUT /orgs/{org}/actions/runners/{runner_id}/labels"] = {
+    "put_org_actions_runner_labels",
+    actions_not_implemented,
+  },
+  ["DELETE /orgs/{org}/actions/runners/{runner_id}/labels"] = {
+    "delete_org_actions_runner_labels",
+    actions_not_implemented,
+  },
+  ["DELETE /orgs/{org}/actions/runners/{runner_id}/labels/{name}"] = {
+    "delete_org_actions_runner_label",
+    actions_not_implemented,
+  },
+
+  -- Organization secrets
+  ["GET /orgs/{org}/actions/secrets"] = { "get_org_actions_secrets", actions_secrets_empty },
+  ["GET /orgs/{org}/actions/secrets/public-key"] = {
+    "get_org_actions_secrets_public_key",
+    actions_not_implemented,
+  },
+  ["GET /orgs/{org}/actions/secrets/{secret_name}"] = {
+    "get_org_actions_secret",
+    actions_not_implemented,
+  },
+  ["PUT /orgs/{org}/actions/secrets/{secret_name}"] = {
+    "put_org_actions_secret",
+    actions_not_implemented,
+  },
+  ["DELETE /orgs/{org}/actions/secrets/{secret_name}"] = {
+    "delete_org_actions_secret",
+    actions_not_implemented,
+  },
+  ["GET /orgs/{org}/actions/secrets/{secret_name}/repositories"] = {
+    "get_org_actions_secret_repos",
+    empty_list,
+  },
+  ["PUT /orgs/{org}/actions/secrets/{secret_name}/repositories"] = {
+    "put_org_actions_secret_repos",
+    actions_not_implemented,
+  },
+  ["PUT /orgs/{org}/actions/secrets/{secret_name}/repositories/{repository_id}"] = {
+    "put_org_actions_secret_repo",
+    actions_not_implemented,
+  },
+  ["DELETE /orgs/{org}/actions/secrets/{secret_name}/repositories/{repository_id}"] = {
+    "delete_org_actions_secret_repo",
+    actions_not_implemented,
+  },
+
+  -- Organization variables
+  ["GET /orgs/{org}/actions/variables"] = {
+    "get_org_actions_variables",
+    actions_variables_empty,
+  },
+  ["POST /orgs/{org}/actions/variables"] = {
+    "post_org_actions_variable",
+    actions_not_implemented,
+  },
+  ["GET /orgs/{org}/actions/variables/{name}"] = {
+    "get_org_actions_variable",
+    actions_not_implemented,
+  },
+  ["PATCH /orgs/{org}/actions/variables/{name}"] = {
+    "patch_org_actions_variable",
+    actions_not_implemented,
+  },
+  ["DELETE /orgs/{org}/actions/variables/{name}"] = {
+    "delete_org_actions_variable",
+    actions_not_implemented,
+  },
+  ["GET /orgs/{org}/actions/variables/{name}/repositories"] = {
+    "get_org_actions_variable_repos",
+    empty_list,
+  },
+  ["PUT /orgs/{org}/actions/variables/{name}/repositories"] = {
+    "put_org_actions_variable_repos",
+    actions_not_implemented,
+  },
+  ["PUT /orgs/{org}/actions/variables/{name}/repositories/{repository_id}"] = {
+    "put_org_actions_variable_repo",
+    actions_not_implemented,
+  },
+  ["DELETE /orgs/{org}/actions/variables/{name}/repositories/{repository_id}"] = {
+    "delete_org_actions_variable_repo",
+    actions_not_implemented,
+  },
+
+  -- Repository artifacts
+  ["GET /repos/{owner}/{repo}/actions/artifacts"] = {
+    "get_repo_actions_artifacts",
+    actions_artifacts_empty,
+  },
+  ["GET /repos/{owner}/{repo}/actions/artifacts/{artifact_id}"] = {
+    "get_repo_actions_artifact",
+    actions_not_implemented,
+  },
+  ["DELETE /repos/{owner}/{repo}/actions/artifacts/{artifact_id}"] = {
+    "delete_repo_actions_artifact",
+    actions_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/actions/artifacts/{artifact_id}/{archive_format}"] = {
+    "get_repo_actions_artifact_archive",
+    actions_not_implemented,
+  },
+
+  -- Repository cache
+  ["GET /repos/{owner}/{repo}/actions/cache/retention-limit"] = {
+    "get_repo_actions_cache_retention_limit",
+    actions_not_implemented,
+  },
+  ["PUT /repos/{owner}/{repo}/actions/cache/retention-limit"] = {
+    "put_repo_actions_cache_retention_limit",
+    actions_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/actions/cache/storage-limit"] = {
+    "get_repo_actions_cache_storage_limit",
+    actions_not_implemented,
+  },
+  ["PUT /repos/{owner}/{repo}/actions/cache/storage-limit"] = {
+    "put_repo_actions_cache_storage_limit",
+    actions_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/actions/cache/usage"] = {
+    "get_repo_actions_cache_usage",
+    actions_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/actions/caches"] = {
+    "get_repo_actions_caches",
+    actions_caches_empty,
+  },
+  ["DELETE /repos/{owner}/{repo}/actions/caches"] = {
+    "delete_repo_actions_caches",
+    actions_not_implemented,
+  },
+  ["DELETE /repos/{owner}/{repo}/actions/caches/{cache_id}"] = {
+    "delete_repo_actions_cache",
+    actions_not_implemented,
+  },
+
+  -- Repository jobs
+  ["GET /repos/{owner}/{repo}/actions/jobs/{job_id}"] = {
+    "get_repo_actions_job",
+    actions_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs"] = {
+    "get_repo_actions_job_logs",
+    actions_not_implemented,
+  },
+  ["POST /repos/{owner}/{repo}/actions/jobs/{job_id}/rerun"] = {
+    "post_repo_actions_job_rerun",
+    actions_not_implemented,
+  },
+
+  -- Repository OIDC
+  ["GET /repos/{owner}/{repo}/actions/oidc/customization/sub"] = {
+    "get_repo_actions_oidc_sub",
+    actions_not_implemented,
+  },
+  ["PUT /repos/{owner}/{repo}/actions/oidc/customization/sub"] = {
+    "put_repo_actions_oidc_sub",
+    actions_not_implemented,
+  },
+
+  -- Repository org secrets/variables (read-only inherited view)
+  ["GET /repos/{owner}/{repo}/actions/organization-secrets"] = {
+    "get_repo_actions_org_secrets",
+    actions_secrets_empty,
+  },
+  ["GET /repos/{owner}/{repo}/actions/organization-variables"] = {
+    "get_repo_actions_org_variables",
+    actions_variables_empty,
+  },
+
+  -- Repository permissions
+  ["GET /repos/{owner}/{repo}/actions/permissions"] = {
+    "get_repo_actions_permissions",
+    actions_not_implemented,
+  },
+  ["PUT /repos/{owner}/{repo}/actions/permissions"] = {
+    "put_repo_actions_permissions",
+    actions_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/actions/permissions/access"] = {
+    "get_repo_actions_access_level",
+    actions_not_implemented,
+  },
+  ["PUT /repos/{owner}/{repo}/actions/permissions/access"] = {
+    "put_repo_actions_access_level",
+    actions_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/actions/permissions/artifact-and-log-retention"] = {
+    "get_repo_actions_artifact_log_retention",
+    actions_not_implemented,
+  },
+  ["PUT /repos/{owner}/{repo}/actions/permissions/artifact-and-log-retention"] = {
+    "put_repo_actions_artifact_log_retention",
+    actions_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/actions/permissions/fork-pr-contributor-approval"] = {
+    "get_repo_actions_fork_pr_approval",
+    actions_not_implemented,
+  },
+  ["PUT /repos/{owner}/{repo}/actions/permissions/fork-pr-contributor-approval"] = {
+    "put_repo_actions_fork_pr_approval",
+    actions_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/actions/permissions/fork-pr-workflows-private-repos"] = {
+    "get_repo_actions_fork_pr_private_repos",
+    actions_not_implemented,
+  },
+  ["PUT /repos/{owner}/{repo}/actions/permissions/fork-pr-workflows-private-repos"] = {
+    "put_repo_actions_fork_pr_private_repos",
+    actions_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/actions/permissions/selected-actions"] = {
+    "get_repo_actions_selected_actions",
+    actions_not_implemented,
+  },
+  ["PUT /repos/{owner}/{repo}/actions/permissions/selected-actions"] = {
+    "put_repo_actions_selected_actions",
+    actions_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/actions/permissions/workflow"] = {
+    "get_repo_actions_default_workflow_perms",
+    actions_not_implemented,
+  },
+  ["PUT /repos/{owner}/{repo}/actions/permissions/workflow"] = {
+    "put_repo_actions_default_workflow_perms",
+    actions_not_implemented,
+  },
+
+  -- Repository runners
+  ["GET /repos/{owner}/{repo}/actions/runners"] = {
+    "get_repo_actions_runners",
+    actions_runners_empty,
+  },
+  ["GET /repos/{owner}/{repo}/actions/runners/downloads"] = {
+    "get_repo_actions_runner_downloads",
+    empty_list,
+  },
+  ["POST /repos/{owner}/{repo}/actions/runners/generate-jitconfig"] = {
+    "post_repo_actions_runner_jitconfig",
+    actions_not_implemented,
+  },
+  ["POST /repos/{owner}/{repo}/actions/runners/registration-token"] = {
+    "post_repo_actions_runner_registration_token",
+    actions_not_implemented,
+  },
+  ["POST /repos/{owner}/{repo}/actions/runners/remove-token"] = {
+    "post_repo_actions_runner_remove_token",
+    actions_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/actions/runners/{runner_id}"] = {
+    "get_repo_actions_runner",
+    actions_not_implemented,
+  },
+  ["DELETE /repos/{owner}/{repo}/actions/runners/{runner_id}"] = {
+    "delete_repo_actions_runner",
+    actions_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/actions/runners/{runner_id}/labels"] = {
+    "get_repo_actions_runner_labels",
+    empty_list,
+  },
+  ["POST /repos/{owner}/{repo}/actions/runners/{runner_id}/labels"] = {
+    "post_repo_actions_runner_labels",
+    actions_not_implemented,
+  },
+  ["PUT /repos/{owner}/{repo}/actions/runners/{runner_id}/labels"] = {
+    "put_repo_actions_runner_labels",
+    actions_not_implemented,
+  },
+  ["DELETE /repos/{owner}/{repo}/actions/runners/{runner_id}/labels"] = {
+    "delete_repo_actions_runner_labels",
+    actions_not_implemented,
+  },
+  ["DELETE /repos/{owner}/{repo}/actions/runners/{runner_id}/labels/{name}"] = {
+    "delete_repo_actions_runner_label",
+    actions_not_implemented,
+  },
+
+  -- Repository workflow runs
+  ["GET /repos/{owner}/{repo}/actions/runs"] = { "get_repo_actions_runs", actions_runs_empty },
+  ["GET /repos/{owner}/{repo}/actions/runs/{run_id}"] = {
+    "get_repo_actions_run",
+    actions_not_implemented,
+  },
+  ["DELETE /repos/{owner}/{repo}/actions/runs/{run_id}"] = {
+    "delete_repo_actions_run",
+    actions_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/actions/runs/{run_id}/approvals"] = {
+    "get_repo_actions_run_approvals",
+    empty_list,
+  },
+  ["POST /repos/{owner}/{repo}/actions/runs/{run_id}/approve"] = {
+    "post_repo_actions_run_approve",
+    actions_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/actions/runs/{run_id}/artifacts"] = {
+    "get_repo_actions_run_artifacts",
+    actions_artifacts_empty,
+  },
+  ["GET /repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}"] = {
+    "get_repo_actions_run_attempt",
+    actions_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}/jobs"] = {
+    "get_repo_actions_run_attempt_jobs",
+    actions_jobs_empty,
+  },
+  ["GET /repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}/logs"] = {
+    "get_repo_actions_run_attempt_logs",
+    actions_not_implemented,
+  },
+  ["POST /repos/{owner}/{repo}/actions/runs/{run_id}/cancel"] = {
+    "post_repo_actions_run_cancel",
+    actions_not_implemented,
+  },
+  ["POST /repos/{owner}/{repo}/actions/runs/{run_id}/deployment_protection_rule"] = {
+    "post_repo_actions_run_deployment_prot",
+    actions_not_implemented,
+  },
+  ["POST /repos/{owner}/{repo}/actions/runs/{run_id}/force-cancel"] = {
+    "post_repo_actions_run_force_cancel",
+    actions_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs"] = {
+    "get_repo_actions_run_jobs",
+    actions_jobs_empty,
+  },
+  ["GET /repos/{owner}/{repo}/actions/runs/{run_id}/logs"] = {
+    "get_repo_actions_run_logs",
+    actions_not_implemented,
+  },
+  ["DELETE /repos/{owner}/{repo}/actions/runs/{run_id}/logs"] = {
+    "delete_repo_actions_run_logs",
+    actions_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/actions/runs/{run_id}/pending_deployments"] = {
+    "get_repo_actions_run_pending_deployments",
+    empty_list,
+  },
+  ["POST /repos/{owner}/{repo}/actions/runs/{run_id}/pending_deployments"] = {
+    "post_repo_actions_run_pending_deployments",
+    actions_not_implemented,
+  },
+  ["POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun"] = {
+    "post_repo_actions_run_rerun",
+    actions_not_implemented,
+  },
+  ["POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs"] = {
+    "post_repo_actions_run_rerun_failed",
+    actions_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/actions/runs/{run_id}/timing"] = {
+    "get_repo_actions_run_timing",
+    actions_not_implemented,
+  },
+
+  -- Repository secrets
+  ["GET /repos/{owner}/{repo}/actions/secrets"] = {
+    "get_repo_actions_secrets",
+    actions_secrets_empty,
+  },
+  ["GET /repos/{owner}/{repo}/actions/secrets/public-key"] = {
+    "get_repo_actions_secrets_public_key",
+    actions_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/actions/secrets/{secret_name}"] = {
+    "get_repo_actions_secret",
+    actions_not_implemented,
+  },
+  ["PUT /repos/{owner}/{repo}/actions/secrets/{secret_name}"] = {
+    "put_repo_actions_secret",
+    actions_not_implemented,
+  },
+  ["DELETE /repos/{owner}/{repo}/actions/secrets/{secret_name}"] = {
+    "delete_repo_actions_secret",
+    actions_not_implemented,
+  },
+
+  -- Repository variables
+  ["GET /repos/{owner}/{repo}/actions/variables"] = {
+    "get_repo_actions_variables",
+    actions_variables_empty,
+  },
+  ["POST /repos/{owner}/{repo}/actions/variables"] = {
+    "post_repo_actions_variable",
+    actions_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/actions/variables/{name}"] = {
+    "get_repo_actions_variable",
+    actions_not_implemented,
+  },
+  ["PATCH /repos/{owner}/{repo}/actions/variables/{name}"] = {
+    "patch_repo_actions_variable",
+    actions_not_implemented,
+  },
+  ["DELETE /repos/{owner}/{repo}/actions/variables/{name}"] = {
+    "delete_repo_actions_variable",
+    actions_not_implemented,
+  },
+
+  -- Repository workflows
+  ["GET /repos/{owner}/{repo}/actions/workflows"] = {
+    "get_repo_actions_workflows",
+    actions_workflows_empty,
+  },
+  ["GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}"] = {
+    "get_repo_actions_workflow",
+    actions_not_implemented,
+  },
+  ["PUT /repos/{owner}/{repo}/actions/workflows/{workflow_id}/disable"] = {
+    "put_repo_actions_workflow_disable",
+    actions_not_implemented,
+  },
+  ["POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches"] = {
+    "post_repo_actions_workflow_dispatch",
+    actions_not_implemented,
+  },
+  ["PUT /repos/{owner}/{repo}/actions/workflows/{workflow_id}/enable"] = {
+    "put_repo_actions_workflow_enable",
+    actions_not_implemented,
+  },
+  ["GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs"] = {
+    "get_repo_actions_workflow_runs",
+    actions_runs_empty,
+  },
+  ["GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/timing"] = {
+    "get_repo_actions_workflow_timing",
+    actions_not_implemented,
+  },
 }
 for spec, v in pairs(routes) do
   if type(v) == "string" then

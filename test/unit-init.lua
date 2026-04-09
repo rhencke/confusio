@@ -801,6 +801,132 @@ reset_request({ method = "POST", path = "/markdown/raw" })
 OnHttpRequest()
 eq(_last_status, 501, "OnHttpRequest: POST /markdown/raw → 501 (markdown not implemented)")
 
+-- Actions default handlers — each function must be hit at least once.
+
+-- actions_not_implemented: GET /enterprises/{enterprise}/actions/cache/retention-limit → 501
+reset_response()
+reset_request({ method = "GET", path = "/enterprises/myenterprise/actions/cache/retention-limit" })
+OnHttpRequest()
+eq(
+  _last_status,
+  501,
+  "OnHttpRequest: GET /enterprises/{enterprise}/actions/cache/retention-limit → 501 (actions not implemented)"
+)
+
+-- actions_runs_empty: GET /repos/{owner}/{repo}/actions/runs → 200 with workflow_runs list
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/actions/runs" })
+OnHttpRequest()
+eq(_last_status, 200, "OnHttpRequest: GET /repos/{owner}/{repo}/actions/runs → 200 (runs empty)")
+ok(
+  _last_body:find("workflow_runs") ~= nil,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/actions/runs → body contains workflow_runs"
+)
+
+-- actions_artifacts_empty: GET /repos/{owner}/{repo}/actions/artifacts → 200 with artifacts list
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/actions/artifacts" })
+OnHttpRequest()
+eq(
+  _last_status,
+  200,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/actions/artifacts → 200 (artifacts empty)"
+)
+ok(
+  _last_body:find("artifacts") ~= nil,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/actions/artifacts → body contains artifacts"
+)
+
+-- actions_jobs_empty: GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs → 200 with jobs list
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/actions/runs/42/jobs" })
+OnHttpRequest()
+eq(
+  _last_status,
+  200,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs → 200 (jobs empty)"
+)
+ok(
+  _last_body:find('"jobs"') ~= nil,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs → body contains jobs"
+)
+
+-- actions_runners_empty: GET /orgs/{org}/actions/hosted-runners → 200 with runners list
+reset_response()
+reset_request({ method = "GET", path = "/orgs/myorg/actions/hosted-runners" })
+OnHttpRequest()
+eq(
+  _last_status,
+  200,
+  "OnHttpRequest: GET /orgs/{org}/actions/hosted-runners → 200 (runners empty)"
+)
+ok(
+  _last_body:find("runners") ~= nil,
+  "OnHttpRequest: GET /orgs/{org}/actions/hosted-runners → body contains runners"
+)
+
+-- actions_runner_groups_empty: GET /orgs/{org}/actions/runner-groups → 200 with runner_groups list
+reset_response()
+reset_request({ method = "GET", path = "/orgs/myorg/actions/runner-groups" })
+OnHttpRequest()
+eq(
+  _last_status,
+  200,
+  "OnHttpRequest: GET /orgs/{org}/actions/runner-groups → 200 (runner groups empty)"
+)
+ok(
+  _last_body:find("runner_groups") ~= nil,
+  "OnHttpRequest: GET /orgs/{org}/actions/runner-groups → body contains runner_groups"
+)
+
+-- actions_secrets_empty: GET /orgs/{org}/actions/secrets → 200 with secrets list
+reset_response()
+reset_request({ method = "GET", path = "/orgs/myorg/actions/secrets" })
+OnHttpRequest()
+eq(_last_status, 200, "OnHttpRequest: GET /orgs/{org}/actions/secrets → 200 (secrets empty)")
+ok(
+  _last_body:find("secrets") ~= nil,
+  "OnHttpRequest: GET /orgs/{org}/actions/secrets → body contains secrets"
+)
+
+-- actions_variables_empty: GET /orgs/{org}/actions/variables → 200 with variables list
+reset_response()
+reset_request({ method = "GET", path = "/orgs/myorg/actions/variables" })
+OnHttpRequest()
+eq(_last_status, 200, "OnHttpRequest: GET /orgs/{org}/actions/variables → 200 (variables empty)")
+ok(
+  _last_body:find("variables") ~= nil,
+  "OnHttpRequest: GET /orgs/{org}/actions/variables → body contains variables"
+)
+
+-- actions_caches_empty: GET /repos/{owner}/{repo}/actions/caches → 200 with actions_caches list
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/actions/caches" })
+OnHttpRequest()
+eq(
+  _last_status,
+  200,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/actions/caches → 200 (caches empty)"
+)
+ok(
+  _last_body:find("actions_caches") ~= nil,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/actions/caches → body contains actions_caches"
+)
+
+-- actions_workflows_empty: GET /repos/{owner}/{repo}/actions/workflows → 200 with workflows list
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/actions/workflows" })
+OnHttpRequest()
+eq(
+  _last_status,
+  200,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/actions/workflows → 200 (workflows empty)"
+)
+ok(
+  _last_body:find("workflows") ~= nil,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/actions/workflows → body contains workflows"
+)
+
 -- ============================================================
 -- Summary
 -- ============================================================

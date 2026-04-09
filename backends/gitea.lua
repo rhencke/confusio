@@ -741,6 +741,68 @@ local function pkg_delete_version(owner, pkg_type, pkg_name, version_id)
   respond_json(404, { message = "Not Found" })
 end
 
+-- Translate a Gitea Actions secret to GitHub format.
+local function translate_gitea_actions_secret(s)
+  return { name = s.name, created_at = s.created_at, updated_at = s.updated_at }
+end
+
+-- Translate a Gitea Actions variable to GitHub format.
+local function translate_gitea_actions_variable(v)
+  return { name = v.name, value = v.value, created_at = v.created_at, updated_at = v.updated_at }
+end
+
+-- Translate a Gitea Actions runner to GitHub format.
+local function translate_gitea_actions_runner(r)
+  return {
+    id = r.id,
+    name = r.name,
+    os = r.os,
+    status = r.status,
+    busy = r.busy or false,
+    labels = r.labels or {},
+  }
+end
+
+-- Proxy a Gitea Actions list (plain JSON array) → GitHub envelope {total_count, key: [...]}.
+local function proxy_actions_list(key, translate_fn, url)
+  local ok, status, _, body = fetch_json(url)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local raw = DecodeJson(body) or {}
+  local items = {}
+  for i, item in ipairs(raw) do
+    items[i] = translate_fn(item)
+  end
+  set_preamble()
+  Write(
+    '{"total_count":'
+      .. #items
+      .. ',"'
+      .. key
+      .. '":'
+      .. (#items > 0 and EncodeJson(items) or "[]")
+      .. "}"
+  )
+end
+
+-- Forward mutating request body to Gitea and return 204 No Content on success.
+local function proxy_204(method, url)
+  local ok, status = fetch_json(url, method, GetBody())
+  if ok and status == 204 then
+    SetStatus(204, "No Content")
+  elseif ok then
+    respond_json(status, {})
+  else
+    respond_json(503, {})
+  end
+end
+
 backend_impl = {
   -- Health check
   get_root = function()
@@ -2992,5 +3054,126 @@ backend_impl = {
     local ct = (headers and (headers["Content-Type"] or headers["content-type"])) or "text/html"
     set_preamble(status, ct)
     Write(body or "")
+  end,
+
+  -- Actions ------------------------------------------------------------------
+  -- Gitea natively supports secrets, variables, and runners (repo + org level).
+  -- Workflow runs, artifacts, caches, jobs, OIDC, and permissions use defaults.
+  --
+  -- Secrets: list/get/delete only. GitHub encrypts secrets with NaCl before
+  -- sending; Gitea stores plaintext. The wire formats are incompatible, so
+  -- create/update (PUT) falls back to the default 501 handler.
+
+  get_repo_actions_secrets = function(owner, repo)
+    proxy_actions_list(
+      "secrets",
+      translate_gitea_actions_secret,
+      base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/secrets"
+    )
+  end,
+  get_repo_actions_secret = function(owner, repo, secret_name)
+    proxy_json(
+      translate_gitea_actions_secret,
+      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/secrets/" .. secret_name)
+    )
+  end,
+  delete_repo_actions_secret = function(owner, repo, secret_name)
+    set_204_or_error(
+      "DELETE",
+      base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/secrets/" .. secret_name
+    )
+  end,
+
+  get_org_actions_secrets = function(org)
+    proxy_actions_list(
+      "secrets",
+      translate_gitea_actions_secret,
+      base() .. "/orgs/" .. org .. "/actions/secrets"
+    )
+  end,
+  get_org_actions_secret = function(org, secret_name)
+    proxy_json(
+      translate_gitea_actions_secret,
+      fetch_json(base() .. "/orgs/" .. org .. "/actions/secrets/" .. secret_name)
+    )
+  end,
+  delete_org_actions_secret = function(org, secret_name)
+    set_204_or_error("DELETE", base() .. "/orgs/" .. org .. "/actions/secrets/" .. secret_name)
+  end,
+
+  -- Variables: full CRUD. Gitea uses PUT for updates; GitHub uses PATCH.
+  get_repo_actions_variables = function(owner, repo)
+    proxy_actions_list(
+      "variables",
+      translate_gitea_actions_variable,
+      base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables"
+    )
+  end,
+  get_repo_actions_variable = function(owner, repo, name)
+    proxy_json(
+      translate_gitea_actions_variable,
+      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables/" .. name)
+    )
+  end,
+  post_repo_actions_variable = function(owner, repo)
+    proxy_json_created(
+      translate_gitea_actions_variable,
+      fetch_json(
+        base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables",
+        "POST",
+        GetBody()
+      )
+    )
+  end,
+  patch_repo_actions_variable = function(owner, repo, name)
+    proxy_204("PUT", base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables/" .. name)
+  end,
+  delete_repo_actions_variable = function(owner, repo, name)
+    set_204_or_error(
+      "DELETE",
+      base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables/" .. name
+    )
+  end,
+
+  get_org_actions_variables = function(org)
+    proxy_actions_list(
+      "variables",
+      translate_gitea_actions_variable,
+      base() .. "/orgs/" .. org .. "/actions/variables"
+    )
+  end,
+  get_org_actions_variable = function(org, name)
+    proxy_json(
+      translate_gitea_actions_variable,
+      fetch_json(base() .. "/orgs/" .. org .. "/actions/variables/" .. name)
+    )
+  end,
+  post_org_actions_variable = function(org)
+    proxy_json_created(
+      translate_gitea_actions_variable,
+      fetch_json(base() .. "/orgs/" .. org .. "/actions/variables", "POST", GetBody())
+    )
+  end,
+  patch_org_actions_variable = function(org, name)
+    proxy_204("PUT", base() .. "/orgs/" .. org .. "/actions/variables/" .. name)
+  end,
+  delete_org_actions_variable = function(org, name)
+    set_204_or_error("DELETE", base() .. "/orgs/" .. org .. "/actions/variables/" .. name)
+  end,
+
+  -- Runners: list only (individual runner operations not proxied).
+  get_repo_actions_runners = function(owner, repo)
+    proxy_actions_list(
+      "runners",
+      translate_gitea_actions_runner,
+      base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/runners"
+    )
+  end,
+  get_org_actions_runners = function(org)
+    proxy_actions_list(
+      "runners",
+      translate_gitea_actions_runner,
+      base() .. "/orgs/" .. org .. "/actions/runners"
+    )
   end,
 }

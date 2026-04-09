@@ -564,6 +564,73 @@ function OnHttpRequest()
     -- pages-repo has a gh-pages branch → confusio synthesizes a 200 Pages response.
     ["/api/v1/repos/octocat/pages-repo/branches/gh-pages"] = { 200, '{"name":"gh-pages"}' },
 
+    -- Actions: repository secrets (list/get/delete proxied; create/update not proxied
+    -- due to NaCl encryption incompatibility between GitHub and Gitea wire formats).
+    ["/api/v1/repos/octocat/hello-world/actions/secrets"] = {
+      200,
+      '[{"name":"MY_SECRET","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"}]',
+    },
+    ["/api/v1/repos/octocat/hello-world/actions/secrets/MY_SECRET"] = {
+      200,
+      '{"name":"MY_SECRET","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"}',
+    },
+    ["DELETE /api/v1/repos/octocat/hello-world/actions/secrets/MY_SECRET"] = { 204, nil },
+
+    -- Actions: organization secrets
+    ["/api/v1/orgs/testorg/actions/secrets"] = {
+      200,
+      '[{"name":"ORG_SECRET","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"}]',
+    },
+    ["/api/v1/orgs/testorg/actions/secrets/ORG_SECRET"] = {
+      200,
+      '{"name":"ORG_SECRET","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"}',
+    },
+    ["DELETE /api/v1/orgs/testorg/actions/secrets/ORG_SECRET"] = { 204, nil },
+
+    -- Actions: repository variables (full CRUD; Gitea uses PUT for updates)
+    ["/api/v1/repos/octocat/hello-world/actions/variables"] = {
+      200,
+      '[{"name":"MY_VAR","value":"my_value","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"}]',
+    },
+    ["/api/v1/repos/octocat/hello-world/actions/variables/MY_VAR"] = {
+      200,
+      '{"name":"MY_VAR","value":"my_value","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"}',
+    },
+    ["POST /api/v1/repos/octocat/hello-world/actions/variables"] = {
+      201,
+      '{"name":"NEW_VAR","value":"new_value","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"}',
+    },
+    ["PUT /api/v1/repos/octocat/hello-world/actions/variables/MY_VAR"] = { 204, nil },
+    ["DELETE /api/v1/repos/octocat/hello-world/actions/variables/MY_VAR"] = { 204, nil },
+
+    -- Actions: organization variables (full CRUD)
+    ["/api/v1/orgs/testorg/actions/variables"] = {
+      200,
+      '[{"name":"ORG_VAR","value":"org_value","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"}]',
+    },
+    ["/api/v1/orgs/testorg/actions/variables/ORG_VAR"] = {
+      200,
+      '{"name":"ORG_VAR","value":"org_value","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"}',
+    },
+    ["POST /api/v1/orgs/testorg/actions/variables"] = {
+      201,
+      '{"name":"NEW_ORG_VAR","value":"new_org_value","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"}',
+    },
+    ["PUT /api/v1/orgs/testorg/actions/variables/ORG_VAR"] = { 204, nil },
+    ["DELETE /api/v1/orgs/testorg/actions/variables/ORG_VAR"] = { 204, nil },
+
+    -- Actions: repository runners (list only)
+    ["/api/v1/repos/octocat/hello-world/actions/runners"] = {
+      200,
+      '[{"id":1,"name":"my-runner","os":"linux","status":"idle","busy":false,"labels":[]}]',
+    },
+
+    -- Actions: organization runners (list only)
+    ["/api/v1/orgs/testorg/actions/runners"] = {
+      200,
+      '[{"id":2,"name":"org-runner","os":"linux","status":"idle","busy":false,"labels":[]}]',
+    },
+
     -- Interactions: Gitea has no GitHub Interactions API; confusio returns stubs directly.
     -- These routes document what the backend would return if ever proxied.
     ["GET /orgs/testorg/interaction-limits"] = { 404, nil },
