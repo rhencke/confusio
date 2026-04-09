@@ -631,6 +631,56 @@ function OnHttpRequest()
       '[{"id":2,"name":"org-runner","os":"linux","status":"idle","busy":false,"labels":[]}]',
     },
 
+    -- Git database (blobs, refs, tags, trees)
+    ["/api/v1/repos/octocat/hello-world/git/blobs/3a0f86fb8db8eea7ccbb9a95f325ddbedfb25e15"] = {
+      200,
+      '{"content":"Q29udGVudCBvZiBibG9i\\n","encoding":"base64",'
+        .. '"url":"http://localhost/api/v1/repos/octocat/hello-world/git/blobs/3a0f86fb8db8eea7ccbb9a95f325ddbedfb25e15",'
+        .. '"sha":"3a0f86fb8db8eea7ccbb9a95f325ddbedfb25e15","size":19}',
+    },
+    ["/api/v1/repos/octocat/hello-world/git/refs/heads/main"] = {
+      200,
+      '[{"ref":"refs/heads/main",'
+        .. '"url":"http://localhost/api/v1/repos/octocat/hello-world/git/refs/heads/main",'
+        .. '"object":{"type":"commit","sha":"abc123def456",'
+        .. '"url":"http://localhost/api/v1/repos/octocat/hello-world/git/commits/abc123def456"}}]',
+    },
+    ["POST /api/v1/repos/octocat/hello-world/git/refs"] = {
+      201,
+      '{"ref":"refs/heads/feature",'
+        .. '"url":"http://localhost/api/v1/repos/octocat/hello-world/git/refs/heads/feature",'
+        .. '"object":{"type":"commit","sha":"abc123def456",'
+        .. '"url":"http://localhost/api/v1/repos/octocat/hello-world/git/commits/abc123def456"}}',
+    },
+    ["DELETE /api/v1/repos/octocat/hello-world/git/refs/heads/feature"] = { 204, nil },
+    ["/api/v1/repos/octocat/hello-world/git/tags/940bd336248efae0f9ee5bc7b2d5c985887b16ac"] = {
+      200,
+      '{"tag":"v1.0","sha":"940bd336248efae0f9ee5bc7b2d5c985887b16ac",'
+        .. '"url":"http://localhost/api/v1/repos/octocat/hello-world/git/tags/940bd336248efae0f9ee5bc7b2d5c985887b16ac",'
+        .. '"message":"Initial release",'
+        .. '"tagger":{"name":"Octocat","email":"octocat@github.com","date":"2020-01-01T00:00:00Z"},'
+        .. '"object":{"type":"commit","sha":"abc123def456",'
+        .. '"url":"http://localhost/api/v1/repos/octocat/hello-world/git/commits/abc123def456"}}',
+    },
+    ["POST /api/v1/repos/octocat/hello-world/git/tags"] = {
+      201,
+      '{"tag":"v2.0","sha":"1234567890abcdef1234567890abcdef12345678",'
+        .. '"url":"http://localhost/api/v1/repos/octocat/hello-world/git/tags/1234567890abcdef1234567890abcdef12345678",'
+        .. '"message":"Second release",'
+        .. '"tagger":{"name":"Octocat","email":"octocat@github.com","date":"2021-01-01T00:00:00Z"},'
+        .. '"object":{"type":"commit","sha":"abc123def456",'
+        .. '"url":"http://localhost/api/v1/repos/octocat/hello-world/git/commits/abc123def456"}}',
+    },
+    ["/api/v1/repos/octocat/hello-world/git/trees/9fb037999f264ba9a7fc6274d15fa3ae2ab98312"] = {
+      200,
+      '{"sha":"9fb037999f264ba9a7fc6274d15fa3ae2ab98312",'
+        .. '"url":"http://localhost/api/v1/repos/octocat/hello-world/git/trees/9fb037999f264ba9a7fc6274d15fa3ae2ab98312",'
+        .. '"tree":[{"path":"README.md","mode":"100644","type":"blob","size":30,'
+        .. '"sha":"3a0f86fb8db8eea7ccbb9a95f325ddbedfb25e15",'
+        .. '"url":"http://localhost/api/v1/repos/octocat/hello-world/git/blobs/3a0f86fb8db8eea7ccbb9a95f325ddbedfb25e15"}],'
+        .. '"truncated":false}',
+    },
+
     -- Interactions: Gitea has no GitHub Interactions API; confusio returns stubs directly.
     -- These routes document what the backend would return if ever proxied.
     ["GET /orgs/testorg/interaction-limits"] = { 404, nil },

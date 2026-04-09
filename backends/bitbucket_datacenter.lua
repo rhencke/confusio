@@ -1401,3 +1401,108 @@ _b.list_code_scanning_analyses = function(owner, repo_name)
   end
   respond_json(200, result)
 end
+
+-- Git database (refs only; blobs/commits/tag-objects/trees have no DC equivalent) -----
+
+local function translate_bbs_ref(r)
+  local ref_id = r.id or ""
+  local sha = r.latestCommit or r.latestChangeset or ""
+  return {
+    ref = ref_id,
+    node_id = "",
+    url = "",
+    object = { type = "commit", sha = sha, url = "" },
+  }
+end
+
+_b.list_git_matching_refs = function(owner, repo_name, ref)
+  local endpoint, prefix
+  if ref:sub(1, 6) == "heads/" then
+    endpoint = "/branches"
+    prefix = ref:sub(7)
+  elseif ref:sub(1, 5) == "tags/" then
+    endpoint = "/tags"
+    prefix = ref:sub(6)
+  else
+    endpoint = "/branches"
+    prefix = ref
+  end
+  local url = bbs_page_url(repo_path(owner, repo_name) .. endpoint .. "?filterText=" .. prefix)
+  proxy_json(function(data)
+    local refs = data.values or {}
+    for i, r in ipairs(refs) do
+      refs[i] = translate_bbs_ref(r)
+    end
+    return refs
+  end, fetch_json(url))
+end
+
+_b.get_git_ref = function(owner, repo_name, ref)
+  local endpoint, prefix
+  if ref:sub(1, 6) == "heads/" then
+    endpoint = "/branches"
+    prefix = ref:sub(7)
+  elseif ref:sub(1, 5) == "tags/" then
+    endpoint = "/tags"
+    prefix = ref:sub(6)
+  else
+    respond_json(422, { message = "Invalid ref format" })
+    return
+  end
+  local url = repo_path(owner, repo_name) .. endpoint .. "?filterText=" .. prefix .. "&limit=1"
+  proxy_json(function(data)
+    local first = (data.values or {})[1]
+    return first and translate_bbs_ref(first) or {}
+  end, fetch_json(url))
+end
+
+_b.create_git_ref = function(owner, repo_name)
+  local req = DecodeJson(GetBody() or "{}")
+  local full_ref = req.ref or ""
+  local sha = req.sha or ""
+  local endpoint, bb_body
+  if full_ref:sub(1, 11) == "refs/heads/" then
+    endpoint = "/branches"
+    bb_body = EncodeJson({ name = full_ref:sub(12), startPoint = sha })
+  elseif full_ref:sub(1, 10) == "refs/tags/" then
+    endpoint = "/tags"
+    bb_body = EncodeJson({ name = full_ref:sub(11), startCommit = sha, message = "" })
+  else
+    respond_json(422, { message = "Invalid ref format" })
+    return
+  end
+  proxy_json_created(
+    translate_bbs_ref,
+    fetch_json(repo_path(owner, repo_name) .. endpoint, "POST", bb_body)
+  )
+end
+
+_b.delete_git_ref = function(owner, repo_name, ref)
+  local endpoint, body_or_nil
+  if ref:sub(1, 6) == "heads/" then
+    endpoint = "/branches"
+    body_or_nil = EncodeJson({ name = "refs/heads/" .. ref:sub(7), dryRun = false })
+  elseif ref:sub(1, 5) == "tags/" then
+    endpoint = "/tags/" .. ref:sub(6)
+    body_or_nil = nil
+  else
+    respond_json(422, { message = "Invalid ref format" })
+    return
+  end
+  local url = repo_path(owner, repo_name) .. endpoint
+  local dopts = auth() or {}
+  dopts.method = "DELETE"
+  if body_or_nil then
+    dopts.body = body_or_nil
+    dopts.headers = dopts.headers or {}
+    dopts.headers["Content-Type"] = "application/json"
+  end
+  local ok, status = pcall(Fetch, url, dopts)
+  if ok and (status == 204 or status == 200 or status == 202) then
+    SetStatus(204, "No Content")
+  elseif ok then
+    respond_json(status, {})
+  else
+    respond_json(503, {})
+  end
+end

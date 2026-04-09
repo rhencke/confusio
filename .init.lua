@@ -486,6 +486,12 @@ local function actions_workflows_empty()
   Write('{"total_count":0,"workflows":[]}')
 end
 
+-- Default handler for Git database endpoints: backends that have a native low-level
+-- git object API override these. Falls back to 501 Not Implemented.
+local function git_not_implemented()
+  respond_json(501, { message = "Git database API is not supported by this backend." })
+end
+
 -- Default handlers for GET /zen, GET /octocat, GET /versions, GET /meta.
 -- These endpoints are fully self-contained and do not call any backend.
 local ZEN_QUOTES = {
@@ -573,6 +579,11 @@ local function _trie_insert(t, key)
     if seg:sub(1, 1) == "{" then
       node.param = node.param or new_node()
       node = node.param
+      -- {param+} is a greedy capture: matches this segment and all remaining segments.
+      if seg:sub(-2) == "+}" then
+        node.greedy = true
+        break
+      end
     else
       node.static[seg] = node.static[seg] or new_node()
       node = node.static[seg]
@@ -595,18 +606,30 @@ end
 -- _trie_walk traverses root over the "/" segments of key.
 -- Returns the final node and a table of captured param values,
 -- or nil if any segment has no matching edge.
+-- Greedy param nodes ({param+}) capture this segment and all remaining segments as one value.
 local function _trie_walk(root, key)
   local node = root
   local caps = {}
+  local segs = {}
   for seg in key:gmatch("[^/]+") do
+    segs[#segs + 1] = seg
+  end
+  local i = 1
+  while i <= #segs do
+    local seg = segs[i]
     if node.static[seg] then
       node = node.static[seg]
     elseif node.param then
-      caps[#caps + 1] = seg
       node = node.param
+      if node.greedy then
+        caps[#caps + 1] = table.concat(segs, "/", i)
+        return node, caps
+      end
+      caps[#caps + 1] = seg
     else
       return nil
     end
+    i = i + 1
   end
   return node, caps
 end
@@ -2084,6 +2107,26 @@ local routes = {
     "get_repo_actions_workflow_timing",
     actions_not_implemented,
   },
+
+  -- Git database (https://docs.github.com/en/rest/git)
+  -- Blobs
+  ["POST /repos/{owner}/{repo}/git/blobs"] = { "create_git_blob", git_not_implemented },
+  ["GET /repos/{owner}/{repo}/git/blobs/{file_sha}"] = { "get_git_blob", git_not_implemented },
+  -- Commits
+  ["POST /repos/{owner}/{repo}/git/commits"] = { "create_git_commit", git_not_implemented },
+  ["GET /repos/{owner}/{repo}/git/commits/{commit_sha}"] = { "get_git_commit", git_not_implemented },
+  -- Refs
+  ["GET /repos/{owner}/{repo}/git/matching-refs/{ref+}"] = { "list_git_matching_refs", git_not_implemented },
+  ["GET /repos/{owner}/{repo}/git/ref/{ref+}"] = { "get_git_ref", git_not_implemented },
+  ["POST /repos/{owner}/{repo}/git/refs"] = { "create_git_ref", git_not_implemented },
+  ["PATCH /repos/{owner}/{repo}/git/refs/{ref+}"] = { "update_git_ref", git_not_implemented },
+  ["DELETE /repos/{owner}/{repo}/git/refs/{ref+}"] = { "delete_git_ref", git_not_implemented },
+  -- Tags
+  ["POST /repos/{owner}/{repo}/git/tags"] = { "create_git_tag", git_not_implemented },
+  ["GET /repos/{owner}/{repo}/git/tags/{tag_sha}"] = { "get_git_tag", git_not_implemented },
+  -- Trees
+  ["POST /repos/{owner}/{repo}/git/trees"] = { "create_git_tree", git_not_implemented },
+  ["GET /repos/{owner}/{repo}/git/trees/{tree_sha}"] = { "get_git_tree", git_not_implemented },
 }
 for spec, v in pairs(routes) do
   if type(v) == "string" then

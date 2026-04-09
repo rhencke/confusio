@@ -122,6 +122,19 @@ local function translate_ado_tag(t)
   return { name = name, commit = { sha = t.objectId or "", url = "" } }
 end
 
+-- ADO git ref (used by git database endpoints): { name, objectId }
+local function translate_ado_ref(r)
+  if not r then
+    return {}
+  end
+  return {
+    ref = r.name or "",
+    node_id = "",
+    url = "",
+    object = { type = "commit", sha = r.objectId or "", url = "" },
+  }
+end
+
 -- Work items (issues) ---------------------------------------------------------
 -- ADO Boards: work items are project-scoped.
 -- GitHub {owner}/{repo}/issues → ADO project {owner} work items (repo not used).
@@ -1680,5 +1693,99 @@ _b.upload_code_scanning_sarif = function(owner, repo_name)
     })
   else
     respond_json(status, {})
+  end
+end
+
+-- Git database (refs only; blobs/commits/tag-objects/trees have no ADO equivalent) ----
+
+local ZERO_SHA = "0000000000000000000000000000000000000000"
+
+_b.list_git_matching_refs = function(owner, repo_name, ref)
+  local filter
+  if ref:sub(1, 6) == "heads/" or ref:sub(1, 5) == "tags/" then
+    filter = ref
+  else
+    filter = "heads/" .. ref
+  end
+  local url = ado_url(repos_base(owner) .. "/" .. repo_name .. "/refs?filter=" .. filter)
+  proxy_json(function(data)
+    local refs = data.value or {}
+    for i, r in ipairs(refs) do
+      refs[i] = translate_ado_ref(r)
+    end
+    return refs
+  end, fetch_json(url))
+end
+
+_b.get_git_ref = function(owner, repo_name, ref)
+  local filter
+  if ref:sub(1, 6) == "heads/" or ref:sub(1, 5) == "tags/" then
+    filter = ref
+  else
+    respond_json(422, { message = "Invalid ref format" })
+    return
+  end
+  local url = ado_url(repos_base(owner) .. "/" .. repo_name .. "/refs?filter=" .. filter)
+  proxy_json(function(data)
+    local first = (data.value or {})[1]
+    return first and translate_ado_ref(first) or {}
+  end, fetch_json(url))
+end
+
+_b.create_git_ref = function(owner, repo_name)
+  local req = DecodeJson(GetBody() or "{}")
+  local full_ref = req.ref or ""
+  local sha = req.sha or ""
+  local url = ado_url(repos_base(owner) .. "/" .. repo_name .. "/refs")
+  local bb_body = EncodeJson({
+    { name = full_ref, newObjectId = sha, oldObjectId = ZERO_SHA },
+  })
+  local ok, status, _, body = fetch_json(url, "POST", bb_body)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local data = DecodeJson(body) or {}
+  local first = (data.value or {})[1]
+  respond_json(201, first and translate_ado_ref(first) or {})
+end
+
+_b.delete_git_ref = function(owner, repo_name, ref)
+  local full_ref
+  if ref:sub(1, 6) == "heads/" or ref:sub(1, 5) == "tags/" then
+    full_ref = "refs/" .. ref
+  else
+    respond_json(422, { message = "Invalid ref format" })
+    return
+  end
+  -- ADO delete requires the current objectId; fetch the ref first.
+  local filter_url = ado_url(repos_base(owner) .. "/" .. repo_name .. "/refs?filter=" .. ref)
+  local ok1, status1, _, body1 = fetch_json(filter_url)
+  if not ok1 then
+    respond_json(503, {})
+    return
+  end
+  if status1 ~= 200 then
+    respond_json(status1, {})
+    return
+  end
+  local data1 = DecodeJson(body1) or {}
+  local current = (data1.value or {})[1]
+  local old_sha = current and current.objectId or ZERO_SHA
+  local url = ado_url(repos_base(owner) .. "/" .. repo_name .. "/refs")
+  local del_body = EncodeJson({
+    { name = full_ref, newObjectId = ZERO_SHA, oldObjectId = old_sha },
+  })
+  local ok2, status2 = fetch_json(url, "POST", del_body)
+  if ok2 and status2 == 200 then
+    SetStatus(204, "No Content")
+  elseif ok2 then
+    respond_json(status2, {})
+  else
+    respond_json(503, {})
   end
 end

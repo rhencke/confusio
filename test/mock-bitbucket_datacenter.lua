@@ -43,6 +43,8 @@ function OnHttpRequest()
     json(REPO)
 
   -- Tags --------------------------------------------------------------------
+  elseif path == rb .. "/tags/v1.0" and GetMethod() == "DELETE" then
+    SetStatus(204, "No Content")
   elseif path == rb .. "/tags" then
     SetStatus(200, "OK")
     json(
@@ -51,6 +53,14 @@ function OnHttpRequest()
     )
 
   -- Branches ----------------------------------------------------------------
+  elseif path == rb .. "/branches" and GetMethod() == "POST" then
+    SetStatus(200, "OK")
+    json(
+      '{"id":"refs/heads/feature","displayId":"feature","type":"BRANCH",'
+        .. '"latestCommit":"abc123def456","isDefault":false}'
+    )
+  elseif path == rb .. "/branches" and GetMethod() == "DELETE" then
+    SetStatus(204, "No Content")
   elseif path == rb .. "/branches" then
     SetStatus(200, "OK")
     json(

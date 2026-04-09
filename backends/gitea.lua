@@ -3176,4 +3176,82 @@ backend_impl = {
       base() .. "/orgs/" .. org .. "/actions/runners"
     )
   end,
+
+  -- Git database (https://docs.github.com/en/rest/git) -----------------------
+
+  -- GET /repos/{owner}/{repo}/git/blobs/{file_sha}
+  get_git_blob = function(owner, repo_name, file_sha)
+    proxy_json(
+      nil,
+      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/blobs/" .. file_sha)
+    )
+  end,
+
+  -- GET /repos/{owner}/{repo}/git/commits/{commit_sha}
+  get_git_commit = function(owner, repo_name, commit_sha)
+    proxy_json(
+      nil,
+      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/commits/" .. commit_sha)
+    )
+  end,
+
+  -- GET /repos/{owner}/{repo}/git/matching-refs/{ref}
+  -- Gitea: GET /repos/{owner}/{repo}/git/refs/{ref} returns an array.
+  list_git_matching_refs = function(owner, repo_name, ref)
+    proxy_json(
+      nil,
+      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs/" .. ref)
+    )
+  end,
+
+  -- GET /repos/{owner}/{repo}/git/ref/{ref}
+  -- GitHub returns a single ref object; Gitea returns an array — take the first element.
+  get_git_ref = function(owner, repo_name, ref)
+    proxy_json(function(arr)
+      if type(arr) == "table" and arr[1] then
+        return arr[1]
+      end
+      return arr
+    end, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs/" .. ref))
+  end,
+
+  -- POST /repos/{owner}/{repo}/git/refs
+  create_git_ref = function(owner, repo_name)
+    proxy_json_created(
+      nil,
+      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs", "POST", GetBody())
+    )
+  end,
+
+  -- DELETE /repos/{owner}/{repo}/git/refs/{ref}
+  delete_git_ref = function(owner, repo_name, ref)
+    set_204_or_error(
+      "DELETE",
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs/" .. ref
+    )
+  end,
+
+  -- GET /repos/{owner}/{repo}/git/tags/{tag_sha}
+  get_git_tag = function(owner, repo_name, tag_sha)
+    proxy_json(
+      nil,
+      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/tags/" .. tag_sha)
+    )
+  end,
+
+  -- POST /repos/{owner}/{repo}/git/tags
+  create_git_tag = function(owner, repo_name)
+    proxy_json_created(
+      nil,
+      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/tags", "POST", GetBody())
+    )
+  end,
+
+  -- GET /repos/{owner}/{repo}/git/trees/{tree_sha}
+  get_git_tree = function(owner, repo_name, tree_sha)
+    proxy_json(
+      nil,
+      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/trees/" .. tree_sha)
+    )
+  end,
 }
