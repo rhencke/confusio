@@ -763,6 +763,16 @@ reset_request({ method = "POST", path = "/user/migrations" })
 OnHttpRequest()
 eq(_last_status, 501, "OnHttpRequest: POST /user/migrations → 501 (not supported)")
 
+-- GET /orgs/{org}/migrations/{migration_id} — migration_not_found default → 404
+reset_response()
+reset_request({ method = "GET", path = "/orgs/myorg/migrations/7" })
+OnHttpRequest()
+eq(
+  _last_status,
+  404,
+  "OnHttpRequest: GET /orgs/{org}/migrations/{migration_id} → 404 (not found)"
+)
+
 -- GET /repos/{owner}/{repo}/import — source_import_gone default → 410
 reset_response()
 reset_request({ method = "GET", path = "/repos/alice/myrepo/import" })
