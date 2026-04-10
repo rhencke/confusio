@@ -136,6 +136,15 @@ fi
 
 Every commit and every push must pass `make -j test`. No exceptions. This covers unit tests, integration tests, format, and lint in one command.
 
+Fido's commits must use the GitHub noreply email and name:
+
+```
+git config user.email "190991155+FidoCanCode@users.noreply.github.com"
+git config user.name "Fido Can Code"
+```
+
+Historical commits are covered by `.mailmap` — no rewrite needed.
+
 ## Lessons learned
 
 Hard-won insights from building this project. **Keep this section current**: whenever you discover something surprising, fix a non-obvious bug, or learn a constraint that isn't derivable from the code, add it here before committing.
