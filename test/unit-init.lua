@@ -1167,6 +1167,22 @@ eq(
   "OnHttpRequest: GET /repos/{owner}/{repo}/dependabot/alerts/{alert_number} → 501 (dependabot not implemented)"
 )
 
+-- GET /orgs/{org}/projectsV2 — projects_list_empty default → 200
+reset_response()
+reset_request({ method = "GET", path = "/orgs/myorg/projectsV2" })
+OnHttpRequest()
+eq(_last_status, 200, "OnHttpRequest: GET /orgs/{org}/projectsV2 → 200 (empty list)")
+
+-- GET /orgs/{org}/projectsV2/{project_number} — projects_not_implemented default → 501
+reset_response()
+reset_request({ method = "GET", path = "/orgs/myorg/projectsV2/1" })
+OnHttpRequest()
+eq(
+  _last_status,
+  501,
+  "OnHttpRequest: GET /orgs/{org}/projectsV2/{project_number} → 501 (projects not implemented)"
+)
+
 -- ============================================================
 -- Summary
 -- ============================================================
