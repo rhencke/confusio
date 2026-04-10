@@ -1151,6 +1151,22 @@ ok(
   "OnHttpRequest: GET /repos/{owner}/{repo}/commits/{ref}/check-suites → body has check_suites"
 )
 
+-- GET /orgs/{org}/dependabot/alerts — dependabot_list_empty default → 200
+reset_response()
+reset_request({ method = "GET", path = "/orgs/myorg/dependabot/alerts" })
+OnHttpRequest()
+eq(_last_status, 200, "OnHttpRequest: GET /orgs/{org}/dependabot/alerts → 200 (empty list)")
+
+-- GET /repos/{owner}/{repo}/dependabot/alerts/{alert_number} — dependabot_not_implemented default → 501
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/dependabot/alerts/1" })
+OnHttpRequest()
+eq(
+  _last_status,
+  501,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/dependabot/alerts/{alert_number} → 501 (dependabot not implemented)"
+)
+
 -- ============================================================
 -- Summary
 -- ============================================================

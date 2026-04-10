@@ -3450,3 +3450,138 @@ backend_impl = {
     Write(parsed.html or "")
   end,
 }
+
+-- Dependabot alerts via GitLab Vulnerabilities API (requires Ultimate tier).
+--
+-- Endpoint mapping:
+--   GET  /repos/{owner}/{repo}/dependabot/alerts       → GET  /projects/:id/vulnerabilities
+--   GET  /repos/{owner}/{repo}/dependabot/alerts/{n}   → GET  /projects/:id/vulnerabilities/:n
+--   PATCH /repos/{owner}/{repo}/dependabot/alerts/{n}  → POST /vulnerabilities/:n/dismiss|revert-to-detected
+--   GET  /orgs/{org}/dependabot/alerts                 → GET  /groups/:org/vulnerabilities
+--
+-- GitLab state mapping:
+--   detected / confirmed → open
+--   dismissed            → dismissed
+--   resolved             → fixed
+--
+-- Secrets and repository-access have no GitLab equivalent; those handlers
+-- remain at their defaults (501 Not Implemented).
+
+local GL_VULN_STATE_TO_GH = {
+  detected = "open",
+  confirmed = "open",
+  dismissed = "dismissed",
+  resolved = "fixed",
+}
+
+local GH_STATE_TO_GL_ACTION = {
+  open = "revert-to-detected",
+  dismissed = "dismiss",
+}
+
+local function translate_gl_vulnerability(v)
+  if not v then
+    return {}
+  end
+  local loc = v.location or {}
+  local dep = loc.dependency or {}
+  local pkg = dep.package or {}
+  local identifiers = v.identifiers or {}
+  local cve_id = nil
+  for _, id in ipairs(identifiers) do
+    if id.type == "cve" then
+      cve_id = id.value
+      break
+    end
+  end
+  local package = { ecosystem = "unknown", name = pkg.name or "" }
+  return {
+    number = v.id or 0,
+    state = GL_VULN_STATE_TO_GH[v.state or ""] or "open",
+    dependency = {
+      package = package,
+      manifest_path = loc.file or "",
+      scope = "runtime",
+    },
+    security_advisory = {
+      ghsa_id = "",
+      cve_id = cve_id,
+      summary = v.title or "",
+      description = v.description or "",
+      severity = v.severity or "unknown",
+      identifiers = identifiers,
+      references = {},
+      published_at = v.created_at or "",
+      updated_at = v.updated_at or "",
+      withdrawn_at = nil,
+      vulnerabilities = {},
+    },
+    security_vulnerability = {
+      package = package,
+      severity = v.severity or "unknown",
+      vulnerable_version_range = dep.version and ("= " .. dep.version) or "",
+      first_patched_version = nil,
+    },
+    url = "",
+    html_url = "",
+    created_at = v.created_at or "",
+    updated_at = v.updated_at or "",
+    dismissed_at = v.dismissed_at,
+    dismissed_by = nil,
+    dismissed_reason = v.dismissed_reason,
+    dismissed_comment = nil,
+    fixed_at = nil,
+    auto_dismissed_at = nil,
+  }
+end
+
+local function translate_gl_vuln_list(arr)
+  local result = {}
+  for _, v in ipairs(arr) do
+    result[#result + 1] = translate_gl_vulnerability(v)
+  end
+  return result
+end
+
+local _b = backend_impl
+
+_b.list_repo_dependabot_alerts = function(owner, repo_name)
+  proxy_json_paged(
+    translate_gl_vuln_list,
+    PAGES,
+    fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/vulnerabilities")
+  )
+end
+
+_b.get_repo_dependabot_alert = function(owner, repo_name, alert_number)
+  proxy_json(
+    translate_gl_vulnerability,
+    fetch_json(
+      base() .. "/projects/" .. project_id(owner, repo_name) .. "/vulnerabilities/" .. alert_number
+    )
+  )
+end
+
+_b.update_repo_dependabot_alert = function(_owner, _repo_name, alert_number)
+  local req = DecodeJson(GetBody() or "{}")
+  local action = GH_STATE_TO_GL_ACTION[req.state or ""] or "revert-to-detected"
+  local gl_url = base() .. "/vulnerabilities/" .. alert_number .. "/" .. action
+  local ok, status, _, body = fetch_json(gl_url, "POST", EncodeJson({}))
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  respond_json(200, translate_gl_vulnerability(DecodeJson(body) or {}))
+end
+
+_b.list_org_dependabot_alerts = function(org)
+  proxy_json_paged(
+    translate_gl_vuln_list,
+    PAGES,
+    fetch_json(base() .. "/groups/" .. org .. "/vulnerabilities")
+  )
+end

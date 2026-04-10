@@ -568,6 +568,65 @@ function OnHttpRequest()
         .. '"size":100,"encoding":"base64","content":"SGVsbG8gV29ybGQ="}'
     )
 
+  -- Vulnerabilities (Dependabot alerts) -----------------------------------------
+  -- Requires GitLab Ultimate; returns dependency_scanning vulnerabilities.
+  elseif path == pb .. "/vulnerabilities" then
+    SetStatus(200, "OK")
+    json(
+      '[{"id":1,"title":"Prototype Pollution in lodash",'
+        .. '"description":"lodash before 4.17.12 is vulnerable to Prototype Pollution in the function zipObjectDeep.",'
+        .. '"state":"detected","severity":"high","confidence":"high",'
+        .. '"report_type":"dependency_scanning",'
+        .. '"created_at":"2021-01-01T00:00:00Z","updated_at":"2021-01-01T00:00:00Z",'
+        .. '"dismissed_at":null,"dismissed_reason":null,'
+        .. '"identifiers":[{"type":"cve","name":"CVE-2019-10744","value":"CVE-2019-10744",'
+        .. '"url":"https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2019-10744"}],'
+        .. '"location":{"file":"package-lock.json",'
+        .. '"dependency":{"package":{"name":"lodash"},"version":"4.17.11"}}}]'
+    )
+  elseif path == pb .. "/vulnerabilities/1" then
+    SetStatus(200, "OK")
+    json(
+      '{"id":1,"title":"Prototype Pollution in lodash",'
+        .. '"description":"lodash before 4.17.12 is vulnerable to Prototype Pollution in the function zipObjectDeep.",'
+        .. '"state":"detected","severity":"high","confidence":"high",'
+        .. '"report_type":"dependency_scanning",'
+        .. '"created_at":"2021-01-01T00:00:00Z","updated_at":"2021-01-01T00:00:00Z",'
+        .. '"dismissed_at":null,"dismissed_reason":null,'
+        .. '"identifiers":[{"type":"cve","name":"CVE-2019-10744","value":"CVE-2019-10744",'
+        .. '"url":"https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2019-10744"}],'
+        .. '"location":{"file":"package-lock.json",'
+        .. '"dependency":{"package":{"name":"lodash"},"version":"4.17.11"}}}'
+    )
+  elseif path == "/api/v4/vulnerabilities/1/dismiss" and GetMethod() == "POST" then
+    SetStatus(200, "OK")
+    json(
+      '{"id":1,"title":"Prototype Pollution in lodash",'
+        .. '"description":"lodash before 4.17.12 is vulnerable to Prototype Pollution in the function zipObjectDeep.",'
+        .. '"state":"dismissed","severity":"high","confidence":"high",'
+        .. '"report_type":"dependency_scanning",'
+        .. '"created_at":"2021-01-01T00:00:00Z","updated_at":"2021-01-02T00:00:00Z",'
+        .. '"dismissed_at":"2021-01-02T00:00:00Z","dismissed_reason":"acceptable_risk",'
+        .. '"identifiers":[{"type":"cve","name":"CVE-2019-10744","value":"CVE-2019-10744",'
+        .. '"url":"https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2019-10744"}],'
+        .. '"location":{"file":"package-lock.json",'
+        .. '"dependency":{"package":{"name":"lodash"},"version":"4.17.11"}}}'
+    )
+  elseif path == "/api/v4/groups/testorg/vulnerabilities" then
+    SetStatus(200, "OK")
+    json(
+      '[{"id":1,"title":"Prototype Pollution in lodash",'
+        .. '"description":"lodash before 4.17.12 is vulnerable to Prototype Pollution in the function zipObjectDeep.",'
+        .. '"state":"detected","severity":"high","confidence":"high",'
+        .. '"report_type":"dependency_scanning",'
+        .. '"created_at":"2021-01-01T00:00:00Z","updated_at":"2021-01-01T00:00:00Z",'
+        .. '"dismissed_at":null,"dismissed_reason":null,'
+        .. '"identifiers":[{"type":"cve","name":"CVE-2019-10744","value":"CVE-2019-10744",'
+        .. '"url":"https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2019-10744"}],'
+        .. '"location":{"file":"package-lock.json",'
+        .. '"dependency":{"package":{"name":"lodash"},"version":"4.17.11"}}}]'
+    )
+
   -- Migrations: GitLab has per-project export, not GitHub-style org/user migrations.
   -- confusio returns fixed responses without proxying, but routes are documented here.
   -- POST /projects/:id/export → 202 Accepted (starts export asynchronously)

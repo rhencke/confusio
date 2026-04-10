@@ -1635,6 +1635,142 @@ _b.upload_code_scanning_sarif = function(owner, repo_name)
   end
 end
 
+-- Dependabot alerts via ADO Advanced Security dependency scanning -----------------
+--
+-- Uses the same /_apis/advancedsecurity/alerts/{repo} endpoint as code scanning
+-- but with alertType=dependency. Secrets and repository-access have no ADO
+-- equivalent and fall back to defaults (501 / empty list).
+--
+-- ADO dependency alert fields used:
+--   alertId, state, severity, firstSeenDate, dismissedDate, dismissal,
+--   dependency.{componentName, componentVersion, packageManager}, title, cve
+
+local ADO_PACKAGE_MANAGER_TO_ECOSYSTEM = {
+  npm = "npm",
+  nuget = "nuget",
+  pypi = "pip",
+  maven = "maven",
+  cargo = "cargo",
+  rubygems = "rubygems",
+  composer = "composer",
+  go = "go",
+}
+
+local GH_DEPENDABOT_DISMISS_REASON_TO_ADO = {
+  inaccurate = "falsePositive",
+  ["fix_started"] = "wontFix",
+  ["no_bandwidth"] = "wontFix",
+  ["not_used"] = "wontFix",
+  ["tolerable_risk"] = "wontFix",
+}
+
+local function translate_ado_dependency_alert(a)
+  if not a then
+    return {}
+  end
+  local state = ADO_STATE_TO_GH[a.state or ""] or "open"
+  local dismissal = a.dismissal or {}
+  local dismissed_reason = ADO_DISMISS_REASON_TO_GH[dismissal.dismissalType or ""]
+  local dep = a.dependency or {}
+  local pm = (dep.packageManager or ""):lower()
+  local ecosystem = ADO_PACKAGE_MANAGER_TO_ECOSYSTEM[pm] or pm
+  local package = { ecosystem = ecosystem, name = dep.componentName or "" }
+  return {
+    number = a.alertId or 0,
+    state = state,
+    dependency = {
+      package = package,
+      manifest_path = "",
+      scope = "runtime",
+    },
+    security_advisory = {
+      ghsa_id = "",
+      cve_id = a.cve or nil,
+      summary = a.title or "",
+      description = a.title or "",
+      severity = (a.severity or ""):lower(),
+      identifiers = {},
+      references = {},
+      published_at = a.firstSeenDate or "",
+      updated_at = a.firstSeenDate or "",
+      withdrawn_at = nil,
+      vulnerabilities = {},
+    },
+    security_vulnerability = {
+      package = package,
+      severity = (a.severity or ""):lower(),
+      vulnerable_version_range = dep.componentVersion and ("= " .. dep.componentVersion) or "",
+      first_patched_version = nil,
+    },
+    url = "",
+    html_url = "",
+    created_at = a.firstSeenDate or "",
+    updated_at = a.firstSeenDate or "",
+    dismissed_at = a.dismissedDate,
+    dismissed_by = nil,
+    dismissed_reason = dismissed_reason,
+    dismissed_comment = dismissal.message or nil,
+    fixed_at = nil,
+    auto_dismissed_at = nil,
+  }
+end
+
+_b.list_repo_dependabot_alerts = function(owner, repo_name)
+  local url = advsec_url(advsec_base(owner) .. "/alerts/" .. repo_name .. "?alertType=dependency")
+  local ok, status, _, body = fetch_json(url)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local data = DecodeJson(body) or {}
+  local result = {}
+  for _, a in ipairs(data.value or {}) do
+    result[#result + 1] = translate_ado_dependency_alert(a)
+  end
+  respond_json(200, result)
+end
+
+_b.get_repo_dependabot_alert = function(owner, repo_name, alert_number)
+  local url = advsec_url(advsec_base(owner) .. "/alerts/" .. repo_name .. "/" .. alert_number)
+  local ok, status, _, body = fetch_json(url)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  respond_json(200, translate_ado_dependency_alert(DecodeJson(body) or {}))
+end
+
+_b.update_repo_dependabot_alert = function(owner, repo_name, alert_number)
+  local req = DecodeJson(GetBody() or "{}")
+  local ado_state = GH_STATE_TO_ADO[req.state or ""] or "active"
+  local patch = { state = ado_state }
+  if req.dismissed_reason then
+    patch.dismissal = {
+      dismissalType = GH_DEPENDABOT_DISMISS_REASON_TO_ADO[req.dismissed_reason] or "wontFix",
+      message = req.dismissed_comment or "",
+    }
+  end
+  local url = advsec_url(advsec_base(owner) .. "/alerts/" .. repo_name .. "/" .. alert_number)
+  local ok, status, _, body = fetch_json(url, "PATCH", EncodeJson(patch))
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  respond_json(200, translate_ado_dependency_alert(DecodeJson(body) or {}))
+end
+
 -- Git database (refs only; blobs/commits/tag-objects/trees have no ADO equivalent) ----
 
 local ZERO_SHA = "0000000000000000000000000000000000000000"

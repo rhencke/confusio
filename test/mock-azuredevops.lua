@@ -267,18 +267,29 @@ function OnHttpRequest()
         .. "]}"
     )
 
-  -- Advanced Security — alert list (list_repo_code_scanning_alerts) ----------
+  -- Advanced Security — alert list (code scanning or dependency) -------------
   elseif path == "/octocat/_apis/advancedsecurity/alerts/hello-world" and method == "GET" then
     SetStatus(200, "OK")
-    json(
-      '{"count":1,"value":[{"alertId":1,"alertType":"code","state":"active",'
-        .. '"severity":"high","firstSeenDate":"2024-01-01T00:00:00Z",'
-        .. '"rule":{"id":"CS001","name":"SQL Injection","description":"Untrusted input"},'
-        .. '"physicalLocations":[{"physicalLocation":{"artifactLocation":{"uri":"src/app.js"}},'
-        .. '"region":{"startLine":42,"endLine":42,"startColumn":5,"endColumn":20}}]}]}'
-    )
+    local alert_type = GetParam("alertType") or "code"
+    if alert_type == "dependency" then
+      json(
+        '{"count":1,"value":[{"alertId":2,"alertType":"dependency","state":"active",'
+          .. '"severity":"high","firstSeenDate":"2024-02-01T00:00:00Z",'
+          .. '"title":"Prototype Pollution in lodash",'
+          .. '"cve":"CVE-2019-10744",'
+          .. '"dependency":{"componentName":"lodash","componentVersion":"4.17.11","packageManager":"npm"}}]}'
+      )
+    else
+      json(
+        '{"count":1,"value":[{"alertId":1,"alertType":"code","state":"active",'
+          .. '"severity":"high","firstSeenDate":"2024-01-01T00:00:00Z",'
+          .. '"rule":{"id":"CS001","name":"SQL Injection","description":"Untrusted input"},'
+          .. '"physicalLocations":[{"physicalLocation":{"artifactLocation":{"uri":"src/app.js"}},'
+          .. '"region":{"startLine":42,"endLine":42,"startColumn":5,"endColumn":20}}]}]}'
+      )
+    end
 
-  -- Advanced Security — single alert (get_code_scanning_alert) ---------------
+  -- Advanced Security — single alert (code scanning alert 1) -----------------
   elseif path == "/octocat/_apis/advancedsecurity/alerts/hello-world/1" and method == "GET" then
     SetStatus(200, "OK")
     json(
@@ -289,7 +300,7 @@ function OnHttpRequest()
         .. '"region":{"startLine":42,"endLine":42,"startColumn":5,"endColumn":20}}]}'
     )
 
-  -- Advanced Security — update alert (update_code_scanning_alert) ------------
+  -- Advanced Security — update alert (code scanning alert 1) -----------------
   elseif path == "/octocat/_apis/advancedsecurity/alerts/hello-world/1" and method == "PATCH" then
     SetStatus(200, "OK")
     json(
@@ -299,6 +310,30 @@ function OnHttpRequest()
         .. '"dismissal":{"dismissalType":"wontFix","message":"Not exploitable"},'
         .. '"rule":{"id":"CS001","name":"SQL Injection","description":"Untrusted input"},'
         .. '"physicalLocations":[]}'
+    )
+
+  -- Advanced Security — single dependency alert 2 ----------------------------
+  elseif path == "/octocat/_apis/advancedsecurity/alerts/hello-world/2" and method == "GET" then
+    SetStatus(200, "OK")
+    json(
+      '{"alertId":2,"alertType":"dependency","state":"active",'
+        .. '"severity":"high","firstSeenDate":"2024-02-01T00:00:00Z",'
+        .. '"title":"Prototype Pollution in lodash",'
+        .. '"cve":"CVE-2019-10744",'
+        .. '"dependency":{"componentName":"lodash","componentVersion":"4.17.11","packageManager":"npm"}}'
+    )
+
+  -- Advanced Security — update dependency alert 2 ----------------------------
+  elseif path == "/octocat/_apis/advancedsecurity/alerts/hello-world/2" and method == "PATCH" then
+    SetStatus(200, "OK")
+    json(
+      '{"alertId":2,"alertType":"dependency","state":"dismissed",'
+        .. '"severity":"high","firstSeenDate":"2024-02-01T00:00:00Z",'
+        .. '"dismissedDate":"2024-02-02T00:00:00Z",'
+        .. '"dismissal":{"dismissalType":"wontFix","message":""},'
+        .. '"title":"Prototype Pollution in lodash",'
+        .. '"cve":"CVE-2019-10744",'
+        .. '"dependency":{"componentName":"lodash","componentVersion":"4.17.11","packageManager":"npm"}}'
     )
 
   -- Advanced Security — analyses list (list_code_scanning_analyses) -----------

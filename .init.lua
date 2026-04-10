@@ -422,6 +422,17 @@ local function code_scanning_list_empty()
   respond_json(200, {})
 end
 
+-- Default handlers for Dependabot endpoints: most backends have no native Dependabot API.
+-- Alert list endpoints return empty arrays (200); per-resource and mutation endpoints return 501.
+-- Secrets list endpoints use make_empty_collection (defined below) for proper envelope format.
+local function dependabot_not_implemented()
+  respond_json(501, { message = "Dependabot is not supported by this backend." })
+end
+
+local function dependabot_list_empty()
+  respond_json(200, {})
+end
+
 -- Default handler for Pages endpoints: no backend has a native GitHub Pages API.
 -- Returns 501 Not Implemented with a descriptive message.
 local function pages_not_implemented()
@@ -728,6 +739,29 @@ local route_defaults = {
   update_code_scanning_default_setup = code_scanning_not_implemented,
   upload_code_scanning_sarif = code_scanning_not_implemented,
   get_code_scanning_sarif = code_scanning_not_implemented,
+  -- Dependabot
+  list_enterprise_dependabot_alerts = dependabot_list_empty,
+  list_org_dependabot_alerts = dependabot_list_empty,
+  list_repo_dependabot_alerts = dependabot_list_empty,
+  get_repo_dependabot_alert = dependabot_not_implemented,
+  update_repo_dependabot_alert = dependabot_not_implemented,
+  list_org_dependabot_secrets = make_empty_collection("secrets"),
+  get_org_dependabot_public_key = dependabot_not_implemented,
+  get_org_dependabot_secret = dependabot_not_implemented,
+  put_org_dependabot_secret = dependabot_not_implemented,
+  delete_org_dependabot_secret = dependabot_not_implemented,
+  list_org_dependabot_secret_repos = make_empty_collection("repositories"),
+  put_org_dependabot_secret_repos = dependabot_not_implemented,
+  add_org_dependabot_secret_repo = dependabot_not_implemented,
+  remove_org_dependabot_secret_repo = dependabot_not_implemented,
+  list_repo_dependabot_secrets = make_empty_collection("secrets"),
+  get_repo_dependabot_public_key = dependabot_not_implemented,
+  get_repo_dependabot_secret = dependabot_not_implemented,
+  put_repo_dependabot_secret = dependabot_not_implemented,
+  delete_repo_dependabot_secret = dependabot_not_implemented,
+  get_org_dependabot_repo_access = dependabot_not_implemented,
+  update_org_dependabot_repo_access = dependabot_not_implemented,
+  set_org_dependabot_repo_access_default_level = dependabot_not_implemented,
   -- Packages
   get_org_packages = empty_list,
   get_org_package_versions = empty_list,
@@ -1553,6 +1587,30 @@ local routes = {
   ["PATCH /repos/{owner}/{repo}/code-scanning/default-setup"] = "update_code_scanning_default_setup",
   ["POST /repos/{owner}/{repo}/code-scanning/sarifs"] = "upload_code_scanning_sarif",
   ["GET /repos/{owner}/{repo}/code-scanning/sarifs/{sarif_id}"] = "get_code_scanning_sarif",
+
+  -- Dependabot (https://docs.github.com/en/rest/dependabot)
+  ["GET /enterprises/{enterprise}/dependabot/alerts"] = "list_enterprise_dependabot_alerts",
+  ["GET /orgs/{org}/dependabot/alerts"] = "list_org_dependabot_alerts",
+  ["GET /orgs/{org}/dependabot/secrets"] = "list_org_dependabot_secrets",
+  ["GET /orgs/{org}/dependabot/secrets/public-key"] = "get_org_dependabot_public_key",
+  ["GET /orgs/{org}/dependabot/secrets/{secret_name}"] = "get_org_dependabot_secret",
+  ["PUT /orgs/{org}/dependabot/secrets/{secret_name}"] = "put_org_dependabot_secret",
+  ["DELETE /orgs/{org}/dependabot/secrets/{secret_name}"] = "delete_org_dependabot_secret",
+  ["GET /orgs/{org}/dependabot/secrets/{secret_name}/repositories"] = "list_org_dependabot_secret_repos",
+  ["PUT /orgs/{org}/dependabot/secrets/{secret_name}/repositories"] = "put_org_dependabot_secret_repos",
+  ["PUT /orgs/{org}/dependabot/secrets/{secret_name}/repositories/{repository_id}"] = "add_org_dependabot_secret_repo",
+  ["DELETE /orgs/{org}/dependabot/secrets/{secret_name}/repositories/{repository_id}"] = "remove_org_dependabot_secret_repo",
+  ["GET /organizations/{org}/dependabot/repository-access"] = "get_org_dependabot_repo_access",
+  ["PATCH /organizations/{org}/dependabot/repository-access"] = "update_org_dependabot_repo_access",
+  ["PUT /organizations/{org}/dependabot/repository-access/default-level"] = "set_org_dependabot_repo_access_default_level",
+  ["GET /repos/{owner}/{repo}/dependabot/alerts"] = "list_repo_dependabot_alerts",
+  ["GET /repos/{owner}/{repo}/dependabot/alerts/{alert_number}"] = "get_repo_dependabot_alert",
+  ["PATCH /repos/{owner}/{repo}/dependabot/alerts/{alert_number}"] = "update_repo_dependabot_alert",
+  ["GET /repos/{owner}/{repo}/dependabot/secrets"] = "list_repo_dependabot_secrets",
+  ["GET /repos/{owner}/{repo}/dependabot/secrets/public-key"] = "get_repo_dependabot_public_key",
+  ["GET /repos/{owner}/{repo}/dependabot/secrets/{secret_name}"] = "get_repo_dependabot_secret",
+  ["PUT /repos/{owner}/{repo}/dependabot/secrets/{secret_name}"] = "put_repo_dependabot_secret",
+  ["DELETE /repos/{owner}/{repo}/dependabot/secrets/{secret_name}"] = "delete_repo_dependabot_secret",
 
   -- Dependency Graph (https://docs.github.com/en/rest/dependency-graph)
   ["GET /repos/{owner}/{repo}/dependency-graph/compare/{basehead}"] = "get_repo_dependency_graph_compare",
