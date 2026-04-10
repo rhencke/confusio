@@ -242,45 +242,6 @@ backend_impl = {
     )
   end,
 
-  get_check_run = function(_owner, _repo_name, check_run_id)
-    respond_json(200, {
-      id = tonumber(check_run_id) or 0,
-      node_id = "",
-      head_sha = "",
-      name = "",
-      status = "completed",
-      conclusion = "success",
-      started_at = nil,
-      completed_at = nil,
-      output = { title = "", summary = "", text = "", annotations_count = 0, annotations_url = "" },
-      url = "",
-      html_url = "",
-      details_url = "",
-    })
-  end,
-
-  patch_check_run = function(_owner, _repo_name, check_run_id)
-    respond_json(200, {
-      id = tonumber(check_run_id) or 0,
-      node_id = "",
-      head_sha = "",
-      name = "",
-      status = "completed",
-      conclusion = "success",
-      started_at = nil,
-      completed_at = nil,
-      output = { title = "", summary = "", text = "", annotations_count = 0, annotations_url = "" },
-      url = "",
-      html_url = "",
-      details_url = "",
-    })
-  end,
-
-  get_check_run_annotations = function(_owner, _repo_name, _check_run_id)
-    set_preamble()
-    Write("[]")
-  end,
-
   post_check_run_rerequest = function(_owner, _repo_name, _check_run_id)
     SetStatus(201, "Created")
     Write("")
@@ -352,13 +313,6 @@ backend_impl = {
     })
   end,
 
-  patch_check_suites_preferences = function(_owner, _repo_name) -- luacheck: ignore 212
-    local req = DecodeJson(GetBody() or "{}") or {}
-    respond_json(200, {
-      preferences = req.auto_trigger_checks or {},
-    })
-  end,
-
   get_check_suite = function(owner, repo_name, check_suite_id)
     respond_json(200, {
       id = tonumber(check_suite_id) or 0,
@@ -372,17 +326,9 @@ backend_impl = {
     })
   end,
 
-  get_check_suite_check_runs = function(_owner, _repo_name, _check_suite_id)
-    respond_json(200, { total_count = 0, check_runs = {} })
-  end,
-
   post_check_suite_rerequest = function(_owner, _repo_name, _check_suite_id)
     SetStatus(201, "Created")
     Write("")
-  end,
-
-  get_commit_check_suites = function(_owner, _repo_name, _ref)
-    respond_json(200, { total_count = 0, check_suites = {} })
   end,
 
   -- Licenses ------------------------------------------------------------------

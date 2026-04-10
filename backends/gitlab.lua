@@ -1851,12 +1851,6 @@ backend_impl = {
     end
   end,
 
-  -- GET /orgs/{org}/teams/{team_slug}/invitations — no concept in GitLab
-  get_org_team_invitations = function()
-    set_preamble()
-    Write("[]")
-  end,
-
   -- GET /orgs/{org}/teams/{team_slug}/members
   get_org_team_members = function(org, slug)
     local ok, status, _, body = fetch_json(base() .. "/groups/" .. org .. "%2F" .. slug)
@@ -2102,12 +2096,6 @@ backend_impl = {
     else
       respond_json(503, {})
     end
-  end,
-
-  -- GET /teams/{team_id}/invitations — no concept in GitLab
-  get_team_invitations = function()
-    set_preamble()
-    Write("[]")
   end,
 
   -- GET /teams/{team_id}/members
@@ -3163,45 +3151,6 @@ backend_impl = {
     )
   end,
 
-  get_check_run = function(_owner, _repo_name, check_run_id)
-    respond_json(200, {
-      id = tonumber(check_run_id) or 0,
-      node_id = "",
-      head_sha = "",
-      name = "",
-      status = "completed",
-      conclusion = "success",
-      started_at = nil,
-      completed_at = nil,
-      output = { title = "", summary = "", text = "", annotations_count = 0, annotations_url = "" },
-      url = "",
-      html_url = "",
-      details_url = "",
-    })
-  end,
-
-  patch_check_run = function(_owner, _repo_name, check_run_id)
-    respond_json(200, {
-      id = tonumber(check_run_id) or 0,
-      node_id = "",
-      head_sha = "",
-      name = "",
-      status = "completed",
-      conclusion = "success",
-      started_at = nil,
-      completed_at = nil,
-      output = { title = "", summary = "", text = "", annotations_count = 0, annotations_url = "" },
-      url = "",
-      html_url = "",
-      details_url = "",
-    })
-  end,
-
-  get_check_run_annotations = function(_owner, _repo_name, _check_run_id)
-    set_preamble()
-    Write("[]")
-  end,
-
   post_check_run_rerequest = function(_owner, _repo_name, _check_run_id)
     SetStatus(201, "Created")
     Write("")
@@ -3279,13 +3228,6 @@ backend_impl = {
     })
   end,
 
-  patch_check_suites_preferences = function(_owner, _repo_name) -- luacheck: ignore 212
-    local req = DecodeJson(GetBody() or "{}")
-    respond_json(200, {
-      preferences = req.auto_trigger_checks or {},
-    })
-  end,
-
   get_check_suite = function(owner, repo_name, check_suite_id)
     respond_json(200, {
       id = tonumber(check_suite_id) or 0,
@@ -3299,17 +3241,9 @@ backend_impl = {
     })
   end,
 
-  get_check_suite_check_runs = function(_owner, _repo_name, _check_suite_id)
-    respond_json(200, { total_count = 0, check_runs = {} })
-  end,
-
   post_check_suite_rerequest = function(_owner, _repo_name, _check_suite_id)
     SetStatus(201, "Created")
     Write("")
-  end,
-
-  get_commit_check_suites = function(_owner, _repo_name, _ref)
-    respond_json(200, { total_count = 0, check_suites = {} })
   end,
 
   -- Packages (org via GitLab group packages API) --------------------------------
