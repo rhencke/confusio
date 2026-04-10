@@ -1352,12 +1352,6 @@ backend_impl = {
     )
   end,
 
-  -- POST /repos/{owner}/{repo}/check-runs/{check_run_id}/rerequest
-  post_check_run_rerequest = function(_owner, _repo_name, _check_run_id)
-    SetStatus(201, "Created")
-    Write("")
-  end,
-
   -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
   get_commit_check_runs = function(owner, repo_name, ref)
     local ok, status, _, body = fetch_json(
@@ -1405,12 +1399,6 @@ backend_impl = {
       url = "",
       repository = { id = 0, name = repo_name, full_name = owner .. "/" .. repo_name },
     })
-  end,
-
-  -- POST /repos/{owner}/{repo}/check-suites/{check_suite_id}/rerequest
-  post_check_suite_rerequest = function(_owner, _repo_name, _check_suite_id)
-    SetStatus(201, "Created")
-    Write("")
   end,
 
   -- Code Scanning (via ADO Advanced Security / GHAzDO) ------------------------

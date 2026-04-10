@@ -242,11 +242,6 @@ backend_impl = {
     )
   end,
 
-  post_check_run_rerequest = function(_owner, _repo_name, _check_run_id)
-    SetStatus(201, "Created")
-    Write("")
-  end,
-
   get_commit_check_runs = function(owner, repo_name, ref)
     local ok, status, _, body = fetch_json(
       append_page_params(
@@ -297,39 +292,8 @@ backend_impl = {
     respond_json(200, { total_count = #runs, check_runs = runs })
   end,
 
-  -- Check suites have no GitBucket equivalent; all suite endpoints are stubs.
-
-  post_check_suites = function(owner, repo_name)
-    local req = DecodeJson(GetBody() or "{}") or {}
-    respond_json(201, {
-      id = 1,
-      node_id = "",
-      head_sha = req.head_sha or "",
-      status = "completed",
-      conclusion = "success",
-      url = "",
-      app = {},
-      repository = { full_name = owner .. "/" .. repo_name },
-    })
-  end,
-
-  get_check_suite = function(owner, repo_name, check_suite_id)
-    respond_json(200, {
-      id = tonumber(check_suite_id) or 0,
-      node_id = "",
-      head_sha = "",
-      status = "completed",
-      conclusion = "success",
-      url = "",
-      app = {},
-      repository = { full_name = owner .. "/" .. repo_name },
-    })
-  end,
-
-  post_check_suite_rerequest = function(_owner, _repo_name, _check_suite_id)
-    SetStatus(201, "Created")
-    Write("")
-  end,
+  -- Check suites have no GitBucket equivalent; all suite endpoints fall back
+  -- to the route_defaults stubs defined in .init.lua.
 
   -- Licenses ------------------------------------------------------------------
   get_licenses = proxy_handler(nil, function()

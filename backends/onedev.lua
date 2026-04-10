@@ -699,30 +699,7 @@ backend_impl = {
   --   TIMED_OUT  → status=completed,   conclusion=timed_out
 
   -- POST /repos/{owner}/{repo}/check-runs
-  -- OneDev has no external check-status push API; return a minimal stub.
-  post_check_runs = function(_owner, _repo_name)
-    local req = DecodeJson(GetBody() or "{}") or {}
-    respond_json(201, {
-      id = 0,
-      node_id = "",
-      head_sha = req.head_sha or "",
-      name = req.name or "",
-      status = req.status or "queued",
-      conclusion = req.conclusion,
-      started_at = nil,
-      completed_at = nil,
-      output = {
-        title = "",
-        summary = "",
-        text = "",
-        annotations_count = 0,
-        annotations_url = "",
-      },
-      url = "",
-      html_url = "",
-      details_url = req.details_url or "",
-    })
-  end,
+  -- OneDev has no external check-status push API; falls back to route_default stub.
 
   -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
   -- Maps to OneDev GET /~api/builds?query="Project" is "owner/repo" "Commit" is "{ref}".
