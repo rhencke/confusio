@@ -462,6 +462,12 @@ local function licenses_not_implemented()
   respond_json(501, { message = "Licenses API is not supported by this backend." })
 end
 
+-- Default handler for Dependency Graph endpoints: backends that have a native
+-- dependency graph API override these. Falls back to 501 Not Implemented.
+local function dependency_graph_not_implemented()
+  respond_json(501, { message = "Dependency graph is not supported by this backend." })
+end
+
 -- Default handlers for GET /zen, GET /octocat, GET /versions, GET /meta.
 -- These endpoints are fully self-contained and do not call any backend.
 local ZEN_QUOTES = {
@@ -627,7 +633,9 @@ end
 
 local route_defaults = {
   -- Meta
-  get_root = function() respond_json(200, {}) end,
+  get_root = function()
+    respond_json(200, {})
+  end,
   get_meta = meta_response,
   get_octocat = octocat_response,
   get_teapot = teapot_response,
@@ -637,6 +645,10 @@ local route_defaults = {
   get_licenses = licenses_not_implemented,
   get_license = licenses_not_implemented,
   get_repo_license = licenses_not_implemented,
+  -- Dependency Graph
+  get_repo_dependency_graph_compare = dependency_graph_not_implemented,
+  get_repo_dependency_graph_sbom = dependency_graph_not_implemented,
+  post_repo_dependency_graph_snapshots = dependency_graph_not_implemented,
   -- Rate limit
   get_rate_limit = rate_limit_response,
   -- Teams
@@ -1541,6 +1553,11 @@ local routes = {
   ["PATCH /repos/{owner}/{repo}/code-scanning/default-setup"] = "update_code_scanning_default_setup",
   ["POST /repos/{owner}/{repo}/code-scanning/sarifs"] = "upload_code_scanning_sarif",
   ["GET /repos/{owner}/{repo}/code-scanning/sarifs/{sarif_id}"] = "get_code_scanning_sarif",
+
+  -- Dependency Graph (https://docs.github.com/en/rest/dependency-graph)
+  ["GET /repos/{owner}/{repo}/dependency-graph/compare/{basehead}"] = "get_repo_dependency_graph_compare",
+  ["GET /repos/{owner}/{repo}/dependency-graph/sbom"] = "get_repo_dependency_graph_sbom",
+  ["POST /repos/{owner}/{repo}/dependency-graph/snapshots"] = "post_repo_dependency_graph_snapshots",
 
   -- Packages (https://docs.github.com/en/rest/packages)
   ["GET /orgs/{org}/packages"] = "get_org_packages",

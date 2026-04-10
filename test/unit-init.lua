@@ -949,6 +949,39 @@ eq(
   "OnHttpRequest: GET /repos/{owner}/{repo}/license → 501 (licenses not implemented)"
 )
 
+-- dependency_graph_not_implemented: GET /repos/{owner}/{repo}/dependency-graph/compare/{basehead} → 501
+reset_response()
+reset_request({
+  method = "GET",
+  path = "/repos/alice/myrepo/dependency-graph/compare/main...feature",
+})
+OnHttpRequest()
+eq(
+  _last_status,
+  501,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/dependency-graph/compare/{basehead} → 501 (dependency graph not implemented)"
+)
+
+-- dependency_graph_not_implemented: GET /repos/{owner}/{repo}/dependency-graph/sbom → 501
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/dependency-graph/sbom" })
+OnHttpRequest()
+eq(
+  _last_status,
+  501,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/dependency-graph/sbom → 501 (dependency graph not implemented)"
+)
+
+-- dependency_graph_not_implemented: POST /repos/{owner}/{repo}/dependency-graph/snapshots → 501
+reset_response()
+reset_request({ method = "POST", path = "/repos/alice/myrepo/dependency-graph/snapshots" })
+OnHttpRequest()
+eq(
+  _last_status,
+  501,
+  "OnHttpRequest: POST /repos/{owner}/{repo}/dependency-graph/snapshots → 501 (dependency graph not implemented)"
+)
+
 -- git_not_implemented: any git database route → 501
 reset_response()
 reset_request({ method = "GET", path = "/repos/alice/myrepo/git/blobs/abc123" })
