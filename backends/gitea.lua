@@ -417,10 +417,10 @@ end
 -- GitHub Check Runs map onto Gitea commit statuses.  Gitea does not have a
 -- concept of a check run independent of a commit SHA, so:
 --   • create/list/list-by-ref work natively.
---   • GET/PATCH by check_run_id cannot be reversed without the SHA;
---     those endpoints return a minimal stub.
---   • Check Suites have no Gitea equivalent; all suite endpoints are stubs.
---   • Annotations are always empty.
+--   • GET/PATCH by check_run_id fall back to the default stub.
+--   • Check Suites have no Gitea equivalent; post_check_suites is overridden,
+--     all other suite endpoints fall back to defaults.
+--   • Annotations fall back to the default empty-array handler.
 --
 -- Status mapping (GitHub → Gitea):
 --   queued            → pending
@@ -502,30 +502,6 @@ local function gh_check_run_to_gitea_status(req)
     description = (req.output and req.output.summary) or req.name or "",
     context = req.name or "",
   })
-end
-
--- Minimal stub check run response (used when the full context is unavailable).
-local function minimal_check_run_stub(check_run_id)
-  return {
-    id = tonumber(check_run_id) or 0,
-    node_id = "",
-    head_sha = "",
-    name = "",
-    status = "completed",
-    conclusion = "success",
-    started_at = nil,
-    completed_at = nil,
-    output = {
-      title = "",
-      summary = "",
-      text = "",
-      annotations_count = 0,
-      annotations_url = "",
-    },
-    url = "",
-    html_url = "",
-    details_url = "",
-  }
 end
 
 -- Packages --------------------------------------------------------------------
@@ -1895,12 +1871,6 @@ backend_impl = {
     end
   end,
 
-  -- GET /orgs/{org}/teams/{team_slug}/invitations — Gitea has no invitations
-  get_org_team_invitations = function()
-    set_preamble()
-    Write("[]")
-  end,
-
   -- GET /orgs/{org}/teams/{team_slug}/members
   get_org_team_members = function(org, slug)
     local id = gitea_find_team_id(org, slug)
@@ -2402,12 +2372,6 @@ backend_impl = {
     return base() .. "/repos/" .. o .. "/" .. r .. "/milestones/" .. n .. "/labels"
   end),
 
-  -- GET /orgs/{org}/teams/{team_slug}/teams — Gitea has no nested teams
-  get_org_team_children = function()
-    set_preamble()
-    Write("[]")
-  end,
-
   -- Legacy team-by-id endpoints (GitHub /teams/{team_id} → Gitea /teams/{id}).
   -- No slug lookup needed — the caller already provides the numeric ID.
 
@@ -2812,32 +2776,6 @@ backend_impl = {
     )
   end,
 
-  -- GET /repos/{owner}/{repo}/check-runs/{check_run_id}
-  -- Gitea has no endpoint to look up a status by ID without the SHA.
-  -- Return a minimal stub.
-  get_check_run = function(_owner, _repo_name, check_run_id)
-    respond_json(200, minimal_check_run_stub(check_run_id))
-  end,
-
-  -- PATCH /repos/{owner}/{repo}/check-runs/{check_run_id}
-  -- Cannot update without SHA. Return a stub.
-  patch_check_run = function(_owner, _repo_name, check_run_id)
-    respond_json(200, minimal_check_run_stub(check_run_id))
-  end,
-
-  -- GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations
-  -- Gitea has no annotations; always return [].
-  get_check_run_annotations = function(_owner, _repo_name, _check_run_id)
-    set_preamble()
-    Write("[]")
-  end,
-
-  -- POST /repos/{owner}/{repo}/check-runs/{check_run_id}/rerequest
-  -- No Gitea equivalent; return 201 stub.
-  post_check_run_rerequest = function(_owner, _repo_name, _check_run_id)
-    respond_json(201, {})
-  end,
-
   -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
   -- Maps to Gitea GET /api/v1/repos/{owner}/{repo}/statuses/{ref}.
   get_commit_check_runs = function(owner, repo_name, ref)
@@ -2874,42 +2812,6 @@ backend_impl = {
       app = { id = 0, slug = "", name = "" },
       repository = { full_name = owner .. "/" .. repo_name },
     })
-  end,
-
-  -- PATCH /repos/{owner}/{repo}/check-suites/preferences
-  patch_check_suites_preferences = function(_owner, _repo_name) -- luacheck: ignore 212
-    local req = DecodeJson(GetBody() or "{}") or {}
-    respond_json(200, {
-      preferences = req.auto_trigger_checks or {},
-    })
-  end,
-
-  -- GET /repos/{owner}/{repo}/check-suites/{check_suite_id}
-  get_check_suite = function(owner, repo_name, check_suite_id)
-    respond_json(200, {
-      id = tonumber(check_suite_id) or 0,
-      node_id = "",
-      head_sha = "",
-      status = "completed",
-      conclusion = "success",
-      app = { id = 0, slug = "", name = "" },
-      repository = { full_name = owner .. "/" .. repo_name },
-    })
-  end,
-
-  -- GET /repos/{owner}/{repo}/check-suites/{check_suite_id}/check-runs
-  get_check_suite_check_runs = function(_owner, _repo_name, _check_suite_id)
-    respond_json(200, { total_count = 0, check_runs = {} })
-  end,
-
-  -- POST /repos/{owner}/{repo}/check-suites/{check_suite_id}/rerequest
-  post_check_suite_rerequest = function(_owner, _repo_name, _check_suite_id)
-    respond_json(201, {})
-  end,
-
-  -- GET /repos/{owner}/{repo}/commits/{ref}/check-suites
-  get_commit_check_suites = function(_owner, _repo_name, _ref)
-    respond_json(200, { total_count = 0, check_suites = {} })
   end,
 
   -- Search -----------------------------------------------------------------------

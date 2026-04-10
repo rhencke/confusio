@@ -185,9 +185,7 @@ local proxy_handler = make_proxy_handler(fetch_json)
 -- GitHub Check Runs map onto builds.sr.ht jobs.  Each job is tagged with the
 -- git repository and commit SHA it was triggered by, so:
 --   • GET commits/{ref}/check-runs → GET /api/jobs?filter[tags]=git.sr.ht/~owner/repo=sha
---   • POST check-runs → POST /api/jobs (stub; Sourcehut jobs are triggered by .build.yml)
---   • GET/PATCH by check_run_id → minimal stub (no reverse lookup by ID)
---   • Check Suites have no builds.sr.ht equivalent; all suite endpoints are stubs.
+--   • All other check and check-suite endpoints fall back to defaults.
 --   • Annotations are always empty.
 --
 -- Status mapping (builds.sr.ht → GitHub):
@@ -223,29 +221,6 @@ local function translate_srht_job_to_check_run(j)
     output = {
       title = name,
       summary = name,
-      text = "",
-      annotations_count = 0,
-      annotations_url = "",
-    },
-    url = "",
-    html_url = "",
-    details_url = "",
-  }
-end
-
-local function minimal_srht_check_run_stub(check_run_id)
-  return {
-    id = tonumber(check_run_id) or 0,
-    node_id = "",
-    head_sha = "",
-    name = "",
-    status = "completed",
-    conclusion = "success",
-    started_at = nil,
-    completed_at = nil,
-    output = {
-      title = "",
-      summary = "",
       text = "",
       annotations_count = 0,
       annotations_url = "",
@@ -631,58 +606,6 @@ backend_impl = {
 
   -- Checks (via builds.sr.ht jobs) --------------------------------------------
 
-  -- POST /repos/{owner}/{repo}/check-runs
-  -- builds.sr.ht jobs are triggered by .build.yml pushes, not via API.
-  -- Return a minimal stub.
-  post_check_runs = function(_owner, _repo_name)
-    local req = DecodeJson(GetBody() or "{}")
-    respond_json(201, {
-      id = 0,
-      node_id = "",
-      head_sha = req.head_sha or "",
-      name = req.name or "",
-      status = req.status or "queued",
-      conclusion = req.conclusion,
-      started_at = nil,
-      completed_at = nil,
-      output = {
-        title = (req.output and req.output.title) or "",
-        summary = (req.output and req.output.summary) or "",
-        text = "",
-        annotations_count = 0,
-        annotations_url = "",
-      },
-      url = "",
-      html_url = "",
-      details_url = req.details_url or "",
-    })
-  end,
-
-  -- GET /repos/{owner}/{repo}/check-runs/{check_run_id}
-  -- No reverse lookup by ID in builds.sr.ht; return a stub.
-  get_check_run = function(_owner, _repo_name, check_run_id)
-    respond_json(200, minimal_srht_check_run_stub(check_run_id))
-  end,
-
-  -- PATCH /repos/{owner}/{repo}/check-runs/{check_run_id}
-  -- Cannot update without job ID context; return a stub.
-  patch_check_run = function(_owner, _repo_name, check_run_id)
-    respond_json(200, minimal_srht_check_run_stub(check_run_id))
-  end,
-
-  -- GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations
-  -- builds.sr.ht has no annotations; always return [].
-  get_check_run_annotations = function(_owner, _repo_name, _check_run_id)
-    set_preamble()
-    Write("[]")
-  end,
-
-  -- POST /repos/{owner}/{repo}/check-runs/{check_run_id}/rerequest
-  -- No builds.sr.ht equivalent; return 201 stub.
-  post_check_run_rerequest = function(_owner, _repo_name, _check_run_id)
-    respond_json(201, {})
-  end,
-
   -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
   -- Maps to builds.sr.ht GET /api/jobs filtered by the git repo tag and commit SHA.
   -- builds.sr.ht jobs are tagged with "git.sr.ht/~owner/repo=sha" when triggered
@@ -708,58 +631,6 @@ backend_impl = {
       runs[#runs + 1] = translate_srht_job_to_check_run(j)
     end
     respond_json(200, { total_count = #runs, check_runs = runs })
-  end,
-
-  -- Check Suites — no builds.sr.ht equivalent; all are stubs ------------------
-
-  -- POST /repos/{owner}/{repo}/check-suites
-  post_check_suites = function(owner, repo_name)
-    local req = DecodeJson(GetBody() or "{}")
-    respond_json(201, {
-      id = 0,
-      node_id = "",
-      head_sha = req.head_sha or "",
-      status = "completed",
-      conclusion = "success",
-      app = { id = 0, slug = "", name = "" },
-      repository = { full_name = owner .. "/" .. repo_name },
-    })
-  end,
-
-  -- PATCH /repos/{owner}/{repo}/check-suites/preferences
-  patch_check_suites_preferences = function(_owner, _repo_name) -- luacheck: ignore 212
-    local req = DecodeJson(GetBody() or "{}") or {}
-    respond_json(200, {
-      preferences = req.auto_trigger_checks or {},
-    })
-  end,
-
-  -- GET /repos/{owner}/{repo}/check-suites/{check_suite_id}
-  get_check_suite = function(owner, repo_name, check_suite_id)
-    respond_json(200, {
-      id = tonumber(check_suite_id) or 0,
-      node_id = "",
-      head_sha = "",
-      status = "completed",
-      conclusion = "success",
-      app = { id = 0, slug = "", name = "" },
-      repository = { full_name = owner .. "/" .. repo_name },
-    })
-  end,
-
-  -- GET /repos/{owner}/{repo}/check-suites/{check_suite_id}/check-runs
-  get_check_suite_check_runs = function(_owner, _repo_name, _check_suite_id)
-    respond_json(200, { total_count = 0, check_runs = {} })
-  end,
-
-  -- POST /repos/{owner}/{repo}/check-suites/{check_suite_id}/rerequest
-  post_check_suite_rerequest = function(_owner, _repo_name, _check_suite_id)
-    respond_json(201, {})
-  end,
-
-  -- GET /repos/{owner}/{repo}/commits/{ref}/check-suites
-  get_commit_check_suites = function(_owner, _repo_name, _ref)
-    respond_json(200, { total_count = 0, check_suites = {} })
   end,
 }
 

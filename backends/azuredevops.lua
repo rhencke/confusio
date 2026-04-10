@@ -285,23 +285,6 @@ local function gh_check_run_to_ado_status(req)
   })
 end
 
-local function minimal_ado_check_run_stub(check_run_id)
-  return {
-    id = tonumber(check_run_id) or 0,
-    node_id = "",
-    head_sha = "",
-    name = "",
-    status = "completed",
-    conclusion = "success",
-    started_at = nil,
-    completed_at = nil,
-    output = { title = "", summary = "", text = "", annotations_count = 0, annotations_url = "" },
-    url = "",
-    html_url = "",
-    details_url = "",
-  }
-end
-
 -- Teams -----------------------------------------------------------------------
 -- ADO: GET /_apis/projects/{project}/teams (project = GitHub org)
 
@@ -808,10 +791,6 @@ backend_impl = {
     end
   end,
 
-  get_org_team_invitations = function()
-    Write("[]")
-  end,
-
   get_org_team_members = function(org, slug)
     local t = ado_find_team(org, slug)
     if not t then
@@ -911,10 +890,7 @@ backend_impl = {
     SetStatus(204, "No Content")
   end,
 
-  -- ADO does not model team-repo associations at this level; return empty list.
-  get_org_team_repos = function()
-    Write("[]")
-  end,
+  -- ADO does not model team-repo associations at this level; returns empty list via default.
   -- PUT/DELETE team repo not supported in ADO model.
   put_org_team_repo = function()
     respond_json(
@@ -925,10 +901,6 @@ backend_impl = {
   end,
   delete_org_team_repo = function()
     SetStatus(204, "No Content")
-  end,
-
-  get_org_team_children = function()
-    Write("[]")
   end,
 
   -- Legacy team-by-id API (/teams/{team_id}) ----------------------------------
@@ -1001,10 +973,6 @@ backend_impl = {
     else
       respond_json(503, {})
     end
-  end,
-
-  get_team_invitations = function()
-    Write("[]")
   end,
 
   get_team_members = function(team_id)
@@ -1178,12 +1146,6 @@ backend_impl = {
     SetStatus(204, "No Content")
   end,
 
-  get_team_repos = function()
-    Write("[]")
-  end,
-  get_team_repo = function()
-    respond_json(404, { message = "Not Found" })
-  end,
   put_team_repo = function()
     respond_json(
       422,
@@ -1193,9 +1155,6 @@ backend_impl = {
   end,
   delete_team_repo = function()
     SetStatus(204, "No Content")
-  end,
-  get_team_children = function()
-    Write("[]")
   end,
 
   -- Issues (Azure Boards work items) -----------------------------------------
@@ -1393,29 +1352,6 @@ backend_impl = {
     )
   end,
 
-  -- GET /repos/{owner}/{repo}/check-runs/{check_run_id}
-  get_check_run = function(_owner, _repo_name, check_run_id)
-    respond_json(200, minimal_ado_check_run_stub(check_run_id))
-  end,
-
-  -- PATCH /repos/{owner}/{repo}/check-runs/{check_run_id}
-  patch_check_run = function(_owner, _repo_name, check_run_id)
-    respond_json(200, minimal_ado_check_run_stub(check_run_id))
-  end,
-
-  -- GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations
-  -- ADO has no annotations concept; always return [].
-  get_check_run_annotations = function(_owner, _repo_name, _check_run_id)
-    set_preamble()
-    Write("[]")
-  end,
-
-  -- POST /repos/{owner}/{repo}/check-runs/{check_run_id}/rerequest
-  post_check_run_rerequest = function(_owner, _repo_name, _check_run_id)
-    SetStatus(201, "Created")
-    Write("")
-  end,
-
   -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
   get_commit_check_runs = function(owner, repo_name, ref)
     local ok, status, _, body = fetch_json(
@@ -1452,12 +1388,6 @@ backend_impl = {
     })
   end,
 
-  -- PATCH /repos/{owner}/{repo}/check-suites/preferences
-  patch_check_suites_preferences = function(_owner, _repo_name) -- luacheck: ignore 212
-    local req = DecodeJson(GetBody() or "{}")
-    respond_json(200, { preferences = req.auto_trigger_checks or {} })
-  end,
-
   -- GET /repos/{owner}/{repo}/check-suites/{check_suite_id}
   get_check_suite = function(owner, repo_name, check_suite_id)
     respond_json(200, {
@@ -1471,21 +1401,6 @@ backend_impl = {
     })
   end,
 
-  -- GET /repos/{owner}/{repo}/check-suites/{check_suite_id}/check-runs
-  get_check_suite_check_runs = function(_owner, _repo_name, _check_suite_id)
-    respond_json(200, { total_count = 0, check_runs = {} })
-  end,
-
-  -- POST /repos/{owner}/{repo}/check-suites/{check_suite_id}/rerequest
-  post_check_suite_rerequest = function(_owner, _repo_name, _check_suite_id)
-    SetStatus(201, "Created")
-    Write("")
-  end,
-
-  -- GET /repos/{owner}/{repo}/commits/{ref}/check-suites
-  get_commit_check_suites = function(_owner, _repo_name, _ref)
-    respond_json(200, { total_count = 0, check_suites = {} })
-  end,
   -- Code Scanning (via ADO Advanced Security / GHAzDO) ------------------------
   --
   -- Azure DevOps Advanced Security provides code scanning alerts at the

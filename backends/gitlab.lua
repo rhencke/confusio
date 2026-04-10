@@ -692,11 +692,6 @@ backend_impl = {
     )
   end),
 
-  -- GitLab does not have a direct equivalent of GitHub's /teams endpoint for repos.
-  get_repo_teams = function()
-    respond_json(404, { message = "Not Found" })
-  end,
-
   -- Branches ------------------------------------------------------------------
 
   get_repo_branches = proxy_handler_paged(function(branches)
@@ -1683,13 +1678,6 @@ backend_impl = {
     proxy_json_created(nil, fetch_json(base() .. "/user/emails", "POST", GetBody()))
   end,
 
-  -- DELETE /user/emails
-  delete_user_emails = function()
-    -- GitLab requires DELETE /user/emails/{id}; without an ID we can't delete by address.
-    -- Return 204 as a best-effort passthrough.
-    respond_json(404, { message = "Not Found" })
-  end,
-
   -- SSH Keys ------------------------------------------------------------------
 
   -- GET /user/keys
@@ -1849,12 +1837,6 @@ backend_impl = {
     else
       respond_json(503, {})
     end
-  end,
-
-  -- GET /orgs/{org}/teams/{team_slug}/invitations — no concept in GitLab
-  get_org_team_invitations = function()
-    set_preamble()
-    Write("[]")
   end,
 
   -- GET /orgs/{org}/teams/{team_slug}/members
@@ -2102,12 +2084,6 @@ backend_impl = {
     else
       respond_json(503, {})
     end
-  end,
-
-  -- GET /teams/{team_id}/invitations — no concept in GitLab
-  get_team_invitations = function()
-    set_preamble()
-    Write("[]")
   end,
 
   -- GET /teams/{team_id}/members
@@ -2379,23 +2355,6 @@ backend_impl = {
       "POST",
       EncodeJson({ body = req.body })
   end),
-
-  -- GET /repos/{owner}/{repo}/issues/comments/{comment_id}
-  get_repo_issue_comment = function(_owner, _repo_name, _comment_id)
-    -- GitLab requires the issue IID; without it we cannot fetch a note directly.
-    -- Return 404 as there's no cross-issue comment lookup endpoint.
-    respond_json(404, { message = "Not Found" })
-  end,
-
-  -- PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}
-  patch_repo_issue_comment = function(_owner, _repo_name, _comment_id)
-    respond_json(404, { message = "Not Found" })
-  end,
-
-  -- DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}
-  delete_repo_issue_comment = function(_owner, _repo_name, _comment_id)
-    respond_json(404, { message = "Not Found" })
-  end,
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}/labels
   get_issue_labels = function(owner, repo_name, issue_number)
@@ -3163,50 +3122,6 @@ backend_impl = {
     )
   end,
 
-  get_check_run = function(_owner, _repo_name, check_run_id)
-    respond_json(200, {
-      id = tonumber(check_run_id) or 0,
-      node_id = "",
-      head_sha = "",
-      name = "",
-      status = "completed",
-      conclusion = "success",
-      started_at = nil,
-      completed_at = nil,
-      output = { title = "", summary = "", text = "", annotations_count = 0, annotations_url = "" },
-      url = "",
-      html_url = "",
-      details_url = "",
-    })
-  end,
-
-  patch_check_run = function(_owner, _repo_name, check_run_id)
-    respond_json(200, {
-      id = tonumber(check_run_id) or 0,
-      node_id = "",
-      head_sha = "",
-      name = "",
-      status = "completed",
-      conclusion = "success",
-      started_at = nil,
-      completed_at = nil,
-      output = { title = "", summary = "", text = "", annotations_count = 0, annotations_url = "" },
-      url = "",
-      html_url = "",
-      details_url = "",
-    })
-  end,
-
-  get_check_run_annotations = function(_owner, _repo_name, _check_run_id)
-    set_preamble()
-    Write("[]")
-  end,
-
-  post_check_run_rerequest = function(_owner, _repo_name, _check_run_id)
-    SetStatus(201, "Created")
-    Write("")
-  end,
-
   -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
   -- Uses GitLab commit statuses.
   get_commit_check_runs = function(owner, repo_name, ref)
@@ -3261,56 +3176,8 @@ backend_impl = {
     respond_json(200, { total_count = #runs, check_runs = runs })
   end,
 
-  -- Check suites have no GitLab equivalent; all suite endpoints are stubs.
-
-  post_check_suites = function(owner, repo_name)
-    local req = DecodeJson(GetBody() or "{}")
-    respond_json(201, {
-      id = 1,
-      node_id = "",
-      head_sha = req.head_sha or "",
-      status = "completed",
-      conclusion = "success",
-      url = "",
-      before = nil,
-      after = nil,
-      app = {},
-      repository = { full_name = owner .. "/" .. repo_name },
-    })
-  end,
-
-  patch_check_suites_preferences = function(_owner, _repo_name) -- luacheck: ignore 212
-    local req = DecodeJson(GetBody() or "{}")
-    respond_json(200, {
-      preferences = req.auto_trigger_checks or {},
-    })
-  end,
-
-  get_check_suite = function(owner, repo_name, check_suite_id)
-    respond_json(200, {
-      id = tonumber(check_suite_id) or 0,
-      node_id = "",
-      head_sha = "",
-      status = "completed",
-      conclusion = "success",
-      url = "",
-      app = {},
-      repository = { full_name = owner .. "/" .. repo_name },
-    })
-  end,
-
-  get_check_suite_check_runs = function(_owner, _repo_name, _check_suite_id)
-    respond_json(200, { total_count = 0, check_runs = {} })
-  end,
-
-  post_check_suite_rerequest = function(_owner, _repo_name, _check_suite_id)
-    SetStatus(201, "Created")
-    Write("")
-  end,
-
-  get_commit_check_suites = function(_owner, _repo_name, _ref)
-    respond_json(200, { total_count = 0, check_suites = {} })
-  end,
+  -- Check suites have no GitLab equivalent; all suite endpoints fall back to
+  -- the route_defaults stubs defined in .init.lua.
 
   -- Packages (org via GitLab group packages API) --------------------------------
 
