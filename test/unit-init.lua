@@ -969,6 +969,155 @@ eq(
   "OnHttpRequest: GET /repos/{owner}/{repo}/git/ref/{ref+} with multi-segment ref → 501"
 )
 
+-- checks_post_check_runs: POST /repos/{owner}/{repo}/check-runs → 201 with id/head_sha/name/status/output
+reset_response()
+reset_request({
+  method = "POST",
+  path = "/repos/alice/myrepo/check-runs",
+  body = '{"head_sha":"abc123","name":"my-check","status":"in_progress"}',
+})
+OnHttpRequest()
+eq(_last_status, 201, "OnHttpRequest: POST /repos/{owner}/{repo}/check-runs → 201")
+ok(
+  _last_body:find('"head_sha"') ~= nil,
+  "OnHttpRequest: POST /repos/{owner}/{repo}/check-runs → body has head_sha"
+)
+ok(
+  _last_body:find('"output"') ~= nil,
+  "OnHttpRequest: POST /repos/{owner}/{repo}/check-runs → body has output"
+)
+
+-- checks_get_check_run: GET /repos/{owner}/{repo}/check-runs/{check_run_id} → 200
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/check-runs/42" })
+OnHttpRequest()
+eq(_last_status, 200, "OnHttpRequest: GET /repos/{owner}/{repo}/check-runs/{check_run_id} → 200")
+ok(
+  _last_body:find('"id"') ~= nil,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/check-runs/{check_run_id} → body has id"
+)
+
+-- checks_patch_check_run: PATCH /repos/{owner}/{repo}/check-runs/{check_run_id} → 200
+reset_response()
+reset_request({ method = "PATCH", path = "/repos/alice/myrepo/check-runs/42" })
+OnHttpRequest()
+eq(
+  _last_status,
+  200,
+  "OnHttpRequest: PATCH /repos/{owner}/{repo}/check-runs/{check_run_id} → 200"
+)
+
+-- checks_get_check_run_annotations: GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations → 200 []
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/check-runs/42/annotations" })
+OnHttpRequest()
+eq(
+  _last_status,
+  200,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations → 200"
+)
+eq(
+  _last_body,
+  "[]",
+  "OnHttpRequest: GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations → body is []"
+)
+
+-- checks_post_check_run_rerequest: POST /repos/{owner}/{repo}/check-runs/{check_run_id}/rerequest → 201
+reset_response()
+reset_request({ method = "POST", path = "/repos/alice/myrepo/check-runs/42/rerequest" })
+OnHttpRequest()
+eq(
+  _last_status,
+  201,
+  "OnHttpRequest: POST /repos/{owner}/{repo}/check-runs/{check_run_id}/rerequest → 201"
+)
+
+-- checks_get_commit_check_runs: GET /repos/{owner}/{repo}/commits/{ref}/check-runs → 200 empty
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/commits/abc123/check-runs" })
+OnHttpRequest()
+eq(_last_status, 200, "OnHttpRequest: GET /repos/{owner}/{repo}/commits/{ref}/check-runs → 200")
+ok(
+  _last_body:find('"check_runs"') ~= nil,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/commits/{ref}/check-runs → body has check_runs"
+)
+
+-- checks_post_check_suites: POST /repos/{owner}/{repo}/check-suites → 201
+reset_response()
+reset_request({
+  method = "POST",
+  path = "/repos/alice/myrepo/check-suites",
+  body = '{"head_sha":"abc123"}',
+})
+OnHttpRequest()
+eq(_last_status, 201, "OnHttpRequest: POST /repos/{owner}/{repo}/check-suites → 201")
+ok(
+  _last_body:find('"head_sha"') ~= nil,
+  "OnHttpRequest: POST /repos/{owner}/{repo}/check-suites → body has head_sha"
+)
+
+-- checks_patch_check_suites_preferences: PATCH /repos/{owner}/{repo}/check-suites/preferences → 200
+reset_response()
+reset_request({
+  method = "PATCH",
+  path = "/repos/alice/myrepo/check-suites/preferences",
+  body = "{}",
+})
+OnHttpRequest()
+eq(_last_status, 200, "OnHttpRequest: PATCH /repos/{owner}/{repo}/check-suites/preferences → 200")
+ok(
+  _last_body:find('"preferences"') ~= nil,
+  "OnHttpRequest: PATCH /repos/{owner}/{repo}/check-suites/preferences → body has preferences"
+)
+
+-- checks_get_check_suite: GET /repos/{owner}/{repo}/check-suites/{check_suite_id} → 200
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/check-suites/7" })
+OnHttpRequest()
+eq(
+  _last_status,
+  200,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/check-suites/{check_suite_id} → 200"
+)
+ok(
+  _last_body:find('"repository"') ~= nil,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/check-suites/{check_suite_id} → body has repository"
+)
+
+-- checks_get_check_suite_check_runs: GET /repos/{owner}/{repo}/check-suites/{check_suite_id}/check-runs → 200 empty
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/check-suites/7/check-runs" })
+OnHttpRequest()
+eq(
+  _last_status,
+  200,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/check-suites/{check_suite_id}/check-runs → 200"
+)
+ok(
+  _last_body:find('"check_runs"') ~= nil,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/check-suites/{check_suite_id}/check-runs → body has check_runs"
+)
+
+-- checks_post_check_suite_rerequest: POST /repos/{owner}/{repo}/check-suites/{check_suite_id}/rerequest → 201
+reset_response()
+reset_request({ method = "POST", path = "/repos/alice/myrepo/check-suites/7/rerequest" })
+OnHttpRequest()
+eq(
+  _last_status,
+  201,
+  "OnHttpRequest: POST /repos/{owner}/{repo}/check-suites/{check_suite_id}/rerequest → 201"
+)
+
+-- checks_get_commit_check_suites: GET /repos/{owner}/{repo}/commits/{ref}/check-suites → 200 empty
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/commits/abc123/check-suites" })
+OnHttpRequest()
+eq(_last_status, 200, "OnHttpRequest: GET /repos/{owner}/{repo}/commits/{ref}/check-suites → 200")
+ok(
+  _last_body:find('"check_suites"') ~= nil,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/commits/{ref}/check-suites → body has check_suites"
+)
+
 -- ============================================================
 -- Summary
 -- ============================================================
