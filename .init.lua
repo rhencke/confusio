@@ -25,6 +25,7 @@ local HTTP_STATUS_TEXT = {
   [200] = "OK",
   [201] = "Created",
   [204] = "No Content",
+  [205] = "Reset Content",
   [302] = "Found",
   [401] = "Unauthorized",
   [404] = "Not Found",
@@ -489,6 +490,28 @@ local function projects_list_empty()
   respond_json(200, {})
 end
 
+-- Default handlers for Activity endpoints (https://docs.github.com/en/rest/activity).
+-- Events and list endpoints return empty arrays (200).
+-- Star/watch/subscription mutation endpoints return 204 No Content (acknowledged, not tracked).
+-- Mark-as-read endpoints return 205 Reset Content (standard GitHub response).
+-- Per-resource GET endpoints (thread, subscription) return 404 (not found / not watching).
+-- Feeds and subscription set endpoints return 501 (no backend exposes these natively).
+local function activity_not_implemented()
+  respond_json(501, { message = "This activity endpoint is not supported by this backend." })
+end
+
+local function activity_no_content()
+  set_preamble(204)
+end
+
+local function activity_reset_content()
+  set_preamble(205)
+end
+
+local function activity_not_found()
+  respond_json(404, { message = "Not Found" })
+end
+
 -- Default handlers for GET /zen, GET /octocat, GET /versions, GET /meta.
 -- These endpoints are fully self-contained and do not call any backend.
 local ZEN_QUOTES = {
@@ -799,6 +822,43 @@ local route_defaults = {
   projects_update_item_for_user = projects_not_implemented,
   projects_delete_item_for_user = projects_not_implemented,
   projects_list_view_items_for_user = projects_list_empty,
+  -- Activity (https://docs.github.com/en/rest/activity)
+  -- Events
+  list_public_events = empty_list,
+  get_feeds = activity_not_implemented,
+  list_network_repo_events = empty_list,
+  list_org_events = empty_list,
+  list_repo_events = empty_list,
+  list_user_events = empty_list,
+  list_user_org_events = empty_list,
+  list_user_public_events = empty_list,
+  list_received_events_for_user = empty_list,
+  list_received_public_events_for_user = empty_list,
+  -- Notifications
+  list_notifications = empty_list,
+  mark_notifications_as_read = activity_reset_content,
+  get_notification_thread = activity_not_found,
+  mark_thread_as_read = activity_reset_content,
+  mark_thread_as_done = activity_no_content,
+  get_thread_subscription = activity_not_found,
+  set_thread_subscription = activity_not_implemented,
+  delete_thread_subscription = activity_no_content,
+  list_repo_notifications = empty_list,
+  mark_repo_notifications_as_read = activity_reset_content,
+  -- Starring
+  list_repo_stargazers = empty_list,
+  list_starred_repos_for_auth_user = empty_list,
+  check_repo_starred_by_auth_user = activity_not_found,
+  star_repo = activity_no_content,
+  unstar_repo = activity_no_content,
+  list_repos_starred_by_user = empty_list,
+  -- Watching
+  list_repo_subscribers = empty_list,
+  get_repo_subscription = activity_not_found,
+  set_repo_subscription = activity_not_implemented,
+  delete_repo_subscription = activity_no_content,
+  list_watched_repos_for_auth_user = empty_list,
+  list_repos_watched_by_user = empty_list,
   -- Packages
   get_org_packages = empty_list,
   get_org_package_versions = empty_list,
@@ -1681,6 +1741,44 @@ local routes = {
   ["PATCH /users/{username}/projectsV2/{project_number}/items/{item_id}"] = "projects_update_item_for_user",
   ["DELETE /users/{username}/projectsV2/{project_number}/items/{item_id}"] = "projects_delete_item_for_user",
   ["GET /users/{username}/projectsV2/{project_number}/views/{view_number}/items"] = "projects_list_view_items_for_user",
+
+  -- Activity (https://docs.github.com/en/rest/activity)
+  -- Events
+  ["GET /events"] = "list_public_events",
+  ["GET /feeds"] = "get_feeds",
+  ["GET /networks/{owner}/{repo}/events"] = "list_network_repo_events",
+  ["GET /orgs/{org}/events"] = "list_org_events",
+  ["GET /repos/{owner}/{repo}/events"] = "list_repo_events",
+  ["GET /users/{username}/events"] = "list_user_events",
+  ["GET /users/{username}/events/orgs/{org}"] = "list_user_org_events",
+  ["GET /users/{username}/events/public"] = "list_user_public_events",
+  ["GET /users/{username}/received_events"] = "list_received_events_for_user",
+  ["GET /users/{username}/received_events/public"] = "list_received_public_events_for_user",
+  -- Notifications
+  ["GET /notifications"] = "list_notifications",
+  ["PUT /notifications"] = "mark_notifications_as_read",
+  ["GET /notifications/threads/{thread_id}"] = "get_notification_thread",
+  ["PATCH /notifications/threads/{thread_id}"] = "mark_thread_as_read",
+  ["DELETE /notifications/threads/{thread_id}"] = "mark_thread_as_done",
+  ["GET /notifications/threads/{thread_id}/subscription"] = "get_thread_subscription",
+  ["PUT /notifications/threads/{thread_id}/subscription"] = "set_thread_subscription",
+  ["DELETE /notifications/threads/{thread_id}/subscription"] = "delete_thread_subscription",
+  ["GET /repos/{owner}/{repo}/notifications"] = "list_repo_notifications",
+  ["PUT /repos/{owner}/{repo}/notifications"] = "mark_repo_notifications_as_read",
+  -- Starring
+  ["GET /repos/{owner}/{repo}/stargazers"] = "list_repo_stargazers",
+  ["GET /user/starred"] = "list_starred_repos_for_auth_user",
+  ["GET /user/starred/{owner}/{repo}"] = "check_repo_starred_by_auth_user",
+  ["PUT /user/starred/{owner}/{repo}"] = "star_repo",
+  ["DELETE /user/starred/{owner}/{repo}"] = "unstar_repo",
+  ["GET /users/{username}/starred"] = "list_repos_starred_by_user",
+  -- Watching
+  ["GET /repos/{owner}/{repo}/subscribers"] = "list_repo_subscribers",
+  ["GET /repos/{owner}/{repo}/subscription"] = "get_repo_subscription",
+  ["PUT /repos/{owner}/{repo}/subscription"] = "set_repo_subscription",
+  ["DELETE /repos/{owner}/{repo}/subscription"] = "delete_repo_subscription",
+  ["GET /user/subscriptions"] = "list_watched_repos_for_auth_user",
+  ["GET /users/{username}/subscriptions"] = "list_repos_watched_by_user",
 
   -- Packages (https://docs.github.com/en/rest/packages)
   ["GET /orgs/{org}/packages"] = "get_org_packages",
