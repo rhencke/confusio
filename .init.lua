@@ -479,6 +479,16 @@ local function dependency_graph_not_implemented()
   respond_json(501, { message = "Dependency graph is not supported by this backend." })
 end
 
+-- Default handlers for Projects endpoints: most backends have no native Projects API.
+-- List endpoints return empty arrays (200); per-resource and mutation endpoints return 501.
+local function projects_not_implemented()
+  respond_json(501, { message = "Projects is not supported by this backend." })
+end
+
+local function projects_list_empty()
+  respond_json(200, {})
+end
+
 -- Default handlers for GET /zen, GET /octocat, GET /versions, GET /meta.
 -- These endpoints are fully self-contained and do not call any backend.
 local ZEN_QUOTES = {
@@ -762,6 +772,33 @@ local route_defaults = {
   get_org_dependabot_repo_access = dependabot_not_implemented,
   update_org_dependabot_repo_access = dependabot_not_implemented,
   set_org_dependabot_repo_access_default_level = dependabot_not_implemented,
+  -- Projects
+  projects_list_for_org = projects_list_empty,
+  projects_get_for_org = projects_not_implemented,
+  projects_create_draft_item_for_org = projects_not_implemented,
+  projects_list_fields_for_org = projects_list_empty,
+  projects_add_field_for_org = projects_not_implemented,
+  projects_get_field_for_org = projects_not_implemented,
+  projects_list_items_for_org = projects_list_empty,
+  projects_add_item_for_org = projects_not_implemented,
+  projects_get_item_for_org = projects_not_implemented,
+  projects_update_item_for_org = projects_not_implemented,
+  projects_delete_item_for_org = projects_not_implemented,
+  projects_create_view_for_org = projects_not_implemented,
+  projects_list_view_items_for_org = projects_list_empty,
+  projects_create_draft_item_for_user = projects_not_implemented,
+  projects_create_view_for_user = projects_not_implemented,
+  projects_list_for_user = projects_list_empty,
+  projects_get_for_user = projects_not_implemented,
+  projects_list_fields_for_user = projects_list_empty,
+  projects_add_field_for_user = projects_not_implemented,
+  projects_get_field_for_user = projects_not_implemented,
+  projects_list_items_for_user = projects_list_empty,
+  projects_add_item_for_user = projects_not_implemented,
+  projects_get_item_for_user = projects_not_implemented,
+  projects_update_item_for_user = projects_not_implemented,
+  projects_delete_item_for_user = projects_not_implemented,
+  projects_list_view_items_for_user = projects_list_empty,
   -- Packages
   get_org_packages = empty_list,
   get_org_package_versions = empty_list,
@@ -1616,6 +1653,34 @@ local routes = {
   ["GET /repos/{owner}/{repo}/dependency-graph/compare/{basehead}"] = "get_repo_dependency_graph_compare",
   ["GET /repos/{owner}/{repo}/dependency-graph/sbom"] = "get_repo_dependency_graph_sbom",
   ["POST /repos/{owner}/{repo}/dependency-graph/snapshots"] = "post_repo_dependency_graph_snapshots",
+
+  -- Projects (https://docs.github.com/en/rest/projects)
+  ["GET /orgs/{org}/projectsV2"] = "projects_list_for_org",
+  ["GET /orgs/{org}/projectsV2/{project_number}"] = "projects_get_for_org",
+  ["POST /orgs/{org}/projectsV2/{project_number}/drafts"] = "projects_create_draft_item_for_org",
+  ["GET /orgs/{org}/projectsV2/{project_number}/fields"] = "projects_list_fields_for_org",
+  ["POST /orgs/{org}/projectsV2/{project_number}/fields"] = "projects_add_field_for_org",
+  ["GET /orgs/{org}/projectsV2/{project_number}/fields/{field_id}"] = "projects_get_field_for_org",
+  ["GET /orgs/{org}/projectsV2/{project_number}/items"] = "projects_list_items_for_org",
+  ["POST /orgs/{org}/projectsV2/{project_number}/items"] = "projects_add_item_for_org",
+  ["GET /orgs/{org}/projectsV2/{project_number}/items/{item_id}"] = "projects_get_item_for_org",
+  ["PATCH /orgs/{org}/projectsV2/{project_number}/items/{item_id}"] = "projects_update_item_for_org",
+  ["DELETE /orgs/{org}/projectsV2/{project_number}/items/{item_id}"] = "projects_delete_item_for_org",
+  ["POST /orgs/{org}/projectsV2/{project_number}/views"] = "projects_create_view_for_org",
+  ["GET /orgs/{org}/projectsV2/{project_number}/views/{view_number}/items"] = "projects_list_view_items_for_org",
+  ["POST /user/{user_id}/projectsV2/{project_number}/drafts"] = "projects_create_draft_item_for_user",
+  ["POST /users/{user_id}/projectsV2/{project_number}/views"] = "projects_create_view_for_user",
+  ["GET /users/{username}/projectsV2"] = "projects_list_for_user",
+  ["GET /users/{username}/projectsV2/{project_number}"] = "projects_get_for_user",
+  ["GET /users/{username}/projectsV2/{project_number}/fields"] = "projects_list_fields_for_user",
+  ["POST /users/{username}/projectsV2/{project_number}/fields"] = "projects_add_field_for_user",
+  ["GET /users/{username}/projectsV2/{project_number}/fields/{field_id}"] = "projects_get_field_for_user",
+  ["GET /users/{username}/projectsV2/{project_number}/items"] = "projects_list_items_for_user",
+  ["POST /users/{username}/projectsV2/{project_number}/items"] = "projects_add_item_for_user",
+  ["GET /users/{username}/projectsV2/{project_number}/items/{item_id}"] = "projects_get_item_for_user",
+  ["PATCH /users/{username}/projectsV2/{project_number}/items/{item_id}"] = "projects_update_item_for_user",
+  ["DELETE /users/{username}/projectsV2/{project_number}/items/{item_id}"] = "projects_delete_item_for_user",
+  ["GET /users/{username}/projectsV2/{project_number}/views/{view_number}/items"] = "projects_list_view_items_for_user",
 
   -- Packages (https://docs.github.com/en/rest/packages)
   ["GET /orgs/{org}/packages"] = "get_org_packages",

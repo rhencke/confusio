@@ -393,3 +393,30 @@ GET /repos/{owner}/{repo}/dependabot/secrets/public-key,n,n,n,n,n,n,n,n,n,n,n,n,
 GET /repos/{owner}/{repo}/dependabot/secrets/{secret_name},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 PUT /repos/{owner}/{repo}/dependabot/secrets/{secret_name},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 DELETE /repos/{owner}/{repo}/dependabot/secrets/{secret_name},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+Projects,,,,,,,,,,,,,,,,,,,,,,,,
+GET /orgs/{org}/projectsV2,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
+GET /orgs/{org}/projectsV2/{project_number},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+POST /orgs/{org}/projectsV2/{project_number}/drafts,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /orgs/{org}/projectsV2/{project_number}/fields,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
+POST /orgs/{org}/projectsV2/{project_number}/fields,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /orgs/{org}/projectsV2/{project_number}/fields/{field_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /orgs/{org}/projectsV2/{project_number}/items,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
+POST /orgs/{org}/projectsV2/{project_number}/items,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /orgs/{org}/projectsV2/{project_number}/items/{item_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+PATCH /orgs/{org}/projectsV2/{project_number}/items/{item_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+DELETE /orgs/{org}/projectsV2/{project_number}/items/{item_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+POST /orgs/{org}/projectsV2/{project_number}/views,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /orgs/{org}/projectsV2/{project_number}/views/{view_number}/items,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
+POST /user/{user_id}/projectsV2/{project_number}/drafts,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+POST /users/{user_id}/projectsV2/{project_number}/views,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /users/{username}/projectsV2,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
+GET /users/{username}/projectsV2/{project_number},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /users/{username}/projectsV2/{project_number}/fields,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
+POST /users/{username}/projectsV2/{project_number}/fields,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /users/{username}/projectsV2/{project_number}/fields/{field_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /users/{username}/projectsV2/{project_number}/items,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
+POST /users/{username}/projectsV2/{project_number}/items,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /users/{username}/projectsV2/{project_number}/items/{item_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+PATCH /users/{username}/projectsV2/{project_number}/items/{item_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+DELETE /users/{username}/projectsV2/{project_number}/items/{item_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /users/{username}/projectsV2/{project_number}/views/{view_number}/items,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
