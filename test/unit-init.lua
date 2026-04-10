@@ -1183,6 +1183,38 @@ eq(
   "OnHttpRequest: GET /orgs/{org}/projectsV2/{project_number} → 501 (projects not implemented)"
 )
 
+-- activity_not_implemented: GET /feeds → 501
+reset_response()
+reset_request({ method = "GET", path = "/feeds" })
+OnHttpRequest()
+eq(_last_status, 501, "OnHttpRequest: GET /feeds → 501 (activity not implemented)")
+
+-- activity_no_content: DELETE /notifications/threads/{thread_id} → 204
+reset_response()
+reset_request({ method = "DELETE", path = "/notifications/threads/1" })
+OnHttpRequest()
+eq(
+  _last_status,
+  204,
+  "OnHttpRequest: DELETE /notifications/threads/{thread_id} → 204 (activity no content)"
+)
+
+-- activity_reset_content: PUT /notifications → 205
+reset_response()
+reset_request({ method = "PUT", path = "/notifications" })
+OnHttpRequest()
+eq(_last_status, 205, "OnHttpRequest: PUT /notifications → 205 (activity reset content)")
+
+-- activity_not_found: GET /notifications/threads/{thread_id} → 404
+reset_response()
+reset_request({ method = "GET", path = "/notifications/threads/1" })
+OnHttpRequest()
+eq(
+  _last_status,
+  404,
+  "OnHttpRequest: GET /notifications/threads/{thread_id} → 404 (activity not found)"
+)
+
 -- ============================================================
 -- Summary
 -- ============================================================
