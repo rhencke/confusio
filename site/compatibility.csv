@@ -366,3 +366,7 @@ GET /repos/{owner}/{repo}/git/tags/{tag_sha},n,n,n,y,n,y,n,n,y,y,n,y,n,n,n,y,n,n
 POST /repos/{owner}/{repo}/git/tags,n,n,n,y,n,y,n,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/git/trees/{tree_sha},n,n,n,y,n,y,n,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 POST /repos/{owner}/{repo}/git/trees,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+Dependency Graph,,,,,,,,,,,,,,,,,,,,,,,,
+GET /repos/{owner}/{repo}/dependency-graph/compare/{basehead},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/dependency-graph/sbom,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+POST /repos/{owner}/{repo}/dependency-graph/snapshots,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
