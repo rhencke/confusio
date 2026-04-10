@@ -1146,9 +1146,6 @@ backend_impl = {
     SetStatus(204, "No Content")
   end,
 
-  get_team_repo = function()
-    respond_json(404, { message = "Not Found" })
-  end,
   put_team_repo = function()
     respond_json(
       422,

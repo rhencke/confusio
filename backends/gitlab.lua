@@ -692,11 +692,6 @@ backend_impl = {
     )
   end),
 
-  -- GitLab does not have a direct equivalent of GitHub's /teams endpoint for repos.
-  get_repo_teams = function()
-    respond_json(404, { message = "Not Found" })
-  end,
-
   -- Branches ------------------------------------------------------------------
 
   get_repo_branches = proxy_handler_paged(function(branches)
@@ -1683,13 +1678,6 @@ backend_impl = {
     proxy_json_created(nil, fetch_json(base() .. "/user/emails", "POST", GetBody()))
   end,
 
-  -- DELETE /user/emails
-  delete_user_emails = function()
-    -- GitLab requires DELETE /user/emails/{id}; without an ID we can't delete by address.
-    -- Return 204 as a best-effort passthrough.
-    respond_json(404, { message = "Not Found" })
-  end,
-
   -- SSH Keys ------------------------------------------------------------------
 
   -- GET /user/keys
@@ -2367,23 +2355,6 @@ backend_impl = {
       "POST",
       EncodeJson({ body = req.body })
   end),
-
-  -- GET /repos/{owner}/{repo}/issues/comments/{comment_id}
-  get_repo_issue_comment = function(_owner, _repo_name, _comment_id)
-    -- GitLab requires the issue IID; without it we cannot fetch a note directly.
-    -- Return 404 as there's no cross-issue comment lookup endpoint.
-    respond_json(404, { message = "Not Found" })
-  end,
-
-  -- PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}
-  patch_repo_issue_comment = function(_owner, _repo_name, _comment_id)
-    respond_json(404, { message = "Not Found" })
-  end,
-
-  -- DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}
-  delete_repo_issue_comment = function(_owner, _repo_name, _comment_id)
-    respond_json(404, { message = "Not Found" })
-  end,
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}/labels
   get_issue_labels = function(owner, repo_name, issue_number)
