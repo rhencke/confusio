@@ -1781,23 +1781,39 @@ backend_impl = {
   -- stargazers and subscribers (Bitbucket does not distinguish the two).
 
   get_repo_stargazers = function(owner, repo_name)
-    proxy_json(function(data)
-      local users = data.values or {}
-      for i, u in ipairs(users) do
-        users[i] = translate_bb_user(u)
-      end
-      return users
-    end, fetch_json(append_page_params(base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/watchers", PAGES)))
+    proxy_json(
+      function(data)
+        local users = data.values or {}
+        for i, u in ipairs(users) do
+          users[i] = translate_bb_user(u)
+        end
+        return users
+      end,
+      fetch_json(
+        append_page_params(
+          base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/watchers",
+          PAGES
+        )
+      )
+    )
   end,
 
   get_repo_subscribers = function(owner, repo_name)
-    proxy_json(function(data)
-      local users = data.values or {}
-      for i, u in ipairs(users) do
-        users[i] = translate_bb_user(u)
-      end
-      return users
-    end, fetch_json(append_page_params(base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/watchers", PAGES)))
+    proxy_json(
+      function(data)
+        local users = data.values or {}
+        for i, u in ipairs(users) do
+          users[i] = translate_bb_user(u)
+        end
+        return users
+      end,
+      fetch_json(
+        append_page_params(
+          base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/watchers",
+          PAGES
+        )
+      )
+    )
   end,
 
   -- Gists (Bitbucket Snippets) -----------------------------------------------

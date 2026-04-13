@@ -3196,7 +3196,9 @@ backend_impl = {
     proxy_json_paged(
       translate_users,
       PAGES,
-      fetch_json(append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/stargazers", PAGES))
+      fetch_json(
+        append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/stargazers", PAGES)
+      )
     )
   end,
 
@@ -3204,7 +3206,12 @@ backend_impl = {
     proxy_json_paged(
       translate_users,
       PAGES,
-      fetch_json(append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscribers", PAGES))
+      fetch_json(
+        append_page_params(
+          base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscribers",
+          PAGES
+        )
+      )
     )
   end,
 
@@ -3213,7 +3220,14 @@ backend_impl = {
   end,
 
   put_repo_subscription = function(owner, repo_name)
-    proxy_json(nil, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscription", "PUT", GetBody()))
+    proxy_json(
+      nil,
+      fetch_json(
+        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscription",
+        "PUT",
+        GetBody()
+      )
+    )
   end,
 
   delete_repo_subscription = function(owner, repo_name)
