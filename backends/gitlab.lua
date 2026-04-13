@@ -3716,3 +3716,201 @@ _b.update_secret_scanning_alert = function(_owner, _repo_name, alert_number)
   end
   respond_json(200, translate_gl_secret_alert(DecodeJson(body) or {}))
 end
+
+-- Gists (GitLab Snippets) ----------------------------------------------------
+
+local function translate_gl_snippet_author(a)
+  if not a then
+    return {}
+  end
+  return {
+    login = a.username or "",
+    id = a.id or 0,
+    node_id = "",
+    avatar_url = a.avatar_url or "",
+    html_url = a.web_url or "",
+    type = "User",
+    site_admin = false,
+  }
+end
+
+local function translate_gl_snippet(s)
+  if not s then
+    return {}
+  end
+  local files = {}
+  for _, f in ipairs(s.files or {}) do
+    local name = f.path or ""
+    files[name] = { filename = name, raw_url = f.raw_url or "" }
+  end
+  -- Fall back to file_name for older single-file snippets.
+  if not next(files) and s.file_name then
+    files[s.file_name] = { filename = s.file_name, raw_url = s.raw_url or "" }
+  end
+  return {
+    id = tostring(s.id or ""),
+    description = s.title or "",
+    public = s.visibility == "public",
+    owner = translate_gl_snippet_author(s.author),
+    files = files,
+    created_at = s.created_at,
+    updated_at = s.updated_at,
+    html_url = s.web_url or "",
+    url = "",
+    node_id = "",
+  }
+end
+
+local function translate_gl_snippets(data)
+  local out = {}
+  for i, s in ipairs(data) do
+    out[i] = translate_gl_snippet(s)
+  end
+  return out
+end
+
+local function translate_gl_snippet_note(n)
+  if not n then
+    return {}
+  end
+  return {
+    id = n.id or 0,
+    body = n.body or "",
+    user = translate_gl_snippet_author(n.author),
+    created_at = n.created_at,
+    updated_at = n.updated_at,
+    url = "",
+    node_id = "",
+  }
+end
+
+local function translate_gl_snippet_notes(data)
+  local out = {}
+  for i, n in ipairs(data) do
+    out[i] = translate_gl_snippet_note(n)
+  end
+  return out
+end
+
+-- Convert a GitHub gist create/update request body to GitLab snippet format.
+local function gl_snippet_req(req)
+  local gl = {}
+  if req.description ~= nil then
+    gl.title = req.description
+  end
+  if req.public ~= nil then
+    gl.visibility = (req.public == true or req.public == "true") and "public" or "private"
+  end
+  if req.files ~= nil then
+    local files = {}
+    for name, f in pairs(req.files) do
+      if f then
+        table.insert(files, { file_path = name, content = f.content or "" })
+      end
+    end
+    gl.files = files
+  end
+  return EncodeJson(gl)
+end
+
+local function proxy_list_gl(translate, ok, status, _headers, body)
+  if ok and status == 200 then
+    local data = DecodeJson(body) or {}
+    local result = translate(data)
+    set_preamble()
+    Write(#result > 0 and EncodeJson(result) or "[]")
+  elseif ok then
+    respond_json(status, {})
+  else
+    respond_json(503, {})
+  end
+end
+
+local function delete_snippet(url)
+  local opts = auth() or {}
+  opts.method = "DELETE"
+  local ok, status = pcall(Fetch, url, opts)
+  if ok and (status == 204 or status == 200) then
+    set_preamble(204)
+  elseif ok then
+    respond_json(status, {})
+  else
+    respond_json(503, {})
+  end
+end
+
+_b.get_gists = function()
+  proxy_list_gl(translate_gl_snippets, fetch_json(base() .. "/snippets"))
+end
+
+_b.get_gists_public = function()
+  proxy_list_gl(translate_gl_snippets, fetch_json(base() .. "/snippets/public"))
+end
+
+_b.post_gists = function()
+  local req = DecodeJson(GetBody() or "{}") or {}
+  proxy_json_created(
+    translate_gl_snippet,
+    fetch_json(base() .. "/snippets", "POST", gl_snippet_req(req))
+  )
+end
+
+_b.get_gist = function(id)
+  proxy_json(translate_gl_snippet, fetch_json(base() .. "/snippets/" .. id))
+end
+
+_b.patch_gist = function(id)
+  local req = DecodeJson(GetBody() or "{}") or {}
+  proxy_json(
+    translate_gl_snippet,
+    fetch_json(base() .. "/snippets/" .. id, "PUT", gl_snippet_req(req))
+  )
+end
+
+_b.delete_gist = function(id)
+  delete_snippet(base() .. "/snippets/" .. id)
+end
+
+_b.get_gist_comments = function(id)
+  proxy_list_gl(translate_gl_snippet_notes, fetch_json(base() .. "/snippets/" .. id .. "/notes"))
+end
+
+_b.post_gist_comment = function(id)
+  local req = DecodeJson(GetBody() or "{}") or {}
+  proxy_json_created(
+    translate_gl_snippet_note,
+    fetch_json(
+      base() .. "/snippets/" .. id .. "/notes",
+      "POST",
+      EncodeJson({ body = req.body or "" })
+    )
+  )
+end
+
+_b.get_gist_comment = function(id, comment_id)
+  proxy_json(
+    translate_gl_snippet_note,
+    fetch_json(base() .. "/snippets/" .. id .. "/notes/" .. comment_id)
+  )
+end
+
+_b.patch_gist_comment = function(id, comment_id)
+  local req = DecodeJson(GetBody() or "{}") or {}
+  proxy_json(
+    translate_gl_snippet_note,
+    fetch_json(
+      base() .. "/snippets/" .. id .. "/notes/" .. comment_id,
+      "PUT",
+      EncodeJson({ body = req.body or "" })
+    )
+  )
+end
+
+_b.delete_gist_comment = function(id, comment_id)
+  delete_snippet(base() .. "/snippets/" .. id .. "/notes/" .. comment_id)
+end
+
+_b.get_user_gists = function(_username)
+  -- GitLab doesn't expose per-user public snippet lists; approximate with own snippets.
+  proxy_list_gl(translate_gl_snippets, fetch_json(base() .. "/snippets"))
+end

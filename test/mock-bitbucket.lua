@@ -27,6 +27,28 @@ function OnHttpRequest()
     .. '"forks":[]}'
 
   local rb = "/2.0/repositories/octocat/hello-world"
+  local method = GetMethod()
+
+  local SNIPPET = '{"id":"pHANT4","title":"Hello snippet",'
+    .. '"is_private":false,'
+    .. '"created_on":"2011-01-26T19:01:12Z",'
+    .. '"updated_on":"2011-01-26T19:14:43Z",'
+    .. '"owner":{"nickname":"octocat","display_name":"Octocat","uuid":"{5678}",'
+    .. '"type":"user","links":{"avatar":{"href":"https://example.com/avatar"}}},'
+    .. '"files":{"hello.txt":{"mimetype":"text/plain","size":11,'
+    .. '"links":{"self":{"href":"https://api.bitbucket.org/2.0/snippets/octocat/pHANT4/files/hello.txt"}}}},'
+    .. '"links":{"html":{"href":"https://bitbucket.org/snippets/octocat/pHANT4"}}}'
+  local SNIPPET_COMMENT = '{"id":1,"created_on":"2011-01-26T19:01:12Z",'
+    .. '"updated_on":"2011-01-26T19:14:43Z",'
+    .. '"content":{"raw":"A comment","markup":"markdown","html":"<p>A comment</p>"},'
+    .. '"author":{"nickname":"octocat","display_name":"Octocat","uuid":"{5678}",'
+    .. '"type":"user","links":{"avatar":{"href":"https://example.com/avatar"}}}}'
+  local SNIPPET_COMMIT = '{"hash":"deadbeef1234","date":"2011-01-26T19:01:12Z",'
+    .. '"message":"Initial","author":{"raw":"Octocat <octocat@example.com>",'
+    .. '"user":{"nickname":"octocat","display_name":"Octocat","uuid":"{5678}",'
+    .. '"type":"user","links":{"avatar":{"href":""}}}}}'
+  local ss = "/2.0/snippets"
+  local sp = ss .. "/octocat/pHANT4"
 
   if path == "/2.0/user" then
     SetStatus(200, "OK")
@@ -334,6 +356,63 @@ function OnHttpRequest()
   -- fixed responses without proxying. Routes documented here for reference.
   elseif path:match("^/orgs/[^/]+/migrations") or path:match("^/user/migrations") then
     SetStatus(404, "Not Found")
+
+  -- Snippets (Gists) ----------------------------------------------------------
+  elseif (path == ss or path:find("^" .. ss .. "%?")) and method == "GET" then
+    SetStatus(200, "OK")
+    json('{"values":[' .. SNIPPET .. '],"pagelen":30,"size":1,"page":1}')
+  elseif path == ss and method == "POST" then
+    SetStatus(201, "Created")
+    json(SNIPPET)
+  elseif (path == ss .. "/octocat" or path:find("^" .. ss .. "/octocat%?")) and method == "GET" then
+    SetStatus(200, "OK")
+    json('{"values":[' .. SNIPPET .. '],"pagelen":30,"size":1,"page":1}')
+  elseif path == sp and method == "GET" then
+    SetStatus(200, "OK")
+    json(SNIPPET)
+  elseif path == sp and method == "PUT" then
+    SetStatus(200, "OK")
+    json(SNIPPET)
+  elseif path == sp and method == "DELETE" then
+    SetStatus(204, "No Content")
+  elseif
+    (path == sp .. "/comments" or path:find("^" .. sp:gsub("%-", "%%-") .. "/comments%?"))
+    and method == "GET"
+  then
+    SetStatus(200, "OK")
+    json('{"values":[' .. SNIPPET_COMMENT .. '],"pagelen":30,"size":1,"page":1}')
+  elseif path == sp .. "/comments" and method == "POST" then
+    SetStatus(201, "Created")
+    json(SNIPPET_COMMENT)
+  elseif path == sp .. "/comments/1" and method == "GET" then
+    SetStatus(200, "OK")
+    json(SNIPPET_COMMENT)
+  elseif path == sp .. "/comments/1" and method == "PUT" then
+    SetStatus(200, "OK")
+    json(SNIPPET_COMMENT)
+  elseif path == sp .. "/comments/1" and method == "DELETE" then
+    SetStatus(204, "No Content")
+  elseif
+    (path == sp .. "/commits" or path:find("^" .. sp:gsub("%-", "%%-") .. "/commits%?"))
+    and method == "GET"
+  then
+    SetStatus(200, "OK")
+    json('{"values":[' .. SNIPPET_COMMIT .. '],"pagelen":30,"size":1,"page":1}')
+  elseif
+    (path == sp .. "/forks" or path:find("^" .. sp:gsub("%-", "%%-") .. "/forks%?"))
+    and method == "GET"
+  then
+    SetStatus(200, "OK")
+    json('{"values":[],"pagelen":30,"size":0,"page":1}')
+  elseif path == sp .. "/watch" and method == "GET" then
+    SetStatus(204, "No Content")
+  elseif path == sp .. "/watch" and method == "PUT" then
+    SetStatus(204, "No Content")
+  elseif path == sp .. "/watch" and method == "DELETE" then
+    SetStatus(204, "No Content")
+  elseif path == sp .. "/deadbeef1234" and method == "GET" then
+    SetStatus(200, "OK")
+    json(SNIPPET)
   else
     SetStatus(404, "Not Found")
   end

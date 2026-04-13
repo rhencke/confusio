@@ -23,3 +23,6 @@ runs:
       with:
         path: luacov
         key: luacov-${{ hashFiles('.luacov-version') }}
+    - name: Touch restored tool binaries
+      shell: bash
+      run: touch -c redbean.com hurl stylua luacheck 2>/dev/null; touch -c luacov 2>/dev/null; true

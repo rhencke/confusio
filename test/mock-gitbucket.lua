@@ -671,6 +671,79 @@ function OnHttpRequest()
   -- returns fixed responses without proxying. Routes documented here for reference.
   elseif path:match("^/orgs/[^/]+/migrations") or path:match("^/user/migrations") then
     SetStatus(404, "Not Found")
+
+  -- Gists ---------------------------------------------------------------------
+  elseif
+    path == "/api/v3/gists"
+    or path == "/api/v3/gists/public"
+    or path == "/api/v3/gists/starred"
+    or path:match("^/api/v3/users/[^/]+/gists")
+  then
+    local GIST_OBJ = '{"id":"aa5a315d61ae9438b18d","description":"Hello gist","public":true,'
+      .. '"owner":{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User","site_admin":false},'
+      .. '"files":{"hello.txt":{"filename":"hello.txt","type":"text/plain","language":"Text","raw_url":"","size":11}},'
+      .. '"created_at":"2010-04-14T02:15:15Z","updated_at":"2011-06-20T11:34:15Z",'
+      .. '"url":"","html_url":"","git_pull_url":"","git_push_url":"","forks_url":"","commits_url":"","node_id":""}'
+    if method == "POST" then
+      SetStatus(201, "Created")
+      json(GIST_OBJ)
+    else
+      SetStatus(200, "OK")
+      json("[" .. GIST_OBJ .. "]")
+    end
+  elseif path == "/api/v3/gists/aa5a315d61ae9438b18d" then
+    if method == "DELETE" then
+      SetStatus(204, "No Content")
+    else
+      SetStatus(200, "OK")
+      json(
+        '{"id":"aa5a315d61ae9438b18d","description":"Hello gist","public":true,'
+          .. '"owner":{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User","site_admin":false},'
+          .. '"files":{"hello.txt":{"filename":"hello.txt","type":"text/plain","language":"Text","raw_url":"","size":11,"content":"Hello World"}},'
+          .. '"created_at":"2010-04-14T02:15:15Z","updated_at":"2011-06-20T11:34:15Z",'
+          .. '"url":"","html_url":"","git_pull_url":"","git_push_url":"","forks_url":"","commits_url":"","node_id":""}'
+      )
+    end
+  elseif path == "/api/v3/gists/aa5a315d61ae9438b18d/comments" then
+    local COMMENT_OBJ = '{"id":1,"body":"A comment","user":{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User","site_admin":false},'
+      .. '"created_at":"2011-04-18T23:23:56Z","updated_at":"2011-04-18T23:23:56Z","url":"","node_id":""}'
+    if method == "POST" then
+      SetStatus(201, "Created")
+      json(COMMENT_OBJ)
+    else
+      SetStatus(200, "OK")
+      json("[" .. COMMENT_OBJ .. "]")
+    end
+  elseif path == "/api/v3/gists/aa5a315d61ae9438b18d/comments/1" then
+    if method == "DELETE" then
+      SetStatus(204, "No Content")
+    else
+      SetStatus(200, "OK")
+      json(
+        '{"id":1,"body":"A comment","user":{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User","site_admin":false},'
+          .. '"created_at":"2011-04-18T23:23:56Z","updated_at":"2011-04-18T23:23:56Z","url":"","node_id":""}'
+      )
+    end
+  elseif path == "/api/v3/gists/aa5a315d61ae9438b18d/commits" then
+    SetStatus(200, "OK")
+    json(
+      '[{"url":"","version":"deadbeef1234","user":{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User","site_admin":false},'
+        .. '"change_status":{"total":1,"additions":1,"deletions":0},"committed_at":"2010-04-14T02:15:15Z"}]'
+    )
+  elseif path == "/api/v3/gists/aa5a315d61ae9438b18d/forks" then
+    SetStatus(200, "OK")
+    json("[]")
+  elseif path == "/api/v3/gists/aa5a315d61ae9438b18d/star" then
+    SetStatus(204, "No Content")
+  elseif path:match("^/api/v3/gists/aa5a315d61ae9438b18d/[0-9a-f]+$") then
+    SetStatus(200, "OK")
+    json(
+      '{"id":"aa5a315d61ae9438b18d","description":"Hello gist","public":true,'
+        .. '"owner":{"login":"octocat","id":1,"node_id":"","avatar_url":"","html_url":"","type":"User","site_admin":false},'
+        .. '"files":{"hello.txt":{"filename":"hello.txt","type":"text/plain","language":"Text","raw_url":"","size":11,"content":"Hello World"}},'
+        .. '"created_at":"2010-04-14T02:15:15Z","updated_at":"2011-06-20T11:34:15Z",'
+        .. '"url":"","html_url":"","git_pull_url":"","git_push_url":"","forks_url":"","commits_url":"","node_id":""}'
+    )
   else
     SetStatus(404, "Not Found")
   end
