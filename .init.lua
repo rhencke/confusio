@@ -501,6 +501,12 @@ local function projects_list_empty()
   respond_json(200, {})
 end
 
+-- Default handlers for Gists endpoints: most backends have no native gist API.
+-- List endpoints return empty arrays (200); per-resource and mutation endpoints return 501.
+local function gists_not_implemented()
+  respond_json(501, { message = "Gists are not supported by this backend." })
+end
+
 -- Default handlers for GET /zen, GET /octocat, GET /versions, GET /meta.
 -- These endpoints are fully self-contained and do not call any backend.
 local ZEN_QUOTES = {
@@ -1202,6 +1208,27 @@ local route_defaults = {
   get_commit_check_suites = function(_owner, _repo_name, _ref)
     respond_json(200, { total_count = 0, check_suites = {} })
   end,
+  -- Gists
+  get_gists = empty_list,
+  post_gists = gists_not_implemented,
+  get_gists_public = empty_list,
+  get_gists_starred = empty_list,
+  get_gist = gists_not_implemented,
+  patch_gist = gists_not_implemented,
+  delete_gist = gists_not_implemented,
+  get_gist_comments = empty_list,
+  post_gist_comment = gists_not_implemented,
+  get_gist_comment = gists_not_implemented,
+  patch_gist_comment = gists_not_implemented,
+  delete_gist_comment = gists_not_implemented,
+  get_gist_commits = empty_list,
+  get_gist_forks = empty_list,
+  post_gist_fork = gists_not_implemented,
+  get_gist_star = gists_not_implemented,
+  put_gist_star = gists_not_implemented,
+  delete_gist_star = gists_not_implemented,
+  get_gist_revision = gists_not_implemented,
+  get_user_gists = empty_list,
 }
 
 -- ---------------------------------------------------------------------------
@@ -1233,6 +1260,28 @@ local routes = {
   ["GET /licenses/{license}"] = "get_license",
   -- Rate Limits (https://docs.github.com/en/rest/rate-limit)
   ["GET /rate_limit"] = "get_rate_limit",
+
+  -- Gists (https://docs.github.com/en/rest/gists)
+  ["GET /gists"] = "get_gists",
+  ["POST /gists"] = "post_gists",
+  ["GET /gists/public"] = "get_gists_public",
+  ["GET /gists/starred"] = "get_gists_starred",
+  ["GET /gists/{gist_id}"] = "get_gist",
+  ["PATCH /gists/{gist_id}"] = "patch_gist",
+  ["DELETE /gists/{gist_id}"] = "delete_gist",
+  ["GET /gists/{gist_id}/comments"] = "get_gist_comments",
+  ["POST /gists/{gist_id}/comments"] = "post_gist_comment",
+  ["GET /gists/{gist_id}/comments/{comment_id}"] = "get_gist_comment",
+  ["PATCH /gists/{gist_id}/comments/{comment_id}"] = "patch_gist_comment",
+  ["DELETE /gists/{gist_id}/comments/{comment_id}"] = "delete_gist_comment",
+  ["GET /gists/{gist_id}/commits"] = "get_gist_commits",
+  ["GET /gists/{gist_id}/forks"] = "get_gist_forks",
+  ["POST /gists/{gist_id}/forks"] = "post_gist_fork",
+  ["GET /gists/{gist_id}/star"] = "get_gist_star",
+  ["PUT /gists/{gist_id}/star"] = "put_gist_star",
+  ["DELETE /gists/{gist_id}/star"] = "delete_gist_star",
+  ["GET /gists/{gist_id}/{sha}"] = "get_gist_revision",
+  ["GET /users/{username}/gists"] = "get_user_gists",
 
   -- Repos core (https://docs.github.com/en/rest/repos/repos)
   ["GET /repos/{owner}/{repo}"] = "get_repo",
