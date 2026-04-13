@@ -473,6 +473,36 @@ function OnHttpRequest()
         .. ","
         .. '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z"}]'
     )
+  elseif path == pb .. "/issues/1/award_emoji" then
+    local AWARD_USER = '{"id":1,"username":"octocat","name":"The Octocat","avatar_url":"",'
+      .. '"web_url":"http://localhost/octocat"}'
+    local AWARD = '{"id":1,"name":"thumbsup","user":'
+      .. AWARD_USER
+      .. ',"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",'
+      .. '"awardable_id":1,"awardable_type":"Issue"}'
+    if GetMethod() == "POST" then
+      SetStatus(201, "Created")
+      json(AWARD)
+    else
+      SetStatus(200, "OK")
+      json("[" .. AWARD .. "]")
+    end
+  elseif path == pb .. "/issues/1/award_emoji/1" then
+    if GetMethod() == "DELETE" then
+      SetStatus(204, "No Content")
+    else
+      local AWARD_USER = '{"id":1,"username":"octocat","name":"The Octocat","avatar_url":"",'
+        .. '"web_url":"http://localhost/octocat"}'
+      json(
+        '{"id":1,"name":"thumbsup","user":'
+          .. AWARD_USER
+          .. ',"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",'
+          .. '"awardable_id":1,"awardable_type":"Issue"}'
+      )
+    end
+  elseif path == pb .. "/issues/1/award_emoji/9999" then
+    SetStatus(404, "Not Found")
+    json('{"message":"404 Award Emoji Not Found"}')
 
   -- Labels -----------------------------------------------------------------
   elseif path == pb .. "/labels" then

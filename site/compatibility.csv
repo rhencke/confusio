@@ -101,6 +101,22 @@ GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id},n,~via partici
 GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments,n,~inline PR comments,~inline PR comments,y,n,y,n,n,y,y,~via MR notes,y,n,n,n,n,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/pulls/comments,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/pulls/comments/{comment_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+Reactions,,,,,,,,,,,,,,,,,,,,,,,,
+GET /repos/{owner}/{repo}/comments/{comment_id}/reactions,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+POST /repos/{owner}/{repo}/comments/{comment_id}/reactions,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+DELETE /repos/{owner}/{repo}/comments/{comment_id}/reactions/{reaction_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+POST /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{reaction_id},n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/issues/{issue_number}/reactions,n,n,n,y,n,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+POST /repos/{owner}/{repo}/issues/{issue_number}/reactions,n,n,n,y,n,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+DELETE /repos/{owner}/{repo}/issues/{issue_number}/reactions/{reaction_id},n,n,n,y,n,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+POST /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+DELETE /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions/{reaction_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/releases/{release_id}/reactions,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+POST /repos/{owner}/{repo}/releases/{release_id}/reactions,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+DELETE /repos/{owner}/{repo}/releases/{release_id}/reactions/{reaction_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 Packages,,,,,,,,,,,,,,,,,,,,,,,,
 GET /orgs/{org}/packages,n,n,n,y,n,y,n,n,n,y,y,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /orgs/{org}/packages/{package_type}/{package_name},n,n,n,y,n,y,n,n,n,y,y,n,n,n,n,n,n,n,n,n,n,n,n,n
@@ -110,21 +126,21 @@ GET /orgs/{org}/packages/{package_type}/{package_name}/versions,n,n,n,y,n,y,n,n,
 GET /orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id},n,n,n,y,n,y,n,n,n,y,y,n,n,n,n,n,n,n,n,n,n,n,n,n
 DELETE /orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id},n,n,n,y,n,y,n,n,n,y,y,n,n,n,n,n,n,n,n,n,n,n,n,n
 POST /orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}/restore,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /user/packages,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /user/packages/{package_type}/{package_name},n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-DELETE /user/packages/{package_type}/{package_name},n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /user/packages,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /user/packages/{package_type}/{package_name},n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+DELETE /user/packages/{package_type}/{package_name},n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 POST /user/packages/{package_type}/{package_name}/restore,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /user/packages/{package_type}/{package_name}/versions,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /user/packages/{package_type}/{package_name}/versions/{package_version_id},n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-DELETE /user/packages/{package_type}/{package_name}/versions/{package_version_id},n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /user/packages/{package_type}/{package_name}/versions,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /user/packages/{package_type}/{package_name}/versions/{package_version_id},n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+DELETE /user/packages/{package_type}/{package_name}/versions/{package_version_id},n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 POST /user/packages/{package_type}/{package_name}/versions/{package_version_id}/restore,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /users/{username}/packages,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /users/{username}/packages/{package_type}/{package_name},n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-DELETE /users/{username}/packages/{package_type}/{package_name},n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /users/{username}/packages,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /users/{username}/packages/{package_type}/{package_name},n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+DELETE /users/{username}/packages/{package_type}/{package_name},n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 POST /users/{username}/packages/{package_type}/{package_name}/restore,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /users/{username}/packages/{package_type}/{package_name}/versions,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id},n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-DELETE /users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id},n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /users/{username}/packages/{package_type}/{package_name}/versions,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id},n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+DELETE /users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id},n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 POST /users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}/restore,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 Migrations,,,,,,,,,,,,,,,,,,,,,,,,
 GET /orgs/{org}/migrations,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
@@ -308,7 +324,7 @@ GET /orgs/{org}/actions/runner-groups/{runner_group_id},n,n,n,n,n,n,n,n,n,n,n,n,
 PATCH /orgs/{org}/actions/runner-groups/{runner_group_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 DELETE /orgs/{org}/actions/runner-groups/{runner_group_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 Actions — Org runners,,,,,,,,,,,,,,,,,,,,,,,,
-GET /orgs/{org}/actions/runners,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /orgs/{org}/actions/runners,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 GET /orgs/{org}/actions/runners/downloads,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 POST /orgs/{org}/actions/runners/registration-token,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 POST /orgs/{org}/actions/runners/remove-token,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
@@ -323,11 +339,11 @@ PUT /orgs/{org}/actions/secrets/{secret_name},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,
 DELETE /orgs/{org}/actions/secrets/{secret_name},n,n,n,~list and delete only,n,~list and delete only,n,n,n,~list and delete only,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /orgs/{org}/actions/secrets/{secret_name}/repositories,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 Actions — Org variables,,,,,,,,,,,,,,,,,,,,,,,,
-GET /orgs/{org}/actions/variables,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-POST /orgs/{org}/actions/variables,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /orgs/{org}/actions/variables/{name},n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-PATCH /orgs/{org}/actions/variables/{name},n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-DELETE /orgs/{org}/actions/variables/{name},n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /orgs/{org}/actions/variables,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+POST /orgs/{org}/actions/variables,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /orgs/{org}/actions/variables/{name},n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+PATCH /orgs/{org}/actions/variables/{name},n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+DELETE /orgs/{org}/actions/variables/{name},n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 GET /orgs/{org}/actions/variables/{name}/repositories,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 Actions — Repo artifacts,,,,,,,,,,,,,,,,,,,,,,,,
 GET /repos/{owner}/{repo}/actions/artifacts,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
@@ -350,7 +366,7 @@ PUT /repos/{owner}/{repo}/actions/permissions,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,
 GET /repos/{owner}/{repo}/actions/permissions/selected-actions,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/actions/permissions/workflow,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 Actions — Repo runners,,,,,,,,,,,,,,,,,,,,,,,,
-GET /repos/{owner}/{repo}/actions/runners,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/actions/runners,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/actions/runners/downloads,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 POST /repos/{owner}/{repo}/actions/runners/registration-token,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 POST /repos/{owner}/{repo}/actions/runners/remove-token,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
@@ -371,11 +387,11 @@ GET /repos/{owner}/{repo}/actions/secrets/{secret_name},n,n,n,~list and delete o
 PUT /repos/{owner}/{repo}/actions/secrets/{secret_name},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 DELETE /repos/{owner}/{repo}/actions/secrets/{secret_name},n,n,n,~list and delete only,n,~list and delete only,n,n,n,~list and delete only,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 Actions — Repo variables,,,,,,,,,,,,,,,,,,,,,,,,
-GET /repos/{owner}/{repo}/actions/variables,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-POST /repos/{owner}/{repo}/actions/variables,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/actions/variables/{name},n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-PATCH /repos/{owner}/{repo}/actions/variables/{name},n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-DELETE /repos/{owner}/{repo}/actions/variables/{name},n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/actions/variables,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+POST /repos/{owner}/{repo}/actions/variables,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/actions/variables/{name},n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+PATCH /repos/{owner}/{repo}/actions/variables/{name},n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+DELETE /repos/{owner}/{repo}/actions/variables/{name},n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 Actions — Repo workflows,,,,,,,,,,,,,,,,,,,,,,,,
 GET /repos/{owner}/{repo}/actions/workflows,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/actions/workflows/{workflow_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
