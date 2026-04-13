@@ -499,6 +499,153 @@ local function translate_bb_ref(r)
   }
 end
 
+-- Gist helpers ---------------------------------------------------------------
+
+-- Translate a Bitbucket snippet object to GitHub gist format.
+-- Files include only metadata (raw_url, size); content is not eagerly fetched.
+-- gist.id encodes "workspace~encoded_id" for round-trip decoding.
+local function translate_bb_snippet(s)
+  if not s then
+    return {}
+  end
+  local owner = s.owner or {}
+  local ws = owner.nickname or owner.display_name or ""
+  local files = {}
+  for name, f in pairs(s.files or {}) do
+    files[name] = {
+      filename = name,
+      type = f.mimetype or "text/plain",
+      language = nil,
+      raw_url = (f.links and f.links.self and f.links.self.href) or "",
+      size = f.size or 0,
+      truncated = false,
+    }
+  end
+  return {
+    id = ws .. "~" .. tostring(s.id or ""),
+    node_id = "",
+    url = "",
+    html_url = (s.links and s.links.html and s.links.html.href) or "",
+    files = files,
+    public = not (s.is_private or false),
+    created_at = s.created_on or "",
+    updated_at = s.updated_on or "",
+    description = s.title or "",
+    comments = 0,
+    user = nil,
+    owner = {
+      login = ws,
+      id = 0,
+      node_id = owner.uuid or "",
+      avatar_url = (owner.links and owner.links.avatar and owner.links.avatar.href) or "",
+      url = "",
+      html_url = "",
+      type = "User",
+    },
+    truncated = false,
+  }
+end
+
+-- Translate a paginated Bitbucket snippet list to a GitHub gist array.
+local function translate_bb_snippets(data)
+  local result = {}
+  for i, s in ipairs(data.values or {}) do
+    result[i] = translate_bb_snippet(s)
+  end
+  return result
+end
+
+-- Translate a Bitbucket snippet comment to GitHub gist comment format.
+local function translate_bb_snippet_comment(c)
+  if not c then
+    return {}
+  end
+  local author = c.author or {}
+  local content = c.content or {}
+  return {
+    id = c.id or 0,
+    node_id = "",
+    url = "",
+    body = content.raw or "",
+    user = {
+      login = author.nickname or author.display_name or "",
+      id = 0,
+      node_id = author.uuid or "",
+      avatar_url = (author.links and author.links.avatar and author.links.avatar.href) or "",
+      url = "",
+      html_url = "",
+      type = "User",
+    },
+    created_at = c.created_on or "",
+    updated_at = c.updated_on or "",
+  }
+end
+
+-- Translate a paginated Bitbucket snippet comment list.
+local function translate_bb_snippet_comments(data)
+  local result = {}
+  for i, c in ipairs(data.values or {}) do
+    result[i] = translate_bb_snippet_comment(c)
+  end
+  return result
+end
+
+-- Translate a paginated Bitbucket snippet commit list to GitHub gist commit format.
+local function translate_bb_snippet_commits(data)
+  local result = {}
+  for i, c in ipairs(data.values or {}) do
+    local author = c.author or {}
+    local user = author.user or {}
+    result[i] = {
+      url = "",
+      version = c.hash or "",
+      user = {
+        login = user.nickname or user.display_name or "",
+        id = 0,
+        node_id = user.uuid or "",
+        avatar_url = (user.links and user.links.avatar and user.links.avatar.href) or "",
+        url = "",
+        html_url = "",
+        type = "User",
+      },
+      committed_at = c.date or "",
+      change_status = { total = 0, additions = 0, deletions = 0 },
+    }
+  end
+  return result
+end
+
+-- Decode a GitHub gist ID (from a confusio response) back to Bitbucket workspace
+-- and encoded_id.  Returns nil, nil if gist_id is not in "workspace~encoded_id" form.
+local function gist_id_split(gist_id)
+  return gist_id:match("^([^~]+)~(.+)$")
+end
+
+-- Build the Bitbucket snippets base URL for a split gist_id, or respond 404
+-- and return nil if gist_id is malformed.
+local function snippet_url(gist_id)
+  local ws, eid = gist_id_split(gist_id)
+  if not ws then
+    respond_json(404, { message = "Not Found" })
+    return nil
+  end
+  return base() .. "/snippets/" .. ws .. "/" .. eid
+end
+
+-- Like proxy_json but ensures empty results are written as "[]" not "{}".
+local function proxy_list(translate, ok, status, _headers, body)
+  if ok and status == 200 then
+    local data = DecodeJson(body) or {}
+    local result = translate(data)
+    set_preamble()
+    Write(#result > 0 and EncodeJson(result) or "[]")
+  elseif ok then
+    respond_json(status, {})
+  else
+    respond_json(503, {})
+  end
+end
+
 backend_impl = {
   get_root = function()
     local ok, status = pcall(Fetch, base() .. "/user", auth())
@@ -1625,5 +1772,226 @@ backend_impl = {
     else
       respond_json(503, {})
     end
+  end,
+
+  -- Gists (Bitbucket Snippets) -----------------------------------------------
+  --
+  -- GitHub gist IDs are encoded as "workspace~encoded_id" so that per-gist
+  -- operations can reconstruct the Bitbucket URL without extra lookups.
+  -- e.g. gist_id = "octocat~pHANT4" → /2.0/snippets/octocat/pHANT4
+
+  get_gists = function()
+    proxy_list(
+      translate_bb_snippets,
+      fetch_json(append_page_params(base() .. "/snippets?role=owner", PAGES))
+    )
+  end,
+
+  get_gists_public = function()
+    proxy_list(translate_bb_snippets, fetch_json(append_page_params(base() .. "/snippets", PAGES)))
+  end,
+
+  post_gists = function()
+    local req = DecodeJson(GetBody() or "{}") or {}
+    local files = {}
+    for name, f in pairs(req.files or {}) do
+      if f then
+        files[name] = { content = f.content or "" }
+      end
+    end
+    local bb_body = EncodeJson({
+      title = req.description or "",
+      is_private = not (req.public == true or req.public == "true"),
+      files = files,
+    })
+    proxy_json_created(translate_bb_snippet, fetch_json(base() .. "/snippets", "POST", bb_body))
+  end,
+
+  get_gist = function(gist_id)
+    local url = snippet_url(gist_id)
+    if url then
+      proxy_json(translate_bb_snippet, fetch_json(url))
+    end
+  end,
+
+  patch_gist = function(gist_id)
+    local url = snippet_url(gist_id)
+    if not url then
+      return
+    end
+    local req = DecodeJson(GetBody() or "{}") or {}
+    local bb_body = {}
+    if req.description ~= nil then
+      bb_body.title = req.description
+    end
+    if req.files ~= nil then
+      local files = {}
+      for name, f in pairs(req.files) do
+        files[name] = f and { content = f.content or "" } or {}
+      end
+      bb_body.files = files
+    end
+    proxy_json(translate_bb_snippet, fetch_json(url, "PUT", EncodeJson(bb_body)))
+  end,
+
+  delete_gist = function(gist_id)
+    local url = snippet_url(gist_id)
+    if not url then
+      return
+    end
+    local dopts = auth() or {}
+    dopts.method = "DELETE"
+    local ok, status = pcall(Fetch, url, dopts)
+    if ok and status == 204 then
+      set_preamble(204)
+    elseif ok then
+      respond_json(status, {})
+    else
+      respond_json(503, {})
+    end
+  end,
+
+  get_gist_comments = function(gist_id)
+    local url = snippet_url(gist_id)
+    if url then
+      proxy_list(
+        translate_bb_snippet_comments,
+        fetch_json(append_page_params(url .. "/comments", PAGES))
+      )
+    end
+  end,
+
+  post_gist_comment = function(gist_id)
+    local url = snippet_url(gist_id)
+    if not url then
+      return
+    end
+    local req = DecodeJson(GetBody() or "{}") or {}
+    proxy_json_created(
+      translate_bb_snippet_comment,
+      fetch_json(url .. "/comments", "POST", EncodeJson({ content = { raw = req.body or "" } }))
+    )
+  end,
+
+  get_gist_comment = function(gist_id, comment_id)
+    local url = snippet_url(gist_id)
+    if url then
+      proxy_json(translate_bb_snippet_comment, fetch_json(url .. "/comments/" .. comment_id))
+    end
+  end,
+
+  patch_gist_comment = function(gist_id, comment_id)
+    local url = snippet_url(gist_id)
+    if not url then
+      return
+    end
+    local req = DecodeJson(GetBody() or "{}") or {}
+    proxy_json(
+      translate_bb_snippet_comment,
+      fetch_json(
+        url .. "/comments/" .. comment_id,
+        "PUT",
+        EncodeJson({ content = { raw = req.body or "" } })
+      )
+    )
+  end,
+
+  delete_gist_comment = function(gist_id, comment_id)
+    local url = snippet_url(gist_id)
+    if not url then
+      return
+    end
+    local dopts = auth() or {}
+    dopts.method = "DELETE"
+    local ok, status = pcall(Fetch, url .. "/comments/" .. comment_id, dopts)
+    if ok and status == 204 then
+      set_preamble(204)
+    elseif ok then
+      respond_json(status, {})
+    else
+      respond_json(503, {})
+    end
+  end,
+
+  get_gist_commits = function(gist_id)
+    local url = snippet_url(gist_id)
+    if url then
+      proxy_list(
+        translate_bb_snippet_commits,
+        fetch_json(append_page_params(url .. "/commits", PAGES))
+      )
+    end
+  end,
+
+  get_gist_forks = function(gist_id)
+    local url = snippet_url(gist_id)
+    if url then
+      proxy_list(translate_bb_snippets, fetch_json(append_page_params(url .. "/forks", PAGES)))
+    end
+  end,
+
+  get_gist_star = function(gist_id)
+    local url = snippet_url(gist_id)
+    if not url then
+      return
+    end
+    local ok, status = fetch_json(url .. "/watch")
+    if ok and (status == 200 or status == 204) then
+      set_preamble(204)
+    elseif ok and status == 404 then
+      respond_json(404, {})
+    elseif ok then
+      respond_json(status, {})
+    else
+      respond_json(503, {})
+    end
+  end,
+
+  put_gist_star = function(gist_id)
+    local url = snippet_url(gist_id)
+    if not url then
+      return
+    end
+    local wopts = auth() or {}
+    wopts.method = "PUT"
+    local ok, status = pcall(Fetch, url .. "/watch", wopts)
+    if ok and (status == 200 or status == 204) then
+      set_preamble(204)
+    elseif ok then
+      respond_json(status, {})
+    else
+      respond_json(503, {})
+    end
+  end,
+
+  delete_gist_star = function(gist_id)
+    local url = snippet_url(gist_id)
+    if not url then
+      return
+    end
+    local wopts = auth() or {}
+    wopts.method = "DELETE"
+    local ok, status = pcall(Fetch, url .. "/watch", wopts)
+    if ok and status == 204 then
+      set_preamble(204)
+    elseif ok then
+      respond_json(status, {})
+    else
+      respond_json(503, {})
+    end
+  end,
+
+  get_gist_revision = function(gist_id, sha)
+    local url = snippet_url(gist_id)
+    if url then
+      proxy_json(translate_bb_snippet, fetch_json(url .. "/" .. sha))
+    end
+  end,
+
+  get_user_gists = function(username)
+    proxy_list(
+      translate_bb_snippets,
+      fetch_json(append_page_params(base() .. "/snippets/" .. username, PAGES))
+    )
   end,
 }
