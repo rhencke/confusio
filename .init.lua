@@ -514,7 +514,8 @@ local function activity_not_implemented()
 end
 
 local function activity_list_empty()
-  respond_json(200, {})
+  set_preamble()
+  Write("[]")
 end
 
 -- Default handlers for GET /zen, GET /octocat, GET /versions, GET /meta.
