@@ -1205,6 +1205,16 @@ reset_request({ method = "POST", path = "/gists" })
 OnHttpRequest()
 eq(_last_status, 501, "OnHttpRequest: POST /gists → 501 (gists not supported)")
 
+-- POST /repos/{owner}/{repo}/issues/{issue_number}/reactions — reactions_not_implemented default → 501
+reset_response()
+reset_request({ method = "POST", path = "/repos/alice/myrepo/issues/1/reactions" })
+OnHttpRequest()
+eq(
+  _last_status,
+  501,
+  "OnHttpRequest: POST /repos/{owner}/{repo}/issues/{issue_number}/reactions → 501 (reactions not supported)"
+)
+
 -- GET /events — activity_list_empty default → 200 []
 reset_response()
 reset_request({ method = "GET", path = "/events" })
