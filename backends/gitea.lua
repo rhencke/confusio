@@ -262,6 +262,46 @@ local function translate_gitea_milestones(milestones)
   return milestones
 end
 
+-- GitHub reaction content types and their integer codes.
+-- Gitea reactions have no native ID; we synthesize one from user_id and content code
+-- so callers can round-trip DELETE /reactions/{reaction_id} → Gitea DELETE with body.
+local REACTION_CONTENT_CODE = {
+  ["+1"] = 1,
+  ["-1"] = 2,
+  laugh = 3,
+  confused = 4,
+  heart = 5,
+  hooray = 6,
+  rocket = 7,
+  eyes = 8,
+}
+local REACTION_BY_CODE = { "+1", "-1", "laugh", "confused", "heart", "hooray", "rocket", "eyes" }
+
+-- Translate a single Gitea reaction to GitHub format.
+-- Synthesized ID = user_id * 10 + content_code (1-8), collision-free per user.
+local function translate_gitea_reaction(r)
+  if not r then
+    return {}
+  end
+  local user = translate_user(r.user or {})
+  local content = r.reaction or ""
+  local code = REACTION_CONTENT_CODE[content] or 0
+  return {
+    id = (user.id or 0) * 10 + code,
+    node_id = "",
+    user = user,
+    content = content,
+    created_at = r.created_at or "2020-01-01T00:00:00Z",
+  }
+end
+
+local function translate_gitea_reactions(reactions)
+  for i, r in ipairs(reactions) do
+    reactions[i] = translate_gitea_reaction(r)
+  end
+  return reactions
+end
+
 -- Map a Gitea pull request branch reference to GitHub format.
 local function translate_gitea_pr_branch(b)
   if not b then
@@ -771,6 +811,31 @@ end
 local function proxy_204(method, url)
   local ok, status = fetch_json(url, method, GetBody())
   if ok and status == 204 then
+    SetStatus(204, "No Content")
+  elseif ok then
+    respond_json(status, {})
+  else
+    respond_json(503, {})
+  end
+end
+
+-- Given a synthesized GitHub reaction_id, extract the content string or nil.
+-- Gitea DELETE reactions takes a JSON body {"content":"..."} rather than an ID.
+local function reaction_content_from_id(reaction_id)
+  local code = tonumber(reaction_id) and (tonumber(reaction_id) % 10) or nil
+  return code and REACTION_BY_CODE[code] or nil
+end
+
+-- DELETE a Gitea reaction by URL and synthesized reaction_id.
+-- Sends {"content":"..."} body; returns 204 on success.
+local function delete_gitea_reaction(url, reaction_id)
+  local content = reaction_content_from_id(reaction_id)
+  if not content then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  local ok, status = fetch_json(url, "DELETE", '{"content":"' .. content .. '"}')
+  if ok and (status == 200 or status == 204) then
     SetStatus(204, "No Content")
   elseif ok then
     respond_json(status, {})
@@ -2066,6 +2131,42 @@ backend_impl = {
     end
   end,
 
+  -- GET /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions
+  get_repo_issue_comment_reactions = proxy_handler_paged(
+    translate_gitea_reactions,
+    function(o, r, id)
+      return append_page_params(
+        base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments/" .. id .. "/reactions",
+        PAGES
+      )
+    end
+  ),
+
+  -- POST /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions
+  post_repo_issue_comment_reaction = proxy_handler_created(
+    translate_gitea_reaction,
+    function(o, r, id)
+      return base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments/" .. id .. "/reactions",
+        "POST",
+        GetBody()
+    end
+  ),
+
+  -- DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{reaction_id}
+  delete_repo_issue_comment_reaction = function(owner, repo_name, comment_id, reaction_id)
+    delete_gitea_reaction(
+      base()
+        .. "/repos/"
+        .. owner
+        .. "/"
+        .. repo_name
+        .. "/issues/comments/"
+        .. comment_id
+        .. "/reactions",
+      reaction_id
+    )
+  end,
+
   -- GET /repos/{owner}/{repo}/issues/events  (all issue events in repo)
   get_repo_issue_events = proxy_handler_paged(nil, function(o, r)
     return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/issues/events", PAGES)
@@ -2104,6 +2205,29 @@ backend_impl = {
       PAGES
     )
   end),
+
+  -- GET /repos/{owner}/{repo}/issues/{issue_number}/reactions
+  get_issue_reactions = proxy_handler_paged(translate_gitea_reactions, function(o, r, n)
+    return append_page_params(
+      base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/reactions",
+      PAGES
+    )
+  end),
+
+  -- POST /repos/{owner}/{repo}/issues/{issue_number}/reactions
+  post_issue_reaction = proxy_handler_created(translate_gitea_reaction, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/reactions",
+      "POST",
+      GetBody()
+  end),
+
+  -- DELETE /repos/{owner}/{repo}/issues/{issue_number}/reactions/{reaction_id}
+  delete_issue_reaction = function(owner, repo_name, issue_number, reaction_id)
+    delete_gitea_reaction(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/reactions",
+      reaction_id
+    )
+  end,
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}/labels
   get_issue_labels = proxy_handler(translate_gitea_labels, function(o, r, n)

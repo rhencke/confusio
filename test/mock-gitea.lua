@@ -39,6 +39,8 @@ function OnHttpRequest()
     .. '"draft":false,"prerelease":false,"created_at":"2020-01-01T00:00:00Z",'
     .. '"published_at":"2020-01-01T00:00:00Z","assets":[]}'
 
+  local REACTION = '{"user":' .. USER .. ',"reaction":"+1","created_at":"2020-01-01T00:00:00Z"}'
+
   local LABEL =
     '{"id":1,"name":"bug","color":"#d73a4a","description":"Something is not working","url":""}'
 
@@ -364,6 +366,17 @@ function OnHttpRequest()
     ["/api/v1/repos/octocat/hello-world/issues/1/events"] = { 200, "[" .. ISSUE_EVENT .. "]" },
     ["/api/v1/repos/octocat/hello-world/issues/1/timeline"] = { 200, "[" .. ISSUE_EVENT .. "]" },
     ["/api/v1/repos/octocat/hello-world/issues/1/labels"] = { 200, "[" .. LABEL .. "]" },
+
+    -- Reactions (issues and issue comments — Gitea has no commit/PR/release reactions)
+    ["/api/v1/repos/octocat/hello-world/issues/1/reactions"] = { 200, "[" .. REACTION .. "]" },
+    ["POST /api/v1/repos/octocat/hello-world/issues/1/reactions"] = { 200, REACTION },
+    ["DELETE /api/v1/repos/octocat/hello-world/issues/1/reactions"] = { 200, nil },
+    ["/api/v1/repos/octocat/hello-world/issues/comments/1/reactions"] = {
+      200,
+      "[" .. REACTION .. "]",
+    },
+    ["POST /api/v1/repos/octocat/hello-world/issues/comments/1/reactions"] = { 200, REACTION },
+    ["DELETE /api/v1/repos/octocat/hello-world/issues/comments/1/reactions"] = { 200, nil },
 
     -- Labels
     ["/api/v1/repos/octocat/hello-world/labels"] = { 200, "[" .. LABEL .. "]" },
