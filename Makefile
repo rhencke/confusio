@@ -46,7 +46,7 @@ ifneq (,$(or $(findstring MINGW,$(HURL_OS)),$(findstring MSYS,$(HURL_OS)),$(find
 	chmod +x hurl
 	rm hurl.zip
 else
-	curl -sL $(HURL_URL) | tar -xz --strip-components=2 hurl-$(HURL_VERSION)-$(HURL_PLATFORM)/bin/hurl
+	curl -fsSL $(HURL_URL) | tar -xz --strip-components=2 hurl-$(HURL_VERSION)-$(HURL_PLATFORM)/bin/hurl
 	chmod +x hurl
 endif
 
