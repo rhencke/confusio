@@ -1771,6 +1771,143 @@ _b.update_repo_dependabot_alert = function(owner, repo_name, alert_number)
   respond_json(200, translate_ado_dependency_alert(DecodeJson(body) or {}))
 end
 
+-- Secret Scanning via ADO Advanced Security -----------------------------------------
+--
+-- Azure DevOps Advanced Security exposes secret scanning alerts at the
+-- repository level via the same /_apis/advancedsecurity/alerts/{repo} endpoint
+-- used by code scanning, selecting alertType=secret:
+--   GET  /{owner}/_apis/advancedsecurity/alerts/{repo}?alertType=secret
+--   GET  /{owner}/_apis/advancedsecurity/alerts/{repo}/{alertId}
+--   PATCH /{owner}/_apis/advancedsecurity/alerts/{repo}/{alertId}
+--
+-- Org-level listing, alert locations, push-protection bypasses, and scan
+-- history have no ADO equivalent and fall back to defaults.
+--
+-- ADO secret alert fields:
+--   alertId, state, severity, firstSeenDate, fixedDate, dismissedDate,
+--   dismissal.{dismissalType, message}, rule.{id, name},
+--   logicalLocations[0].fullyQualifiedName (secret value)
+--
+-- ADO dismissal type → GitHub resolution mapping for secrets:
+--   falsePositive  → false_positive
+--   wontFix        → wont_fix
+--   usedInTests    → used_in_tests
+--   revokedSecret  → revoked
+
+local ADO_SECRET_DISMISS_REASON_TO_GH = {
+  falsePositive = "false_positive",
+  wontFix = "wont_fix",
+  usedInTests = "used_in_tests",
+  revokedSecret = "revoked",
+}
+
+local GH_SECRET_DISMISS_REASON_TO_ADO = {
+  false_positive = "falsePositive",
+  wont_fix = "wontFix",
+  used_in_tests = "usedInTests",
+  revoked = "revokedSecret",
+  pattern_deleted = "wontFix",
+  pattern_edited = "wontFix",
+}
+
+local ADO_SECRET_STATE_TO_GH = {
+  active = "open",
+  dismissed = "dismissed",
+  fixed = "resolved",
+}
+
+local function translate_ado_secret_alert(a)
+  if not a then
+    return {}
+  end
+  local state = ADO_SECRET_STATE_TO_GH[a.state or ""] or "open"
+  local dismissal = a.dismissal or {}
+  local resolution = ADO_SECRET_DISMISS_REASON_TO_GH[dismissal.dismissalType or ""]
+  local rule = a.rule or {}
+  local locs = a.logicalLocations or {}
+  local secret = (locs[1] or {}).fullyQualifiedName or ""
+  local resolved_at = a.fixedDate or a.dismissedDate
+  return {
+    number = a.alertId or 0,
+    created_at = a.firstSeenDate or "",
+    updated_at = a.firstSeenDate or "",
+    url = "",
+    html_url = "",
+    locations_url = "",
+    state = state,
+    resolution = resolution,
+    resolved_by = nil,
+    resolved_at = resolved_at,
+    resolution_comment = dismissal.message or nil,
+    secret_type = rule.id or "",
+    secret_type_display_name = rule.name or "",
+    secret = secret,
+    push_protection_bypassed = nil,
+    push_protection_bypassed_by = nil,
+    push_protection_bypassed_at = nil,
+    validity = "unknown",
+    publicly_leaked = false,
+    multi_repo = false,
+    auto_dismissed_at = nil,
+  }
+end
+
+_b.list_repo_secret_scanning_alerts = function(owner, repo_name)
+  local url = advsec_url(advsec_base(owner) .. "/alerts/" .. repo_name .. "?alertType=secret")
+  local ok, status, _, body = fetch_json(url)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local data = DecodeJson(body) or {}
+  local result = {}
+  for _, a in ipairs(data.value or {}) do
+    result[#result + 1] = translate_ado_secret_alert(a)
+  end
+  respond_json(200, result)
+end
+
+_b.get_secret_scanning_alert = function(owner, repo_name, alert_number)
+  local url = advsec_url(advsec_base(owner) .. "/alerts/" .. repo_name .. "/" .. alert_number)
+  local ok, status, _, body = fetch_json(url)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  respond_json(200, translate_ado_secret_alert(DecodeJson(body) or {}))
+end
+
+_b.update_secret_scanning_alert = function(owner, repo_name, alert_number)
+  local req = DecodeJson(GetBody() or "{}")
+  local ado_state = GH_STATE_TO_ADO[req.state or ""] or "active"
+  local patch = { state = ado_state }
+  if req.resolution then
+    patch.dismissal = {
+      dismissalType = GH_SECRET_DISMISS_REASON_TO_ADO[req.resolution] or "wontFix",
+      message = req.resolution_comment or "",
+    }
+  end
+  local url = advsec_url(advsec_base(owner) .. "/alerts/" .. repo_name .. "/" .. alert_number)
+  local ok, status, _, body = fetch_json(url, "PATCH", EncodeJson(patch))
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  respond_json(200, translate_ado_secret_alert(DecodeJson(body) or {}))
+end
+
 -- Git database (refs only; blobs/commits/tag-objects/trees have no ADO equivalent) ----
 
 local ZERO_SHA = "0000000000000000000000000000000000000000"

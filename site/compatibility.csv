@@ -212,9 +212,9 @@ Secret Scanning,,,,,,,,,,,,,,,,,,,,,,,,
 GET /orgs/{org}/secret-scanning/alerts,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
 GET /orgs/{org}/secret-scanning/pattern-configurations,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 PATCH /orgs/{org}/secret-scanning/pattern-configurations,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/secret-scanning/alerts,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
-GET /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-PATCH /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/secret-scanning/alerts,y,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
+GET /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number},y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+PATCH /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number},y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}/locations,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
 POST /repos/{owner}/{repo}/secret-scanning/push-protection-bypasses,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/secret-scanning/scan-history,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n

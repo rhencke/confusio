@@ -267,7 +267,7 @@ function OnHttpRequest()
         .. "]}"
     )
 
-  -- Advanced Security — alert list (code scanning or dependency) -------------
+  -- Advanced Security — alert list (code scanning, dependency, or secret) ------
   elseif path == "/octocat/_apis/advancedsecurity/alerts/hello-world" and method == "GET" then
     SetStatus(200, "OK")
     local alert_type = GetParam("alertType") or "code"
@@ -278,6 +278,13 @@ function OnHttpRequest()
           .. '"title":"Prototype Pollution in lodash",'
           .. '"cve":"CVE-2019-10744",'
           .. '"dependency":{"componentName":"lodash","componentVersion":"4.17.11","packageManager":"npm"}}]}'
+      )
+    elseif alert_type == "secret" then
+      json(
+        '{"count":1,"value":[{"alertId":3,"alertType":"secret","state":"active",'
+          .. '"severity":"critical","firstSeenDate":"2024-03-01T00:00:00Z",'
+          .. '"rule":{"id":"github-personal-access-token","name":"GitHub Personal Access Token"},'
+          .. '"logicalLocations":[{"fullyQualifiedName":"github_pat_EXAMPLE12345"}]}]}'
       )
     else
       json(
@@ -310,6 +317,28 @@ function OnHttpRequest()
         .. '"dismissal":{"dismissalType":"wontFix","message":"Not exploitable"},'
         .. '"rule":{"id":"CS001","name":"SQL Injection","description":"Untrusted input"},'
         .. '"physicalLocations":[]}'
+    )
+
+  -- Advanced Security — single secret alert 3 ----------------------------------
+  elseif path == "/octocat/_apis/advancedsecurity/alerts/hello-world/3" and method == "GET" then
+    SetStatus(200, "OK")
+    json(
+      '{"alertId":3,"alertType":"secret","state":"active",'
+        .. '"severity":"critical","firstSeenDate":"2024-03-01T00:00:00Z",'
+        .. '"rule":{"id":"github-personal-access-token","name":"GitHub Personal Access Token"},'
+        .. '"logicalLocations":[{"fullyQualifiedName":"github_pat_EXAMPLE12345"}]}'
+    )
+
+  -- Advanced Security — update secret alert 3 ----------------------------------
+  elseif path == "/octocat/_apis/advancedsecurity/alerts/hello-world/3" and method == "PATCH" then
+    SetStatus(200, "OK")
+    json(
+      '{"alertId":3,"alertType":"secret","state":"dismissed",'
+        .. '"severity":"critical","firstSeenDate":"2024-03-01T00:00:00Z",'
+        .. '"dismissedDate":"2024-03-02T00:00:00Z",'
+        .. '"dismissal":{"dismissalType":"revokedSecret","message":"Token has been rotated"},'
+        .. '"rule":{"id":"github-personal-access-token","name":"GitHub Personal Access Token"},'
+        .. '"logicalLocations":[{"fullyQualifiedName":"github_pat_EXAMPLE12345"}]}'
     )
 
   -- Advanced Security — single dependency alert 2 ----------------------------
