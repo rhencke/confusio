@@ -476,7 +476,8 @@ function OnHttpRequest()
   elseif path == pb .. "/issues/1/award_emoji" then
     local AWARD_USER = '{"id":1,"username":"octocat","name":"The Octocat","avatar_url":"",'
       .. '"web_url":"http://localhost/octocat"}'
-    local AWARD = '{"id":1,"name":"thumbsup","user":' .. AWARD_USER
+    local AWARD = '{"id":1,"name":"thumbsup","user":'
+      .. AWARD_USER
       .. ',"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",'
       .. '"awardable_id":1,"awardable_type":"Issue"}'
     if GetMethod() == "POST" then
@@ -493,7 +494,8 @@ function OnHttpRequest()
       local AWARD_USER = '{"id":1,"username":"octocat","name":"The Octocat","avatar_url":"",'
         .. '"web_url":"http://localhost/octocat"}'
       json(
-        '{"id":1,"name":"thumbsup","user":' .. AWARD_USER
+        '{"id":1,"name":"thumbsup","user":'
+          .. AWARD_USER
           .. ',"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",'
           .. '"awardable_id":1,"awardable_type":"Issue"}'
       )
