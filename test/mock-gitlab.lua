@@ -704,6 +704,56 @@ function OnHttpRequest()
   elseif path == pb .. "/export/download" then
     SetStatus(302, "Found")
     SetHeader("Location", "https://storage.example.com/octocat-hello-world-export.tar.gz")
+
+  -- Snippets (Gists) ----------------------------------------------------------
+  elseif path == "/api/v4/snippets" or path == "/api/v4/snippets/public" then
+    local SNIPPET = '{"id":36,"title":"Hello snippet","description":"","visibility":"public",'
+      .. '"author":{"id":1,"username":"octocat","name":"The Octocat","avatar_url":"","web_url":"https://gitlab.com/octocat"},'
+      .. '"created_at":"2012-06-28T10:52:04.000Z","updated_at":"2012-06-28T10:52:04.000Z",'
+      .. '"project_id":null,"web_url":"","raw_url":"",'
+      .. '"files":[{"path":"hello.txt","raw_url":""}]}'
+    if GetMethod() == "POST" then
+      SetStatus(201, "Created")
+      json(SNIPPET)
+    else
+      SetStatus(200, "OK")
+      json("[" .. SNIPPET .. "]")
+    end
+  elseif path == "/api/v4/snippets/36" then
+    if GetMethod() == "DELETE" then
+      SetStatus(204, "No Content")
+    else
+      SetStatus(200, "OK")
+      json(
+        '{"id":36,"title":"Hello snippet","description":"","visibility":"public",'
+          .. '"author":{"id":1,"username":"octocat","name":"The Octocat","avatar_url":"","web_url":"https://gitlab.com/octocat"},'
+          .. '"created_at":"2012-06-28T10:52:04.000Z","updated_at":"2012-06-28T10:52:04.000Z",'
+          .. '"project_id":null,"web_url":"","raw_url":"",'
+          .. '"files":[{"path":"hello.txt","raw_url":""}]}'
+      )
+    end
+  elseif path == "/api/v4/snippets/36/notes" then
+    local NOTE = '{"id":1,"body":"A comment",'
+      .. '"author":{"id":1,"username":"octocat","name":"The Octocat","avatar_url":"","web_url":""},'
+      .. '"created_at":"2013-10-02T08:57:14.000Z","updated_at":"2013-10-02T08:57:14.000Z"}'
+    if GetMethod() == "POST" then
+      SetStatus(201, "Created")
+      json(NOTE)
+    else
+      SetStatus(200, "OK")
+      json("[" .. NOTE .. "]")
+    end
+  elseif path == "/api/v4/snippets/36/notes/1" then
+    if GetMethod() == "DELETE" then
+      SetStatus(204, "No Content")
+    else
+      SetStatus(200, "OK")
+      json(
+        '{"id":1,"body":"A comment",'
+          .. '"author":{"id":1,"username":"octocat","name":"The Octocat","avatar_url":"","web_url":""},'
+          .. '"created_at":"2013-10-02T08:57:14.000Z","updated_at":"2013-10-02T08:57:14.000Z"}'
+      )
+    end
   else
     SetStatus(404, "Not Found")
   end
