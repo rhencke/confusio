@@ -507,6 +507,16 @@ local function gists_not_implemented()
   respond_json(501, { message = "Gists are not supported by this backend." })
 end
 
+-- Default handlers for Activity endpoints: event feeds, notifications, starring, and watching.
+-- List endpoints return empty arrays (200); per-resource and mutation endpoints return 501.
+local function activity_not_implemented()
+  respond_json(501, { message = "This activity endpoint is not supported by this backend." })
+end
+
+local function activity_list_empty()
+  respond_json(200, {})
+end
+
 -- Default handlers for GET /zen, GET /octocat, GET /versions, GET /meta.
 -- These endpoints are fully self-contained and do not call any backend.
 local ZEN_QUOTES = {
@@ -1229,6 +1239,39 @@ local route_defaults = {
   delete_gist_star = gists_not_implemented,
   get_gist_revision = gists_not_implemented,
   get_user_gists = empty_list,
+  -- Activity (https://docs.github.com/en/rest/activity)
+  get_events = activity_list_empty,
+  get_feeds = activity_not_implemented,
+  get_network_events = activity_list_empty,
+  get_org_events = activity_list_empty,
+  get_notifications = activity_list_empty,
+  put_notifications = activity_not_implemented,
+  get_notification_thread = activity_not_implemented,
+  patch_notification_thread = activity_not_implemented,
+  delete_notification_thread = activity_not_implemented,
+  get_notification_thread_subscription = activity_not_implemented,
+  put_notification_thread_subscription = activity_not_implemented,
+  delete_notification_thread_subscription = activity_not_implemented,
+  get_repo_events = activity_list_empty,
+  get_repo_notifications = activity_list_empty,
+  put_repo_notifications = activity_not_implemented,
+  get_repo_stargazers = activity_list_empty,
+  get_repo_subscribers = activity_list_empty,
+  get_repo_subscription = activity_not_implemented,
+  put_repo_subscription = activity_not_implemented,
+  delete_repo_subscription = activity_not_implemented,
+  get_user_starred = activity_list_empty,
+  get_user_starred_repo = activity_not_implemented,
+  put_user_starred_repo = activity_not_implemented,
+  delete_user_starred_repo = activity_not_implemented,
+  get_user_subscriptions = activity_list_empty,
+  get_users_events = activity_list_empty,
+  get_users_org_events = activity_list_empty,
+  get_users_public_events = activity_list_empty,
+  get_users_received_events = activity_list_empty,
+  get_users_received_public_events = activity_list_empty,
+  get_users_starred = activity_list_empty,
+  get_users_subscriptions = activity_list_empty,
 }
 
 -- ---------------------------------------------------------------------------
@@ -1282,6 +1325,40 @@ local routes = {
   ["DELETE /gists/{gist_id}/star"] = "delete_gist_star",
   ["GET /gists/{gist_id}/{sha}"] = "get_gist_revision",
   ["GET /users/{username}/gists"] = "get_user_gists",
+
+  -- Activity (https://docs.github.com/en/rest/activity)
+  ["GET /events"] = "get_events",
+  ["GET /feeds"] = "get_feeds",
+  ["GET /networks/{owner}/{repo}/events"] = "get_network_events",
+  ["GET /notifications"] = "get_notifications",
+  ["PUT /notifications"] = "put_notifications",
+  ["GET /notifications/threads/{thread_id}"] = "get_notification_thread",
+  ["PATCH /notifications/threads/{thread_id}"] = "patch_notification_thread",
+  ["DELETE /notifications/threads/{thread_id}"] = "delete_notification_thread",
+  ["GET /notifications/threads/{thread_id}/subscription"] = "get_notification_thread_subscription",
+  ["PUT /notifications/threads/{thread_id}/subscription"] = "put_notification_thread_subscription",
+  ["DELETE /notifications/threads/{thread_id}/subscription"] = "delete_notification_thread_subscription",
+  ["GET /orgs/{org}/events"] = "get_org_events",
+  ["GET /repos/{owner}/{repo}/events"] = "get_repo_events",
+  ["GET /repos/{owner}/{repo}/notifications"] = "get_repo_notifications",
+  ["PUT /repos/{owner}/{repo}/notifications"] = "put_repo_notifications",
+  ["GET /repos/{owner}/{repo}/stargazers"] = "get_repo_stargazers",
+  ["GET /repos/{owner}/{repo}/subscribers"] = "get_repo_subscribers",
+  ["GET /repos/{owner}/{repo}/subscription"] = "get_repo_subscription",
+  ["PUT /repos/{owner}/{repo}/subscription"] = "put_repo_subscription",
+  ["DELETE /repos/{owner}/{repo}/subscription"] = "delete_repo_subscription",
+  ["GET /user/starred"] = "get_user_starred",
+  ["GET /user/starred/{owner}/{repo}"] = "get_user_starred_repo",
+  ["PUT /user/starred/{owner}/{repo}"] = "put_user_starred_repo",
+  ["DELETE /user/starred/{owner}/{repo}"] = "delete_user_starred_repo",
+  ["GET /user/subscriptions"] = "get_user_subscriptions",
+  ["GET /users/{username}/events"] = "get_users_events",
+  ["GET /users/{username}/events/orgs/{org}"] = "get_users_org_events",
+  ["GET /users/{username}/events/public"] = "get_users_public_events",
+  ["GET /users/{username}/received_events"] = "get_users_received_events",
+  ["GET /users/{username}/received_events/public"] = "get_users_received_public_events",
+  ["GET /users/{username}/starred"] = "get_users_starred",
+  ["GET /users/{username}/subscriptions"] = "get_users_subscriptions",
 
   -- Repos core (https://docs.github.com/en/rest/repos/repos)
   ["GET /repos/{owner}/{repo}"] = "get_repo",
