@@ -3914,3 +3914,76 @@ _b.get_user_gists = function(_username)
   -- GitLab doesn't expose per-user public snippet lists; approximate with own snippets.
   proxy_list_gl(translate_gl_snippets, fetch_json(base() .. "/snippets"))
 end
+
+-- ── Reactions (GitLab award emoji) ────────────────────────────────────────────
+-- GitLab award emoji → GitHub reaction content (8 supported types).
+local GL_EMOJI_TO_CONTENT = {
+  thumbsup = "+1",
+  thumbsdown = "-1",
+  laughing = "laugh",
+  confused = "confused",
+  heart = "heart",
+  tada = "hooray",
+  rocket = "rocket",
+  eyes = "eyes",
+}
+local CONTENT_TO_GL_EMOJI = {
+  ["+1"] = "thumbsup",
+  ["-1"] = "thumbsdown",
+  laugh = "laughing",
+  confused = "confused",
+  heart = "heart",
+  hooray = "tada",
+  rocket = "rocket",
+  eyes = "eyes",
+}
+
+local function translate_gl_award(a)
+  if not a then return {} end
+  local user = translate_gl_user(a.user or {})
+  return {
+    id = a.id,
+    node_id = "",
+    user = user,
+    content = GL_EMOJI_TO_CONTENT[a.name] or a.name,
+    created_at = a.created_at or "2020-01-01T00:00:00Z",
+  }
+end
+
+local function translate_gl_awards(awards)
+  for i, a in ipairs(awards) do awards[i] = translate_gl_award(a) end
+  return awards
+end
+
+-- Issue reactions: GitLab has full award_emoji support on issues.
+_b.get_issue_reactions = proxy_handler_paged(translate_gl_awards, function(owner, repo_name, issue_number)
+  return append_page_params(
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number .. "/award_emoji",
+    PAGES
+  )
+end)
+
+_b.post_issue_reaction = proxy_handler_created(translate_gl_award, function(owner, repo_name, issue_number)
+  local req = DecodeJson(GetBody() or "{}") or {}
+  local emoji = CONTENT_TO_GL_EMOJI[req.content or ""] or req.content or ""
+  return base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number .. "/award_emoji",
+    "POST",
+    EncodeJson({ name = emoji })
+end)
+
+_b.delete_issue_reaction = function(owner, repo_name, issue_number, reaction_id)
+  local url = base()
+    .. "/projects/" .. project_id(owner, repo_name)
+    .. "/issues/" .. issue_number
+    .. "/award_emoji/" .. reaction_id
+  local dopts = auth() or {}
+  dopts.method = "DELETE"
+  local ok, status, _, body = pcall(Fetch, url, dopts)
+  if ok and status == 204 then
+    SetStatus(204, "No Content")
+  elseif ok then
+    respond_json(status, DecodeJson(body) or {})
+  else
+    respond_json(503, {})
+  end
+end
