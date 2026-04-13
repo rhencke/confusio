@@ -1183,6 +1183,22 @@ eq(
   "OnHttpRequest: GET /orgs/{org}/projectsV2/{project_number} → 501 (projects not implemented)"
 )
 
+-- GET /orgs/{org}/secret-scanning/alerts — secret_scanning_list_empty default → 200
+reset_response()
+reset_request({ method = "GET", path = "/orgs/myorg/secret-scanning/alerts" })
+OnHttpRequest()
+eq(_last_status, 200, "OnHttpRequest: GET /orgs/{org}/secret-scanning/alerts → 200 (empty list)")
+
+-- GET /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number} — secret_scanning_not_implemented default → 501
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/secret-scanning/alerts/1" })
+OnHttpRequest()
+eq(
+  _last_status,
+  501,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number} → 501 (not implemented)"
+)
+
 -- ============================================================
 -- Summary
 -- ============================================================
