@@ -700,6 +700,32 @@ function OnHttpRequest()
         .. '"truncated":false}',
     },
 
+    -- Activity: starring, watching, and subscriptions
+    ["/api/v1/repos/octocat/hello-world/stargazers"] = { 200, "[" .. USER .. "]" },
+    ["/api/v1/repos/octocat/hello-world/subscribers"] = { 200, "[" .. USER .. "]" },
+    ["/api/v1/repos/octocat/hello-world/subscription"] = {
+      200,
+      '{"subscribed":true,"ignored":false,"reason":null,'
+        .. '"created_at":"2020-01-01T00:00:00Z",'
+        .. '"url":"http://localhost/api/v1/repos/octocat/hello-world/subscription",'
+        .. '"repository_url":"http://localhost/api/v1/repos/octocat/hello-world"}',
+    },
+    ["PUT /api/v1/repos/octocat/hello-world/subscription"] = {
+      200,
+      '{"subscribed":true,"ignored":false,"reason":null,'
+        .. '"created_at":"2020-01-01T00:00:00Z",'
+        .. '"url":"http://localhost/api/v1/repos/octocat/hello-world/subscription",'
+        .. '"repository_url":"http://localhost/api/v1/repos/octocat/hello-world"}',
+    },
+    ["DELETE /api/v1/repos/octocat/hello-world/subscription"] = { 204, nil },
+    ["/api/v1/user/starred"] = { 200, "[" .. REPO .. "]" },
+    ["GET /api/v1/user/starred/octocat/hello-world"] = { 204, nil },
+    ["PUT /api/v1/user/starred/octocat/hello-world"] = { 204, nil },
+    ["DELETE /api/v1/user/starred/octocat/hello-world"] = { 204, nil },
+    ["/api/v1/user/subscriptions"] = { 200, "[" .. REPO .. "]" },
+    ["/api/v1/users/octocat/starred"] = { 200, "[" .. REPO .. "]" },
+    ["/api/v1/users/octocat/subscriptions"] = { 200, "[" .. REPO .. "]" },
+
     -- Interactions: Gitea has no GitHub Interactions API; confusio returns stubs directly.
     -- These routes document what the backend would return if ever proxied.
     ["GET /orgs/testorg/interaction-limits"] = { 404, nil },

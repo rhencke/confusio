@@ -3187,4 +3187,103 @@ backend_impl = {
       fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/trees/" .. tree_sha)
     )
   end,
+
+  -- Activity (https://docs.github.com/en/rest/activity)
+  -- Gitea supports starring, watching, and subscription endpoints.
+  -- Events feeds and notifications have no Gitea equivalent.
+
+  get_repo_stargazers = function(owner, repo_name)
+    proxy_json_paged(
+      translate_users,
+      PAGES,
+      fetch_json(
+        append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/stargazers", PAGES)
+      )
+    )
+  end,
+
+  get_repo_subscribers = function(owner, repo_name)
+    proxy_json_paged(
+      translate_users,
+      PAGES,
+      fetch_json(
+        append_page_params(
+          base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscribers",
+          PAGES
+        )
+      )
+    )
+  end,
+
+  get_repo_subscription = function(owner, repo_name)
+    proxy_json(nil, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscription"))
+  end,
+
+  put_repo_subscription = function(owner, repo_name)
+    proxy_json(
+      nil,
+      fetch_json(
+        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscription",
+        "PUT",
+        GetBody()
+      )
+    )
+  end,
+
+  delete_repo_subscription = function(owner, repo_name)
+    set_204_or_error("DELETE", base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscription")
+  end,
+
+  get_user_starred = function()
+    proxy_json_paged(
+      translate_repos,
+      PAGES,
+      fetch_json(append_page_params(base() .. "/user/starred", PAGES))
+    )
+  end,
+
+  get_user_starred_repo = function(owner, repo_name)
+    local ok, status = fetch_json(base() .. "/user/starred/" .. owner .. "/" .. repo_name)
+    if ok and status == 204 then
+      SetStatus(204, "No Content")
+    elseif ok and status == 404 then
+      respond_json(404, { message = "Not Found" })
+    elseif ok then
+      respond_json(status, {})
+    else
+      respond_json(503, {})
+    end
+  end,
+
+  put_user_starred_repo = function(owner, repo_name)
+    set_204_or_error("PUT", base() .. "/user/starred/" .. owner .. "/" .. repo_name)
+  end,
+
+  delete_user_starred_repo = function(owner, repo_name)
+    set_204_or_error("DELETE", base() .. "/user/starred/" .. owner .. "/" .. repo_name)
+  end,
+
+  get_user_subscriptions = function()
+    proxy_json_paged(
+      translate_repos,
+      PAGES,
+      fetch_json(append_page_params(base() .. "/user/subscriptions", PAGES))
+    )
+  end,
+
+  get_users_starred = function(username)
+    proxy_json_paged(
+      translate_repos,
+      PAGES,
+      fetch_json(append_page_params(base() .. "/users/" .. username .. "/starred", PAGES))
+    )
+  end,
+
+  get_users_subscriptions = function(username)
+    proxy_json_paged(
+      translate_repos,
+      PAGES,
+      fetch_json(append_page_params(base() .. "/users/" .. username .. "/subscriptions", PAGES))
+    )
+  end,
 }

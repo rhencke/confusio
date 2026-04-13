@@ -1205,6 +1205,19 @@ reset_request({ method = "POST", path = "/gists" })
 OnHttpRequest()
 eq(_last_status, 501, "OnHttpRequest: POST /gists → 501 (gists not supported)")
 
+-- GET /events — activity_list_empty default → 200 []
+reset_response()
+reset_request({ method = "GET", path = "/events" })
+OnHttpRequest()
+eq(_last_status, 200, "OnHttpRequest: GET /events → 200 (activity list empty)")
+eq(_last_body, "[]", "OnHttpRequest: GET /events → body is []")
+
+-- GET /feeds — activity_not_implemented default → 501
+reset_response()
+reset_request({ method = "GET", path = "/feeds" })
+OnHttpRequest()
+eq(_last_status, 501, "OnHttpRequest: GET /feeds → 501 (activity not implemented)")
+
 -- ============================================================
 -- Summary
 -- ============================================================
