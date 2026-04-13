@@ -316,6 +316,15 @@ function OnHttpRequest()
         .. '"pagelen":30,"size":1,"page":1}'
     )
 
+  -- Activity: watchers (used for both stargazers and subscribers) -----------
+  elseif path == rb .. "/watchers" then
+    SetStatus(200, "OK")
+    json(
+      '{"values":[{"account_id":"abc123","nickname":"octocat","display_name":"The Octocat",'
+        .. '"links":{"avatar":{"href":""},"html":{"href":"http://bitbucket.org/octocat"}}}],'
+        .. '"pagelen":30,"size":1,"page":1}'
+    )
+
   -- Users ------------------------------------------------------------------
   elseif path == "/2.0/user" then
     SetStatus(200, "OK")
