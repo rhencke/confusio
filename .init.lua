@@ -518,6 +518,12 @@ local function activity_list_empty()
   Write("[]")
 end
 
+-- Default handlers for Reactions endpoints (commit comments, issue comments, issues, PR comments, releases).
+-- List endpoints return empty arrays (200); create and delete endpoints return 501.
+local function reactions_not_implemented()
+  respond_json(501, { message = "Reactions are not supported by this backend." })
+end
+
 -- Default handlers for GET /zen, GET /octocat, GET /versions, GET /meta.
 -- These endpoints are fully self-contained and do not call any backend.
 local ZEN_QUOTES = {
@@ -740,6 +746,8 @@ local route_defaults = {
   get_repo_pulls = empty_list,
   get_repo_pull_comments = empty_list,
   get_repo_pull_comment_reactions = empty_list,
+  post_repo_pull_comment_reaction = reactions_not_implemented,
+  delete_repo_pull_comment_reaction = reactions_not_implemented,
   get_pull_codespaces = empty_list,
   get_pull_comments = empty_list,
   get_pull_commits = empty_list,
@@ -748,6 +756,19 @@ local route_defaults = {
   get_pull_reviews = empty_list,
   get_pull_review_comments = empty_list,
   get_commit_pulls = empty_list,
+  -- Reactions (https://docs.github.com/en/rest/reactions)
+  get_repo_comment_reactions = empty_list,
+  post_repo_comment_reaction = reactions_not_implemented,
+  delete_repo_comment_reaction = reactions_not_implemented,
+  get_repo_issue_comment_reactions = empty_list,
+  post_repo_issue_comment_reaction = reactions_not_implemented,
+  delete_repo_issue_comment_reaction = reactions_not_implemented,
+  get_issue_reactions = empty_list,
+  post_issue_reaction = reactions_not_implemented,
+  delete_issue_reaction = reactions_not_implemented,
+  get_repo_release_reactions = empty_list,
+  post_repo_release_reaction = reactions_not_implemented,
+  delete_repo_release_reaction = reactions_not_implemented,
   -- Search
   search_code = search_empty,
   search_commits = search_empty,
@@ -1393,6 +1414,9 @@ local routes = {
   ["GET /repos/{owner}/{repo}/comments/{comment_id}"] = "get_repo_comment",
   ["PATCH /repos/{owner}/{repo}/comments/{comment_id}"] = "patch_repo_comment",
   ["DELETE /repos/{owner}/{repo}/comments/{comment_id}"] = "delete_repo_comment",
+  ["GET /repos/{owner}/{repo}/comments/{comment_id}/reactions"] = "get_repo_comment_reactions",
+  ["POST /repos/{owner}/{repo}/comments/{comment_id}/reactions"] = "post_repo_comment_reaction",
+  ["DELETE /repos/{owner}/{repo}/comments/{comment_id}/reactions/{reaction_id}"] = "delete_repo_comment_reaction",
   ["GET /repos/{owner}/{repo}/commits/{commit_sha}/comments"] = "get_commit_comments",
   ["POST /repos/{owner}/{repo}/commits/{commit_sha}/comments"] = "post_commit_comment",
 
@@ -1443,6 +1467,9 @@ local routes = {
   ["GET /repos/{owner}/{repo}/releases/assets/{asset_id}"] = "get_repo_release_asset",
   ["PATCH /repos/{owner}/{repo}/releases/assets/{asset_id}"] = "patch_repo_release_asset",
   ["DELETE /repos/{owner}/{repo}/releases/assets/{asset_id}"] = "delete_repo_release_asset",
+  ["GET /repos/{owner}/{repo}/releases/{release_id}/reactions"] = "get_repo_release_reactions",
+  ["POST /repos/{owner}/{repo}/releases/{release_id}/reactions"] = "post_repo_release_reaction",
+  ["DELETE /repos/{owner}/{repo}/releases/{release_id}/reactions/{reaction_id}"] = "delete_repo_release_reaction",
 
   -- Deploy keys (https://docs.github.com/en/rest/deploy-keys)
   ["GET /repos/{owner}/{repo}/keys"] = "get_repo_keys",
@@ -1551,6 +1578,9 @@ local routes = {
   ["DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}"] = "delete_repo_issue_comment",
   ["PUT /repos/{owner}/{repo}/issues/comments/{comment_id}/pin"] = "put_repo_issue_comment_pin",
   ["DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}/pin"] = "delete_repo_issue_comment_pin",
+  ["GET /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions"] = "get_repo_issue_comment_reactions",
+  ["POST /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions"] = "post_repo_issue_comment_reaction",
+  ["DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{reaction_id}"] = "delete_repo_issue_comment_reaction",
   ["GET /repos/{owner}/{repo}/issues/events"] = "get_repo_issue_events",
   ["GET /repos/{owner}/{repo}/issues/events/{event_id}"] = "get_repo_issue_event",
   ["GET /repos/{owner}/{repo}/issues/{issue_number}"] = "get_repo_issue",
@@ -1579,6 +1609,9 @@ local routes = {
   ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/sub_issue"] = "delete_issue_sub_issue",
   ["PATCH /repos/{owner}/{repo}/issues/{issue_number}/sub_issues/priority"] = "patch_issue_sub_issues_priority",
   ["GET /repos/{owner}/{repo}/issues/{issue_number}/timeline"] = "get_issue_timeline",
+  ["GET /repos/{owner}/{repo}/issues/{issue_number}/reactions"] = "get_issue_reactions",
+  ["POST /repos/{owner}/{repo}/issues/{issue_number}/reactions"] = "post_issue_reaction",
+  ["DELETE /repos/{owner}/{repo}/issues/{issue_number}/reactions/{reaction_id}"] = "delete_issue_reaction",
 
   -- Assignees (https://docs.github.com/en/rest/issues/assignees)
   ["GET /repos/{owner}/{repo}/assignees"] = "get_repo_assignees",
