@@ -1199,6 +1199,12 @@ eq(
   "OnHttpRequest: GET /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number} → 501 (not implemented)"
 )
 
+-- POST /gists — gists_not_implemented default → 501
+reset_response()
+reset_request({ method = "POST", path = "/gists" })
+OnHttpRequest()
+eq(_last_status, 501, "OnHttpRequest: POST /gists → 501 (gists not supported)")
+
 -- ============================================================
 -- Summary
 -- ============================================================
