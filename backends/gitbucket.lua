@@ -1407,4 +1407,66 @@ backend_impl = {
   get_git_tree = proxy_handler(nil, function(o, r, sha)
     return base() .. "/repos/" .. o .. "/" .. r .. "/git/trees/" .. sha
   end),
+
+  -- Gists (GitHub-compatible passthrough) ------------------------------------
+  get_gists = proxy_handler(nil, function()
+    return base() .. "/gists"
+  end),
+  post_gists = function()
+    proxy_json_created(nil, fetch_json(base() .. "/gists", "POST", GetBody()))
+  end,
+  get_gists_public = proxy_handler(nil, function()
+    return base() .. "/gists/public"
+  end),
+  get_gists_starred = proxy_handler(nil, function()
+    return base() .. "/gists/starred"
+  end),
+  get_gist = proxy_handler(nil, function(id)
+    return base() .. "/gists/" .. id
+  end),
+  patch_gist = function(id)
+    proxy_json(nil, fetch_json(base() .. "/gists/" .. id, "PATCH", GetBody()))
+  end,
+  delete_gist = function(id)
+    set_204_or_error("DELETE", base() .. "/gists/" .. id)
+  end,
+  get_gist_comments = proxy_handler(nil, function(id)
+    return base() .. "/gists/" .. id .. "/comments"
+  end),
+  post_gist_comment = function(id)
+    proxy_json_created(nil, fetch_json(base() .. "/gists/" .. id .. "/comments", "POST", GetBody()))
+  end,
+  get_gist_comment = proxy_handler(nil, function(id, cid)
+    return base() .. "/gists/" .. id .. "/comments/" .. cid
+  end),
+  patch_gist_comment = function(id, cid)
+    proxy_json(
+      nil,
+      fetch_json(base() .. "/gists/" .. id .. "/comments/" .. cid, "PATCH", GetBody())
+    )
+  end,
+  delete_gist_comment = function(id, cid)
+    set_204_or_error("DELETE", base() .. "/gists/" .. id .. "/comments/" .. cid)
+  end,
+  get_gist_commits = proxy_handler(nil, function(id)
+    return base() .. "/gists/" .. id .. "/commits"
+  end),
+  get_gist_forks = proxy_handler(nil, function(id)
+    return base() .. "/gists/" .. id .. "/forks"
+  end),
+  get_gist_star = function(id)
+    set_204_or_error("GET", base() .. "/gists/" .. id .. "/star")
+  end,
+  put_gist_star = function(id)
+    set_204_or_error("PUT", base() .. "/gists/" .. id .. "/star")
+  end,
+  delete_gist_star = function(id)
+    set_204_or_error("DELETE", base() .. "/gists/" .. id .. "/star")
+  end,
+  get_gist_revision = proxy_handler(nil, function(id, sha)
+    return base() .. "/gists/" .. id .. "/" .. sha
+  end),
+  get_user_gists = proxy_handler(nil, function(user)
+    return base() .. "/users/" .. user .. "/gists"
+  end),
 }

@@ -49,25 +49,25 @@ GET /user/keys,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 GET /user/gpg_keys,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 GET /user/emails,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 Gists,,,,,,,,,,,,,,,,,,,,,,,,
-GET /gists,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-POST /gists,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /gists/public,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /gists/starred,n,~no starred-snippets list,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /gists/{gist_id},n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-PATCH /gists/{gist_id},n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-DELETE /gists/{gist_id},n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /gists/{gist_id}/comments,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-POST /gists/{gist_id}/comments,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /gists/{gist_id}/comments/{comment_id},n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-PATCH /gists/{gist_id}/comments/{comment_id},n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-DELETE /gists/{gist_id}/comments/{comment_id},n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /gists/{gist_id}/commits,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /gists/{gist_id}/forks,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /gists,n,y,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+POST /gists,n,y,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /gists/public,n,y,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /gists/starred,n,~no starred-snippets list,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /gists/{gist_id},n,y,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+PATCH /gists/{gist_id},n,y,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+DELETE /gists/{gist_id},n,y,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /gists/{gist_id}/comments,n,y,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+POST /gists/{gist_id}/comments,n,y,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /gists/{gist_id}/comments/{comment_id},n,y,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+PATCH /gists/{gist_id}/comments/{comment_id},n,y,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+DELETE /gists/{gist_id}/comments/{comment_id},n,y,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /gists/{gist_id}/commits,n,y,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /gists/{gist_id}/forks,n,y,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 POST /gists/{gist_id}/forks,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /gists/{gist_id}/star,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-PUT /gists/{gist_id}/star,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-DELETE /gists/{gist_id}/star,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-GET /gists/{gist_id}/{sha},n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /gists/{gist_id}/star,n,y,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+PUT /gists/{gist_id}/star,n,y,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+DELETE /gists/{gist_id}/star,n,y,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /gists/{gist_id}/{sha},n,y,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /users/{username}/gists,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 Teams,,,,,,,,,,,,,,,,,,,,,,,,
 GET /orgs/{org}/teams,y,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
