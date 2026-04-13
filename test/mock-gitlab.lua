@@ -568,22 +568,38 @@ function OnHttpRequest()
         .. '"size":100,"encoding":"base64","content":"SGVsbG8gV29ybGQ="}'
     )
 
-  -- Vulnerabilities (Dependabot alerts) -----------------------------------------
-  -- Requires GitLab Ultimate; returns dependency_scanning vulnerabilities.
+  -- Vulnerabilities (Dependabot alerts + Secret Scanning) ----------------------
+  -- Requires GitLab Ultimate. Filters by report_type when provided.
   elseif path == pb .. "/vulnerabilities" then
     SetStatus(200, "OK")
-    json(
-      '[{"id":1,"title":"Prototype Pollution in lodash",'
-        .. '"description":"lodash before 4.17.12 is vulnerable to Prototype Pollution in the function zipObjectDeep.",'
-        .. '"state":"detected","severity":"high","confidence":"high",'
-        .. '"report_type":"dependency_scanning",'
-        .. '"created_at":"2021-01-01T00:00:00Z","updated_at":"2021-01-01T00:00:00Z",'
-        .. '"dismissed_at":null,"dismissed_reason":null,'
-        .. '"identifiers":[{"type":"cve","name":"CVE-2019-10744","value":"CVE-2019-10744",'
-        .. '"url":"https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2019-10744"}],'
-        .. '"location":{"file":"package-lock.json",'
-        .. '"dependency":{"package":{"name":"lodash"},"version":"4.17.11"}}}]'
-    )
+    local report_type = GetParam("report_type") or ""
+    if report_type == "secret_detection" then
+      json(
+        '[{"id":2,"title":"GitLab Personal Access Token",'
+          .. '"description":"A GitLab personal access token was detected.",'
+          .. '"state":"detected","severity":"critical","confidence":"high",'
+          .. '"report_type":"secret_detection",'
+          .. '"created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z",'
+          .. '"dismissed_at":null,"dismissed_reason":null,'
+          .. '"scanner":{"id":"gitlab_pat_scanner","name":"GitLab Token Scanner"},'
+          .. '"identifiers":[{"type":"secret_detection","name":"GitLab Personal Access Token",'
+          .. '"value":"gitlab_personal_access_token"}],'
+          .. '"location":{"file":"config/database.yml"}}]'
+      )
+    else
+      json(
+        '[{"id":1,"title":"Prototype Pollution in lodash",'
+          .. '"description":"lodash before 4.17.12 is vulnerable to Prototype Pollution in the function zipObjectDeep.",'
+          .. '"state":"detected","severity":"high","confidence":"high",'
+          .. '"report_type":"dependency_scanning",'
+          .. '"created_at":"2021-01-01T00:00:00Z","updated_at":"2021-01-01T00:00:00Z",'
+          .. '"dismissed_at":null,"dismissed_reason":null,'
+          .. '"identifiers":[{"type":"cve","name":"CVE-2019-10744","value":"CVE-2019-10744",'
+          .. '"url":"https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2019-10744"}],'
+          .. '"location":{"file":"package-lock.json",'
+          .. '"dependency":{"package":{"name":"lodash"},"version":"4.17.11"}}}]'
+      )
+    end
   elseif path == pb .. "/vulnerabilities/1" then
     SetStatus(200, "OK")
     json(
@@ -612,20 +628,68 @@ function OnHttpRequest()
         .. '"location":{"file":"package-lock.json",'
         .. '"dependency":{"package":{"name":"lodash"},"version":"4.17.11"}}}'
     )
-  elseif path == "/api/v4/groups/testorg/vulnerabilities" then
+
+  -- Single secret scanning vulnerability (id=2) --------------------------------
+  elseif path == pb .. "/vulnerabilities/2" then
     SetStatus(200, "OK")
     json(
-      '[{"id":1,"title":"Prototype Pollution in lodash",'
-        .. '"description":"lodash before 4.17.12 is vulnerable to Prototype Pollution in the function zipObjectDeep.",'
-        .. '"state":"detected","severity":"high","confidence":"high",'
-        .. '"report_type":"dependency_scanning",'
-        .. '"created_at":"2021-01-01T00:00:00Z","updated_at":"2021-01-01T00:00:00Z",'
+      '{"id":2,"title":"GitLab Personal Access Token",'
+        .. '"description":"A GitLab personal access token was detected.",'
+        .. '"state":"detected","severity":"critical","confidence":"high",'
+        .. '"report_type":"secret_detection",'
+        .. '"created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z",'
         .. '"dismissed_at":null,"dismissed_reason":null,'
-        .. '"identifiers":[{"type":"cve","name":"CVE-2019-10744","value":"CVE-2019-10744",'
-        .. '"url":"https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2019-10744"}],'
-        .. '"location":{"file":"package-lock.json",'
-        .. '"dependency":{"package":{"name":"lodash"},"version":"4.17.11"}}}]'
+        .. '"scanner":{"id":"gitlab_pat_scanner","name":"GitLab Token Scanner"},'
+        .. '"identifiers":[{"type":"secret_detection","name":"GitLab Personal Access Token",'
+        .. '"value":"gitlab_personal_access_token"}],'
+        .. '"location":{"file":"config/database.yml"}}'
     )
+
+  -- Dismiss secret scanning vulnerability (id=2) --------------------------------
+  elseif path == "/api/v4/vulnerabilities/2/dismiss" and GetMethod() == "POST" then
+    SetStatus(200, "OK")
+    json(
+      '{"id":2,"title":"GitLab Personal Access Token",'
+        .. '"description":"A GitLab personal access token was detected.",'
+        .. '"state":"dismissed","severity":"critical","confidence":"high",'
+        .. '"report_type":"secret_detection",'
+        .. '"created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-02T00:00:00Z",'
+        .. '"dismissed_at":"2024-01-02T00:00:00Z","dismissed_reason":"false_positive",'
+        .. '"scanner":{"id":"gitlab_pat_scanner","name":"GitLab Token Scanner"},'
+        .. '"identifiers":[{"type":"secret_detection","name":"GitLab Personal Access Token",'
+        .. '"value":"gitlab_personal_access_token"}],'
+        .. '"location":{"file":"config/database.yml"}}'
+    )
+  elseif path == "/api/v4/groups/testorg/vulnerabilities" then
+    SetStatus(200, "OK")
+    local report_type = GetParam("report_type") or ""
+    if report_type == "secret_detection" then
+      json(
+        '[{"id":2,"title":"GitLab Personal Access Token",'
+          .. '"description":"A GitLab personal access token was detected.",'
+          .. '"state":"detected","severity":"critical","confidence":"high",'
+          .. '"report_type":"secret_detection",'
+          .. '"created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z",'
+          .. '"dismissed_at":null,"dismissed_reason":null,'
+          .. '"scanner":{"id":"gitlab_pat_scanner","name":"GitLab Token Scanner"},'
+          .. '"identifiers":[{"type":"secret_detection","name":"GitLab Personal Access Token",'
+          .. '"value":"gitlab_personal_access_token"}],'
+          .. '"location":{"file":"config/database.yml"}}]'
+      )
+    else
+      json(
+        '[{"id":1,"title":"Prototype Pollution in lodash",'
+          .. '"description":"lodash before 4.17.12 is vulnerable to Prototype Pollution in the function zipObjectDeep.",'
+          .. '"state":"detected","severity":"high","confidence":"high",'
+          .. '"report_type":"dependency_scanning",'
+          .. '"created_at":"2021-01-01T00:00:00Z","updated_at":"2021-01-01T00:00:00Z",'
+          .. '"dismissed_at":null,"dismissed_reason":null,'
+          .. '"identifiers":[{"type":"cve","name":"CVE-2019-10744","value":"CVE-2019-10744",'
+          .. '"url":"https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2019-10744"}],'
+          .. '"location":{"file":"package-lock.json",'
+          .. '"dependency":{"package":{"name":"lodash"},"version":"4.17.11"}}}]'
+      )
+    end
 
   -- Migrations: GitLab has per-project export, not GitHub-style org/user migrations.
   -- confusio returns fixed responses without proxying, but routes are documented here.

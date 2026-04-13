@@ -208,6 +208,16 @@ GET /repos/{owner}/{repo}/code-scanning/default-setup,n,n,n,n,n,n,n,n,n,n,n,n,n,
 PATCH /repos/{owner}/{repo}/code-scanning/default-setup,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 POST /repos/{owner}/{repo}/code-scanning/sarifs,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/code-scanning/sarifs/{sarif_id},n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+Secret Scanning,,,,,,,,,,,,,,,,,,,,,,,,
+GET /orgs/{org}/secret-scanning/alerts,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,y,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
+GET /orgs/{org}/secret-scanning/pattern-configurations,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+PATCH /orgs/{org}/secret-scanning/pattern-configurations,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/secret-scanning/alerts,y,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,y,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
+GET /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number},y,n,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n
+PATCH /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number},y,n,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}/locations,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
+POST /repos/{owner}/{repo}/secret-scanning/push-protection-bypasses,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/secret-scanning/scan-history,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GitHub Apps,,,,,,,,,,,,,,,,,,,,,,,,
 GET /app,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 GET /app/hook/config,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n

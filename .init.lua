@@ -422,6 +422,18 @@ local function code_scanning_list_empty()
   respond_json(200, {})
 end
 
+-- Default handlers for secret-scanning endpoints: no backend has a native secret scanning API.
+-- Returns 501 Not Implemented with a descriptive message.
+local function secret_scanning_not_implemented()
+  respond_json(501, { message = "Secret scanning is not supported by this backend." })
+end
+
+-- Default handler for secret-scanning list endpoints: returns an empty collection (200).
+-- Per-resource and mutation endpoints use secret_scanning_not_implemented (501) as their default.
+local function secret_scanning_list_empty()
+  respond_json(200, {})
+end
+
 -- Default handlers for Dependabot endpoints: most backends have no native Dependabot API.
 -- Alert list endpoints return empty arrays (200); per-resource and mutation endpoints return 501.
 -- Secrets list endpoints use make_empty_collection (defined below) for proper envelope format.
@@ -749,6 +761,16 @@ local route_defaults = {
   update_code_scanning_default_setup = code_scanning_not_implemented,
   upload_code_scanning_sarif = code_scanning_not_implemented,
   get_code_scanning_sarif = code_scanning_not_implemented,
+  -- Secret Scanning
+  list_org_secret_scanning_alerts = secret_scanning_list_empty,
+  get_org_secret_scanning_pattern_configs = secret_scanning_not_implemented,
+  update_org_secret_scanning_pattern_configs = secret_scanning_not_implemented,
+  list_repo_secret_scanning_alerts = secret_scanning_list_empty,
+  get_secret_scanning_alert = secret_scanning_not_implemented,
+  update_secret_scanning_alert = secret_scanning_not_implemented,
+  list_secret_scanning_alert_locations = secret_scanning_list_empty,
+  create_secret_scanning_push_protection_bypass = secret_scanning_not_implemented,
+  get_secret_scanning_scan_history = secret_scanning_not_implemented,
   -- Dependabot
   list_enterprise_dependabot_alerts = dependabot_list_empty,
   list_org_dependabot_alerts = dependabot_list_empty,
@@ -1624,6 +1646,17 @@ local routes = {
   ["PATCH /repos/{owner}/{repo}/code-scanning/default-setup"] = "update_code_scanning_default_setup",
   ["POST /repos/{owner}/{repo}/code-scanning/sarifs"] = "upload_code_scanning_sarif",
   ["GET /repos/{owner}/{repo}/code-scanning/sarifs/{sarif_id}"] = "get_code_scanning_sarif",
+
+  -- Secret Scanning (https://docs.github.com/en/rest/secret-scanning)
+  ["GET /orgs/{org}/secret-scanning/alerts"] = "list_org_secret_scanning_alerts",
+  ["GET /orgs/{org}/secret-scanning/pattern-configurations"] = "get_org_secret_scanning_pattern_configs",
+  ["PATCH /orgs/{org}/secret-scanning/pattern-configurations"] = "update_org_secret_scanning_pattern_configs",
+  ["GET /repos/{owner}/{repo}/secret-scanning/alerts"] = "list_repo_secret_scanning_alerts",
+  ["GET /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}"] = "get_secret_scanning_alert",
+  ["PATCH /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}"] = "update_secret_scanning_alert",
+  ["GET /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}/locations"] = "list_secret_scanning_alert_locations",
+  ["POST /repos/{owner}/{repo}/secret-scanning/push-protection-bypasses"] = "create_secret_scanning_push_protection_bypass",
+  ["GET /repos/{owner}/{repo}/secret-scanning/scan-history"] = "get_secret_scanning_scan_history",
 
   -- Dependabot (https://docs.github.com/en/rest/dependabot)
   ["GET /enterprises/{enterprise}/dependabot/alerts"] = "list_enterprise_dependabot_alerts",

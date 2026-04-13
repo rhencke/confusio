@@ -3585,3 +3585,134 @@ _b.list_org_dependabot_alerts = function(org)
     fetch_json(base() .. "/groups/" .. org .. "/vulnerabilities")
   )
 end
+
+-- Secret Scanning via GitLab Secret Detection ----------------------------------
+--
+-- GitLab Secret Detection stores findings as vulnerabilities with
+-- report_type=secret_detection. Endpoint mapping:
+--   GET  /repos/{owner}/{repo}/secret-scanning/alerts       → GET  /projects/:id/vulnerabilities?report_type=secret_detection
+--   GET  /repos/{owner}/{repo}/secret-scanning/alerts/{n}   → GET  /projects/:id/vulnerabilities/:n
+--   PATCH /repos/{owner}/{repo}/secret-scanning/alerts/{n}  → POST /vulnerabilities/:n/dismiss|revert-to-detected|resolve
+--   GET  /orgs/{org}/secret-scanning/alerts                 → GET  /groups/:org/vulnerabilities?report_type=secret_detection
+--
+-- Alert locations, push-protection bypasses, pattern configurations, and
+-- scan history have no GitLab equivalent and fall back to defaults.
+--
+-- GitLab dismissed_reason → GitHub resolution:
+--   false_positive   → false_positive
+--   acceptable_risk  → wont_fix
+--   used_in_tests    → used_in_tests
+--   mitigating_control / not_applicable → wont_fix
+
+local GL_SECRET_DISMISS_REASON_TO_GH = {
+  false_positive = "false_positive",
+  acceptable_risk = "wont_fix",
+  used_in_tests = "used_in_tests",
+  mitigating_control = "wont_fix",
+  not_applicable = "wont_fix",
+}
+
+local GH_SECRET_STATE_TO_GL_ACTION = {
+  open = "revert-to-detected",
+  dismissed = "dismiss",
+  resolved = "resolve",
+}
+
+local function translate_gl_secret_alert(v)
+  if not v then
+    return {}
+  end
+  local state = GL_VULN_STATE_TO_GH[v.state or ""] or "open"
+  if v.state == "resolved" then
+    state = "resolved"
+  end
+  local identifiers = v.identifiers or {}
+  local secret_type = ""
+  for _, id in ipairs(identifiers) do
+    if id.type == "secret_detection" then
+      secret_type = id.value or ""
+      break
+    end
+  end
+  local scanner = v.scanner or {}
+  if secret_type == "" then
+    secret_type = scanner.id or ""
+  end
+  return {
+    number = v.id or 0,
+    created_at = v.created_at or "",
+    updated_at = v.updated_at or "",
+    url = "",
+    html_url = "",
+    locations_url = "",
+    state = state,
+    resolution = GL_SECRET_DISMISS_REASON_TO_GH[v.dismissed_reason or ""],
+    resolved_by = nil,
+    resolved_at = v.dismissed_at,
+    resolution_comment = nil,
+    secret_type = secret_type,
+    secret_type_display_name = v.title or "",
+    secret = "",
+    push_protection_bypassed = nil,
+    push_protection_bypassed_by = nil,
+    push_protection_bypassed_at = nil,
+    validity = "unknown",
+    publicly_leaked = false,
+    multi_repo = false,
+    auto_dismissed_at = nil,
+  }
+end
+
+local function translate_gl_secret_list(arr)
+  local result = {}
+  for _, v in ipairs(arr) do
+    result[#result + 1] = translate_gl_secret_alert(v)
+  end
+  return result
+end
+
+_b.list_repo_secret_scanning_alerts = function(owner, repo_name)
+  proxy_json_paged(
+    translate_gl_secret_list,
+    PAGES,
+    fetch_json(
+      base()
+        .. "/projects/"
+        .. project_id(owner, repo_name)
+        .. "/vulnerabilities?report_type=secret_detection"
+    )
+  )
+end
+
+_b.list_org_secret_scanning_alerts = function(org)
+  proxy_json_paged(
+    translate_gl_secret_list,
+    PAGES,
+    fetch_json(base() .. "/groups/" .. org .. "/vulnerabilities?report_type=secret_detection")
+  )
+end
+
+_b.get_secret_scanning_alert = function(owner, repo_name, alert_number)
+  proxy_json(
+    translate_gl_secret_alert,
+    fetch_json(
+      base() .. "/projects/" .. project_id(owner, repo_name) .. "/vulnerabilities/" .. alert_number
+    )
+  )
+end
+
+_b.update_secret_scanning_alert = function(_owner, _repo_name, alert_number)
+  local req = DecodeJson(GetBody() or "{}")
+  local action = GH_SECRET_STATE_TO_GL_ACTION[req.state or ""] or "revert-to-detected"
+  local gl_url = base() .. "/vulnerabilities/" .. alert_number .. "/" .. action
+  local ok, status, _, body = fetch_json(gl_url, "POST", EncodeJson({}))
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  respond_json(200, translate_gl_secret_alert(DecodeJson(body) or {}))
+end
