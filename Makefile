@@ -126,7 +126,7 @@ endef
 
 $(foreach b,$(BACKENDS),$(eval $(call BACKEND_RULE,$(b))))
 
-.PHONY: build site dump-endpoints dump-families validate-csv validate-tests validate-providers test test-unit test-unit-functions test-unit-backends test-integration validate-mock test-format test-lint test-coverage clean
+.PHONY: build site dump-endpoints dump-families dump-claims validate-csv validate-tests validate-providers validate-claims test test-unit test-unit-functions test-unit-backends test-integration validate-mock test-format test-lint test-coverage clean
 
 build: confusio.com
 
@@ -144,6 +144,12 @@ dump-families: redbean.com
 
 validate-providers: redbean.com
 	./redbean.com -i scripts/dump-families.lua 2>/dev/null | python3 scripts/validate-providers.py
+
+dump-claims: redbean.com
+	./redbean.com -i scripts/dump-claims.lua $(BACKENDS)
+
+validate-claims: redbean.com
+	./redbean.com -i scripts/dump-claims.lua $(BACKENDS) 2>/dev/null | python3 scripts/validate-claims.py site/compatibility.csv
 
 site: redbean.com
 	mkdir -p _site
