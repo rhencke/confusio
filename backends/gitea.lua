@@ -13,6 +13,11 @@ local auth = function()
   return make_fetch_opts("token")
 end
 local PAGES = { per_page = "limit", page = "page" }
+local _t = make_backend_transport("token", PAGES)
+local fetch_json = _t.fetch_json
+local proxy_handler = _t.proxy_handler
+local proxy_handler_created = _t.proxy_handler_created
+local proxy_handler_paged = _t.proxy_handler_paged
 
 -- Check if this Gitea instance allows anonymous access.
 -- Sets the global backend_allow_anonymous so OnHttpRequest can gate unauthenticated requests.
@@ -22,21 +27,6 @@ do
     local settings = DecodeJson(body) or {}
     backend_allow_anonymous = settings.require_signin_view ~= true
   end
-end
-
--- Thin wrappers that forward request body and headers for mutating calls.
-local function fetch_json(url, method, body)
-  local opts = auth()
-  if method ~= nil and method ~= "GET" then
-    opts = opts or {}
-    opts.method = method
-    if body then
-      opts.body = body
-      opts.headers = opts.headers or {}
-      opts.headers["Content-Type"] = "application/json"
-    end
-  end
-  return pcall(Fetch, url, opts)
 end
 
 local function translate_repos(repos)
@@ -73,20 +63,6 @@ local function proxy_users_follow_list(username, rel)
     fetch_json(append_page_params(base() .. "/users/" .. username .. "/" .. rel, PAGES))
   )
 end
-
--- Returns a handler function: defers fetch_json(url_fn(...)) to request time.
--- xform receives (response_body, ...handler_args) so closures over handler args are not needed.
--- Named translate functions that only take the response body work as-is (extra args ignored).
-local proxy_handler = make_proxy_handler(fetch_json)
-local proxy_handler_created = make_proxy_handler(fetch_json, proxy_json_created)
--- proxy_handler_paged: like proxy_handler but rewrites the upstream Link header.
--- Use for endpoints whose url_fn calls append_page_params.
-local proxy_handler_paged = make_proxy_handler(
-  fetch_json,
-  function(translate, ok, status, headers, body)
-    proxy_json_paged(translate, PAGES, ok, status, headers, body)
-  end
-)
 
 -- Proxy a Gitea search response {"data":[...],"ok":true} to the GitHub search
 -- envelope {"total_count":N,"incomplete_results":false,"items":[...]}.
