@@ -155,6 +155,18 @@ function proxy_json_created(translate, ok, status, _headers, body)
   end
 end
 
+-- proxy_health_check is global: backends use it to implement get_root.
+-- Probes an upstream endpoint; responds 200 {} on success, 503 {} otherwise.
+-- Accepts the first two return values of pcall(Fetch, url, opts):
+--   proxy_health_check(pcall(Fetch, url, opts))
+function proxy_health_check(ok, status)
+  if ok and status == 200 then
+    respond_json(200, {})
+  else
+    respond_json(503, {})
+  end
+end
+
 -- append_page_params appends translated pagination params to url.
 -- mapping: { per_page = "upstream_name", page = "upstream_name" }
 --   Omit the page key for providers that only support limit (e.g. Sourcehut).

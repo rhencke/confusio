@@ -31,6 +31,7 @@ globals = {
   "proxy_json",
   "proxy_json_paged",
   "proxy_json_created",
+  "proxy_health_check",
   "rewrite_link_header",
   "append_page_params",
   "make_fetch_opts",

@@ -564,6 +564,27 @@ eq(_last_status, 201, "proxy_json_created: translate fn applied")
 ok(_last_body:find("created") ~= nil, "proxy_json_created: translated body emitted")
 
 -- ============================================================
+-- proxy_health_check
+-- ============================================================
+
+reset_response()
+proxy_health_check(true, 200)
+eq(_last_status, 200, "proxy_health_check: upstream 200 → 200")
+eq(_last_body, "{}", "proxy_health_check: upstream 200 → empty object body")
+
+reset_response()
+proxy_health_check(true, 404)
+eq(_last_status, 503, "proxy_health_check: upstream non-200 → 503")
+
+reset_response()
+proxy_health_check(true, 503)
+eq(_last_status, 503, "proxy_health_check: upstream 503 → 503")
+
+reset_response()
+proxy_health_check(false, nil)
+eq(_last_status, 503, "proxy_health_check: pcall failure → 503")
+
+-- ============================================================
 -- make_proxy_handler
 -- ============================================================
 
