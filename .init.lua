@@ -22,6 +22,7 @@ dofile("/zip/internal/http.lua")
 dofile("/zip/internal/proxy.lua")
 dofile("/zip/internal/transport.lua")
 dofile("/zip/internal/translators.lua")
+dofile("/zip/internal/graphql_parser.lua")
 dofile("/zip/internal/families.lua")
 
 -- backend_impl is global: set by backends/<name>.lua at startup.
