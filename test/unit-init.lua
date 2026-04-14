@@ -674,6 +674,72 @@ eq(_last_status, 200, "proxy_json_list: translate applied")
 ok(_last_body:find('"v":6') ~= nil, "proxy_json_list: translate doubles value")
 
 -- ============================================================
+-- translate_list
+-- ============================================================
+
+local tl = translate_list(function(x)
+  return x * 2
+end, { 1, 2, 3 })
+eq(#tl, 3, "translate_list: length preserved")
+eq(tl[1], 2, "translate_list: first element doubled")
+eq(tl[3], 6, "translate_list: third element doubled")
+
+local tl_empty = translate_list(function(x)
+  return x
+end, {})
+eq(#tl_empty, 0, "translate_list: empty input → empty output")
+
+local tl_nil = translate_list(function(x)
+  return x
+end, nil)
+eq(#tl_nil, 0, "translate_list: nil input → empty output")
+
+-- ============================================================
+-- proxy_search_envelope
+-- ============================================================
+
+reset_response()
+proxy_search_envelope(function(x)
+  return { id = x.id * 10 }
+end, nil, true, 200, {}, '[{"id":1},{"id":2}]')
+eq(_last_status, 200, "proxy_search_envelope(nil container): 200")
+ok(_last_body:find('"total_count":2') ~= nil, "proxy_search_envelope(nil container): total_count")
+ok(
+  _last_body:find('"incomplete_results":false') ~= nil,
+  "proxy_search_envelope: incomplete_results false"
+)
+ok(_last_body:find('"id":10') ~= nil, "proxy_search_envelope: translate_item applied")
+
+reset_response()
+proxy_search_envelope(function(x)
+  return { v = x.v }
+end, "values", true, 200, {}, '{"values":[{"v":7}],"size":1}')
+eq(_last_status, 200, "proxy_search_envelope(string container): 200")
+ok(
+  _last_body:find('"total_count":1') ~= nil,
+  "proxy_search_envelope(string container): total_count 1"
+)
+ok(_last_body:find('"v":7') ~= nil, "proxy_search_envelope(string container): item translated")
+
+reset_response()
+proxy_search_envelope(function(x)
+  return x
+end, nil, true, 200, {}, "[]")
+ok(_last_body:find('"items":%[%]') ~= nil, "proxy_search_envelope: empty array → items:[]")
+
+reset_response()
+proxy_search_envelope(function(x)
+  return x
+end, nil, true, 404, {}, "{}")
+eq(_last_status, 404, "proxy_search_envelope: upstream non-200 forwarded")
+
+reset_response()
+proxy_search_envelope(function(x)
+  return x
+end, nil, false, nil, nil, nil)
+eq(_last_status, 503, "proxy_search_envelope: pcall failure → 503")
+
+-- ============================================================
 -- make_proxy_handler
 -- ============================================================
 

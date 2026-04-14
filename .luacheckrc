@@ -34,6 +34,8 @@ globals = {
   "proxy_health_check",
   "proxy_204",
   "proxy_json_list",
+  "translate_list",
+  "proxy_search_envelope",
   "rewrite_link_header",
   "append_page_params",
   "make_fetch_opts",
