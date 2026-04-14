@@ -2,12 +2,17 @@
 """Validate that CSV support claims agree with actual backend_impl handler presence.
 
 Rules checked for each (backend, endpoint) cell in the CSV:
-  y  — backend_impl must contain a handler, OR the endpoint has a catalog default
-         (has_default=True means a real response exists even without a backend handler;
-          only endpoints with has_default=False would return 404 without a handler)
+  y  — backend_impl must contain a handler for this endpoint, UNLESS the handler is
+         confusio-native (a complete response synthesized by confusio itself, not the
+         backend API — e.g. GET /meta, GET /zen).  Confusio-native handlers return
+         real responses for every backend and are exempted from the handler-presence
+         requirement.
   n  — backend_impl must NOT contain a handler for this endpoint
          (backend silently implements something the CSV calls unsupported → error)
   ~* — not checked (partial support may or may not have a dedicated handler)
+
+The confusio-native handler set is small and explicit — update it here if catalog
+defaults ever change.
 
 Usage:
   ./redbean.com -i scripts/dump-claims.lua <backends...> 2>/dev/null \\
@@ -21,6 +26,11 @@ import csv
 import json
 import sys
 from pathlib import Path
+
+# Handlers whose catalog defaults are complete confusio-synthesised responses.
+# These work for every backend without a per-backend handler, so a y claim is
+# accurate even when backend_impl has no entry for them.
+CONFUSIO_NATIVE = {"get_meta", "get_octocat", "get_teapot", "get_versions", "get_zen"}
 
 csv_path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("site/compatibility.csv")
 
@@ -45,14 +55,13 @@ for row in rows:
         # validate-csv already catches orphan rows; skip here.
         continue
     handler = endpoint_info["handler"]
-    has_default = endpoint_info["has_default"]
     for provider in csv_providers:
         if provider not in backends:
             continue
         claim = row.get(provider, "n")
         impl_handlers = set(backends.get(provider, []))
         has_handler = handler in impl_handlers
-        if claim == "y" and not has_handler and not has_default:
+        if claim == "y" and not has_handler and handler not in CONFUSIO_NATIVE:
             errors.append(
                 f"ERROR: {provider} claims 'y' for {ep}"
                 f" but backend_impl has no handler '{handler}'"
