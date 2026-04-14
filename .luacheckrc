@@ -48,6 +48,8 @@ globals = {
   -- Set by backends/*.lua, read by .init.lua
   "backend_impl",
   "backend_allow_anonymous",
+  -- Default stub handlers: populated by internal/defaults.lua, read by the catalog in .init.lua
+  "defaults",
   -- Endpoint catalog: populated by .init.lua, read by scripts/dump-endpoints.lua
   "endpoints",
 }
