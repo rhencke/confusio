@@ -360,6 +360,39 @@ The nine `internal/` modules are loaded by `.init.lua` in a fixed order. Each ex
 
 **`/zip/internal/` → `internal/` redirect pattern**: scripts and unit tests load `.init.lua` via `redbean.com -i` (no zip context). They stub `dofile` to translate `/zip/internal/xxx` → `internal/xxx` (strip the `/zip/` prefix with `path:sub(6)`). The same stub skips `/zip/backends/` loads (not needed in test context). See `test/unit-init.lua` and `scripts/dump-endpoints.lua` for the canonical implementation.
 
+### Compatibility CSV and validate-claims
+
+- **`make validate-claims` cross-checks CSV claims against `backend_impl`** by running
+  `scripts/dump-claims.lua` (all backends) and piping the JSON output to
+  `scripts/validate-claims.py`. It is wired into `make test` and must pass before any push.
+- **CONFUSIO_NATIVE exemption**: five handlers (`get_meta`, `get_octocat`, `get_teapot`,
+  `get_versions`, `get_zen`) synthesize complete GitHub-compatible responses without a per-backend
+  handler. A `y` claim for these is valid for every backend and is exempted from the presence check.
+  Do not broaden this set — other endpoints with `defaults.empty_list` or similar stubs are
+  *not* confusio-native; a `y` claim for them requires an actual backend handler.
+- **`has_default=true` does NOT exempt a `y` claim** from requiring a backend handler. The
+  `has_default` flag only means there's a catalog default function — not that the response is
+  meaningful for every backend. Only the five `CONFUSIO_NATIVE` handlers are truly backend-agnostic.
+- **Common `~` patterns found during the audit** (record new ones as they appear):
+  - `~files only` — `get_repo_content` proxies file blobs only; directory listing returns an error
+    (most backends: onedev, pagure, sourcehut, gerrit, azuredevops)
+  - `~no email fields` — commit translator always emits `email = ""`
+    (Bitbucket Cloud: Bitbucket API does not expose committer emails)
+  - `~no date fields` — commit translator always emits `date = ""`
+    (Radicle: the commit API does not include timestamps)
+  - `~primary language only` — language endpoint returns only the dominant language, not a
+    breakdown by byte count (Bitbucket Cloud)
+  - `~stub; returns 405` — handler exists but explicitly rejects the operation with 405
+    (Radicle `delete_repo`: Radicle has no deletion endpoint)
+- **GitBucket is GitHub-API-compatible**: its `nil`-translator pass-through handlers proxy
+  directly to GitBucket's `/api/v3/` which mirrors the GitHub v3 API. All such handlers are `y`.
+- **`dump-claims.lua` stubs `Fetch` to a noop** before loading each backend so that
+  load-time network probes (e.g. Gitea's anonymous-access check) fail inside their `pcall`
+  wrappers without making real network calls. This is necessary for `redbean.com -i` mode.
+- **Alias backends call `load_family_backend(root)`**, which internally calls
+  `dofile("/zip/backends/<root>.lua")`. The `dump-claims.lua` dofile stub must redirect
+  `/zip/backends/` → `backends/` (not block it) so alias backends load their root correctly.
+
 ### Code coverage (luacov)
 
 - **Redbean ships Lua 5.4 with the full `debug` library** (`debug.sethook` is available), so

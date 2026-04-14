@@ -157,7 +157,7 @@ site: redbean.com
 	./redbean.com -i scripts/dump-endpoints.lua 2>/dev/null | \
 	  python3 scripts/gen-matrix.py - site/compatibility.csv site/index.html _site/index.html
 
-test: test-unit test-integration test-format test-lint validate-csv validate-tests validate-providers
+test: test-unit test-integration test-format test-lint validate-csv validate-tests validate-providers validate-claims
 
 # Unit tests for .init.lua global functions (pure Lua, no HTTP server needed)
 test-unit-functions: redbean.com
