@@ -1212,15 +1212,10 @@ backend_impl = {
     opts.body = EncodeJson(patch)
     opts.headers = opts.headers or {}
     opts.headers["Content-Type"] = "application/json-patch+json"
-    local cok, cstatus, _, cbody =
+    proxy_json_created(
+      translate_ado_workitem,
       pcall(Fetch, ado_url(config.base_url .. "/" .. owner .. "/_apis/wit/workitems/$Issue"), opts)
-    if cok and (cstatus == 200 or cstatus == 201) then
-      respond_json(201, translate_ado_workitem(DecodeJson(cbody) or {}))
-    elseif cok then
-      respond_json(cstatus, {})
-    else
-      respond_json(503, {})
-    end
+    )
   end,
 
   patch_repo_issue = function(owner, _repo_name, issue_number)

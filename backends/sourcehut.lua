@@ -511,21 +511,14 @@ backend_impl = {
   post_repo_issues = function(owner, repo_name)
     local req = DecodeJson(GetBody() or "{}")
     local payload = EncodeJson({ title = req.title or "", description = req.body or "" })
-    local ok, status, _, body = fetch_json(
-      todo_base() .. "/~" .. owner .. "/trackers/" .. repo_name .. "/tickets",
-      "POST",
-      payload
+    proxy_json_created(
+      translate_srht_ticket,
+      fetch_json(
+        todo_base() .. "/~" .. owner .. "/trackers/" .. repo_name .. "/tickets",
+        "POST",
+        payload
+      )
     )
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 and status ~= 201 then
-      respond_json(status, {})
-      return
-    end
-    local ticket = DecodeJson(body)
-    respond_json(201, translate_srht_ticket(ticket))
   end,
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
@@ -566,18 +559,9 @@ backend_impl = {
       .. "/tickets/"
       .. issue_number
       .. "/events"
-    local ok, status, _, body = fetch_json(url, "POST", payload)
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 and status ~= 201 then
-      respond_json(status, {})
-      return
-    end
-    local event = DecodeJson(body)
-    local comment = translate_srht_event_comment(event)
-    respond_json(201, comment or {})
+    proxy_json_created(function(e)
+      return translate_srht_event_comment(e) or {}
+    end, fetch_json(url, "POST", payload))
   end,
 
   -- Checks (via builds.sr.ht jobs) --------------------------------------------
