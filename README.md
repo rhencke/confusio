@@ -113,3 +113,25 @@ See the [full compatibility matrix](https://rhencke.github.io/confusio/) on the 
 ## Testing
 
 Unit tests run against mock backends on every push.  See [`docs/real-world-testing.md`](docs/real-world-testing.md) for the plan to extend coverage to real provider instances on a weekly cadence.
+
+## Design docs
+
+| Topic | Document |
+|-------|----------|
+| GraphQL support (overview) | [`docs/graphql/README.md`](docs/graphql/README.md) |
+| GitHub GraphQL API surface and scope | [`docs/graphql/01-api-surface.md`](docs/graphql/01-api-surface.md) |
+| Lexer and parser | [`docs/graphql/02-lexer-parser.md`](docs/graphql/02-lexer-parser.md) |
+| Schema loading | [`docs/graphql/03-schema.md`](docs/graphql/03-schema.md) |
+| Query executor | [`docs/graphql/04-executor.md`](docs/graphql/04-executor.md) |
+| REST translation | [`docs/graphql/05-translation.md`](docs/graphql/05-translation.md) |
+| Fragments, variables, directives | [`docs/graphql/06-fragments-vars-directives.md`](docs/graphql/06-fragments-vars-directives.md) |
+| Relay pagination | [`docs/graphql/07-pagination.md`](docs/graphql/07-pagination.md) |
+| Node/ID scheme | [`docs/graphql/08-node-id.md`](docs/graphql/08-node-id.md) |
+| Error model | [`docs/graphql/09-errors.md`](docs/graphql/09-errors.md) |
+| Auth and rate limiting | [`docs/graphql/10-auth-ratelimit.md`](docs/graphql/10-auth-ratelimit.md) |
+| Mutations | [`docs/graphql/11-mutations.md`](docs/graphql/11-mutations.md) |
+| Batching and caching | [`docs/graphql/12-batching-caching.md`](docs/graphql/12-batching-caching.md) |
+| Testing strategy | [`docs/graphql/13-testing.md`](docs/graphql/13-testing.md) |
+| Per-backend feasibility | [`docs/graphql/14-backend-feasibility.md`](docs/graphql/14-backend-feasibility.md) |
+| Compatibility site integration | [`docs/graphql/15-compat-site.md`](docs/graphql/15-compat-site.md) |
+| Rollout roadmap | [`docs/graphql/16-roadmap.md`](docs/graphql/16-roadmap.md) |
