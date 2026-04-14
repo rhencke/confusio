@@ -289,6 +289,31 @@ Hard-won insights from building this project. **Keep this section current**: whe
 - **Use Redbean itself as the mock server** — no Python/Node dependency, same binary already in the repo. Build `mock-<backend>.com` by copying `redbean.com` and zipping in a `.init.lua` handler. See `mock-gitea.com` target in `Makefile`.
 - **Mock validation via Hurl**: run the same `.hurl` assertion file against both the mock and the real endpoint. If both pass the same structural assertions, the mock is compatible. See `make validate-mock`.
 
+### Shared proxy helpers
+
+Two global helpers defined in `.init.lua` are available to all backend files:
+
+**`translate_list(fn, items)`** — applies `fn` to every element of `items` (ipairs) and returns a new array. A nil `items` argument returns `{}`. Use whenever a backend loop has the form `for i, x in ipairs(arr) do result[i] = fn(x) end` where `fn` is an already-defined **named** function.
+
+Do **not** use `translate_list` when:
+- The loop **filters** (skips items with an `if` guard)
+- The loop **truncates** (`for i = 1, math.min(limit, #arr) do`) — that's a slice, not a map
+- The loop uses index `i` meaningfully in the output (e.g., `runs[i] = { id = i, ... }`)
+- The transform is a **single-use inline anonymous closure** — don't extract a named function just to feed `translate_list`; the goal is removing duplication, not adding abstraction
+- The loop has **side effects** (HTTP calls, state mutations)
+
+**`proxy_search_envelope(translate_item, container, ok, status, _headers, body)`** — decodes the upstream body, extracts items from `container` (nil = root array, string = named key such as `"data"` or `"values"`), translates each with `translate_item`, and writes the GitHub search envelope `{"total_count":N,"incomplete_results":false,"items":[...]}`. The `ok/status/_headers/body` tuple is the raw return from `fetch_json`.
+
+Do **not** use `proxy_search_envelope` when:
+- The envelope key is not `"items"` (e.g., `check_runs`, `runners`) — use `respond_json` with the correct key
+- The response must also **forward a Link header** — `proxy_search_envelope` only writes the body; `proxy_search_gl` (GitLab) and `proxy_actions_list` (Gitea) handle this themselves
+
+**Retained patterns** intentionally left as custom code:
+- `proxy_search_gl` (gitlab) — rewrites the upstream Link pagination header then writes the search envelope; `proxy_search_envelope` does not touch headers
+- `proxy_actions_list` (gitea) — emits `{total_count, <key>: [...]}` with a caller-supplied key; `proxy_search_envelope` hardcodes `"items"`
+- `get_commit_check_runs` in most backends — emits `{total_count, check_runs: [...]}` with key `"check_runs"`, not `"items"`
+- `get_user_repos`/`get_org_repos`/`get_users_repos` in azuredevops — loop is `for i=1, math.min(limit, #all)` to honour a per_page cap; not a plain full-array map
+
 ### Code coverage (luacov)
 
 - **Redbean ships Lua 5.4 with the full `debug` library** (`debug.sethook` is available), so
