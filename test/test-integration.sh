@@ -5,7 +5,7 @@
 #   sh confusio.com -- gitea https://codeberg.org
 set -euo pipefail
 
-CONFUSIO_PORT=18080
+CONFUSIO_PORT=18200
 TMPDIR_INT=$(mktemp -d)
 trap "rm -rf $TMPDIR_INT" EXIT
 
