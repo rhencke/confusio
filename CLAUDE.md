@@ -208,6 +208,23 @@ Historical commits are covered by `.mailmap` — no rewrite needed.
 
 Hard-won insights from building this project. **Keep this section current**: whenever you discover something surprising, fix a non-obvious bug, or learn a constraint that isn't derivable from the code, add it here before committing.
 
+### Architectural deduplication baseline
+
+Issues #111–#117 established four authoritative seams. Future endpoint and provider work should touch only these sources — all other surfaces are derived and must not be edited directly.
+
+| Concern | Authoritative source | What is derived from it |
+|---------|---------------------|------------------------|
+| Routes and default handler stubs | `endpoint_sections` in `internal/catalog.lua` | route registration, `defaults` table wire-up, compatibility matrix sections, test file discovery, `make dump-endpoints` / `validate-tests` / `validate-csv` / `site` |
+| Provider family membership | `provider_families` in `internal/families.lua` | mock building via `.make-families.mk` (auto-generated), `make validate-providers`, `load_family_backend` behavior |
+| Backend transport scaffold | `make_backend_transport` in `internal/transport.lua` | `fetch_json`, `proxy_json*`, `proxy_204`, `proxy_json_list`, `proxy_health_check`, pagination params — all consumed by backends via the transport object |
+| Application module layout | nine `internal/*.lua` files, dofile'd in fixed order by `.init.lua` | the full global surface for backends; see "Internal module layout" for load order and exported globals |
+
+**Adding an endpoint**: touch `internal/catalog.lua` (`endpoint_sections`) and `internal/defaults.lua`, plus per-backend overrides in `backends/<name>.lua` if native support is needed.
+
+**Adding a standalone backend**: create `backends/<name>.lua`, add `<name>` to `BACKENDS` in the Makefile, create hurl test files, add a `site/compatibility.csv` column.
+
+**Adding a family-alias backend**: update `provider_families` in `internal/families.lua` (the single declaration), create a one-line `backends/<alias>.lua` calling `load_family_backend`, add to `BACKENDS` — no mock file needed.
+
 ### Redbean
 
 - **`-D key=value` is NOT for Lua globals.** It means "directory overlay" — passing `-D backend=gitea` errors with "not a directory: backend=gitea". Use positional SCRIPTARGS instead: `sh ./confusio.com -- gitea`.
