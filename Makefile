@@ -126,7 +126,7 @@ endef
 
 $(foreach b,$(BACKENDS),$(eval $(call BACKEND_RULE,$(b))))
 
-.PHONY: build site dump-endpoints dump-families dump-claims validate-csv validate-tests validate-providers validate-claims test test-unit test-unit-functions test-unit-backends test-integration validate-mock test-format test-lint test-coverage clean
+.PHONY: build site dump-endpoints dump-families dump-claims validate-csv validate-tests validate-providers validate-claims generate-schema validate-schema test test-unit test-unit-functions test-unit-backends test-integration validate-mock test-format test-lint test-coverage clean
 
 build: confusio.com
 
@@ -151,13 +151,20 @@ dump-claims: redbean.com
 validate-claims: redbean.com
 	./redbean.com -i scripts/dump-claims.lua $(BACKENDS) 2>/dev/null | ./redbean.com -i scripts/validate-claims.lua site/compatibility.csv
 
+generate-schema: redbean.com
+	./redbean.com -i scripts/gen-graphql-schema.lua
+
+validate-schema: redbean.com
+	./redbean.com -i scripts/gen-graphql-schema.lua vendor/github-graphql-schema/schema.docs.graphql /tmp/graphql_schema_data_validate.lua 2>/dev/null
+	diff -q internal/graphql_schema_data.lua /tmp/graphql_schema_data_validate.lua
+
 site: redbean.com
 	mkdir -p _site
 	cp -r site/. _site/
 	./redbean.com -i scripts/dump-endpoints.lua 2>/dev/null | \
 	  python3 scripts/gen-matrix.py - site/compatibility.csv site/index.html _site/index.html
 
-test: test-unit test-integration test-format test-lint validate-csv validate-tests validate-providers validate-claims
+test: test-unit test-integration test-format test-lint validate-csv validate-tests validate-providers validate-claims validate-schema
 
 # Unit tests for .init.lua global functions (pure Lua, no HTTP server needed)
 test-unit-functions: redbean.com
