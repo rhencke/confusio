@@ -195,7 +195,7 @@ local function make_parser(text)
   local maybe_description, parse_implements, skip_directives, parse_field_defs
   local parse_field_def, parse_arguments_def, parse_input_value_def
   local parse_type_ref, parse_default_value, parse_value_literal
-  local has_deprecated_directive, skip_balanced, skip_directive_def
+  local has_deprecated_directive, skip_balanced, parse_directive_def
   local skip_schema_def, skip_extend_def
 
   maybe_description = function()
@@ -245,6 +245,8 @@ local function make_parser(text)
     end
   end
 
+  -- Parse @deprecated directive if present, returning {is_deprecated, reason}.
+  -- Consumes the @deprecated directive; remaining directives are left for skip_directives.
   has_deprecated_directive = function()
     if
       not P.at_end()
@@ -254,9 +256,26 @@ local function make_parser(text)
       and tokens[pos + 1][1] == "NAME"
       and tokens[pos + 1][2] == "deprecated"
     then
-      return true
+      P.advance() -- @
+      P.advance() -- deprecated
+      local reason
+      if not P.at_end() and P.peek()[1] == "PUNCT" and P.peek()[2] == "(" then
+        P.advance() -- (
+        -- Parse reason: "..." argument if present
+        while not P.at_end() and not (P.peek()[1] == "PUNCT" and P.peek()[2] == ")") do
+          local arg_name = P.expect("NAME")[2]
+          P.expect_punct(":")
+          local val = parse_value_literal()
+          if arg_name == "reason" then
+            -- Strip surrounding quotes from string values
+            reason = val:match('^"(.*)"$') or val
+          end
+        end
+        P.expect_punct(")")
+      end
+      return true, reason
     end
-    return false
+    return false, nil
   end
 
   parse_type_ref = function()
@@ -359,8 +378,16 @@ local function make_parser(text)
     local args = parse_arguments_def()
     P.expect_punct(":")
     local type_ref = parse_type_ref()
+    local deprecated, deprecation_reason = has_deprecated_directive()
     skip_directives()
-    return { name = name, type = type_ref, description = desc, args = args }
+    return {
+      name = name,
+      type = type_ref,
+      description = desc,
+      args = args,
+      is_deprecated = deprecated,
+      deprecation_reason = deprecation_reason,
+    }
   end
 
   parse_field_defs = function()
@@ -429,9 +456,14 @@ local function make_parser(text)
     while not P.at_end() and not (P.peek()[1] == "PUNCT" and P.peek()[2] == "}") do
       local vdesc = maybe_description()
       local vname = P.expect("NAME")[2]
-      local deprecated = has_deprecated_directive()
+      local deprecated, deprecation_reason = has_deprecated_directive()
       skip_directives()
-      values[#values + 1] = { name = vname, description = vdesc, is_deprecated = deprecated }
+      values[#values + 1] = {
+        name = vname,
+        description = vdesc,
+        is_deprecated = deprecated,
+        deprecation_reason = deprecation_reason,
+      }
     end
     P.expect_punct("}")
     return { kind = "ENUM", name = name, description = desc, values = values }
@@ -457,22 +489,29 @@ local function make_parser(text)
     return { kind = "SCALAR", name = name, description = desc }
   end
 
-  skip_directive_def = function()
+  parse_directive_def = function(desc)
     P.expect("NAME", "directive")
     P.expect_punct("@")
-    P.expect("NAME")
-    if not P.at_end() and P.peek()[1] == "PUNCT" and P.peek()[2] == "(" then
-      skip_balanced("(", ")")
-    end
+    local name = P.expect("NAME")[2]
+    local args = parse_arguments_def()
+    local is_repeatable = false
     if not P.at_end() and P.peek()[1] == "NAME" and P.peek()[2] == "repeatable" then
       P.advance()
+      is_repeatable = true
     end
     P.expect("NAME", "on")
-    P.expect("NAME")
+    local locations = { P.expect("NAME")[2] }
     while not P.at_end() and P.peek()[1] == "PUNCT" and P.peek()[2] == "|" do
       P.advance()
-      P.expect("NAME")
+      locations[#locations + 1] = P.expect("NAME")[2]
     end
+    return {
+      name = name,
+      description = desc,
+      args = args,
+      locations = locations,
+      is_repeatable = is_repeatable,
+    }
   end
 
   skip_schema_def = function()
@@ -526,6 +565,7 @@ local function make_parser(text)
 
   function P.parse()
     local types = {}
+    local directives = {}
     while not P.at_end() do
       local desc = maybe_description()
       if P.at_end() then
@@ -547,7 +587,8 @@ local function make_parser(text)
         elseif tok[2] == "scalar" then
           td = parse_scalar_type(desc)
         elseif tok[2] == "directive" then
-          skip_directive_def()
+          local dd = parse_directive_def(desc)
+          directives[dd.name] = dd
         elseif tok[2] == "schema" then
           skip_schema_def()
         elseif tok[2] == "extend" then
@@ -562,7 +603,7 @@ local function make_parser(text)
         P.advance()
       end
     end
-    return types
+    return types, directives
   end
 
   return P
@@ -990,6 +1031,60 @@ local INTROSPECTION_TYPES = {
   },
 }
 
+local BUILTIN_DIRECTIVES = {
+  skip = {
+    name = "skip",
+    description = "Directs the executor to skip this field or fragment when the `if` argument is true.",
+    args = {
+      { name = "if", type = "Boolean!", description = "Skipped when true.", default_value = nil },
+    },
+    locations = { "FIELD", "FRAGMENT_SPREAD", "INLINE_FRAGMENT" },
+    is_repeatable = false,
+  },
+  include = {
+    name = "include",
+    description = "Directs the executor to include this field or fragment only when the `if` argument is true.",
+    args = {
+      { name = "if", type = "Boolean!", description = "Included when true.", default_value = nil },
+    },
+    locations = { "FIELD", "FRAGMENT_SPREAD", "INLINE_FRAGMENT" },
+    is_repeatable = false,
+  },
+  deprecated = {
+    name = "deprecated",
+    description = "Marks an element of a GraphQL schema as no longer supported.",
+    args = {
+      {
+        name = "reason",
+        type = "String",
+        description = "Explains why this element was deprecated.",
+        default_value = '"No longer supported"',
+      },
+    },
+    locations = {
+      "FIELD_DEFINITION",
+      "ARGUMENT_DEFINITION",
+      "INPUT_FIELD_DEFINITION",
+      "ENUM_VALUE",
+    },
+    is_repeatable = false,
+  },
+  specifiedBy = {
+    name = "specifiedBy",
+    description = "Exposes a URL that specifies the behavior of this scalar.",
+    args = {
+      {
+        name = "url",
+        type = "String!",
+        description = "The URL that specifies the behavior of this scalar.",
+        default_value = nil,
+      },
+    },
+    locations = { "SCALAR" },
+    is_repeatable = false,
+  },
+}
+
 -- ---------------------------------------------------------------------------
 -- Lua emitter
 -- ---------------------------------------------------------------------------
@@ -1041,6 +1136,11 @@ end
 emit_field = function(field, out, indent)
   local pad = string.rep(" ", indent)
   local args = field.args or {}
+  local dep_suffix = ""
+  if field.is_deprecated then
+    dep_suffix = ", is_deprecated = true, deprecation_reason = "
+      .. lua_escape(field.deprecation_reason)
+  end
   if #args > 0 then
     out[#out + 1] = pad
       .. "{ name = "
@@ -1049,6 +1149,7 @@ emit_field = function(field, out, indent)
       .. lua_escape(field.type)
       .. ", description = "
       .. lua_escape(field.description)
+      .. dep_suffix
       .. ", args = {\n"
     for _, a in ipairs(args) do
       emit_input_value(a, out, indent + 2)
@@ -1062,6 +1163,7 @@ emit_field = function(field, out, indent)
       .. lua_escape(field.type)
       .. ", description = "
       .. lua_escape(field.description)
+      .. dep_suffix
       .. ", args = {} },\n"
   end
 end
@@ -1088,12 +1190,17 @@ local function emit_type(td, out)
   elseif kind == "ENUM" then
     out[#out + 1] = "      values      = {\n"
     for _, val in ipairs(td.values or {}) do
+      local dep_suffix = ""
+      if val.deprecation_reason then
+        dep_suffix = ", deprecation_reason = " .. lua_escape(val.deprecation_reason)
+      end
       out[#out + 1] = "        { name = "
         .. lua_escape(val.name)
         .. ", description = "
         .. lua_escape(val.description)
         .. ", is_deprecated = "
         .. lua_bool(val.is_deprecated)
+        .. dep_suffix
         .. " },\n"
     end
     out[#out + 1] = "      },\n"
@@ -1108,7 +1215,26 @@ local function emit_type(td, out)
   out[#out + 1] = "    },\n"
 end
 
-local function emit_lua(types, reachable)
+local function emit_directive(dir, out)
+  out[#out + 1] = "    {\n"
+  out[#out + 1] = "      name          = " .. lua_escape(dir.name) .. ",\n"
+  out[#out + 1] = "      description   = " .. lua_escape(dir.description) .. ",\n"
+  out[#out + 1] = "      is_repeatable = " .. lua_bool(dir.is_repeatable) .. ",\n"
+  out[#out + 1] = "      locations     = " .. lua_string_list(dir.locations) .. ",\n"
+  local args = dir.args or {}
+  if #args > 0 then
+    out[#out + 1] = "      args          = {\n"
+    for _, a in ipairs(args) do
+      emit_input_value(a, out, 8)
+    end
+    out[#out + 1] = "      },\n"
+  else
+    out[#out + 1] = "      args          = {},\n"
+  end
+  out[#out + 1] = "    },\n"
+end
+
+local function emit_lua(types, reachable, directives)
   -- Collect and sort type names
   local names = {}
   for name in pairs(reachable) do
@@ -1132,6 +1258,21 @@ local function emit_lua(types, reachable)
   end
 
   out[#out + 1] = "  },\n"
+  out[#out + 1] = "\n"
+
+  -- Emit directives sorted by name
+  local dir_names = {}
+  for name in pairs(directives) do
+    dir_names[#dir_names + 1] = name
+  end
+  table.sort(dir_names)
+
+  out[#out + 1] = "  directives = {\n"
+  for _, name in ipairs(dir_names) do
+    emit_directive(directives[name], out)
+  end
+  out[#out + 1] = "  },\n"
+
   out[#out + 1] = "}\n"
   return table.concat(out)
 end
@@ -1142,7 +1283,7 @@ end
 
 local sdl_text = read_file(sdl_path)
 local parser = make_parser(sdl_text)
-local types = parser.parse()
+local types, sdl_directives = parser.parse()
 
 -- Add built-in scalars (SDL usually omits them)
 for name, td in pairs(BUILTIN_SCALARS) do
@@ -1201,8 +1342,17 @@ for _ in pairs(reachable) do
   count = count + 1
 end
 
+-- Merge directives: built-in spec directives as fallback, SDL directives take precedence
+local all_directives = {}
+for name, dd in pairs(BUILTIN_DIRECTIVES) do
+  all_directives[name] = dd
+end
+for name, dd in pairs(sdl_directives) do
+  all_directives[name] = dd
+end
+
 -- Emit
-local output = emit_lua(types, reachable)
+local output = emit_lua(types, reachable, all_directives)
 local f = assert(io.open(out_path, "w"))
 f:write(output)
 f:close()
