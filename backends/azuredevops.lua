@@ -384,14 +384,7 @@ backend_impl = {
     local repo_id = repo.id or repo_name
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local dok, dstatus = pcall(Fetch, ado_url(repos_base(owner) .. "/" .. repo_id), dopts)
-    if dok and (dstatus == 204 or dstatus == 200) then
-      SetStatus(204, "No Content")
-    elseif dok then
-      respond_json(dstatus, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, pcall(Fetch, ado_url(repos_base(owner) .. "/" .. repo_id), dopts))
   end,
 
   get_user_repos = function()
@@ -759,18 +752,14 @@ backend_impl = {
     end
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(
-      Fetch,
-      ado_url(config.base_url .. "/_apis/projects/" .. org .. "/teams/" .. t.id),
-      dopts
+    proxy_204(
+      { 200 },
+      pcall(
+        Fetch,
+        ado_url(config.base_url .. "/_apis/projects/" .. org .. "/teams/" .. t.id),
+        dopts
+      )
     )
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
   end,
 
   get_org_team_members = function(org, slug)
@@ -941,20 +930,16 @@ backend_impl = {
     end
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(
-      Fetch,
-      ado_url(
-        config.base_url .. "/_apis/projects/" .. (t.projectName or "") .. "/teams/" .. team_id
-      ),
-      dopts
+    proxy_204(
+      { 200 },
+      pcall(
+        Fetch,
+        ado_url(
+          config.base_url .. "/_apis/projects/" .. (t.projectName or "") .. "/teams/" .. team_id
+        ),
+        dopts
+      )
     )
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
   end,
 
   get_team_members = function(team_id)
@@ -1974,12 +1959,5 @@ _b.delete_git_ref = function(owner, repo_name, ref)
   local del_body = EncodeJson({
     { name = full_ref, newObjectId = ZERO_SHA, oldObjectId = old_sha },
   })
-  local ok2, status2 = fetch_json(url, "POST", del_body)
-  if ok2 and status2 == 200 then
-    SetStatus(204, "No Content")
-  elseif ok2 then
-    respond_json(status2, {})
-  else
-    respond_json(503, {})
-  end
+  proxy_204({ 200 }, fetch_json(url, "POST", del_body))
 end
