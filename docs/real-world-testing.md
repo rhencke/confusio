@@ -138,7 +138,111 @@ value is marginal given their support level.
 
 ## Account and credential management
 
-*(To be detailed in the next section of this plan.)*
+### Account creation (Tier 1 — SaaS)
+
+Account creation is a one-time manual task per provider.  It cannot be automated because
+most providers require email verification, CAPTCHA, or human review.
+
+**Naming convention:** use `confusio-test` as the username everywhere it is available.
+Where that name is taken, use `confusio-ci`.  Consistency makes it obvious which account
+belongs to this project and simplifies token revocation if needed.
+
+**Email:** use a single dedicated address (e.g. a `+confusio-test` alias of the project
+maintainer's address) so that verification emails and provider notifications go to one place.
+
+The table below documents the one-time steps for each Tier 1 backend.
+
+| Backend | Registration URL | Special requirements |
+|---------|-----------------|---------------------|
+| `gitea` | https://gitea.com/user/sign_up | None. Free. |
+| `forgejo` / `codeberg` | https://codeberg.org/user/sign_up | Single account covers both backends. |
+| `notabug` / `gogs` | https://notabug.org/user/sign_up | Single account covers both backends.  If notabug is unreachable, fall back to Tier 2 Docker for `gogs`. |
+| `gitlab` | https://gitlab.com/users/sign_up | Free tier sufficient. |
+| `bitbucket` | https://bitbucket.org/account/signup/ | Atlassian account.  Enable app passwords — Bitbucket does not support PATs for the Cloud API. |
+| `azuredevops` | https://dev.azure.com (sign in with Microsoft account) | Create one organisation named `confusio-test`.  Free tier (5 parallel jobs) is sufficient. |
+| `harness` | https://app.harness.io/auth/#/signup | Free Developer plan. |
+| `sourcehut` | https://sr.ht (paid subscription) | Read-only endpoints work unauthenticated; write endpoints require a paid account.  Defer write endpoints until a subscription is in place. |
+| `pagure` | https://id.fedoraproject.org/login/ | Fedora Account System required. |
+| `launchpad` | https://launchpad.net/+login | Ubuntu One account. |
+| `sourceforge` | https://sourceforge.net/user/registration | None. Free. |
+
+### Authentication mechanisms
+
+Different providers use different schemes; confusio passes the caller's `Authorization` header
+straight through.  The test runner supplies the right format for each backend.
+
+| Backend | Mechanism | Header / format |
+|---------|-----------|----------------|
+| `gitea`, `forgejo`, `codeberg`, `notabug`, `gogs` | API token (PAT) | `Authorization: token <TOKEN>` |
+| `gitlab` | Personal access token | `Authorization: Bearer <TOKEN>` |
+| `bitbucket` | App password | `Authorization: Basic base64(user:app_password)` |
+| `azuredevops` | Personal access token | `Authorization: Basic base64(:TOKEN)` (empty username, PAT as password) |
+| `harness` | PAT | `Authorization: Bearer <TOKEN>` |
+| `sourcehut` | OAuth2 PAT | `Authorization: token <TOKEN>` |
+| `pagure` | API key | `Authorization: token <TOKEN>` |
+| `launchpad` | OAuth 1.0a | Handled by confusio's passthrough; requires pre-obtained token |
+| `sourceforge` | Bearer token | `Authorization: Bearer <TOKEN>` |
+| All Tier 2 Docker | Admin PAT generated at boot | Same scheme as the corresponding root family (e.g. `token <TOKEN>` for gitea-family) |
+
+### Token scopes (minimum required)
+
+Request the narrowest scopes that cover all `y`/`~` endpoints.  The table below gives the
+minimum set; request no more than this.
+
+| Backend | Minimum scopes |
+|---------|---------------|
+| `gitea` / `forgejo` / family | `read:repository`, `read:user`, `read:organization`, `read:issue`, `write:repository` (for mutation endpoints), `write:issue` |
+| `gitlab` | `read_api` for read-only; `api` for mutation endpoints |
+| `bitbucket` | App password: `Repositories: Read/Write`, `Issues: Read/Write`, `Pull requests: Read/Write`, `Account: Read` |
+| `azuredevops` | PAT scopes: `Code (Read & Write)`, `Work Items (Read & Write)`, `Project and Team (Read)` |
+| `harness` | Account-level PAT with `core_project_viewer` + `code_repo_viewer` minimum |
+| `sourcehut` | `REPOSITORIES`, `PROFILE` (read-only until paid account) |
+| `pagure` | Default token scopes: `pull_request`, `issue_comment`, `create_branch` |
+| `launchpad` | OAuth token: `WRITE_PUBLIC` (covers most endpoints) |
+| `sourceforge` | Default token scopes |
+
+### GitHub Actions secrets
+
+Each Tier 1 token is stored as a repository secret.  Naming convention:
+`REAL_WORLD_<BACKEND>_TOKEN` (all caps, underscores).  Additional secrets where needed:
+
+| Secret name | Used by | Notes |
+|-------------|---------|-------|
+| `REAL_WORLD_GITEA_TOKEN` | `gitea` | — |
+| `REAL_WORLD_FORGEJO_TOKEN` | `forgejo`, `codeberg` | Same account on codeberg.org |
+| `REAL_WORLD_CODEBERG_TOKEN` | `codeberg` | Same value as `FORGEJO` if sharing account |
+| `REAL_WORLD_NOTABUG_TOKEN` | `notabug`, `gogs` (Tier 1) | — |
+| `REAL_WORLD_GITLAB_TOKEN` | `gitlab` | — |
+| `REAL_WORLD_BITBUCKET_TOKEN` | `bitbucket` | App password, not a PAT |
+| `REAL_WORLD_BITBUCKET_USER` | `bitbucket` | Username for Basic auth |
+| `REAL_WORLD_AZUREDEVOPS_TOKEN` | `azuredevops` | PAT |
+| `REAL_WORLD_AZUREDEVOPS_ORG` | `azuredevops` | Organisation name (e.g. `confusio-test`) |
+| `REAL_WORLD_HARNESS_TOKEN` | `harness` | PAT |
+| `REAL_WORLD_HARNESS_ACCOUNT` | `harness` | Harness account ID |
+| `REAL_WORLD_SOURCEHUT_TOKEN` | `sourcehut` | OAuth PAT |
+| `REAL_WORLD_PAGURE_TOKEN` | `pagure` | API key |
+| `REAL_WORLD_LAUNCHPAD_TOKEN` | `launchpad` | OAuth access token |
+| `REAL_WORLD_LAUNCHPAD_TOKEN_SECRET` | `launchpad` | OAuth token secret (OAuth 1.0a pair) |
+| `REAL_WORLD_SOURCEFORGE_TOKEN` | `sourceforge` | Bearer token |
+| `REAL_WORLD_BITBUCKET_DC_LICENSE` | `bitbucket_datacenter` | Evaluation license key for the Docker container |
+
+Tier 2 Docker backends (gerrit, gitblit, gitbucket, gogs, kallithea, onedev, phabricator,
+rhodecode, tuleap) generate ephemeral admin credentials at container boot; no GHA secrets
+are needed for them.  The bootstrap credentials are written into the test job's environment
+by the setup script (see *Setup and teardown automation*).
+
+### Token lifetime and rotation
+
+- **Prefer non-expiring tokens** where the provider allows.  Expiring tokens fail silently
+  on the day they expire, producing failures that look like endpoint regressions.
+- **Where expiry is mandatory** (e.g. Azure DevOps PATs max out at 1 year): create a
+  reminder issue on the repo 30 days before expiry.  The weekly workflow should detect
+  `401` responses and open a labelled issue distinct from endpoint-regression issues.
+- **Rotation procedure**: revoke the old token, generate a new one with the same scopes,
+  update the GHA secret.  No code changes needed — the secret name stays the same.
+- **Principle of least privilege**: the test account should have no admin rights on any
+  organisation outside the dedicated `confusio-test` org/group.  If a token is compromised
+  it can at worst write to test repos.
 
 ## Setup and teardown automation
 
