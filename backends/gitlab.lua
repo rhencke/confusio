@@ -95,10 +95,7 @@ local function translate_gl_req(body_str)
 end
 
 local function translate_gl_projects(projects)
-  for i, p in ipairs(projects) do
-    projects[i] = translate_gl_repo(p)
-  end
-  return projects
+  return translate_list(translate_gl_repo, projects)
 end
 
 -- Map a GitLab user object to GitHub format.
@@ -123,10 +120,7 @@ local function translate_gl_user(u)
 end
 
 local function translate_gl_users(users)
-  for i, u in ipairs(users) do
-    users[i] = translate_gl_user(u)
-  end
-  return users
+  return translate_list(translate_gl_user, users)
 end
 
 -- Proxy a GitLab search response (plain JSON array) to the GitHub search
@@ -305,34 +299,19 @@ local function translate_gl_note(c)
 end
 
 local function translate_gl_issues(issues)
-  for i, iss in ipairs(issues) do
-    issues[i] = translate_gl_issue(iss)
-  end
-  return issues
+  return translate_list(translate_gl_issue, issues)
 end
 local function translate_gl_notes(notes)
-  for i, n in ipairs(notes) do
-    notes[i] = translate_gl_note(n)
-  end
-  return notes
+  return translate_list(translate_gl_note, notes)
 end
 local function translate_gl_labels(labels)
-  for i, l in ipairs(labels) do
-    labels[i] = translate_gl_label(l)
-  end
-  return labels
+  return translate_list(translate_gl_label, labels)
 end
 local function translate_gl_milestones(milestones)
-  for i, m in ipairs(milestones) do
-    milestones[i] = translate_gl_milestone(m)
-  end
-  return milestones
+  return translate_list(translate_gl_milestone, milestones)
 end
 local function translate_gl_members(members)
-  for i, m in ipairs(members) do
-    members[i] = translate_gl_member(m)
-  end
-  return members
+  return translate_list(translate_gl_member, members)
 end
 
 -- Map a GitLab MR (merge request) object to GitHub PR format.
@@ -385,10 +364,7 @@ local function translate_gl_mr(mr)
 end
 
 local function translate_gl_mrs(mrs)
-  for i, mr in ipairs(mrs) do
-    mrs[i] = translate_gl_mr(mr)
-  end
-  return mrs
+  return translate_list(translate_gl_mr, mrs)
 end
 
 -- Map GitLab MR approvals to GitHub reviews (APPROVED state).
@@ -557,6 +533,26 @@ local function gl_find_link(owner, repo_name, asset_id)
   end
   return nil
 end
+
+-- GitLab commit status → GitHub commit status (simple string).
+-- Used by get_commit_statuses, get_commit_combined_status, post_commit_status.
+local GL_STATUS_TO_GH = {
+  pending = "pending",
+  running = "pending",
+  success = "success",
+  failed = "failure",
+  canceled = "error",
+}
+
+-- GitLab commit status → GitHub check run status/conclusion.
+-- Used by post_check_runs and get_commit_check_runs.
+local GL_STATUS_TO_CHECK_RUN = {
+  pending = { status = "queued", conclusion = nil },
+  running = { status = "in_progress", conclusion = nil },
+  success = { status = "completed", conclusion = "success" },
+  failed = { status = "completed", conclusion = "failure" },
+  canceled = { status = "completed", conclusion = "cancelled" },
+}
 
 backend_impl = {
   get_root = function()
@@ -739,20 +735,13 @@ backend_impl = {
 
   -- GitLab status mapping: running→pending, failed→failure, canceled→error
   get_commit_statuses = function(owner, repo_name, ref)
-    local gl_to_gh = {
-      pending = "pending",
-      running = "pending",
-      success = "success",
-      failed = "failure",
-      canceled = "error",
-    }
     proxy_json_paged(
       function(statuses)
         local result = {}
         for _, s in ipairs(statuses or {}) do
           result[#result + 1] = {
             id = s.id,
-            state = gl_to_gh[s.status] or s.status,
+            state = GL_STATUS_TO_GH[s.status] or s.status,
             description = s.description,
             target_url = s.target_url,
             context = s.name,
@@ -780,19 +769,12 @@ backend_impl = {
   get_commit_combined_status = function(owner, repo_name, ref)
     -- GitLab has no single-object combined status; return the list as-is
     -- and wrap in a GitHub-style combined status object.
-    local gl_to_gh = {
-      pending = "pending",
-      running = "pending",
-      success = "success",
-      failed = "failure",
-      canceled = "error",
-    }
     proxy_json(
       function(statuses)
         local state = "success"
         local result = {}
         for _, s in ipairs(statuses or {}) do
-          local gh_state = gl_to_gh[s.status] or s.status
+          local gh_state = GL_STATUS_TO_GH[s.status] or s.status
           if gh_state == "failure" or gh_state == "error" then
             state = gh_state
           end
@@ -832,16 +814,9 @@ backend_impl = {
     })
     proxy_json_created(
       function(s)
-        local gl_to_gh = {
-          pending = "pending",
-          running = "pending",
-          success = "success",
-          failed = "failure",
-          canceled = "error",
-        }
         return {
           id = s.id,
-          state = gl_to_gh[s.status] or s.status,
+          state = GL_STATUS_TO_GH[s.status] or s.status,
           description = s.description,
           target_url = s.target_url,
           context = s.name,
@@ -2911,14 +2886,8 @@ backend_impl = {
       if not s then
         return {}
       end
-      local gl_to_gh = {
-        pending = { status = "queued", conclusion = nil },
-        running = { status = "in_progress", conclusion = nil },
-        success = { status = "completed", conclusion = "success" },
-        failed = { status = "completed", conclusion = "failure" },
-        canceled = { status = "completed", conclusion = "cancelled" },
-      }
-      local mapped = gl_to_gh[s.status] or { status = "completed", conclusion = "failure" }
+      local mapped = GL_STATUS_TO_CHECK_RUN[s.status]
+        or { status = "completed", conclusion = "failure" }
       return {
         id = s.id,
         node_id = "",
@@ -2970,16 +2939,10 @@ backend_impl = {
       return
     end
     local statuses = DecodeJson(body) or {}
-    local gl_to_gh = {
-      pending = { status = "queued", conclusion = nil },
-      running = { status = "in_progress", conclusion = nil },
-      success = { status = "completed", conclusion = "success" },
-      failed = { status = "completed", conclusion = "failure" },
-      canceled = { status = "completed", conclusion = "cancelled" },
-    }
     local runs = {}
     for i, s in ipairs(statuses) do
-      local mapped = gl_to_gh[s.status] or { status = "completed", conclusion = "failure" }
+      local mapped = GL_STATUS_TO_CHECK_RUN[s.status]
+        or { status = "completed", conclusion = "failure" }
       runs[i] = {
         id = s.id,
         node_id = "",
@@ -3590,11 +3553,7 @@ local function translate_gl_snippet(s)
 end
 
 local function translate_gl_snippets(data)
-  local out = {}
-  for i, s in ipairs(data) do
-    out[i] = translate_gl_snippet(s)
-  end
-  return out
+  return translate_list(translate_gl_snippet, data)
 end
 
 local function translate_gl_snippet_note(n)
@@ -3613,11 +3572,7 @@ local function translate_gl_snippet_note(n)
 end
 
 local function translate_gl_snippet_notes(data)
-  local out = {}
-  for i, n in ipairs(data) do
-    out[i] = translate_gl_snippet_note(n)
-  end
-  return out
+  return translate_list(translate_gl_snippet_note, data)
 end
 
 -- Convert a GitHub gist create/update request body to GitLab snippet format.
@@ -3761,10 +3716,7 @@ local function translate_gl_award(a)
 end
 
 local function translate_gl_awards(awards)
-  for i, a in ipairs(awards) do
-    awards[i] = translate_gl_award(a)
-  end
-  return awards
+  return translate_list(translate_gl_award, awards)
 end
 
 -- Issue reactions: GitLab has full award_emoji support on issues.

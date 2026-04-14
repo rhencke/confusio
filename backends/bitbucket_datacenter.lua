@@ -100,11 +100,9 @@ local function translate_bbs_user(u)
 end
 
 local function translate_bbs_repos(data, proj_key)
-  local repos = (data and data.values) or {}
-  for i, r in ipairs(repos) do
-    repos[i] = translate_bbs_repo(r, proj_key)
-  end
-  return repos
+  return translate_list(function(r)
+    return translate_bbs_repo(r, proj_key)
+  end, (data and data.values))
 end
 
 -- Translate GitHub create/update request body to Bitbucket DC format.
@@ -202,30 +200,13 @@ local function translate_bbs_hook_req(body_str)
   })
 end
 
--- Proxy a BBS paginated response to the GitHub search envelope.
-local function proxy_search_bbs(translate_item, url)
-  local ok, status, _, body = fetch_json(url)
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
-  end
-  local raw = DecodeJson(body) or {}
-  local items = {}
-  for i, item in ipairs(raw.values or {}) do
-    items[i] = translate_item(item)
-  end
-  set_preamble()
-  Write(
-    '{"total_count":'
-      .. #items
-      .. ',"incomplete_results":false,"items":'
-      .. (#items > 0 and EncodeJson(items) or "[]")
-      .. "}"
-  )
+-- Translate a DC tag object to GitHub format.
+-- DC: { id: "refs/tags/v1.0", displayId: "v1.0", latestCommit: "abc..." }
+local function translate_bbs_tag(t)
+  return {
+    name = t.displayId or t.id or "",
+    commit = { sha = t.latestCommit or t.latestChangeset or "", url = "" },
+  }
 end
 
 -- Repo path helper: /projects/{owner}/repos/{repo}
@@ -305,11 +286,7 @@ local function translate_bbs_pull(pr)
 end
 
 local function translate_bbs_pulls(data)
-  local prs = (data and data.values) or {}
-  for i, pr in ipairs(prs) do
-    prs[i] = translate_bbs_pull(pr)
-  end
-  return prs
+  return translate_list(translate_bbs_pull, (data and data.values))
 end
 
 -- Map a DC pull request change entry to GitHub file format.
@@ -386,6 +363,15 @@ local function translate_bbs_reviewers_to_reviews(reviewers)
   return result
 end
 
+-- DC build-status state → GitHub check_run status/conclusion mapping.
+-- Shared by post_check_runs and get_commit_check_runs.
+local bbs_dc_to_gh = {
+  INPROGRESS = { status = "in_progress", conclusion = nil },
+  SUCCESSFUL = { status = "completed", conclusion = "success" },
+  FAILED = { status = "completed", conclusion = "failure" },
+  STOPPED = { status = "completed", conclusion = "cancelled" },
+}
+
 backend_impl = {
   get_root = function()
     proxy_health_check(pcall(Fetch, base() .. "/repos", auth()))
@@ -454,15 +440,7 @@ backend_impl = {
   -- DC: GET /projects/{proj}/repos/{slug}/tags → { values: [{id, displayId, latestCommit}] }
 
   get_repo_tags = proxy_handler(function(data)
-    local tags = data.values or {}
-    local result = {}
-    for _, t in ipairs(tags) do
-      result[#result + 1] = {
-        name = t.displayId or t.id or "",
-        commit = { sha = t.latestCommit or t.latestChangeset or "", url = "" },
-      }
-    end
-    return result
+    return translate_list(translate_bbs_tag, data.values)
   end, function(owner, repo_name)
     return bbs_page_url(repo_path(owner, repo_name) .. "/tags")
   end),
@@ -470,11 +448,7 @@ backend_impl = {
   -- Branches -------------------------------------------------------------------
 
   get_repo_branches = proxy_handler(function(data)
-    local branches = data.values or {}
-    for i, b in ipairs(branches) do
-      branches[i] = translate_bbs_branch(b)
-    end
-    return branches
+    return translate_list(translate_bbs_branch, data.values)
   end, function(owner, repo_name)
     return bbs_page_url(repo_path(owner, repo_name) .. "/branches")
   end),
@@ -496,11 +470,7 @@ backend_impl = {
       url = url .. sep .. "until=" .. ref
     end
     proxy_json(function(data)
-      local commits = data.values or {}
-      for i, c in ipairs(commits) do
-        commits[i] = translate_bbs_commit(c)
-      end
-      return commits
+      return translate_list(translate_bbs_commit, data.values)
     end, fetch_json(url))
   end,
 
@@ -604,11 +574,7 @@ backend_impl = {
   -- DC: /ssh endpoint (not /deploy-keys)
 
   get_repo_keys = proxy_handler(function(data)
-    local keys = data.values or {}
-    for i, k in ipairs(keys) do
-      keys[i] = translate_bbs_key(k)
-    end
-    return keys
+    return translate_list(translate_bbs_key, data.values)
   end, function(owner, repo_name)
     return bbs_page_url(repo_path(owner, repo_name) .. "/ssh")
   end),
@@ -638,11 +604,7 @@ backend_impl = {
   -- Webhooks -------------------------------------------------------------------
 
   get_repo_hooks = proxy_handler(function(data)
-    local hooks = data.values or {}
-    for i, h in ipairs(hooks) do
-      hooks[i] = translate_bbs_hook(h)
-    end
-    return hooks
+    return translate_list(translate_bbs_hook, data.values)
   end, function(owner, repo_name)
     return bbs_page_url(repo_path(owner, repo_name) .. "/webhooks")
   end),
@@ -694,11 +656,7 @@ backend_impl = {
 
   -- GET /users
   get_users = proxy_handler(function(data)
-    local users = (data and data.values) or {}
-    for i, u in ipairs(users) do
-      users[i] = translate_bbs_user(u)
-    end
-    return users
+    return translate_list(translate_bbs_user, (data and data.values))
   end, function()
     return bbs_page_url(base() .. "/users")
   end),
@@ -767,11 +725,7 @@ backend_impl = {
 
   -- GET /repos/{owner}/{repo}/pulls/{pull_number}/commits
   get_pull_commits = proxy_handler(function(data)
-    local commits = (data and data.values) or {}
-    for i, c in ipairs(commits) do
-      commits[i] = translate_bbs_commit(c)
-    end
-    return commits
+    return translate_list(translate_bbs_commit, (data and data.values))
   end, function(owner, repo_name, pull_number)
     return bbs_page_url(
       repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number .. "/commits"
@@ -781,11 +735,7 @@ backend_impl = {
   -- GET /repos/{owner}/{repo}/pulls/{pull_number}/files
   -- DC uses /changes for per-file info (no line stats).
   get_pull_files = proxy_handler(function(data)
-    local changes = (data and data.values) or {}
-    for i, c in ipairs(changes) do
-      changes[i] = translate_bbs_pr_change(c)
-    end
-    return changes
+    return translate_list(translate_bbs_pr_change, (data and data.values))
   end, function(owner, repo_name, pull_number)
     return bbs_page_url(
       repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number .. "/changes"
@@ -932,13 +882,21 @@ backend_impl = {
   -- GET /search/repositories — DC: GET /repos?name=<q>
   search_repositories = function()
     local q = GetParam("q") or ""
-    proxy_search_bbs(translate_bbs_repo, bbs_page_url(base() .. "/repos?name=" .. q))
+    proxy_search_envelope(
+      translate_bbs_repo,
+      "values",
+      fetch_json(bbs_page_url(base() .. "/repos?name=" .. q))
+    )
   end,
 
   -- GET /search/users — DC: GET /users?filter=<q>
   search_users = function()
     local q = GetParam("q") or ""
-    proxy_search_bbs(translate_bbs_user, bbs_page_url(base() .. "/users?filter=" .. q))
+    proxy_search_envelope(
+      translate_bbs_user,
+      "values",
+      fetch_json(bbs_page_url(base() .. "/users?filter=" .. q))
+    )
   end,
 
   -- GET /repos/{owner}/{repo}/pulls/{pull_number}/comments
@@ -1008,12 +966,6 @@ backend_impl = {
     }
     local dc_state = gh_status == "completed" and (gh_conclusion_to_dc[conclusion] or "FAILED")
       or "INPROGRESS"
-    local dc_to_gh = {
-      INPROGRESS = { status = "in_progress", conclusion = nil },
-      SUCCESSFUL = { status = "completed", conclusion = "success" },
-      FAILED = { status = "completed", conclusion = "failure" },
-      STOPPED = { status = "completed", conclusion = "cancelled" },
-    }
     local dc_body = EncodeJson({
       state = dc_state,
       key = req.name or "",
@@ -1032,7 +984,7 @@ backend_impl = {
       respond_json(up_status, {})
       return
     end
-    local mapped = dc_to_gh[dc_state] or { status = "completed", conclusion = "failure" }
+    local mapped = bbs_dc_to_gh[dc_state] or { status = "completed", conclusion = "failure" }
     respond_json(201, {
       id = 0,
       node_id = "",
@@ -1069,15 +1021,9 @@ backend_impl = {
       return
     end
     local data = DecodeJson(body) or {}
-    local dc_to_gh = {
-      INPROGRESS = { status = "in_progress", conclusion = nil },
-      SUCCESSFUL = { status = "completed", conclusion = "success" },
-      FAILED = { status = "completed", conclusion = "failure" },
-      STOPPED = { status = "completed", conclusion = "cancelled" },
-    }
     local runs = {}
     for i, s in ipairs(data.values or {}) do
-      local mapped = dc_to_gh[s.state] or { status = "completed", conclusion = "failure" }
+      local mapped = bbs_dc_to_gh[s.state] or { status = "completed", conclusion = "failure" }
       runs[i] = {
         id = i,
         node_id = "",
@@ -1315,11 +1261,7 @@ _b.list_git_matching_refs = function(owner, repo_name, ref)
   end
   local url = bbs_page_url(repo_path(owner, repo_name) .. endpoint .. "?filterText=" .. prefix)
   proxy_json(function(data)
-    local refs = data.values or {}
-    for i, r in ipairs(refs) do
-      refs[i] = translate_bbs_ref(r)
-    end
-    return refs
+    return translate_list(translate_bbs_ref, data.values)
   end, fetch_json(url))
 end
 

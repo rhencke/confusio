@@ -98,11 +98,7 @@ local function translate_onedev_req(body_str)
 end
 
 local function translate_onedev_repos(repos)
-  repos = repos or {}
-  for i, r in ipairs(repos) do
-    repos[i] = translate_onedev_repo(r)
-  end
-  return repos
+  return translate_list(translate_onedev_repo, repos)
 end
 
 local function translate_onedev_user(u)
@@ -308,11 +304,7 @@ backend_impl = {
     local page = tonumber(GetParam("page")) or 1
     proxy_json(
       function(branches)
-        branches = branches or {}
-        for i, b in ipairs(branches) do
-          branches[i] = translate_onedev_branch(b)
-        end
-        return branches
+        return translate_list(translate_onedev_branch, branches)
       end,
       fetch_json(
         base()
@@ -367,11 +359,7 @@ backend_impl = {
       url = url .. "&revision=" .. ref
     end
     proxy_json(function(commits)
-      commits = commits or {}
-      for i, c in ipairs(commits) do
-        commits[i] = translate_onedev_commit(c)
-      end
-      return commits
+      return translate_list(translate_onedev_commit, commits)
     end, fetch_json(url))
   end,
 
@@ -499,11 +487,7 @@ backend_impl = {
     local page = tonumber(GetParam("page")) or 1
     local offset = (page - 1) * (tonumber(count) or 30)
     proxy_json(function(users)
-      users = users or {}
-      for i, u in ipairs(users) do
-        users[i] = translate_onedev_user(u)
-      end
-      return users
+      return translate_list(translate_onedev_user, users)
     end, fetch_json(base() .. "/users?offset=" .. offset .. "&count=" .. count))
   end,
 
@@ -531,11 +515,7 @@ backend_impl = {
     end
     proxy_json(
       function(issues)
-        issues = issues or {}
-        for i, iss in ipairs(issues) do
-          issues[i] = translate_onedev_issue(iss)
-        end
-        return issues
+        return translate_list(translate_onedev_issue, issues)
       end,
       fetch_json(
         base()
@@ -615,11 +595,7 @@ backend_impl = {
     local cq = "%22Issue%22+is+%22" .. issue_id .. "%22"
     proxy_json(
       function(comments)
-        comments = comments or {}
-        for i, c in ipairs(comments) do
-          comments[i] = translate_onedev_issue_comment(c)
-        end
-        return comments
+        return translate_list(translate_onedev_issue_comment, comments)
       end,
       fetch_json(
         base()

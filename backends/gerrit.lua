@@ -111,6 +111,18 @@ local function translate_gerrit_tag(t)
   return { name = name, commit = { sha = t.revision or t.object or "", url = "" } }
 end
 
+-- Gerrit projects endpoints return a dict { project_name → project_info }.
+-- This translate function is shared by get_user_repos, get_users_repos, and
+-- get_repositories, all of which iterate the same dict shape.
+local function gerrit_repos_from_dict(data)
+  local repos = {}
+  for name, r in pairs(data or {}) do
+    r.name = name
+    repos[#repos + 1] = translate_gerrit_repo(r)
+  end
+  return repos
+end
+
 backend_impl = {
   get_root = function()
     proxy_health_check(pcall(Fetch, config.base_url .. "/config/server/version", auth()))
@@ -142,14 +154,7 @@ backend_impl = {
     local limit = GetParam("per_page") or "30"
     local skip = ((tonumber(GetParam("page")) or 1) - 1) * (tonumber(limit) or 30)
     local url = base() .. "/projects/?n=" .. limit .. (skip > 0 and ("&S=" .. skip) or "")
-    proxy_json(function(data)
-      local repos = {}
-      for name, r in pairs(data or {}) do
-        r.name = name
-        repos[#repos + 1] = translate_gerrit_repo(r)
-      end
-      return repos
-    end, fetch_json(url))
+    proxy_json(gerrit_repos_from_dict, fetch_json(url))
   end,
 
   get_users_repos = function(username)
@@ -161,28 +166,14 @@ backend_impl = {
       .. "%2F&n="
       .. limit
       .. (skip > 0 and ("&S=" .. skip) or "")
-    proxy_json(function(data)
-      local repos = {}
-      for name, r in pairs(data or {}) do
-        r.name = name
-        repos[#repos + 1] = translate_gerrit_repo(r)
-      end
-      return repos
-    end, fetch_json(url))
+    proxy_json(gerrit_repos_from_dict, fetch_json(url))
   end,
 
   get_repositories = function()
     local limit = GetParam("per_page") or "30"
     local skip = ((tonumber(GetParam("page")) or 1) - 1) * (tonumber(limit) or 30)
     local url = base() .. "/projects/?n=" .. limit .. (skip > 0 and ("&S=" .. skip) or "")
-    proxy_json(function(data)
-      local repos = {}
-      for name, r in pairs(data or {}) do
-        r.name = name
-        repos[#repos + 1] = translate_gerrit_repo(r)
-      end
-      return repos
-    end, fetch_json(url))
+    proxy_json(gerrit_repos_from_dict, fetch_json(url))
   end,
 
   -- Branches ------------------------------------------------------------------
@@ -212,11 +203,7 @@ backend_impl = {
   -- GET /a/projects/{id}/tags/ → [{ ref, revision, object }]
 
   get_repo_tags = proxy_handler(function(tags)
-    local result = {}
-    for _, t in ipairs(tags or {}) do
-      result[#result + 1] = translate_gerrit_tag(t)
-    end
-    return result
+    return translate_list(translate_gerrit_tag, tags)
   end, function(owner, repo_name)
     return base() .. "/projects/" .. project_id(owner, repo_name) .. "/tags/"
   end),
@@ -286,12 +273,7 @@ backend_impl = {
       .. (skip > 0 and ("&S=" .. skip) or "")
     local ok, status, _, body = fetch_json(url)
     if ok and status == 200 then
-      local accounts = gerrit_decode(body)
-      local users = {}
-      for _, a in ipairs(accounts) do
-        users[#users + 1] = translate_gerrit_user(a)
-      end
-      respond_json(200, users)
+      respond_json(200, translate_list(translate_gerrit_user, gerrit_decode(body)))
     elseif ok then
       respond_json(status, {})
     else

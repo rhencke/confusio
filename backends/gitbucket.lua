@@ -20,6 +20,14 @@ local function set_204_or_error(method, url)
   proxy_204(nil, pcall(Fetch, url, opts))
 end
 
+-- GitBucket commit status state → GitHub check_run status/conclusion mapping.
+-- Shared by post_check_runs and get_commit_check_runs.
+local gb_to_gh = {
+  pending = { status = "in_progress", conclusion = nil },
+  success = { status = "completed", conclusion = "success" },
+  warning = { status = "completed", conclusion = "neutral" },
+}
+
 backend_impl = {
   get_root = function()
     proxy_health_check(pcall(Fetch, base() .. "/rate_limit", auth()))
@@ -167,11 +175,6 @@ backend_impl = {
         return {}
       end
       local state = s.state or "pending"
-      local gb_to_gh = {
-        pending = { status = "in_progress", conclusion = nil },
-        success = { status = "completed", conclusion = "success" },
-        warning = { status = "completed", conclusion = "neutral" },
-      }
       local mapped = gb_to_gh[state] or { status = "completed", conclusion = "failure" }
       local gh_status, gh_conclusion = mapped.status, mapped.conclusion
       return {
@@ -229,11 +232,6 @@ backend_impl = {
     local runs = {}
     for i, s in ipairs(statuses) do
       local state = s.state or "pending"
-      local gb_to_gh = {
-        pending = { status = "in_progress", conclusion = nil },
-        success = { status = "completed", conclusion = "success" },
-        warning = { status = "completed", conclusion = "neutral" },
-      }
       local mapped = gb_to_gh[state] or { status = "completed", conclusion = "failure" }
       local gh_status, gh_conclusion = mapped.status, mapped.conclusion
       runs[i] = {

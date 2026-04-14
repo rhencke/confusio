@@ -144,11 +144,7 @@ backend_impl = {
       respond_json(status, {})
       return
     end
-    local result = {}
-    for _, r in ipairs(repos) do
-      result[#result + 1] = translate_repo(r)
-    end
-    respond_json(200, result)
+    respond_json(200, translate_list(translate_repo, repos))
   end,
 
   -- GET /repos/{owner}/{repo}/branches: owner must be "codecommit".

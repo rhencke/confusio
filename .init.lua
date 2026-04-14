@@ -215,6 +215,46 @@ function proxy_json_list(translate, ok, status, _headers, body)
   end
 end
 
+-- translate_list is global: apply fn to each element of items and return a new array.
+-- Replaces the repeated for-i-ipairs + arr[i]=fn(item) pattern in backend modules.
+--   translate_list(translate_item, data.values)
+--   translate_list(translate_item, data)
+function translate_list(fn, items)
+  local result = {}
+  for i, item in ipairs(items or {}) do
+    result[i] = fn(item)
+  end
+  return result
+end
+
+-- proxy_search_envelope is global: emit the GitHub search response envelope.
+-- translate_item: applied to each element of the upstream array.
+-- container: nil = use the decoded body itself as the array;
+--            string = use body[container] as the array (e.g. "values", "data").
+-- Designed to receive the return values of fetch_json(...):
+--   proxy_search_envelope(translate_fn, "values", fetch_json(url))
+--   proxy_search_envelope(translate_fn, "data",   fetch_json(url))
+--   proxy_search_envelope(translate_fn, nil,      fetch_json(url))
+function proxy_search_envelope(translate_item, container, ok, status, _headers, body)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local raw = DecodeJson(body) or {}
+  local src = type(container) == "string" and (raw[container] or {}) or raw
+  local items = translate_list(translate_item, src)
+  set_preamble()
+  Write(
+    '{"total_count":' .. #items .. ',"incomplete_results":false,"items":'
+      .. (#items > 0 and EncodeJson(items) or "[]")
+      .. "}"
+  )
+end
+
 -- append_page_params appends translated pagination params to url.
 -- mapping: { per_page = "upstream_name", page = "upstream_name" }
 --   Omit the page key for providers that only support limit (e.g. Sourcehut).
