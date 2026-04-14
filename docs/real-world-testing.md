@@ -464,7 +464,172 @@ test/real-world/
 
 ## Test harness design
 
-*(To be detailed in the next section of this plan.)*
+### Approach: generator-primary with per-backend overrides
+
+Two approaches were considered:
+
+**Option A — Hurl file per provider** (extend the existing unit-test pattern):  
+Write `test/real-world/<backend>-<group>.hurl` files by hand, one per backend per endpoint
+group, using real fixture variables instead of mock-hardcoded values.
+
+**Option B — Metadata-driven generator** (generate hurl files from the catalog + OpenAPI spec):  
+A script reads the endpoint catalog, the compatibility CSV, and the vendored GitHub OpenAPI
+spec (`vendor/github-rest-api-description/api.github.com.yaml`) and emits one hurl file per
+backend containing structural assertions for every `y`/`~` endpoint.
+
+**Decision: Option B (generator), with a per-backend manual override layer.**
+
+Rationale: 24 backends × ~100–140 supported endpoints each is on the order of 2,400–3,400
+request/assertion blocks.  Hand-maintaining that volume is not viable — every new endpoint
+added to the catalog would require touching up to 24 files.  The generator pattern already
+exists in this project (`scripts/gen-matrix.py`), and the OpenAPI spec is already vendored.
+
+A pure generator covers the common structural shape; the override layer handles the small
+number of endpoints where the generated assertions are wrong or insufficient for a specific
+backend.
+
+### What the generator produces
+
+Script: `scripts/gen-realworld-hurl.py`
+
+Inputs:
+- `make dump-endpoints` JSON (catalog: verb, path, group, handler)
+- `site/compatibility.csv` (which endpoints each backend supports)
+- `vendor/github-rest-api-description/api.github.com.yaml` (response schemas)
+- `test/real-world/backends.json` (per-backend config: base URL, fixture variable values)
+
+Output: one hurl file per backend at `test/real-world/generated/<backend>.hurl`
+
+For each (backend, endpoint) pair where the CSV value is `y` or starts with `~`, the
+generator emits:
+
+```hurl
+# <VERB> <path>
+<VERB> http://{{host}}<path-with-vars>
+Authorization: <scheme> {{token}}
+
+HTTP <expected-status>
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+<field-assertions from OpenAPI schema>
+```
+
+**Assertion strategy — structural, not value-based.**  Real-world tests cannot assert exact
+values (we don't control the content of real repos).  Every assertion is one of:
+- `isInteger`, `isFloat`, `isString`, `isBoolean`, `isCollection`, `isNotEmpty`
+- `exists` / `not exists`
+- Range checks for known-bounded fields (e.g. HTTP status integers)
+
+Example of generated output for `GET /repos/{owner}/{repo}` (gitea-family):
+
+```hurl
+# GET /repos/{owner}/{repo}
+GET http://{{host}}/repos/{{owner}}/{{repo}}
+Authorization: token {{token}}
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$.id" isInteger
+jsonpath "$.name" isString
+jsonpath "$.full_name" isString
+jsonpath "$.owner.login" isString
+jsonpath "$.private" isBoolean
+jsonpath "$.html_url" isString
+jsonpath "$.default_branch" isString
+jsonpath "$.visibility" isString
+```
+
+**Handling `~` (partial) entries.**  The partial annotation may carry an explanation
+(e.g. `~no release assets`).  Fields that the annotation exempts are omitted from the
+generated assertions.  Initially the generator treats all `~` entries identically to `y`
+(assert all required fields from the schema) and relies on the override layer to suppress
+assertions that don't apply.  A future improvement is to make partial annotations
+machine-parseable so suppressions are automatic.
+
+**Mutation endpoints** (`POST`, `PATCH`, `DELETE`, `PUT`).  The generator emits a create,
+assert, and cleanup triple using the mutation isolation pattern described in *Setup and
+teardown automation* (unique `{{run_id}}`-suffixed resource names, best-effort DELETE).
+
+### Per-backend variable conventions
+
+The hurl runner injects these variables for every backend:
+
+| Variable | Value | Example |
+|----------|-------|---------|
+| `host` | confusio listen address | `localhost:18300` |
+| `token` | auth token in the backend's expected format | `abcdef123...` |
+| `owner` | fixture user or org name | `confusio-test` |
+| `repo` | primary fixture repo | `fixtures-main` |
+| `fork_repo` | fork-target fixture repo | `fixtures-fork-target` |
+| `run_id` | GHA run number (for unique mutation names) | `12345678` |
+| `backend` | backend identifier | `gitea` |
+
+For backends that require extra variables (e.g. `azuredevops` needs `org`), the generator
+reads `test/real-world/backends.json` for the additional bindings.
+
+### Per-backend override layer
+
+Location: `test/real-world/overrides/<backend>/<group>.hurl`
+
+When the runner finds an override file for a (backend, group) pair it uses that file
+*instead of* the generated snippet for that group.  This covers cases like:
+
+- Paginated endpoints where the `Link` header must be asserted (generator omits header
+  assertions by default).
+- Endpoints where a backend returns a different HTTP status for a supported operation
+  (e.g. 201 vs 200 on create).
+- Endpoints that the generator cannot express correctly from the OpenAPI schema alone.
+
+Override files use the same variable conventions as generated files.  They are checked in
+and reviewed like any other source file.  The expectation is that overrides are rare — if an
+override is needed for more than a handful of endpoints on a backend, that suggests a
+systematic translation difference that belongs in the backend implementation, not the test.
+
+### Test runner
+
+Script: `test/test-realworld.sh`
+
+Analogous in shape to `test/test-unit.sh` but iterates real instances instead of mocks.
+For each backend:
+
+1. Merge the generated hurl file with any override snippets into a temporary combined file.
+2. Start confusio pointed at the real backend URL: `sh ./confusio.com -p $PORT -- $BACKEND $BASE_URL`
+3. Run hurl with:
+   ```sh
+   ./hurl --delay 1000 \
+          --retry 3 --retry-interval 2000 \
+          --variable host=localhost:$PORT \
+          --variable token="$TOKEN" \
+          --variable owner="$OWNER" \
+          --variable repo="$REPO" \
+          --variable fork_repo="$FORK_REPO" \
+          --variable run_id="$RUN_ID" \
+          --report-json "$RESULTS_DIR/$BACKEND.json" \
+          "$TMPDIR/$BACKEND.hurl"
+   ```
+4. Stop confusio.
+5. Append the per-backend JSON result to a running summary.
+
+The `--report-json` output is a machine-readable hurl JSON report.  The GHA workflow reads
+this to build the issue body (see *Weekly GHA workflow*).
+
+Backends run sequentially (not in parallel) to respect rate limits and avoid port conflicts.
+
+### Difference from existing unit/mock hurl files
+
+| Dimension | Unit tests (`test/<backend>-<group>.hurl`) | Real-world tests |
+|-----------|-------------------------------------------|-----------------|
+| Target | confusio + mock backend | confusio + real instance |
+| Assertions | Value-exact (`== "hello-world"`) | Structural (`isString`) |
+| Fixture data | Hardcoded in mock | Live data from real account |
+| File authoring | Hand-written | Generator + optional overrides |
+| Auth header | None (mock ignores it) | Real token injected per-backend |
+| Run cadence | Every CI push | Weekly |
+| Failure meaning | confusio translation bug | Provider API change or real bug |
+
+The two test layers are complementary: unit tests catch confusio regressions quickly on every
+push; real-world tests catch provider-side drift weekly.
 
 ## Weekly GHA workflow and issue reporting
 
