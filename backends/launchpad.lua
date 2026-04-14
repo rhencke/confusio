@@ -119,12 +119,7 @@ backend_impl = {
         .. "&status=New&status=Incomplete&status=Confirmed&status=Triaged&status=In+Progress"
     end
     proxy_json(function(data)
-      local entries = data.entries or {}
-      local result = {}
-      for _, t in ipairs(entries) do
-        result[#result + 1] = translate_lp_task(t)
-      end
-      return result
+      return translate_list(translate_lp_task, data.entries)
     end, fetch_json(url))
   end,
 
