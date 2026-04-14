@@ -81,6 +81,40 @@ end
 -- Lexer
 -- ============================================================
 
+-- Character predicates.
+local function is_name_start(b)
+  if not b then
+    return false
+  end
+  return b == 95 or (b >= 65 and b <= 90) or (b >= 97 and b <= 122)
+end
+
+local function is_name_char(b)
+  if not b then
+    return false
+  end
+  return b == 95 or (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or (b >= 48 and b <= 57)
+end
+
+local function is_digit(b)
+  if not b then
+    return false
+  end
+  return b >= 48 and b <= 57
+end
+
+-- Lookup table for single-character string escape sequences.
+local escape_map = {
+  [34] = '"',
+  [47] = "/",
+  [92] = "\\",
+  [98] = "\b",
+  [102] = "\f",
+  [110] = "\n",
+  [114] = "\r",
+  [116] = "\t",
+}
+
 local function make_lexer(source)
   local lex = { src = source, pos = 1, line = 1, col = 1, _peeked = nil }
 
@@ -88,51 +122,240 @@ local function make_lexer(source)
     error(self.line .. ":" .. self.col .. ": " .. msg, 0)
   end
 
-  -- Read and return the next meaningful token, advancing position.
-  local function read_token(l)
-    local src = l.src
+  -- Advance one non-newline character.
+  function lex:advance()
+    self.pos = self.pos + 1
+    self.col = self.col + 1
+  end
 
-    -- Skip ignored tokens: whitespace, line terminators, commas, comments.
-    while l.pos <= #src do
-      local b = src:byte(l.pos)
+  -- Advance n non-newline characters.
+  function lex:advance_by(n)
+    self.pos = self.pos + n
+    self.col = self.col + n
+  end
+
+  -- Handle a \n line terminator.
+  function lex:newline_lf()
+    self.line = self.line + 1
+    self.col = 1
+    self.pos = self.pos + 1
+  end
+
+  -- Handle a \r (or \r\n) line terminator.
+  function lex:newline_cr()
+    self.line = self.line + 1
+    self.col = 1
+    self.pos = self.pos + 1
+    if self.src:byte(self.pos) == 10 then
+      self.pos = self.pos + 1
+    end
+  end
+
+  -- Skip a # comment to end of line.
+  function lex:skip_comment()
+    self:advance() -- consume #
+    while self.pos <= #self.src do
+      local b = self.src:byte(self.pos)
+      if b == 10 or b == 13 then
+        break
+      end
+      self:advance()
+    end
+  end
+
+  -- Skip all ignored tokens: whitespace, commas, line terminators, comments.
+  function lex:skip_ignored()
+    while self.pos <= #self.src do
+      local b = self.src:byte(self.pos)
       if b == 9 or b == 32 or b == 44 then -- tab, space, comma
-        l.col = l.col + 1
-        l.pos = l.pos + 1
-      elseif b == 10 then -- \n
-        l.line = l.line + 1
-        l.col = 1
-        l.pos = l.pos + 1
-      elseif b == 13 then -- \r or \r\n
-        l.line = l.line + 1
-        l.col = 1
-        l.pos = l.pos + 1
-        if src:byte(l.pos) == 10 then
-          l.pos = l.pos + 1
-        end
-      elseif b == 35 then -- # comment: skip to end of line
-        l.pos = l.pos + 1
-        l.col = l.col + 1
-        while l.pos <= #src do
-          local cb = src:byte(l.pos)
-          if cb == 10 or cb == 13 then
-            break
-          end
-          l.pos = l.pos + 1
-          l.col = l.col + 1
-        end
+        self:advance()
+      elseif b == 10 then
+        self:newline_lf()
+      elseif b == 13 then
+        self:newline_cr()
+      elseif b == 35 then
+        self:skip_comment()
       else
         break
       end
     end
+  end
 
-    local tline = l.line
-    local tcol = l.col
+  -- Consume all digits at the current position (no col tracking).
+  function lex:consume_digits()
+    while is_digit(self.src:byte(self.pos)) do
+      self.pos = self.pos + 1
+    end
+  end
 
-    if l.pos > #src then
+  -- Read a NAME token; pos is at the first name character.
+  function lex:read_name(tline, tcol)
+    local s = self.pos
+    self.pos = self.pos + 1
+    while is_name_char(self.src:byte(self.pos)) do
+      self.pos = self.pos + 1
+    end
+    local value = self.src:sub(s, self.pos - 1)
+    self.col = tcol + #value
+    return { kind = "NAME", value = value, line = tline, col = tcol }
+  end
+
+  -- Read an INT_VALUE or FLOAT_VALUE token; pos is at - or first digit.
+  function lex:read_number(tline, tcol)
+    local src = self.src
+    local s = self.pos
+    if src:byte(self.pos) == 45 then -- optional leading minus
+      self.pos = self.pos + 1
+      if not is_digit(src:byte(self.pos)) then
+        self:error("invalid number: expected digit after '-'")
+      end
+    end
+    self:consume_digits()
+    local is_float = false
+    if src:byte(self.pos) == 46 then -- fractional part
+      is_float = true
+      self.pos = self.pos + 1
+      if not is_digit(src:byte(self.pos)) then
+        self:error("invalid float: expected digit after '.'")
+      end
+      self:consume_digits()
+    end
+    local b = src:byte(self.pos)
+    if b == 69 or b == 101 then -- exponent part (E or e)
+      is_float = true
+      self.pos = self.pos + 1
+      local sb = src:byte(self.pos)
+      if sb == 43 or sb == 45 then -- optional sign
+        self.pos = self.pos + 1
+      end
+      if not is_digit(src:byte(self.pos)) then
+        self:error("invalid float: expected digit in exponent")
+      end
+      self:consume_digits()
+    end
+    if is_name_char(src:byte(self.pos)) then
+      self:error("invalid number literal: unexpected character after digits")
+    end
+    local value = src:sub(s, self.pos - 1)
+    self.col = tcol + #value
+    return {
+      kind = is_float and "FLOAT_VALUE" or "INT_VALUE",
+      value = value,
+      line = tline,
+      col = tcol,
+    }
+  end
+
+  -- Read one escape sequence; pos is at the backslash.
+  function lex:read_escape()
+    self.pos = self.pos + 1 -- skip backslash
+    local eb = self.src:byte(self.pos)
+    local ch = escape_map[eb]
+    if ch then
+      self.pos = self.pos + 1
+      self.col = self.col + 2
+      return ch
+    elseif eb == 117 then -- \uXXXX
+      self.pos = self.pos + 1
+      local hex = self.src:sub(self.pos, self.pos + 3)
+      if #hex < 4 or not hex:match("^[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]$") then
+        self:error("invalid unicode escape \\u" .. hex)
+      end
+      local result = utf8.char(tonumber(hex, 16))
+      self.pos = self.pos + 4
+      self.col = self.col + 6 -- \uXXXX = 6 source chars
+      return result
+    else
+      self:error("invalid escape sequence '\\" .. string.char(eb) .. "'")
+    end
+  end
+
+  -- Read a single-line string token; pos is at the opening ".
+  function lex:read_string(tline, tcol)
+    self:advance() -- consume opening "
+    local parts = {}
+    while true do
+      if self.pos > #self.src then
+        self:error("unterminated string")
+      end
+      local b = self.src:byte(self.pos)
+      if b == 10 or b == 13 then
+        self:error("line terminator inside string")
+      elseif b == 34 then -- closing "
+        self:advance()
+        break
+      elseif b == 92 then -- backslash escape
+        parts[#parts + 1] = self:read_escape()
+      else
+        parts[#parts + 1] = self.src:sub(self.pos, self.pos)
+        self:advance()
+      end
+    end
+    return { kind = "STRING_VALUE", value = table.concat(parts), line = tline, col = tcol }
+  end
+
+  -- Consume one raw character into parts, tracking line state (for block strings).
+  function lex:block_char(parts)
+    local src = self.src
+    local b = src:byte(self.pos)
+    if b == 10 then
+      parts[#parts + 1] = "\n"
+      self:newline_lf()
+    elseif b == 13 then
+      parts[#parts + 1] = "\r"
+      self.line = self.line + 1
+      self.col = 1
+      self.pos = self.pos + 1
+      if src:byte(self.pos) == 10 then -- \r\n: consume and capture the \n too
+        parts[#parts + 1] = "\n"
+        self.pos = self.pos + 1
+      end
+    else
+      parts[#parts + 1] = src:sub(self.pos, self.pos)
+      self:advance()
+    end
+  end
+
+  -- Read a block string token; pos is at the opening """.
+  function lex:read_block_string(tline, tcol)
+    local src = self.src
+    self:advance_by(3) -- consume opening """
+    local parts = {}
+    while true do
+      if self.pos > #src then
+        self:error("unterminated block string")
+      end
+      if src:sub(self.pos, self.pos + 2) == '"""' then
+        self:advance_by(3)
+        break
+      elseif src:sub(self.pos, self.pos + 3) == '\\"""' then -- escaped triple-quote
+        parts[#parts + 1] = '"""'
+        self:advance_by(4)
+      else
+        self:block_char(parts)
+      end
+    end
+    return {
+      kind = "STRING_VALUE",
+      value = block_string_value(table.concat(parts)),
+      line = tline,
+      col = tcol,
+    }
+  end
+
+  -- Read and return the next meaningful token, advancing position.
+  function lex:read_token()
+    self:skip_ignored()
+
+    local tline = self.line
+    local tcol = self.col
+
+    if self.pos > #self.src then
       return { kind = "EOF", value = "", line = tline, col = tcol }
     end
 
-    local b = src:byte(l.pos)
+    local src = self.src
+    local b = src:byte(self.pos)
 
     -- Single-character punctuation.
     if
@@ -150,248 +373,40 @@ local function make_lexer(source)
       or b == 124
       or b == 125
     then
-      local ch = src:sub(l.pos, l.pos)
-      l.pos = l.pos + 1
-      l.col = l.col + 1
+      local ch = src:sub(self.pos, self.pos)
+      self:advance()
       return { kind = "PUNCT", value = ch, line = tline, col = tcol }
     end
 
-    -- ... (three dots; one or two dots alone is a lexer error).
+    -- ... spread operator (one or two dots alone is a lexer error).
     if b == 46 then
-      if src:sub(l.pos, l.pos + 2) == "..." then
-        l.pos = l.pos + 3
-        l.col = l.col + 3
+      if src:sub(self.pos, self.pos + 2) == "..." then
+        self:advance_by(3)
         return { kind = "PUNCT", value = "...", line = tline, col = tcol }
       end
-      l:error("unexpected character '.'")
+      self:error("unexpected character '.'")
     end
 
     -- NAME: [_A-Za-z][_0-9A-Za-z]*
-    if b == 95 or (b >= 65 and b <= 90) or (b >= 97 and b <= 122) then
-      local s = l.pos
-      l.pos = l.pos + 1
-      while true do
-        local nb = src:byte(l.pos)
-        if
-          nb
-          and (
-            nb == 95
-            or (nb >= 65 and nb <= 90)
-            or (nb >= 97 and nb <= 122)
-            or (nb >= 48 and nb <= 57)
-          )
-        then
-          l.pos = l.pos + 1
-        else
-          break
-        end
-      end
-      local value = src:sub(s, l.pos - 1)
-      l.col = tcol + #value
-      return { kind = "NAME", value = value, line = tline, col = tcol }
+    if is_name_start(b) then
+      return self:read_name(tline, tcol)
     end
 
-    -- Number: IntValue or FloatValue.
-    if b == 45 or (b >= 48 and b <= 57) then -- - or digit
-      local s = l.pos
-      if b == 45 then -- optional leading minus
-        l.pos = l.pos + 1
-        local nb = src:byte(l.pos)
-        if not nb or not (nb >= 48 and nb <= 57) then
-          l:error("invalid number: expected digit after '-'")
-        end
-      end
-      while true do -- integer part
-        local nb = src:byte(l.pos)
-        if nb and nb >= 48 and nb <= 57 then
-          l.pos = l.pos + 1
-        else
-          break
-        end
-      end
-      local is_float = false
-      local nb = src:byte(l.pos)
-      if nb == 46 then -- fractional part
-        is_float = true
-        l.pos = l.pos + 1
-        local fb = src:byte(l.pos)
-        if not fb or not (fb >= 48 and fb <= 57) then
-          l:error("invalid float: expected digit after '.'")
-        end
-        while true do
-          local db = src:byte(l.pos)
-          if db and db >= 48 and db <= 57 then
-            l.pos = l.pos + 1
-          else
-            break
-          end
-        end
-        nb = src:byte(l.pos)
-      end
-      if nb == 69 or nb == 101 then -- exponent part (E or e)
-        is_float = true
-        l.pos = l.pos + 1
-        local sb2 = src:byte(l.pos)
-        if sb2 == 43 or sb2 == 45 then -- optional +/-
-          l.pos = l.pos + 1
-        end
-        local eb = src:byte(l.pos)
-        if not eb or not (eb >= 48 and eb <= 57) then
-          l:error("invalid float: expected digit in exponent")
-        end
-        while true do
-          local db = src:byte(l.pos)
-          if db and db >= 48 and db <= 57 then
-            l.pos = l.pos + 1
-          else
-            break
-          end
-        end
-        nb = src:byte(l.pos)
-      end
-      -- Number must not be immediately followed by a name-start char.
-      if
-        nb
-        and (
-          nb == 95
-          or (nb >= 65 and nb <= 90)
-          or (nb >= 97 and nb <= 122)
-          or (nb >= 48 and nb <= 57)
-        )
-      then
-        l:error("invalid number literal: unexpected character after digits")
-      end
-      local value = src:sub(s, l.pos - 1)
-      l.col = tcol + #value
-      return {
-        kind = is_float and "FLOAT_VALUE" or "INT_VALUE",
-        value = value,
-        line = tline,
-        col = tcol,
-      }
+    -- INT_VALUE or FLOAT_VALUE
+    if b == 45 or is_digit(b) then
+      return self:read_number(tline, tcol)
     end
 
-    -- String (single-line) or block string (triple-quoted).
-    if b == 34 then -- "
-      if src:sub(l.pos, l.pos + 2) == '"""' then
-        -- Block string.
-        l.pos = l.pos + 3
-        l.col = l.col + 3
-        local parts = {}
-        while true do
-          if l.pos > #src then
-            l:error("unterminated block string")
-          end
-          if src:sub(l.pos, l.pos + 2) == '"""' then
-            l.pos = l.pos + 3
-            l.col = l.col + 3
-            break
-          end
-          if src:sub(l.pos, l.pos + 3) == '\\"""' then -- escaped triple-quote
-            parts[#parts + 1] = '"""'
-            l.pos = l.pos + 4
-            l.col = l.col + 4
-          else
-            local ch = src:sub(l.pos, l.pos)
-            parts[#parts + 1] = ch
-            if ch == "\n" then
-              l.line = l.line + 1
-              l.col = 1
-              l.pos = l.pos + 1
-            elseif ch == "\r" then
-              l.line = l.line + 1
-              l.col = 1
-              l.pos = l.pos + 1
-              if src:sub(l.pos, l.pos) == "\n" then
-                parts[#parts + 1] = "\n"
-                l.pos = l.pos + 1
-              end
-            else
-              l.col = l.col + 1
-              l.pos = l.pos + 1
-            end
-          end
-        end
-        return {
-          kind = "STRING_VALUE",
-          value = block_string_value(table.concat(parts)),
-          line = tline,
-          col = tcol,
-        }
+    -- STRING_VALUE: single-line or block (triple-quoted).
+    if b == 34 then
+      if src:sub(self.pos, self.pos + 2) == '"""' then
+        return self:read_block_string(tline, tcol)
       else
-        -- Single-line string.
-        l.pos = l.pos + 1
-        l.col = l.col + 1
-        local parts = {}
-        while true do
-          if l.pos > #src then
-            l:error("unterminated string")
-          end
-          local cb = src:byte(l.pos)
-          if cb == 10 or cb == 13 then
-            l:error("line terminator inside string")
-          elseif cb == 34 then -- closing "
-            l.pos = l.pos + 1
-            l.col = l.col + 1
-            break
-          elseif cb == 92 then -- backslash escape
-            l.pos = l.pos + 1
-            local eb = src:byte(l.pos)
-            if eb == 34 then
-              parts[#parts + 1] = '"'
-              l.pos = l.pos + 1
-              l.col = l.col + 2
-            elseif eb == 92 then
-              parts[#parts + 1] = "\\"
-              l.pos = l.pos + 1
-              l.col = l.col + 2
-            elseif eb == 47 then
-              parts[#parts + 1] = "/"
-              l.pos = l.pos + 1
-              l.col = l.col + 2
-            elseif eb == 98 then
-              parts[#parts + 1] = "\b"
-              l.pos = l.pos + 1
-              l.col = l.col + 2
-            elseif eb == 102 then
-              parts[#parts + 1] = "\f"
-              l.pos = l.pos + 1
-              l.col = l.col + 2
-            elseif eb == 110 then
-              parts[#parts + 1] = "\n"
-              l.pos = l.pos + 1
-              l.col = l.col + 2
-            elseif eb == 114 then
-              parts[#parts + 1] = "\r"
-              l.pos = l.pos + 1
-              l.col = l.col + 2
-            elseif eb == 116 then
-              parts[#parts + 1] = "\t"
-              l.pos = l.pos + 1
-              l.col = l.col + 2
-            elseif eb == 117 then -- \uXXXX
-              l.pos = l.pos + 1
-              local hex = src:sub(l.pos, l.pos + 3)
-              if #hex < 4 or not hex:match("^[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]$") then
-                l:error("invalid unicode escape \\u" .. hex)
-              end
-              parts[#parts + 1] = utf8.char(tonumber(hex, 16))
-              l.pos = l.pos + 4
-              l.col = l.col + 6 -- \uXXXX = 6 source chars
-            else
-              l:error("invalid escape sequence '\\" .. string.char(eb) .. "'")
-            end
-          else
-            parts[#parts + 1] = src:sub(l.pos, l.pos)
-            l.pos = l.pos + 1
-            l.col = l.col + 1
-          end
-        end
-        return { kind = "STRING_VALUE", value = table.concat(parts), line = tline, col = tcol }
+        return self:read_string(tline, tcol)
       end
     end
 
-    l:error("unexpected character '" .. src:sub(l.pos, l.pos) .. "'")
+    self:error("unexpected character '" .. src:sub(self.pos, self.pos) .. "'")
   end
 
   function lex:next()
@@ -400,12 +415,12 @@ local function make_lexer(source)
       self._peeked = nil
       return tok
     end
-    return read_token(self)
+    return self:read_token()
   end
 
   function lex:peek()
     if not self._peeked then
-      self._peeked = read_token(self)
+      self._peeked = self:read_token()
     end
     return self._peeked
   end
