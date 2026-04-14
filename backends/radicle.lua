@@ -88,11 +88,7 @@ local function translate_radicle_req(body_str)
 end
 
 local function translate_radicle_repos(repos)
-  repos = repos or {}
-  for i, r in ipairs(repos) do
-    repos[i] = translate_radicle_repo(r)
-  end
-  return repos
+  return translate_list(translate_radicle_repo, repos)
 end
 
 backend_impl = {

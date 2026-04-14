@@ -275,11 +275,7 @@ backend_impl = {
     local canonical = user.canonical_name or ("~" .. (user.name or ""))
     proxy_json(
       function(data)
-        local repos = data.results or {}
-        for i, r in ipairs(repos) do
-          repos[i] = translate_srht_repo(r)
-        end
-        return repos
+        return translate_list(translate_srht_repo, data.results)
       end,
       -- Sourcehut uses cursor-based pagination; only limit is supported for page size
       fetch_json(append_page_params(base() .. "/" .. canonical .. "/repos", PAGES))
@@ -355,11 +351,7 @@ backend_impl = {
     end
     url = append_page_params(url, PAGES)
     proxy_json(function(data)
-      local commits = data.results or {}
-      for i, c in ipairs(commits) do
-        commits[i] = translate_srht_commit(c)
-      end
-      return commits
+      return translate_list(translate_srht_commit, data.results)
     end, fetch_json(url))
   end,
 
@@ -432,11 +424,7 @@ backend_impl = {
 
   get_users_repos = function(username)
     proxy_json(function(data)
-      local repos = data.results or {}
-      for i, r in ipairs(repos) do
-        repos[i] = translate_srht_repo(r)
-      end
-      return repos
+      return translate_list(translate_srht_repo, data.results)
     end, fetch_json(append_page_params(base() .. "/~" .. username .. "/repos", PAGES)))
   end,
 
@@ -472,12 +460,7 @@ backend_impl = {
     local url = todo_base() .. "/~" .. owner .. "/trackers/" .. repo_name .. "/tickets"
     url = append_page_params(url, PAGES)
     proxy_json(function(data)
-      local tickets = data.results or {}
-      local result = {}
-      for _, t in ipairs(tickets) do
-        result[#result + 1] = translate_srht_ticket(t)
-      end
-      return result
+      return translate_list(translate_srht_ticket, data.results)
     end, fetch_json(url))
   end,
 
@@ -587,11 +570,7 @@ backend_impl = {
       return
     end
     local data = DecodeJson(body) or {}
-    local jobs = data.results or {}
-    local runs = {}
-    for _, j in ipairs(jobs) do
-      runs[#runs + 1] = translate_srht_job_to_check_run(j)
-    end
+    local runs = translate_list(translate_srht_job_to_check_run, data.results)
     respond_json(200, { total_count = #runs, check_runs = runs })
   end,
 }
