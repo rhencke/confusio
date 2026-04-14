@@ -45,6 +45,9 @@ internal/
   catalog.lua                — endpoint_sections table; populates global `endpoints` and registers routes at load time
   dispatch.lua               — OnHttpRequest: auth gate, route_match, handler dispatch
 backends/                    — per-provider implementations; each sets backend_impl = { handler = fn, ... }
+docs/
+  graphql/                   — GraphQL support design docs (README.md + 01–16 numbered documents)
+  real-world-testing.md      — plan for weekly live-backend integration tests
 Makefile                     — build, test, and download targets
 .redbean-version             — pinned Redbean version (wget'd by make)
 .hurl-version                — pinned Hurl version (curl'd by make)
@@ -442,3 +445,18 @@ The nine `internal/` modules are loaded by `.init.lua` in a fixed order. Each ex
   dispatch path via direct Lua calls. HTTP tests would cover at most the 14 missed lines
   (SCRIPTARGS block + four static handlers), adding roughly 1.5 percentage points. The flush and
   path-normalisation machinery is not justified for that marginal gain.
+
+### GraphQL design
+
+The full design lives in `docs/graphql/` (16 numbered documents).  Key decisions recorded
+here so they stay visible without reading all 16 docs:
+
+- **`EncodeJson({data=nil})` silently drops the `data` key** — produces `{"errors":[...]}` instead of `{"data":null,"errors":[...]}`. The `respond_graphql` function works around this by using manual string concatenation: `EncodeJson(nil)` → `"null"`, so `'{"data":' .. data_json .. ...}` is assembled by hand when `data` is nil. Never pass `{data=nil}` to `EncodeJson` in the GraphQL response path.
+- **All GraphQL-facing Lua tables use camelCase keys** (GraphQL field names, e.g. `nameWithOwner`, `totalCount`, `hasNextPage`) — not the REST snake_case field names. The executor plucks fields by doing `parent[field_name]` where `field_name` is the GraphQL name from the query, so the keys must match exactly. This is an exception to the REST translator convention.
+- **`graphql_resolvers` is a global table, not part of `backend_impl`**. Backends populate it at load time alongside `backend_impl`. The executor reads it on every request. Backends never set `backend_impl.graphql_request`; that handler is always `graphql_handler` from `graphql_executor.lua`.
+- **GraphQL coverage is bounded by REST coverage** — a GraphQL resolver calls the same REST endpoint the REST handler already uses. A backend that doesn't implement a REST endpoint will return `null` for the corresponding GraphQL field, with an error entry if the field is non-null. No backend gains new REST coverage by adding GraphQL.
+- **Node IDs use path-segment encoding**: `encode_node_id("Repository", "owner/repo")` = `EncodeBase64("Repository:owner/repo")`. Path segments (not integer IDs) because REST backends universally support `GET /repos/{owner}/{repo}` but rarely `GET /repositories/{integer_id}`. Stable across restarts; the `node()` resolver constructs the same REST URL any other resolver uses.
+- **Page-number cursors** (`EncodeBase64("page:N")`) rather than offset cursors. Offset cursors misalign when the client changes `first` between requests; page-number cursors are stable regardless of page size.
+- **`graphql_request = true` must be added to `CONFUSIO_NATIVE`** in `scripts/validate-claims.lua` when the GraphQL catalog entry ships. Without this exemption, any `y` CSV claim for `POST /graphql` will fail `make validate-claims` (the handler is `graphql_handler`, not a `backend_impl` key).
+- **`pages.yml` passes args to `gen-matrix.py` in a different order than the Makefile** — the workflow passes `site/compatibility.csv` as the first positional arg (catalog position) while the Makefile pipes catalog via stdin with `-`. This pre-existing discrepancy exists independently of GraphQL; note it before touching either invocation.
+- **`graphql_schema_data.lua` is committed generated output**, not regenerated at build time. The `make generate-schema` target regenerates it from the vendored SDL; `make validate-schema` checks it is up to date. This mirrors how `vendor/github-rest-api-description/` handles the REST OpenAPI spec.
