@@ -34,29 +34,7 @@ if config.backend ~= "" then
   dofile("/zip/backends/" .. config.backend .. ".lua")
 end
 
--- Handlers resolved once at startup; backend is fixed for the program's lifetime.
--- Registered routes not implemented by the backend return 404.
-local handle = backend_impl
-
 dofile("/zip/internal/defaults.lua")
 dofile("/zip/internal/router.lua")
 dofile("/zip/internal/catalog.lua")
-function OnHttpRequest()
-  if not backend_allow_anonymous and not GetHeader("Authorization") then
-    respond_json(401, { message = "This instance requires authentication." })
-    return
-  end
-  local ep, caps, default_fn = route_match(GetMethod(), GetPath())
-  if ep then
-    local fn = handle[ep] or default_fn
-    if fn then
-      fn(table.unpack(caps))
-    else
-      respond_json(404, { message = "Not Found" })
-    end
-  elseif path_known(GetPath()) then
-    respond_json(405, { message = "Method Not Allowed" })
-  else
-    respond_json(404, { message = "Not Found" })
-  end
-end
+dofile("/zip/internal/dispatch.lua")
