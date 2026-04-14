@@ -1305,43 +1305,33 @@ backend_impl = {
   -- GET /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
   -- Bitbucket: participants with role=REVIEWER and not yet approved.
   get_pull_requested_reviewers = function(owner, repo_name, pull_number)
-    local ok, status, _, body = fetch_json(
-      base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/pullrequests/" .. pull_number
+    proxy_json(
+      function(pr)
+        local users = {}
+        for _, p in ipairs(pr.participants or {}) do
+          if p.role == "REVIEWER" and not p.approved then
+            users[#users + 1] = translate_bb_user(p.user)
+          end
+        end
+        return { users = users, teams = {} }
+      end,
+      fetch_json(
+        base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/pullrequests/" .. pull_number
+      )
     )
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local pr = DecodeJson(body) or {}
-    local users = {}
-    for _, p in ipairs(pr.participants or {}) do
-      if p.role == "REVIEWER" and not p.approved then
-        users[#users + 1] = translate_bb_user(p.user)
-      end
-    end
-    respond_json(200, { users = users, teams = {} })
   end,
 
   -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews
   -- Bitbucket: participants with role=REVIEWER and approved=true → APPROVED reviews.
   get_pull_reviews = function(owner, repo_name, pull_number)
-    local ok, status, _, body = fetch_json(
-      base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/pullrequests/" .. pull_number
+    proxy_json(
+      function(pr)
+        return translate_bb_participants_to_reviews(pr.participants)
+      end,
+      fetch_json(
+        base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/pullrequests/" .. pull_number
+      )
     )
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local pr = DecodeJson(body) or {}
-    respond_json(200, translate_bb_participants_to_reviews(pr.participants))
   end,
 
   -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
@@ -1370,69 +1360,59 @@ backend_impl = {
   -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments
   -- Bitbucket has no per-review inline comments; return all inline PR comments.
   get_pull_review_comments = function(owner, repo_name, pull_number)
-    local ok, status, _, body = fetch_json(
-      append_page_params(
-        base()
-          .. "/repositories/"
-          .. owner
-          .. "/"
-          .. repo_name
-          .. "/pullrequests/"
-          .. pull_number
-          .. "/comments",
-        PAGES
+    proxy_json(
+      function(data)
+        local result = {}
+        for _, c in ipairs(data.values or {}) do
+          if c.inline then
+            result[#result + 1] = translate_bb_pr_comment(c)
+          end
+        end
+        return result
+      end,
+      fetch_json(
+        append_page_params(
+          base()
+            .. "/repositories/"
+            .. owner
+            .. "/"
+            .. repo_name
+            .. "/pullrequests/"
+            .. pull_number
+            .. "/comments",
+          PAGES
+        )
       )
     )
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local data = DecodeJson(body) or {}
-    local result = {}
-    for _, c in ipairs(data.values or {}) do
-      if c.inline then
-        result[#result + 1] = translate_bb_pr_comment(c)
-      end
-    end
-    respond_json(200, result)
   end,
 
   -- GET /repos/{owner}/{repo}/pulls/{pull_number}/comments
   -- Bitbucket inline PR comments (those with an "inline" field).
   get_pull_comments = function(owner, repo_name, pull_number)
-    local ok, status, _, body = fetch_json(
-      append_page_params(
-        base()
-          .. "/repositories/"
-          .. owner
-          .. "/"
-          .. repo_name
-          .. "/pullrequests/"
-          .. pull_number
-          .. "/comments",
-        PAGES
+    proxy_json(
+      function(data)
+        local result = {}
+        for _, c in ipairs(data.values or {}) do
+          if c.inline then
+            result[#result + 1] = translate_bb_pr_comment(c)
+          end
+        end
+        return result
+      end,
+      fetch_json(
+        append_page_params(
+          base()
+            .. "/repositories/"
+            .. owner
+            .. "/"
+            .. repo_name
+            .. "/pullrequests/"
+            .. pull_number
+            .. "/comments",
+          PAGES
+        )
       )
     )
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local data = DecodeJson(body) or {}
-    local result = {}
-    for _, c in ipairs(data.values or {}) do
-      if c.inline then
-        result[#result + 1] = translate_bb_pr_comment(c)
-      end
-    end
-    respond_json(200, result)
   end,
 
   -- Search -----------------------------------------------------------------------
@@ -1553,49 +1533,44 @@ backend_impl = {
   -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
   -- Uses Bitbucket commit statuses.
   get_commit_check_runs = function(owner, repo_name, ref)
-    local ok, status, _, body = fetch_json(
-      base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/commit/" .. ref .. "/statuses"
-    )
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local data = DecodeJson(body) or {}
     local bb_to_gh = {
       INPROGRESS = { status = "in_progress", conclusion = nil },
       SUCCESSFUL = { status = "completed", conclusion = "success" },
       FAILED = { status = "completed", conclusion = "failure" },
       STOPPED = { status = "completed", conclusion = "cancelled" },
     }
-    local runs = {}
-    for i, s in ipairs(data.values or {}) do
-      local mapped = bb_to_gh[s.state] or { status = "completed", conclusion = "failure" }
-      runs[i] = {
-        id = i,
-        node_id = "",
-        head_sha = ref,
-        name = s.key or s.name or "",
-        status = mapped.status,
-        conclusion = mapped.conclusion,
-        started_at = s.created_on,
-        completed_at = mapped.status == "completed" and s.updated_on or nil,
-        output = {
-          title = s.description or "",
-          summary = s.description or "",
-          text = "",
-          annotations_count = 0,
-          annotations_url = "",
-        },
-        url = "",
-        html_url = s.url or "",
-        details_url = s.url or "",
-      }
-    end
-    respond_json(200, { total_count = #runs, check_runs = runs })
+    proxy_json(
+      function(data)
+        local runs = {}
+        for i, s in ipairs(data.values or {}) do
+          local mapped = bb_to_gh[s.state] or { status = "completed", conclusion = "failure" }
+          runs[i] = {
+            id = i,
+            node_id = "",
+            head_sha = ref,
+            name = s.key or s.name or "",
+            status = mapped.status,
+            conclusion = mapped.conclusion,
+            started_at = s.created_on,
+            completed_at = mapped.status == "completed" and s.updated_on or nil,
+            output = {
+              title = s.description or "",
+              summary = s.description or "",
+              text = "",
+              annotations_count = 0,
+              annotations_url = "",
+            },
+            url = "",
+            html_url = s.url or "",
+            details_url = s.url or "",
+          }
+        end
+        return { total_count = #runs, check_runs = runs }
+      end,
+      fetch_json(
+        base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/commit/" .. ref .. "/statuses"
+      )
+    )
   end,
 
   -- Check suites have no Bitbucket equivalent; all suite endpoints fall back
