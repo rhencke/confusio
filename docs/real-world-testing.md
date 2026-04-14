@@ -845,8 +845,112 @@ open duplicates for a long-running outage.
 
 ## Phased rollout
 
-*(To be detailed in the next section of this plan.)*
+### Phase 0 — Infrastructure (prerequisite)
+
+Before any real-world tests can run, the following must exist:
+
+- `test/real-world/setup/common.sh` — shared fixture helpers
+- `scripts/gen-realworld-hurl.py` — hurl generator (reads catalog, CSV, OpenAPI spec)
+- `scripts/report-realworld.py` — result collector and issue poster
+- `test/test-realworld.sh` — per-backend test runner
+- `.github/workflows/real-world.yml` — workflow skeleton (with all backend jobs stubbed out
+  as `if: false` until each backend is ready)
+- `test/real-world/backends.json` — per-backend base URLs and fixture variable values
+- `test/real-world/fixtures.md` — fixture inventory with `fixtures_version` front matter
+
+Phase 0 is complete when the infrastructure runs end-to-end against gitea (the one backend
+that already has integration tests) and produces a well-formed JSON result and a draft issue.
+
+### Phase 1 — Gitea family (Tier 1)
+
+Backends: `gitea`, `forgejo`, `codeberg`, `notabug`, `gogs`
+
+These five backends share the same API family, so one setup script shape covers all of them.
+The existing `test-integration` job already validates gitea.com; Phase 1 extends that
+coverage to the full endpoint set and adds the remaining four family members.
+
+**Exit criteria**: all five backends pass two consecutive weekly runs without manual
+intervention.
+
+### Phase 2 — GitLab and Bitbucket (Tier 1)
+
+Backends: `gitlab`, `bitbucket`
+
+Both have well-documented APIs, high uptime, and mature free tiers.  GitLab's API is close
+enough to GitHub's that the generator should produce good assertions with minimal overrides.
+
+**Exit criteria**: both backends pass two consecutive weekly runs.
+
+### Phase 3 — Remaining Tier 1 SaaS
+
+Backends: `azuredevops`, `harness`, `gitbucket` (Tier 2 standing in for no public SaaS),
+`sourcehut`, `pagure`, `launchpad`, `sourceforge`
+
+These are less homogeneous — each needs its own setup script and potentially more overrides.
+`sourcehut` write endpoints are deferred until a paid subscription is in place; read-only
+endpoints can be enabled immediately.
+
+**Exit criteria**: all enabled backends pass two consecutive weekly runs.
+
+### Phase 4 — Tier 2 Docker backends
+
+Backends: `gerrit`, `gitblit`, `gitbucket` (Docker), `gogs` (Docker fallback),
+`kallithea`, `onedev`, `rhodecode`, `tuleap`, `phabricator`, `bitbucket_datacenter`
+
+Start with simpler bootstrap (gitbucket, onedev) then work toward the more complex ones
+(kallithea, tuleap, bitbucket_datacenter).  Phabricator/Phorge is lowest priority given
+Phabricator's archived upstream status.
+
+**Exit criteria**: all Docker backends produce a result (pass or classified failure) for two
+consecutive weekly runs without the bootstrap script hanging or erroring.
+
+### Phase summary
+
+| Phase | Backends | Key dependency |
+|-------|---------|---------------|
+| 0 — Infrastructure | (none — tooling only) | Generator, runner, reporter written |
+| 1 — Gitea family | gitea, forgejo, codeberg, notabug, gogs | Phase 0 done; accounts created |
+| 2 — GitLab + Bitbucket | gitlab, bitbucket | Accounts created |
+| 3 — Remaining Tier 1 | azuredevops, harness, sourcehut, pagure, launchpad, sourceforge | Accounts created; sourcehut subscription |
+| 4 — Tier 2 Docker | gerrit, gitblit, gitbucket, kallithea, onedev, rhodecode, tuleap, phabricator, bitbucket_datacenter | Docker bootstrap scripts |
+
+## Risks and mitigations
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|-----------|--------|------------|
+| Provider changes a field name or drops a field | High (over time) | Medium — test fails, surfaces as `regression` issue | Expected and desired — this is the point of the tests |
+| Public SaaS instance goes offline (e.g. notabug) | Medium | Low — one backend skips | Tier 2 Docker fallback for gogs; skip guard on missing token |
+| Token expires silently | Medium | Medium — test produces 401, looks like backend failure | 401 classification; rotation reminder issue; prefer non-expiring tokens |
+| Rate limiting by provider | Low (weekly cadence, 1 req/s) | Low — job skips for the week | `429` classification; weekly cadence is conservative |
+| Generator produces wrong assertions for `~` endpoints | Medium (initially) | Low — false positive failures | Override layer; conservative initial assertions; tighten iteratively |
+| Docker image tag changes break bootstrap | Medium | Medium — Tier 2 job fails at bootstrap | Pin image tags in workflow; schedule quarterly tag updates |
+| Bitbucket Datacenter evaluation license expires | High (30-day trial) | Medium — DC job fails | Investigate free developer license or community edition; note in bootstrap script |
+| Generator or reporter script has a bug | Low | Low — entire run produces no results | Phase 0 validation against gitea before enabling other backends |
+| GHA secrets sprawl (16+ secrets) | Low | Low — maintainability concern | Document all secrets in `test/real-world/SECRETS.md`; consistent naming |
 
 ## Open questions
 
-*(To be collected as each section is written.)*
+1. **Forgejo/Codeberg job deduplication**: `forgejo` and `codeberg` both test against
+   codeberg.org with the same token.  Should they run as one job (halving API calls) or
+   separate jobs (clearer per-backend failure attribution)?  Separate jobs are cleaner but
+   double the load on codeberg.org.
+
+2. **Docker image pinning strategy**: pin to `image:latest` (always tests the newest
+   version, which is the most realistic) or pin to a specific tag (reproducible but stale)?
+   Suggestion: pin tags, update on a quarterly schedule via a separate maintenance PR.
+
+3. **`~` annotation machine-readability**: should partial annotations be standardised as
+   structured tags (e.g. `~no_release_assets`, `~read_only`) so the generator can auto-suppress
+   the corresponding field assertions?  Or defer and manage via the override layer?
+
+4. **Real-world tests on PR pushes**: should the workflow also trigger on PRs that modify a
+   specific backend file (e.g. `backends/gitlab.lua`)?  This would catch regressions earlier
+   but consumes more API quota and GHA minutes.
+
+5. **Sourcehut write access**: the read-only free tier covers 19 endpoints.  Is a paid
+   subscription worth it for the remaining write endpoints, or should sourcehut be limited to
+   read-only indefinitely?
+
+6. **`test/real-world/generated/` commit strategy**: should generated hurl files be committed
+   to the repo (reviewable diffs when the generator changes) or always regenerated at CI time
+   (no stale files)?  Committed generated files add noise to PRs that update the generator.
