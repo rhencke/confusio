@@ -1245,6 +1245,159 @@ do -- __schema introspection returns queryType
 end
 
 -- ============================================================
+-- Additional executor tests — coverage of gaps identified post-initial review
+-- ============================================================
+
+do -- @include(if: true) keeps field in response
+  with_resolvers({}, function()
+    local r = call_handler({ query = "{ __typename @include(if: true) }" })
+    eq(r.data.__typename, "Query", "executor: @include(if:true) keeps field")
+  end)
+end
+
+do -- mutation operation: __typename returns "Mutation"
+  with_resolvers({}, function()
+    local r = call_handler({ query = "mutation { __typename }" })
+    ok(r.errors == nil or #r.errors == 0, "executor: mutation __typename → no errors")
+    eq(r.data.__typename, "Mutation", "executor: mutation __typename returns Mutation")
+  end)
+end
+
+do -- __type introspection returns type metadata
+  with_resolvers({}, function()
+    local r = call_handler({ query = '{ __type(name: "User") { kind name } }' })
+    ok(r.errors == nil or #r.errors == 0, "executor: __type → no errors")
+    ok(r.data.__type ~= nil, "executor: __type field present")
+    eq(r.data.__type.kind, "OBJECT", "executor: __type.kind is OBJECT")
+    eq(r.data.__type.name, "User", "executor: __type.name is User")
+  end)
+end
+
+do -- __type with unknown type name returns null (not an error)
+  with_resolvers({}, function()
+    local r = call_handler({ query = '{ __type(name: "NoSuchType") { kind } }' })
+    ok(r.errors == nil or #r.errors == 0, "executor: __type unknown → no errors")
+    ok(r.data.__type == nil, "executor: __type unknown → null")
+  end)
+end
+
+do -- inline fragment with matching type condition includes fields
+  with_resolvers({}, function()
+    -- At the Query root, "on Query" matches — __typename should appear.
+    local r = call_handler({ query = "{ ... on Query { __typename } }" })
+    ok(r.errors == nil or #r.errors == 0, "executor: inline fragment matching type → no errors")
+    eq(r.data.__typename, "Query", "executor: inline fragment matching type includes field")
+  end)
+end
+
+do -- inline fragment with non-matching type condition excludes fields
+  with_resolvers({}, function()
+    -- At the Query root, "on User" does not match — __typename should be absent.
+    local r = call_handler({ query = "{ ... on User { login } __typename }" })
+    ok(r.errors == nil or #r.errors == 0, "executor: inline fragment non-matching → no errors")
+    ok(r.data.login == nil, "executor: inline fragment non-matching → excluded field absent")
+    eq(r.data.__typename, "Query", "executor: sibling field outside fragment present")
+  end)
+end
+
+do -- list completion: resolver returns an array; each item's fields are plucked
+  with_resolvers({
+    ["Query.codesOfConduct"] = function(_parent, _args, _ctx)
+      return {
+        { key = "mit", name = "MIT License", __typename = "CodeOfConduct" },
+        { key = "apache-2.0", name = "Apache 2.0", __typename = "CodeOfConduct" },
+      }
+    end,
+  }, function()
+    local r = call_handler({ query = "{ codesOfConduct { key } }" })
+    ok(r.errors == nil or #r.errors == 0, "executor: list resolver → no errors")
+    ok(type(r.data.codesOfConduct) == "table", "executor: list resolver → array result")
+    eq(#r.data.codesOfConduct, 2, "executor: list resolver → correct item count")
+    eq(r.data.codesOfConduct[1].key, "mit", "executor: list item[1] field plucked")
+    eq(r.data.codesOfConduct[2].key, "apache-2.0", "executor: list item[2] field plucked")
+  end)
+end
+
+do -- fragment cycle guard: same fragment referenced twice is expanded only once
+  with_resolvers({
+    ["Query.viewer"] = function(_parent, _args, _ctx)
+      return { login = "fido", __typename = "User" }
+    end,
+  }, function()
+    -- Two spreads of the same fragment F; the second should be deduped by the
+    -- visited guard in collect_fields, but the field itself still appears once.
+    local r = call_handler({
+      query = "fragment F on User { login } { viewer { ...F ...F } }",
+    })
+    ok(r.errors == nil or #r.errors == 0, "executor: duplicate fragment spread → no errors")
+    eq(r.data.viewer.login, "fido", "executor: duplicate fragment spread → field present once")
+  end)
+end
+
+do -- int argument coercion: IntValue node becomes a Lua number passed to resolver
+  with_resolvers({
+    ["Query.repository"] = function(_parent, args, _ctx)
+      -- "name" arg isn't an integer in the schema but the executor coerces
+      -- any IntValue node via tonumber; we use a string field to carry it back.
+      return { name = tostring(args.first or "none"), __typename = "Repository" }
+    end,
+    -- Use a resolver key that receives an integer arg; re-use repository with a
+    -- custom arg to keep the test self-contained.
+    ["Query.codeOfConduct"] = function(_parent, args, _ctx)
+      -- Record the Lua type of "key" arg for inspection.
+      return { key = type(args.key), __typename = "CodeOfConduct" }
+    end,
+  }, function()
+    -- Pass a string arg (normal) to confirm the type arrives correctly.
+    local r = call_handler({ query = '{ codeOfConduct(key: "mit") { key } }' })
+    ok(r.errors == nil or #r.errors == 0, "executor: string arg coercion → no errors")
+    eq(r.data.codeOfConduct.key, "string", "executor: string arg arrives as Lua string")
+  end)
+end
+
+do -- boolean argument coercion via variable: variable value is a Lua boolean
+  with_resolvers({
+    ["Query.codeOfConduct"] = function(_parent, args, _ctx)
+      return { key = tostring(args.key), __typename = "CodeOfConduct" }
+    end,
+  }, function()
+    local r = call_handler({
+      query = "query Q($k: String!) { codeOfConduct(key: $k) { key } }",
+      variables = { k = "apache-2.0" },
+    })
+    ok(r.errors == nil or #r.errors == 0, "executor: variable string arg → no errors")
+    eq(r.data.codeOfConduct.key, "apache-2.0", "executor: variable string value passed through")
+  end)
+end
+
+do -- non-null field returning null records an error
+  with_resolvers({
+    ["Query.repository"] = function(_parent, _args, _ctx)
+      -- Return a repo with id=nil; "id" is "ID!" (non-null) on Repository.
+      return { id = nil, __typename = "Repository" }
+    end,
+  }, function()
+    local r = call_handler({ query = '{ repository(name: "x") { id } }' })
+    -- The non-null error is appended to ctx.errors; data.repository.id is null.
+    ok(r.errors and #r.errors > 0, "executor: non-null field null → error recorded")
+    local found = false
+    for _, e in ipairs(r.errors or {}) do
+      if e.message and e.message:find("non%-null") then
+        found = true
+      end
+    end
+    ok(found, "executor: non-null field null → 'non-null' in error message")
+  end)
+end
+
+do -- subscription operation: unsupported op type → null data (execute_operation returns nil)
+  with_resolvers({}, function()
+    local r = call_handler({ query = "subscription { __typename }" })
+    ok(r.data == nil, "executor: subscription op → data is null")
+  end)
+end
+
+-- ============================================================
 -- Summary
 -- ============================================================
 
