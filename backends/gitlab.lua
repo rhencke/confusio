@@ -3641,19 +3641,6 @@ local function gl_snippet_req(req)
   return EncodeJson(gl)
 end
 
-local function proxy_list_gl(translate, ok, status, _headers, body)
-  if ok and status == 200 then
-    local data = DecodeJson(body) or {}
-    local result = translate(data)
-    set_preamble()
-    Write(#result > 0 and EncodeJson(result) or "[]")
-  elseif ok then
-    respond_json(status, {})
-  else
-    respond_json(503, {})
-  end
-end
-
 local function delete_snippet(url)
   local opts = auth() or {}
   opts.method = "DELETE"
@@ -3661,11 +3648,11 @@ local function delete_snippet(url)
 end
 
 _b.get_gists = function()
-  proxy_list_gl(translate_gl_snippets, fetch_json(base() .. "/snippets"))
+  proxy_json_list(translate_gl_snippets, fetch_json(base() .. "/snippets"))
 end
 
 _b.get_gists_public = function()
-  proxy_list_gl(translate_gl_snippets, fetch_json(base() .. "/snippets/public"))
+  proxy_json_list(translate_gl_snippets, fetch_json(base() .. "/snippets/public"))
 end
 
 _b.post_gists = function()
@@ -3693,7 +3680,7 @@ _b.delete_gist = function(id)
 end
 
 _b.get_gist_comments = function(id)
-  proxy_list_gl(translate_gl_snippet_notes, fetch_json(base() .. "/snippets/" .. id .. "/notes"))
+  proxy_json_list(translate_gl_snippet_notes, fetch_json(base() .. "/snippets/" .. id .. "/notes"))
 end
 
 _b.post_gist_comment = function(id)
@@ -3733,7 +3720,7 @@ end
 
 _b.get_user_gists = function(_username)
   -- GitLab doesn't expose per-user public snippet lists; approximate with own snippets.
-  proxy_list_gl(translate_gl_snippets, fetch_json(base() .. "/snippets"))
+  proxy_json_list(translate_gl_snippets, fetch_json(base() .. "/snippets"))
 end
 
 -- ── Reactions (GitLab award emoji) ────────────────────────────────────────────

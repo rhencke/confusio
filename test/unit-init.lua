@@ -634,6 +634,46 @@ proxy_204({ 200, 201 }, false, nil)
 eq(_last_status, 503, "proxy_204({200,201}): pcall failure → 503")
 
 -- ============================================================
+-- proxy_json_list
+-- ============================================================
+
+local function identity_list(x)
+  return x
+end
+
+reset_response()
+proxy_json_list(identity_list, true, 200, {}, '[{"a":1},{"b":2}]')
+eq(_last_status, 200, "proxy_json_list: upstream 200 → 200")
+ok(
+  _last_body == '[{"a":1},{"b":2}]' or _last_body == '[{"b":2},{"a":1}]',
+  "proxy_json_list: non-empty array body"
+)
+
+reset_response()
+proxy_json_list(identity_list, true, 200, {}, "[]")
+eq(_last_status, 200, "proxy_json_list: upstream empty array → 200")
+eq(_last_body, "[]", "proxy_json_list: upstream empty array → [] body")
+
+reset_response()
+proxy_json_list(identity_list, true, 404, {}, "{}")
+eq(_last_status, 404, "proxy_json_list: upstream non-200 forwarded")
+
+reset_response()
+proxy_json_list(identity_list, false, nil, nil, nil)
+eq(_last_status, 503, "proxy_json_list: pcall failure → 503")
+
+reset_response()
+proxy_json_list(function(data)
+  local out = {}
+  for i, x in ipairs(data) do
+    out[i] = { v = (x.v or 0) * 2 }
+  end
+  return out
+end, true, 200, {}, '[{"v":3}]')
+eq(_last_status, 200, "proxy_json_list: translate applied")
+ok(_last_body:find('"v":6') ~= nil, "proxy_json_list: translate doubles value")
+
+-- ============================================================
 -- make_proxy_handler
 -- ============================================================
 
