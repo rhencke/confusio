@@ -261,14 +261,7 @@ backend_impl = {
     local url = base() .. "/~" .. owner .. "/repos/" .. repo_name
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, url, dopts)
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, pcall(Fetch, url, dopts))
   end,
 
   get_user_repos = function()

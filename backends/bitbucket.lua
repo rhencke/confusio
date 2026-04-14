@@ -657,14 +657,7 @@ backend_impl = {
     local url = base() .. "/repositories/" .. owner .. "/" .. repo_name
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, url, dopts)
-    if ok and status == 204 then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204(nil, pcall(Fetch, url, dopts))
   end,
 
   get_user_repos = function()
@@ -1085,14 +1078,7 @@ backend_impl = {
     local url = base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/deploy-keys/" .. key_id
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, url, dopts)
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, pcall(Fetch, url, dopts))
   end,
 
   -- Webhooks ------------------------------------------------------------------
@@ -1157,14 +1143,7 @@ backend_impl = {
       .. "}"
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, url, dopts)
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, pcall(Fetch, url, dopts))
   end,
 
   -- Users ---------------------------------------------------------------------
@@ -1334,13 +1313,7 @@ backend_impl = {
       "POST",
       EncodeJson(bb)
     )
-    if ok and status == 200 then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, ok, status)
   end,
 
   -- GET /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
@@ -1746,14 +1719,7 @@ backend_impl = {
       .. name
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, url, dopts)
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, pcall(Fetch, url, dopts))
   end,
 
   -- Activity (Bitbucket Watchers) ---------------------------------------------
@@ -1865,14 +1831,7 @@ backend_impl = {
     end
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, url, dopts)
-    if ok and status == 204 then
-      set_preamble(204)
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204(nil, pcall(Fetch, url, dopts))
   end,
 
   get_gist_comments = function(gist_id)
@@ -1927,14 +1886,7 @@ backend_impl = {
     end
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, url .. "/comments/" .. comment_id, dopts)
-    if ok and status == 204 then
-      set_preamble(204)
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204(nil, pcall(Fetch, url .. "/comments/" .. comment_id, dopts))
   end,
 
   get_gist_commits = function(gist_id)
@@ -1978,14 +1930,7 @@ backend_impl = {
     end
     local wopts = auth() or {}
     wopts.method = "PUT"
-    local ok, status = pcall(Fetch, url .. "/watch", wopts)
-    if ok and (status == 200 or status == 204) then
-      set_preamble(204)
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, pcall(Fetch, url .. "/watch", wopts))
   end,
 
   delete_gist_star = function(gist_id)
@@ -1995,14 +1940,7 @@ backend_impl = {
     end
     local wopts = auth() or {}
     wopts.method = "DELETE"
-    local ok, status = pcall(Fetch, url .. "/watch", wopts)
-    if ok and status == 204 then
-      set_preamble(204)
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204(nil, pcall(Fetch, url .. "/watch", wopts))
   end,
 
   get_gist_revision = function(gist_id, sha)

@@ -208,14 +208,7 @@ backend_impl = {
     local url = base() .. "/repos/" .. repo_ref(owner, repo_name)
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, url, dopts)
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, pcall(Fetch, url, dopts))
   end,
 
   get_user_repos = proxy_handler(translate_harness_repos, function()
@@ -425,15 +418,10 @@ backend_impl = {
   end),
 
   delete_repo_key = function(owner, repo_name, key_id)
-    local ok, status =
+    proxy_204(
+      { 200 },
       fetch_json(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/keys/" .. key_id, "DELETE")
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    )
   end,
 
   -- Webhooks ------------------------------------------------------------------
@@ -480,17 +468,13 @@ backend_impl = {
   end,
 
   delete_repo_hook = function(owner, repo_name, hook_id)
-    local ok, status = fetch_json(
-      base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/webhooks/" .. hook_id,
-      "DELETE"
+    proxy_204(
+      { 200 },
+      fetch_json(
+        base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/webhooks/" .. hook_id,
+        "DELETE"
+      )
     )
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
   end,
 
   -- Hook config ---------------------------------------------------------------
@@ -525,17 +509,13 @@ backend_impl = {
   end,
 
   post_repo_hook_test = function(owner, repo_name, hook_id)
-    local ok, status = fetch_json(
-      base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/webhooks/" .. hook_id .. "/test",
-      "POST"
+    proxy_204(
+      { 200 },
+      fetch_json(
+        base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/webhooks/" .. hook_id .. "/test",
+        "POST"
+      )
     )
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
   end,
 
   -- Languages -----------------------------------------------------------------
