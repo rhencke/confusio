@@ -76,10 +76,34 @@ mock-%.com: redbean.com test/mock-%.lua
 	(cd .tmp-mock-$* && zip -u ../$@ .init.lua)
 	rm -rf .tmp-mock-$*
 
+# Family-alias mock rules: build mock-<alias>.com from the root family's mock lua
+# instead of a per-alias test/mock-<alias>.lua.  Explicit rules take precedence over
+# the mock-%.com pattern rule above.
+# ALIAS_MOCK_RULE(alias, root): builds mock-<alias>.com from test/mock-<root>.lua
+define ALIAS_MOCK_RULE
+mock-$(1).com: redbean.com test/mock-$(2).lua
+	cp redbean.com $$@
+	@mkdir -p .tmp-mock-$(1)
+	cp test/mock-$(2).lua .tmp-mock-$(1)/.init.lua
+	(cd .tmp-mock-$(1) && zip -u ../$$@ .init.lua)
+	rm -rf .tmp-mock-$(1)
+endef
+
+# .make-families.mk is auto-generated from provider_families in .init.lua.
+# It contains $(eval $(call ALIAS_MOCK_RULE,...)) lines for every family alias
+# so that mock-<alias>.com is built from the root family's mock lua.
+# If the file does not exist, Make rebuilds it before re-reading the Makefile.
+-include .make-families.mk
+
+.make-families.mk: redbean.com scripts/dump-families.lua .init.lua
+	./redbean.com -i scripts/dump-families.lua 2>/dev/null | python3 scripts/gen-family-mk.py > $@
+
 # Backend test configuration.
-# To add a backend: append to BACKENDS (ports auto-assigned from 18080).
-# Each backend needs test/mock-<name>.lua (symlink ok) and
-# at least one test/<name>-*.hurl file (symlinks ok — used by wildcard discovery).
+# To add a standalone backend: append to BACKENDS (ports auto-assigned from 18080).
+# Each backend needs test/mock-<name>.lua and at least one test/<name>-*.hurl file
+# (symlinks ok — used by wildcard discovery).
+# To add a family-alias backend: add to BACKENDS; no test/mock-<name>.lua needed —
+# .make-families.mk auto-generates mock-<alias>.com from the root family's mock.
 BACKENDS = azuredevops bitbucket bitbucket_datacenter codeberg codecommit forgejo gerrit gitblit gitbucket gitea gitlab gogs \
            harness kallithea launchpad notabug onedev pagure phabricator radicle \
            rhodecode sourceforge sourcehut tuleap
@@ -102,7 +126,7 @@ endef
 
 $(foreach b,$(BACKENDS),$(eval $(call BACKEND_RULE,$(b))))
 
-.PHONY: build site dump-endpoints validate-csv validate-tests test test-unit test-unit-functions test-unit-backends test-integration validate-mock test-format test-lint test-coverage clean
+.PHONY: build site dump-endpoints dump-families validate-csv validate-tests validate-providers test test-unit test-unit-functions test-unit-backends test-integration validate-mock test-format test-lint test-coverage clean
 
 build: confusio.com
 
@@ -115,13 +139,19 @@ validate-csv: redbean.com
 validate-tests: redbean.com
 	./redbean.com -i scripts/dump-endpoints.lua 2>/dev/null | python3 scripts/validate-tests.py $(BACKENDS)
 
+dump-families: redbean.com
+	./redbean.com -i scripts/dump-families.lua
+
+validate-providers: redbean.com
+	./redbean.com -i scripts/dump-families.lua 2>/dev/null | python3 scripts/validate-providers.py
+
 site: redbean.com
 	mkdir -p _site
 	cp -r site/. _site/
 	./redbean.com -i scripts/dump-endpoints.lua 2>/dev/null | \
 	  python3 scripts/gen-matrix.py - site/compatibility.csv site/index.html _site/index.html
 
-test: test-unit test-integration test-format test-lint validate-csv validate-tests
+test: test-unit test-integration test-format test-lint validate-csv validate-tests validate-providers
 
 # Unit tests for .init.lua global functions (pure Lua, no HTTP server needed)
 test-unit-functions: redbean.com
@@ -154,5 +184,5 @@ test-coverage: redbean.com luacov
 	./redbean.com -i scripts/luacov-report.lua
 
 clean:
-	rm -f redbean.com confusio.com $(MOCKS) hurl stylua luacheck
+	rm -f redbean.com confusio.com $(MOCKS) hurl stylua luacheck .make-families.mk
 	rm -rf _site luacov

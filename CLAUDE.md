@@ -117,6 +117,8 @@ When implementing a new endpoint, check the spec for:
 
 ## Adding a new backend
 
+### Standalone backend (new API family)
+
 1. Create `backends/<name>.lua`. Set `backend_impl = { endpoint = function, ... }` with only
    the endpoints that differ from the defaults. The file is loaded automatically when
    `config.backend == "<name>"` — no changes to `.init.lua` needed.
@@ -128,6 +130,32 @@ When implementing a new endpoint, check the spec for:
    `make validate-tests` to see which groups lack coverage.
 6. Add a column for the new backend in `site/compatibility.csv` and fill in support values
    for every endpoint row. Run `make validate-csv` to check consistency.
+
+### Family-alias backend (API-compatible with an existing family)
+
+A family alias shares one backend implementation, mock, and most tests with an existing root
+backend. All four authoritative locations must be updated consistently — `make validate-providers`
+will catch any mismatch.
+
+1. Add the alias to `provider_families` in `.init.lua` (the single authoritative declaration):
+   ```lua
+   gitea = {
+     aliases = {
+       myalias = { default_url = "https://myalias.example.com",
+                   strip = { "_package" } },  -- omit strip if no feature gaps
+     },
+   },
+   ```
+2. Create `backends/<alias>.lua` — one line plus a comment:
+   ```lua
+   -- MyAlias is API-compatible with Gitea v1.  Family metadata in provider_families.
+   load_family_backend("gitea")
+   ```
+3. Add `<alias>` to the `BACKENDS` list in the Makefile.
+   No `test/mock-<alias>.lua` file is needed — `.make-families.mk` is auto-generated
+   from `provider_families` and builds `mock-<alias>.com` from the root family's mock.
+4. Add hurl test files and a `site/compatibility.csv` column as for a standalone backend (steps 5–6 above).
+5. Run `make validate-providers` to confirm all three locations agree.
 
 ## Redbean API notes
 
@@ -202,6 +230,31 @@ Hard-won insights from building this project. **Keep this section current**: whe
 - **`make dump-endpoints`** exports the catalog as JSON. Used internally by `make site`,
   `make validate-csv`, and `make validate-tests`.
 
+### Provider families
+
+- **`provider_families` in `.init.lua` is the single authoritative source** for which
+  backends belong to the same API family. It drives backend loading, mock building, and
+  the `validate-providers` check. Never encode family membership only in filesystem layout
+  or Makefile variables — both are derived from this table.
+- **`load_family_backend(root)`** is the helper alias backends call instead of raw `dofile`.
+  It reads the alias's entry from `provider_families[root].aliases[config.backend]`, sets
+  `config.base_url` from `default_url` when none was supplied, dofiles the root backend,
+  then clears any `backend_impl` keys matching the alias's `strip` patterns. All of this
+  replaces the old per-file `dofile` + manual `for k in pairs(backend_impl)` strip loops.
+- **`strip` patterns are Lua patterns, not exact names.** `"_package"` matches any key
+  containing `_package` (e.g. `list_packages`, `get_package`). Keep patterns tight enough
+  not to accidentally strip unrelated keys.
+- **Mock reuse is driven by `ALIAS_MOCK_RULE` in the Makefile**, not by `test/mock-<alias>.lua`
+  symlinks. The `mock-<alias>.com` rule is generated automatically into `.make-families.mk`
+  (gitignored) by `scripts/gen-family-mk.py` reading `dump-families.lua` output.  The
+  Makefile `-include`s this file; if it doesn't exist Make rebuilds it before re-reading.
+  No family-specific variable (e.g. `GITEA_FAMILY_ALIASES`) is needed in the Makefile.
+- **`make dump-families`** exports `provider_families` as JSON. Useful for debugging and
+  piped into `make validate-providers`.
+- **`make validate-providers`** is wired into `make test`. It checks: root backend and mock
+  exist; each alias backend calls `load_family_backend`; no stale `test/mock-<alias>.lua`
+  files; every alias is in `BACKENDS`.
+
 ### Routing
 
 - **Segment-based radix trie** (`route_add` / `route_match` in `.init.lua`): O(k) lookup where
@@ -228,7 +281,7 @@ Hard-won insights from building this project. **Keep this section current**: whe
 - **`backend_allow_anonymous` is a global boolean** defaulting to `true`. `OnHttpRequest()` checks it on every request: if `false` and no `Authorization` header is present, confusio returns `401 { message = "This instance requires authentication." }` immediately, before routing.
 - **Only Gitea probes its backend at startup.** The Gitea backend calls `GET /api/v1/settings/api` and sets `backend_allow_anonymous = (settings.require_signin_view ~= true)`. If the probe fails (network error or non-200), the default `true` is preserved and anonymous requests are allowed.
 - **All other backends leave the default `true`.** They neither probe nor set `backend_allow_anonymous`, so anonymous access is always permitted regardless of the upstream's actual configuration.
-- **`dofile`'d backends (forgejo, gogs, codeberg, notabug) inherit Gitea's probe** because they `dofile` `backends/gitea.lua`, which includes the probe block.
+- **Gitea-family backends (forgejo, gogs, codeberg, notabug) inherit Gitea's probe** because `load_family_backend("gitea")` dofiles `backends/gitea.lua`, which includes the probe block.
 - **Test pattern**: `*-anon.hurl` files verify that unauthenticated requests succeed when the mock advertises anonymous access. The mock's `/api/v1/settings/api` route returns `{"require_signin_view": false}` to simulate an open instance. Closed-instance (401) behavior is covered by unit tests that set `backend_allow_anonymous = false` directly.
 
 ### Mock server design
