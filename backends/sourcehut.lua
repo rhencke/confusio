@@ -27,20 +27,9 @@ local auth = function()
   return make_fetch_opts("token")
 end
 local PAGES = { per_page = "limit" }
-
-local function fetch_json(url, method, body)
-  local opts = auth()
-  if method ~= nil and method ~= "GET" then
-    opts = opts or {}
-    opts.method = method
-    if body then
-      opts.body = body
-      opts.headers = opts.headers or {}
-      opts.headers["Content-Type"] = "application/json"
-    end
-  end
-  return pcall(Fetch, url, opts)
-end
+local _t = make_backend_transport("token", PAGES)
+local fetch_json = _t.fetch_json
+local proxy_handler = _t.proxy_handler
 
 -- Map a Sourcehut repository object to GitHub format.
 local function translate_srht_repo(r)
@@ -178,7 +167,6 @@ end
 
 -- Translate a Sourcehut log entry to GitHub commit format.
 -- Sourcehut: { id, message, timestamp, author: { name, email } }
-local proxy_handler = make_proxy_handler(fetch_json)
 
 -- Checks (via builds.sr.ht jobs) -----------------------------------------------
 --
