@@ -1061,14 +1061,24 @@ local BUILTIN_DIRECTIVES = {
         default_value = '"No longer supported"',
       },
     },
-    locations = { "FIELD_DEFINITION", "ARGUMENT_DEFINITION", "INPUT_FIELD_DEFINITION", "ENUM_VALUE" },
+    locations = {
+      "FIELD_DEFINITION",
+      "ARGUMENT_DEFINITION",
+      "INPUT_FIELD_DEFINITION",
+      "ENUM_VALUE",
+    },
     is_repeatable = false,
   },
   specifiedBy = {
     name = "specifiedBy",
     description = "Exposes a URL that specifies the behavior of this scalar.",
     args = {
-      { name = "url", type = "String!", description = "The URL that specifies the behavior of this scalar.", default_value = nil },
+      {
+        name = "url",
+        type = "String!",
+        description = "The URL that specifies the behavior of this scalar.",
+        default_value = nil,
+      },
     },
     locations = { "SCALAR" },
     is_repeatable = false,
@@ -1128,7 +1138,8 @@ emit_field = function(field, out, indent)
   local args = field.args or {}
   local dep_suffix = ""
   if field.is_deprecated then
-    dep_suffix = ", is_deprecated = true, deprecation_reason = " .. lua_escape(field.deprecation_reason)
+    dep_suffix = ", is_deprecated = true, deprecation_reason = "
+      .. lua_escape(field.deprecation_reason)
   end
   if #args > 0 then
     out[#out + 1] = pad
