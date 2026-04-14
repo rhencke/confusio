@@ -249,9 +249,7 @@ function proxy_search_envelope(translate_item, container, ok, status, _headers, 
   local items = translate_list(translate_item, src)
   set_preamble()
   Write(
-    '{"total_count":'
-      .. #items
-      .. ',"incomplete_results":false,"items":'
+    '{"total_count":' .. #items .. ',"incomplete_results":false,"items":'
       .. (#items > 0 and EncodeJson(items) or "[]")
       .. "}"
   )
