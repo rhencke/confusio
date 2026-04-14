@@ -13,20 +13,7 @@ local auth = function()
   return make_fetch_opts("bearer")
 end
 local PAGES = { per_page = "perPage", page = "page" }
-
-local function fetch_json(url, method, body)
-  local opts = auth()
-  if method ~= nil and method ~= "GET" then
-    opts = opts or {}
-    opts.method = method
-    if body then
-      opts.body = body
-      opts.headers = opts.headers or {}
-      opts.headers["Content-Type"] = "application/json"
-    end
-  end
-  return pcall(Fetch, url, opts)
-end
+local fetch_json = make_backend_transport("bearer", PAGES).fetch_json
 
 -- Map a Radicle repository object to GitHub format.
 local function translate_radicle_repo(r)

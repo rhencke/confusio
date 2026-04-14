@@ -8,23 +8,10 @@ local auth = function()
   return make_fetch_opts("basic-colon")
 end
 local API_VER = "api-version=7.0"
+local fetch_json = make_backend_transport("basic-colon").fetch_json
 
 local function repos_base(owner)
   return config.base_url .. "/" .. owner .. "/_apis/git/repositories"
-end
-
-local function fetch_json(url, method, body)
-  local opts = auth()
-  if method ~= nil and method ~= "GET" then
-    opts = opts or {}
-    opts.method = method
-    if body then
-      opts.body = body
-      opts.headers = opts.headers or {}
-      opts.headers["Content-Type"] = "application/json"
-    end
-  end
-  return pcall(Fetch, url, opts)
 end
 
 local function ado_url(path)

@@ -12,20 +12,9 @@ local auth = function()
   return make_fetch_opts("token")
 end
 local PAGES = { per_page = "per_page", page = "page" }
-
-local function fetch_json(url, method, body)
-  local opts = auth()
-  if method ~= nil and method ~= "GET" then
-    opts = opts or {}
-    opts.method = method
-    if body then
-      opts.body = body
-      opts.headers = opts.headers or {}
-      opts.headers["Content-Type"] = "application/json"
-    end
-  end
-  return pcall(Fetch, url, opts)
-end
+local _t = make_backend_transport("token", PAGES)
+local fetch_json = _t.fetch_json
+local proxy_handler = _t.proxy_handler
 
 -- Map a Pagure project object to GitHub repo format.
 local function translate_pagure_repo(r)
@@ -85,7 +74,6 @@ end
 
 -- Translate a Pagure commit object to GitHub format.
 -- Pagure: { id, message, date, date_utc, author: { name, email } }
-local proxy_handler = make_proxy_handler(fetch_json)
 
 -- Translate a Pagure user to GitHub format.
 local function translate_pagure_user(u)
