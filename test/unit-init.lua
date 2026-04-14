@@ -585,6 +585,55 @@ proxy_health_check(false, nil)
 eq(_last_status, 503, "proxy_health_check: pcall failure → 503")
 
 -- ============================================================
+-- proxy_204
+-- ============================================================
+
+-- 204-only (also_ok = nil)
+reset_response()
+proxy_204(nil, true, 204)
+eq(_last_status, 204, "proxy_204: upstream 204 → 204")
+eq(_last_body, "", "proxy_204: upstream 204 → no body")
+
+reset_response()
+proxy_204(nil, true, 404)
+eq(_last_status, 404, "proxy_204: upstream 404 forwarded")
+
+reset_response()
+proxy_204(nil, false, nil)
+eq(_last_status, 503, "proxy_204: pcall failure → 503")
+
+-- also_ok = {200}
+reset_response()
+proxy_204({ 200 }, true, 200)
+eq(_last_status, 204, "proxy_204({200}): upstream 200 → 204")
+
+reset_response()
+proxy_204({ 200 }, true, 204)
+eq(_last_status, 204, "proxy_204({200}): upstream 204 → 204")
+
+reset_response()
+proxy_204({ 200 }, true, 422)
+eq(_last_status, 422, "proxy_204({200}): upstream 422 forwarded")
+
+-- also_ok = {202}
+reset_response()
+proxy_204({ 202 }, true, 202)
+eq(_last_status, 204, "proxy_204({202}): upstream 202 → 204")
+
+-- also_ok = {200, 201}
+reset_response()
+proxy_204({ 200, 201 }, true, 201)
+eq(_last_status, 204, "proxy_204({200,201}): upstream 201 → 204")
+
+reset_response()
+proxy_204({ 200, 201 }, true, 204)
+eq(_last_status, 204, "proxy_204({200,201}): upstream 204 → 204")
+
+reset_response()
+proxy_204({ 200, 201 }, false, nil)
+eq(_last_status, 503, "proxy_204({200,201}): pcall failure → 503")
+
+-- ============================================================
 -- make_proxy_handler
 -- ============================================================
 

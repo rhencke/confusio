@@ -167,6 +167,35 @@ function proxy_health_check(ok, status)
   end
 end
 
+-- proxy_204 is global: standard mutation/DELETE response helper.
+-- Responds 204 No Content if the upstream status is 204 or any status in also_ok.
+-- Forwards any other upstream status as-is; responds 503 on connection failure.
+--
+-- also_ok: nil for 204-only, or a list of additional accepted success statuses.
+-- Designed to receive the return values of pcall(Fetch,...) or fetch_json(...):
+--   proxy_204(nil, pcall(Fetch, url, opts))          -- 204-only
+--   proxy_204({200}, fetch_json(url, "DELETE"))      -- also accept 200
+--   proxy_204({202}, pcall(Fetch, url, opts))        -- also accept 202
+--   proxy_204({200, 201}, pcall(Fetch, url, opts))   -- also accept 200 or 201
+function proxy_204(also_ok, ok, status)
+  local success = status == 204
+  if not success and also_ok then
+    for _, s in ipairs(also_ok) do
+      if s == status then
+        success = true
+        break
+      end
+    end
+  end
+  if ok and success then
+    SetStatus(204, "No Content")
+  elseif ok then
+    respond_json(status, {})
+  else
+    respond_json(503, {})
+  end
+end
+
 -- append_page_params appends translated pagination params to url.
 -- mapping: { per_page = "upstream_name", page = "upstream_name" }
 --   Omit the page key for providers that only support limit (e.g. Sourcehut).
