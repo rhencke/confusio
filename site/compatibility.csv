@@ -6,21 +6,21 @@ GET /user/repos,n,y,~,y,n,y,n,n,y,y,y,y,y,n,n,y,y,y,n,y,n,n,y,n
 POST /user/repos,n,y,~,y,n,y,n,n,y,y,y,y,y,n,n,y,y,y,n,y,n,n,y,n
 GET /orgs/{org}/repos,n,y,y,y,n,y,n,y,y,y,y,y,y,n,n,y,y,y,n,n,n,n,n,~
 POST /orgs/{org}/repos,n,y,y,y,n,y,n,n,y,y,y,y,y,n,n,y,y,y,n,n,n,n,n,n
-GET /users/{username}/repos,n,n,y,y,n,y,n,y,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /users/{username}/repos,n,y,y,y,n,y,n,y,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 GET /repositories,n,y,y,y,y,y,y,y,y,y,y,y,n,n,n,y,n,y,n,y,n,n,n,n
-GET /repos/{owner}/{repo}/tags,n,n,y,y,n,y,n,n,n,y,y,y,y,n,n,y,y,y,n,y,n,n,y,n
+GET /repos/{owner}/{repo}/tags,n,y,y,y,n,y,n,n,n,y,y,y,y,n,n,y,y,y,n,y,n,n,y,n
 GET /repos/{owner}/{repo}/topics,n,n,n,y,n,y,n,n,n,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
 PUT /repos/{owner}/{repo}/topics,n,n,n,y,n,y,n,n,n,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/languages,n,n,n,y,n,y,n,n,y,y,y,y,y,n,n,y,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/branches,n,n,y,y,y,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/commits,n,n,y,y,n,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/contents/{path},n,n,y,y,n,y,n,n,n,y,~files only,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/languages,n,~primary language only,n,y,n,y,n,n,y,y,y,y,y,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/branches,n,y,y,y,y,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/commits,n,~no email fields,y,y,n,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/contents/{path},n,y,y,y,n,y,n,n,n,y,~files only,y,n,n,n,y,n,n,n,n,n,n,n,n
 PUT /repos/{owner}/{repo}/contents/{path},n,n,y,y,n,y,n,n,n,y,~,y,n,n,n,y,n,n,n,n,n,n,n,n
 DELETE /repos/{owner}/{repo}/contents/{path},n,n,y,y,n,y,n,n,n,y,~,y,n,n,n,y,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/license,y,y,y,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/collaborators,n,n,n,y,n,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/forks,n,n,y,y,n,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
-POST /repos/{owner}/{repo}/forks,n,n,y,y,n,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/forks,n,y,y,y,n,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+POST /repos/{owner}/{repo}/forks,n,y,y,y,n,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/releases,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 POST /repos/{owner}/{repo}/releases,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/releases/latest,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
@@ -33,10 +33,10 @@ POST /repos/{owner}/{repo}/releases/{release_id}/assets,n,n,n,y,n,y,n,n,n,y,y,y,
 GET /repos/{owner}/{repo}/releases/assets/{asset_id},n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 PATCH /repos/{owner}/{repo}/releases/assets/{asset_id},n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 DELETE /repos/{owner}/{repo}/releases/assets/{asset_id},n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/keys,n,n,y,y,n,y,n,n,n,y,~,y,n,n,n,y,n,n,n,n,n,n,n,n
-GET /repos/{owner}/{repo}/hooks,n,n,y,y,n,y,n,n,n,y,~,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/keys,n,~,y,y,n,y,n,n,n,y,~,y,n,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/hooks,n,~,y,y,n,y,n,n,n,y,~,y,n,n,n,y,n,n,n,n,n,n,n,n
 GET /user,n,y,n,y,n,y,y,n,y,y,y,y,y,n,n,y,n,y,n,n,n,n,y,n
-PATCH /user,n,y,n,y,n,y,y,n,y,y,y,y,y,n,n,y,n,y,n,n,n,n,y,n
+PATCH /user,n,n,n,y,n,y,y,n,y,y,y,y,y,n,n,y,n,y,n,n,n,n,y,n
 GET /users,n,n,y,y,n,y,y,y,y,y,y,y,n,n,n,y,y,y,n,n,n,n,n,~
 GET /users/{username},n,y,y,y,n,y,y,y,y,y,y,y,n,n,n,y,y,y,n,n,n,n,n,~
 GET /user/followers,n,n,n,y,n,y,n,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
