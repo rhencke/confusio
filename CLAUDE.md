@@ -17,7 +17,10 @@ Built with [Redbean](https://redbean.dev): a self-contained web server + Lua int
 | `make -j test-format` | Check StyLua formatting only (no changes — fails if any file needs reformatting) |
 | `make -j test-lint` | Run luacheck linting only |
 | `make -j validate-mock` | Run `test/validate/gitea-api-version.hurl` against both the mock and a real Gitea instance to check they agree |
-| `make -j site` | Build GitHub Pages site into `_site/` (generates matrix from CSV) |
+| `make -j validate-csv` | Check every `site/compatibility.csv` row exists in the catalog |
+| `make -j validate-tests` | Check every catalog group has test coverage per backend |
+| `make -j dump-endpoints` | Print catalog as JSON to stdout |
+| `make -j site` | Build GitHub Pages site into `_site/` (catalog + CSV → matrix HTML) |
 
 **Before any commit and before any push: run `make -j test`.** This runs unit tests, integration tests, format check, and lint in one shot. CI enforces all of these — fix any failures before pushing.
 
