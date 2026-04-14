@@ -1,11 +1,12 @@
 -- internal/graphql_schema.lua
 -- Runtime API for the GraphQL type registry.
 -- Depends on graphql_schema_data (loaded first).
--- Exports six globals: graphql_schema_type, graphql_schema_field,
+-- Exports eight globals: graphql_schema_type, graphql_schema_field,
 -- graphql_schema_base_type, graphql_schema_is_leaf, graphql_schema_is_nonnull,
--- graphql_schema_expand_type.
+-- graphql_schema_expand_type, graphql_introspect_schema, graphql_introspect_type.
 -- luacheck: globals graphql_schema_type graphql_schema_field graphql_schema_base_type
 -- luacheck: globals graphql_schema_is_leaf graphql_schema_is_nonnull graphql_schema_expand_type
+-- luacheck: globals graphql_introspect_schema graphql_introspect_type
 
 -- ---------------------------------------------------------------------------
 -- graphql_schema_type(name)
@@ -135,4 +136,152 @@ function graphql_schema_field(type_name, field_name) -- luacheck: globals graphq
     end
   end
   return nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Introspection helpers (internal).
+-- ---------------------------------------------------------------------------
+
+-- Convert a stored arg/input-field definition to an __InputValue introspection table.
+local function introspect_input_value(iv)
+  return {
+    name = iv.name,
+    description = iv.description,
+    type = graphql_schema_expand_type(iv.type),
+    defaultValue = iv.default_value,
+  }
+end
+
+-- Convert a stored field definition to a __Field introspection table.
+local function introspect_field(f)
+  local args = {}
+  for i, a in ipairs(f.args or {}) do
+    args[i] = introspect_input_value(a)
+  end
+  return {
+    name = f.name,
+    description = f.description,
+    args = args,
+    type = graphql_schema_expand_type(f.type),
+    isDeprecated = f.is_deprecated or false,
+    deprecationReason = f.deprecation_reason,
+  }
+end
+
+-- Convert a stored type definition to a __Type introspection table.
+local function introspect_type_def(t)
+  if t == nil then
+    return nil
+  end
+  local result = {
+    kind = t.kind,
+    name = t.name,
+    description = t.description,
+  }
+
+  -- fields: OBJECT and INTERFACE only
+  if t.kind == "OBJECT" or t.kind == "INTERFACE" then
+    local fields = {}
+    for i, f in ipairs(t.fields or {}) do
+      fields[i] = introspect_field(f)
+    end
+    result.fields = fields
+  end
+
+  -- interfaces: OBJECT only
+  if t.kind == "OBJECT" then
+    local ifaces = {}
+    for i, iname in ipairs(t.interfaces or {}) do
+      ifaces[i] = { kind = "INTERFACE", name = iname, ofType = nil }
+    end
+    result.interfaces = ifaces
+  end
+
+  -- possibleTypes: INTERFACE and UNION
+  if t.kind == "INTERFACE" or t.kind == "UNION" then
+    local pts = {}
+    for i, ptname in ipairs(t.possible_types or {}) do
+      pts[i] = { kind = "OBJECT", name = ptname, ofType = nil }
+    end
+    result.possibleTypes = pts
+  end
+
+  -- enumValues: ENUM only
+  if t.kind == "ENUM" then
+    local evs = {}
+    for i, ev in ipairs(t.values or {}) do
+      evs[i] = {
+        name = ev.name,
+        description = ev.description,
+        isDeprecated = ev.is_deprecated or false,
+        deprecationReason = ev.deprecation_reason,
+      }
+    end
+    result.enumValues = evs
+  end
+
+  -- inputFields: INPUT_OBJECT only
+  if t.kind == "INPUT_OBJECT" then
+    local ifields = {}
+    for i, f in ipairs(t.input_fields or {}) do
+      ifields[i] = introspect_input_value(f)
+    end
+    result.inputFields = ifields
+  end
+
+  return result
+end
+
+-- ---------------------------------------------------------------------------
+-- graphql_introspect_type(name)
+-- Returns the __Type introspection table for the named type, or nil if unknown.
+-- ---------------------------------------------------------------------------
+function graphql_introspect_type(name) -- luacheck: globals graphql_introspect_type
+  return introspect_type_def(graphql_schema_type(name))
+end
+
+-- ---------------------------------------------------------------------------
+-- graphql_introspect_schema()
+-- Returns the full __schema introspection response table.
+-- ---------------------------------------------------------------------------
+function graphql_introspect_schema() -- luacheck: globals graphql_introspect_schema
+  -- Collect all types as __Type objects, sorted by name for stability.
+  local type_names = {}
+  for name in pairs(graphql_schema_data.types) do
+    type_names[#type_names + 1] = name
+  end
+  table.sort(type_names)
+
+  local types = {}
+  for i, name in ipairs(type_names) do
+    types[i] = introspect_type_def(graphql_schema_data.types[name])
+  end
+
+  -- Convert stored directive definitions to __Directive introspection tables.
+  local directives = {}
+  for i, d in ipairs(graphql_schema_data.directives or {}) do
+    local args = {}
+    for j, a in ipairs(d.args or {}) do
+      args[j] = introspect_input_value(a)
+    end
+    directives[i] = {
+      name = d.name,
+      description = d.description,
+      isRepeatable = d.is_repeatable or false,
+      locations = d.locations,
+      args = args,
+    }
+  end
+
+  local qt = graphql_schema_data.query_type
+  local mt = graphql_schema_data.mutation_type
+  local st = graphql_schema_data.subscription_type
+
+  return {
+    types = types,
+    queryType = qt and { name = qt } or nil,
+    mutationType = mt and { name = mt } or nil,
+    subscriptionType = st and { name = st } or nil,
+    directives = directives,
+  }
 end
