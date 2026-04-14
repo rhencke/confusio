@@ -65,9 +65,9 @@ luacov: .luacov-version
 	mkdir -p luacov
 	curl -fsSL $(LUACOV_URL) | tar -xz --strip-components=2 -C luacov luacov-$(LUACOV_VERSION)/src
 
-confusio.com: redbean.com .init.lua $(wildcard backends/*.lua)
+confusio.com: redbean.com .init.lua $(wildcard backends/*.lua) $(wildcard internal/*.lua)
 	cp redbean.com confusio.com
-	zip confusio.com .init.lua $(wildcard backends/*.lua)
+	zip confusio.com .init.lua $(wildcard backends/*.lua) $(wildcard internal/*.lua)
 
 mock-%.com: redbean.com test/mock-%.lua
 	cp redbean.com $@

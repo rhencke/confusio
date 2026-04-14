@@ -2,10 +2,15 @@
 -- Run from the project root: ./redbean.com -i scripts/dump-endpoints.lua
 
 -- Block backend files so only the core catalog is loaded.
+-- Redirect /zip/internal/ to the internal/ directory on the filesystem so the
+-- script can load internal modules without a Redbean zip.
 local _real_dofile = dofile
 function dofile(path) -- luacheck: globals dofile
   if path and path:match("^/zip/backends/") then
     return
+  end
+  if path and path:match("^/zip/internal/") then
+    return _real_dofile(path:sub(6))
   end
   return _real_dofile(path)
 end
