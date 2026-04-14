@@ -1,5 +1,4 @@
--- Unit tests for the GraphQL lexer and recursive-descent parser
--- (internal/graphql_parser.lua).
+-- Unit tests for the GraphQL lexer, parser, and schema loader.
 -- Run from project root: sh redbean.com -i test/unit-graphql.lua
 -- ============================================================
 
@@ -13,8 +12,10 @@ function dofile(path) -- luacheck: globals dofile
   return _real_dofile(path)
 end
 
--- Load module under test.
+-- Load modules under test.
 dofile("internal/graphql_parser.lua")
+dofile("internal/graphql_schema_data.lua")
+dofile("internal/graphql_schema.lua")
 
 dofile = _real_dofile -- luacheck: globals dofile
 
@@ -621,6 +622,140 @@ end
 
 do -- bad unicode escape (not 4 hex digits)
   must_fail('{ field(x: "\\u00GG") { id } }', "bad unicode escape")
+end
+
+-- luacheck: globals graphql_schema_type graphql_schema_field graphql_schema_base_type
+-- luacheck: globals graphql_schema_is_leaf graphql_schema_is_nonnull graphql_schema_expand_type
+
+-- ============================================================
+-- graphql_schema_type
+-- ============================================================
+
+do
+  local t = graphql_schema_type("Repository")
+  ok(t ~= nil, "schema_type: Repository is found")
+  eq(t and t.kind, "OBJECT", "schema_type: Repository.kind is OBJECT")
+end
+
+do
+  local t = graphql_schema_type("IssueState")
+  ok(t ~= nil, "schema_type: IssueState is found")
+  eq(t and t.kind, "ENUM", "schema_type: IssueState.kind is ENUM")
+end
+
+do
+  local t = graphql_schema_type("NonExistent")
+  ok(t == nil, "schema_type: NonExistent returns nil")
+end
+
+-- ============================================================
+-- graphql_schema_field
+-- ============================================================
+
+do
+  local f = graphql_schema_field("Repository", "issues")
+  ok(f ~= nil, "schema_field: Repository.issues is found")
+  eq(f and f.type, "IssueConnection!", "schema_field: Repository.issues type is IssueConnection!")
+end
+
+do -- meta-field __schema on Query
+  local f = graphql_schema_field("Query", "__schema")
+  ok(f ~= nil, "schema_field: Query.__schema returns synthetic meta-field")
+  eq(f and f.name, "__schema", "schema_field: Query.__schema name")
+  eq(f and f.type, "__Schema!", "schema_field: Query.__schema type is __Schema!")
+end
+
+do -- meta-field __type on Query
+  local f = graphql_schema_field("Query", "__type")
+  ok(f ~= nil, "schema_field: Query.__type returns synthetic meta-field")
+  eq(f and f.name, "__type", "schema_field: Query.__type name")
+  eq(f and f.type, "__Type", "schema_field: Query.__type type is __Type")
+end
+
+do -- meta-field __typename on any object
+  local f = graphql_schema_field("Repository", "__typename")
+  ok(f ~= nil, "schema_field: Repository.__typename returns synthetic meta-field")
+  eq(f and f.name, "__typename", "schema_field: Repository.__typename name")
+  eq(f and f.type, "String!", "schema_field: Repository.__typename type is String!")
+end
+
+do -- __schema not available on non-Query types
+  local f = graphql_schema_field("Repository", "__schema")
+  ok(f == nil, "schema_field: __schema is nil on non-Query type")
+end
+
+do -- unknown field returns nil
+  local f = graphql_schema_field("Repository", "doesNotExist")
+  ok(f == nil, "schema_field: unknown field returns nil")
+end
+
+do -- unknown type returns nil
+  local f = graphql_schema_field("NoSuchType", "field")
+  ok(f == nil, "schema_field: unknown type returns nil")
+end
+
+-- ============================================================
+-- graphql_schema_base_type
+-- ============================================================
+
+do
+  eq(graphql_schema_base_type("[Issue!]!"), "Issue", "base_type: [Issue!]! → Issue")
+  eq(graphql_schema_base_type("String!"), "String", "base_type: String! → String")
+  eq(
+    graphql_schema_base_type("[IssueState]!"),
+    "IssueState",
+    "base_type: [IssueState]! → IssueState"
+  )
+  eq(graphql_schema_base_type("Repository"), "Repository", "base_type: Repository → Repository")
+end
+
+-- ============================================================
+-- graphql_schema_is_nonnull
+-- ============================================================
+
+do
+  ok(graphql_schema_is_nonnull("String!") == true, "is_nonnull: String! is non-null")
+  ok(graphql_schema_is_nonnull("String") == false, "is_nonnull: String is nullable")
+  ok(graphql_schema_is_nonnull("[Issue!]!") == true, "is_nonnull: [Issue!]! is non-null")
+  ok(graphql_schema_is_nonnull("[Issue!]") == false, "is_nonnull: [Issue!] is nullable")
+end
+
+-- ============================================================
+-- graphql_schema_is_leaf
+-- ============================================================
+
+do
+  ok(graphql_schema_is_leaf("String!") == true, "is_leaf: String! is a leaf (scalar)")
+  ok(graphql_schema_is_leaf("Repository!") == false, "is_leaf: Repository! is not a leaf (object)")
+  ok(graphql_schema_is_leaf("IssueState") == true, "is_leaf: IssueState is a leaf (enum)")
+  ok(
+    graphql_schema_is_leaf("IssueConnection!") == false,
+    "is_leaf: IssueConnection! is not a leaf (object)"
+  )
+  ok(graphql_schema_is_leaf("UnknownType") == false, "is_leaf: unknown type is not a leaf")
+end
+
+-- ============================================================
+-- graphql_schema_expand_type
+-- ============================================================
+
+do -- "String!" → NON_NULL → SCALAR
+  local e = graphql_schema_expand_type("String!")
+  eq(e.kind, "NON_NULL", "expand_type String!: outer kind is NON_NULL")
+  ok(e.name == nil, "expand_type String!: outer name is nil")
+  ok(e.ofType ~= nil, "expand_type String!: ofType present")
+  eq(e.ofType.kind, "SCALAR", "expand_type String!: inner kind is SCALAR")
+  eq(e.ofType.name, "String", "expand_type String!: inner name is String")
+  ok(e.ofType.ofType == nil, "expand_type String!: inner ofType is nil")
+end
+
+do -- "[Issue!]!" → NON_NULL → LIST → NON_NULL → OBJECT
+  local e = graphql_schema_expand_type("[Issue!]!")
+  eq(e.kind, "NON_NULL", "expand_type [Issue!]!: level 1 NON_NULL")
+  eq(e.ofType.kind, "LIST", "expand_type [Issue!]!: level 2 LIST")
+  eq(e.ofType.ofType.kind, "NON_NULL", "expand_type [Issue!]!: level 3 NON_NULL")
+  eq(e.ofType.ofType.ofType.kind, "OBJECT", "expand_type [Issue!]!: level 4 OBJECT")
+  eq(e.ofType.ofType.ofType.name, "Issue", "expand_type [Issue!]!: leaf name Issue")
 end
 
 -- ============================================================
