@@ -30,17 +30,11 @@ do
 end
 
 local function translate_repos(repos)
-  for i, r in ipairs(repos) do
-    repos[i] = translate_repo(r)
-  end
-  return repos
+  return translate_list(translate_repo, repos)
 end
 
 local function translate_users(users)
-  for i, u in ipairs(users) do
-    users[i] = translate_user(u)
-  end
-  return users
+  return translate_list(translate_user, users)
 end
 
 local function set_204_or_error(method, url)
@@ -61,28 +55,7 @@ end
 -- envelope {"total_count":N,"incomplete_results":false,"items":[...]}.
 -- translate_item is applied to each element of data[].
 local function proxy_search(translate_item, url)
-  local ok, status, _, body = fetch_json(url)
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
-  end
-  local raw = (DecodeJson(body) or {}).data or {}
-  local items = {}
-  for i, item in ipairs(raw) do
-    items[i] = translate_item(item)
-  end
-  set_preamble()
-  Write(
-    '{"total_count":'
-      .. #items
-      .. ',"incomplete_results":false,"items":'
-      .. (#items > 0 and EncodeJson(items) or "[]")
-      .. "}"
-  )
+  proxy_search_envelope(translate_item, "data", fetch_json(url))
 end
 
 local function filter_verified_emails(emails)
@@ -207,28 +180,16 @@ local function translate_gitea_issue_comment(c)
 end
 
 local function translate_gitea_issues(issues)
-  for i, iss in ipairs(issues) do
-    issues[i] = translate_gitea_issue(iss)
-  end
-  return issues
+  return translate_list(translate_gitea_issue, issues)
 end
 local function translate_gitea_issue_comments(comments)
-  for i, c in ipairs(comments) do
-    comments[i] = translate_gitea_issue_comment(c)
-  end
-  return comments
+  return translate_list(translate_gitea_issue_comment, comments)
 end
 local function translate_gitea_labels(labels)
-  for i, l in ipairs(labels) do
-    labels[i] = translate_gitea_label(l)
-  end
-  return labels
+  return translate_list(translate_gitea_label, labels)
 end
 local function translate_gitea_milestones(milestones)
-  for i, m in ipairs(milestones) do
-    milestones[i] = translate_gitea_milestone(m)
-  end
-  return milestones
+  return translate_list(translate_gitea_milestone, milestones)
 end
 
 -- GitHub reaction content types and their integer codes.
@@ -265,10 +226,7 @@ local function translate_gitea_reaction(r)
 end
 
 local function translate_gitea_reactions(reactions)
-  for i, r in ipairs(reactions) do
-    reactions[i] = translate_gitea_reaction(r)
-  end
-  return reactions
+  return translate_list(translate_gitea_reaction, reactions)
 end
 
 -- Map a Gitea pull request branch reference to GitHub format.
@@ -322,10 +280,7 @@ local function translate_gitea_pull(pr)
 end
 
 local function translate_gitea_pulls(prs)
-  for i, pr in ipairs(prs) do
-    prs[i] = translate_gitea_pull(pr)
-  end
-  return prs
+  return translate_list(translate_gitea_pull, prs)
 end
 
 -- Map a Gitea pull request review to GitHub format.
@@ -353,10 +308,7 @@ local function translate_gitea_review(r)
 end
 
 local function translate_gitea_reviews(reviews)
-  for i, r in ipairs(reviews) do
-    reviews[i] = translate_gitea_review(r)
-  end
-  return reviews
+  return translate_list(translate_gitea_review, reviews)
 end
 
 -- Map a Gitea inline review comment to GitHub format.
@@ -384,10 +336,7 @@ local function translate_gitea_review_comment(c)
 end
 
 local function translate_gitea_review_comments(comments)
-  for i, c in ipairs(comments) do
-    comments[i] = translate_gitea_review_comment(c)
-  end
-  return comments
+  return translate_list(translate_gitea_review_comment, comments)
 end
 
 -- Look up a Gitea label ID by name within a repo.
@@ -486,11 +435,7 @@ end
 
 -- Translate a list of Gitea statuses to GitHub check runs.
 local function translate_gitea_statuses_to_check_runs(statuses)
-  local runs = {}
-  for i, s in ipairs(statuses) do
-    runs[i] = translate_gitea_status_to_check_run(s)
-  end
-  return runs
+  return translate_list(translate_gitea_status_to_check_run, statuses)
 end
 
 -- Map a GitHub check run request body to a Gitea commit status body.
