@@ -195,7 +195,7 @@ local function make_parser(text)
   local maybe_description, parse_implements, skip_directives, parse_field_defs
   local parse_field_def, parse_arguments_def, parse_input_value_def
   local parse_type_ref, parse_default_value, parse_value_literal
-  local has_deprecated_directive, skip_balanced, skip_directive_def
+  local has_deprecated_directive, skip_balanced, parse_directive_def
   local skip_schema_def, skip_extend_def
 
   maybe_description = function()
@@ -457,22 +457,29 @@ local function make_parser(text)
     return { kind = "SCALAR", name = name, description = desc }
   end
 
-  skip_directive_def = function()
+  parse_directive_def = function(desc)
     P.expect("NAME", "directive")
     P.expect_punct("@")
-    P.expect("NAME")
-    if not P.at_end() and P.peek()[1] == "PUNCT" and P.peek()[2] == "(" then
-      skip_balanced("(", ")")
-    end
+    local name = P.expect("NAME")[2]
+    local args = parse_arguments_def()
+    local is_repeatable = false
     if not P.at_end() and P.peek()[1] == "NAME" and P.peek()[2] == "repeatable" then
       P.advance()
+      is_repeatable = true
     end
     P.expect("NAME", "on")
-    P.expect("NAME")
+    local locations = { P.expect("NAME")[2] }
     while not P.at_end() and P.peek()[1] == "PUNCT" and P.peek()[2] == "|" do
       P.advance()
-      P.expect("NAME")
+      locations[#locations + 1] = P.expect("NAME")[2]
     end
+    return {
+      name = name,
+      description = desc,
+      args = args,
+      locations = locations,
+      is_repeatable = is_repeatable,
+    }
   end
 
   skip_schema_def = function()
@@ -526,6 +533,7 @@ local function make_parser(text)
 
   function P.parse()
     local types = {}
+    local directives = {}
     while not P.at_end() do
       local desc = maybe_description()
       if P.at_end() then
@@ -547,7 +555,8 @@ local function make_parser(text)
         elseif tok[2] == "scalar" then
           td = parse_scalar_type(desc)
         elseif tok[2] == "directive" then
-          skip_directive_def()
+          local dd = parse_directive_def(desc)
+          directives[dd.name] = dd
         elseif tok[2] == "schema" then
           skip_schema_def()
         elseif tok[2] == "extend" then
@@ -562,7 +571,7 @@ local function make_parser(text)
         P.advance()
       end
     end
-    return types
+    return types, directives
   end
 
   return P
@@ -990,6 +999,50 @@ local INTROSPECTION_TYPES = {
   },
 }
 
+local BUILTIN_DIRECTIVES = {
+  skip = {
+    name = "skip",
+    description = "Directs the executor to skip this field or fragment when the `if` argument is true.",
+    args = {
+      { name = "if", type = "Boolean!", description = "Skipped when true.", default_value = nil },
+    },
+    locations = { "FIELD", "FRAGMENT_SPREAD", "INLINE_FRAGMENT" },
+    is_repeatable = false,
+  },
+  include = {
+    name = "include",
+    description = "Directs the executor to include this field or fragment only when the `if` argument is true.",
+    args = {
+      { name = "if", type = "Boolean!", description = "Included when true.", default_value = nil },
+    },
+    locations = { "FIELD", "FRAGMENT_SPREAD", "INLINE_FRAGMENT" },
+    is_repeatable = false,
+  },
+  deprecated = {
+    name = "deprecated",
+    description = "Marks an element of a GraphQL schema as no longer supported.",
+    args = {
+      {
+        name = "reason",
+        type = "String",
+        description = "Explains why this element was deprecated.",
+        default_value = '"No longer supported"',
+      },
+    },
+    locations = { "FIELD_DEFINITION", "ARGUMENT_DEFINITION", "INPUT_FIELD_DEFINITION", "ENUM_VALUE" },
+    is_repeatable = false,
+  },
+  specifiedBy = {
+    name = "specifiedBy",
+    description = "Exposes a URL that specifies the behavior of this scalar.",
+    args = {
+      { name = "url", type = "String!", description = "The URL that specifies the behavior of this scalar.", default_value = nil },
+    },
+    locations = { "SCALAR" },
+    is_repeatable = false,
+  },
+}
+
 -- ---------------------------------------------------------------------------
 -- Lua emitter
 -- ---------------------------------------------------------------------------
@@ -1108,7 +1161,26 @@ local function emit_type(td, out)
   out[#out + 1] = "    },\n"
 end
 
-local function emit_lua(types, reachable)
+local function emit_directive(dir, out)
+  out[#out + 1] = "    {\n"
+  out[#out + 1] = "      name          = " .. lua_escape(dir.name) .. ",\n"
+  out[#out + 1] = "      description   = " .. lua_escape(dir.description) .. ",\n"
+  out[#out + 1] = "      is_repeatable = " .. lua_bool(dir.is_repeatable) .. ",\n"
+  out[#out + 1] = "      locations     = " .. lua_string_list(dir.locations) .. ",\n"
+  local args = dir.args or {}
+  if #args > 0 then
+    out[#out + 1] = "      args          = {\n"
+    for _, a in ipairs(args) do
+      emit_input_value(a, out, 8)
+    end
+    out[#out + 1] = "      },\n"
+  else
+    out[#out + 1] = "      args          = {},\n"
+  end
+  out[#out + 1] = "    },\n"
+end
+
+local function emit_lua(types, reachable, directives)
   -- Collect and sort type names
   local names = {}
   for name in pairs(reachable) do
@@ -1132,6 +1204,21 @@ local function emit_lua(types, reachable)
   end
 
   out[#out + 1] = "  },\n"
+  out[#out + 1] = "\n"
+
+  -- Emit directives sorted by name
+  local dir_names = {}
+  for name in pairs(directives) do
+    dir_names[#dir_names + 1] = name
+  end
+  table.sort(dir_names)
+
+  out[#out + 1] = "  directives = {\n"
+  for _, name in ipairs(dir_names) do
+    emit_directive(directives[name], out)
+  end
+  out[#out + 1] = "  },\n"
+
   out[#out + 1] = "}\n"
   return table.concat(out)
 end
@@ -1142,7 +1229,7 @@ end
 
 local sdl_text = read_file(sdl_path)
 local parser = make_parser(sdl_text)
-local types = parser.parse()
+local types, sdl_directives = parser.parse()
 
 -- Add built-in scalars (SDL usually omits them)
 for name, td in pairs(BUILTIN_SCALARS) do
@@ -1201,8 +1288,17 @@ for _ in pairs(reachable) do
   count = count + 1
 end
 
+-- Merge directives: built-in spec directives as fallback, SDL directives take precedence
+local all_directives = {}
+for name, dd in pairs(BUILTIN_DIRECTIVES) do
+  all_directives[name] = dd
+end
+for name, dd in pairs(sdl_directives) do
+  all_directives[name] = dd
+end
+
 -- Emit
-local output = emit_lua(types, reachable)
+local output = emit_lua(types, reachable, all_directives)
 local f = assert(io.open(out_path, "w"))
 f:write(output)
 f:close()

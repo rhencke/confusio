@@ -25470,4 +25470,62 @@ graphql_schema_data = {
       },
     },
   },
+
+  directives = {
+    {
+      name          = "deprecated",
+      description   = "Marks an element of a GraphQL schema as no longer supported.",
+      is_repeatable = false,
+      locations     = { "FIELD_DEFINITION", "ARGUMENT_DEFINITION", "INPUT_FIELD_DEFINITION", "ENUM_VALUE" },
+      args          = {
+        { name = "reason", type = "String", description = "Explains why this element was deprecated.", default_value = "\"No longer supported\"" },
+      },
+    },
+    {
+      name          = "include",
+      description   = "Directs the executor to include this field or fragment only when the `if` argument is true.",
+      is_repeatable = false,
+      locations     = { "FIELD", "FRAGMENT_SPREAD", "INLINE_FRAGMENT" },
+      args          = {
+        { name = "if", type = "Boolean!", description = "Included when true.", default_value = nil },
+      },
+    },
+    {
+      name          = "possibleTypes",
+      description   = "Defines what type of global IDs are accepted for a mutation argument of type ID.",
+      is_repeatable = false,
+      locations     = { "INPUT_FIELD_DEFINITION" },
+      args          = {
+        { name = "abstractType", type = "String", description = "Abstract type of accepted global ID", default_value = nil },
+        { name = "concreteTypes", type = "[String!]!", description = "Accepted types of global IDs.", default_value = nil },
+      },
+    },
+    {
+      name          = "preview",
+      description   = "Marks an element of a GraphQL schema as only available via a preview header",
+      is_repeatable = false,
+      locations     = { "ARGUMENT_DEFINITION", "ENUM", "ENUM_VALUE", "FIELD_DEFINITION", "INPUT_FIELD_DEFINITION", "INPUT_OBJECT", "INTERFACE", "OBJECT", "SCALAR", "UNION" },
+      args          = {
+        { name = "toggledBy", type = "String!", description = "The identifier of the API preview that toggles this field.", default_value = nil },
+      },
+    },
+    {
+      name          = "skip",
+      description   = "Directs the executor to skip this field or fragment when the `if` argument is true.",
+      is_repeatable = false,
+      locations     = { "FIELD", "FRAGMENT_SPREAD", "INLINE_FRAGMENT" },
+      args          = {
+        { name = "if", type = "Boolean!", description = "Skipped when true.", default_value = nil },
+      },
+    },
+    {
+      name          = "specifiedBy",
+      description   = "Exposes a URL that specifies the behavior of this scalar.",
+      is_repeatable = false,
+      locations     = { "SCALAR" },
+      args          = {
+        { name = "url", type = "String!", description = "The URL that specifies the behavior of this scalar.", default_value = nil },
+      },
+    },
+  },
 }
