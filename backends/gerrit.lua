@@ -8,25 +8,11 @@ end
 local auth = function()
   return make_fetch_opts("basic")
 end
+local _t = make_backend_transport("basic")
+local fetch_json = _t.fetch_json
+local proxy_handler = _t.proxy_handler
 
-local function fetch_json(url, method, body)
-  local opts = auth()
-  if method ~= nil and method ~= "GET" then
-    opts = opts or {}
-    opts.method = method
-    if body then
-      opts.body = body
-      opts.headers = opts.headers or {}
-      opts.headers["Content-Type"] = "application/json"
-    end
-  end
-  return pcall(Fetch, url, opts)
-end
-
--- Gerrit project names use "/" as path separator; URL-encode it.
-local function project_id(owner, repo_name)
-  return owner .. "%2F" .. repo_name
-end
+local project_id = owner_repo_id
 
 -- Map a Gerrit project object to GitHub format.
 local function translate_gerrit_repo(r, owner, repo_name)
@@ -115,8 +101,6 @@ local function translate_gerrit_branch(b)
   local name = b.ref and b.ref:match("^refs/heads/(.+)") or (b.ref or "")
   return { name = name, commit = { sha = b.revision or "", url = "" }, protected = false }
 end
-
-local proxy_handler = make_proxy_handler(fetch_json)
 
 -- Gerrit tag: { ref, revision, object }
 local function translate_gerrit_tag(t)

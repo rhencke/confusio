@@ -11,27 +11,13 @@ local auth = function()
   return make_fetch_opts("bearer")
 end
 local PAGES = { per_page = "per_page", page = "page" }
+local _t = make_backend_transport("bearer", PAGES)
+local fetch_json = _t.fetch_json
+local proxy_handler = _t.proxy_handler
+local proxy_handler_created = _t.proxy_handler_created
+local proxy_handler_paged = _t.proxy_handler_paged
 
--- Encode owner/repo as GitLab project ID (URL-encoded "owner/repo").
-local function project_id(owner, repo_name)
-  -- Replace / with %2F and percent-encode other special chars.
-  -- owner and repo_name come from the URL path so they contain no slashes.
-  return owner .. "%2F" .. repo_name
-end
-
-local function fetch_json(url, method, body)
-  local opts = auth()
-  if method ~= nil and method ~= "GET" then
-    opts = opts or {}
-    opts.method = method
-    if body then
-      opts.body = body
-      opts.headers = opts.headers or {}
-      opts.headers["Content-Type"] = "application/json"
-    end
-  end
-  return pcall(Fetch, url, opts)
-end
+local project_id = owner_repo_id
 
 -- Map a GitLab project object to GitHub repo format.
 local function translate_gl_repo(p)
@@ -142,15 +128,6 @@ local function translate_gl_users(users)
   end
   return users
 end
-
-local proxy_handler = make_proxy_handler(fetch_json)
-local proxy_handler_created = make_proxy_handler(fetch_json, proxy_json_created)
-local proxy_handler_paged = make_proxy_handler(
-  fetch_json,
-  function(translate, ok, status, headers, body)
-    return proxy_json_paged(translate, PAGES, ok, status, headers, body)
-  end
-)
 
 -- Proxy a GitLab search response (plain JSON array) to the GitHub search
 -- envelope {"total_count":N,"incomplete_results":false,"items":[...]}.

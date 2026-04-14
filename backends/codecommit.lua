@@ -13,20 +13,7 @@ end
 local auth = function()
   return make_fetch_opts("basic")
 end
-
-local function fetch_json(url, method, body)
-  local opts = auth()
-  if method ~= nil and method ~= "GET" then
-    opts = opts or {}
-    opts.method = method
-    if body then
-      opts.body = body
-      opts.headers = opts.headers or {}
-      opts.headers["Content-Type"] = "application/json"
-    end
-  end
-  return pcall(Fetch, url, opts)
-end
+local fetch_json = make_backend_transport("basic").fetch_json
 
 -- Translate a CodeCommit repositoryMetadata (or summary) object to GitHub format.
 local function translate_repo(r)

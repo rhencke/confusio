@@ -12,24 +12,11 @@ local auth = function()
   return make_fetch_opts("bearer")
 end
 local PAGES = { per_page = "limit", page = "page" }
+local _t = make_backend_transport("bearer", PAGES)
+local fetch_json = _t.fetch_json
+local proxy_handler = _t.proxy_handler
 
-local function fetch_json(url, method, body)
-  local opts = auth()
-  if method ~= nil and method ~= "GET" then
-    opts = opts or {}
-    opts.method = method
-    if body then
-      opts.body = body
-      opts.headers = opts.headers or {}
-      opts.headers["Content-Type"] = "application/json"
-    end
-  end
-  return pcall(Fetch, url, opts)
-end
-
-local function repo_ref(owner, repo_name)
-  return owner .. "%2F" .. repo_name
-end
+local repo_ref = owner_repo_id
 
 -- Map a Harness Code repository object to GitHub format.
 local function translate_harness_repo(r)
@@ -186,8 +173,6 @@ local function translate_harness_hook(h)
 end
 
 -- Translate GitHub webhook request to Harness format.
-local proxy_handler = make_proxy_handler(fetch_json)
-
 local function translate_harness_hook_req(body_str)
   local req = DecodeJson(body_str or "{}")
   local cfg = req.config or {}

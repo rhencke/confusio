@@ -9,20 +9,9 @@ end
 local auth = function()
   return make_fetch_opts("basic")
 end
-
-local function fetch_json(url, method, body)
-  local opts = auth()
-  if method ~= nil and method ~= "GET" then
-    opts = opts or {}
-    opts.method = method
-    if body then
-      opts.body = body
-      opts.headers = opts.headers or {}
-      opts.headers["Content-Type"] = "application/json"
-    end
-  end
-  return pcall(Fetch, url, opts)
-end
+local _t = make_backend_transport("basic")
+local fetch_json = _t.fetch_json
+local proxy_handler = _t.proxy_handler
 
 -- Bitbucket DC pagination: { values, isLastPage, start, limit }
 -- Upstream query params: start (offset) and limit (page size).
@@ -238,8 +227,6 @@ local function proxy_search_bbs(translate_item, url)
       .. "}"
   )
 end
-
-local proxy_handler = make_proxy_handler(fetch_json)
 
 -- Repo path helper: /projects/{owner}/repos/{repo}
 local function repo_path(owner, repo_name)

@@ -11,20 +11,9 @@ end
 local auth = function()
   return make_fetch_opts("bearer")
 end
-
-local function fetch_json(url, method, body)
-  local opts = auth()
-  if method ~= nil and method ~= "GET" then
-    opts = opts or {}
-    opts.method = method
-    if body then
-      opts.body = body
-      opts.headers = opts.headers or {}
-      opts.headers["Content-Type"] = "application/json"
-    end
-  end
-  return pcall(Fetch, url, opts)
-end
+local _t = make_backend_transport("bearer")
+local fetch_json = _t.fetch_json
+local proxy_handler = _t.proxy_handler
 
 -- Resolve owner/repo to a OneDev project ID by querying by path.
 local function resolve_project_id(owner, repo_name)
@@ -115,8 +104,6 @@ local function translate_onedev_repos(repos)
   end
   return repos
 end
-
-local proxy_handler = make_proxy_handler(fetch_json)
 
 local function translate_onedev_user(u)
   if not u then

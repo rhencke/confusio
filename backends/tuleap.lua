@@ -12,20 +12,7 @@ end
 local auth = function()
   return make_fetch_opts("bearer")
 end
-
-local function fetch_json(url, method, body)
-  local opts = auth()
-  if method ~= nil and method ~= "GET" then
-    opts = opts or {}
-    opts.method = method
-    if body then
-      opts.body = body
-      opts.headers = opts.headers or {}
-      opts.headers["Content-Type"] = "application/json"
-    end
-  end
-  return pcall(Fetch, url, opts)
-end
+local fetch_json = make_backend_transport("bearer").fetch_json
 
 -- Translate a Tuleap git repository object to GitHub format.
 local function translate_tuleap_repo(r)
