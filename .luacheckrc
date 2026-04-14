@@ -24,6 +24,7 @@ globals = {
   "OnHttpRequest",
   -- App globals defined in .init.lua, read by backends/*.lua
   "provider_families",
+  "load_family_backend",
   "config",
   "set_preamble",
   "respond_json",
