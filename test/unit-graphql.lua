@@ -69,73 +69,86 @@ eq(1, 1, "test harness: eq(1, 1) passes")
 -- graphql_tokenize: lexer smoke tests
 -- ============================================================
 
-do
-  local toks = graphql_tokenize("{ viewer }")
-  eq(#toks, 4, "tokenize '{viewer}': 4 tokens (including EOF)")
-  eq(toks[1].kind, "PUNCT", "tokenize: toks[1] is PUNCT")
-  eq(toks[1].value, "{", "tokenize: toks[1].value is '{'")
-  eq(toks[2].kind, "NAME", "tokenize: toks[2] is NAME")
-  eq(toks[2].value, "viewer", "tokenize: toks[2].value is 'viewer'")
-  eq(toks[3].kind, "PUNCT", "tokenize: toks[3] is PUNCT")
-  eq(toks[3].value, "}", "tokenize: toks[3].value is '}'")
-  eq(toks[4].kind, "EOF", "tokenize: toks[4] is EOF")
+-- Data-driven token sequence tests: each entry is { input, label, expected }
+-- where expected is a flat list of { kind, value } pairs. EOF is checked
+-- automatically after the last expected token.
+local token_cases = {
+  {
+    "{ viewer }",
+    "simple query tokens",
+    { "PUNCT", "{", "NAME", "viewer", "PUNCT", "}" },
+  },
+  {
+    "a , b",
+    "commas ignored",
+    { "NAME", "a", "NAME", "b" },
+  },
+  {
+    "# this is a comment\n{ id }",
+    "comments discarded",
+    { "PUNCT", "{", "NAME", "id", "PUNCT", "}" },
+  },
+  {
+    "...",
+    "spread operator",
+    { "PUNCT", "..." },
+  },
+  {
+    "42 -7 3.14 1e10 -2.5E-3",
+    "numbers",
+    {
+      "INT_VALUE",
+      "42",
+      "INT_VALUE",
+      "-7",
+      "FLOAT_VALUE",
+      "3.14",
+      "FLOAT_VALUE",
+      "1e10",
+      "FLOAT_VALUE",
+      "-2.5E-3",
+    },
+  },
+  {
+    '"hello\\nworld"',
+    "string escape",
+    { "STRING_VALUE", "hello\nworld" },
+  },
+  {
+    '"\\u0041"',
+    "unicode escape \\u0041 → A",
+    { "STRING_VALUE", "A" },
+  },
+}
+for _, case in ipairs(token_cases) do
+  local input, label, expected = case[1], case[2], case[3]
+  local toks = graphql_tokenize(input)
+  local n_expected = #expected / 2
+  eq(#toks, n_expected + 1, "tokenize " .. label .. ": token count (including EOF)")
+  for i = 1, n_expected do
+    local kind, value = expected[i * 2 - 1], expected[i * 2]
+    eq(toks[i].kind, kind, "tokenize " .. label .. ": toks[" .. i .. "] kind")
+    eq(toks[i].value, value, "tokenize " .. label .. ": toks[" .. i .. "] value")
+  end
+  eq(toks[#toks].kind, "EOF", "tokenize " .. label .. ": last token is EOF")
 end
 
-do -- commas and whitespace are ignored
-  local toks = graphql_tokenize("a , b")
-  eq(#toks, 3, "tokenize: commas ignored → 3 tokens (a b EOF)")
-end
-
-do -- line/col tracking
+do -- line/col tracking (not just kind/value, so tested separately)
   local toks = graphql_tokenize("{\n  login\n}")
   eq(toks[2].line, 2, "tokenize: 'login' is on line 2")
   eq(toks[2].col, 3, "tokenize: 'login' starts at col 3")
 end
 
-do -- comments discarded
-  local toks = graphql_tokenize("# this is a comment\n{ id }")
-  eq(toks[1].kind, "PUNCT", "tokenize: comment skipped, first real token is '{'")
-end
-
-do -- spread operator
-  local toks = graphql_tokenize("...")
-  eq(toks[1].kind, "PUNCT", "tokenize: '...' is PUNCT")
-  eq(toks[1].value, "...", "tokenize: '...' value is '...'")
-end
-
-do -- integer and float
-  local toks = graphql_tokenize("42 -7 3.14 1e10 -2.5E-3")
-  eq(toks[1].kind, "INT_VALUE", "tokenize: '42' is INT_VALUE")
-  eq(toks[1].value, "42", "tokenize: '42' value")
-  eq(toks[2].kind, "INT_VALUE", "tokenize: '-7' is INT_VALUE")
-  eq(toks[2].value, "-7", "tokenize: '-7' value")
-  eq(toks[3].kind, "FLOAT_VALUE", "tokenize: '3.14' is FLOAT_VALUE")
-  eq(toks[3].value, "3.14", "tokenize: '3.14' value")
-  eq(toks[4].kind, "FLOAT_VALUE", "tokenize: '1e10' is FLOAT_VALUE")
-  eq(toks[5].kind, "FLOAT_VALUE", "tokenize: '-2.5E-3' is FLOAT_VALUE")
-end
-
-do -- string token with escape sequences
-  local toks = graphql_tokenize('"hello\\nworld"')
-  eq(toks[1].kind, "STRING_VALUE", "tokenize: string is STRING_VALUE")
-  eq(toks[1].value, "hello\nworld", "tokenize: \\n escape decoded")
-end
-
-do -- \uXXXX unicode escape
-  local toks = graphql_tokenize('"\\u0041"') -- \u0041 = 'A'
-  eq(toks[1].value, "A", "tokenize: \\u0041 decoded to 'A'")
-end
-
-do -- tokenize error: two dots instead of three
-  local ok2, err = pcall(graphql_tokenize, "{ viewer { ..UserFields } }")
-  ok(not ok2, "tokenize: two dots raises error")
-  ok(err ~= nil and err:match("%d+:%d+:") ~= nil, "tokenize: two-dot error has line:col")
-end
-
-do -- tokenize error: int immediately followed by name char
-  local ok2, err = pcall(graphql_tokenize, "42abc")
-  ok(not ok2, "tokenize: int+name raises error")
-  ok(err ~= nil and err:match("%d+:%d+:") ~= nil, "tokenize: int+name error has line:col")
+-- Data-driven tokenizer error tests: each entry is { input, label }.
+local tokenize_error_cases = {
+  { "{ viewer { ..UserFields } }", "two dots instead of three" },
+  { "42abc", "int immediately followed by name char" },
+}
+for _, case in ipairs(tokenize_error_cases) do
+  local input, label = case[1], case[2]
+  local ok2, err = pcall(graphql_tokenize, input)
+  ok(not ok2, "tokenize error: " .. label .. " raises error")
+  ok(err ~= nil and err:match("%d+:%d+:") ~= nil, "tokenize error: " .. label .. " has line:col")
 end
 
 -- ============================================================
