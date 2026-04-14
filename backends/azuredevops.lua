@@ -442,11 +442,7 @@ backend_impl = {
     local url =
       ado_url(repos_base(owner) .. "/" .. repo_name .. "/refs?filter=heads&$top=" .. limit)
     proxy_json(function(data)
-      local result = {}
-      for _, b in ipairs(data.value or {}) do
-        result[#result + 1] = translate_ado_branch(b)
-      end
-      return result
+      return translate_list(translate_ado_branch, data.value)
     end, fetch_json(url))
   end,
 
@@ -464,11 +460,7 @@ backend_impl = {
   get_repo_tags = function(owner, repo_name)
     local url = ado_url(repos_base(owner) .. "/" .. repo_name .. "/refs?filter=tags")
     proxy_json(function(data)
-      local result = {}
-      for _, t in ipairs(data.value or {}) do
-        result[#result + 1] = translate_ado_tag(t)
-      end
-      return result
+      return translate_list(translate_ado_tag, data.value)
     end, fetch_json(url))
   end,
 
@@ -487,11 +479,7 @@ backend_impl = {
       url = url .. "&searchCriteria.itemVersion.version=" .. ref
     end
     proxy_json(function(data)
-      local result = {}
-      for _, c in ipairs(data.value or {}) do
-        result[#result + 1] = translate_ado_commit(c)
-      end
-      return result
+      return translate_list(translate_ado_commit, data.value)
     end, fetch_json(url))
   end,
 
@@ -623,11 +611,7 @@ backend_impl = {
 
   get_repo_forks = function(owner, repo_name)
     proxy_json(function(data)
-      local result = {}
-      for _, r in ipairs(data.value or {}) do
-        result[#result + 1] = translate_ado_repo(r)
-      end
-      return result
+      return translate_list(translate_ado_repo, data.value)
     end, fetch_json(ado_url(repos_base(owner) .. "/" .. repo_name .. "/forks/" .. owner)))
   end,
 
@@ -657,11 +641,7 @@ backend_impl = {
     local repo_id = (DecodeJson(body) or {}).id or repo_name
     proxy_json(
       function(data)
-        local result = {}
-        for _, h in ipairs(data.value or {}) do
-          result[#result + 1] = translate_ado_hook(h)
-        end
-        return result
+        return translate_list(translate_ado_hook, data.value)
       end,
       fetch_json(
         ado_url(
@@ -690,11 +670,7 @@ backend_impl = {
 
   get_org_teams = function(org)
     proxy_json(function(data)
-      local result = {}
-      for _, t in ipairs(data.value or {}) do
-        result[#result + 1] = translate_ado_team(t)
-      end
-      return result
+      return translate_list(translate_ado_team, data.value)
     end, fetch_json(ado_url(config.base_url .. "/_apis/projects/" .. org .. "/teams")))
   end,
 
@@ -1515,11 +1491,7 @@ _b.list_repo_code_scanning_alerts = function(owner, repo_name)
     return
   end
   local data = DecodeJson(body) or {}
-  local result = {}
-  for _, a in ipairs(data.value or {}) do
-    result[#result + 1] = translate_ado_alert(a)
-  end
-  respond_json(200, result)
+  respond_json(200, translate_list(translate_ado_alert, data.value))
 end
 
 _b.get_code_scanning_alert = function(owner, repo_name, alert_number)
@@ -1571,11 +1543,7 @@ _b.list_code_scanning_analyses = function(owner, repo_name)
     return
   end
   local data = DecodeJson(body) or {}
-  local result = {}
-  for _, an in ipairs(data.value or {}) do
-    result[#result + 1] = translate_ado_analysis(an)
-  end
-  respond_json(200, result)
+  respond_json(200, translate_list(translate_ado_analysis, data.value))
 end
 
 _b.upload_code_scanning_sarif = function(owner, repo_name)
@@ -1689,11 +1657,7 @@ _b.list_repo_dependabot_alerts = function(owner, repo_name)
     return
   end
   local data = DecodeJson(body) or {}
-  local result = {}
-  for _, a in ipairs(data.value or {}) do
-    result[#result + 1] = translate_ado_dependency_alert(a)
-  end
-  respond_json(200, result)
+  respond_json(200, translate_list(translate_ado_dependency_alert, data.value))
 end
 
 _b.get_repo_dependabot_alert = function(owner, repo_name, alert_number)
@@ -1826,11 +1790,7 @@ _b.list_repo_secret_scanning_alerts = function(owner, repo_name)
     return
   end
   local data = DecodeJson(body) or {}
-  local result = {}
-  for _, a in ipairs(data.value or {}) do
-    result[#result + 1] = translate_ado_secret_alert(a)
-  end
-  respond_json(200, result)
+  respond_json(200, translate_list(translate_ado_secret_alert, data.value))
 end
 
 _b.get_secret_scanning_alert = function(owner, repo_name, alert_number)
