@@ -151,11 +151,11 @@ dump-claims: redbean.com
 validate-claims: redbean.com
 	./redbean.com -i scripts/dump-claims.lua $(BACKENDS) 2>/dev/null | ./redbean.com -i scripts/validate-claims.lua site/compatibility.csv
 
-generate-schema:
-	python3 scripts/gen-graphql-schema.py
+generate-schema: redbean.com
+	./redbean.com -i scripts/gen-graphql-schema.lua
 
-validate-schema:
-	python3 scripts/gen-graphql-schema.py vendor/github-graphql-schema/schema.docs.graphql /tmp/graphql_schema_data_validate.lua
+validate-schema: redbean.com
+	./redbean.com -i scripts/gen-graphql-schema.lua vendor/github-graphql-schema/schema.docs.graphql /tmp/graphql_schema_data_validate.lua 2>/dev/null
 	diff -q internal/graphql_schema_data.lua /tmp/graphql_schema_data_validate.lua
 
 site: redbean.com
