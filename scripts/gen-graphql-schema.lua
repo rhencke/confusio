@@ -245,6 +245,8 @@ local function make_parser(text)
     end
   end
 
+  -- Parse @deprecated directive if present, returning {is_deprecated, reason}.
+  -- Consumes the @deprecated directive; remaining directives are left for skip_directives.
   has_deprecated_directive = function()
     if
       not P.at_end()
@@ -254,9 +256,26 @@ local function make_parser(text)
       and tokens[pos + 1][1] == "NAME"
       and tokens[pos + 1][2] == "deprecated"
     then
-      return true
+      P.advance() -- @
+      P.advance() -- deprecated
+      local reason
+      if not P.at_end() and P.peek()[1] == "PUNCT" and P.peek()[2] == "(" then
+        P.advance() -- (
+        -- Parse reason: "..." argument if present
+        while not P.at_end() and not (P.peek()[1] == "PUNCT" and P.peek()[2] == ")") do
+          local arg_name = P.expect("NAME")[2]
+          P.expect_punct(":")
+          local val = parse_value_literal()
+          if arg_name == "reason" then
+            -- Strip surrounding quotes from string values
+            reason = val:match('^"(.*)"$') or val
+          end
+        end
+        P.expect_punct(")")
+      end
+      return true, reason
     end
-    return false
+    return false, nil
   end
 
   parse_type_ref = function()
@@ -359,8 +378,16 @@ local function make_parser(text)
     local args = parse_arguments_def()
     P.expect_punct(":")
     local type_ref = parse_type_ref()
+    local deprecated, deprecation_reason = has_deprecated_directive()
     skip_directives()
-    return { name = name, type = type_ref, description = desc, args = args }
+    return {
+      name = name,
+      type = type_ref,
+      description = desc,
+      args = args,
+      is_deprecated = deprecated,
+      deprecation_reason = deprecation_reason,
+    }
   end
 
   parse_field_defs = function()
@@ -429,9 +456,14 @@ local function make_parser(text)
     while not P.at_end() and not (P.peek()[1] == "PUNCT" and P.peek()[2] == "}") do
       local vdesc = maybe_description()
       local vname = P.expect("NAME")[2]
-      local deprecated = has_deprecated_directive()
+      local deprecated, deprecation_reason = has_deprecated_directive()
       skip_directives()
-      values[#values + 1] = { name = vname, description = vdesc, is_deprecated = deprecated }
+      values[#values + 1] = {
+        name = vname,
+        description = vdesc,
+        is_deprecated = deprecated,
+        deprecation_reason = deprecation_reason,
+      }
     end
     P.expect_punct("}")
     return { kind = "ENUM", name = name, description = desc, values = values }
@@ -1094,6 +1126,10 @@ end
 emit_field = function(field, out, indent)
   local pad = string.rep(" ", indent)
   local args = field.args or {}
+  local dep_suffix = ""
+  if field.is_deprecated then
+    dep_suffix = ", is_deprecated = true, deprecation_reason = " .. lua_escape(field.deprecation_reason)
+  end
   if #args > 0 then
     out[#out + 1] = pad
       .. "{ name = "
@@ -1102,6 +1138,7 @@ emit_field = function(field, out, indent)
       .. lua_escape(field.type)
       .. ", description = "
       .. lua_escape(field.description)
+      .. dep_suffix
       .. ", args = {\n"
     for _, a in ipairs(args) do
       emit_input_value(a, out, indent + 2)
@@ -1115,6 +1152,7 @@ emit_field = function(field, out, indent)
       .. lua_escape(field.type)
       .. ", description = "
       .. lua_escape(field.description)
+      .. dep_suffix
       .. ", args = {} },\n"
   end
 end
@@ -1141,12 +1179,17 @@ local function emit_type(td, out)
   elseif kind == "ENUM" then
     out[#out + 1] = "      values      = {\n"
     for _, val in ipairs(td.values or {}) do
+      local dep_suffix = ""
+      if val.deprecation_reason then
+        dep_suffix = ", deprecation_reason = " .. lua_escape(val.deprecation_reason)
+      end
       out[#out + 1] = "        { name = "
         .. lua_escape(val.name)
         .. ", description = "
         .. lua_escape(val.description)
         .. ", is_deprecated = "
         .. lua_bool(val.is_deprecated)
+        .. dep_suffix
         .. " },\n"
     end
     out[#out + 1] = "      },\n"
