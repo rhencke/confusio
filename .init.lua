@@ -18,39 +18,7 @@ end
 
 config.base_url = config.base_url:gsub("/$", "")
 
--- set_preamble is global: backends/<name>.lua uses it.
--- Sets the HTTP status (with text looked up by code) and Content-Type header.
--- content_type defaults to "application/json; charset=utf-8".
-local HTTP_STATUS_TEXT = {
-  [200] = "OK",
-  [201] = "Created",
-  [204] = "No Content",
-  [302] = "Found",
-  [401] = "Unauthorized",
-  [404] = "Not Found",
-  [405] = "Method Not Allowed",
-  [410] = "Gone",
-  [418] = "I'm a Teapot",
-  [422] = "Unprocessable Entity",
-  [501] = "Not Implemented",
-  [503] = "Service Unavailable",
-}
-function set_preamble(status, content_type)
-  if type(status) == "string" then
-    content_type = status
-    status = 200
-  else
-    status = status or 200
-  end
-  SetStatus(status, HTTP_STATUS_TEXT[status] or tostring(status))
-  SetHeader("Content-Type", content_type or "application/json; charset=utf-8")
-end
-
--- respond_json is global: backends/<name>.lua uses it.
-function respond_json(status, body)
-  set_preamble(status)
-  Write(EncodeJson(body))
-end
+dofile("/zip/internal/http.lua")
 
 -- rewrite_link_header is global: called by proxy_json when page_params are provided.
 -- Rewrites each URL in an upstream Link header to point back at confusio.

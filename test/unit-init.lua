@@ -62,10 +62,15 @@ end
 -- luacheck: pop
 
 -- Prevent backend file loading (config.backend will be "" anyway, but be safe).
+-- Redirect /zip/internal/ to the internal/ directory on the filesystem so unit
+-- tests can load internal modules without a Redbean zip.
 local _real_dofile = dofile
 function dofile(path) -- luacheck: globals dofile
   if path and path:match("^/zip/backends/") then
     return
+  end
+  if path and path:match("^/zip/internal/") then
+    return _real_dofile(path:sub(6))
   end
   return _real_dofile(path)
 end
