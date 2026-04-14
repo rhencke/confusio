@@ -364,7 +364,7 @@ The nine `internal/` modules are loaded by `.init.lua` in a fixed order. Each ex
 
 - **`make validate-claims` cross-checks CSV claims against `backend_impl`** by running
   `scripts/dump-claims.lua` (all backends) and piping the JSON output to
-  `scripts/validate-claims.py`. It is wired into `make test` and must pass before any push.
+  `scripts/validate-claims.lua`. It is wired into `make test` and must pass before any push.
 - **CONFUSIO_NATIVE exemption**: five handlers (`get_meta`, `get_octocat`, `get_teapot`,
   `get_versions`, `get_zen`) synthesize complete GitHub-compatible responses without a per-backend
   handler. A `y` claim for these is valid for every backend and is exempted from the presence check.

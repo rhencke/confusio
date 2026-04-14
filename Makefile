@@ -149,7 +149,7 @@ dump-claims: redbean.com
 	./redbean.com -i scripts/dump-claims.lua $(BACKENDS)
 
 validate-claims: redbean.com
-	./redbean.com -i scripts/dump-claims.lua $(BACKENDS) 2>/dev/null | python3 scripts/validate-claims.py site/compatibility.csv
+	./redbean.com -i scripts/dump-claims.lua $(BACKENDS) 2>/dev/null | ./redbean.com -i scripts/validate-claims.lua site/compatibility.csv
 
 site: redbean.com
 	mkdir -p _site
