@@ -482,6 +482,8 @@ backend_impl = {
   end,
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}
+  -- Cannot use proxy_json: todo.sr.ht returns a 404 body with tracker-specific
+  -- error text; we emit a clean GitHub-shaped { message = "Not Found" } instead.
   get_repo_issue = function(owner, repo_name, issue_number)
     local url = todo_base()
       .. "/~"

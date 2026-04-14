@@ -793,7 +793,8 @@ backend_impl = {
   end),
 
   -- GET /repos/{owner}/{repo}/pulls/{pull_number}/merge
-  -- Returns 204 if PR is merged, 404 otherwise.
+  -- Cannot use proxy_json: DC always returns 200 with a PR object; the response
+  -- status (204 merged / 404 not merged) is synthesised from the body's state field.
   get_pull_merge = function(owner, repo_name, pull_number)
     local ok, status, _, body =
       fetch_json(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number)
