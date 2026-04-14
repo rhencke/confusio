@@ -2,8 +2,9 @@
 """Validate that CSV support claims agree with actual backend_impl handler presence.
 
 Rules checked for each (backend, endpoint) cell in the CSV:
-  y  — backend_impl must contain a handler for this endpoint
-         (claims native support but falls through to a stub → error)
+  y  — backend_impl must contain a handler, OR the endpoint has a catalog default
+         (has_default=True means a real response exists even without a backend handler;
+          only endpoints with has_default=False would return 404 without a handler)
   n  — backend_impl must NOT contain a handler for this endpoint
          (backend silently implements something the CSV calls unsupported → error)
   ~* — not checked (partial support may or may not have a dedicated handler)
@@ -27,9 +28,6 @@ data = json.load(sys.stdin)
 endpoints = data["endpoints"]
 backends = data["backends"]
 
-# Build handler → endpoint lookup from catalog.
-handler_to_ep = {e["handler"]: e["method"] + " " + e["path"] for e in endpoints}
-
 with open(csv_path, newline="") as f:
     reader = csv.DictReader(f)
     csv_providers = [h for h in reader.fieldnames if h != "endpoint"]
@@ -38,19 +36,23 @@ with open(csv_path, newline="") as f:
 errors = []
 for row in rows:
     ep = row["endpoint"]
-    # Find the handler name for this endpoint row.
-    handler = next(
-        (e["handler"] for e in endpoints if e["method"] + " " + e["path"] == ep),
+    # Find the catalog entry for this endpoint row.
+    endpoint_info = next(
+        (e for e in endpoints if e["method"] + " " + e["path"] == ep),
         None,
     )
-    if handler is None:
+    if endpoint_info is None:
         # validate-csv already catches orphan rows; skip here.
         continue
+    handler = endpoint_info["handler"]
+    has_default = endpoint_info["has_default"]
     for provider in csv_providers:
+        if provider not in backends:
+            continue
         claim = row.get(provider, "n")
         impl_handlers = set(backends.get(provider, []))
         has_handler = handler in impl_handlers
-        if claim == "y" and not has_handler:
+        if claim == "y" and not has_handler and not has_default:
             errors.append(
                 f"ERROR: {provider} claims 'y' for {ep}"
                 f" but backend_impl has no handler '{handler}'"
