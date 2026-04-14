@@ -2,9 +2,9 @@
 
 ## What this is
 
-A single-file Redbean/Lua HTTP proxy that translates GitHub API calls to other git hosting providers (Gitea, GitLab, Bitbucket, Forgejo, Sourcehut). The GitHub API is the interface; provider-native APIs are the backends.
+A Redbean/Lua HTTP proxy that translates GitHub API calls to other git hosting providers (Gitea, GitLab, Bitbucket, Forgejo, Sourcehut). The GitHub API is the interface; provider-native APIs are the backends.
 
-Built with [Redbean](https://redbean.dev): a self-contained web server + Lua interpreter distributed as a self-extracting zip. The main application source is `.init.lua`, which Redbean executes on startup.
+Built with [Redbean](https://redbean.dev): a self-contained web server + Lua interpreter distributed as a self-extracting zip. The entry point is `.init.lua` (boot/composition only); all application logic lives in `internal/` modules and `backends/` files, all zipped into the single `confusio.com` binary.
 
 ## Build and test
 
@@ -33,7 +33,18 @@ Only spelunk the output if the exit code is non-zero.
 ## Project structure
 
 ```
-.init.lua                    — Redbean app entry point (all application logic lives here)
+.init.lua                    — Redbean entry point: config, SCRIPTARGS, module load order, backend wiring
+internal/
+  http.lua                   — HTTP response primitives: set_preamble, respond_json
+  proxy.lua                  — upstream proxy helpers: proxy_json family, translate_list, proxy_search_envelope
+  transport.lua              — auth/fetch scaffolding: make_fetch_opts, make_proxy_handler, make_backend_transport, append_page_params
+  translators.lua            — shared Gitea-family translators: translate_repo, translate_user, translate_migration, owner_repo_id
+  families.lua               — provider_families table and load_family_backend
+  defaults.lua               — default stub handlers collected in the global `defaults` table
+  router.lua                 — segment-based radix trie: route_add, route_match, path_known
+  catalog.lua                — endpoint_sections table; populates global `endpoints` and registers routes at load time
+  dispatch.lua               — OnHttpRequest: auth gate, route_match, handler dispatch
+backends/                    — per-provider implementations; each sets backend_impl = { handler = fn, ... }
 Makefile                     — build, test, and download targets
 .redbean-version             — pinned Redbean version (wget'd by make)
 .hurl-version                — pinned Hurl version (curl'd by make)
@@ -98,11 +109,12 @@ When implementing a new endpoint, check the spec for:
 ## Adding a new endpoint
 
 1. Check `vendor/github-rest-api-description/api.github.com.yaml` for the endpoint's contract.
-2. Add the endpoint to the appropriate `endpoint_sections` entry in `.init.lua`. Each entry is
-   `{ "VERB /path", "handler_name" }` or `{ "VERB /path", "handler_name", default_fn }`.
+2. Add the endpoint to the appropriate `endpoint_sections` entry in `internal/catalog.lua`. Each entry is
+   `{ "VERB /path", "handler_name" }` or `{ "VERB /path", "handler_name", defaults.fn }`.
    Endpoints are grouped into named sections (e.g. `"repos"`, `"issues"`) that drive the
    compatibility matrix sections and test file naming.
-3. Add a default handler to the `defaults` table in `.init.lua`.
+3. Add a default handler to `internal/defaults.lua`: define it as a local function and add it
+   to the `defaults` table at the bottom of that file.
 4. If any backend behaves differently, add an override in `backends/<name>.lua`.
    Parametric captures are passed positionally: `repo = function(owner, repo) ... end`
 5. Add a hurl assertion file in `test/` named `test/stub-<group>.hurl` (if the default behavior
@@ -137,7 +149,7 @@ A family alias shares one backend implementation, mock, and most tests with an e
 backend. All four authoritative locations must be updated consistently — `make validate-providers`
 will catch any mismatch.
 
-1. Add the alias to `provider_families` in `.init.lua` (the single authoritative declaration):
+1. Add the alias to `provider_families` in `internal/families.lua` (the single authoritative declaration):
    ```lua
    gitea = {
      aliases = {
@@ -161,7 +173,7 @@ will catch any mismatch.
 
 - `GetMethod()`, `GetPath()`, `GetHeader()` — inspect the incoming request
 - `SetStatus(code, reason)`, `SetHeader(name, value)`, `Write(body)` — build the response
-- `Fetch(url[, opts])` — outgoing HTTP. `opts` may include `method`, `body`, and `headers` (table). Returns `status, headers, body`; wrap in `pcall` (throws on network failure). `make_fetch_opts(scheme)` in `.init.lua` builds the opts table for auth passthrough.
+- `Fetch(url[, opts])` — outgoing HTTP. `opts` may include `method`, `body`, and `headers` (table). Returns `status, headers, body`; wrap in `pcall` (throws on network failure). `make_fetch_opts(scheme)` in `internal/transport.lua` builds the opts table for auth passthrough.
 - `EncodeBase64(str)` — standard base64 encoding (used for Basic auth headers)
 - `EncodeJson(table)`, `DecodeJson(string)` — JSON encode/decode
 - `Route()` — fall through to default Redbean routing (static files in the zip)
@@ -217,7 +229,7 @@ Hard-won insights from building this project. **Keep this section current**: whe
 
 - **`endpoint_sections` is the single source of truth** for all routes. It drives route
   registration, the compatibility matrix, and test file discovery. When adding endpoints,
-  only touch `endpoint_sections` in `.init.lua` — never manually update the matrix HTML or
+  only touch `endpoint_sections` in `internal/catalog.lua` — never manually update the matrix HTML or
   add hardcoded group lists elsewhere.
 - **Group names** (the first element of each `endpoint_sections` entry) match test file
   suffixes (`test/<backend>-<group>.hurl`) and CSV section keys. They are stable identifiers;
@@ -232,7 +244,7 @@ Hard-won insights from building this project. **Keep this section current**: whe
 
 ### Provider families
 
-- **`provider_families` in `.init.lua` is the single authoritative source** for which
+- **`provider_families` in `internal/families.lua` is the single authoritative source** for which
   backends belong to the same API family. It drives backend loading, mock building, and
   the `validate-providers` check. Never encode family membership only in filesystem layout
   or Makefile variables — both are derived from this table.
@@ -257,14 +269,15 @@ Hard-won insights from building this project. **Keep this section current**: whe
 
 ### Routing
 
-- **Segment-based radix trie** (`route_add` / `route_match` in `.init.lua`): O(k) lookup where
+- **Segment-based radix trie** (`route_add` / `route_match` in `internal/router.lua`): O(k) lookup where
   k = path depth. Static edges are preferred over param edges at each node, so `/repos/search`
   beats `/repos/{owner}` when both are registered. Captures from `{param}` segments are passed
   as positional arguments to the handler.
-- **Startup-time handler resolution**: `setmetatable(backend_impl, { __index = defaults })` is
-  built once after config loads. The backend is fixed for the program's lifetime — no per-request
-  dispatch needed. Backend files set `backend_impl = { ... }` globally; `dofile` runs in global
-  scope so locals from `.init.lua` are not visible to backend files.
+- **Startup-time handler resolution**: `backend_impl` is populated once by the backend file;
+  `internal/dispatch.lua` reads it on every request via the global directly. The backend is fixed
+  for the program's lifetime — no per-request dispatch needed. Backend files set
+  `backend_impl = { ... }` globally; `dofile` runs in global scope so locals from any module
+  are not visible to backend files.
 - **`/zip/` prefix for dofile**: Redbean's `dofile` resolves paths on the real filesystem by
   default. Files inside the zip must be accessed as `dofile("/zip/backends/gitea.lua")`.
 - **`SetStatus` clears all previously-set response headers.** Any `SetHeader` call made before
@@ -291,7 +304,7 @@ Hard-won insights from building this project. **Keep this section current**: whe
 
 ### Shared proxy helpers
 
-Two global helpers defined in `.init.lua` are available to all backend files:
+Two global helpers defined in `internal/proxy.lua` are available to all backend files:
 
 **`translate_list(fn, items)`** — applies `fn` to every element of `items` (ipairs) and returns a new array. A nil `items` argument returns `{}`. Use whenever a backend loop has the form `for i, x in ipairs(arr) do result[i] = fn(x) end` where `fn` is an already-defined **named** function.
 
@@ -313,6 +326,39 @@ Do **not** use `proxy_search_envelope` when:
 - `proxy_actions_list` (gitea) — emits `{total_count, <key>: [...]}` with a caller-supplied key; `proxy_search_envelope` hardcodes `"items"`
 - `get_commit_check_runs` in most backends — emits `{total_count, check_runs: [...]}` with key `"check_runs"`, not `"items"`
 - `get_user_repos`/`get_org_repos`/`get_users_repos` in azuredevops — loop is `for i=1, math.min(limit, #all)` to honour a per_page cap; not a plain full-array map
+
+### Internal module layout
+
+The nine `internal/` modules are loaded by `.init.lua` in a fixed order. Each exports only globals — no `require`/`return` pattern; `dofile` runs in global scope.
+
+**Load order and exports:**
+
+| Module | Globals exported | Consumer |
+|--------|-----------------|----------|
+| `http.lua` | `set_preamble`, `respond_json` | all modules + backends |
+| `proxy.lua` | `proxy_json`, `proxy_json_paged`, `proxy_json_created`, `proxy_health_check`, `proxy_204`, `proxy_json_list`, `translate_list`, `proxy_search_envelope`, `rewrite_link_header` | backends |
+| `transport.lua` | `append_page_params`, `make_fetch_opts`, `make_proxy_handler`, `make_backend_transport` | backends |
+| `translators.lua` | `owner_repo_id`, `translate_repo`, `translate_user`, `translate_migration` | backends |
+| `families.lua` | `provider_families`, `load_family_backend` | backends + Makefile scripts |
+| *(backend loaded here)* | `backend_impl`, `backend_allow_anonymous` | dispatch |
+| `defaults.lua` | `defaults` (table of handler functions) | catalog |
+| `router.lua` | `route_add`, `route_match`, `path_known` | catalog, dispatch |
+| `catalog.lua` | `endpoints` (flat array); registers routes via `route_add` | dispatch, scripts |
+| `dispatch.lua` | `OnHttpRequest` | Redbean (entry point) |
+
+**Global surface for backend authors** (backends can call any of these):
+- Response: `set_preamble`, `respond_json`
+- Proxy: all of `proxy.lua`'s exports
+- Transport: all of `transport.lua`'s exports
+- Translators: all of `translators.lua`'s exports
+- Family loading: `load_family_backend`
+
+**Internal-only globals** (backends must not depend on these):
+- `defaults` — implementation detail of the catalog; not part of the backend API
+- `route_add`, `route_match`, `path_known` — router internals used only by catalog and dispatch
+- `endpoints` — catalog output, consumed only by scripts and CI validation
+
+**`/zip/internal/` → `internal/` redirect pattern**: scripts and unit tests load `.init.lua` via `redbean.com -i` (no zip context). They stub `dofile` to translate `/zip/internal/xxx` → `internal/xxx` (strip the `/zip/` prefix with `path:sub(6)`). The same stub skips `/zip/backends/` loads (not needed in test context). See `test/unit-init.lua` and `scripts/dump-endpoints.lua` for the canonical implementation.
 
 ### Code coverage (luacov)
 
