@@ -206,12 +206,7 @@ end
 
 backend_impl = {
   get_root = function()
-    local ok, status = pcall(Fetch, config.base_url .. "/api/conduit.ping")
-    if ok and status == 200 then
-      respond_json(200, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_health_check(pcall(Fetch, config.base_url .. "/api/conduit.ping"))
   end,
 
   -- Issues --------------------------------------------------------------------

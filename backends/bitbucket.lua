@@ -635,12 +635,7 @@ end
 
 backend_impl = {
   get_root = function()
-    local ok, status = pcall(Fetch, base() .. "/user", auth())
-    if ok and status == 200 then
-      respond_json(200, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_health_check(pcall(Fetch, base() .. "/user", auth()))
   end,
 
   get_repo = proxy_handler(translate_bb_repo, function(o, r)

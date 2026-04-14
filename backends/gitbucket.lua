@@ -29,12 +29,7 @@ end
 
 backend_impl = {
   get_root = function()
-    local ok, status = pcall(Fetch, base() .. "/rate_limit", auth())
-    if ok and status == 200 then
-      respond_json(200, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_health_check(pcall(Fetch, base() .. "/rate_limit", auth()))
   end,
 
   get_rate_limit = proxy_handler(function(data)

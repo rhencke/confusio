@@ -352,12 +352,7 @@ end
 
 backend_impl = {
   get_root = function()
-    local ok, status = pcall(Fetch, ado_url(config.base_url .. "/_apis/connectionData"), auth())
-    if ok and status == 200 then
-      respond_json(200, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_health_check(pcall(Fetch, ado_url(config.base_url .. "/_apis/connectionData"), auth()))
   end,
   get_repo = function(owner, repo_name)
     proxy_json(translate_ado_repo, fetch_json(ado_url(repos_base(owner) .. "/" .. repo_name)))

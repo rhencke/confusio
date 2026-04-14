@@ -113,12 +113,7 @@ end
 
 backend_impl = {
   get_root = function()
-    local ok, status = pcall(Fetch, config.base_url .. "/config/server/version", auth())
-    if ok and status == 200 then
-      respond_json(200, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_health_check(pcall(Fetch, config.base_url .. "/config/server/version", auth()))
   end,
   get_repo = proxy_handler(translate_gerrit_repo, function(owner, repo_name)
     return base() .. "/projects/" .. project_id(owner, repo_name)

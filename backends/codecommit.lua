@@ -98,12 +98,7 @@ end
 
 backend_impl = {
   get_root = function()
-    local ok, status = pcall(Fetch, base() .. "/repos", auth())
-    if ok and status == 200 then
-      respond_json(200, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_health_check(pcall(Fetch, base() .. "/repos", auth()))
   end,
 
   -- GET /repos/{owner}/{repo}: owner must be "codecommit".

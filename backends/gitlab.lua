@@ -560,12 +560,7 @@ end
 
 backend_impl = {
   get_root = function()
-    local ok, status = pcall(Fetch, base() .. "/version", auth())
-    if ok and status == 200 then
-      respond_json(200, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_health_check(pcall(Fetch, base() .. "/version", auth()))
   end,
 
   get_repo = proxy_handler(translate_gl_repo, function(owner, repo_name)
