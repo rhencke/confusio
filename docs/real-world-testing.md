@@ -246,7 +246,221 @@ by the setup script (see *Setup and teardown automation*).
 
 ## Setup and teardown automation
 
-*(To be detailed in the next section of this plan.)*
+### Design principles
+
+- **Idempotent everywhere.** The setup step runs at the top of every weekly job.  It must
+  be safe to run repeatedly: check whether a fixture already exists before creating it, never
+  fail if a resource is already in the correct state.
+- **Tier 1 fixtures are persistent.** SaaS test fixtures (repos, orgs, issues) are created
+  once and left in place across runs.  The weekly job only recreates them if they are missing.
+  This keeps run times short and avoids hammering provider rate limits.
+- **Tier 2 fixtures are ephemeral.** Docker containers start fresh every run; the bootstrap
+  script creates everything from scratch.  Teardown is free — the job just exits.
+- **Mutation tests clean up after themselves (best effort).** Endpoints that create, modify,
+  or delete resources operate on uniquely-named ephemeral sub-resources, not on the standing
+  fixtures.  Cleanup is attempted after each mutation test; failure to clean up is logged
+  but does not fail the overall test job.
+- **No Terraform.** Terraform would add state-file management overhead and not all providers
+  have first-class Terraform providers.  Shell + curl is sufficient, consistent with the
+  project's existing toolchain, and easy to read at a glance.
+
+### Standard fixture inventory
+
+Every backend that supports a resource type should have the following fixtures present before
+tests run.  Setup scripts create exactly this set, no more.
+
+**User / account**
+- The `confusio-test` user (the test account itself).
+
+**Organisation / group**
+- `confusio-test` org (or group, project, namespace — whatever the provider calls it).
+  Created under the test account.
+
+**Repositories**
+- `confusio-test/fixtures-main` — the primary test repo.  Required contents:
+  - At least one file per language (Go, Python, Markdown) — needed for language-stats
+    endpoint assertions.
+  - A `LICENSE` file (MIT) — needed for the license endpoint.
+  - Topics/labels: `["testing", "confusio"]` — needed for topic endpoints.
+  - Branches: `main` (default), `develop`, `feature/test-branch`.
+  - 10+ commits distributed across branches.
+  - Two annotated tags: `v1.0.0`, `v1.1.0`.
+  - One release: `v1.0.0` with a release body.
+  - Two open issues, one closed issue.  Each has at least one comment.
+  - One open pull request: `develop` → `main`.
+  - One closed/merged pull request.
+- `confusio-test/fixtures-fork-target` — a minimal repo (single commit, no branches beyond
+  main).  `fixtures-main` should be a fork of this repo on providers that support forks.
+
+**Fixture versioning**
+
+The fixture set is described in `test/real-world/fixtures.md` (machine-readable front matter +
+human narrative).  If a fixture needs to change (e.g. an endpoint test requires a new field),
+bump the `fixtures_version` field in that file.  Setup scripts check the version tag on
+the live fixture and re-create it if the version is stale.
+
+### Tier 1 setup scripts
+
+Location: `test/real-world/setup/<backend>.sh`
+
+Each script:
+1. Sources `test/real-world/setup/common.sh` for shared helpers (`fixture_repo_exists`,
+   `create_repo`, `create_issue`, etc. — thin wrappers around `curl`).
+2. Accepts credentials and base URL via environment variables
+   (`CONFUSIO_TEST_TOKEN`, `CONFUSIO_TEST_USER`, `CONFUSIO_TEST_BASE_URL`).
+3. Creates missing fixtures in dependency order (org → repos → branches →
+   issues → PRs → releases).
+4. Exits non-zero if any creation step fails after retries.
+
+A lightweight driver script `test/real-world/setup/run-all.sh` iterates all per-backend
+scripts and is called by the weekly GHA job.
+
+Example shape of a single-backend setup script:
+
+```sh
+#!/usr/bin/env bash
+# setup/gitea.sh — idempotent fixture setup for gitea.com
+set -euo pipefail
+source "$(dirname "$0")/common.sh"
+
+BASE="${CONFUSIO_TEST_BASE_URL:-https://gitea.com}"
+ORG="confusio-test"
+MAIN_REPO="fixtures-main"
+FORK_TARGET="fixtures-fork-target"
+
+ensure_org "$BASE" "$ORG"
+ensure_repo "$BASE" "$ORG" "$MAIN_REPO" --has-issues --has-projects
+ensure_repo "$BASE" "$ORG" "$FORK_TARGET"
+ensure_branches "$BASE" "$ORG/$MAIN_REPO" develop "feature/test-branch"
+ensure_tags "$BASE" "$ORG/$MAIN_REPO" v1.0.0 v1.1.0
+ensure_release "$BASE" "$ORG/$MAIN_REPO" v1.0.0
+ensure_issues "$BASE" "$ORG/$MAIN_REPO" 2   # at least 2 open issues
+ensure_pull_request "$BASE" "$ORG/$MAIN_REPO" develop main
+```
+
+### Tier 2 bootstrap scripts
+
+Location: `test/real-world/docker/<backend>/bootstrap.sh`
+
+Each script runs inside the GHA job after the service container passes its health check.
+Steps:
+
+1. **Wait for readiness** — poll the container's health or status endpoint until it returns
+   a 200 (with exponential back-off, 60 s timeout).
+2. **Create admin user** — use the provider's initial-setup API or CLI.  The admin
+   credentials are written to `$GITHUB_ENV` so subsequent steps in the job can read them.
+3. **Generate token** — call the provider's token-creation API as the admin user; export as
+   `CONFUSIO_TEST_TOKEN`.
+4. **Create fixtures** — call the same `common.sh` helpers used by Tier 1 scripts.  The
+   `BASE_URL` points to `http://localhost:<port>`.
+
+Example for gitbucket:
+
+```sh
+#!/usr/bin/env bash
+# docker/gitbucket/bootstrap.sh
+set -euo pipefail
+source "$(dirname "$0")/../../setup/common.sh"
+
+BASE="http://localhost:8080"
+wait_for_health "$BASE/signin"          # polls until 200
+admin_setup "$BASE" root password123    # first-time wizard via API
+TOKEN=$(create_token "$BASE" root password123 confusio-ci-token)
+echo "CONFUSIO_TEST_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+echo "CONFUSIO_TEST_BASE_URL=$BASE" >> "$GITHUB_ENV"
+echo "CONFUSIO_TEST_USER=root" >> "$GITHUB_ENV"
+
+source "$(dirname "$0")/../../setup/gitbucket.sh"
+```
+
+### Mutation test isolation
+
+Endpoints that mutate state (create, update, or delete a resource) must not operate on the
+standing fixtures, which are shared across all test runs.  The isolation rule:
+
+> **Every mutation test creates its own uniquely-named resource, asserts on it, then
+> deletes it.**  The resource name includes a short timestamp or run ID to avoid collisions
+> between concurrent runs.
+
+Implementation in hurl (example for `POST /user/repos`):
+
+```hurl
+# Create a temp repo for this test run
+POST http://{{host}}/user/repos
+Authorization: token {{token}}
+{
+  "name": "confusio-tmp-{{run_id}}",
+  "private": false
+}
+HTTP 201
+[Captures]
+tmp_repo_name: jsonpath "$.name"
+
+# ... assertions ...
+
+# Cleanup (best effort — failure here does not abort the suite)
+DELETE http://{{host}}/repos/{{user}}/{{tmp_repo_name}}
+Authorization: token {{token}}
+HTTP *
+```
+
+The `run_id` variable is set once per job invocation (e.g. the GHA run number) and injected
+via `--variable run_id=${{ github.run_id }}`.
+
+### Rate limit handling
+
+Real-world tests must be polite.  Guidelines:
+
+- Run at most one request per second against any Tier 1 SaaS instance.  Hurl's
+  `--delay` flag sets a global inter-request delay; set it to `1000` ms for all real-world
+  runs.
+- Abort the job (not just the backend) if a `429 Too Many Requests` is received.
+  Do not retry — flag it as a rate-limit event in the issue report and skip the backend for
+  this run.
+- Tier 2 Docker containers have no rate limits; delay is not needed there.
+
+### File layout
+
+```
+test/real-world/
+  fixtures.md                    — fixture inventory and version (machine-readable front matter)
+  setup/
+    common.sh                    — shared helpers: wait_for_health, ensure_repo, ensure_org, …
+    run-all.sh                   — driver: iterates per-backend scripts
+    gitea.sh
+    forgejo.sh
+    codeberg.sh
+    notabug.sh
+    gitlab.sh
+    bitbucket.sh
+    azuredevops.sh
+    harness.sh
+    sourcehut.sh
+    pagure.sh
+    launchpad.sh
+    sourceforge.sh
+  docker/
+    gerrit/
+      bootstrap.sh
+    gitblit/
+      bootstrap.sh
+    gitbucket/
+      bootstrap.sh
+    gogs/
+      bootstrap.sh
+    kallithea/
+      bootstrap.sh
+    onedev/
+      bootstrap.sh
+    phabricator/
+      bootstrap.sh
+    rhodecode/
+      bootstrap.sh
+    tuleap/
+      bootstrap.sh
+    bitbucket_datacenter/
+      bootstrap.sh
+```
 
 ## Test harness design
 
