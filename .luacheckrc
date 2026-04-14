@@ -50,6 +50,10 @@ globals = {
   "backend_allow_anonymous",
   -- Default stub handlers: populated by internal/defaults.lua, read by the catalog in .init.lua
   "defaults",
+  -- Router: populated by internal/router.lua, used by the catalog and OnHttpRequest in .init.lua
+  "route_add",
+  "route_match",
+  "path_known",
   -- Endpoint catalog: populated by .init.lua, read by scripts/dump-endpoints.lua
   "endpoints",
 }
