@@ -89,17 +89,21 @@ mock-$(1).com: redbean.com test/mock-$(2).lua
 	rm -rf .tmp-mock-$(1)
 endef
 
-# Gitea-family aliases — must match provider_families["gitea"].aliases in .init.lua.
-# validate-providers will catch any mismatch.
-GITEA_FAMILY_ALIASES := codeberg forgejo gogs notabug
-$(foreach a,$(GITEA_FAMILY_ALIASES),$(eval $(call ALIAS_MOCK_RULE,$(a),gitea)))
+# .make-families.mk is auto-generated from provider_families in .init.lua.
+# It contains $(eval $(call ALIAS_MOCK_RULE,...)) lines for every family alias
+# so that mock-<alias>.com is built from the root family's mock lua.
+# If the file does not exist, Make rebuilds it before re-reading the Makefile.
+-include .make-families.mk
+
+.make-families.mk: redbean.com scripts/dump-families.lua .init.lua
+	sh redbean.com -i scripts/dump-families.lua 2>/dev/null | python3 scripts/gen-family-mk.py > $@
 
 # Backend test configuration.
 # To add a standalone backend: append to BACKENDS (ports auto-assigned from 18080).
 # Each backend needs test/mock-<name>.lua and at least one test/<name>-*.hurl file
 # (symlinks ok — used by wildcard discovery).
-# To add a family-alias backend: add to BACKENDS and to the appropriate FAMILY_ALIASES
-# list above; no test/mock-<name>.lua needed.
+# To add a family-alias backend: add to BACKENDS; no test/mock-<name>.lua needed —
+# .make-families.mk auto-generates mock-<alias>.com from the root family's mock.
 BACKENDS = azuredevops bitbucket bitbucket_datacenter codeberg codecommit forgejo gerrit gitblit gitbucket gitea gitlab gogs \
            harness kallithea launchpad notabug onedev pagure phabricator radicle \
            rhodecode sourceforge sourcehut tuleap
@@ -180,5 +184,5 @@ test-coverage: redbean.com luacov
 	./redbean.com -i scripts/luacov-report.lua
 
 clean:
-	rm -f redbean.com confusio.com $(MOCKS) hurl stylua luacheck
+	rm -f redbean.com confusio.com $(MOCKS) hurl stylua luacheck .make-families.mk
 	rm -rf _site luacov

@@ -151,12 +151,11 @@ will catch any mismatch.
    -- MyAlias is API-compatible with Gitea v1.  Family metadata in provider_families.
    load_family_backend("gitea")
    ```
-3. Add the alias to `<ROOT_UPPER>_FAMILY_ALIASES` in the Makefile (e.g. `GITEA_FAMILY_ALIASES`).
-   No `test/mock-<alias>.lua` file is needed — the Makefile `ALIAS_MOCK_RULE` builds
-   `mock-<alias>.com` from `test/mock-gitea.lua` automatically.
-4. Add `<alias>` to the `BACKENDS` list in the Makefile.
-5. Add hurl test files and a `site/compatibility.csv` column as for a standalone backend (steps 5–6 above).
-6. Run `make validate-providers` to confirm all four locations agree.
+3. Add `<alias>` to the `BACKENDS` list in the Makefile.
+   No `test/mock-<alias>.lua` file is needed — `.make-families.mk` is auto-generated
+   from `provider_families` and builds `mock-<alias>.com` from the root family's mock.
+4. Add hurl test files and a `site/compatibility.csv` column as for a standalone backend (steps 5–6 above).
+5. Run `make validate-providers` to confirm all three locations agree.
 
 ## Redbean API notes
 
@@ -246,13 +245,15 @@ Hard-won insights from building this project. **Keep this section current**: whe
   containing `_package` (e.g. `list_packages`, `get_package`). Keep patterns tight enough
   not to accidentally strip unrelated keys.
 - **Mock reuse is driven by `ALIAS_MOCK_RULE` in the Makefile**, not by `test/mock-<alias>.lua`
-  symlinks. The Makefile variable `GITEA_FAMILY_ALIASES` must match `provider_families["gitea"].aliases`.
-  `make validate-providers` catches any mismatch between these two locations.
+  symlinks. The `mock-<alias>.com` rule is generated automatically into `.make-families.mk`
+  (gitignored) by `scripts/gen-family-mk.py` reading `dump-families.lua` output.  The
+  Makefile `-include`s this file; if it doesn't exist Make rebuilds it before re-reading.
+  No family-specific variable (e.g. `GITEA_FAMILY_ALIASES`) is needed in the Makefile.
 - **`make dump-families`** exports `provider_families` as JSON. Useful for debugging and
   piped into `make validate-providers`.
 - **`make validate-providers`** is wired into `make test`. It checks: root backend and mock
   exist; each alias backend calls `load_family_backend`; no stale `test/mock-<alias>.lua`
-  files; Makefile `FAMILY_ALIASES` matches `provider_families`; every alias is in `BACKENDS`.
+  files; every alias is in `BACKENDS`.
 
 ### Routing
 

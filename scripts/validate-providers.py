@@ -4,7 +4,6 @@
 Checks that provider_families in .init.lua agrees with:
   - backend files (each alias calls load_family_backend)
   - mock files (no stale test/mock-<alias>.lua for aliases)
-  - Makefile <ROOT_UPPER>_FAMILY_ALIASES variable
   - Makefile BACKENDS list (every alias must be present)
 
 Usage:
@@ -37,7 +36,6 @@ else:
 for family in families:
     root = family["root"]
     aliases = family["aliases"]
-    root_upper = root.upper()
 
     # Root backend and mock must exist.
     if not os.path.exists(f"backends/{root}.lua"):
@@ -68,25 +66,6 @@ for family in families:
         # Every alias must appear in BACKENDS.
         if backends and alias not in backends:
             errors.append(f"ERROR: alias {alias} missing from Makefile BACKENDS")
-
-    # Makefile <ROOT_UPPER>_FAMILY_ALIASES must match provider_families aliases.
-    makefile_var = f"{root_upper}_FAMILY_ALIASES"
-    var_match = re.search(
-        rf"^{makefile_var}\s*:?=\s*(.+)$", makefile, re.MULTILINE
-    )
-    if not var_match:
-        errors.append(f"ERROR: {makefile_var} not found in Makefile")
-    else:
-        makefile_aliases = set(var_match.group(1).split())
-        metadata_aliases = set(aliases)
-        for a in metadata_aliases - makefile_aliases:
-            errors.append(
-                f"ERROR: alias {a} in provider_families but missing from {makefile_var}"
-            )
-        for a in makefile_aliases - metadata_aliases:
-            errors.append(
-                f"ERROR: alias {a} in {makefile_var} but missing from provider_families"
-            )
 
 if errors:
     for e in errors:
