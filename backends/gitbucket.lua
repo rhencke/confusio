@@ -17,14 +17,7 @@ local proxy_handler_created = _t.proxy_handler_created
 local function set_204_or_error(method, url)
   local opts = auth() or {}
   opts.method = method
-  local ok, status = pcall(Fetch, url, opts)
-  if ok and status == 204 then
-    SetStatus(204, "No Content")
-  elseif ok then
-    respond_json(status, {})
-  else
-    respond_json(503, {})
-  end
+  proxy_204(nil, pcall(Fetch, url, opts))
 end
 
 backend_impl = {
@@ -53,14 +46,7 @@ backend_impl = {
     local url = base() .. "/repos/" .. owner .. "/" .. repo_name
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, url, dopts)
-    if ok and status == 204 then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204(nil, pcall(Fetch, url, dopts))
   end,
 
   get_user_repos = proxy_handler(nil, function()
@@ -363,32 +349,24 @@ backend_impl = {
   end,
 
   put_repo_collaborator = function(owner, repo_name, username)
-    local ok, status = fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
-      "PUT",
-      GetBody()
+    proxy_204(
+      { 201 },
+      fetch_json(
+        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
+        "PUT",
+        GetBody()
+      )
     )
-    if ok and (status == 204 or status == 201) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
   end,
 
   delete_repo_collaborator = function(owner, repo_name, username)
-    local ok, status = fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
-      "DELETE"
+    proxy_204(
+      { 200 },
+      fetch_json(
+        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
+        "DELETE"
+      )
     )
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
   end,
 
   get_repo_collaborator_permission = proxy_handler(nil, function(o, r, username)
@@ -443,17 +421,13 @@ backend_impl = {
   end,
 
   delete_repo_release = function(owner, repo_name, release_id)
-    local ok, status = fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id,
-      "DELETE"
+    proxy_204(
+      { 200 },
+      fetch_json(
+        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id,
+        "DELETE"
+      )
     )
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
   end,
 
   get_repo_release_assets = proxy_handler(nil, function(o, r, id)
@@ -496,17 +470,13 @@ backend_impl = {
   end,
 
   delete_repo_release_asset = function(owner, repo_name, asset_id)
-    local ok, status = fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/assets/" .. asset_id,
-      "DELETE"
+    proxy_204(
+      { 200 },
+      fetch_json(
+        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/assets/" .. asset_id,
+        "DELETE"
+      )
     )
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
   end,
 
   -- Deploy keys ---------------------------------------------------------------
@@ -526,15 +496,10 @@ backend_impl = {
   end),
 
   delete_repo_key = function(owner, repo_name, key_id)
-    local ok, status =
+    proxy_204(
+      { 200 },
       fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys/" .. key_id, "DELETE")
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    )
   end,
 
   -- Webhooks ------------------------------------------------------------------
@@ -565,15 +530,10 @@ backend_impl = {
   end,
 
   delete_repo_hook = function(owner, repo_name, hook_id)
-    local ok, status =
+    proxy_204(
+      { 200 },
       fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id, "DELETE")
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    )
   end,
 
   get_repo_hook_config = proxy_handler(function(h)
@@ -605,31 +565,23 @@ backend_impl = {
   end,
 
   post_repo_hook_ping = function(owner, repo_name, hook_id)
-    local ok, status = fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id .. "/pings",
-      "POST"
+    proxy_204(
+      { 200 },
+      fetch_json(
+        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id .. "/pings",
+        "POST"
+      )
     )
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
   end,
 
   post_repo_hook_test = function(owner, repo_name, hook_id)
-    local ok, status = fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id .. "/tests",
-      "POST"
+    proxy_204(
+      { 200 },
+      fetch_json(
+        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id .. "/tests",
+        "POST"
+      )
     )
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
   end,
 
   -- Commit comments -----------------------------------------------------------
@@ -653,17 +605,13 @@ backend_impl = {
   end,
 
   delete_repo_comment = function(owner, repo_name, comment_id)
-    local ok, status = fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments/" .. comment_id,
-      "DELETE"
+    proxy_204(
+      { 200 },
+      fetch_json(
+        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments/" .. comment_id,
+        "DELETE"
+      )
     )
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
   end,
 
   get_commit_comments = proxy_handler(nil, function(o, r, sha)
@@ -772,14 +720,7 @@ backend_impl = {
     opts.body = GetBody()
     opts.headers = opts.headers or {}
     opts.headers["Content-Type"] = "application/json"
-    local ok, status = pcall(Fetch, base() .. "/user/emails", opts)
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, pcall(Fetch, base() .. "/user/emails", opts))
   end,
 
   get_user_keys = proxy_handler(nil, function()
@@ -797,14 +738,7 @@ backend_impl = {
   delete_user_key = function(key_id)
     local opts = auth() or {}
     opts.method = "DELETE"
-    local ok, status = pcall(Fetch, base() .. "/user/keys/" .. key_id, opts)
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, pcall(Fetch, base() .. "/user/keys/" .. key_id, opts))
   end,
 
   get_users_keys = proxy_handler(nil, function(username)
@@ -830,14 +764,7 @@ backend_impl = {
   end,
 
   delete_org_team = function(org, slug)
-    local ok, status = fetch_json(base() .. "/orgs/" .. org .. "/teams/" .. slug, "DELETE")
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, fetch_json(base() .. "/orgs/" .. org .. "/teams/" .. slug, "DELETE"))
   end,
 
   get_org_team_invitations = proxy_handler(nil, function(org, slug)
@@ -867,17 +794,13 @@ backend_impl = {
   end,
 
   delete_org_team_membership = function(org, slug, username)
-    local ok, status = fetch_json(
-      base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/memberships/" .. username,
-      "DELETE"
+    proxy_204(
+      { 200 },
+      fetch_json(
+        base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/memberships/" .. username,
+        "DELETE"
+      )
     )
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
   end,
 
   get_org_team_repos = proxy_handler(nil, function(org, slug)
@@ -889,32 +812,24 @@ backend_impl = {
   end),
 
   put_org_team_repo = function(org, slug, owner, repo_name)
-    local ok, status = fetch_json(
-      base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/repos/" .. owner .. "/" .. repo_name,
-      "PUT",
-      GetBody()
+    proxy_204(
+      { 200 },
+      fetch_json(
+        base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/repos/" .. owner .. "/" .. repo_name,
+        "PUT",
+        GetBody()
+      )
     )
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
   end,
 
   delete_org_team_repo = function(org, slug, owner, repo_name)
-    local ok, status = fetch_json(
-      base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/repos/" .. owner .. "/" .. repo_name,
-      "DELETE"
+    proxy_204(
+      { 200 },
+      fetch_json(
+        base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/repos/" .. owner .. "/" .. repo_name,
+        "DELETE"
+      )
     )
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
   end,
 
   get_org_team_children = proxy_handler(nil, function(org, slug)
@@ -952,17 +867,13 @@ backend_impl = {
   end),
 
   delete_repo_issue_comment = function(owner, repo_name, comment_id)
-    local ok, status = fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/comments/" .. comment_id,
-      "DELETE"
+    proxy_204(
+      { 200 },
+      fetch_json(
+        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/comments/" .. comment_id,
+        "DELETE"
+      )
     )
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
   end,
 
   get_repo_issue_events = proxy_handler(nil, function(o, r)
@@ -1007,39 +918,31 @@ backend_impl = {
   end),
 
   delete_issue_labels = function(owner, repo_name, issue_number)
-    local ok, status = fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/labels",
-      "DELETE"
+    proxy_204(
+      { 200 },
+      fetch_json(
+        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/labels",
+        "DELETE"
+      )
     )
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
   end,
 
   delete_issue_label = function(owner, repo_name, issue_number, label_name)
-    local ok, status = fetch_json(
-      base()
-        .. "/repos/"
-        .. owner
-        .. "/"
-        .. repo_name
-        .. "/issues/"
-        .. issue_number
-        .. "/labels/"
-        .. label_name,
-      "DELETE"
+    proxy_204(
+      { 200 },
+      fetch_json(
+        base()
+          .. "/repos/"
+          .. owner
+          .. "/"
+          .. repo_name
+          .. "/issues/"
+          .. issue_number
+          .. "/labels/"
+          .. label_name,
+        "DELETE"
+      )
     )
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
   end,
 
   post_issue_assignees = proxy_handler(nil, function(o, r, n)
@@ -1075,17 +978,13 @@ backend_impl = {
   end),
 
   delete_repo_label = function(owner, repo_name, label_name)
-    local ok, status = fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/labels/" .. label_name,
-      "DELETE"
+    proxy_204(
+      { 200 },
+      fetch_json(
+        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/labels/" .. label_name,
+        "DELETE"
+      )
     )
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
   end,
 
   get_repo_milestones = proxy_handler(nil, function(o, r)
@@ -1118,14 +1017,7 @@ backend_impl = {
   end,
 
   delete_team = function(team_id)
-    local ok, status = fetch_json(base() .. "/teams/" .. team_id, "DELETE")
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, fetch_json(base() .. "/teams/" .. team_id, "DELETE"))
   end,
 
   get_team_invitations = proxy_handler(nil, function(team_id)
@@ -1168,15 +1060,10 @@ backend_impl = {
   end,
 
   delete_team_membership = function(team_id, username)
-    local ok, status =
+    proxy_204(
+      { 200 },
       fetch_json(base() .. "/teams/" .. team_id .. "/memberships/" .. username, "DELETE")
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    )
   end,
 
   get_team_repos = proxy_handler(nil, function(team_id)
@@ -1188,30 +1075,21 @@ backend_impl = {
   end),
 
   put_team_repo = function(team_id, owner, repo_name)
-    local ok, status = fetch_json(
-      base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name,
-      "PUT",
-      GetBody()
+    proxy_204(
+      { 200 },
+      fetch_json(
+        base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name,
+        "PUT",
+        GetBody()
+      )
     )
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
   end,
 
   delete_team_repo = function(team_id, owner, repo_name)
-    local ok, status =
+    proxy_204(
+      { 200 },
       fetch_json(base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name, "DELETE")
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    )
   end,
 
   get_team_children = proxy_handler(nil, function(team_id)
@@ -1278,18 +1156,14 @@ backend_impl = {
   end,
 
   put_pull_merge = function(owner, repo_name, pull_number)
-    local ok, status = fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/merge",
-      "PUT",
-      GetBody()
+    proxy_204(
+      nil,
+      fetch_json(
+        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/merge",
+        "PUT",
+        GetBody()
+      )
     )
-    if ok and status == 204 then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
   end,
 
   get_pull_requested_reviewers = proxy_handler(nil, function(o, r, n)
