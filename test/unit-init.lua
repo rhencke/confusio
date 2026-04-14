@@ -1229,6 +1229,71 @@ OnHttpRequest()
 eq(_last_status, 501, "OnHttpRequest: GET /feeds → 501 (activity not implemented)")
 
 -- ============================================================
+-- load_family_backend
+-- ============================================================
+
+do
+  local _saved_backend = config.backend
+  local _saved_base_url = config.base_url
+  local _saved_impl = backend_impl
+
+  -- Stub dofile so load_family_backend's dofile("/zip/backends/gitea.lua") is a no-op.
+  -- luacheck: push
+  -- luacheck: globals dofile
+  local _real_dofile2 = dofile
+  dofile = function(path)
+    if path and path:match("^/zip/backends/") then
+      return
+    end
+    return _real_dofile2(path)
+  end
+  -- luacheck: pop
+
+  -- Happy path: sets base_url from alias default when config.base_url is empty.
+  config.backend = "forgejo"
+  config.base_url = ""
+  backend_impl = {}
+  load_family_backend("gitea")
+  eq(
+    config.base_url,
+    "https://codeberg.org",
+    "load_family_backend: sets base_url from alias default"
+  )
+
+  -- Explicit base_url is preserved (not overwritten by alias default).
+  config.backend = "forgejo"
+  config.base_url = "https://custom.example.com"
+  backend_impl = {}
+  load_family_backend("gitea")
+  eq(
+    config.base_url,
+    "https://custom.example.com",
+    "load_family_backend: preserves explicit base_url"
+  )
+
+  -- Strip patterns remove matching backend_impl keys (gogs strips _package and _actions_).
+  config.backend = "gogs"
+  config.base_url = "https://try.gogs.io"
+  backend_impl = {
+    get_package_info = function() end,
+    list_actions_runs = function() end,
+    get_repo = function() end,
+  }
+  load_family_backend("gitea")
+  ok(backend_impl["get_package_info"] == nil, "load_family_backend: strips _package keys for gogs")
+  ok(
+    backend_impl["list_actions_runs"] == nil,
+    "load_family_backend: strips _actions_ keys for gogs"
+  )
+  ok(backend_impl["get_repo"] ~= nil, "load_family_backend: preserves non-stripped keys for gogs")
+
+  dofile = _real_dofile2 -- luacheck: globals dofile
+  config.backend = _saved_backend
+  config.base_url = _saved_base_url
+  backend_impl = _saved_impl
+end
+
+-- ============================================================
 -- Summary
 -- ============================================================
 
