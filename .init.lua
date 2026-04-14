@@ -316,11 +316,12 @@ function make_backend_transport(scheme, pages)
     end
     return pcall(Fetch, url, opts)
   end
-  local proxy_handler_paged = pages
-      and make_proxy_handler(fetch_json, function(translate, ok, status, headers, body)
-        proxy_json_paged(translate, pages, ok, status, headers, body)
-      end)
-    or nil
+  local proxy_handler_paged
+  if pages then
+    proxy_handler_paged = make_proxy_handler(fetch_json, function(translate, ok, status, headers, body)
+      proxy_json_paged(translate, pages, ok, status, headers, body)
+    end)
+  end
   return {
     fetch_json = fetch_json,
     proxy_handler = make_proxy_handler(fetch_json),
