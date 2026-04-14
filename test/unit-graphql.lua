@@ -14,8 +14,7 @@ function dofile(path) -- luacheck: globals dofile
 end
 
 -- Load module under test.
--- (Uncomment once internal/graphql_parser.lua exists.)
--- dofile("internal/graphql_parser.lua")
+dofile("internal/graphql_parser.lua")
 
 dofile = _real_dofile -- luacheck: globals dofile
 
