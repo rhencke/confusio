@@ -633,7 +633,215 @@ push; real-world tests catch provider-side drift weekly.
 
 ## Weekly GHA workflow and issue reporting
 
-*(To be detailed in the next section of this plan.)*
+### Workflow file
+
+`.github/workflows/real-world.yml`
+
+Triggers:
+- **Schedule**: `cron: '37 6 * * 1'` — Mondays at 06:37 UTC.  Off-minute scheduling avoids
+  the thundering herd at the top of the hour when many scheduled workflows fire simultaneously.
+- **`workflow_dispatch`**: manual trigger for debugging or on-demand runs.
+
+```yaml
+name: Real-world tests
+on:
+  schedule:
+    - cron: '37 6 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: real-world
+  cancel-in-progress: false   # let the in-progress run finish; queue the new one
+
+permissions:
+  contents: read
+  issues: write               # needed to create/update the result issue
+```
+
+### Job structure
+
+One job per backend, all running in parallel.  Each job is independent — a Tier 1 job does
+not need to wait for fixture setup to complete globally because each job runs its own setup
+step.  A final `report` job (with `needs` pointing at all backend jobs and `if: always()`)
+collects results and posts the issue.
+
+**Why one job per backend rather than one job for all backends:**
+
+- GHA surfaces per-job pass/fail in the UI — it is immediately clear which backends are
+  broken without reading logs.
+- A hung or rate-limited backend does not block other backends.
+- Docker service containers are job-scoped, so Tier 2 backends require a separate job anyway.
+
+### Tier 1 job skeleton
+
+```yaml
+test-gitea:
+  runs-on: ubuntu-latest
+  if: ${{ secrets.REAL_WORLD_GITEA_TOKEN != '' }}
+  steps:
+    - uses: actions/checkout@v4
+    - uses: ./.github/actions/setup
+    - run: make build
+    - name: Setup fixtures
+      run: test/real-world/setup/gitea.sh
+      env:
+        CONFUSIO_TEST_TOKEN: ${{ secrets.REAL_WORLD_GITEA_TOKEN }}
+        CONFUSIO_TEST_BASE_URL: https://gitea.com
+        CONFUSIO_TEST_USER: confusio-test
+    - name: Generate hurl
+      run: python3 scripts/gen-realworld-hurl.py gitea
+    - name: Run real-world tests
+      run: test/test-realworld.sh gitea https://gitea.com
+      env:
+        CONFUSIO_TEST_TOKEN: ${{ secrets.REAL_WORLD_GITEA_TOKEN }}
+        CONFUSIO_TEST_USER: confusio-test
+    - name: Upload results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: results-gitea
+        path: results/gitea.json
+```
+
+The `if: ${{ secrets.REAL_WORLD_GITEA_TOKEN != '' }}` guard skips the job entirely when the
+secret is absent (e.g. for backends whose accounts have not been created yet).  A skipped job
+is not treated as a failure by the `report` job.
+
+### Tier 2 job skeleton (Docker service container)
+
+```yaml
+test-gerrit:
+  runs-on: ubuntu-latest
+  services:
+    gerrit:
+      image: gerritcodereview/gerrit:latest
+      ports:
+        - 8080:8080
+      options: >-
+        --health-cmd "curl -sf http://localhost:8080"
+        --health-interval 10s
+        --health-timeout 5s
+        --health-retries 18
+  steps:
+    - uses: actions/checkout@v4
+    - uses: ./.github/actions/setup
+    - run: make build
+    - name: Bootstrap container
+      run: test/real-world/docker/gerrit/bootstrap.sh
+      # bootstrap.sh writes CONFUSIO_TEST_TOKEN and CONFUSIO_TEST_BASE_URL to $GITHUB_ENV
+    - name: Generate hurl
+      run: python3 scripts/gen-realworld-hurl.py gerrit
+    - name: Run real-world tests
+      run: test/test-realworld.sh gerrit "$CONFUSIO_TEST_BASE_URL"
+    - name: Upload results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: results-gerrit
+        path: results/gerrit.json
+```
+
+No token secret is needed for Tier 2; the bootstrap script generates one at runtime and
+writes it to `$GITHUB_ENV`.
+
+### Report job
+
+```yaml
+report:
+  needs:
+    - test-gitea
+    - test-forgejo
+    # ... all 22 backend jobs ...
+  if: always()
+  runs-on: ubuntu-latest
+  permissions:
+    issues: write
+  steps:
+    - uses: actions/checkout@v4
+    - uses: actions/download-artifact@v4
+      with:
+        pattern: results-*
+        merge-multiple: true
+        path: results/
+    - name: Post results
+      run: python3 scripts/report-realworld.py
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+```
+
+Script: `scripts/report-realworld.py`
+
+Steps:
+1. Reads all `results/<backend>.json` hurl report files.
+2. Classifies each failure by HTTP response code (see *Failure classification* below).
+3. If all backends pass (or were skipped): exits without opening an issue.
+4. If any backend has real failures: calls the GitHub Issues API to open a new issue (or
+   append a comment to the already-open issue from the previous week if it describes the same
+   set of failing backends — avoids duplicate issues for persistent outages).
+5. If a prior-week failure issue is open and this run shows all-clear: closes the issue with
+   a "resolved" comment.
+
+### Issue format
+
+**Title**: `[Real-world] Weekly run YYYY-MM-DD — N backends failing`
+
+**Labels**: `real-world`, `automated` (both created on first use)
+
+**Body**:
+
+```markdown
+## Real-world test results — YYYY-MM-DD
+
+Run: [#RUN_ID](RUN_URL) | Triggered: scheduled
+
+| Backend | Result | Failure count | Category |
+|---------|--------|:-------------:|----------|
+| gitea | ✅ pass | — | — |
+| gitlab | ❌ fail | 3 | assertion |
+| gerrit | ⚠️ skip | — | token not configured |
+| bitbucket | ⚠️ warn | 1 | rate-limited |
+
+### Failures
+
+<details>
+<summary>gitlab (3 failures)</summary>
+
+| Endpoint | Expected | Actual |
+|----------|---------|--------|
+| `GET /repos/{owner}/{repo}` | HTTP 200, `$.visibility` isString | `$.visibility` is null |
+| `POST /user/repos` | HTTP 201 | HTTP 422 |
+| `GET /repos/{owner}/{repo}/topics` | HTTP 200 | HTTP 404 |
+
+</details>
+```
+
+### Failure classification
+
+The report script examines the HTTP status code of each failing entry to classify the root
+cause.  This prevents token expiry or provider outages from being filed as confusio bugs.
+
+| HTTP status | Classification | Label | Action |
+|------------|---------------|-------|--------|
+| `401` | Auth failure (token expired or revoked) | `auth-failure` | Open a separate issue reminding maintainer to rotate the token |
+| `429` | Rate-limited | `rate-limited` | Log as warning, not failure; retry next week |
+| `5xx` | Provider infrastructure | `provider-outage` | Log as warning; do not count as assertion failure |
+| `200` with assertion failure | Translation regression | `regression` | Include in the failure issue |
+| `404`/`422` where `2xx` expected | API change or confusio bug | `regression` | Include in the failure issue |
+
+Only `regression`-classified failures trigger a new issue.  Auth and outage events are noted
+in the issue body but do not count toward the failure total.
+
+### Preserving history
+
+Each weekly issue is a snapshot.  Do not update the body of a prior issue — open a new one.
+This preserves a searchable audit trail: searching the repo issues for `[Real-world]` shows
+the history of when specific backends started or stopped failing.
+
+The one exception is persistent failures: if the same backend is failing with the same
+endpoints for three consecutive weeks, the report script adds a comment to the current open
+issue rather than opening a third duplicate.  This keeps the issue list from accumulating
+open duplicates for a long-running outage.
 
 ## Phased rollout
 
