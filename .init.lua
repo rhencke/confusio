@@ -682,17 +682,23 @@ end
 -- ---------------------------------------------------------------------------
 -- Endpoint catalog
 --
--- Authoritative source for every registered endpoint. Each entry is
--- { "METHOD /path", handler_name, default_fn } where default_fn is the
--- fallback when no backend implements the handler. Entries without a
--- default omit the third element (nil → 404 when unimplemented).
+-- Authoritative source for every registered endpoint. Each entry is:
+--   { "METHOD /path", handler_name [, default_fn] }
+-- where default_fn is the fallback when no backend implements the handler.
+-- Entries without a default omit the third element (nil → 404).
+--
+-- Entries are organised into named sections. { group = "name" } marker
+-- entries separate sections; they carry no route data. The section loop
+-- below sets e.group on every real entry and builds the global `endpoints`
+-- table, which scripts/dump-endpoints.lua reads to export the catalog.
 --
 -- Backends override handlers by setting backend_impl.<name>. Parametric
 -- captures from {param} segments are passed positionally to the handler.
 -- ---------------------------------------------------------------------------
 
-local endpoints = {
+local _ep_catalog = {
 
+  { group = "meta" },
   -- Root
   {
     "GET /",
@@ -712,17 +718,21 @@ local endpoints = {
   -- Emojis
   { "GET /emojis", "get_emojis" },
 
+  { group = "gitignore" },
   -- Gitignore templates (https://docs.github.com/en/rest/gitignore)
   { "GET /gitignore/templates", "get_gitignore_templates" },
   { "GET /gitignore/templates/{name}", "get_gitignore_template" },
 
+  { group = "licenses" },
   -- Licenses (https://docs.github.com/en/rest/licenses)
   { "GET /licenses", "get_licenses", licenses_not_implemented },
   { "GET /licenses/{license}", "get_license", licenses_not_implemented },
 
+  { group = "rate-limit" },
   -- Rate Limits (https://docs.github.com/en/rest/rate-limit)
   { "GET /rate_limit", "get_rate_limit", rate_limit_response },
 
+  { group = "gists" },
   -- Gists (https://docs.github.com/en/rest/gists)
   { "GET /gists", "get_gists", empty_list },
   { "POST /gists", "post_gists", gists_not_implemented },
@@ -745,6 +755,7 @@ local endpoints = {
   { "GET /gists/{gist_id}/{sha}", "get_gist_revision", gists_not_implemented },
   { "GET /users/{username}/gists", "get_user_gists", empty_list },
 
+  { group = "activity" },
   -- Activity (https://docs.github.com/en/rest/activity)
   { "GET /events", "get_events", activity_list_empty },
   { "GET /feeds", "get_feeds", activity_not_implemented },
@@ -807,6 +818,7 @@ local endpoints = {
   { "GET /users/{username}/starred", "get_users_starred", activity_list_empty },
   { "GET /users/{username}/subscriptions", "get_users_subscriptions", activity_list_empty },
 
+  { group = "repos" },
   -- Repos core (https://docs.github.com/en/rest/repos/repos)
   { "GET /repos/{owner}/{repo}", "get_repo" },
   { "PATCH /repos/{owner}/{repo}", "patch_repo" },
@@ -826,6 +838,7 @@ local endpoints = {
   { "GET /repos/{owner}/{repo}/tags", "get_repo_tags" },
   { "GET /repos/{owner}/{repo}/teams", "get_repo_teams" },
 
+  { group = "repos-ext" },
   -- Branches (https://docs.github.com/en/rest/branches)
   { "GET /repos/{owner}/{repo}/branches", "get_repo_branches" },
   { "GET /repos/{owner}/{repo}/branches/{branch}", "get_repo_branch" },
@@ -839,21 +852,6 @@ local endpoints = {
   { "GET /repos/{owner}/{repo}/comments/{comment_id}", "get_repo_comment" },
   { "PATCH /repos/{owner}/{repo}/comments/{comment_id}", "patch_repo_comment" },
   { "DELETE /repos/{owner}/{repo}/comments/{comment_id}", "delete_repo_comment" },
-  {
-    "GET /repos/{owner}/{repo}/comments/{comment_id}/reactions",
-    "get_repo_comment_reactions",
-    empty_list,
-  },
-  {
-    "POST /repos/{owner}/{repo}/comments/{comment_id}/reactions",
-    "post_repo_comment_reaction",
-    reactions_not_implemented,
-  },
-  {
-    "DELETE /repos/{owner}/{repo}/comments/{comment_id}/reactions/{reaction_id}",
-    "delete_repo_comment_reaction",
-    reactions_not_implemented,
-  },
   { "GET /repos/{owner}/{repo}/commits/{commit_sha}/comments", "get_commit_comments" },
   { "POST /repos/{owner}/{repo}/commits/{commit_sha}/comments", "post_commit_comment" },
 
@@ -871,9 +869,11 @@ local endpoints = {
   { "GET /repos/{owner}/{repo}/tarball/{ref}", "get_repo_tarball" },
   { "GET /repos/{owner}/{repo}/zipball/{ref}", "get_repo_zipball" },
 
+  { group = "licenses" },
   -- Repo license (https://docs.github.com/en/rest/licenses)
   { "GET /repos/{owner}/{repo}/license", "get_repo_license", licenses_not_implemented },
 
+  { group = "repos-ext" },
   -- Compare
   { "GET /repos/{owner}/{repo}/compare/{basehead}", "get_repo_compare" },
 
@@ -895,6 +895,7 @@ local endpoints = {
   { "POST /repos/{owner}/{repo}/merges", "post_repo_merges" },
   { "POST /repos/{owner}/{repo}/merge-upstream", "post_repo_merge_upstream" },
 
+  { group = "releases" },
   -- Releases (https://docs.github.com/en/rest/releases)
   { "GET /repos/{owner}/{repo}/releases", "get_repo_releases" },
   { "POST /repos/{owner}/{repo}/releases", "post_repo_releases" },
@@ -908,22 +909,8 @@ local endpoints = {
   { "GET /repos/{owner}/{repo}/releases/assets/{asset_id}", "get_repo_release_asset" },
   { "PATCH /repos/{owner}/{repo}/releases/assets/{asset_id}", "patch_repo_release_asset" },
   { "DELETE /repos/{owner}/{repo}/releases/assets/{asset_id}", "delete_repo_release_asset" },
-  {
-    "GET /repos/{owner}/{repo}/releases/{release_id}/reactions",
-    "get_repo_release_reactions",
-    empty_list,
-  },
-  {
-    "POST /repos/{owner}/{repo}/releases/{release_id}/reactions",
-    "post_repo_release_reaction",
-    reactions_not_implemented,
-  },
-  {
-    "DELETE /repos/{owner}/{repo}/releases/{release_id}/reactions/{reaction_id}",
-    "delete_repo_release_reaction",
-    reactions_not_implemented,
-  },
 
+  { group = "repos-ext" },
   -- Deploy keys (https://docs.github.com/en/rest/deploy-keys)
   { "GET /repos/{owner}/{repo}/keys", "get_repo_keys" },
   { "POST /repos/{owner}/{repo}/keys", "post_repo_keys" },
@@ -980,6 +967,7 @@ local endpoints = {
     "get_repo_deployment_status",
   },
 
+  { group = "teams" },
   -- Teams (https://docs.github.com/en/rest/teams)
   { "GET /orgs/{org}/teams", "get_org_teams", empty_list },
   { "POST /orgs/{org}/teams", "post_org_teams" },
@@ -1016,6 +1004,7 @@ local endpoints = {
   { "DELETE /teams/{team_id}/repos/{owner}/{repo}", "delete_team_repo" },
   { "GET /teams/{team_id}/teams", "get_team_children", empty_list },
 
+  { group = "security-advisories" },
   -- Security advisories (https://docs.github.com/en/rest/security-advisories)
   { "GET /advisories", "get_global_advisories", empty_list },
   { "GET /advisories/{ghsa_id}", "get_global_advisory" },
@@ -1037,6 +1026,7 @@ local endpoints = {
     "post_repo_security_advisory_fork",
   },
 
+  { group = "issues" },
   -- Issues (https://docs.github.com/en/rest/issues)
   { "GET /issues", "get_issues", empty_list },
   { "GET /orgs/{org}/issues", "get_org_issues", empty_list },
@@ -1051,21 +1041,6 @@ local endpoints = {
   {
     "DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}/pin",
     "delete_repo_issue_comment_pin",
-  },
-  {
-    "GET /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions",
-    "get_repo_issue_comment_reactions",
-    empty_list,
-  },
-  {
-    "POST /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions",
-    "post_repo_issue_comment_reaction",
-    reactions_not_implemented,
-  },
-  {
-    "DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{reaction_id}",
-    "delete_repo_issue_comment_reaction",
-    reactions_not_implemented,
   },
   { "GET /repos/{owner}/{repo}/issues/events", "get_repo_issue_events", empty_list },
   { "GET /repos/{owner}/{repo}/issues/events/{event_id}", "get_repo_issue_event" },
@@ -1120,21 +1095,6 @@ local endpoints = {
     "patch_issue_sub_issues_priority",
   },
   { "GET /repos/{owner}/{repo}/issues/{issue_number}/timeline", "get_issue_timeline", empty_list },
-  {
-    "GET /repos/{owner}/{repo}/issues/{issue_number}/reactions",
-    "get_issue_reactions",
-    empty_list,
-  },
-  {
-    "POST /repos/{owner}/{repo}/issues/{issue_number}/reactions",
-    "post_issue_reaction",
-    reactions_not_implemented,
-  },
-  {
-    "DELETE /repos/{owner}/{repo}/issues/{issue_number}/reactions/{reaction_id}",
-    "delete_issue_reaction",
-    reactions_not_implemented,
-  },
 
   -- Assignees (https://docs.github.com/en/rest/issues/assignees)
   { "GET /repos/{owner}/{repo}/assignees", "get_repo_assignees", empty_list },
@@ -1173,6 +1133,7 @@ local endpoints = {
     "delete_repository_issue_field_value",
   },
 
+  { group = "pulls" },
   -- Pull Requests (https://docs.github.com/en/rest/pulls)
   { "GET /repos/{owner}/{repo}/pulls", "get_repo_pulls", empty_list },
   { "POST /repos/{owner}/{repo}/pulls", "post_repo_pulls" },
@@ -1180,21 +1141,6 @@ local endpoints = {
   { "GET /repos/{owner}/{repo}/pulls/comments/{comment_id}", "get_repo_pull_comment" },
   { "PATCH /repos/{owner}/{repo}/pulls/comments/{comment_id}", "patch_repo_pull_comment" },
   { "DELETE /repos/{owner}/{repo}/pulls/comments/{comment_id}", "delete_repo_pull_comment" },
-  {
-    "GET /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions",
-    "get_repo_pull_comment_reactions",
-    empty_list,
-  },
-  {
-    "POST /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions",
-    "post_repo_pull_comment_reaction",
-    reactions_not_implemented,
-  },
-  {
-    "DELETE /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions/{reaction_id}",
-    "delete_repo_pull_comment_reaction",
-    reactions_not_implemented,
-  },
   { "GET /repos/{owner}/{repo}/pulls/{pull_number}", "get_repo_pull" },
   { "PATCH /repos/{owner}/{repo}/pulls/{pull_number}", "patch_repo_pull" },
   { "GET /repos/{owner}/{repo}/pulls/{pull_number}/codespaces", "get_pull_codespaces", empty_list },
@@ -1242,6 +1188,85 @@ local endpoints = {
   { "POST /repos/{owner}/{repo}/pulls/{pull_number}/update-branch", "post_pull_update_branch" },
   { "GET /repos/{owner}/{repo}/commits/{commit_sha}/pulls", "get_commit_pulls", empty_list },
 
+
+  -- Reactions (https://docs.github.com/en/rest/reactions)
+  { group = "reactions" },
+  {
+    "GET /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions",
+    "get_repo_pull_comment_reactions",
+    empty_list,
+  },
+  {
+    "POST /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions",
+    "post_repo_pull_comment_reaction",
+    reactions_not_implemented,
+  },
+  {
+    "DELETE /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions/{reaction_id}",
+    "delete_repo_pull_comment_reaction",
+    reactions_not_implemented,
+  },
+  {
+    "GET /repos/{owner}/{repo}/issues/{issue_number}/reactions",
+    "get_issue_reactions",
+    empty_list,
+  },
+  {
+    "POST /repos/{owner}/{repo}/issues/{issue_number}/reactions",
+    "post_issue_reaction",
+    reactions_not_implemented,
+  },
+  {
+    "DELETE /repos/{owner}/{repo}/issues/{issue_number}/reactions/{reaction_id}",
+    "delete_issue_reaction",
+    reactions_not_implemented,
+  },
+  {
+    "GET /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions",
+    "get_repo_issue_comment_reactions",
+    empty_list,
+  },
+  {
+    "POST /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions",
+    "post_repo_issue_comment_reaction",
+    reactions_not_implemented,
+  },
+  {
+    "DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{reaction_id}",
+    "delete_repo_issue_comment_reaction",
+    reactions_not_implemented,
+  },
+  {
+    "GET /repos/{owner}/{repo}/releases/{release_id}/reactions",
+    "get_repo_release_reactions",
+    empty_list,
+  },
+  {
+    "POST /repos/{owner}/{repo}/releases/{release_id}/reactions",
+    "post_repo_release_reaction",
+    reactions_not_implemented,
+  },
+  {
+    "DELETE /repos/{owner}/{repo}/releases/{release_id}/reactions/{reaction_id}",
+    "delete_repo_release_reaction",
+    reactions_not_implemented,
+  },
+  {
+    "GET /repos/{owner}/{repo}/comments/{comment_id}/reactions",
+    "get_repo_comment_reactions",
+    empty_list,
+  },
+  {
+    "POST /repos/{owner}/{repo}/comments/{comment_id}/reactions",
+    "post_repo_comment_reaction",
+    reactions_not_implemented,
+  },
+  {
+    "DELETE /repos/{owner}/{repo}/comments/{comment_id}/reactions/{reaction_id}",
+    "delete_repo_comment_reaction",
+    reactions_not_implemented,
+  },
+  { group = "users" },
   -- Users (https://docs.github.com/en/rest/users)
   { "GET /user", "get_user" },
   { "PATCH /user", "patch_user" },
@@ -1300,6 +1325,7 @@ local endpoints = {
   { "DELETE /user/ssh_signing_keys/{ssh_signing_key_id}", "delete_user_ssh_signing_key" },
   { "GET /users/{username}/ssh_signing_keys", "get_users_ssh_signing_keys" },
 
+  { group = "search" },
   -- Search (https://docs.github.com/en/rest/search)
   { "GET /search/code", "search_code", search_empty },
   { "GET /search/commits", "search_commits", search_empty },
@@ -1309,6 +1335,7 @@ local endpoints = {
   { "GET /search/topics", "search_topics", search_empty },
   { "GET /search/users", "search_users", search_empty },
 
+  { group = "apps" },
   -- Apps (https://docs.github.com/en/rest/apps)
   { "GET /app", "get_app" },
   { "GET /app/hook/config", "get_app_hook_config" },
@@ -1353,6 +1380,7 @@ local endpoints = {
   },
   { "GET /users/{username}/installation", "get_users_installation" },
 
+  { group = "checks" },
   -- Checks (https://docs.github.com/en/rest/checks)
   {
     "POST /repos/{owner}/{repo}/check-runs",
@@ -1518,6 +1546,7 @@ local endpoints = {
     end,
   },
 
+  { group = "code-scanning" },
   -- Code Scanning (https://docs.github.com/en/rest/code-scanning)
   {
     "GET /orgs/{org}/code-scanning/alerts",
@@ -1625,6 +1654,7 @@ local endpoints = {
     code_scanning_not_implemented,
   },
 
+  { group = "secret-scanning" },
   -- Secret Scanning (https://docs.github.com/en/rest/secret-scanning)
   {
     "GET /orgs/{org}/secret-scanning/alerts",
@@ -1672,6 +1702,7 @@ local endpoints = {
     secret_scanning_not_implemented,
   },
 
+  { group = "dependabot" },
   -- Dependabot (https://docs.github.com/en/rest/dependabot)
   {
     "GET /enterprises/{enterprise}/dependabot/alerts",
@@ -1780,6 +1811,7 @@ local endpoints = {
     dependabot_not_implemented,
   },
 
+  { group = "dependency-graph" },
   -- Dependency Graph (https://docs.github.com/en/rest/dependency-graph)
   {
     "GET /repos/{owner}/{repo}/dependency-graph/compare/{basehead}",
@@ -1797,6 +1829,7 @@ local endpoints = {
     dependency_graph_not_implemented,
   },
 
+  { group = "projects" },
   -- Projects (https://docs.github.com/en/rest/projects)
   { "GET /orgs/{org}/projectsV2", "projects_list_for_org", projects_list_empty },
   {
@@ -1921,6 +1954,7 @@ local endpoints = {
     projects_list_empty,
   },
 
+  { group = "packages" },
   -- Packages (https://docs.github.com/en/rest/packages)
   { "GET /orgs/{org}/packages", "get_org_packages", empty_list },
   { "GET /orgs/{org}/packages/{package_type}/{package_name}", "get_org_package" },
@@ -1989,6 +2023,7 @@ local endpoints = {
     "restore_users_package_version",
   },
 
+  { group = "interactions" },
   -- Interactions (https://docs.github.com/en/rest/interactions)
   { "GET /orgs/{org}/interaction-limits", "get_org_interaction_limits", interaction_limits_empty },
   { "PUT /orgs/{org}/interaction-limits", "put_org_interaction_limits", interaction_limits_put },
@@ -2020,6 +2055,7 @@ local endpoints = {
     interaction_limits_delete,
   },
 
+  { group = "migrations" },
   -- Migrations (https://docs.github.com/en/rest/migrations)
   -- Organization migrations
   { "GET /orgs/{org}/migrations", "get_org_migrations", empty_list },
@@ -2067,6 +2103,7 @@ local endpoints = {
   },
   { "GET /user/migrations/{migration_id}/repositories", "get_user_migration_repos", empty_list },
 
+  { group = "pages" },
   -- Pages (https://docs.github.com/en/rest/pages)
   { "GET /repos/{owner}/{repo}/pages", "get_repo_pages", pages_not_implemented },
   { "POST /repos/{owner}/{repo}/pages", "post_repo_pages", pages_not_implemented },
@@ -2119,10 +2156,12 @@ local endpoints = {
   },
   { "PATCH /repos/{owner}/{repo}/import/lfs", "patch_repo_import_lfs", source_import_gone },
 
+  { group = "markdown" },
   -- Markdown (https://docs.github.com/en/rest/markdown)
   { "POST /markdown", "render_markdown", markdown_not_implemented },
   { "POST /markdown/raw", "render_markdown_raw", markdown_not_implemented },
 
+  { group = "actions" },
   -- Actions (https://docs.github.com/en/rest/actions)
   -- Enterprise-level cache limits
   {
@@ -3054,6 +3093,7 @@ local endpoints = {
     actions_not_implemented,
   },
 
+  { group = "git" },
   -- Git database (https://docs.github.com/en/rest/git)
   -- Blobs
   { "POST /repos/{owner}/{repo}/git/blobs", "create_git_blob", git_not_implemented },
@@ -3082,8 +3122,19 @@ local endpoints = {
   { "POST /repos/{owner}/{repo}/git/trees", "create_git_tree", git_not_implemented },
   { "GET /repos/{owner}/{repo}/git/trees/{tree_sha}", "get_git_tree", git_not_implemented },
 }
-for _, e in ipairs(endpoints) do
-  route_add(e[1], e[2], e[3])
+-- Build the global `endpoints` table (consumed by scripts/dump-endpoints.lua)
+-- and register routes. Marker entries { group = "name" } set the current
+-- group; real entries get e.group set and are added to `endpoints`.
+endpoints = {}
+local _group = ""
+for _, e in ipairs(_ep_catalog) do
+  if not e[1] then
+    _group = e.group
+  else
+    e.group = _group
+    endpoints[#endpoints + 1] = e
+    route_add(e[1], e[2], e[3])
+  end
 end
 function OnHttpRequest()
   if not backend_allow_anonymous and not GetHeader("Authorization") then
