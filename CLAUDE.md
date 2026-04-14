@@ -36,9 +36,12 @@ Makefile                     — build, test, and download targets
 .hurl-version                — pinned Hurl version (curl'd by make)
 site/
   index.html                 — GitHub Pages template (contains <!-- COMPAT_MATRIX --> placeholder)
-  compatibility.csv          — compatibility matrix source data (one row per route group, one column per provider)
+  compatibility.csv          — support values only: one row per endpoint (keyed by "METHOD /path"), one column per provider; section structure comes from the catalog
 scripts/
-  gen-matrix.py              — generates the HTML table from compatibility.csv into the template
+  dump-endpoints.lua         — exports endpoint catalog as JSON (run via redbean.com -i)
+  gen-matrix.py              — generates HTML table from catalog JSON + compatibility.csv
+  validate-csv.py            — checks every CSV row exists in the catalog
+  validate-tests.py          — checks every catalog group has test coverage per backend
 _site/                       — generated output (gitignored; produced by `make site` or the Pages workflow)
 test/
   test-unit.sh               — unit test harness (starts confusio + mock, runs hurl)
@@ -92,14 +95,22 @@ When implementing a new endpoint, check the spec for:
 ## Adding a new endpoint
 
 1. Check `vendor/github-rest-api-description/api.github.com.yaml` for the endpoint's contract.
-2. Add a `route_add(...)` call in `.init.lua`:
-   - Exact path: `route_add("/emojis", "emojis")`
-   - Parametric path: `route_add("/repos/{owner}/{repo}", "repo")`
+2. Add the endpoint to the appropriate `endpoint_sections` entry in `.init.lua`. Each entry is
+   `{ "VERB /path", "handler_name" }` or `{ "VERB /path", "handler_name", default_fn }`.
+   Endpoints are grouped into named sections (e.g. `"repos"`, `"issues"`) that drive the
+   compatibility matrix sections and test file naming.
 3. Add a default handler to the `defaults` table in `.init.lua`.
 4. If any backend behaves differently, add an override in `backends/<name>.lua`.
    Parametric captures are passed positionally: `repo = function(owner, repo) ... end`
-5. Add a hurl assertion file in `test/` and wire it into `test/test-unit.sh` (mock) and `test/test-integration.sh` (live).
-6. Update `site/compatibility.csv`: add a row (or update an existing row) for the new endpoint. Values: `y` = native support, `~` = partial/stub, `~explanation` = partial with tooltip explanation, `n` = returns 404/501. The GitHub Pages site is regenerated automatically from this CSV in CI — never edit the generated HTML.
+5. Add a hurl assertion file in `test/` named `test/stub-<group>.hurl` (if the default behavior
+   is the same for all backends) or `test/<backend>-<group>.hurl` (for backend-specific
+   behavior). The `BACKEND_RULE` in the Makefile automatically includes stub files as fallback
+   for any backend without its own group file.
+6. Update `site/compatibility.csv`: add a row for the new endpoint. Values: `y` = native
+   support, `~` = partial/stub, `~explanation` = partial with tooltip explanation,
+   `n` = returns 404/501. The endpoint column must match exactly what the catalog emits
+   (`make dump-endpoints`). Run `make validate-csv` to check. The GitHub Pages site is
+   regenerated automatically from the catalog + CSV in CI — never edit the generated HTML.
 
 ## Adding a new backend
 
@@ -108,7 +119,12 @@ When implementing a new endpoint, check the spec for:
    `config.backend == "<name>"` — no changes to `.init.lua` needed.
 2. Add mock server as `test/mock-<newbackend>.lua` and build it in the `Makefile` (copy pattern from `mock-gitea.com`).
 3. Add a `test/test-mock-validate.sh`-equivalent for the new backend if its spec differs meaningfully.
-4. Add a column for the new backend in `site/compatibility.csv` and fill in support values for every row.
+4. Add `<name>` to the `BACKENDS` list in the Makefile. Port numbers are assigned automatically.
+5. For each catalog group where this backend has native support, create `test/<name>-<group>.hurl`.
+   Groups with no custom file fall back to `test/stub-<group>.hurl` automatically. Run
+   `make validate-tests` to see which groups lack coverage.
+6. Add a column for the new backend in `site/compatibility.csv` and fill in support values
+   for every endpoint row. Run `make validate-csv` to check consistency.
 
 ## Redbean API notes
 
@@ -165,6 +181,23 @@ Hard-won insights from building this project. **Keep this section current**: whe
 ### GitHub Actions composite actions
 
 - **A local composite action (`uses: ./.github/actions/setup`) cannot contain `actions/checkout`.** The workflow runner needs to find the action file before checkout has run — chicken-and-egg. Always put `actions/checkout@v4` as an explicit first step in each job; the composite action handles everything after.
+
+### Endpoint catalog
+
+- **`endpoint_sections` is the single source of truth** for all routes. It drives route
+  registration, the compatibility matrix, and test file discovery. When adding endpoints,
+  only touch `endpoint_sections` in `.init.lua` — never manually update the matrix HTML or
+  add hardcoded group lists elsewhere.
+- **Group names** (the first element of each `endpoint_sections` entry) match test file
+  suffixes (`test/<backend>-<group>.hurl`) and CSV section keys. They are stable identifiers;
+  changing a group name requires updating test files and CSV rows.
+- **Stub files as universal fallback**: `test/stub-<group>.hurl` is automatically run for
+  any backend that lacks a `test/<backend>-<group>.hurl`. Write stubs to test the **default**
+  confusio behavior (empty arrays, 404s). If a backend has native support for a group, create
+  `test/<backend>-<group>.hurl` instead — never rely on the stub for a backend that returns
+  real data, or the stub's 404 assertions will fail.
+- **`make dump-endpoints`** exports the catalog as JSON. Used internally by `make site`,
+  `make validate-csv`, and `make validate-tests`.
 
 ### Routing
 
