@@ -15,8 +15,8 @@ GET /repos/{owner}/{repo}/languages,n,~primary language only,n,y,n,y,n,n,y,y,y,y
 GET /repos/{owner}/{repo}/branches,n,y,y,y,y,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/commits,n,~no email fields,y,y,n,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/contents/{path},n,y,y,y,n,y,n,n,n,y,~files only,y,n,n,n,y,n,n,n,n,n,n,n,n
-PUT /repos/{owner}/{repo}/contents/{path},n,n,y,y,n,y,n,n,n,y,~,y,n,n,n,y,n,n,n,n,n,n,n,n
-DELETE /repos/{owner}/{repo}/contents/{path},n,n,y,y,n,y,n,n,n,y,~,y,n,n,n,y,n,n,n,n,n,n,n,n
+PUT /repos/{owner}/{repo}/contents/{path},n,n,n,y,n,y,n,n,n,y,~,y,n,n,n,y,n,n,n,n,n,n,n,n
+DELETE /repos/{owner}/{repo}/contents/{path},n,n,n,y,n,y,n,n,n,y,~,y,n,n,n,y,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/license,y,y,y,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/collaborators,n,n,n,y,n,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/forks,n,y,y,y,n,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
