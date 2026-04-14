@@ -16,9 +16,7 @@ local _t = make_backend_transport("bearer", PAGES)
 local fetch_json = _t.fetch_json
 local proxy_handler = _t.proxy_handler
 
-local function repo_ref(owner, repo_name)
-  return owner .. "%2F" .. repo_name
-end
+local repo_ref = owner_repo_id
 
 -- Map a Harness Code repository object to GitHub format.
 local function translate_harness_repo(r)

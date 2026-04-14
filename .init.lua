@@ -270,6 +270,13 @@ function make_backend_transport(scheme, pages)
   }
 end
 
+-- owner_repo_id is global: URL-encodes owner/repo as "owner%2Frepo".
+-- Used by backends (GitLab, Gerrit, Harness) whose APIs address repositories
+-- by a URL-encoded "owner/repo" composite identifier rather than separate segments.
+function owner_repo_id(owner, repo_name)
+  return owner .. "%2F" .. repo_name
+end
+
 -- translate_repo is global: maps a Gitea-style repo object to GitHub field names.
 -- Called by any Gitea-API-compatible backend (gitea, forgejo, gogs, codeberg, notabug).
 function translate_repo(r)

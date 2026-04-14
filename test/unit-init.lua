@@ -276,6 +276,14 @@ ok(
 )
 
 -- ============================================================
+-- owner_repo_id
+-- ============================================================
+
+eq(owner_repo_id("alice", "myrepo"), "alice%2Fmyrepo", "owner_repo_id: basic case")
+eq(owner_repo_id("org", "my-repo"), "org%2Fmy-repo", "owner_repo_id: hyphen in repo name")
+eq(owner_repo_id("a", "b"), "a%2Fb", "owner_repo_id: single-char segments")
+
+-- ============================================================
 -- translate_repo
 -- ============================================================
 

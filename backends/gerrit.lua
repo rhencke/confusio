@@ -12,10 +12,7 @@ local _t = make_backend_transport("basic")
 local fetch_json = _t.fetch_json
 local proxy_handler = _t.proxy_handler
 
--- Gerrit project names use "/" as path separator; URL-encode it.
-local function project_id(owner, repo_name)
-  return owner .. "%2F" .. repo_name
-end
+local project_id = owner_repo_id
 
 -- Map a Gerrit project object to GitHub format.
 local function translate_gerrit_repo(r, owner, repo_name)

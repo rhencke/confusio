@@ -17,12 +17,7 @@ local proxy_handler = _t.proxy_handler
 local proxy_handler_created = _t.proxy_handler_created
 local proxy_handler_paged = _t.proxy_handler_paged
 
--- Encode owner/repo as GitLab project ID (URL-encoded "owner/repo").
-local function project_id(owner, repo_name)
-  -- Replace / with %2F and percent-encode other special chars.
-  -- owner and repo_name come from the URL path so they contain no slashes.
-  return owner .. "%2F" .. repo_name
-end
+local project_id = owner_repo_id
 
 -- Map a GitLab project object to GitHub repo format.
 local function translate_gl_repo(p)
