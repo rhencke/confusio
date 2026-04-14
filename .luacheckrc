@@ -35,6 +35,7 @@ globals = {
   "append_page_params",
   "make_fetch_opts",
   "make_proxy_handler",
+  "make_backend_transport",
   "translate_repo",
   "translate_user",
   "translate_migration",

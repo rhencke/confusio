@@ -229,6 +229,47 @@ function make_proxy_handler(fetch_fn, proxy_fn)
   end
 end
 
+-- make_backend_transport is global: builds the standard transport scaffolding for a backend.
+--
+-- Returns a table with:
+--   fetch_json(url[, method[, body]])  — authorized fetch; adds method + Content-Type for
+--                                        non-GET calls with a body
+--   proxy_handler                       — make_proxy_handler(fetch_json) using proxy_json
+--   proxy_handler_created               — make_proxy_handler(fetch_json, proxy_json_created)
+--   proxy_handler_paged                 — make_proxy_handler bound to proxy_json_paged with
+--                                         the given pages mapping; nil when pages is omitted
+--
+-- scheme: "token" | "bearer" | "basic" | "basic-colon"  (forwarded to make_fetch_opts)
+-- pages:  { per_page = "upstream_name" [, page = "upstream_name"] } for paged endpoints;
+--         omit (or pass nil) when the backend has no paged handler.
+function make_backend_transport(scheme, pages)
+  local function fetch_json(url, method, body)
+    local opts = make_fetch_opts(scheme)
+    if method ~= nil and method ~= "GET" then
+      opts = opts or {}
+      opts.method = method
+      if body then
+        opts.body = body
+        opts.headers = opts.headers or {}
+        opts.headers["Content-Type"] = "application/json"
+      end
+    end
+    return pcall(Fetch, url, opts)
+  end
+  local proxy_handler_paged = pages and make_proxy_handler(
+    fetch_json,
+    function(translate, ok, status, headers, body)
+      proxy_json_paged(translate, pages, ok, status, headers, body)
+    end
+  ) or nil
+  return {
+    fetch_json = fetch_json,
+    proxy_handler = make_proxy_handler(fetch_json),
+    proxy_handler_created = make_proxy_handler(fetch_json, proxy_json_created),
+    proxy_handler_paged = proxy_handler_paged,
+  }
+end
+
 -- translate_repo is global: maps a Gitea-style repo object to GitHub field names.
 -- Called by any Gitea-API-compatible backend (gitea, forgejo, gogs, codeberg, notabug).
 function translate_repo(r)
