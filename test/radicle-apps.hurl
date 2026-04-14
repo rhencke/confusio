@@ -1,1 +1,0 @@
-stub-apps.hurl

@@ -94,21 +94,34 @@ test-unit-$(1): confusio.com mock-$(1).com hurl
 	bash test/run-backend.sh mock-$(1).com \
 	  $($(1)_CPORT) $($(1)_MPORT) \
 	  "-- $(1) http://127.0.0.1:$($(1)_MPORT)" \
-	  $(wildcard test/$(1)-*.hurl)
+	  $(wildcard test/$(1)-*.hurl) \
+	  $(filter-out \
+	    $(patsubst test/$(1)-%.hurl,test/stub-%.hurl,$(wildcard test/$(1)-*.hurl)), \
+	    $(wildcard test/stub-*.hurl))
 endef
 
 $(foreach b,$(BACKENDS),$(eval $(call BACKEND_RULE,$(b))))
 
-.PHONY: build site test test-unit test-unit-functions test-unit-backends test-integration validate-mock test-format test-lint test-coverage clean
+.PHONY: build site dump-endpoints validate-csv validate-tests test test-unit test-unit-functions test-unit-backends test-integration validate-mock test-format test-lint test-coverage clean
 
 build: confusio.com
 
-site:
+dump-endpoints: redbean.com
+	./redbean.com -i scripts/dump-endpoints.lua
+
+validate-csv: redbean.com
+	./redbean.com -i scripts/dump-endpoints.lua 2>/dev/null | python3 scripts/validate-csv.py site/compatibility.csv
+
+validate-tests: redbean.com
+	./redbean.com -i scripts/dump-endpoints.lua 2>/dev/null | python3 scripts/validate-tests.py $(BACKENDS)
+
+site: redbean.com
 	mkdir -p _site
 	cp -r site/. _site/
-	python3 scripts/gen-matrix.py site/compatibility.csv site/index.html _site/index.html
+	./redbean.com -i scripts/dump-endpoints.lua 2>/dev/null | \
+	  python3 scripts/gen-matrix.py - site/compatibility.csv site/index.html _site/index.html
 
-test: test-unit test-integration test-format test-lint
+test: test-unit test-integration test-format test-lint validate-csv validate-tests
 
 # Unit tests for .init.lua global functions (pure Lua, no HTTP server needed)
 test-unit-functions: redbean.com

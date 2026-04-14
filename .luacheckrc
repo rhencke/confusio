@@ -39,4 +39,6 @@ globals = {
   -- Set by backends/*.lua, read by .init.lua
   "backend_impl",
   "backend_allow_anonymous",
+  -- Endpoint catalog: populated by .init.lua, read by scripts/dump-endpoints.lua
+  "endpoints",
 }
