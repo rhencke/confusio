@@ -78,33 +78,27 @@ local function block_string_value(raw)
 end
 
 -- ============================================================
--- Lexer
+-- Character class predicates
 -- ============================================================
 
--- Character predicates.
+local function is_digit(b)
+  return b ~= nil and b >= 48 and b <= 57
+end
+
 local function is_name_start(b)
-  if not b then
-    return false
-  end
-  return b == 95 or (b >= 65 and b <= 90) or (b >= 97 and b <= 122)
+  return b ~= nil and (b == 95 or (b >= 65 and b <= 90) or (b >= 97 and b <= 122))
 end
 
 local function is_name_char(b)
-  if not b then
-    return false
-  end
-  return b == 95 or (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or (b >= 48 and b <= 57)
+  return is_name_start(b) or is_digit(b)
 end
 
-local function is_digit(b)
-  if not b then
-    return false
-  end
-  return b >= 48 and b <= 57
-end
+-- ============================================================
+-- Lexer tables
+-- ============================================================
 
--- Lookup table for single-character string escape sequences.
-local escape_map = {
+-- Single-character escape sequences (GraphQL spec §2.1.9).
+local simple_escapes = {
   [34] = '"',
   [47] = "/",
   [92] = "\\",
@@ -115,47 +109,96 @@ local escape_map = {
   [116] = "\t",
 }
 
+-- Single-character punctuation (GraphQL spec §2.1.8): ! $ & ( ) : = @ [ ] { | }
+local punct_bytes = {
+  [33] = true,
+  [36] = true,
+  [38] = true,
+  [40] = true,
+  [41] = true,
+  [58] = true,
+  [61] = true,
+  [64] = true,
+  [91] = true,
+  [93] = true,
+  [123] = true,
+  [124] = true,
+  [125] = true,
+}
+
+-- ============================================================
+-- Lexer
+-- ============================================================
+
 local function make_lexer(source)
+  local src = source
   local lex = { src = source, pos = 1, line = 1, col = 1, _peeked = nil }
+
+  -- ---- Error reporting ----
 
   function lex:error(msg)
     error(self.line .. ":" .. self.col .. ": " .. msg, 0)
   end
 
-  -- Advance one non-newline character.
+  -- ---- Character inspection ----
+
+  function lex:at_end()
+    return self.pos > #src
+  end
+
+  function lex:byte()
+    return src:byte(self.pos)
+  end
+
+  function lex:char()
+    return src:sub(self.pos, self.pos)
+  end
+
+  function lex:match(s)
+    return src:sub(self.pos, self.pos + #s - 1) == s
+  end
+
+  -- ---- Position advancement ----
+
   function lex:advance()
     self.pos = self.pos + 1
     self.col = self.col + 1
   end
 
-  -- Advance n non-newline characters.
   function lex:advance_by(n)
     self.pos = self.pos + n
     self.col = self.col + n
   end
 
-  -- Handle a \n line terminator.
-  function lex:newline_lf()
+  function lex:newline()
     self.line = self.line + 1
     self.col = 1
     self.pos = self.pos + 1
   end
 
-  -- Handle a \r (or \r\n) line terminator.
-  function lex:newline_cr()
-    self.line = self.line + 1
-    self.col = 1
-    self.pos = self.pos + 1
-    if self.src:byte(self.pos) == 10 then
-      self.pos = self.pos + 1
+  -- ---- Skip helpers ----
+
+  -- Consume \n, \r, or \r\n.  Return true if a line terminator was consumed.
+  function lex:skip_line_terminator()
+    local b = self:byte()
+    if b == 10 then
+      self:newline()
+      return true
+    elseif b == 13 then
+      self:newline()
+      if self:byte() == 10 then
+        self.pos = self.pos + 1
+      end
+      return true
     end
+    return false
   end
 
-  -- Skip a # comment to end of line.
+  -- Skip from # through end of line.
   function lex:skip_comment()
-    self:advance() -- consume #
-    while self.pos <= #self.src do
-      local b = self.src:byte(self.pos)
+    self:advance()
+    while not self:at_end() do
+      local b = self:byte()
       if b == 10 or b == 13 then
         break
       end
@@ -163,77 +206,72 @@ local function make_lexer(source)
     end
   end
 
-  -- Skip all ignored tokens: whitespace, commas, line terminators, comments.
+  -- Skip whitespace, commas, line terminators, and comments.
   function lex:skip_ignored()
-    while self.pos <= #self.src do
-      local b = self.src:byte(self.pos)
-      if b == 9 or b == 32 or b == 44 then -- tab, space, comma
+    while not self:at_end() do
+      local b = self:byte()
+      if b == 9 or b == 32 or b == 44 then
         self:advance()
-      elseif b == 10 then
-        self:newline_lf()
-      elseif b == 13 then
-        self:newline_cr()
       elseif b == 35 then
         self:skip_comment()
-      else
+      elseif not self:skip_line_terminator() then
         break
       end
     end
   end
 
-  -- Consume all digits at the current position (no col tracking).
-  function lex:consume_digits()
-    while is_digit(self.src:byte(self.pos)) do
-      self.pos = self.pos + 1
-    end
-  end
+  -- ---- Token readers ----
 
-  -- Read a NAME token; pos is at the first name character.
   function lex:read_name(tline, tcol)
     local s = self.pos
     self.pos = self.pos + 1
-    while is_name_char(self.src:byte(self.pos)) do
+    while is_name_char(self:byte()) do
       self.pos = self.pos + 1
     end
-    local value = self.src:sub(s, self.pos - 1)
+    local value = src:sub(s, self.pos - 1)
     self.col = tcol + #value
     return { kind = "NAME", value = value, line = tline, col = tcol }
   end
 
-  -- Read an INT_VALUE or FLOAT_VALUE token; pos is at - or first digit.
-  function lex:read_number(tline, tcol)
-    local src = self.src
-    local s = self.pos
-    if src:byte(self.pos) == 45 then -- optional leading minus
+  function lex:read_digits()
+    while is_digit(self:byte()) do
       self.pos = self.pos + 1
-      if not is_digit(src:byte(self.pos)) then
+    end
+  end
+
+  function lex:read_number(tline, tcol)
+    local s = self.pos
+    if self:byte() == 45 then -- optional leading minus
+      self.pos = self.pos + 1
+      if not is_digit(self:byte()) then
         self:error("invalid number: expected digit after '-'")
       end
     end
-    self:consume_digits()
+    self:read_digits()
     local is_float = false
-    if src:byte(self.pos) == 46 then -- fractional part
+    if self:byte() == 46 then -- fractional part
       is_float = true
       self.pos = self.pos + 1
-      if not is_digit(src:byte(self.pos)) then
+      if not is_digit(self:byte()) then
         self:error("invalid float: expected digit after '.'")
       end
-      self:consume_digits()
+      self:read_digits()
     end
-    local b = src:byte(self.pos)
-    if b == 69 or b == 101 then -- exponent part (E or e)
+    local eb = self:byte()
+    if eb == 69 or eb == 101 then -- exponent part (E or e)
       is_float = true
       self.pos = self.pos + 1
-      local sb = src:byte(self.pos)
-      if sb == 43 or sb == 45 then -- optional sign
+      local sb = self:byte()
+      if sb == 43 or sb == 45 then -- optional +/-
         self.pos = self.pos + 1
       end
-      if not is_digit(src:byte(self.pos)) then
+      if not is_digit(self:byte()) then
         self:error("invalid float: expected digit in exponent")
       end
-      self:consume_digits()
+      self:read_digits()
     end
-    if is_name_char(src:byte(self.pos)) then
+    -- Number must not be immediately followed by a name/digit character.
+    if is_name_char(self:byte()) then
       self:error("invalid number literal: unexpected character after digits")
     end
     local value = src:sub(s, self.pos - 1)
@@ -246,39 +284,37 @@ local function make_lexer(source)
     }
   end
 
-  -- Read one escape sequence; pos is at the backslash.
   function lex:read_escape()
     self.pos = self.pos + 1 -- skip backslash
-    local eb = self.src:byte(self.pos)
-    local ch = escape_map[eb]
+    local eb = self:byte()
+    local ch = simple_escapes[eb]
     if ch then
       self.pos = self.pos + 1
       self.col = self.col + 2
       return ch
-    elseif eb == 117 then -- \uXXXX
+    end
+    if eb == 117 then -- \uXXXX
       self.pos = self.pos + 1
-      local hex = self.src:sub(self.pos, self.pos + 3)
-      if #hex < 4 or not hex:match("^[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]$") then
+      local hex = src:sub(self.pos, self.pos + 3)
+      if #hex < 4 or not hex:match("^%x%x%x%x$") then
         self:error("invalid unicode escape \\u" .. hex)
       end
-      local result = utf8.char(tonumber(hex, 16))
+      local codepoint = tonumber(hex, 16)
       self.pos = self.pos + 4
-      self.col = self.col + 6 -- \uXXXX = 6 source chars
-      return result
-    else
-      self:error("invalid escape sequence '\\" .. string.char(eb) .. "'")
+      self.col = self.col + 6
+      return utf8.char(codepoint)
     end
+    self:error("invalid escape sequence '\\" .. string.char(eb) .. "'")
   end
 
-  -- Read a single-line string token; pos is at the opening ".
   function lex:read_string(tline, tcol)
-    self:advance() -- consume opening "
+    self:advance() -- skip opening "
     local parts = {}
     while true do
-      if self.pos > #self.src then
+      if self:at_end() then
         self:error("unterminated string")
       end
-      local b = self.src:byte(self.pos)
+      local b = self:byte()
       if b == 10 or b == 13 then
         self:error("line terminator inside string")
       elseif b == 34 then -- closing "
@@ -287,52 +323,43 @@ local function make_lexer(source)
       elseif b == 92 then -- backslash escape
         parts[#parts + 1] = self:read_escape()
       else
-        parts[#parts + 1] = self.src:sub(self.pos, self.pos)
+        parts[#parts + 1] = self:char()
         self:advance()
       end
     end
     return { kind = "STRING_VALUE", value = table.concat(parts), line = tline, col = tcol }
   end
 
-  -- Consume one raw character into parts, tracking line state (for block strings).
-  function lex:block_char(parts)
-    local src = self.src
-    local b = src:byte(self.pos)
-    if b == 10 then
-      parts[#parts + 1] = "\n"
-      self:newline_lf()
-    elseif b == 13 then
-      parts[#parts + 1] = "\r"
-      self.line = self.line + 1
-      self.col = 1
-      self.pos = self.pos + 1
-      if src:byte(self.pos) == 10 then -- \r\n: consume and capture the \n too
-        parts[#parts + 1] = "\n"
-        self.pos = self.pos + 1
-      end
-    else
-      parts[#parts + 1] = src:sub(self.pos, self.pos)
-      self:advance()
-    end
-  end
-
-  -- Read a block string token; pos is at the opening """.
   function lex:read_block_string(tline, tcol)
-    local src = self.src
-    self:advance_by(3) -- consume opening """
+    self:advance_by(3) -- skip opening """
     local parts = {}
     while true do
-      if self.pos > #src then
+      if self:at_end() then
         self:error("unterminated block string")
       end
-      if src:sub(self.pos, self.pos + 2) == '"""' then
+      if self:match('"""') then
         self:advance_by(3)
         break
-      elseif src:sub(self.pos, self.pos + 3) == '\\"""' then -- escaped triple-quote
+      end
+      if self:match('\\"""') then -- escaped triple-quote
         parts[#parts + 1] = '"""'
         self:advance_by(4)
       else
-        self:block_char(parts)
+        local ch = self:char()
+        parts[#parts + 1] = ch
+        if ch == "\n" then
+          self:newline()
+        elseif ch == "\r" then
+          -- Cannot delegate to skip_line_terminator here because we must
+          -- also append the \n to parts when consuming a \r\n pair.
+          self:newline()
+          if self:byte() == 10 then
+            parts[#parts + 1] = "\n"
+            self.pos = self.pos + 1
+          end
+        else
+          self:advance()
+        end
       end
     end
     return {
@@ -343,71 +370,52 @@ local function make_lexer(source)
     }
   end
 
-  -- Read and return the next meaningful token, advancing position.
-  function lex:read_token()
-    self:skip_ignored()
+  function lex:read_punct(tline, tcol)
+    local ch = self:char()
+    self:advance()
+    return { kind = "PUNCT", value = ch, line = tline, col = tcol }
+  end
 
-    local tline = self.line
-    local tcol = self.col
-
-    if self.pos > #self.src then
-      return { kind = "EOF", value = "", line = tline, col = tcol }
-    end
-
-    local src = self.src
-    local b = src:byte(self.pos)
-
-    -- Single-character punctuation.
-    if
-      b == 33
-      or b == 36
-      or b == 38
-      or b == 40
-      or b == 41
-      or b == 58
-      or b == 61
-      or b == 64
-      or b == 91
-      or b == 93
-      or b == 123
-      or b == 124
-      or b == 125
-    then
-      local ch = src:sub(self.pos, self.pos)
-      self:advance()
-      return { kind = "PUNCT", value = ch, line = tline, col = tcol }
-    end
-
-    -- ... spread operator (one or two dots alone is a lexer error).
-    if b == 46 then
-      if src:sub(self.pos, self.pos + 2) == "..." then
-        self:advance_by(3)
-        return { kind = "PUNCT", value = "...", line = tline, col = tcol }
-      end
+  function lex:read_spread(tline, tcol)
+    if not self:match("...") then
       self:error("unexpected character '.'")
     end
+    self:advance_by(3)
+    return { kind = "PUNCT", value = "...", line = tline, col = tcol }
+  end
 
-    -- NAME: [_A-Za-z][_0-9A-Za-z]*
+  -- ---- Main tokenizer ----
+
+  function lex:read_token()
+    self:skip_ignored()
+    local tline = self.line
+    local tcol = self.col
+    if self:at_end() then
+      return { kind = "EOF", value = "", line = tline, col = tcol }
+    end
+    local b = self:byte()
+    if punct_bytes[b] then
+      return self:read_punct(tline, tcol)
+    end
+    if b == 46 then
+      return self:read_spread(tline, tcol)
+    end
     if is_name_start(b) then
       return self:read_name(tline, tcol)
     end
-
-    -- INT_VALUE or FLOAT_VALUE
     if b == 45 or is_digit(b) then
       return self:read_number(tline, tcol)
     end
-
-    -- STRING_VALUE: single-line or block (triple-quoted).
     if b == 34 then
-      if src:sub(self.pos, self.pos + 2) == '"""' then
+      if self:match('"""') then
         return self:read_block_string(tline, tcol)
-      else
-        return self:read_string(tline, tcol)
       end
+      return self:read_string(tline, tcol)
     end
-
-    self:error("unexpected character '" .. src:sub(self.pos, self.pos) .. "'")
+    self:error("unexpected character '" .. self:char() .. "'")
   end
+
+  -- ---- Public interface ----
 
   function lex:next()
     if self._peeked then
