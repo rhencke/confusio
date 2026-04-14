@@ -210,12 +210,7 @@ end
 
 backend_impl = {
   get_root = function()
-    local ok, status = pcall(Fetch, base() .. "/server-version", auth())
-    if ok and status == 200 then
-      respond_json(200, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_health_check(pcall(Fetch, base() .. "/server-version", auth()))
   end,
 
   get_repo = function(owner, repo_name)
@@ -247,14 +242,7 @@ backend_impl = {
     end
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, base() .. "/projects/" .. id, dopts)
-    if ok and (status == 200 or status == 204) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, pcall(Fetch, base() .. "/projects/" .. id, dopts))
   end,
 
   get_user_repos = function()

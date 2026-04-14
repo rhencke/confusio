@@ -352,12 +352,7 @@ end
 
 backend_impl = {
   get_root = function()
-    local ok, status = pcall(Fetch, ado_url(config.base_url .. "/_apis/connectionData"), auth())
-    if ok and status == 200 then
-      respond_json(200, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_health_check(pcall(Fetch, ado_url(config.base_url .. "/_apis/connectionData"), auth()))
   end,
   get_repo = function(owner, repo_name)
     proxy_json(translate_ado_repo, fetch_json(ado_url(repos_base(owner) .. "/" .. repo_name)))
@@ -389,14 +384,7 @@ backend_impl = {
     local repo_id = repo.id or repo_name
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local dok, dstatus = pcall(Fetch, ado_url(repos_base(owner) .. "/" .. repo_id), dopts)
-    if dok and (dstatus == 204 or dstatus == 200) then
-      SetStatus(204, "No Content")
-    elseif dok then
-      respond_json(dstatus, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, pcall(Fetch, ado_url(repos_base(owner) .. "/" .. repo_id), dopts))
   end,
 
   get_user_repos = function()
@@ -764,18 +752,14 @@ backend_impl = {
     end
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(
-      Fetch,
-      ado_url(config.base_url .. "/_apis/projects/" .. org .. "/teams/" .. t.id),
-      dopts
+    proxy_204(
+      { 200 },
+      pcall(
+        Fetch,
+        ado_url(config.base_url .. "/_apis/projects/" .. org .. "/teams/" .. t.id),
+        dopts
+      )
     )
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
   end,
 
   get_org_team_members = function(org, slug)
@@ -946,20 +930,16 @@ backend_impl = {
     end
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(
-      Fetch,
-      ado_url(
-        config.base_url .. "/_apis/projects/" .. (t.projectName or "") .. "/teams/" .. team_id
-      ),
-      dopts
+    proxy_204(
+      { 200 },
+      pcall(
+        Fetch,
+        ado_url(
+          config.base_url .. "/_apis/projects/" .. (t.projectName or "") .. "/teams/" .. team_id
+        ),
+        dopts
+      )
     )
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
   end,
 
   get_team_members = function(team_id)
@@ -1232,15 +1212,10 @@ backend_impl = {
     opts.body = EncodeJson(patch)
     opts.headers = opts.headers or {}
     opts.headers["Content-Type"] = "application/json-patch+json"
-    local cok, cstatus, _, cbody =
+    proxy_json_created(
+      translate_ado_workitem,
       pcall(Fetch, ado_url(config.base_url .. "/" .. owner .. "/_apis/wit/workitems/$Issue"), opts)
-    if cok and (cstatus == 200 or cstatus == 201) then
-      respond_json(201, translate_ado_workitem(DecodeJson(cbody) or {}))
-    elseif cok then
-      respond_json(cstatus, {})
-    else
-      respond_json(503, {})
-    end
+    )
   end,
 
   patch_repo_issue = function(owner, _repo_name, issue_number)
@@ -1979,12 +1954,5 @@ _b.delete_git_ref = function(owner, repo_name, ref)
   local del_body = EncodeJson({
     { name = full_ref, newObjectId = ZERO_SHA, oldObjectId = old_sha },
   })
-  local ok2, status2 = fetch_json(url, "POST", del_body)
-  if ok2 and status2 == 200 then
-    SetStatus(204, "No Content")
-  elseif ok2 then
-    respond_json(status2, {})
-  else
-    respond_json(503, {})
-  end
+  proxy_204({ 200 }, fetch_json(url, "POST", del_body))
 end

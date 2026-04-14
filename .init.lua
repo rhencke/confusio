@@ -155,6 +155,66 @@ function proxy_json_created(translate, ok, status, _headers, body)
   end
 end
 
+-- proxy_health_check is global: backends use it to implement get_root.
+-- Probes an upstream endpoint; responds 200 {} on success, 503 {} otherwise.
+-- Accepts the first two return values of pcall(Fetch, url, opts):
+--   proxy_health_check(pcall(Fetch, url, opts))
+function proxy_health_check(ok, status)
+  if ok and status == 200 then
+    respond_json(200, {})
+  else
+    respond_json(503, {})
+  end
+end
+
+-- proxy_204 is global: standard mutation/DELETE response helper.
+-- Responds 204 No Content if the upstream status is 204 or any status in also_ok.
+-- Forwards any other upstream status as-is; responds 503 on connection failure.
+--
+-- also_ok: nil for 204-only, or a list of additional accepted success statuses.
+-- Designed to receive the return values of pcall(Fetch,...) or fetch_json(...):
+--   proxy_204(nil, pcall(Fetch, url, opts))          -- 204-only
+--   proxy_204({200}, fetch_json(url, "DELETE"))      -- also accept 200
+--   proxy_204({202}, pcall(Fetch, url, opts))        -- also accept 202
+--   proxy_204({200, 201}, pcall(Fetch, url, opts))   -- also accept 200 or 201
+function proxy_204(also_ok, ok, status)
+  local success = status == 204
+  if not success and also_ok then
+    for _, s in ipairs(also_ok) do
+      if s == status then
+        success = true
+        break
+      end
+    end
+  end
+  if ok and success then
+    SetStatus(204, "No Content")
+  elseif ok then
+    respond_json(status, {})
+  else
+    respond_json(503, {})
+  end
+end
+
+-- proxy_json_list is global: standard list-endpoint response helper.
+-- Translates a successful 200 upstream array response to a JSON array,
+-- writing "[]" rather than "{}" when the result is empty.
+-- translate receives the decoded array and returns the translated array.
+-- Designed to receive the return values of fetch_json(...):
+--   proxy_json_list(translate, fetch_json(url))
+function proxy_json_list(translate, ok, status, _headers, body)
+  if ok and status == 200 then
+    local data = DecodeJson(body) or {}
+    local result = translate(data)
+    set_preamble()
+    Write(#result > 0 and EncodeJson(result) or "[]")
+  elseif ok then
+    respond_json(status, {})
+  else
+    respond_json(503, {})
+  end
+end
+
 -- append_page_params appends translated pagination params to url.
 -- mapping: { per_page = "upstream_name", page = "upstream_name" }
 --   Omit the page key for providers that only support limit (e.g. Sourcehut).
@@ -256,12 +316,12 @@ function make_backend_transport(scheme, pages)
     end
     return pcall(Fetch, url, opts)
   end
-  local proxy_handler_paged = pages and make_proxy_handler(
-    fetch_json,
-    function(translate, ok, status, headers, body)
+  local proxy_handler_paged
+  if pages then
+    proxy_handler_paged = make_proxy_handler(fetch_json, function(translate, ok, status, headers, body)
       proxy_json_paged(translate, pages, ok, status, headers, body)
-    end
-  ) or nil
+    end)
+  end
   return {
     fetch_json = fetch_json,
     proxy_handler = make_proxy_handler(fetch_json),
@@ -396,10 +456,13 @@ end
 provider_families = {
   gitea = {
     aliases = {
-      forgejo  = { default_url = "https://codeberg.org" },
+      forgejo = { default_url = "https://codeberg.org" },
       codeberg = { default_url = "https://codeberg.org" },
-      gogs     = { default_url = "https://try.gogs.io", strip = { "_package", "_actions_" } },
-      notabug  = { default_url = "https://notabug.org", strip = { "gitignore", "_package", "_actions_" } },
+      gogs = { default_url = "https://try.gogs.io", strip = { "_package", "_actions_" } },
+      notabug = {
+        default_url = "https://notabug.org",
+        strip = { "gitignore", "_package", "_actions_" },
+      },
     },
   },
 }
@@ -805,7 +868,6 @@ local endpoint_sections = {
 
       -- Emojis
       { "GET /emojis", "get_emojis" },
-
     },
   },
   {
@@ -814,7 +876,6 @@ local endpoint_sections = {
       -- Gitignore templates (https://docs.github.com/en/rest/gitignore)
       { "GET /gitignore/templates", "get_gitignore_templates" },
       { "GET /gitignore/templates/{name}", "get_gitignore_template" },
-
     },
   },
   {
@@ -826,7 +887,6 @@ local endpoint_sections = {
 
       -- Repo license (https://docs.github.com/en/rest/licenses)
       { "GET /repos/{owner}/{repo}/license", "get_repo_license", licenses_not_implemented },
-
     },
   },
   {
@@ -834,7 +894,6 @@ local endpoint_sections = {
     {
       -- Rate Limits (https://docs.github.com/en/rest/rate-limit)
       { "GET /rate_limit", "get_rate_limit", rate_limit_response },
-
     },
   },
   {
@@ -851,8 +910,16 @@ local endpoint_sections = {
       { "GET /gists/{gist_id}/comments", "get_gist_comments", empty_list },
       { "POST /gists/{gist_id}/comments", "post_gist_comment", gists_not_implemented },
       { "GET /gists/{gist_id}/comments/{comment_id}", "get_gist_comment", gists_not_implemented },
-      { "PATCH /gists/{gist_id}/comments/{comment_id}", "patch_gist_comment", gists_not_implemented },
-      { "DELETE /gists/{gist_id}/comments/{comment_id}", "delete_gist_comment", gists_not_implemented },
+      {
+        "PATCH /gists/{gist_id}/comments/{comment_id}",
+        "patch_gist_comment",
+        gists_not_implemented,
+      },
+      {
+        "DELETE /gists/{gist_id}/comments/{comment_id}",
+        "delete_gist_comment",
+        gists_not_implemented,
+      },
       { "GET /gists/{gist_id}/commits", "get_gist_commits", empty_list },
       { "GET /gists/{gist_id}/forks", "get_gist_forks", empty_list },
       { "POST /gists/{gist_id}/forks", "post_gist_fork", gists_not_implemented },
@@ -861,7 +928,6 @@ local endpoint_sections = {
       { "DELETE /gists/{gist_id}/star", "delete_gist_star", gists_not_implemented },
       { "GET /gists/{gist_id}/{sha}", "get_gist_revision", gists_not_implemented },
       { "GET /users/{username}/gists", "get_user_gists", empty_list },
-
     },
   },
   {
@@ -873,7 +939,11 @@ local endpoint_sections = {
       { "GET /networks/{owner}/{repo}/events", "get_network_events", activity_list_empty },
       { "GET /notifications", "get_notifications", activity_list_empty },
       { "PUT /notifications", "put_notifications", activity_not_implemented },
-      { "GET /notifications/threads/{thread_id}", "get_notification_thread", activity_not_implemented },
+      {
+        "GET /notifications/threads/{thread_id}",
+        "get_notification_thread",
+        activity_not_implemented,
+      },
       {
         "PATCH /notifications/threads/{thread_id}",
         "patch_notification_thread",
@@ -902,11 +972,23 @@ local endpoint_sections = {
       { "GET /orgs/{org}/events", "get_org_events", activity_list_empty },
       { "GET /repos/{owner}/{repo}/events", "get_repo_events", activity_list_empty },
       { "GET /repos/{owner}/{repo}/notifications", "get_repo_notifications", activity_list_empty },
-      { "PUT /repos/{owner}/{repo}/notifications", "put_repo_notifications", activity_not_implemented },
+      {
+        "PUT /repos/{owner}/{repo}/notifications",
+        "put_repo_notifications",
+        activity_not_implemented,
+      },
       { "GET /repos/{owner}/{repo}/stargazers", "get_repo_stargazers", activity_list_empty },
       { "GET /repos/{owner}/{repo}/subscribers", "get_repo_subscribers", activity_list_empty },
-      { "GET /repos/{owner}/{repo}/subscription", "get_repo_subscription", activity_not_implemented },
-      { "PUT /repos/{owner}/{repo}/subscription", "put_repo_subscription", activity_not_implemented },
+      {
+        "GET /repos/{owner}/{repo}/subscription",
+        "get_repo_subscription",
+        activity_not_implemented,
+      },
+      {
+        "PUT /repos/{owner}/{repo}/subscription",
+        "put_repo_subscription",
+        activity_not_implemented,
+      },
       {
         "DELETE /repos/{owner}/{repo}/subscription",
         "delete_repo_subscription",
@@ -915,7 +997,11 @@ local endpoint_sections = {
       { "GET /user/starred", "get_user_starred", activity_list_empty },
       { "GET /user/starred/{owner}/{repo}", "get_user_starred_repo", activity_not_implemented },
       { "PUT /user/starred/{owner}/{repo}", "put_user_starred_repo", activity_not_implemented },
-      { "DELETE /user/starred/{owner}/{repo}", "delete_user_starred_repo", activity_not_implemented },
+      {
+        "DELETE /user/starred/{owner}/{repo}",
+        "delete_user_starred_repo",
+        activity_not_implemented,
+      },
       { "GET /user/subscriptions", "get_user_subscriptions", activity_list_empty },
       { "GET /users/{username}/events", "get_users_events", activity_list_empty },
       { "GET /users/{username}/events/orgs/{org}", "get_users_org_events", activity_list_empty },
@@ -928,7 +1014,6 @@ local endpoint_sections = {
       },
       { "GET /users/{username}/starred", "get_users_starred", activity_list_empty },
       { "GET /users/{username}/subscriptions", "get_users_subscriptions", activity_list_empty },
-
     },
   },
   {
@@ -952,7 +1037,6 @@ local endpoint_sections = {
       { "GET /repos/{owner}/{repo}/contributors", "get_repo_contributors" },
       { "GET /repos/{owner}/{repo}/tags", "get_repo_tags" },
       { "GET /repos/{owner}/{repo}/teams", "get_repo_teams" },
-
     },
   },
   {
@@ -1097,7 +1181,10 @@ local endpoint_sections = {
       { "GET /orgs/{org}/teams/{team_slug}/members", "get_org_team_members", empty_list },
       { "GET /orgs/{org}/teams/{team_slug}/memberships/{username}", "get_org_team_membership" },
       { "PUT /orgs/{org}/teams/{team_slug}/memberships/{username}", "put_org_team_membership" },
-      { "DELETE /orgs/{org}/teams/{team_slug}/memberships/{username}", "delete_org_team_membership" },
+      {
+        "DELETE /orgs/{org}/teams/{team_slug}/memberships/{username}",
+        "delete_org_team_membership",
+      },
       { "GET /orgs/{org}/teams/{team_slug}/repos", "get_org_team_repos", empty_list },
       { "GET /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", "get_org_team_repo" },
       { "PUT /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", "put_org_team_repo" },
@@ -1122,7 +1209,6 @@ local endpoint_sections = {
       { "PUT /teams/{team_id}/repos/{owner}/{repo}", "put_team_repo" },
       { "DELETE /teams/{team_id}/repos/{owner}/{repo}", "delete_team_repo" },
       { "GET /teams/{team_id}/teams", "get_team_children", empty_list },
-
     },
   },
   {
@@ -1132,14 +1218,21 @@ local endpoint_sections = {
       { "GET /advisories", "get_global_advisories", empty_list },
       { "GET /advisories/{ghsa_id}", "get_global_advisory" },
       { "GET /orgs/{org}/security-advisories", "get_org_security_advisories", empty_list },
-      { "GET /repos/{owner}/{repo}/security-advisories", "get_repo_security_advisories", empty_list },
+      {
+        "GET /repos/{owner}/{repo}/security-advisories",
+        "get_repo_security_advisories",
+        empty_list,
+      },
       { "POST /repos/{owner}/{repo}/security-advisories", "post_repo_security_advisory" },
       {
         "POST /repos/{owner}/{repo}/security-advisories/reports",
         "post_repo_security_advisory_report",
       },
       { "GET /repos/{owner}/{repo}/security-advisories/{ghsa_id}", "get_repo_security_advisory" },
-      { "PATCH /repos/{owner}/{repo}/security-advisories/{ghsa_id}", "patch_repo_security_advisory" },
+      {
+        "PATCH /repos/{owner}/{repo}/security-advisories/{ghsa_id}",
+        "patch_repo_security_advisory",
+      },
       {
         "POST /repos/{owner}/{repo}/security-advisories/{ghsa_id}/cve",
         "post_repo_security_advisory_cve",
@@ -1148,7 +1241,6 @@ local endpoint_sections = {
         "POST /repos/{owner}/{repo}/security-advisories/{ghsa_id}/forks",
         "post_repo_security_advisory_fork",
       },
-
     },
   },
   {
@@ -1164,7 +1256,10 @@ local endpoint_sections = {
       { "GET /repos/{owner}/{repo}/issues/comments/{comment_id}", "get_repo_issue_comment" },
       { "PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}", "patch_repo_issue_comment" },
       { "DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}", "delete_repo_issue_comment" },
-      { "PUT /repos/{owner}/{repo}/issues/comments/{comment_id}/pin", "put_repo_issue_comment_pin" },
+      {
+        "PUT /repos/{owner}/{repo}/issues/comments/{comment_id}/pin",
+        "put_repo_issue_comment_pin",
+      },
       {
         "DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}/pin",
         "delete_repo_issue_comment_pin",
@@ -1175,8 +1270,15 @@ local endpoint_sections = {
       { "PATCH /repos/{owner}/{repo}/issues/{issue_number}", "patch_repo_issue" },
       { "POST /repos/{owner}/{repo}/issues/{issue_number}/assignees", "post_issue_assignees" },
       { "DELETE /repos/{owner}/{repo}/issues/{issue_number}/assignees", "delete_issue_assignees" },
-      { "GET /repos/{owner}/{repo}/issues/{issue_number}/assignees/{assignee}", "get_issue_assignee" },
-      { "GET /repos/{owner}/{repo}/issues/{issue_number}/comments", "get_issue_comments", empty_list },
+      {
+        "GET /repos/{owner}/{repo}/issues/{issue_number}/assignees/{assignee}",
+        "get_issue_assignee",
+      },
+      {
+        "GET /repos/{owner}/{repo}/issues/{issue_number}/comments",
+        "get_issue_comments",
+        empty_list,
+      },
       { "POST /repos/{owner}/{repo}/issues/{issue_number}/comments", "post_issue_comment" },
       {
         "GET /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocked_by",
@@ -1221,7 +1323,11 @@ local endpoint_sections = {
         "PATCH /repos/{owner}/{repo}/issues/{issue_number}/sub_issues/priority",
         "patch_issue_sub_issues_priority",
       },
-      { "GET /repos/{owner}/{repo}/issues/{issue_number}/timeline", "get_issue_timeline", empty_list },
+      {
+        "GET /repos/{owner}/{repo}/issues/{issue_number}/timeline",
+        "get_issue_timeline",
+        empty_list,
+      },
 
       -- Assignees (https://docs.github.com/en/rest/issues/assignees)
       { "GET /repos/{owner}/{repo}/assignees", "get_repo_assignees", empty_list },
@@ -1259,7 +1365,6 @@ local endpoint_sections = {
         "DELETE /repositories/{repository_id}/issues/{issue_number}/issue-field-values/{issue_field_id}",
         "delete_repository_issue_field_value",
       },
-
     },
   },
   {
@@ -1274,7 +1379,11 @@ local endpoint_sections = {
       { "DELETE /repos/{owner}/{repo}/pulls/comments/{comment_id}", "delete_repo_pull_comment" },
       { "GET /repos/{owner}/{repo}/pulls/{pull_number}", "get_repo_pull" },
       { "PATCH /repos/{owner}/{repo}/pulls/{pull_number}", "patch_repo_pull" },
-      { "GET /repos/{owner}/{repo}/pulls/{pull_number}/codespaces", "get_pull_codespaces", empty_list },
+      {
+        "GET /repos/{owner}/{repo}/pulls/{pull_number}/codespaces",
+        "get_pull_codespaces",
+        empty_list,
+      },
       { "GET /repos/{owner}/{repo}/pulls/{pull_number}/comments", "get_pull_comments", empty_list },
       { "POST /repos/{owner}/{repo}/pulls/{pull_number}/comments", "post_pull_comment" },
       {
@@ -1302,7 +1411,10 @@ local endpoint_sections = {
       { "POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews", "post_pull_review" },
       { "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}", "get_pull_review" },
       { "PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}", "put_pull_review" },
-      { "DELETE /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}", "delete_pull_review" },
+      {
+        "DELETE /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}",
+        "delete_pull_review",
+      },
       {
         "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments",
         "get_pull_review_comments",
@@ -1461,7 +1573,6 @@ local endpoint_sections = {
       { "GET /user/ssh_signing_keys/{ssh_signing_key_id}", "get_user_ssh_signing_key" },
       { "DELETE /user/ssh_signing_keys/{ssh_signing_key_id}", "delete_user_ssh_signing_key" },
       { "GET /users/{username}/ssh_signing_keys", "get_users_ssh_signing_keys" },
-
     },
   },
   {
@@ -1475,7 +1586,6 @@ local endpoint_sections = {
       { "GET /search/repositories", "search_repositories", search_empty },
       { "GET /search/topics", "search_topics", search_empty },
       { "GET /search/users", "search_users", search_empty },
-
     },
   },
   {
@@ -1497,7 +1607,10 @@ local endpoint_sections = {
         "post_app_installation_access_tokens",
       },
       { "PUT /app/installations/{installation_id}/suspended", "put_app_installation_suspended" },
-      { "DELETE /app/installations/{installation_id}/suspended", "delete_app_installation_suspended" },
+      {
+        "DELETE /app/installations/{installation_id}/suspended",
+        "delete_app_installation_suspended",
+      },
       { "GET /apps/{app_slug}", "get_apps_app_slug" },
       { "POST /app-manifests/{code}/conversions", "post_app_manifest_conversions" },
       { "GET /installation/repositories", "get_installation_repositories" },
@@ -1524,7 +1637,6 @@ local endpoint_sections = {
         "delete_user_installation_repository",
       },
       { "GET /users/{username}/installation", "get_users_installation" },
-
     },
   },
   {
@@ -1694,7 +1806,6 @@ local endpoint_sections = {
           respond_json(200, { total_count = 0, check_suites = {} })
         end,
       },
-
     },
   },
   {
@@ -1806,7 +1917,6 @@ local endpoint_sections = {
         "get_code_scanning_sarif",
         code_scanning_not_implemented,
       },
-
     },
   },
   {
@@ -1858,7 +1968,6 @@ local endpoint_sections = {
         "get_secret_scanning_scan_history",
         secret_scanning_not_implemented,
       },
-
     },
   },
   {
@@ -1971,7 +2080,6 @@ local endpoint_sections = {
         "delete_repo_dependabot_secret",
         dependabot_not_implemented,
       },
-
     },
   },
   {
@@ -1993,7 +2101,6 @@ local endpoint_sections = {
         "post_repo_dependency_graph_snapshots",
         dependency_graph_not_implemented,
       },
-
     },
   },
   {
@@ -2122,7 +2229,6 @@ local endpoint_sections = {
         "projects_list_view_items_for_user",
         projects_list_empty,
       },
-
     },
   },
   {
@@ -2195,15 +2301,22 @@ local endpoint_sections = {
         "POST /users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}/restore",
         "restore_users_package_version",
       },
-
     },
   },
   {
     "interactions",
     {
       -- Interactions (https://docs.github.com/en/rest/interactions)
-      { "GET /orgs/{org}/interaction-limits", "get_org_interaction_limits", interaction_limits_empty },
-      { "PUT /orgs/{org}/interaction-limits", "put_org_interaction_limits", interaction_limits_put },
+      {
+        "GET /orgs/{org}/interaction-limits",
+        "get_org_interaction_limits",
+        interaction_limits_empty,
+      },
+      {
+        "PUT /orgs/{org}/interaction-limits",
+        "put_org_interaction_limits",
+        interaction_limits_put,
+      },
       {
         "DELETE /orgs/{org}/interaction-limits",
         "delete_org_interaction_limits",
@@ -2231,7 +2344,6 @@ local endpoint_sections = {
         "delete_user_interaction_limits",
         interaction_limits_delete,
       },
-
     },
   },
   {
@@ -2282,8 +2394,11 @@ local endpoint_sections = {
         "delete_user_migration_repo_lock",
         migration_not_found,
       },
-      { "GET /user/migrations/{migration_id}/repositories", "get_user_migration_repos", empty_list },
-
+      {
+        "GET /user/migrations/{migration_id}/repositories",
+        "get_user_migration_repos",
+        empty_list,
+      },
     },
   },
   {
@@ -2295,7 +2410,11 @@ local endpoint_sections = {
       { "PUT /repos/{owner}/{repo}/pages", "put_repo_pages", pages_not_implemented },
       { "DELETE /repos/{owner}/{repo}/pages", "delete_repo_pages", pages_not_implemented },
       { "GET /repos/{owner}/{repo}/pages/builds", "get_repo_pages_builds", empty_list },
-      { "POST /repos/{owner}/{repo}/pages/builds", "post_repo_pages_builds", pages_not_implemented },
+      {
+        "POST /repos/{owner}/{repo}/pages/builds",
+        "post_repo_pages_builds",
+        pages_not_implemented,
+      },
       {
         "GET /repos/{owner}/{repo}/pages/builds/latest",
         "get_repo_pages_build_latest",
@@ -2340,7 +2459,6 @@ local endpoint_sections = {
         source_import_gone,
       },
       { "PATCH /repos/{owner}/{repo}/import/lfs", "patch_repo_import_lfs", source_import_gone },
-
     },
   },
   {
@@ -2349,7 +2467,6 @@ local endpoint_sections = {
       -- Markdown (https://docs.github.com/en/rest/markdown)
       { "POST /markdown", "render_markdown", markdown_not_implemented },
       { "POST /markdown/raw", "render_markdown_raw", markdown_not_implemented },
-
     },
   },
   {
@@ -2418,7 +2535,11 @@ local endpoint_sections = {
       },
 
       -- Organization cache
-      { "GET /orgs/{org}/actions/cache/usage", "get_org_actions_cache_usage", actions_not_implemented },
+      {
+        "GET /orgs/{org}/actions/cache/usage",
+        "get_org_actions_cache_usage",
+        actions_not_implemented,
+      },
       {
         "GET /orgs/{org}/actions/cache/usage-by-repository",
         "get_org_actions_cache_usage_by_repo",
@@ -2535,8 +2656,16 @@ local endpoint_sections = {
       },
 
       -- Organization permissions
-      { "GET /orgs/{org}/actions/permissions", "get_org_actions_permissions", actions_not_implemented },
-      { "PUT /orgs/{org}/actions/permissions", "put_org_actions_permissions", actions_not_implemented },
+      {
+        "GET /orgs/{org}/actions/permissions",
+        "get_org_actions_permissions",
+        actions_not_implemented,
+      },
+      {
+        "PUT /orgs/{org}/actions/permissions",
+        "put_org_actions_permissions",
+        actions_not_implemented,
+      },
       {
         "GET /orgs/{org}/actions/permissions/artifact-and-log-retention",
         "get_org_actions_artifact_log_retention",
@@ -2567,7 +2696,11 @@ local endpoint_sections = {
         "put_org_actions_fork_pr_private_repos",
         actions_not_implemented,
       },
-      { "GET /orgs/{org}/actions/permissions/repositories", "get_org_actions_perm_repos", empty_list },
+      {
+        "GET /orgs/{org}/actions/permissions/repositories",
+        "get_org_actions_perm_repos",
+        empty_list,
+      },
       {
         "PUT /orgs/{org}/actions/permissions/repositories",
         "put_org_actions_perm_repos",
@@ -2712,7 +2845,11 @@ local endpoint_sections = {
         "get_org_actions_runners",
         make_empty_collection("runners"),
       },
-      { "GET /orgs/{org}/actions/runners/downloads", "get_org_actions_runner_downloads", empty_list },
+      {
+        "GET /orgs/{org}/actions/runners/downloads",
+        "get_org_actions_runner_downloads",
+        empty_list,
+      },
       {
         "POST /orgs/{org}/actions/runners/generate-jitconfig",
         "post_org_actions_runner_jitconfig",
@@ -2817,7 +2954,11 @@ local endpoint_sections = {
         "get_org_actions_variables",
         make_empty_collection("variables"),
       },
-      { "POST /orgs/{org}/actions/variables", "post_org_actions_variable", actions_not_implemented },
+      {
+        "POST /orgs/{org}/actions/variables",
+        "post_org_actions_variable",
+        actions_not_implemented,
+      },
       {
         "GET /orgs/{org}/actions/variables/{name}",
         "get_org_actions_variable",
@@ -3285,7 +3426,6 @@ local endpoint_sections = {
         "get_repo_actions_workflow_timing",
         actions_not_implemented,
       },
-
     },
   },
   {
@@ -3298,7 +3438,11 @@ local endpoint_sections = {
 
       -- Commits
       { "POST /repos/{owner}/{repo}/git/commits", "create_git_commit", git_not_implemented },
-      { "GET /repos/{owner}/{repo}/git/commits/{commit_sha}", "get_git_commit", git_not_implemented },
+      {
+        "GET /repos/{owner}/{repo}/git/commits/{commit_sha}",
+        "get_git_commit",
+        git_not_implemented,
+      },
 
       -- Refs
       {

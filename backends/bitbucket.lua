@@ -619,28 +619,9 @@ local function snippet_url(gist_id)
   return base() .. "/snippets/" .. ws .. "/" .. eid
 end
 
--- Like proxy_json but ensures empty results are written as "[]" not "{}".
-local function proxy_list(translate, ok, status, _headers, body)
-  if ok and status == 200 then
-    local data = DecodeJson(body) or {}
-    local result = translate(data)
-    set_preamble()
-    Write(#result > 0 and EncodeJson(result) or "[]")
-  elseif ok then
-    respond_json(status, {})
-  else
-    respond_json(503, {})
-  end
-end
-
 backend_impl = {
   get_root = function()
-    local ok, status = pcall(Fetch, base() .. "/user", auth())
-    if ok and status == 200 then
-      respond_json(200, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_health_check(pcall(Fetch, base() .. "/user", auth()))
   end,
 
   get_repo = proxy_handler(translate_bb_repo, function(o, r)
@@ -662,14 +643,7 @@ backend_impl = {
     local url = base() .. "/repositories/" .. owner .. "/" .. repo_name
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, url, dopts)
-    if ok and status == 204 then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204(nil, pcall(Fetch, url, dopts))
   end,
 
   get_user_repos = function()
@@ -1090,14 +1064,7 @@ backend_impl = {
     local url = base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/deploy-keys/" .. key_id
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, url, dopts)
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, pcall(Fetch, url, dopts))
   end,
 
   -- Webhooks ------------------------------------------------------------------
@@ -1162,14 +1129,7 @@ backend_impl = {
       .. "}"
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, url, dopts)
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, pcall(Fetch, url, dopts))
   end,
 
   -- Users ---------------------------------------------------------------------
@@ -1339,13 +1299,7 @@ backend_impl = {
       "POST",
       EncodeJson(bb)
     )
-    if ok and status == 200 then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, ok, status)
   end,
 
   -- GET /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
@@ -1751,14 +1705,7 @@ backend_impl = {
       .. name
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, url, dopts)
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, pcall(Fetch, url, dopts))
   end,
 
   -- Activity (Bitbucket Watchers) ---------------------------------------------
@@ -1810,14 +1757,17 @@ backend_impl = {
   -- e.g. gist_id = "octocat~pHANT4" → /2.0/snippets/octocat/pHANT4
 
   get_gists = function()
-    proxy_list(
+    proxy_json_list(
       translate_bb_snippets,
       fetch_json(append_page_params(base() .. "/snippets?role=owner", PAGES))
     )
   end,
 
   get_gists_public = function()
-    proxy_list(translate_bb_snippets, fetch_json(append_page_params(base() .. "/snippets", PAGES)))
+    proxy_json_list(
+      translate_bb_snippets,
+      fetch_json(append_page_params(base() .. "/snippets", PAGES))
+    )
   end,
 
   post_gists = function()
@@ -1870,20 +1820,13 @@ backend_impl = {
     end
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, url, dopts)
-    if ok and status == 204 then
-      set_preamble(204)
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204(nil, pcall(Fetch, url, dopts))
   end,
 
   get_gist_comments = function(gist_id)
     local url = snippet_url(gist_id)
     if url then
-      proxy_list(
+      proxy_json_list(
         translate_bb_snippet_comments,
         fetch_json(append_page_params(url .. "/comments", PAGES))
       )
@@ -1932,20 +1875,13 @@ backend_impl = {
     end
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, url .. "/comments/" .. comment_id, dopts)
-    if ok and status == 204 then
-      set_preamble(204)
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204(nil, pcall(Fetch, url .. "/comments/" .. comment_id, dopts))
   end,
 
   get_gist_commits = function(gist_id)
     local url = snippet_url(gist_id)
     if url then
-      proxy_list(
+      proxy_json_list(
         translate_bb_snippet_commits,
         fetch_json(append_page_params(url .. "/commits", PAGES))
       )
@@ -1955,7 +1891,7 @@ backend_impl = {
   get_gist_forks = function(gist_id)
     local url = snippet_url(gist_id)
     if url then
-      proxy_list(translate_bb_snippets, fetch_json(append_page_params(url .. "/forks", PAGES)))
+      proxy_json_list(translate_bb_snippets, fetch_json(append_page_params(url .. "/forks", PAGES)))
     end
   end,
 
@@ -1983,14 +1919,7 @@ backend_impl = {
     end
     local wopts = auth() or {}
     wopts.method = "PUT"
-    local ok, status = pcall(Fetch, url .. "/watch", wopts)
-    if ok and (status == 200 or status == 204) then
-      set_preamble(204)
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, pcall(Fetch, url .. "/watch", wopts))
   end,
 
   delete_gist_star = function(gist_id)
@@ -2000,14 +1929,7 @@ backend_impl = {
     end
     local wopts = auth() or {}
     wopts.method = "DELETE"
-    local ok, status = pcall(Fetch, url .. "/watch", wopts)
-    if ok and status == 204 then
-      set_preamble(204)
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204(nil, pcall(Fetch, url .. "/watch", wopts))
   end,
 
   get_gist_revision = function(gist_id, sha)
@@ -2018,7 +1940,7 @@ backend_impl = {
   end,
 
   get_user_gists = function(username)
-    proxy_list(
+    proxy_json_list(
       translate_bb_snippets,
       fetch_json(append_page_params(base() .. "/snippets/" .. username, PAGES))
     )

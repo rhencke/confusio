@@ -560,12 +560,7 @@ end
 
 backend_impl = {
   get_root = function()
-    local ok, status = pcall(Fetch, base() .. "/version", auth())
-    if ok and status == 200 then
-      respond_json(200, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_health_check(pcall(Fetch, base() .. "/version", auth()))
   end,
 
   get_repo = proxy_handler(translate_gl_repo, function(owner, repo_name)
@@ -587,15 +582,8 @@ backend_impl = {
     local url = base() .. "/projects/" .. project_id(owner, repo_name)
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, url, dopts)
     -- GitLab returns 202 Accepted for async deletion
-    if ok and (status == 202 or status == 204) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 202 }, pcall(Fetch, url, dopts))
   end,
 
   get_user_repos = proxy_handler_paged(translate_gl_projects, function()
@@ -1151,11 +1139,7 @@ backend_impl = {
       base() .. "/projects/" .. project_id(owner, repo_name) .. "/members/" .. uid,
       "DELETE"
     )
-    if ok2 and (status2 == 200 or status2 == 204) then
-      SetStatus(204, "No Content")
-    else
-      respond_json(status2 or 503, {})
-    end
+    proxy_204({ 200 }, ok2, status2)
   end,
 
   get_repo_collaborator_permission = function(owner, repo_name, username)
@@ -1327,13 +1311,7 @@ backend_impl = {
       base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases/" .. tag,
       "DELETE"
     )
-    if ok and (status == 200 or status == 204) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, ok, status)
   end,
 
   get_repo_release_assets = function(owner, repo_name, release_id)
@@ -1448,13 +1426,7 @@ backend_impl = {
         .. asset_id,
       "DELETE"
     )
-    if ok and (status == 200 or status == 204) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, ok, status)
   end,
 
   -- Deploy keys ---------------------------------------------------------------
@@ -1492,13 +1464,7 @@ backend_impl = {
       base() .. "/projects/" .. project_id(owner, repo_name) .. "/deploy_keys/" .. key_id,
       "DELETE"
     )
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, ok, status)
   end,
 
   -- Webhooks ------------------------------------------------------------------
@@ -1542,13 +1508,7 @@ backend_impl = {
       base() .. "/projects/" .. project_id(owner, repo_name) .. "/hooks/" .. hook_id,
       "DELETE"
     )
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, ok, status)
   end,
 
   get_repo_hook_config = proxy_handler(function(h)
@@ -1676,14 +1636,7 @@ backend_impl = {
   delete_user_key = function(key_id)
     local opts = auth() or {}
     opts.method = "DELETE"
-    local ok, status = pcall(Fetch, base() .. "/user/keys/" .. key_id, opts)
-    if ok and status == 204 then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204(nil, pcall(Fetch, base() .. "/user/keys/" .. key_id, opts))
   end,
 
   -- GET /users/{username}/keys
@@ -1717,14 +1670,7 @@ backend_impl = {
   delete_user_gpg_key = function(gpg_key_id)
     local opts = auth() or {}
     opts.method = "DELETE"
-    local ok, status = pcall(Fetch, base() .. "/user/gpg_keys/" .. gpg_key_id, opts)
-    if ok and status == 204 then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204(nil, pcall(Fetch, base() .. "/user/gpg_keys/" .. gpg_key_id, opts))
   end,
 
   -- GET /users/{username}/gpg_keys
@@ -1806,14 +1752,7 @@ backend_impl = {
     local gid = (DecodeJson(body) or {}).id
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local dok, dstatus = pcall(Fetch, base() .. "/groups/" .. gid, dopts)
-    if dok and (dstatus == 202 or dstatus == 204) then
-      SetStatus(204, "No Content")
-    elseif dok then
-      respond_json(dstatus, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 202 }, pcall(Fetch, base() .. "/groups/" .. gid, dopts))
   end,
 
   -- GET /orgs/{org}/teams/{team_slug}/members
@@ -1902,14 +1841,7 @@ backend_impl = {
     end
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local dok, dstatus = pcall(Fetch, base() .. "/groups/" .. gid .. "/members/" .. uid, dopts)
-    if dok and (dstatus == 204 or dstatus == 200) then
-      SetStatus(204, "No Content")
-    elseif dok then
-      respond_json(dstatus, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, pcall(Fetch, base() .. "/groups/" .. gid .. "/members/" .. uid, dopts))
   end,
 
   -- GET /orgs/{org}/teams/{team_slug}/repos
@@ -1967,13 +1899,7 @@ backend_impl = {
       "POST",
       EncodeJson({ group_id = gid, group_access = access })
     )
-    if pok and (pstatus == 200 or pstatus == 201) then
-      SetStatus(204, "No Content")
-    elseif pok then
-      respond_json(pstatus, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200, 201 }, pok, pstatus)
   end,
 
   -- DELETE /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
@@ -1987,14 +1913,7 @@ backend_impl = {
     local pid = project_id(owner, repo_name)
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local dok, dstatus = pcall(Fetch, base() .. "/projects/" .. pid .. "/share/" .. gid, dopts)
-    if dok and (dstatus == 204 or dstatus == 200) then
-      SetStatus(204, "No Content")
-    elseif dok then
-      respond_json(dstatus, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, pcall(Fetch, base() .. "/projects/" .. pid .. "/share/" .. gid, dopts))
   end,
 
   -- GET /orgs/{org}/teams/{team_slug}/teams — list sub-subgroups
@@ -2053,14 +1972,7 @@ backend_impl = {
   delete_team = function(team_id)
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, base() .. "/groups/" .. team_id, dopts)
-    if ok and (status == 202 or status == 204) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 202 }, pcall(Fetch, base() .. "/groups/" .. team_id, dopts))
   end,
 
   -- GET /teams/{team_id}/members
@@ -2107,13 +2019,7 @@ backend_impl = {
       "POST",
       EncodeJson({ user_id = uid, access_level = 30 })
     )
-    if ok and (status == 200 or status == 201) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200, 201 }, ok, status)
   end,
 
   -- DELETE /teams/{team_id}/members/{username} — deprecated legacy
@@ -2125,14 +2031,7 @@ backend_impl = {
     end
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, base() .. "/groups/" .. team_id .. "/members/" .. uid, dopts)
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, pcall(Fetch, base() .. "/groups/" .. team_id .. "/members/" .. uid, dopts))
   end,
 
   -- GET /teams/{team_id}/memberships/{username}
@@ -2186,14 +2085,7 @@ backend_impl = {
     end
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, base() .. "/groups/" .. team_id .. "/members/" .. uid, dopts)
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, pcall(Fetch, base() .. "/groups/" .. team_id .. "/members/" .. uid, dopts))
   end,
 
   -- GET /teams/{team_id}/repos
@@ -2232,13 +2124,7 @@ backend_impl = {
       "POST",
       EncodeJson({ group_id = team_id, group_access = access })
     )
-    if ok and (status == 200 or status == 201) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200, 201 }, ok, status)
   end,
 
   -- DELETE /teams/{team_id}/repos/{owner}/{repo}
@@ -2246,14 +2132,7 @@ backend_impl = {
     local pid = project_id(owner, repo_name)
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, base() .. "/projects/" .. pid .. "/share/" .. team_id, dopts)
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, pcall(Fetch, base() .. "/projects/" .. pid .. "/share/" .. team_id, dopts))
   end,
 
   -- GET /teams/{team_id}/teams — sub-subgroups
@@ -2443,18 +2322,14 @@ backend_impl = {
 
   -- DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels  (remove all)
   delete_issue_labels = function(owner, repo_name, issue_number)
-    local ok, status = fetch_json(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number,
-      "PUT",
-      EncodeJson({ labels = {} })
+    proxy_204(
+      { 200 },
+      fetch_json(
+        base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number,
+        "PUT",
+        EncodeJson({ labels = {} })
+      )
     )
-    if ok and (status == 200 or status == 204) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
   end,
 
   -- DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}
@@ -2479,13 +2354,7 @@ backend_impl = {
       "PUT",
       EncodeJson({ labels = labels })
     )
-    if upok and (upstatus == 200 or upstatus == 204) then
-      SetStatus(204, "No Content")
-    elseif upok then
-      respond_json(upstatus, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, upok, upstatus)
   end,
 
   -- GET /repos/{owner}/{repo}/labels
@@ -2542,13 +2411,7 @@ backend_impl = {
       base() .. "/projects/" .. project_id(owner, repo_name) .. "/labels/" .. id,
       dopts
     )
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, ok, status)
   end,
 
   -- Milestones ----------------------------------------------------------------
@@ -2607,13 +2470,7 @@ backend_impl = {
       base() .. "/projects/" .. project_id(owner, repo_name) .. "/milestones/" .. milestone_number,
       dopts
     )
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, ok, status)
   end,
 
   -- Assignees -----------------------------------------------------------------
@@ -2786,13 +2643,7 @@ backend_impl = {
       "PUT",
       EncodeJson(gl)
     )
-    if ok and status == 200 then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, ok, status)
   end,
 
   -- GET /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
@@ -3790,38 +3641,18 @@ local function gl_snippet_req(req)
   return EncodeJson(gl)
 end
 
-local function proxy_list_gl(translate, ok, status, _headers, body)
-  if ok and status == 200 then
-    local data = DecodeJson(body) or {}
-    local result = translate(data)
-    set_preamble()
-    Write(#result > 0 and EncodeJson(result) or "[]")
-  elseif ok then
-    respond_json(status, {})
-  else
-    respond_json(503, {})
-  end
-end
-
 local function delete_snippet(url)
   local opts = auth() or {}
   opts.method = "DELETE"
-  local ok, status = pcall(Fetch, url, opts)
-  if ok and (status == 204 or status == 200) then
-    set_preamble(204)
-  elseif ok then
-    respond_json(status, {})
-  else
-    respond_json(503, {})
-  end
+  proxy_204({ 200 }, pcall(Fetch, url, opts))
 end
 
 _b.get_gists = function()
-  proxy_list_gl(translate_gl_snippets, fetch_json(base() .. "/snippets"))
+  proxy_json_list(translate_gl_snippets, fetch_json(base() .. "/snippets"))
 end
 
 _b.get_gists_public = function()
-  proxy_list_gl(translate_gl_snippets, fetch_json(base() .. "/snippets/public"))
+  proxy_json_list(translate_gl_snippets, fetch_json(base() .. "/snippets/public"))
 end
 
 _b.post_gists = function()
@@ -3849,7 +3680,7 @@ _b.delete_gist = function(id)
 end
 
 _b.get_gist_comments = function(id)
-  proxy_list_gl(translate_gl_snippet_notes, fetch_json(base() .. "/snippets/" .. id .. "/notes"))
+  proxy_json_list(translate_gl_snippet_notes, fetch_json(base() .. "/snippets/" .. id .. "/notes"))
 end
 
 _b.post_gist_comment = function(id)
@@ -3889,7 +3720,7 @@ end
 
 _b.get_user_gists = function(_username)
   -- GitLab doesn't expose per-user public snippet lists; approximate with own snippets.
-  proxy_list_gl(translate_gl_snippets, fetch_json(base() .. "/snippets"))
+  proxy_json_list(translate_gl_snippets, fetch_json(base() .. "/snippets"))
 end
 
 -- ── Reactions (GitLab award emoji) ────────────────────────────────────────────

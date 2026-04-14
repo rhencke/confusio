@@ -113,12 +113,7 @@ end
 
 backend_impl = {
   get_root = function()
-    local ok, status = pcall(Fetch, config.base_url .. "/config/server/version", auth())
-    if ok and status == 200 then
-      respond_json(200, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_health_check(pcall(Fetch, config.base_url .. "/config/server/version", auth()))
   end,
   get_repo = proxy_handler(translate_gerrit_repo, function(owner, repo_name)
     return base() .. "/projects/" .. project_id(owner, repo_name)
@@ -252,6 +247,9 @@ backend_impl = {
   end),
 
   -- Users ---------------------------------------------------------------------
+  -- These handlers cannot use proxy_json: Gerrit prefixes every JSON response
+  -- with ")]}'\n" to prevent XSS cross-domain reads.  gerrit_decode strips that
+  -- prefix before passing the body to DecodeJson.
 
   -- GET /user — authenticated user
   get_user = function()
@@ -307,7 +305,8 @@ backend_impl = {
   -- default empty-list / 404 handlers defined in .init.lua.
 
   -- Contents ------------------------------------------------------------------
-  -- Gerrit returns raw base64-encoded content at /branches/{branch}/files/{path}/content
+  -- Cannot use proxy_json: Gerrit returns the raw base64-encoded file bytes
+  -- directly (no JSON envelope), so DecodeJson is not applicable.
 
   get_repo_content = function(owner, repo_name, path)
     local ref = GetParam("ref") or "HEAD"

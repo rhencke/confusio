@@ -388,12 +388,7 @@ end
 
 backend_impl = {
   get_root = function()
-    local ok, status = pcall(Fetch, base() .. "/repos", auth())
-    if ok and status == 200 then
-      respond_json(200, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_health_check(pcall(Fetch, base() .. "/repos", auth()))
   end,
 
   get_repo = proxy_handler(translate_bbs_repo, function(owner, repo_name)
@@ -409,14 +404,7 @@ backend_impl = {
   delete_repo = function(owner, repo_name)
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, repo_path(owner, repo_name), dopts)
-    if ok and (status == 202 or status == 204) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 202 }, pcall(Fetch, repo_path(owner, repo_name), dopts))
   end,
 
   -- GET /user/repos — DC: GET /repos (all repos visible to the auth'd user)
@@ -644,14 +632,7 @@ backend_impl = {
   delete_repo_key = function(owner, repo_name, key_id)
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, repo_path(owner, repo_name) .. "/ssh/" .. key_id, dopts)
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, pcall(Fetch, repo_path(owner, repo_name) .. "/ssh/" .. key_id, dopts))
   end,
 
   -- Webhooks -------------------------------------------------------------------
@@ -695,14 +676,7 @@ backend_impl = {
   delete_repo_hook = function(owner, repo_name, hook_id)
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, repo_path(owner, repo_name) .. "/webhooks/" .. hook_id, dopts)
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, pcall(Fetch, repo_path(owner, repo_name) .. "/webhooks/" .. hook_id, dopts))
   end,
 
   get_repo_hook_config = proxy_handler(function(h)
@@ -819,7 +793,8 @@ backend_impl = {
   end),
 
   -- GET /repos/{owner}/{repo}/pulls/{pull_number}/merge
-  -- Returns 204 if PR is merged, 404 otherwise.
+  -- Cannot use proxy_json: DC always returns 200 with a PR object; the response
+  -- status (204 merged / 404 not merged) is synthesised from the body's state field.
   get_pull_merge = function(owner, repo_name, pull_number)
     local ok, status, _, body =
       fetch_json(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number)
@@ -858,14 +833,7 @@ backend_impl = {
     if req.commit_message then
       dc.message = req.commit_message
     end
-    local mok, mstatus = fetch_json(pr_url .. "/merge", "POST", EncodeJson(dc))
-    if mok and (mstatus == 200 or mstatus == 204) then
-      SetStatus(204, "No Content")
-    elseif mok then
-      respond_json(mstatus, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, fetch_json(pr_url .. "/merge", "POST", EncodeJson(dc)))
   end,
 
   -- GET /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
@@ -1415,12 +1383,5 @@ _b.delete_git_ref = function(owner, repo_name, ref)
     dopts.headers = dopts.headers or {}
     dopts.headers["Content-Type"] = "application/json"
   end
-  local ok, status = pcall(Fetch, url, dopts)
-  if ok and (status == 204 or status == 200 or status == 202) then
-    SetStatus(204, "No Content")
-  elseif ok then
-    respond_json(status, {})
-  else
-    respond_json(503, {})
-  end
+  proxy_204({ 200, 202 }, pcall(Fetch, url, dopts))
 end

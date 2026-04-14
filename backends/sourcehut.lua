@@ -238,12 +238,7 @@ end
 
 backend_impl = {
   get_root = function()
-    local ok, status = pcall(Fetch, config.base_url .. "/api/version", auth())
-    if ok and status == 200 then
-      respond_json(200, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_health_check(pcall(Fetch, config.base_url .. "/api/version", auth()))
   end,
 
   get_repo = proxy_handler(translate_srht_repo, function(owner, repo_name)
@@ -266,14 +261,7 @@ backend_impl = {
     local url = base() .. "/~" .. owner .. "/repos/" .. repo_name
     local dopts = auth() or {}
     dopts.method = "DELETE"
-    local ok, status = pcall(Fetch, url, dopts)
-    if ok and (status == 204 or status == 200) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, pcall(Fetch, url, dopts))
   end,
 
   get_user_repos = function()
@@ -494,6 +482,8 @@ backend_impl = {
   end,
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}
+  -- Cannot use proxy_json: todo.sr.ht returns a 404 body with tracker-specific
+  -- error text; we emit a clean GitHub-shaped { message = "Not Found" } instead.
   get_repo_issue = function(owner, repo_name, issue_number)
     local url = todo_base()
       .. "/~"
@@ -523,21 +513,14 @@ backend_impl = {
   post_repo_issues = function(owner, repo_name)
     local req = DecodeJson(GetBody() or "{}")
     local payload = EncodeJson({ title = req.title or "", description = req.body or "" })
-    local ok, status, _, body = fetch_json(
-      todo_base() .. "/~" .. owner .. "/trackers/" .. repo_name .. "/tickets",
-      "POST",
-      payload
+    proxy_json_created(
+      translate_srht_ticket,
+      fetch_json(
+        todo_base() .. "/~" .. owner .. "/trackers/" .. repo_name .. "/tickets",
+        "POST",
+        payload
+      )
     )
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 and status ~= 201 then
-      respond_json(status, {})
-      return
-    end
-    local ticket = DecodeJson(body)
-    respond_json(201, translate_srht_ticket(ticket))
   end,
 
   -- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
@@ -578,18 +561,9 @@ backend_impl = {
       .. "/tickets/"
       .. issue_number
       .. "/events"
-    local ok, status, _, body = fetch_json(url, "POST", payload)
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 and status ~= 201 then
-      respond_json(status, {})
-      return
-    end
-    local event = DecodeJson(body)
-    local comment = translate_srht_event_comment(event)
-    respond_json(201, comment or {})
+    proxy_json_created(function(e)
+      return translate_srht_event_comment(e) or {}
+    end, fetch_json(url, "POST", payload))
   end,
 
   -- Checks (via builds.sr.ht jobs) --------------------------------------------

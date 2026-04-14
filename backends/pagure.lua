@@ -189,12 +189,7 @@ end
 
 backend_impl = {
   get_root = function()
-    local ok, status = pcall(Fetch, base() .. "/version", auth())
-    if ok and status == 200 then
-      respond_json(200, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_health_check(pcall(Fetch, base() .. "/version", auth()))
   end,
 
   get_repo = proxy_handler(translate_pagure_repo, function(owner, repo_name)
@@ -221,14 +216,7 @@ backend_impl = {
   delete_repo = function(owner, repo_name)
     -- Pagure: delete project via POST /api/0/{owner}/{repo}/delete
     local url = base() .. "/" .. owner .. "/" .. repo_name .. "/delete"
-    local ok, status = fetch_json(url, "POST", "{}")
-    if ok and (status == 200 or status == 204) then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
+    proxy_204({ 200 }, fetch_json(url, "POST", "{}"))
   end,
 
   get_user_repos = function()

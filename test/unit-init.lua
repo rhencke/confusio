@@ -564,6 +564,116 @@ eq(_last_status, 201, "proxy_json_created: translate fn applied")
 ok(_last_body:find("created") ~= nil, "proxy_json_created: translated body emitted")
 
 -- ============================================================
+-- proxy_health_check
+-- ============================================================
+
+reset_response()
+proxy_health_check(true, 200)
+eq(_last_status, 200, "proxy_health_check: upstream 200 → 200")
+eq(_last_body, "{}", "proxy_health_check: upstream 200 → empty object body")
+
+reset_response()
+proxy_health_check(true, 404)
+eq(_last_status, 503, "proxy_health_check: upstream non-200 → 503")
+
+reset_response()
+proxy_health_check(true, 503)
+eq(_last_status, 503, "proxy_health_check: upstream 503 → 503")
+
+reset_response()
+proxy_health_check(false, nil)
+eq(_last_status, 503, "proxy_health_check: pcall failure → 503")
+
+-- ============================================================
+-- proxy_204
+-- ============================================================
+
+-- 204-only (also_ok = nil)
+reset_response()
+proxy_204(nil, true, 204)
+eq(_last_status, 204, "proxy_204: upstream 204 → 204")
+eq(_last_body, "", "proxy_204: upstream 204 → no body")
+
+reset_response()
+proxy_204(nil, true, 404)
+eq(_last_status, 404, "proxy_204: upstream 404 forwarded")
+
+reset_response()
+proxy_204(nil, false, nil)
+eq(_last_status, 503, "proxy_204: pcall failure → 503")
+
+-- also_ok = {200}
+reset_response()
+proxy_204({ 200 }, true, 200)
+eq(_last_status, 204, "proxy_204({200}): upstream 200 → 204")
+
+reset_response()
+proxy_204({ 200 }, true, 204)
+eq(_last_status, 204, "proxy_204({200}): upstream 204 → 204")
+
+reset_response()
+proxy_204({ 200 }, true, 422)
+eq(_last_status, 422, "proxy_204({200}): upstream 422 forwarded")
+
+-- also_ok = {202}
+reset_response()
+proxy_204({ 202 }, true, 202)
+eq(_last_status, 204, "proxy_204({202}): upstream 202 → 204")
+
+-- also_ok = {200, 201}
+reset_response()
+proxy_204({ 200, 201 }, true, 201)
+eq(_last_status, 204, "proxy_204({200,201}): upstream 201 → 204")
+
+reset_response()
+proxy_204({ 200, 201 }, true, 204)
+eq(_last_status, 204, "proxy_204({200,201}): upstream 204 → 204")
+
+reset_response()
+proxy_204({ 200, 201 }, false, nil)
+eq(_last_status, 503, "proxy_204({200,201}): pcall failure → 503")
+
+-- ============================================================
+-- proxy_json_list
+-- ============================================================
+
+local function identity_list(x)
+  return x
+end
+
+reset_response()
+proxy_json_list(identity_list, true, 200, {}, '[{"a":1},{"b":2}]')
+eq(_last_status, 200, "proxy_json_list: upstream 200 → 200")
+ok(
+  _last_body == '[{"a":1},{"b":2}]' or _last_body == '[{"b":2},{"a":1}]',
+  "proxy_json_list: non-empty array body"
+)
+
+reset_response()
+proxy_json_list(identity_list, true, 200, {}, "[]")
+eq(_last_status, 200, "proxy_json_list: upstream empty array → 200")
+eq(_last_body, "[]", "proxy_json_list: upstream empty array → [] body")
+
+reset_response()
+proxy_json_list(identity_list, true, 404, {}, "{}")
+eq(_last_status, 404, "proxy_json_list: upstream non-200 forwarded")
+
+reset_response()
+proxy_json_list(identity_list, false, nil, nil, nil)
+eq(_last_status, 503, "proxy_json_list: pcall failure → 503")
+
+reset_response()
+proxy_json_list(function(data)
+  local out = {}
+  for i, x in ipairs(data) do
+    out[i] = { v = (x.v or 0) * 2 }
+  end
+  return out
+end, true, 200, {}, '[{"v":3}]')
+eq(_last_status, 200, "proxy_json_list: translate applied")
+ok(_last_body:find('"v":6') ~= nil, "proxy_json_list: translate doubles value")
+
+-- ============================================================
 -- make_proxy_handler
 -- ============================================================
 
