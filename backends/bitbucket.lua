@@ -11,20 +11,9 @@ local auth = function()
   return make_fetch_opts("basic")
 end
 local PAGES = { per_page = "pagelen", page = "page" }
-
-local function fetch_json(url, method, body)
-  local opts = auth()
-  if method ~= nil and method ~= "GET" then
-    opts = opts or {}
-    opts.method = method
-    if body then
-      opts.body = body
-      opts.headers = opts.headers or {}
-      opts.headers["Content-Type"] = "application/json"
-    end
-  end
-  return pcall(Fetch, url, opts)
-end
+local _t = make_backend_transport("basic", PAGES)
+local fetch_json = _t.fetch_json
+local proxy_handler = _t.proxy_handler
 
 -- Map a Bitbucket repository object to GitHub format.
 local function translate_bb_repo(r)
@@ -239,8 +228,6 @@ local function translate_bb_hook(h)
     active = h.active ~= false,
   }
 end
-
-local proxy_handler = make_proxy_handler(fetch_json)
 
 -- Map a Bitbucket pull request branch ref to GitHub format.
 local function translate_bb_pr_branch(ref)
