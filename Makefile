@@ -96,7 +96,7 @@ endef
 -include .make-families.mk
 
 .make-families.mk: redbean.com scripts/dump-families.lua .init.lua
-	sh redbean.com -i scripts/dump-families.lua 2>/dev/null | python3 scripts/gen-family-mk.py > $@
+	./redbean.com -i scripts/dump-families.lua 2>/dev/null | python3 scripts/gen-family-mk.py > $@
 
 # Backend test configuration.
 # To add a standalone backend: append to BACKENDS (ports auto-assigned from 18080).
