@@ -180,12 +180,15 @@ local function translate_pagure_commit(c)
 end
 
 local function translate_pagure_issues(data)
-  local issues = data.issues or {}
-  for i, iss in ipairs(issues) do
-    issues[i] = translate_pagure_issue(iss)
-  end
-  return issues
+  return translate_list(translate_pagure_issue, data.issues)
 end
+
+-- Map Pagure flag statuses to GitHub check-run status/conclusion.
+local pagure_to_gh = {
+  pending = { status = "in_progress", conclusion = nil },
+  success = { status = "completed", conclusion = "success" },
+  canceled = { status = "completed", conclusion = "cancelled" },
+}
 
 backend_impl = {
   get_root = function()
@@ -229,11 +232,7 @@ backend_impl = {
     local me = DecodeJson(ubody)
     local username = me.username or me.name or ""
     proxy_json(function(data)
-      local projects = data.projects or {}
-      for i, p in ipairs(projects) do
-        projects[i] = translate_pagure_repo(p)
-      end
-      return projects
+      return translate_list(translate_pagure_repo, data.projects)
     end, fetch_json(append_page_params(base() .. "/user/" .. username .. "/projects", PAGES)))
   end,
 
@@ -251,11 +250,7 @@ backend_impl = {
   end,
 
   get_org_repos = proxy_handler(function(data)
-    local projects = data.projects or {}
-    for i, p in ipairs(projects) do
-      projects[i] = translate_pagure_repo(p)
-    end
-    return projects
+    return translate_list(translate_pagure_repo, data.projects)
   end, function(namespace)
     return append_page_params(base() .. "/projects?namespace=" .. namespace, PAGES)
   end),
@@ -295,11 +290,7 @@ backend_impl = {
   -- No commit SHAs in branch list response.
 
   get_repo_branches = proxy_handler(function(data)
-    local branches = {}
-    for _, name in ipairs(data.branches or {}) do
-      branches[#branches + 1] = translate_pagure_branch(name)
-    end
-    return branches
+    return translate_list(translate_pagure_branch, data.branches)
   end, function(owner, repo_name)
     return base() .. "/" .. owner .. "/" .. repo_name .. "/git/branches"
   end),
@@ -326,11 +317,7 @@ backend_impl = {
       url = url .. "&branch=" .. branch
     end
     proxy_json(function(data)
-      local commits = data.commits or {}
-      for i, c in ipairs(commits) do
-        commits[i] = translate_pagure_commit(c)
-      end
-      return commits
+      return translate_list(translate_pagure_commit, data.commits)
     end, fetch_json(url))
   end,
 
@@ -405,11 +392,7 @@ backend_impl = {
   -- Pagure: POST /api/0/fork with form body
 
   get_repo_forks = proxy_handler(function(data)
-    local forks = {}
-    for _, f in ipairs(data.forks or {}) do
-      forks[#forks + 1] = translate_pagure_repo(f)
-    end
-    return forks
+    return translate_list(translate_pagure_repo, data.forks)
   end, function(owner, repo_name)
     return base() .. "/" .. owner .. "/" .. repo_name
   end),
@@ -500,11 +483,7 @@ backend_impl = {
   -- Users' repos --------------------------------------------------------------
 
   get_users_repos = proxy_handler(function(data)
-    local projects = data.repos or data.projects or {}
-    for i, p in ipairs(projects) do
-      projects[i] = translate_pagure_repo(p)
-    end
-    return projects
+    return translate_list(translate_pagure_repo, data.repos or data.projects)
   end, function(username)
     return append_page_params(base() .. "/user/" .. username .. "/projects", PAGES)
   end),
@@ -513,11 +492,7 @@ backend_impl = {
 
   get_repositories = function()
     proxy_json(function(data)
-      local projects = data.projects or {}
-      for i, p in ipairs(projects) do
-        projects[i] = translate_pagure_repo(p)
-      end
-      return projects
+      return translate_list(translate_pagure_repo, data.projects)
     end, fetch_json(append_page_params(base() .. "/repos", PAGES)))
   end,
 
@@ -545,11 +520,7 @@ backend_impl = {
       return
     end
     local issue = DecodeJson(body or "{}") or {}
-    local comments = {}
-    for _, c in ipairs(issue.comments or {}) do
-      comments[#comments + 1] = translate_pagure_comment(c)
-    end
-    respond_json(200, comments)
+    respond_json(200, translate_list(translate_pagure_comment, issue.comments))
   end,
 
   get_repo_labels = function(_owner, _repo_name)
@@ -608,11 +579,6 @@ backend_impl = {
         return {}
       end
       local s = f.status or "pending"
-      local pagure_to_gh = {
-        pending = { status = "in_progress", conclusion = nil },
-        success = { status = "completed", conclusion = "success" },
-        canceled = { status = "completed", conclusion = "cancelled" },
-      }
       local mapped = pagure_to_gh[s] or { status = "completed", conclusion = "failure" }
       local gh_status, gh_conclusion = mapped.status, mapped.conclusion
       return {
@@ -667,11 +633,6 @@ backend_impl = {
     local runs = {}
     for i, f in ipairs(flags) do
       local s = f.status or "pending"
-      local pagure_to_gh = {
-        pending = { status = "in_progress", conclusion = nil },
-        success = { status = "completed", conclusion = "success" },
-        canceled = { status = "completed", conclusion = "cancelled" },
-      }
       local mapped = pagure_to_gh[s] or { status = "completed", conclusion = "failure" }
       local gh_status, gh_conclusion = mapped.status, mapped.conclusion
       runs[i] = {
