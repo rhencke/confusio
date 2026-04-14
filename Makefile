@@ -99,9 +99,12 @@ endef
 
 $(foreach b,$(BACKENDS),$(eval $(call BACKEND_RULE,$(b))))
 
-.PHONY: build site test test-unit test-unit-functions test-unit-backends test-integration validate-mock test-format test-lint test-coverage clean
+.PHONY: build site dump-endpoints test test-unit test-unit-functions test-unit-backends test-integration validate-mock test-format test-lint test-coverage clean
 
 build: confusio.com
+
+dump-endpoints: redbean.com
+	./redbean.com -i scripts/dump-endpoints.lua
 
 site:
 	mkdir -p _site
