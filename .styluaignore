@@ -1,1 +1,2 @@
 luacov/
+internal/graphql_schema_data.lua
