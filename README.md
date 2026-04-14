@@ -109,3 +109,7 @@ Early design stage.
 ## Compatibility
 
 See the [full compatibility matrix](https://rhencke.github.io/confusio/) on the project landing page.
+
+## Testing
+
+Unit tests run against mock backends on every push.  See [`docs/real-world-testing.md`](docs/real-world-testing.md) for the plan to extend coverage to real provider instances on a weekly cadence.
