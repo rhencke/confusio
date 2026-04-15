@@ -113,4 +113,5 @@ globals = {
 -- Exclude auto-generated files from linting
 exclude_files = {
   "internal/graphql_schema_data.lua",
+  ".claude/",
 }
