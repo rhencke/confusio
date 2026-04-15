@@ -1097,6 +1097,64 @@ do -- validation error: unknown field
   )
 end
 
+-- ============================================================
+-- extensions.code on request-level and validation errors
+-- ============================================================
+
+do -- invalid body → extensions.code = BAD_USER_INPUT
+  reset_response()
+  _req_body = "not json"
+  graphql_handler()
+  local r = DecodeJson(_last_body)
+  ok(
+    r.errors and r.errors[1].extensions and r.errors[1].extensions.code == "BAD_USER_INPUT",
+    "error codes: invalid body → BAD_USER_INPUT"
+  )
+end
+
+do -- missing query field → extensions.code = BAD_USER_INPUT
+  reset_response()
+  _req_body = '{"notQuery": "x"}'
+  graphql_handler()
+  local r = DecodeJson(_last_body)
+  ok(
+    r.errors and r.errors[1].extensions and r.errors[1].extensions.code == "BAD_USER_INPUT",
+    "error codes: missing query field → BAD_USER_INPUT"
+  )
+end
+
+do -- parse error → extensions.code = PARSE_ERROR
+  local r = call_handler({ query = "{ unclosed_brace" })
+  ok(
+    r.errors and r.errors[1].extensions and r.errors[1].extensions.code == "PARSE_ERROR",
+    "error codes: parse error → PARSE_ERROR"
+  )
+end
+
+do -- unknown operationName → extensions.code = BAD_USER_INPUT
+  local r = call_handler({ query = "query A { __typename }", operationName = "B" })
+  ok(
+    r.errors and r.errors[1].extensions and r.errors[1].extensions.code == "BAD_USER_INPUT",
+    "error codes: unknown operationName → BAD_USER_INPUT"
+  )
+end
+
+do -- ambiguous document (no operationName) → extensions.code = BAD_USER_INPUT
+  local r = call_handler({ query = "query A { __typename } query B { __typename }" })
+  ok(
+    r.errors and r.errors[1].extensions and r.errors[1].extensions.code == "BAD_USER_INPUT",
+    "error codes: ambiguous document → BAD_USER_INPUT"
+  )
+end
+
+do -- validation error: unknown field → extensions.code = VALIDATION_ERROR
+  local r = call_handler({ query = "{ nonexistentField123 }" })
+  ok(
+    r.errors and r.errors[1].extensions and r.errors[1].extensions.code == "VALIDATION_ERROR",
+    "error codes: unknown field → VALIDATION_ERROR"
+  )
+end
+
 do -- __typename meta-field — no resolver needed
   with_resolvers({}, function()
     local r = call_handler({ query = "{ __typename }" })

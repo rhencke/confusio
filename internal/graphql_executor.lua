@@ -480,6 +480,20 @@ end
 -- graphql_validate: Phase 1 field-existence and leaf/composite checks
 -- ---------------------------------------------------------------------------
 
+-- graphql_validate_error: builds a validation error table (VALIDATION_ERROR code).
+-- Simpler than graphql_error — no ctx needed since validation runs before execution.
+-- name_node is a NameNode with optional line/col from the parser, or nil.
+local function graphql_validate_error(message, name_node)
+  local err = {
+    message = message,
+    extensions = { code = "VALIDATION_ERROR" },
+  }
+  if name_node and name_node.line then
+    err.locations = { { line = name_node.line, column = name_node.col } }
+  end
+  return err
+end
+
 -- validate_selection_set: recursively validate field existence and structure.
 -- Returns an array of error objects (empty means valid).
 local function validate_selection_set(sel_set, type_name, doc, seen_frags, errors)
@@ -490,29 +504,22 @@ local function validate_selection_set(sel_set, type_name, doc, seen_frags, error
       if field_name ~= "__typename" and field_name ~= "__schema" and field_name ~= "__type" then
         local field_def = graphql_schema_field(type_name, field_name)
         if not field_def then
-          errors[#errors + 1] = {
-            message = "Field '" .. field_name .. "' does not exist on type '" .. type_name .. "'",
-            locations = sel.name.line and { { line = sel.name.line, column = sel.name.col } }
-              or nil,
-          }
+          errors[#errors + 1] = graphql_validate_error(
+            "Field '" .. field_name .. "' does not exist on type '" .. type_name .. "'",
+            sel.name
+          )
         else
           local is_leaf = graphql_schema_is_leaf(field_def.type)
           if is_leaf and sel.selection_set then
-            errors[#errors + 1] = {
-              message = "Field '"
-                .. field_name
-                .. "' is a leaf type and must not have sub-selections",
-              locations = sel.name.line and { { line = sel.name.line, column = sel.name.col } }
-                or nil,
-            }
+            errors[#errors + 1] = graphql_validate_error(
+              "Field '" .. field_name .. "' is a leaf type and must not have sub-selections",
+              sel.name
+            )
           elseif not is_leaf and not sel.selection_set then
-            errors[#errors + 1] = {
-              message = "Field '"
-                .. field_name
-                .. "' is a composite type and must have sub-selections",
-              locations = sel.name.line and { { line = sel.name.line, column = sel.name.col } }
-                or nil,
-            }
+            errors[#errors + 1] = graphql_validate_error(
+              "Field '" .. field_name .. "' is a composite type and must have sub-selections",
+              sel.name
+            )
           elseif sel.selection_set then
             local base = graphql_schema_base_type(field_def.type)
             validate_selection_set(sel.selection_set, base, doc, seen_frags, errors)
@@ -551,7 +558,9 @@ local function graphql_validate(doc, op)
   elseif op.operation == "mutation" then
     root_type = graphql_schema_data.mutation_type
   else
-    return { { message = "Unsupported operation type: " .. tostring(op.operation) } }
+    return {
+      graphql_validate_error("Unsupported operation type: " .. tostring(op.operation), nil),
+    }
   end
   local errors = {}
   validate_selection_set(op.selection_set, root_type, doc, {}, errors)
@@ -640,10 +649,12 @@ function graphql_handler() -- luacheck: globals graphql_handler
   local raw = GetBody() or ""
   local req = DecodeJson(raw)
   if not req or type(req.query) ~= "string" then
-    respond_graphql(
-      nil,
-      { { message = "POST /graphql requires a JSON body with a 'query' field" } }
-    )
+    respond_graphql(nil, {
+      {
+        message = "POST /graphql requires a JSON body with a 'query' field",
+        extensions = { code = "BAD_USER_INPUT" },
+      },
+    })
     return
   end
   local source = req.query
@@ -653,14 +664,24 @@ function graphql_handler() -- luacheck: globals graphql_handler
   -- Step 2: parse.
   local doc, parse_err = graphql_parse(source)
   if not doc then
-    respond_graphql(nil, { { message = parse_err } })
+    respond_graphql(nil, {
+      {
+        message = parse_err,
+        extensions = { code = "PARSE_ERROR" },
+      },
+    })
     return
   end
 
   -- Step 3: select operation.
   local op, sel_err = select_operation(doc, op_name)
   if not op then
-    respond_graphql(nil, { { message = sel_err } })
+    respond_graphql(nil, {
+      {
+        message = sel_err,
+        extensions = { code = "BAD_USER_INPUT" },
+      },
+    })
     return
   end
 
