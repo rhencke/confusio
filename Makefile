@@ -173,6 +173,8 @@ test-unit-functions: redbean.com
 # Unit tests for the GraphQL lexer and parser (pure Lua, no HTTP server needed)
 test-unit-graphql: redbean.com
 	./redbean.com -i test/unit-graphql.lua
+	./redbean.com -i test/graphql-parser.lua
+	./redbean.com -i test/graphql-schema.lua
 	./redbean.com -i test/graphql-fragments-vars-directives.lua
 	./redbean.com -i test/graphql-node-id.lua
 	./redbean.com -i test/graphql-node-resolvers.lua
