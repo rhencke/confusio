@@ -171,12 +171,12 @@ test-unit-functions: redbean.com
 	./redbean.com -i test/unit-init.lua
 
 # Unit tests for the GraphQL lexer and parser (pure Lua, no HTTP server needed)
+# unit-graphql.lua is the driver: loads shared state once, then dofiles graphql-errors.lua
+# and graphql-executor.lua. All other sub-files are standalone and run independently.
 test-unit-graphql: redbean.com
 	./redbean.com -i test/unit-graphql.lua
 	./redbean.com -i test/graphql-parser.lua
 	./redbean.com -i test/graphql-schema.lua
-	./redbean.com -i test/graphql-errors.lua
-	./redbean.com -i test/graphql-executor.lua
 	./redbean.com -i test/graphql-fragments-vars-directives.lua
 	./redbean.com -i test/graphql-node-id.lua
 	./redbean.com -i test/graphql-node-resolvers.lua

@@ -1,67 +1,11 @@
 -- Unit tests for the GraphQL error model.
 -- Covers respond_graphql (null-safe response envelope) and graphql_error
 -- (error recorder: message, location, path snapshot, extensions.code).
--- Run: sh redbean.com -i test/graphql-errors.lua
+-- Loaded by test/unit-graphql.lua; relies on shared state from the driver.
 -- ============================================================
 
--- Stub Redbean HTTP context APIs needed by http.lua and graphql_executor.lua.
--- luacheck: push
--- luacheck: globals SetStatus SetHeader Write GetBody
-local _last_status, _last_body, _req_body
-SetStatus = function(code, _reason)
-  _last_status = code
-end
-SetHeader = function(_k, _v) end
-Write = function(s)
-  _last_body = (_last_body or "") .. tostring(s)
-end
-GetBody = function()
-  return _req_body
-end
--- luacheck: pop
-
-local function reset_response()
-  _last_status = nil
-  _last_body = ""
-  _req_body = nil
-end
-
--- Redirect /zip/internal/ → internal/ so tests run without a Redbean zip context.
-local _real_dofile = dofile
-function dofile(path) -- luacheck: globals dofile
-  if path and path:match("^/zip/internal/") then
-    return _real_dofile(path:sub(6))
-  end
-  return _real_dofile(path)
-end
-
-dofile("internal/graphql_parser.lua")
-dofile("internal/graphql_schema_data.lua")
-dofile("internal/graphql_schema.lua")
-dofile("internal/http.lua")
-dofile("internal/graphql_executor.lua")
-
-dofile = _real_dofile -- luacheck: globals dofile
-
--- ============================================================
--- Assertion helpers
--- ============================================================
-
-local PASS, FAIL = 0, 0
-
-local function ok(cond, msg)
-  if cond then
-    PASS = PASS + 1
-    io.write("PASS  " .. msg .. "\n")
-  else
-    FAIL = FAIL + 1
-    io.write("FAIL  " .. msg .. "\n")
-  end
-end
-
-local function eq(a, b, msg)
-  ok(a == b, msg .. " (got " .. tostring(a) .. ", want " .. tostring(b) .. ")")
-end
+-- Globals provided by the driver (test/unit-graphql.lua):
+-- luacheck: globals ok eq PASS FAIL reset_response _last_status _last_body _req_body
 
 -- ============================================================
 -- respond_graphql: null-safe GraphQL response envelope
@@ -167,13 +111,4 @@ do -- multiple errors accumulate
   graphql_error(ctx, "second", nil, nil)
   eq(#ctx.errors, 2, "graphql_error: second error appended")
   eq(ctx.errors[2].message, "second", "graphql_error: second error message")
-end
-
--- ============================================================
--- Summary
--- ============================================================
-
-io.write(string.format("\n%d passed, %d failed\n", PASS, FAIL))
-if FAIL > 0 then
-  os.exit(1)
 end

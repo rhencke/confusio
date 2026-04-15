@@ -1,19 +1,34 @@
--- GraphQL unit test driver (interim stub).
--- All GraphQL tests have been extracted to test/graphql-*.lua standalone files.
--- This file retains the shared setup and will become the driver in the next task.
+-- GraphQL unit test driver.
+-- Sets up shared state once, then loads each sub-file.
 -- Run from project root: sh redbean.com -i test/unit-graphql.lua
 -- ============================================================
 
+-- Globals set here and shared with sub-files loaded via dofile:
+-- luacheck: globals SetStatus SetHeader Write GetBody reset_response
+-- luacheck: globals _last_status _last_body _req_body
+-- luacheck: globals PASS FAIL ok eq
+
 -- Stub Redbean HTTP context APIs needed by http.lua and graphql_executor.lua.
--- luacheck: push
--- luacheck: globals SetStatus SetHeader Write GetBody
-SetStatus = function(_code, _reason) end
-SetHeader = function(_k, _v) end
-Write = function(_s) end
-GetBody = function()
-  return nil
+-- These are globals so sub-files can reference them.
+_last_status = nil
+_last_body = nil
+_req_body = nil
+SetStatus = function(code, _reason)
+  _last_status = code
 end
--- luacheck: pop
+SetHeader = function(_k, _v) end
+Write = function(s)
+  _last_body = (_last_body or "") .. tostring(s)
+end
+GetBody = function()
+  return _req_body
+end
+
+function reset_response()
+  _last_status = nil
+  _last_body = ""
+  _req_body = nil
+end
 
 -- Redirect /zip/internal/ to the internal/ directory so tests can load
 -- internal modules without a Redbean zip context.
@@ -31,17 +46,17 @@ dofile("internal/graphql_schema_data.lua")
 dofile("internal/graphql_schema.lua")
 dofile("internal/http.lua")
 dofile("internal/graphql_executor.lua")
-dofile("internal/graphql_translators.lua") -- graphql_fetch, graphql_fetch_or_error, etc.
+dofile("internal/graphql_translators.lua")
 
 dofile = _real_dofile -- luacheck: globals dofile
 
 -- ============================================================
--- Minimal assertion helpers
+-- Assertion helpers (globals so sub-files share state)
 -- ============================================================
 
-local PASS, FAIL = 0, 0
+PASS, FAIL = 0, 0
 
-local function ok(cond, msg)
+function ok(cond, msg)
   if cond then
     PASS = PASS + 1
     io.write("PASS  " .. msg .. "\n")
@@ -51,7 +66,7 @@ local function ok(cond, msg)
   end
 end
 
-local function eq(a, b, msg)
+function eq(a, b, msg)
   ok(a == b, msg .. " (got " .. tostring(a) .. ", want " .. tostring(b) .. ")")
 end
 
@@ -61,6 +76,13 @@ end
 
 ok(true, "test harness: ok(true) passes")
 eq(1, 1, "test harness: eq(1, 1) passes")
+
+-- ============================================================
+-- Sub-files (each adds to the shared PASS/FAIL counters)
+-- ============================================================
+
+dofile("test/graphql-errors.lua")
+dofile("test/graphql-executor.lua")
 
 -- ============================================================
 -- Summary
