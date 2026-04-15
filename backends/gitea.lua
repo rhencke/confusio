@@ -3211,7 +3211,9 @@ graphql_resolvers["Query.viewer"] = function(_parent, _args, ctx)
   if not data then
     return nil
   end
-  return graphql_translate_user(translate_user(data))
+  local u = graphql_translate_user(translate_user(data))
+  u.isViewer = true
+  return u
 end
 
 -- node.Repository: fetch a repository by "owner/repo" local ID.
