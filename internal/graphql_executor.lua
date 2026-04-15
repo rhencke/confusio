@@ -9,6 +9,7 @@
 --   graphql_handler()            — HTTP handler for POST /graphql; registered in catalog
 --   respond_graphql(data, errs)  — null-safe GraphQL response writer
 --   graphql_error(ctx, ...)      — error-recording helper called by resolvers
+--   estimate_query_cost(op, vars) — query cost estimator; exposed for unit tests
 
 -- ---------------------------------------------------------------------------
 -- Resolver registry
@@ -638,6 +639,89 @@ graphql_resolvers["Query.nodes"] = function(_parent, args, ctx)
 end
 
 -- ---------------------------------------------------------------------------
+-- estimate_query_cost
+-- ---------------------------------------------------------------------------
+
+-- Lightweight pre-execution cost estimator.  Walks the operation's selection
+-- set counting connection argument values (first/last), multiplying for nested
+-- connections.  The result is stored in ctx.rate_cost before execution so that
+-- the Query.rateLimit resolver can report a non-zero cost value.
+--
+-- Cost rules (mirrors GitHub's documented model):
+--   - Each field with a first/last argument contributes (multiplier × value).
+--   - Nested connection fields multiply their parent's page size.
+--   - Scalar leaf fields contribute 0.
+--   - Minimum returned value is 1 (math.max(1, total)).
+--
+-- This is best-effort: fragment spreads are not walked in Phase 1, and
+-- @skip/@include directives are not applied.  The value is used only to
+-- populate rateLimit.cost for observability; it has no enforcement effect.
+function estimate_query_cost(op, variables) -- luacheck: globals estimate_query_cost
+  local cost = 0
+  -- We need a minimal ctx for coerce_value (Variable nodes require variables +
+  -- variable_defs).  Build one from the operation's variable definitions.
+  local vdefs = {}
+  for _, vd in ipairs(op.variable_definitions or {}) do
+    vdefs[vd.variable.name.value] = vd
+  end
+  local cost_ctx = { variables = variables or {}, variable_defs = vdefs }
+
+  local function walk(selection_set, multiplier)
+    if not selection_set then
+      return
+    end
+    for _, sel in ipairs(selection_set.selections) do
+      if sel.kind == "Field" then
+        local page_size = 0
+        if sel.arguments then
+          for _, arg in ipairs(sel.arguments) do
+            if arg.name.value == "first" or arg.name.value == "last" then
+              local v = coerce_value(arg.value, cost_ctx)
+              if type(v) == "number" then
+                page_size = v
+              end
+            end
+          end
+        end
+        if page_size > 0 then
+          cost = cost + multiplier * page_size
+          walk(sel.selectionSet, multiplier * page_size)
+        else
+          walk(sel.selectionSet, multiplier)
+        end
+      elseif sel.kind == "InlineFragment" then
+        walk(sel.selectionSet, multiplier)
+      end
+      -- FragmentSpread: not walked in Phase 1.
+    end
+  end
+
+  walk(op.selectionSet, 1)
+  return math.max(1, cost)
+end
+
+-- ---------------------------------------------------------------------------
+-- Query.rateLimit — backend-independent synthetic rate limit response
+-- ---------------------------------------------------------------------------
+
+-- Confusio does not bill by node cost.  Synthesise a plausible rateLimit
+-- response so that clients polling rateLimit { cost remaining resetAt } work
+-- without errors.  ctx.rate_cost is populated by estimate_query_cost before
+-- execution runs.
+graphql_resolvers["Query.rateLimit"] = function(_parent, _args, ctx)
+  local limit = 999999
+  local reset = os.time() + 3600
+  return {
+    limit = limit,
+    cost = ctx.rate_cost or 1,
+    remaining = limit,
+    used = 0,
+    nodeCount = 0,
+    resetAt = os.date("!%Y-%m-%dT%H:%M:%SZ", reset),
+  }
+end
+
+-- ---------------------------------------------------------------------------
 -- graphql_handler
 -- ---------------------------------------------------------------------------
 
@@ -704,6 +788,8 @@ function graphql_handler() -- luacheck: globals graphql_handler
   for _, vd in ipairs(op.variable_definitions or {}) do
     ctx.variable_defs[vd.variable.name.value] = vd
   end
+  -- Estimate query cost before execution so rateLimit.cost reflects this query.
+  ctx.rate_cost = estimate_query_cost(op, variables)
   local data = execute_operation(op, ctx)
 
   -- Step 6: write response.
