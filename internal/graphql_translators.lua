@@ -9,6 +9,17 @@
 --   decode_node_id(encoded)
 --   graphql_fetch(fetch_json, path[, method[, body]])
 --   graphql_fetch_with_headers(fetch_json, path[, method[, body]])
+--   graphql_page_to_cursor(page)
+--   graphql_cursor_to_page(cursor)
+--   graphql_cursor_url(url_base, args, param_names)
+--   graphql_inline_connection(typename, nodes)
+--   graphql_make_connection(typename, nodes, args, total[, ctx])
+--   graphql_issues_connection(nodes, args, total[, ctx])
+--   graphql_prs_connection(nodes, args, total[, ctx])
+--   graphql_repos_connection(nodes, args, total[, ctx])
+--   graphql_users_connection(nodes, args, total[, ctx])
+--   graphql_labels_connection(nodes, args, total[, ctx])
+--   graphql_refs_connection(nodes, args, total[, ctx])
 --   graphql_translate_repo(r)
 --   graphql_translate_user(u)
 --   graphql_translate_org(o)
@@ -138,13 +149,65 @@ function graphql_fetch_with_headers(fetch_json, path, method, body) -- luacheck:
 end
 
 -- ---------------------------------------------------------------------------
--- Inline connection helper (local)
+-- Pagination cursor helpers
 -- ---------------------------------------------------------------------------
 
--- Build a Relay Connection table for a small list already present in the parent response
--- (e.g. issue labels, PR assignees) where no pagination is needed.
--- All keys are GraphQL camelCase so the executor can pluck them directly.
-local function make_inline_connection(typename, nodes)
+-- graphql_page_to_cursor is global: encodes a 1-based page number as a stable opaque cursor.
+-- Page-number cursors are stable across page-size changes; clients should treat them as opaque.
+function graphql_page_to_cursor(page) -- luacheck: globals graphql_page_to_cursor
+  return EncodeBase64("page:" .. tostring(page))
+end
+
+-- graphql_cursor_to_page is global: decodes a cursor produced by graphql_page_to_cursor.
+-- Returns the 1-based page number on success, or nil if the cursor is absent or malformed.
+function graphql_cursor_to_page(cursor) -- luacheck: globals graphql_cursor_to_page
+  if not cursor then
+    return nil
+  end
+  local decoded = DecodeBase64(cursor)
+  if not decoded then
+    return nil
+  end
+  return tonumber(decoded:match("^page:(%d+)$"))
+end
+
+-- graphql_cursor_url is global: builds a paginated REST URL from GraphQL connection args.
+-- url_base:    base REST URL (may already contain a query string)
+-- args:        GraphQL connection arguments table; reads args.first (default 30) and args.after
+-- param_names: table mapping REST parameter names, e.g. { per_page = "limit", page = "page" }.
+--              Keys present in param_names are appended; omitted keys are skipped.
+--              The page parameter is only appended when the resolved page is > 1.
+function graphql_cursor_url(url_base, args, param_names) -- luacheck: globals graphql_cursor_url
+  local per_page = args.first or 30
+  local page = 1
+  if args.after then
+    local p = graphql_cursor_to_page(args.after)
+    if p then
+      page = p + 1
+    end
+  end
+  local sep = url_base:find("?", 1, true) and "&" or "?"
+  local parts = {}
+  if param_names.per_page then
+    parts[#parts + 1] = param_names.per_page .. "=" .. tostring(per_page)
+  end
+  if param_names.page and page > 1 then
+    parts[#parts + 1] = param_names.page .. "=" .. tostring(page)
+  end
+  if #parts == 0 then
+    return url_base
+  end
+  return url_base .. sep .. table.concat(parts, "&")
+end
+
+-- ---------------------------------------------------------------------------
+-- Connection builders
+-- ---------------------------------------------------------------------------
+
+-- graphql_inline_connection is global: builds a Relay Connection for a list already present
+-- in the parent REST response (e.g. issue labels, PR assignees) where no pagination is needed.
+-- All keys are GraphQL camelCase so the executor can pluck them by field name directly.
+function graphql_inline_connection(typename, nodes) -- luacheck: globals graphql_inline_connection
   local edges = {}
   for i, node in ipairs(nodes) do
     edges[i] = { __typename = typename .. "Edge", cursor = "", node = node }
@@ -162,6 +225,97 @@ local function make_inline_connection(typename, nodes)
     nodes = nodes,
     edges = edges,
   }
+end
+
+-- graphql_make_connection is global: builds a Relay Connection for a paginated REST list.
+-- typename: GraphQL type name of the items (e.g. "Issue", "Repository")
+-- nodes:    array of already-translated GraphQL objects for this page
+-- args:     GraphQL connection arguments (first, after, last, before)
+-- total:    total item count from the upstream header (X-Total / X-Total-Count), or nil
+-- ctx:      optional GraphQL field context; when present, backward-pagination errors are
+--           reported via graphql_error; when nil the error is silently dropped.
+--
+-- Backward pagination (last/before) is not supported in Phase 1: returns an empty connection
+-- with an error added to ctx when provided.
+function graphql_make_connection(typename, nodes, args, total, ctx) -- luacheck: globals graphql_make_connection
+  if args.last or args.before then
+    if ctx then
+      graphql_error(ctx, "backward pagination (last/before) is not supported in this version")
+    end
+    return {
+      __typename = typename .. "Connection",
+      totalCount = 0,
+      pageInfo = {
+        __typename = "PageInfo",
+        hasNextPage = false,
+        hasPreviousPage = false,
+        startCursor = nil,
+        endCursor = nil,
+      },
+      nodes = {},
+      edges = {},
+    }
+  end
+  local per_page = args.first or 30
+  local page = 1
+  if args.after then
+    local p = graphql_cursor_to_page(args.after)
+    if p then
+      page = p + 1
+    end
+  end
+  local count = #nodes
+  local has_next
+  if total ~= nil then
+    has_next = (page * per_page) < total
+  else
+    has_next = count == per_page
+  end
+  local start_cursor = count > 0 and graphql_page_to_cursor(page) or nil
+  local edges = {}
+  for i, node in ipairs(nodes) do
+    edges[i] =
+      { __typename = typename .. "Edge", cursor = graphql_page_to_cursor(page), node = node }
+  end
+  return {
+    __typename = typename .. "Connection",
+    totalCount = total or count,
+    pageInfo = {
+      __typename = "PageInfo",
+      hasNextPage = has_next,
+      hasPreviousPage = page > 1,
+      startCursor = start_cursor,
+      endCursor = start_cursor,
+    },
+    nodes = nodes,
+    edges = edges,
+  }
+end
+
+-- Typed convenience wrappers around graphql_make_connection.
+
+function graphql_issues_connection(nodes, args, total, ctx) -- luacheck: globals graphql_issues_connection
+  return graphql_make_connection("Issue", nodes, args, total, ctx)
+end
+
+function graphql_prs_connection(nodes, args, total, ctx) -- luacheck: globals graphql_prs_connection
+  return graphql_make_connection("PullRequest", nodes, args, total, ctx)
+end
+
+function graphql_repos_connection(nodes, args, total, ctx) -- luacheck: globals graphql_repos_connection
+  return graphql_make_connection("Repository", nodes, args, total, ctx)
+end
+
+function graphql_users_connection(nodes, args, total, ctx) -- luacheck: globals graphql_users_connection
+  return graphql_make_connection("User", nodes, args, total, ctx)
+end
+
+function graphql_labels_connection(nodes, args, total, ctx) -- luacheck: globals graphql_labels_connection
+  return graphql_make_connection("Label", nodes, args, total, ctx)
+end
+
+function graphql_refs_connection(nodes, args, total, ctx) -- luacheck: globals graphql_refs_connection
+  return graphql_make_connection("Ref", nodes, args, total, ctx)
 end
 
 -- ---------------------------------------------------------------------------
@@ -431,8 +585,8 @@ function graphql_translate_issue(i, owner, repo) -- luacheck: globals graphql_tr
     state = ISSUE_STATE[i.state] or "OPEN",
     url = i.html_url,
     author = i.user and graphql_translate_user(i.user) or nil,
-    assignees = make_inline_connection("User", translated_assignees),
-    labels = make_inline_connection("Label", translated_labels),
+    assignees = graphql_inline_connection("User", translated_assignees),
+    labels = graphql_inline_connection("Label", translated_labels),
     milestone = graphql_translate_milestone(i.milestone, owner, repo),
     comments = { __typename = "IssueCommentConnection", totalCount = i.comments or 0 },
     createdAt = i.created_at,
@@ -482,8 +636,8 @@ function graphql_translate_pr(p, owner, repo) -- luacheck: globals graphql_trans
     baseRefName = base.ref,
     baseRefOid = base.sha,
     mergeable = MERGEABLE[p.mergeable] or "UNKNOWN",
-    assignees = make_inline_connection("User", translated_assignees),
-    labels = make_inline_connection("Label", translated_labels),
+    assignees = graphql_inline_connection("User", translated_assignees),
+    labels = graphql_inline_connection("Label", translated_labels),
     createdAt = p.created_at,
     updatedAt = p.updated_at,
     closedAt = p.closed_at,
