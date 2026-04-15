@@ -3492,6 +3492,75 @@ graphql_resolvers["Issue.comments"] = function(parent, args, ctx)
   return graphql_make_connection("IssueComment", nodes, args, total, ctx)
 end
 
+-- PullRequest.commits: paginated commit list for a pull request.
+-- Decodes the PullRequest node ID (PullRequest:owner/repo/number) for coordinates,
+-- then fetches /api/v1/repos/{owner}/{repo}/pulls/{number}/commits.
+graphql_resolvers["PullRequest.commits"] = function(parent, args, ctx)
+  local _, local_id = decode_node_id(parent.id)
+  if not local_id then
+    return nil
+  end
+  local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local url = graphql_cursor_url(
+    base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number .. "/commits",
+    args,
+    { per_page = "limit", page = "page" }
+  )
+  local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
+  if not data then
+    graphql_error(ctx, err)
+    return nil
+  end
+  local total = (headers["X-Total"] and tonumber(headers["X-Total"]))
+    or (headers["X-Total-Count"] and tonumber(headers["X-Total-Count"]))
+  -- PullRequest.commits returns PullRequestCommitConnection, whose nodes are
+  -- PullRequestCommit objects (not bare Commit objects).  Each PullRequestCommit
+  -- wraps the Commit so clients can query commits { nodes { commit { oid } } }.
+  local nodes = {}
+  for _, c in ipairs(data) do
+    local sha = c.sha or (c.commit and c.commit.id) or ""
+    nodes[#nodes + 1] = {
+      __typename = "PullRequestCommit",
+      id = encode_node_id("PullRequestCommit", sha),
+      commit = graphql_translate_commit(c),
+      url = c.html_url,
+    }
+  end
+  return graphql_make_connection("PullRequestCommit", nodes, args, total, ctx)
+end
+
+-- PullRequest.reviews: paginated review list for a pull request.
+graphql_resolvers["PullRequest.reviews"] = function(parent, args, ctx)
+  local _, local_id = decode_node_id(parent.id)
+  if not local_id then
+    return nil
+  end
+  local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local url = graphql_cursor_url(
+    base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number .. "/reviews",
+    args,
+    { per_page = "limit", page = "page" }
+  )
+  local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
+  if not data then
+    graphql_error(ctx, err)
+    return nil
+  end
+  local total = (headers["X-Total"] and tonumber(headers["X-Total"]))
+    or (headers["X-Total-Count"] and tonumber(headers["X-Total-Count"]))
+  local nodes = {}
+  for _, r in ipairs(data) do
+    nodes[#nodes + 1] = graphql_translate_review(translate_gitea_review(r), owner, repo)
+  end
+  return graphql_make_connection("PullRequestReview", nodes, args, total, ctx)
+end
+
 -- Repository.collaborators: paginated list of collaborators as Users.
 graphql_resolvers["Repository.collaborators"] = function(parent, args, ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")

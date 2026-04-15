@@ -106,6 +106,7 @@ globals = {
   "graphql_translate_commit",
   "graphql_translate_ref",
   "graphql_translate_release",
+  "graphql_translate_review",
   "graphql_translate_reaction",
 }
 

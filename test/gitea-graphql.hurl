@@ -218,3 +218,26 @@ HTTP 200
 [Asserts]
 jsonpath "$.data.repository.collaborators.nodes" isCollection
 jsonpath "$.data.repository.collaborators.nodes[0].login" == "octocat"
+
+# POST /graphql — PullRequest.commits returns a CommitConnection
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ repository(owner: \"octocat\", name: \"hello-world\") { pullRequests { nodes { number commits { nodes { commit { oid } } } } } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.repository.pullRequests.nodes[0].number" == 1
+jsonpath "$.data.repository.pullRequests.nodes[0].commits.nodes" isCollection
+
+# POST /graphql — PullRequest.reviews returns a PullRequestReviewConnection
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ repository(owner: \"octocat\", name: \"hello-world\") { pullRequests { nodes { number reviews { nodes { state body author { login } } } } } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.repository.pullRequests.nodes[0].number" == 1
+jsonpath "$.data.repository.pullRequests.nodes[0].reviews.nodes" isCollection
+jsonpath "$.data.repository.pullRequests.nodes[0].reviews.nodes[0].state" == "APPROVED"
+jsonpath "$.data.repository.pullRequests.nodes[0].reviews.nodes[0].body" == "Looks good!"
+jsonpath "$.data.repository.pullRequests.nodes[0].reviews.nodes[0].author.login" == "octocat"
