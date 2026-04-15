@@ -41,6 +41,7 @@ dofile("internal/graphql_schema_data.lua")
 dofile("internal/graphql_schema.lua")
 dofile("internal/http.lua")
 dofile("internal/graphql_executor.lua")
+dofile("internal/graphql_translators.lua") -- graphql_fetch, graphql_fetch_or_error, etc.
 
 dofile = _real_dofile -- luacheck: globals dofile
 
@@ -1097,6 +1098,64 @@ do -- validation error: unknown field
   )
 end
 
+-- ============================================================
+-- extensions.code on request-level and validation errors
+-- ============================================================
+
+do -- invalid body → extensions.code = BAD_USER_INPUT
+  reset_response()
+  _req_body = "not json"
+  graphql_handler()
+  local r = DecodeJson(_last_body)
+  ok(
+    r.errors and r.errors[1].extensions and r.errors[1].extensions.code == "BAD_USER_INPUT",
+    "error codes: invalid body → BAD_USER_INPUT"
+  )
+end
+
+do -- missing query field → extensions.code = BAD_USER_INPUT
+  reset_response()
+  _req_body = '{"notQuery": "x"}'
+  graphql_handler()
+  local r = DecodeJson(_last_body)
+  ok(
+    r.errors and r.errors[1].extensions and r.errors[1].extensions.code == "BAD_USER_INPUT",
+    "error codes: missing query field → BAD_USER_INPUT"
+  )
+end
+
+do -- parse error → extensions.code = PARSE_ERROR
+  local r = call_handler({ query = "{ unclosed_brace" })
+  ok(
+    r.errors and r.errors[1].extensions and r.errors[1].extensions.code == "PARSE_ERROR",
+    "error codes: parse error → PARSE_ERROR"
+  )
+end
+
+do -- unknown operationName → extensions.code = BAD_USER_INPUT
+  local r = call_handler({ query = "query A { __typename }", operationName = "B" })
+  ok(
+    r.errors and r.errors[1].extensions and r.errors[1].extensions.code == "BAD_USER_INPUT",
+    "error codes: unknown operationName → BAD_USER_INPUT"
+  )
+end
+
+do -- ambiguous document (no operationName) → extensions.code = BAD_USER_INPUT
+  local r = call_handler({ query = "query A { __typename } query B { __typename }" })
+  ok(
+    r.errors and r.errors[1].extensions and r.errors[1].extensions.code == "BAD_USER_INPUT",
+    "error codes: ambiguous document → BAD_USER_INPUT"
+  )
+end
+
+do -- validation error: unknown field → extensions.code = VALIDATION_ERROR
+  local r = call_handler({ query = "{ nonexistentField123 }" })
+  ok(
+    r.errors and r.errors[1].extensions and r.errors[1].extensions.code == "VALIDATION_ERROR",
+    "error codes: unknown field → VALIDATION_ERROR"
+  )
+end
+
 do -- __typename meta-field — no resolver needed
   with_resolvers({}, function()
     local r = call_handler({ query = "{ __typename }" })
@@ -1395,6 +1454,201 @@ do -- subscription operation: unsupported op type → null data (execute_operati
     local r = call_handler({ query = "subscription { __typename }" })
     ok(r.data == nil, "executor: subscription op → data is null")
   end)
+end
+
+-- ============================================================
+-- ctx.path tracking: path appears in errors during execution
+-- ============================================================
+
+do -- path recorded for nested non-null field error
+  -- Query.repository → Repository.id (ID!) with id=nil triggers a non-null error.
+  -- The error path should be ["repository", "id"].
+  with_resolvers({
+    ["Query.repository"] = function(_parent, _args, _ctx)
+      return { id = nil, __typename = "Repository" }
+    end,
+  }, function()
+    local r = call_handler({ query = '{ repository(name: "x") { id } }' })
+    ok(r.errors and #r.errors > 0, "path tracking: nested field error recorded")
+    local err = r.errors[1]
+    ok(err.path ~= nil, "path tracking: path is present on field error")
+    eq(err.path[1], "repository", "path tracking: path[1] is 'repository'")
+    eq(err.path[2], "id", "path tracking: path[2] is 'id'")
+    eq(#err.path, 2, "path tracking: path has exactly 2 segments")
+  end)
+end
+
+do -- path includes 0-based list index for error inside a list item
+  -- Query.codesOfConduct returns [CodeOfConduct]; CodeOfConduct.id is ID! (non-null).
+  -- The second item has id=nil → error path should be ["codesOfConduct", 1, "id"].
+  with_resolvers({
+    ["Query.codesOfConduct"] = function(_parent, _args, _ctx)
+      return {
+        { __typename = "CodeOfConduct", id = "coc:mit", key = "mit", name = "MIT" },
+        { __typename = "CodeOfConduct", id = nil, key = "cc0-1.0", name = "CC0" },
+      }
+    end,
+  }, function()
+    local r = call_handler({ query = "{ codesOfConduct { id } }" })
+    ok(r.errors and #r.errors > 0, "path tracking: list item error recorded")
+    local err = r.errors[1]
+    ok(err.path ~= nil, "path tracking: path present for list item error")
+    eq(err.path[1], "codesOfConduct", "path tracking: list path[1] is field name")
+    eq(err.path[2], 1, "path tracking: list path[2] is 0-based index (1 = second item)")
+    eq(err.path[3], "id", "path tracking: list path[3] is 'id'")
+    eq(#err.path, 3, "path tracking: list error path has 3 segments")
+  end)
+end
+
+-- ============================================================
+-- PROPAGATE sentinel and null propagation
+-- ============================================================
+
+do -- non-null field with nil value: error message uses new wording, exactly one error
+  -- complete_value(nil, "ID!") should record exactly one "non-null field resolved to null"
+  -- error and store nil for that field in data.
+  with_resolvers({
+    ["Query.repository"] = function(_parent, _args, _ctx)
+      return { id = nil, __typename = "Repository" }
+    end,
+  }, function()
+    local r = call_handler({ query = '{ repository(name: "x") { id } }' })
+    eq(#r.errors, 1, "propagate: exactly one error for one non-null violation")
+    ok(
+      r.errors[1].message:find("non%-null field resolved to null"),
+      "propagate: error message is 'non-null field resolved to null: ...'"
+    )
+    -- The field is null (nil in Lua → null in JSON), not the PROPAGATE sentinel.
+    ok(r.data.repository ~= nil, "propagate: Repository object is still present")
+    ok(r.data.repository.id == nil, "propagate: id field is null (PROPAGATE converted to nil)")
+  end)
+end
+
+do -- PROPAGATE stops at nullable: the nullable parent is not null, only the non-null field inside
+  -- Repository.name is "String!" (non-null); Query.repository is "Repository" (nullable).
+  -- When name is nil, null propagates to name but stops there — repository stays non-null.
+  with_resolvers({
+    ["Query.repository"] = function(_parent, _args, _ctx)
+      return { name = nil, __typename = "Repository" }
+    end,
+  }, function()
+    local r = call_handler({ query = '{ repository(name: "x") { name } }' })
+    eq(#r.errors, 1, "propagate stops at nullable: exactly one error")
+    ok(r.data.repository ~= nil, "propagate stops at nullable: Repository field is not null")
+    ok(r.data.repository.name == nil, "propagate stops at nullable: name field is null")
+  end)
+end
+
+do -- PROPAGATE in a list: non-null item failure becomes nil in the list, not the sentinel
+  -- Query.codesOfConduct is [CodeOfConduct]; CodeOfConduct.id is ID! (non-null).
+  -- Second item has id=nil → data.codesOfConduct[2].id must be nil, not a table/object.
+  with_resolvers({
+    ["Query.codesOfConduct"] = function(_parent, _args, _ctx)
+      return {
+        { __typename = "CodeOfConduct", id = "coc:mit", key = "mit", name = "MIT" },
+        { __typename = "CodeOfConduct", id = nil, key = "cc0-1.0", name = "CC0" },
+      }
+    end,
+  }, function()
+    local r = call_handler({ query = "{ codesOfConduct { id } }" })
+    ok(r.errors and #r.errors == 1, "propagate in list: exactly one error")
+    -- First item succeeds; second item's id is null (not the PROPAGATE sentinel object).
+    eq(r.data.codesOfConduct[1].id, "coc:mit", "propagate in list: first item id intact")
+    ok(
+      r.data.codesOfConduct[2].id == nil,
+      "propagate in list: second item id is null (not sentinel)"
+    )
+  end)
+end
+
+-- ============================================================
+-- graphql_fetch_or_error: HTTP-status → error-code mapping
+-- ============================================================
+
+-- luacheck: globals graphql_fetch_or_error
+
+-- make_fetch_stub: returns a fetch_json stub that produces (ok, status, {}, json_body).
+-- Pass status=nil to simulate a network failure (ok=false).
+local function make_fetch_stub(status, json_body)
+  return function(_path, _method, _body)
+    if status == nil then
+      return false, nil, nil, nil -- network failure
+    end
+    return true, status, {}, json_body or '{"key":"value"}'
+  end
+end
+
+do -- success: returns decoded data, no error added to ctx
+  local ctx = { errors = {}, path = {} }
+  local fetch = make_fetch_stub(200, '{"login":"fido"}')
+  local data = graphql_fetch_or_error(fetch, "/user", ctx, nil)
+  ok(data ~= nil, "fetch_or_error: 200 → data returned")
+  eq(data.login, "fido", "fetch_or_error: 200 → decoded body accessible")
+  eq(#ctx.errors, 0, "fetch_or_error: 200 → no errors added")
+end
+
+do -- 404 → NOT_FOUND code, nil returned
+  local ctx = { errors = {}, path = {} }
+  local fetch = make_fetch_stub(404)
+  local data = graphql_fetch_or_error(fetch, "/repos/x/y", ctx, nil)
+  ok(data == nil, "fetch_or_error: 404 → nil returned")
+  eq(#ctx.errors, 1, "fetch_or_error: 404 → one error added")
+  eq(ctx.errors[1].extensions.code, "NOT_FOUND", "fetch_or_error: 404 → NOT_FOUND code")
+end
+
+do -- 401 → FORBIDDEN code
+  local ctx = { errors = {}, path = {} }
+  local fetch = make_fetch_stub(401, "")
+  -- graphql_fetch produces "upstream error 401 fetching /path" which matches "40[13]"
+  local data = graphql_fetch_or_error(fetch, "/user", ctx, nil)
+  ok(data == nil, "fetch_or_error: 401 → nil returned")
+  eq(ctx.errors[1].extensions.code, "FORBIDDEN", "fetch_or_error: 401 → FORBIDDEN code")
+end
+
+do -- 403 → FORBIDDEN code
+  local ctx = { errors = {}, path = {} }
+  local fetch = make_fetch_stub(403, "")
+  local data = graphql_fetch_or_error(fetch, "/user", ctx, nil)
+  ok(data == nil, "fetch_or_error: 403 → nil returned")
+  eq(ctx.errors[1].extensions.code, "FORBIDDEN", "fetch_or_error: 403 → FORBIDDEN code")
+end
+
+do -- 429 → RATE_LIMITED code
+  local ctx = { errors = {}, path = {} }
+  local fetch = make_fetch_stub(429, "")
+  local data = graphql_fetch_or_error(fetch, "/user", ctx, nil)
+  ok(data == nil, "fetch_or_error: 429 → nil returned")
+  eq(ctx.errors[1].extensions.code, "RATE_LIMITED", "fetch_or_error: 429 → RATE_LIMITED code")
+end
+
+do -- 500 → INTERNAL_ERROR code
+  local ctx = { errors = {}, path = {} }
+  local fetch = make_fetch_stub(500, "")
+  local data = graphql_fetch_or_error(fetch, "/user", ctx, nil)
+  ok(data == nil, "fetch_or_error: 500 → nil returned")
+  eq(ctx.errors[1].extensions.code, "INTERNAL_ERROR", "fetch_or_error: 500 → INTERNAL_ERROR code")
+end
+
+do -- network failure → INTERNAL_ERROR code
+  local ctx = { errors = {}, path = {} }
+  local fetch = make_fetch_stub(nil) -- ok=false
+  local data = graphql_fetch_or_error(fetch, "/user", ctx, nil)
+  ok(data == nil, "fetch_or_error: network failure → nil returned")
+  eq(
+    ctx.errors[1].extensions.code,
+    "INTERNAL_ERROR",
+    "fetch_or_error: network failure → INTERNAL_ERROR code"
+  )
+end
+
+do -- error message forwarded to ctx.errors[1].message
+  local ctx = { errors = {}, path = {} }
+  local fetch = make_fetch_stub(404)
+  graphql_fetch_or_error(fetch, "/repos/owner/repo", ctx, nil)
+  ok(
+    ctx.errors[1].message:find("not found"),
+    "fetch_or_error: error message forwarded from graphql_fetch"
+  )
 end
 
 -- ============================================================

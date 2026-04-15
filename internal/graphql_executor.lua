@@ -294,6 +294,12 @@ end
 local execute_selection_set
 local complete_value
 
+-- PROPAGATE is a unique sentinel returned by complete_value when a Non-Null field
+-- resolves to null.  The parent complete_value propagates it upward until a nullable
+-- type stops it (returning nil) or execute_selection_set converts it to nil in the
+-- result table.  Identity comparison only — never serialised or exposed to resolvers.
+local PROPAGATE = {}
+
 -- execute_field: resolves one field and returns the raw (uncompleted) value.
 local function execute_field(field_node, type_name, parent, ctx)
   local field_name = field_node.name.value
@@ -336,13 +342,23 @@ complete_value = function(value, type_ref, field_node, type_name, ctx)
   if graphql_schema_is_nonnull(type_ref) then
     local inner_ref = type_ref:sub(1, -2) -- strip trailing "!"
     local inner = complete_value(value, inner_ref, field_node, type_name, ctx)
-    if inner == nil then
-      local response_key = (field_node.alias and field_node.alias.value) or field_node.name.value
-      append_error(ctx, "non-null field returned null: " .. response_key, field_node)
+    if inner == nil or inner == PROPAGATE then
+      -- Non-null contract violated; bubble upward so the nearest nullable ancestor
+      -- becomes null (execute_selection_set converts PROPAGATE → nil in the result).
+      graphql_error(
+        ctx,
+        "non-null field resolved to null: " .. (field_node and field_node.name.value or "?"),
+        field_node
+      )
+      return PROPAGATE
     end
     return inner
   end
 
+  -- Nullable: absorb any upward-propagating null here.
+  if value == PROPAGATE then
+    return nil
+  end
   if value == nil then
     return nil
   end
@@ -359,7 +375,14 @@ complete_value = function(value, type_ref, field_node, type_name, ctx)
     -- Query.nodes where some entries are nil/null) to preserve the correct length.
     local len = rawget(value, "n") or #value
     for i = 1, len do
-      result[i] = complete_value(value[i], inner_ref, field_node, type_name, ctx)
+      ctx.path[#ctx.path + 1] = i - 1 -- push 0-based index per spec
+      local item = complete_value(value[i], inner_ref, field_node, type_name, ctx)
+      -- Do not use `item and nil or item` — the ternary idiom breaks when nil is
+      -- the "truthy" branch.  An explicit if keeps PROPAGATE out of the result.
+      if item ~= PROPAGATE then
+        result[i] = item
+      end
+      ctx.path[#ctx.path] = nil -- pop
     end
     return result
   end
@@ -394,10 +417,18 @@ execute_selection_set = function(sel_set, type_name, parent, ctx)
     local field_nodes = field_map[response_key]
     local field_node = field_nodes[1]
     local field_name = field_node.name.value
+    ctx.path[#ctx.path + 1] = response_key -- push
     local raw = execute_field(field_node, type_name, parent, ctx)
     local field_def = graphql_schema_field(type_name, field_name)
     local type_ref = (field_def and field_def.type) or "String"
-    result[response_key] = complete_value(raw, type_ref, field_node, type_name, ctx)
+    local completed = complete_value(raw, type_ref, field_node, type_name, ctx)
+    -- PROPAGATE means a non-null field resolved to null; the field becomes null
+    -- (nil in Lua) in the result.  Do not use the `a and b or c` ternary here —
+    -- it breaks when b is nil (falsy), causing PROPAGATE to leak into the result.
+    if completed ~= PROPAGATE then
+      result[response_key] = completed
+    end
+    ctx.path[#ctx.path] = nil -- pop
   end
   return result
 end
@@ -449,6 +480,20 @@ end
 -- graphql_validate: Phase 1 field-existence and leaf/composite checks
 -- ---------------------------------------------------------------------------
 
+-- graphql_validate_error: builds a validation error table (VALIDATION_ERROR code).
+-- Simpler than graphql_error — no ctx needed since validation runs before execution.
+-- name_node is a NameNode with optional line/col from the parser, or nil.
+local function graphql_validate_error(message, name_node)
+  local err = {
+    message = message,
+    extensions = { code = "VALIDATION_ERROR" },
+  }
+  if name_node and name_node.line then
+    err.locations = { { line = name_node.line, column = name_node.col } }
+  end
+  return err
+end
+
 -- validate_selection_set: recursively validate field existence and structure.
 -- Returns an array of error objects (empty means valid).
 local function validate_selection_set(sel_set, type_name, doc, seen_frags, errors)
@@ -459,29 +504,22 @@ local function validate_selection_set(sel_set, type_name, doc, seen_frags, error
       if field_name ~= "__typename" and field_name ~= "__schema" and field_name ~= "__type" then
         local field_def = graphql_schema_field(type_name, field_name)
         if not field_def then
-          errors[#errors + 1] = {
-            message = "Field '" .. field_name .. "' does not exist on type '" .. type_name .. "'",
-            locations = sel.name.line and { { line = sel.name.line, column = sel.name.col } }
-              or nil,
-          }
+          errors[#errors + 1] = graphql_validate_error(
+            "Field '" .. field_name .. "' does not exist on type '" .. type_name .. "'",
+            sel.name
+          )
         else
           local is_leaf = graphql_schema_is_leaf(field_def.type)
           if is_leaf and sel.selection_set then
-            errors[#errors + 1] = {
-              message = "Field '"
-                .. field_name
-                .. "' is a leaf type and must not have sub-selections",
-              locations = sel.name.line and { { line = sel.name.line, column = sel.name.col } }
-                or nil,
-            }
+            errors[#errors + 1] = graphql_validate_error(
+              "Field '" .. field_name .. "' is a leaf type and must not have sub-selections",
+              sel.name
+            )
           elseif not is_leaf and not sel.selection_set then
-            errors[#errors + 1] = {
-              message = "Field '"
-                .. field_name
-                .. "' is a composite type and must have sub-selections",
-              locations = sel.name.line and { { line = sel.name.line, column = sel.name.col } }
-                or nil,
-            }
+            errors[#errors + 1] = graphql_validate_error(
+              "Field '" .. field_name .. "' is a composite type and must have sub-selections",
+              sel.name
+            )
           elseif sel.selection_set then
             local base = graphql_schema_base_type(field_def.type)
             validate_selection_set(sel.selection_set, base, doc, seen_frags, errors)
@@ -520,7 +558,9 @@ local function graphql_validate(doc, op)
   elseif op.operation == "mutation" then
     root_type = graphql_schema_data.mutation_type
   else
-    return { { message = "Unsupported operation type: " .. tostring(op.operation) } }
+    return {
+      graphql_validate_error("Unsupported operation type: " .. tostring(op.operation), nil),
+    }
   end
   local errors = {}
   validate_selection_set(op.selection_set, root_type, doc, {}, errors)
@@ -609,10 +649,12 @@ function graphql_handler() -- luacheck: globals graphql_handler
   local raw = GetBody() or ""
   local req = DecodeJson(raw)
   if not req or type(req.query) ~= "string" then
-    respond_graphql(
-      nil,
-      { { message = "POST /graphql requires a JSON body with a 'query' field" } }
-    )
+    respond_graphql(nil, {
+      {
+        message = "POST /graphql requires a JSON body with a 'query' field",
+        extensions = { code = "BAD_USER_INPUT" },
+      },
+    })
     return
   end
   local source = req.query
@@ -622,14 +664,24 @@ function graphql_handler() -- luacheck: globals graphql_handler
   -- Step 2: parse.
   local doc, parse_err = graphql_parse(source)
   if not doc then
-    respond_graphql(nil, { { message = parse_err } })
+    respond_graphql(nil, {
+      {
+        message = parse_err,
+        extensions = { code = "PARSE_ERROR" },
+      },
+    })
     return
   end
 
   -- Step 3: select operation.
   local op, sel_err = select_operation(doc, op_name)
   if not op then
-    respond_graphql(nil, { { message = sel_err } })
+    respond_graphql(nil, {
+      {
+        message = sel_err,
+        extensions = { code = "BAD_USER_INPUT" },
+      },
+    })
     return
   end
 
@@ -645,6 +697,7 @@ function graphql_handler() -- luacheck: globals graphql_handler
     doc = doc,
     variables = variables,
     errors = {},
+    path = {},
   }
   -- Build variable_defs lookup: name → VariableDefinitionNode (for default values).
   ctx.variable_defs = {}
