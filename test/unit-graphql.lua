@@ -1398,6 +1398,50 @@ do -- subscription operation: unsupported op type → null data (execute_operati
 end
 
 -- ============================================================
+-- ctx.path tracking: path appears in errors during execution
+-- ============================================================
+
+do -- path recorded for nested non-null field error
+  -- Query.repository → Repository.id (ID!) with id=nil triggers a non-null error.
+  -- The error path should be ["repository", "id"].
+  with_resolvers({
+    ["Query.repository"] = function(_parent, _args, _ctx)
+      return { id = nil, __typename = "Repository" }
+    end,
+  }, function()
+    local r = call_handler({ query = '{ repository(name: "x") { id } }' })
+    ok(r.errors and #r.errors > 0, "path tracking: nested field error recorded")
+    local err = r.errors[1]
+    ok(err.path ~= nil, "path tracking: path is present on field error")
+    eq(err.path[1], "repository", "path tracking: path[1] is 'repository'")
+    eq(err.path[2], "id", "path tracking: path[2] is 'id'")
+    eq(#err.path, 2, "path tracking: path has exactly 2 segments")
+  end)
+end
+
+do -- path includes 0-based list index for error inside a list item
+  -- Query.codesOfConduct returns [CodeOfConduct]; CodeOfConduct.id is ID! (non-null).
+  -- The second item has id=nil → error path should be ["codesOfConduct", 1, "id"].
+  with_resolvers({
+    ["Query.codesOfConduct"] = function(_parent, _args, _ctx)
+      return {
+        { __typename = "CodeOfConduct", id = "coc:mit", key = "mit", name = "MIT" },
+        { __typename = "CodeOfConduct", id = nil, key = "cc0-1.0", name = "CC0" },
+      }
+    end,
+  }, function()
+    local r = call_handler({ query = "{ codesOfConduct { id } }" })
+    ok(r.errors and #r.errors > 0, "path tracking: list item error recorded")
+    local err = r.errors[1]
+    ok(err.path ~= nil, "path tracking: path present for list item error")
+    eq(err.path[1], "codesOfConduct", "path tracking: list path[1] is field name")
+    eq(err.path[2], 1, "path tracking: list path[2] is 0-based index (1 = second item)")
+    eq(err.path[3], "id", "path tracking: list path[3] is 'id'")
+    eq(#err.path, 3, "path tracking: list error path has 3 segments")
+  end)
+end
+
+-- ============================================================
 -- Summary
 -- ============================================================
 

@@ -359,7 +359,9 @@ complete_value = function(value, type_ref, field_node, type_name, ctx)
     -- Query.nodes where some entries are nil/null) to preserve the correct length.
     local len = rawget(value, "n") or #value
     for i = 1, len do
+      ctx.path[#ctx.path + 1] = i - 1 -- push 0-based index per spec
       result[i] = complete_value(value[i], inner_ref, field_node, type_name, ctx)
+      ctx.path[#ctx.path] = nil -- pop
     end
     return result
   end
@@ -394,10 +396,12 @@ execute_selection_set = function(sel_set, type_name, parent, ctx)
     local field_nodes = field_map[response_key]
     local field_node = field_nodes[1]
     local field_name = field_node.name.value
+    ctx.path[#ctx.path + 1] = response_key -- push
     local raw = execute_field(field_node, type_name, parent, ctx)
     local field_def = graphql_schema_field(type_name, field_name)
     local type_ref = (field_def and field_def.type) or "String"
     result[response_key] = complete_value(raw, type_ref, field_node, type_name, ctx)
+    ctx.path[#ctx.path] = nil -- pop
   end
   return result
 end
@@ -645,6 +649,7 @@ function graphql_handler() -- luacheck: globals graphql_handler
     doc = doc,
     variables = variables,
     errors = {},
+    path = {},
   }
   -- Build variable_defs lookup: name → VariableDefinitionNode (for default values).
   ctx.variable_defs = {}
