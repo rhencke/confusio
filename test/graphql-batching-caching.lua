@@ -140,6 +140,76 @@ do -- APQ body that also includes a query field is still rejected
 end
 
 -- ============================================================
+-- Cost-limit enforcement
+-- ============================================================
+
+-- Helper: parse source and return the first OperationDefinition.
+local function parse_op(src)
+  local doc, err = graphql_parse(src) -- luacheck: globals graphql_parse
+  if not doc then
+    error("parse failed: " .. tostring(err))
+  end
+  return doc.definitions[1]
+end
+
+do -- 100×100 nested connection → cost 10100 (100 outer + 100*100 inner)
+  -- outer first:100 → 100; inner first:100 per outer item → 100*100 = 10000; total = 10100
+  local op =
+    parse_op("{ repositories(first: 100) { nodes { issues(first: 100) { nodes { title } } } } }")
+  local cost = estimate_query_cost(op, {}) -- luacheck: globals estimate_query_cost
+  ok(
+    cost > 10000,
+    "cost: 100×100 nested connection exceeds GRAPHQL_MAX_COST (got " .. tostring(cost) .. ")"
+  )
+end
+
+do -- cost enforcement gate: query over ceiling → data:null, BAD_USER_INPUT, estimatedCost
+  -- Stub estimate_query_cost to return 10001 so validation (run first) can pass on a
+  -- simple schema-valid query, while the cost gate still fires as intended.
+  local _saved = estimate_query_cost -- luacheck: globals estimate_query_cost
+  estimate_query_cost = function(_op, _vars)
+    return 10001
+  end -- luacheck: globals estimate_query_cost
+  local status, r = run_handler(EncodeJson({ query = "{ rateLimit { cost } }" }))
+  estimate_query_cost = _saved -- luacheck: globals estimate_query_cost
+  eq(status, 200, "cost-limit: HTTP 200 (GraphQL-layer rejection)")
+  ok(r ~= nil, "cost-limit: response is valid JSON")
+  ok(r.errors ~= nil and #r.errors == 1, "cost-limit: exactly one error")
+  eq(r.errors[1].extensions.code, "BAD_USER_INPUT", "cost-limit: error code BAD_USER_INPUT")
+  eq(r.errors[1].extensions.estimatedCost, 10001, "cost-limit: estimatedCost is 10001")
+  eq(r.errors[1].extensions.maxAllowedCost, 10000, "cost-limit: maxAllowedCost is 10000")
+  ok(
+    type(r.errors[1].message) == "string" and r.errors[1].message:find("exceeds") ~= nil,
+    "cost-limit: message mentions exceeds"
+  )
+end
+
+do -- cost enforcement gate: cost exactly at ceiling (==10000) is allowed through
+  local _saved = estimate_query_cost -- luacheck: globals estimate_query_cost
+  estimate_query_cost = function(_op, _vars)
+    return 10000
+  end -- luacheck: globals estimate_query_cost
+  local status, r = run_handler(EncodeJson({ query = "{ rateLimit { cost } }" }))
+  estimate_query_cost = _saved -- luacheck: globals estimate_query_cost
+  eq(status, 200, "cost-limit: cost==10000 → HTTP 200")
+  ok(
+    r.errors == nil or #r.errors == 0 or r.errors[1].extensions.code ~= "BAD_USER_INPUT",
+    "cost-limit: cost==10000 allowed through (not rejected as cost-limit error)"
+  )
+end
+
+do -- introspection query has cost 1, well below ceiling → allowed
+  local body = EncodeJson({ query = "{ __schema { types { name } } }" })
+  local status, r = run_handler(body)
+  eq(status, 200, "cost-limit: introspection → HTTP 200")
+  ok(
+    r.errors == nil or #r.errors == 0 or r.errors[1].extensions.code ~= "BAD_USER_INPUT",
+    "cost-limit: introspection not rejected by cost enforcement"
+  )
+  ok(r.data ~= nil, "cost-limit: introspection returns data")
+end
+
+-- ============================================================
 -- Summary
 -- ============================================================
 

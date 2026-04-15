@@ -639,13 +639,19 @@ graphql_resolvers["Query.nodes"] = function(_parent, args, ctx)
 end
 
 -- ---------------------------------------------------------------------------
--- estimate_query_cost
+-- estimate_query_cost / GRAPHQL_MAX_COST
 -- ---------------------------------------------------------------------------
+
+-- Maximum allowed estimated query cost.  Queries whose estimated cost exceeds
+-- this value are rejected before execution.  The default (10000) is enough for
+-- practical GitHub CLI and Octokit queries; override in Phase 2 via SCRIPTARGS.
+local GRAPHQL_MAX_COST = 10000
 
 -- Lightweight pre-execution cost estimator.  Walks the operation's selection
 -- set counting connection argument values (first/last), multiplying for nested
 -- connections.  The result is stored in ctx.rate_cost before execution so that
--- the Query.rateLimit resolver can report a non-zero cost value.
+-- the Query.rateLimit resolver can report a non-zero cost value, and so that
+-- the cost-limit gate can reject runaway queries before execution begins.
 --
 -- Cost rules (mirrors GitHub's documented model):
 --   - Each field with a first/last argument contributes (multiplier × value).
@@ -654,8 +660,7 @@ end
 --   - Minimum returned value is 1 (math.max(1, total)).
 --
 -- This is best-effort: fragment spreads are not walked in Phase 1, and
--- @skip/@include directives are not applied.  The value is used only to
--- populate rateLimit.cost for observability; it has no enforcement effect.
+-- @skip/@include directives are not applied.
 function estimate_query_cost(op, variables) -- luacheck: globals estimate_query_cost
   local cost = 0
   -- We need a minimal ctx for coerce_value (Variable nodes require variables +
@@ -810,6 +815,23 @@ function graphql_handler() -- luacheck: globals graphql_handler
   end
   -- Estimate query cost before execution so rateLimit.cost reflects this query.
   ctx.rate_cost = estimate_query_cost(op, variables)
+  -- Step 5a: reject queries that exceed the cost ceiling.
+  if ctx.rate_cost > GRAPHQL_MAX_COST then
+    respond_graphql(nil, {
+      {
+        message = "query cost "
+          .. tostring(ctx.rate_cost)
+          .. " exceeds maximum allowed cost of "
+          .. tostring(GRAPHQL_MAX_COST),
+        extensions = {
+          code = "BAD_USER_INPUT",
+          estimatedCost = ctx.rate_cost,
+          maxAllowedCost = GRAPHQL_MAX_COST,
+        },
+      },
+    })
+    return
+  end
   local data = execute_operation(op, ctx)
 
   -- Step 6: write response.
