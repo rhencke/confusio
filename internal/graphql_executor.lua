@@ -685,18 +685,18 @@ function estimate_query_cost(op, variables) -- luacheck: globals estimate_query_
         end
         if page_size > 0 then
           cost = cost + multiplier * page_size
-          walk(sel.selectionSet, multiplier * page_size)
+          walk(sel.selection_set, multiplier * page_size)
         else
-          walk(sel.selectionSet, multiplier)
+          walk(sel.selection_set, multiplier)
         end
       elseif sel.kind == "InlineFragment" then
-        walk(sel.selectionSet, multiplier)
+        walk(sel.selection_set, multiplier)
       end
       -- FragmentSpread: not walked in Phase 1.
     end
   end
 
-  walk(op.selectionSet, 1)
+  walk(op.selection_set, 1)
   return math.max(1, cost)
 end
 

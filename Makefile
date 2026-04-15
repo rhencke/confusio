@@ -178,6 +178,7 @@ test-unit-graphql: redbean.com
 	./redbean.com -i test/graphql-node-resolvers.lua
 	./redbean.com -i test/graphql-translators.lua
 	./redbean.com -i test/graphql-pagination.lua
+	./redbean.com -i test/graphql-ratelimit-viewer.lua
 
 # Sequential preamble (boot-path checks), then all backends in parallel
 test-unit: test-unit-functions test-unit-graphql confusio.com $(MOCKS) hurl
