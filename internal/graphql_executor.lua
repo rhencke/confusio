@@ -294,6 +294,12 @@ end
 local execute_selection_set
 local complete_value
 
+-- PROPAGATE is a unique sentinel returned by complete_value when a Non-Null field
+-- resolves to null.  The parent complete_value propagates it upward until a nullable
+-- type stops it (returning nil) or execute_selection_set converts it to nil in the
+-- result table.  Identity comparison only — never serialised or exposed to resolvers.
+local PROPAGATE = {}
+
 -- execute_field: resolves one field and returns the raw (uncompleted) value.
 local function execute_field(field_node, type_name, parent, ctx)
   local field_name = field_node.name.value
@@ -336,13 +342,23 @@ complete_value = function(value, type_ref, field_node, type_name, ctx)
   if graphql_schema_is_nonnull(type_ref) then
     local inner_ref = type_ref:sub(1, -2) -- strip trailing "!"
     local inner = complete_value(value, inner_ref, field_node, type_name, ctx)
-    if inner == nil then
-      local response_key = (field_node.alias and field_node.alias.value) or field_node.name.value
-      append_error(ctx, "non-null field returned null: " .. response_key, field_node)
+    if inner == nil or inner == PROPAGATE then
+      -- Non-null contract violated; bubble upward so the nearest nullable ancestor
+      -- becomes null (execute_selection_set converts PROPAGATE → nil in the result).
+      graphql_error(
+        ctx,
+        "non-null field resolved to null: " .. (field_node and field_node.name.value or "?"),
+        field_node
+      )
+      return PROPAGATE
     end
     return inner
   end
 
+  -- Nullable: absorb any upward-propagating null here.
+  if value == PROPAGATE then
+    return nil
+  end
   if value == nil then
     return nil
   end
@@ -360,7 +376,12 @@ complete_value = function(value, type_ref, field_node, type_name, ctx)
     local len = rawget(value, "n") or #value
     for i = 1, len do
       ctx.path[#ctx.path + 1] = i - 1 -- push 0-based index per spec
-      result[i] = complete_value(value[i], inner_ref, field_node, type_name, ctx)
+      local item = complete_value(value[i], inner_ref, field_node, type_name, ctx)
+      -- Do not use `item and nil or item` — the ternary idiom breaks when nil is
+      -- the "truthy" branch.  An explicit if keeps PROPAGATE out of the result.
+      if item ~= PROPAGATE then
+        result[i] = item
+      end
       ctx.path[#ctx.path] = nil -- pop
     end
     return result
@@ -400,7 +421,13 @@ execute_selection_set = function(sel_set, type_name, parent, ctx)
     local raw = execute_field(field_node, type_name, parent, ctx)
     local field_def = graphql_schema_field(type_name, field_name)
     local type_ref = (field_def and field_def.type) or "String"
-    result[response_key] = complete_value(raw, type_ref, field_node, type_name, ctx)
+    local completed = complete_value(raw, type_ref, field_node, type_name, ctx)
+    -- PROPAGATE means a non-null field resolved to null; the field becomes null
+    -- (nil in Lua) in the result.  Do not use the `a and b or c` ternary here —
+    -- it breaks when b is nil (falsy), causing PROPAGATE to leak into the result.
+    if completed ~= PROPAGATE then
+      result[response_key] = completed
+    end
     ctx.path[#ctx.path] = nil -- pop
   end
   return result

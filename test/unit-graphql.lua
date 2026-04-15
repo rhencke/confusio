@@ -1442,6 +1442,67 @@ do -- path includes 0-based list index for error inside a list item
 end
 
 -- ============================================================
+-- PROPAGATE sentinel and null propagation
+-- ============================================================
+
+do -- non-null field with nil value: error message uses new wording, exactly one error
+  -- complete_value(nil, "ID!") should record exactly one "non-null field resolved to null"
+  -- error and store nil for that field in data.
+  with_resolvers({
+    ["Query.repository"] = function(_parent, _args, _ctx)
+      return { id = nil, __typename = "Repository" }
+    end,
+  }, function()
+    local r = call_handler({ query = '{ repository(name: "x") { id } }' })
+    eq(#r.errors, 1, "propagate: exactly one error for one non-null violation")
+    ok(
+      r.errors[1].message:find("non%-null field resolved to null"),
+      "propagate: error message is 'non-null field resolved to null: ...'"
+    )
+    -- The field is null (nil in Lua → null in JSON), not the PROPAGATE sentinel.
+    ok(r.data.repository ~= nil, "propagate: Repository object is still present")
+    ok(r.data.repository.id == nil, "propagate: id field is null (PROPAGATE converted to nil)")
+  end)
+end
+
+do -- PROPAGATE stops at nullable: the nullable parent is not null, only the non-null field inside
+  -- Repository.name is "String!" (non-null); Query.repository is "Repository" (nullable).
+  -- When name is nil, null propagates to name but stops there — repository stays non-null.
+  with_resolvers({
+    ["Query.repository"] = function(_parent, _args, _ctx)
+      return { name = nil, __typename = "Repository" }
+    end,
+  }, function()
+    local r = call_handler({ query = '{ repository(name: "x") { name } }' })
+    eq(#r.errors, 1, "propagate stops at nullable: exactly one error")
+    ok(r.data.repository ~= nil, "propagate stops at nullable: Repository field is not null")
+    ok(r.data.repository.name == nil, "propagate stops at nullable: name field is null")
+  end)
+end
+
+do -- PROPAGATE in a list: non-null item failure becomes nil in the list, not the sentinel
+  -- Query.codesOfConduct is [CodeOfConduct]; CodeOfConduct.id is ID! (non-null).
+  -- Second item has id=nil → data.codesOfConduct[2].id must be nil, not a table/object.
+  with_resolvers({
+    ["Query.codesOfConduct"] = function(_parent, _args, _ctx)
+      return {
+        { __typename = "CodeOfConduct", id = "coc:mit", key = "mit", name = "MIT" },
+        { __typename = "CodeOfConduct", id = nil, key = "cc0-1.0", name = "CC0" },
+      }
+    end,
+  }, function()
+    local r = call_handler({ query = "{ codesOfConduct { id } }" })
+    ok(r.errors and #r.errors == 1, "propagate in list: exactly one error")
+    -- First item succeeds; second item's id is null (not the PROPAGATE sentinel object).
+    eq(r.data.codesOfConduct[1].id, "coc:mit", "propagate in list: first item id intact")
+    ok(
+      r.data.codesOfConduct[2].id == nil,
+      "propagate in list: second item id is null (not sentinel)"
+    )
+  end)
+end
+
+-- ============================================================
 -- Summary
 -- ============================================================
 
