@@ -197,6 +197,18 @@ jsonpath "$.data.repository.refs.nodes" isCollection
 jsonpath "$.data.repository.refs.nodes[0].name" == "main"
 jsonpath "$.data.repository.refs.nodes[0].target.oid" == "abc123def456"
 
+# POST /graphql — Issue.comments returns an IssueCommentConnection
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ repository(owner: \"octocat\", name: \"hello-world\") { issues { nodes { number comments { nodes { body author { login } } } } } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.repository.issues.nodes[0].number" == 1
+jsonpath "$.data.repository.issues.nodes[0].comments.nodes" isCollection
+jsonpath "$.data.repository.issues.nodes[0].comments.nodes[0].body" == "This is a comment"
+jsonpath "$.data.repository.issues.nodes[0].comments.nodes[0].author.login" == "octocat"
+
 # POST /graphql — Repository.collaborators returns a RepositoryCollaboratorConnection
 POST http://{{host}}/graphql
 Content-Type: application/json

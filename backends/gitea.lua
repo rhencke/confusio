@@ -3461,6 +3461,37 @@ graphql_resolvers["Repository.refs"] = function(parent, args, ctx)
   end, graphql_refs_connection)
 end
 
+-- Issue.comments: paginated list of comments for a single issue.
+-- Decodes the Issue node ID to extract owner/repo/number, then fetches
+-- /api/v1/repos/{owner}/{repo}/issues/{number}/comments.
+graphql_resolvers["Issue.comments"] = function(parent, args, ctx)
+  local _, local_id = decode_node_id(parent.id)
+  if not local_id then
+    return nil
+  end
+  local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local url = graphql_cursor_url(
+    base() .. "/repos/" .. owner .. "/" .. repo .. "/issues/" .. number .. "/comments",
+    args,
+    { per_page = "limit", page = "page" }
+  )
+  local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
+  if not data then
+    graphql_error(ctx, err)
+    return nil
+  end
+  local total = (headers["X-Total"] and tonumber(headers["X-Total"]))
+    or (headers["X-Total-Count"] and tonumber(headers["X-Total-Count"]))
+  local nodes = {}
+  for _, c in ipairs(data) do
+    nodes[#nodes + 1] = graphql_translate_comment(translate_gitea_issue_comment(c), owner, repo)
+  end
+  return graphql_make_connection("IssueComment", nodes, args, total, ctx)
+end
+
 -- Repository.collaborators: paginated list of collaborators as Users.
 graphql_resolvers["Repository.collaborators"] = function(parent, args, ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
