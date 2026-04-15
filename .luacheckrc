@@ -76,11 +76,13 @@ globals = {
   "respond_graphql",
   "graphql_error",
   "graphql_handler",
+  "estimate_query_cost",
   -- GraphQL translators: internal/graphql_translators.lua
   "encode_node_id",
   "decode_node_id",
   "graphql_fetch",
   "graphql_fetch_with_headers",
+  "graphql_fetch_or_error",
   "graphql_page_to_cursor",
   "graphql_cursor_to_page",
   "graphql_cursor_url",
