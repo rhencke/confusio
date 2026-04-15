@@ -9,6 +9,7 @@
 --   decode_node_id(encoded)
 --   graphql_fetch(fetch_json, path[, method[, body]])
 --   graphql_fetch_with_headers(fetch_json, path[, method[, body]])
+--   graphql_fetch_or_error(fetch_json, path, ctx, field_node[, method[, body]])
 --   graphql_page_to_cursor(page)
 --   graphql_cursor_to_page(cursor)
 --   graphql_cursor_url(url_base, args, param_names)
@@ -146,6 +147,35 @@ function graphql_fetch_with_headers(fetch_json, path, method, body) -- luacheck:
     return nil, nil, "invalid JSON from upstream for " .. path
   end
   return decoded, headers or {}, nil
+end
+
+-- graphql_fetch_or_error is global: like graphql_fetch but records an error in ctx on
+-- failure and returns nil, so callers can write `if not data then return nil end` instead
+-- of repeating the HTTP-status → error-code mapping in every resolver.
+--
+-- fetch_json:  the backend's fetch function (from make_backend_transport)
+-- path:        full URL to request
+-- ctx:         GraphQL execution context (errors array)
+-- field_node:  FieldNode being resolved (for location tracking), or nil
+-- method:      HTTP method string, or nil for GET
+-- body:        request body (JSON-encoded string) or nil
+--
+-- Returns decoded_table on success, nil on failure (error already in ctx.errors).
+function graphql_fetch_or_error(fetch_json, path, ctx, field_node, method, body) -- luacheck: globals graphql_fetch_or_error
+  local data, err = graphql_fetch(fetch_json, path, method, body)
+  if not data then
+    local code = "INTERNAL_ERROR"
+    if err:find("not found") then
+      code = "NOT_FOUND"
+    elseif err:find("40[13]") then
+      code = "FORBIDDEN"
+    elseif err:find("429") then
+      code = "RATE_LIMITED"
+    end
+    graphql_error(ctx, err, field_node, code)
+    return nil
+  end
+  return data
 end
 
 -- ---------------------------------------------------------------------------

@@ -41,6 +41,7 @@ dofile("internal/graphql_schema_data.lua")
 dofile("internal/graphql_schema.lua")
 dofile("internal/http.lua")
 dofile("internal/graphql_executor.lua")
+dofile("internal/graphql_translators.lua") -- graphql_fetch, graphql_fetch_or_error, etc.
 
 dofile = _real_dofile -- luacheck: globals dofile
 
@@ -1558,6 +1559,96 @@ do -- PROPAGATE in a list: non-null item failure becomes nil in the list, not th
       "propagate in list: second item id is null (not sentinel)"
     )
   end)
+end
+
+-- ============================================================
+-- graphql_fetch_or_error: HTTP-status → error-code mapping
+-- ============================================================
+
+-- luacheck: globals graphql_fetch_or_error
+
+-- make_fetch_stub: returns a fetch_json stub that produces (ok, status, {}, json_body).
+-- Pass status=nil to simulate a network failure (ok=false).
+local function make_fetch_stub(status, json_body)
+  return function(_path, _method, _body)
+    if status == nil then
+      return false, nil, nil, nil -- network failure
+    end
+    return true, status, {}, json_body or '{"key":"value"}'
+  end
+end
+
+do -- success: returns decoded data, no error added to ctx
+  local ctx = { errors = {}, path = {} }
+  local fetch = make_fetch_stub(200, '{"login":"fido"}')
+  local data = graphql_fetch_or_error(fetch, "/user", ctx, nil)
+  ok(data ~= nil, "fetch_or_error: 200 → data returned")
+  eq(data.login, "fido", "fetch_or_error: 200 → decoded body accessible")
+  eq(#ctx.errors, 0, "fetch_or_error: 200 → no errors added")
+end
+
+do -- 404 → NOT_FOUND code, nil returned
+  local ctx = { errors = {}, path = {} }
+  local fetch = make_fetch_stub(404)
+  local data = graphql_fetch_or_error(fetch, "/repos/x/y", ctx, nil)
+  ok(data == nil, "fetch_or_error: 404 → nil returned")
+  eq(#ctx.errors, 1, "fetch_or_error: 404 → one error added")
+  eq(ctx.errors[1].extensions.code, "NOT_FOUND", "fetch_or_error: 404 → NOT_FOUND code")
+end
+
+do -- 401 → FORBIDDEN code
+  local ctx = { errors = {}, path = {} }
+  local fetch = make_fetch_stub(401, "")
+  -- graphql_fetch produces "upstream error 401 fetching /path" which matches "40[13]"
+  local data = graphql_fetch_or_error(fetch, "/user", ctx, nil)
+  ok(data == nil, "fetch_or_error: 401 → nil returned")
+  eq(ctx.errors[1].extensions.code, "FORBIDDEN", "fetch_or_error: 401 → FORBIDDEN code")
+end
+
+do -- 403 → FORBIDDEN code
+  local ctx = { errors = {}, path = {} }
+  local fetch = make_fetch_stub(403, "")
+  local data = graphql_fetch_or_error(fetch, "/user", ctx, nil)
+  ok(data == nil, "fetch_or_error: 403 → nil returned")
+  eq(ctx.errors[1].extensions.code, "FORBIDDEN", "fetch_or_error: 403 → FORBIDDEN code")
+end
+
+do -- 429 → RATE_LIMITED code
+  local ctx = { errors = {}, path = {} }
+  local fetch = make_fetch_stub(429, "")
+  local data = graphql_fetch_or_error(fetch, "/user", ctx, nil)
+  ok(data == nil, "fetch_or_error: 429 → nil returned")
+  eq(ctx.errors[1].extensions.code, "RATE_LIMITED", "fetch_or_error: 429 → RATE_LIMITED code")
+end
+
+do -- 500 → INTERNAL_ERROR code
+  local ctx = { errors = {}, path = {} }
+  local fetch = make_fetch_stub(500, "")
+  local data = graphql_fetch_or_error(fetch, "/user", ctx, nil)
+  ok(data == nil, "fetch_or_error: 500 → nil returned")
+  eq(ctx.errors[1].extensions.code, "INTERNAL_ERROR", "fetch_or_error: 500 → INTERNAL_ERROR code")
+end
+
+do -- network failure → INTERNAL_ERROR code
+  local ctx = { errors = {}, path = {} }
+  local fetch = make_fetch_stub(nil) -- ok=false
+  local data = graphql_fetch_or_error(fetch, "/user", ctx, nil)
+  ok(data == nil, "fetch_or_error: network failure → nil returned")
+  eq(
+    ctx.errors[1].extensions.code,
+    "INTERNAL_ERROR",
+    "fetch_or_error: network failure → INTERNAL_ERROR code"
+  )
+end
+
+do -- error message forwarded to ctx.errors[1].message
+  local ctx = { errors = {}, path = {} }
+  local fetch = make_fetch_stub(404)
+  graphql_fetch_or_error(fetch, "/repos/owner/repo", ctx, nil)
+  ok(
+    ctx.errors[1].message:find("not found"),
+    "fetch_or_error: error message forwarded from graphql_fetch"
+  )
 end
 
 -- ============================================================
