@@ -3357,6 +3357,123 @@ graphql_resolvers["node.Label"] = function(local_id, _ctx)
   return graphql_translate_label(translate_gitea_label(data), owner, repo)
 end
 
+-- ---------------------------------------------------------------------------
+-- Repository connection sub-resolvers
+-- ---------------------------------------------------------------------------
+-- Local helper: build a paginated Relay Connection from a Gitea list endpoint.
+-- Fetches page from graphql_cursor_url(base_suffix, args, {per_page="limit", page="page"}),
+-- reads X-Total / X-Total-Count for totalCount, translates items with translate_fn(item),
+-- and delegates to make_conn(nodes, args, total, ctx).
+local function gitea_repo_connection(owner, repo, suffix, args, ctx, translate_fn, make_conn)
+  local url = graphql_cursor_url(
+    base() .. "/repos/" .. owner .. "/" .. repo .. suffix,
+    args,
+    { per_page = "limit", page = "page" }
+  )
+  local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
+  if not data then
+    graphql_error(ctx, err)
+    return nil
+  end
+  local total = (headers["X-Total"] and tonumber(headers["X-Total"]))
+    or (headers["X-Total-Count"] and tonumber(headers["X-Total-Count"]))
+  local nodes = {}
+  for _, item in ipairs(data) do
+    nodes[#nodes + 1] = translate_fn(item)
+  end
+  return make_conn(nodes, args, total, ctx)
+end
+
+-- Repository.issues: paginated list of issues (excluding pull requests).
+-- Passes type=issues so Gitea omits PRs from the response.
+graphql_resolvers["Repository.issues"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return gitea_repo_connection(owner, name, "/issues?type=issues", args, ctx, function(i)
+    return graphql_translate_issue(translate_gitea_issue(i), owner, name)
+  end, graphql_issues_connection)
+end
+
+-- Repository.pullRequests: paginated list of pull requests.
+graphql_resolvers["Repository.pullRequests"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return gitea_repo_connection(owner, name, "/pulls", args, ctx, function(p)
+    return graphql_translate_pr(translate_gitea_pull(p), owner, name)
+  end, graphql_prs_connection)
+end
+
+-- Repository.releases: paginated list of releases.
+-- Gitea release objects are already GitHub-REST-compatible; no intermediate translator needed.
+graphql_resolvers["Repository.releases"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return gitea_repo_connection(owner, name, "/releases", args, ctx, function(r)
+    return graphql_translate_release(r, owner, name)
+  end, function(n, a, t, c)
+    return graphql_make_connection("Release", n, a, t, c)
+  end)
+end
+
+-- Repository.labels: paginated list of labels.
+graphql_resolvers["Repository.labels"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return gitea_repo_connection(owner, name, "/labels", args, ctx, function(l)
+    return graphql_translate_label(translate_gitea_label(l), owner, name)
+  end, graphql_labels_connection)
+end
+
+-- Repository.milestones: paginated list of milestones.
+graphql_resolvers["Repository.milestones"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return gitea_repo_connection(owner, name, "/milestones", args, ctx, function(m)
+    return graphql_translate_milestone(translate_gitea_milestone(m), owner, name)
+  end, function(n, a, t, c)
+    return graphql_make_connection("Milestone", n, a, t, c)
+  end)
+end
+
+-- Repository.refs: paginated list of branches as Ref objects.
+-- Gitea branch objects use commit.id for the SHA; we normalise to commit.sha before
+-- passing to graphql_translate_ref (which uses r.commit.sha).
+graphql_resolvers["Repository.refs"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return gitea_repo_connection(owner, name, "/branches", args, ctx, function(b)
+    if b.commit then
+      b.commit.sha = b.commit.id
+    end
+    return graphql_translate_ref(b, parent)
+  end, graphql_refs_connection)
+end
+
+-- Repository.collaborators: paginated list of collaborators as Users.
+graphql_resolvers["Repository.collaborators"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return gitea_repo_connection(owner, name, "/collaborators", args, ctx, function(u)
+    return graphql_translate_user(translate_user(u))
+  end, function(n, a, t, c)
+    return graphql_make_connection("RepositoryCollaborator", n, a, t, c)
+  end)
+end
+
 -- Repository.defaultBranchRef: enrich the inline stub with full branch data.
 -- The parent already carries {__typename="Ref",name="main"} from graphql_translate_repo.
 -- This resolver makes a second call to get the commit SHA.

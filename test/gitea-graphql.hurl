@@ -126,3 +126,83 @@ HTTP 200
 jsonpath "$.data.repository.languages.totalCount" == 2
 jsonpath "$.data.repository.languages.totalSize" == 19134
 jsonpath "$.data.repository.languages.nodes" isCollection
+
+# POST /graphql — Repository.issues returns an IssueConnection
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ repository(owner: \"octocat\", name: \"hello-world\") { issues { nodes { number title state } } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.repository.issues.nodes" isCollection
+jsonpath "$.data.repository.issues.nodes[0].number" == 1
+jsonpath "$.data.repository.issues.nodes[0].title" == "Found a bug"
+jsonpath "$.data.repository.issues.nodes[0].state" == "OPEN"
+
+# POST /graphql — Repository.pullRequests returns a PullRequestConnection
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ repository(owner: \"octocat\", name: \"hello-world\") { pullRequests { nodes { number title state } } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.repository.pullRequests.nodes" isCollection
+jsonpath "$.data.repository.pullRequests.nodes[0].number" == 1
+jsonpath "$.data.repository.pullRequests.nodes[0].title" == "A great PR"
+jsonpath "$.data.repository.pullRequests.nodes[0].state" == "OPEN"
+
+# POST /graphql — Repository.releases returns a ReleaseConnection
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ repository(owner: \"octocat\", name: \"hello-world\") { releases { nodes { tagName name isDraft isPrerelease } } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.repository.releases.nodes" isCollection
+jsonpath "$.data.repository.releases.nodes[0].tagName" == "v1.0"
+jsonpath "$.data.repository.releases.nodes[0].name" == "Release 1.0"
+jsonpath "$.data.repository.releases.nodes[0].isDraft" == false
+jsonpath "$.data.repository.releases.nodes[0].isPrerelease" == false
+
+# POST /graphql — Repository.labels returns a LabelConnection
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ repository(owner: \"octocat\", name: \"hello-world\") { labels { nodes { name color } } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.repository.labels.nodes" isCollection
+jsonpath "$.data.repository.labels.nodes[0].name" == "bug"
+jsonpath "$.data.repository.labels.nodes[0].color" == "d73a4a"
+
+# POST /graphql — Repository.milestones returns a MilestoneConnection
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ repository(owner: \"octocat\", name: \"hello-world\") { milestones { nodes { title state } } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.repository.milestones.nodes" isCollection
+jsonpath "$.data.repository.milestones.nodes[0].title" == "v1.0"
+jsonpath "$.data.repository.milestones.nodes[0].state" == "OPEN"
+
+# POST /graphql — Repository.refs returns a RefConnection (branches)
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ repository(owner: \"octocat\", name: \"hello-world\") { refs { nodes { name target { oid } } } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.repository.refs.nodes" isCollection
+jsonpath "$.data.repository.refs.nodes[0].name" == "main"
+jsonpath "$.data.repository.refs.nodes[0].target.oid" == "abc123def456"
+
+# POST /graphql — Repository.collaborators returns a RepositoryCollaboratorConnection
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ repository(owner: \"octocat\", name: \"hello-world\") { collaborators { nodes { login } } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.repository.collaborators.nodes" isCollection
+jsonpath "$.data.repository.collaborators.nodes[0].login" == "octocat"
