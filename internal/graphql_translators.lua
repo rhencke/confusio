@@ -33,6 +33,7 @@
 --   graphql_translate_commit(c)
 --   graphql_translate_ref(r, repo)
 --   graphql_translate_release(r[, owner, repo])
+--   graphql_translate_review(r[, owner, repo])
 --   graphql_translate_reaction(r)
 
 -- ---------------------------------------------------------------------------
@@ -671,6 +672,34 @@ function graphql_translate_pr(p, owner, repo) -- luacheck: globals graphql_trans
     createdAt = p.created_at,
     updatedAt = p.updated_at,
     closedAt = p.closed_at,
+  }
+end
+
+-- graphql_translate_review is global: converts a GitHub REST pull request review to GraphQL shape.
+-- owner and repo are optional; when provided they give the review a resolvable node ID.
+-- GitHub REST uses state "COMMENT" but GraphQL enum uses "COMMENTED"; normalised here.
+function graphql_translate_review(r, owner, repo) -- luacheck: globals graphql_translate_review
+  if not r then
+    return nil
+  end
+  local local_id
+  if owner and repo then
+    local_id = owner .. "/" .. repo .. "/" .. tostring(r.id or "")
+  else
+    local_id = tostring(r.id or "")
+  end
+  local state = r.state or "COMMENTED"
+  if state == "COMMENT" then
+    state = "COMMENTED"
+  end
+  return {
+    __typename = "PullRequestReview",
+    id = encode_node_id("PullRequestReview", local_id),
+    body = (r.body and r.body ~= "") and r.body or nil,
+    state = state,
+    author = r.user and graphql_translate_user(r.user) or nil,
+    submittedAt = r.submitted_at,
+    url = r.html_url,
   }
 end
 

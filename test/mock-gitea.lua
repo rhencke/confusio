@@ -31,6 +31,10 @@ function OnHttpRequest()
     .. '"location":"San Francisco","website":"https://github.blog",'
     .. '"followers_count":100,"following_count":5,"created":"2011-01-25T18:44:36Z"}'
 
+  local ORG = '{"login":"testorg","id":2,"avatar_url":"","html_url":"http://localhost/testorg",'
+    .. '"name":"Test Organization","description":"A test org","email":"","location":"",'
+    .. '"blog":"","created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z"}'
+
   local FOLLOWER = '[{"login":"hubot","id":2,"avatar_url":"","html_url":"","full_name":"Hubot",'
     .. '"email":"","is_admin":false,"location":"","website":"","followers_count":0,'
     .. '"following_count":0,"created":"2020-01-01T00:00:00Z"}]'
@@ -273,6 +277,9 @@ function OnHttpRequest()
       '{"id":1,"body":"Nice commit","user":{"login":"octocat"},"created_at":"2020-01-01T00:00:00Z"}',
     },
 
+    -- Orgs
+    ["/api/v1/orgs/testorg"] = { 200, ORG },
+
     -- Users
     ["GET /api/v1/user"] = { 200, USER },
     ["PATCH /api/v1/user/settings"] = { 200, USER },
@@ -411,6 +418,7 @@ function OnHttpRequest()
     -- Search
     ["/api/v1/repos/search"] = { 200, '{"data":[' .. REPO .. '],"ok":true}' },
     ["/api/v1/users/search"] = { 200, '{"data":[' .. USER .. '],"ok":true}' },
+    ["/api/v1/repos/issues/search"] = { 200, "[" .. ISSUE .. "]" },
 
     -- Gitignore templates
     ["/api/v1/gitignores"] = { 200, '["C","Go","Python"]' },
