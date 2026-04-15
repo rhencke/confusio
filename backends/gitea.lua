@@ -3286,3 +3286,73 @@ graphql_resolvers["node.IssueComment"] = function(local_id, _ctx)
   end
   return graphql_translate_comment(translate_gitea_issue_comment(data), owner, repo)
 end
+
+-- Query.user: look up a User by login.
+-- Returns nil (and no error) when the user does not exist.
+graphql_resolvers["Query.user"] = function(_parent, args, ctx)
+  if not args.login then
+    graphql_error(ctx, "user requires a login argument")
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, base() .. "/users/" .. args.login)
+  if not data then
+    return nil
+  end
+  return graphql_translate_user(translate_user(data))
+end
+
+-- Query.organization: look up an Organization by login.
+-- Returns nil (and no error) when the organization does not exist.
+graphql_resolvers["Query.organization"] = function(_parent, args, ctx)
+  if not args.login then
+    graphql_error(ctx, "organization requires a login argument")
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, base() .. "/orgs/" .. args.login)
+  if not data then
+    return nil
+  end
+  return graphql_translate_org(data)
+end
+
+-- Query.repository: look up a Repository by owner login and repo name.
+-- Returns nil (and no error) when the repository does not exist.
+graphql_resolvers["Query.repository"] = function(_parent, args, ctx)
+  if not args.owner or not args.name then
+    graphql_error(ctx, "repository requires owner and name arguments")
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, base() .. "/repos/" .. args.owner .. "/" .. args.name)
+  if not data then
+    return nil
+  end
+  return graphql_translate_repo(translate_repo(data))
+end
+
+-- node.Release: fetch a release by "owner/repo/release_id" local ID.
+graphql_resolvers["node.Release"] = function(local_id, _ctx)
+  local owner, repo, rid = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ =
+    graphql_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo .. "/releases/" .. rid)
+  if not data then
+    return nil
+  end
+  return graphql_translate_release(data, owner, repo)
+end
+
+-- node.Label: fetch a label by "owner/repo/label_id" local ID.
+graphql_resolvers["node.Label"] = function(local_id, _ctx)
+  local owner, repo, lid = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ =
+    graphql_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo .. "/labels/" .. lid)
+  if not data then
+    return nil
+  end
+  return graphql_translate_label(translate_gitea_label(data), owner, repo)
+end

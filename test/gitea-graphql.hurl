@@ -36,3 +36,63 @@ jsonpath "$.data.viewer.websiteUrl" == "https://github.blog"
 jsonpath "$.data.viewer.url" == "http://localhost/octocat"
 jsonpath "$.data.viewer.isViewer" == true
 jsonpath "$.data.viewer.isSiteAdmin" == false
+
+# POST /graphql — Query.user returns a user by login
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ user(login: \"octocat\") { login name email location websiteUrl url } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.user.login" == "octocat"
+jsonpath "$.data.user.name" == "The Octocat"
+jsonpath "$.data.user.email" == "octocat@github.com"
+jsonpath "$.data.user.location" == "San Francisco"
+jsonpath "$.data.user.websiteUrl" == "https://github.blog"
+jsonpath "$.data.user.url" == "http://localhost/octocat"
+
+# POST /graphql — Query.organization returns an organization by login
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ organization(login: \"testorg\") { login name description } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.organization.login" == "testorg"
+jsonpath "$.data.organization.name" == "Test Organization"
+jsonpath "$.data.organization.description" == "A test org"
+
+# POST /graphql — Query.repository returns a repository by owner and name
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ repository(owner: \"octocat\", name: \"hello-world\") { name nameWithOwner description } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.repository.name" == "hello-world"
+jsonpath "$.data.repository.nameWithOwner" == "octocat/hello-world"
+jsonpath "$.data.repository.description" == "My first repo"
+
+# POST /graphql — node(Release) fetches a release by encoded node ID
+# Node ID for Release:octocat/hello-world/1 = UmVsZWFzZTpvY3RvY2F0L2hlbGxvLXdvcmxkLzE=
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ node(id: \"UmVsZWFzZTpvY3RvY2F0L2hlbGxvLXdvcmxkLzE=\") { ... on Release { tagName name isDraft isPrerelease } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.node.tagName" == "v1.0"
+jsonpath "$.data.node.name" == "Release 1.0"
+jsonpath "$.data.node.isDraft" == false
+jsonpath "$.data.node.isPrerelease" == false
+
+# POST /graphql — node(Label) fetches a label by encoded node ID
+# Node ID for Label:octocat/hello-world/1 = TGFiZWw6b2N0b2NhdC9oZWxsby13b3JsZC8x
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ node(id: \"TGFiZWw6b2N0b2NhdC9oZWxsby13b3JsZC8x\") { ... on Label { name color } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.node.name" == "bug"
+jsonpath "$.data.node.color" == "d73a4a"
