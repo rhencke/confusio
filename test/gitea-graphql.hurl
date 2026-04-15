@@ -96,3 +96,33 @@ HTTP 200
 [Asserts]
 jsonpath "$.data.node.name" == "bug"
 jsonpath "$.data.node.color" == "d73a4a"
+
+# POST /graphql — Repository.owner is inlined by the translator (no sub-resolver)
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ repository(owner: \"octocat\", name: \"hello-world\") { owner { login } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.repository.owner.login" == "octocat"
+
+# POST /graphql — Repository.defaultBranchRef enriches the inline stub with commit SHA
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ repository(owner: \"octocat\", name: \"hello-world\") { defaultBranchRef { name target { oid } } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.repository.defaultBranchRef.name" == "main"
+jsonpath "$.data.repository.defaultBranchRef.target.oid" == "abc123def456"
+
+# POST /graphql — Repository.languages returns a LanguageConnection
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ repository(owner: \"octocat\", name: \"hello-world\") { languages { totalCount totalSize nodes { name } } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.repository.languages.totalCount" == 2
+jsonpath "$.data.repository.languages.totalSize" == 19134
+jsonpath "$.data.repository.languages.nodes" isCollection

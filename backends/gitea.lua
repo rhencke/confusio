@@ -3356,3 +3356,70 @@ graphql_resolvers["node.Label"] = function(local_id, _ctx)
   end
   return graphql_translate_label(translate_gitea_label(data), owner, repo)
 end
+
+-- Repository.defaultBranchRef: enrich the inline stub with full branch data.
+-- The parent already carries {__typename="Ref",name="main"} from graphql_translate_repo.
+-- This resolver makes a second call to get the commit SHA.
+-- Gitea branch objects use commit.id for the SHA; we normalise to commit.sha before
+-- passing to graphql_translate_ref.
+graphql_resolvers["Repository.defaultBranchRef"] = function(parent, _args, _ctx)
+  local branch = parent.defaultBranchRef and parent.defaultBranchRef.name
+  if not branch then
+    return nil
+  end
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ =
+    graphql_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. name .. "/branches/" .. branch)
+  if not data then
+    return nil
+  end
+  if data.commit then
+    data.commit.sha = data.commit.id
+  end
+  return graphql_translate_ref(data, parent)
+end
+
+-- Repository.languages: fetch language byte-count breakdown as a LanguageConnection.
+-- Gitea returns {"Language": bytes, ...}; we convert to the Relay Connection shape.
+-- Language colours are not available from Gitea's API; color is always nil.
+graphql_resolvers["Repository.languages"] = function(parent, _args, _ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ =
+    graphql_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. name .. "/languages")
+  if not data then
+    return nil
+  end
+  local nodes, edges = {}, {}
+  local total_size = 0
+  for lang_name, size in pairs(data) do
+    total_size = total_size + size
+    local node = {
+      __typename = "Language",
+      id = encode_node_id("Language", lang_name),
+      name = lang_name,
+      color = nil,
+    }
+    nodes[#nodes + 1] = node
+    edges[#edges + 1] = { cursor = "", node = node, size = size }
+  end
+  return {
+    __typename = "LanguageConnection",
+    totalCount = #nodes,
+    totalSize = total_size,
+    pageInfo = {
+      __typename = "PageInfo",
+      hasNextPage = false,
+      hasPreviousPage = false,
+      startCursor = nil,
+      endCursor = nil,
+    },
+    nodes = nodes,
+    edges = edges,
+  }
+end
