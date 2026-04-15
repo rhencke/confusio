@@ -92,7 +92,16 @@ end
 -- coerce_value: converts a parsed Value node to a Lua value.
 local function coerce_value(node, ctx)
   if node.kind == "Variable" then
-    return ctx.variables[node.name.value]
+    local name = node.name.value
+    local val = ctx.variables[name]
+    if val == nil then
+      -- Fall back to the VariableDefinition's default value, if any.
+      local vd = ctx.variable_defs and ctx.variable_defs[name]
+      if vd and vd.default_value then
+        return coerce_value(vd.default_value, ctx)
+      end
+    end
+    return val
   elseif node.kind == "IntValue" or node.kind == "FloatValue" then
     return tonumber(node.value)
   elseif node.kind == "StringValue" or node.kind == "EnumValue" then
@@ -564,6 +573,11 @@ function graphql_handler() -- luacheck: globals graphql_handler
     variables = variables,
     errors = {},
   }
+  -- Build variable_defs lookup: name → VariableDefinitionNode (for default values).
+  ctx.variable_defs = {}
+  for _, vd in ipairs(op.variable_definitions or {}) do
+    ctx.variable_defs[vd.variable.name.value] = vd
+  end
   local data = execute_operation(op, ctx)
 
   -- Step 6: write response.
