@@ -27,4 +27,5 @@ for _i in $(seq 1 150); do
 done
 
 ./hurl --retry 10 --retry-interval 200 --connect-timeout 5 --max-time 15 \
-  --variable host=localhost:$CONFUSIO_PORT test/gitea-root.hurl test/stub-apps.hurl
+  --variable host=localhost:$CONFUSIO_PORT test/gitea-root.hurl test/stub-apps.hurl \
+  test/integration-graphql.hurl
