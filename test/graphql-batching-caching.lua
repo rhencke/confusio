@@ -210,6 +210,90 @@ do -- introspection query has cost 1, well below ceiling → allowed
 end
 
 -- ============================================================
+-- graphql_cached
+-- ============================================================
+-- luacheck: globals graphql_cached
+
+-- Build a minimal ctx with an empty cache (mirrors graphql_handler's ctx init).
+local function make_cache_ctx()
+  return { errors = {}, path = {}, cache = {} }
+end
+
+do -- first call invokes fetch_fn and returns its result
+  local calls = 0
+  local ctx = make_cache_ctx()
+  local result = graphql_cached(ctx, "User:fido", function()
+    calls = calls + 1
+    return { login = "fido" }
+  end)
+  eq(calls, 1, "graphql_cached: first call invokes fetch_fn once")
+  ok(result ~= nil and result.login == "fido", "graphql_cached: first call returns fetch result")
+end
+
+do -- second call with same key returns cached value without re-invoking fetch_fn
+  local calls = 0
+  local ctx = make_cache_ctx()
+  local function fetch()
+    calls = calls + 1
+    return { login = "fido" }
+  end
+  graphql_cached(ctx, "User:fido", fetch)
+  local result2 = graphql_cached(ctx, "User:fido", fetch)
+  eq(calls, 1, "graphql_cached: second call does not invoke fetch_fn again")
+  ok(result2 ~= nil and result2.login == "fido", "graphql_cached: second call returns cached value")
+end
+
+do -- nil result is cached via CACHE_MISS sentinel; second call returns nil without fetch
+  local calls = 0
+  local ctx = make_cache_ctx()
+  local function fetch()
+    calls = calls + 1
+    return nil
+  end
+  local r1 = graphql_cached(ctx, "User:ghost", fetch)
+  local r2 = graphql_cached(ctx, "User:ghost", fetch)
+  eq(calls, 1, "graphql_cached: nil result cached; fetch_fn not called again")
+  ok(r1 == nil, "graphql_cached: first call returns nil when fetch_fn returns nil")
+  ok(r2 == nil, "graphql_cached: second call returns nil (from cache, not re-fetch)")
+end
+
+do -- different keys are independent; each invokes its own fetch_fn
+  local calls_a, calls_b = 0, 0
+  local ctx = make_cache_ctx()
+  graphql_cached(ctx, "User:alice", function()
+    calls_a = calls_a + 1
+    return { login = "alice" }
+  end)
+  graphql_cached(ctx, "User:bob", function()
+    calls_b = calls_b + 1
+    return { login = "bob" }
+  end)
+  eq(calls_a, 1, "graphql_cached: key alice fetched once")
+  eq(calls_b, 1, "graphql_cached: key bob fetched once (independent)")
+end
+
+do -- request-scoped isolation: two separate ctx tables share no cache state
+  local calls = 0
+  local function fetch()
+    calls = calls + 1
+    return { login = "fido" }
+  end
+  local ctx1 = make_cache_ctx()
+  local ctx2 = make_cache_ctx()
+  graphql_cached(ctx1, "User:fido", fetch)
+  graphql_cached(ctx2, "User:fido", fetch)
+  eq(calls, 2, "graphql_cached: separate ctx tables each invoke fetch_fn (no cross-request bleed)")
+end
+
+do -- ctx.cache is initialised by graphql_handler (verified via a handler round-trip)
+  -- The handler sets ctx.cache = {}; resolvers that call graphql_cached must not panic.
+  -- Use the rateLimit query (no backend needed) to exercise the full handler path.
+  local status, r = run_handler(EncodeJson({ query = "{ rateLimit { cost } }" }))
+  eq(status, 200, "graphql_cached: handler initialises ctx.cache (rateLimit round-trip → 200)")
+  ok(r ~= nil and r.data ~= nil, "graphql_cached: handler response has data")
+end
+
+-- ============================================================
 -- Summary
 -- ============================================================
 

@@ -9,6 +9,7 @@
 --   graphql_handler()            — HTTP handler for POST /graphql; registered in catalog
 --   respond_graphql(data, errs)  — null-safe GraphQL response writer
 --   graphql_error(ctx, ...)      — error-recording helper called by resolvers
+--   graphql_cached(ctx, key, fn) — request-scoped cache helper for resolvers
 --   estimate_query_cost(op, vars) — query cost estimator; exposed for unit tests
 
 -- ---------------------------------------------------------------------------
@@ -79,6 +80,40 @@ function graphql_error(ctx, message, field_node, code) -- luacheck: globals grap
 
   ctx.errors[#ctx.errors + 1] = err
   return nil
+end
+
+-- ---------------------------------------------------------------------------
+-- graphql_cached
+-- ---------------------------------------------------------------------------
+
+-- Unique sentinel: distinguishes "key not yet fetched" (nil table entry) from
+-- "key was fetched and result was nil" (CACHE_MISS entry).
+local CACHE_MISS = {}
+
+-- Call fetch_fn() and cache the result under cache_key for this request.
+-- Returns the cached result on subsequent calls with the same key.
+--
+-- fetch_fn may return nil (e.g. resource not found); nil is cached via the
+-- CACHE_MISS sentinel so a second call does not re-invoke fetch_fn.
+--
+-- Cache key convention: "TypeName:local_id"  (e.g. "User:octocat",
+-- "Repository:octocat/hello-world").  Connection results (paginated lists)
+-- are not cached — their content varies by pagination args.
+--
+-- ctx.cache is created fresh per graphql_handler invocation; there is no
+-- cross-request cache.
+function graphql_cached(ctx, cache_key, fetch_fn) -- luacheck: globals graphql_cached
+  local hit = ctx.cache[cache_key]
+  if hit == nil then
+    -- Not yet fetched.
+    local result = fetch_fn()
+    ctx.cache[cache_key] = (result == nil) and CACHE_MISS or result
+    return result
+  elseif hit == CACHE_MISS then
+    return nil -- previously fetched, was nil
+  else
+    return hit
+  end
 end
 
 -- ---------------------------------------------------------------------------
@@ -807,6 +842,7 @@ function graphql_handler() -- luacheck: globals graphql_handler
     variables = variables,
     errors = {},
     path = {},
+    cache = {}, -- request-scoped cache; see graphql_cached
   }
   -- Build variable_defs lookup: name → VariableDefinitionNode (for default values).
   ctx.variable_defs = {}
