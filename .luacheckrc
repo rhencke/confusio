@@ -61,6 +61,20 @@ globals = {
   -- GraphQL lexer and parser: internal/graphql_parser.lua
   "graphql_parse",
   "graphql_tokenize",
+  -- GraphQL schema loader: internal/graphql_schema.lua
+  "graphql_schema_type",
+  "graphql_schema_field",
+  "graphql_schema_base_type",
+  "graphql_schema_is_nonnull",
+  "graphql_schema_is_leaf",
+  "graphql_schema_expand_type",
+  "graphql_introspect_schema",
+  "graphql_introspect_type",
+  -- GraphQL executor: internal/graphql_executor.lua
+  "graphql_resolvers",
+  "respond_graphql",
+  "graphql_error",
+  "graphql_handler",
 }
 
 -- Exclude auto-generated files from linting

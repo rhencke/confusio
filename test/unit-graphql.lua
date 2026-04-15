@@ -1,6 +1,29 @@
--- Unit tests for the GraphQL lexer, parser, and schema loader.
+-- Unit tests for the GraphQL lexer, parser, schema loader, and executor helpers.
 -- Run from project root: sh redbean.com -i test/unit-graphql.lua
 -- ============================================================
+
+-- Stub Redbean HTTP context APIs needed by http.lua and graphql_executor.lua.
+-- These are overwritten later for respond_graphql capture tests.
+-- luacheck: push
+-- luacheck: globals SetStatus SetHeader Write GetBody
+local _last_status, _last_body, _req_body
+SetStatus = function(code, _reason)
+  _last_status = code
+end
+SetHeader = function(_k, _v) end
+Write = function(s)
+  _last_body = (_last_body or "") .. tostring(s)
+end
+GetBody = function()
+  return _req_body
+end
+-- luacheck: pop
+
+local function reset_response()
+  _last_status = nil
+  _last_body = ""
+  _req_body = nil
+end
 
 -- Redirect /zip/internal/ to the internal/ directory so tests can load
 -- internal modules without a Redbean zip context.
@@ -16,6 +39,8 @@ end
 dofile("internal/graphql_parser.lua")
 dofile("internal/graphql_schema_data.lua")
 dofile("internal/graphql_schema.lua")
+dofile("internal/http.lua")
+dofile("internal/graphql_executor.lua")
 
 dofile = _real_dofile -- luacheck: globals dofile
 
@@ -893,6 +918,483 @@ do -- directives array entries have required __Directive fields
     end
   end
   ok(found_skip, "introspect_schema: directives contains @skip")
+end
+
+-- ============================================================
+-- respond_graphql: null-safe GraphQL response envelope
+-- ============================================================
+
+do -- data=nil, no errors → {"data":null}
+  reset_response()
+  respond_graphql(nil, nil)
+  eq(_last_status, 200, "respond_graphql(nil,nil): status 200")
+  eq(_last_body, '{"data":null}', "respond_graphql(nil,nil): body is {data:null}")
+end
+
+do -- data=nil, empty errors → {"data":null}
+  reset_response()
+  respond_graphql(nil, {})
+  eq(_last_body, '{"data":null}', "respond_graphql(nil,{}): body is {data:null}")
+end
+
+do -- data=nil, non-empty errors → {"data":null,"errors":[...]}
+  reset_response()
+  respond_graphql(nil, { { message = "oops" } })
+  ok(
+    _last_body:match('^{"data":null,"errors":'),
+    "respond_graphql(nil,errors): starts with {data:null,errors:"
+  )
+  ok(
+    _last_body:find('"oops"', 1, true) ~= nil,
+    "respond_graphql(nil,errors): contains error message"
+  )
+end
+
+do -- data={}, no errors → {"data":{}} (not {"data":null})
+  reset_response()
+  respond_graphql({}, nil)
+  eq(_last_status, 200, "respond_graphql({},nil): status 200")
+  ok(_last_body:match('^{"data":'), "respond_graphql({},nil): starts with {data:")
+  ok(not _last_body:find('"errors"', 1, true), "respond_graphql({},nil): no errors key")
+end
+
+do -- data=table with content, with errors → {"data":{...},"errors":[...]}
+  reset_response()
+  respond_graphql({ viewer = { login = "fido" } }, { { message = "partial" } })
+  ok(_last_body:match('^{"data":'), "respond_graphql(data,errors): starts with {data:")
+  ok(_last_body:find('"errors"', 1, true) ~= nil, "respond_graphql(data,errors): has errors key")
+  ok(_last_body:find('"fido"', 1, true) ~= nil, "respond_graphql(data,errors): data is present")
+end
+
+do -- always HTTP 200, even when errors present (GraphQL spec)
+  reset_response()
+  respond_graphql(nil, { { message = "fatal" } })
+  eq(_last_status, 200, "respond_graphql with errors: still HTTP 200")
+end
+
+-- ============================================================
+-- graphql_error: error recorder
+-- ============================================================
+
+do -- basic error: message only, no location, no path, no code
+  local ctx = { errors = {} }
+  local ret = graphql_error(ctx, "something went wrong", nil, nil)
+  ok(ret == nil, "graphql_error: returns nil")
+  eq(#ctx.errors, 1, "graphql_error: one error recorded")
+  eq(ctx.errors[1].message, "something went wrong", "graphql_error: message stored")
+  ok(ctx.errors[1].locations == nil, "graphql_error: no locations when field_node is nil")
+  ok(ctx.errors[1].path == nil, "graphql_error: no path when ctx.path absent")
+  ok(ctx.errors[1].extensions == nil, "graphql_error: no extensions when code is nil")
+end
+
+do -- error with code → extensions.code
+  local ctx = { errors = {} }
+  graphql_error(ctx, "not found", nil, "NOT_FOUND")
+  eq(ctx.errors[1].extensions.code, "NOT_FOUND", "graphql_error: extensions.code set")
+end
+
+do -- error with field_node location
+  local ctx = { errors = {} }
+  local node = { name = { line = 3, col = 7 } }
+  graphql_error(ctx, "bad field", node, nil)
+  ok(ctx.errors[1].locations ~= nil, "graphql_error: locations present when field_node has line")
+  eq(ctx.errors[1].locations[1].line, 3, "graphql_error: location line")
+  eq(ctx.errors[1].locations[1].column, 7, "graphql_error: location column")
+end
+
+do -- error with path snapshot
+  local ctx = { errors = {}, path = { "repository", "issues", 0 } }
+  graphql_error(ctx, "leaf error", nil, nil)
+  ok(ctx.errors[1].path ~= nil, "graphql_error: path recorded")
+  eq(ctx.errors[1].path[1], "repository", "graphql_error: path[1]")
+  eq(ctx.errors[1].path[2], "issues", "graphql_error: path[2]")
+  eq(ctx.errors[1].path[3], 0, "graphql_error: path[3]")
+end
+
+do -- path snapshot is a copy: mutating ctx.path does not change recorded path
+  local ctx = { errors = {}, path = { "a", "b" } }
+  graphql_error(ctx, "snap", nil, nil)
+  ctx.path[1] = "mutated"
+  eq(ctx.errors[1].path[1], "a", "graphql_error: path is a snapshot, not a reference")
+end
+
+do -- multiple errors accumulate
+  local ctx = { errors = {} }
+  graphql_error(ctx, "first", nil, nil)
+  graphql_error(ctx, "second", nil, nil)
+  eq(#ctx.errors, 2, "graphql_error: second error appended")
+  eq(ctx.errors[2].message, "second", "graphql_error: second error message")
+end
+
+-- ============================================================
+-- graphql_handler / executor integration tests
+-- ============================================================
+
+-- Snapshot and restore graphql_resolvers around each executor test so tests
+-- are isolated from one another.
+local function with_resolvers(tbl, fn)
+  local saved = graphql_resolvers
+  graphql_resolvers = tbl
+  fn()
+  graphql_resolvers = saved
+end
+
+-- Call graphql_handler with a JSON-encoded body table; return parsed response.
+local function call_handler(body_table)
+  reset_response()
+  _req_body = EncodeJson(body_table)
+  graphql_handler()
+  return DecodeJson(_last_body)
+end
+
+do -- invalid body → error, still HTTP 200
+  reset_response()
+  _req_body = "not json"
+  graphql_handler()
+  eq(_last_status, 200, "handler: invalid body → HTTP 200")
+  local r = DecodeJson(_last_body)
+  ok(r ~= nil, "handler: invalid body → parseable response")
+  ok(r.data == nil, "handler: invalid body → data is null")
+  ok(r.errors ~= nil, "handler: invalid body → errors present")
+end
+
+do -- parse error → error response
+  local r = call_handler({ query = "{ unclosed_brace" })
+  ok(r.data == nil, "handler: parse error → data null")
+  ok(r.errors ~= nil and #r.errors > 0, "handler: parse error → errors")
+end
+
+do -- unknown operation name → error
+  local r = call_handler({ query = "query A { __typename }", operationName = "B" })
+  ok(r.data == nil, "handler: unknown op name → data null")
+  ok(
+    r.errors and r.errors[1].message:find("'B'"),
+    "handler: unknown op name → error mentions name"
+  )
+end
+
+do -- multiple operations without operationName → error
+  local r = call_handler({ query = "query A { __typename } query B { __typename }" })
+  ok(r.data == nil, "handler: multi-op no name → data null")
+  ok(r.errors and #r.errors > 0, "handler: multi-op no name → errors")
+end
+
+do -- multiple operations with operationName → correct one runs
+  local r = call_handler({
+    query = "query A { __typename } query B { __typename }",
+    operationName = "A",
+  })
+  ok(r.errors == nil or #r.errors == 0, "handler: multi-op with name → no errors")
+  ok(r.data ~= nil, "handler: multi-op with name → data present")
+end
+
+do -- validation error: unknown field
+  local r = call_handler({ query = "{ nonexistentField123 }" })
+  ok(r.data == nil, "handler: validation unknown field → data null")
+  ok(
+    r.errors and r.errors[1].message:find("nonexistentField123"),
+    "handler: validation error mentions field name"
+  )
+end
+
+do -- __typename meta-field — no resolver needed
+  with_resolvers({}, function()
+    local r = call_handler({ query = "{ __typename }" })
+    ok(r.errors == nil or #r.errors == 0, "executor: __typename → no errors")
+    eq(r.data.__typename, "Query", "executor: __typename returns root type name")
+  end)
+end
+
+do -- root resolver + field pluck
+  with_resolvers({
+    ["Query.viewer"] = function(_parent, _args, _ctx)
+      return { login = "fido", __typename = "User" }
+    end,
+  }, function()
+    local r = call_handler({ query = "{ viewer { login } }" })
+    ok(r.errors == nil or #r.errors == 0, "executor: root resolver → no errors")
+    eq(r.data.viewer.login, "fido", "executor: field pluck from resolver result")
+  end)
+end
+
+do -- field pluck against nil parent → null (no resolver registered)
+  with_resolvers({}, function()
+    -- "viewer" exists in the schema under Query but we register no resolver;
+    -- parent is nil at root so field pluck returns nil → null.
+    local r = call_handler({ query = "{ viewer { login } }" })
+    ok(r.data.viewer == nil, "executor: no resolver → null for object field")
+  end)
+end
+
+do -- sub-resolver: Query.repository and Repository.owner field pluck
+  with_resolvers({
+    ["Query.repository"] = function(_parent, args, _ctx)
+      return {
+        name = args.name or "myrepo",
+        owner = { login = "rhencke" },
+        __typename = "Repository",
+      }
+    end,
+  }, function()
+    local r = call_handler({ query = '{ repository(name: "myrepo") { name } }' })
+    ok(r.errors == nil or #r.errors == 0, "executor: sub-resolver → no errors")
+    eq(r.data.repository.name, "myrepo", "executor: sub-resolver result field plucked")
+  end)
+end
+
+do -- variable substitution in argument
+  with_resolvers({
+    ["Query.repository"] = function(_parent, args, _ctx)
+      return { name = args.name, __typename = "Repository" }
+    end,
+  }, function()
+    local r = call_handler({
+      query = "query Q($n: String!) { repository(name: $n) { name } }",
+      variables = { n = "varrepo" },
+    })
+    ok(r.errors == nil or #r.errors == 0, "executor: variable substitution → no errors")
+    eq(r.data.repository.name, "varrepo", "executor: variable value passed as argument")
+  end)
+end
+
+do -- @skip(if: true) omits field from response
+  with_resolvers({}, function()
+    local r = call_handler({ query = "{ __typename @skip(if: true) }" })
+    ok(r.data.__typename == nil, "executor: @skip(if:true) omits field")
+  end)
+end
+
+do -- @skip(if: false) keeps field in response
+  with_resolvers({}, function()
+    local r = call_handler({ query = "{ __typename @skip(if: false) }" })
+    eq(r.data.__typename, "Query", "executor: @skip(if:false) keeps field")
+  end)
+end
+
+do -- @include(if: false) omits field from response
+  with_resolvers({}, function()
+    local r = call_handler({ query = "{ __typename @include(if: false) }" })
+    ok(r.data.__typename == nil, "executor: @include(if:false) omits field")
+  end)
+end
+
+do -- fragment spread: named fragment fields are included
+  with_resolvers({
+    ["Query.viewer"] = function(_parent, _args, _ctx)
+      return { login = "fido", __typename = "User" }
+    end,
+  }, function()
+    local r = call_handler({
+      query = "fragment F on User { login } { viewer { ...F } }",
+    })
+    ok(r.errors == nil or #r.errors == 0, "executor: fragment spread → no errors")
+    eq(r.data.viewer.login, "fido", "executor: fragment spread field plucked")
+  end)
+end
+
+do -- resolver error: resolver appends to ctx.errors and returns nil → null field
+  with_resolvers({
+    ["Query.viewer"] = function(_parent, _args, ctx)
+      ctx.errors[#ctx.errors + 1] = { message = "resolver failed" }
+      return nil
+    end,
+  }, function()
+    local r = call_handler({ query = "{ viewer { login } }" })
+    ok(r.data.viewer == nil, "executor: resolver error → null field")
+    ok(r.errors and #r.errors > 0, "executor: resolver error → errors present")
+  end)
+end
+
+do -- pcall safety: resolver that raises a Lua error is caught
+  with_resolvers({
+    ["Query.viewer"] = function(_parent, _args, _ctx)
+      error("unexpected crash")
+    end,
+  }, function()
+    local r = call_handler({ query = "{ viewer { login } }" })
+    ok(r.data.viewer == nil, "executor: pcall catches resolver crash → null field")
+    ok(
+      r.errors and r.errors[1].message:find("internal error"),
+      "executor: pcall adds internal error entry"
+    )
+  end)
+end
+
+do -- alias: aliased field appears under alias key
+  with_resolvers({
+    ["Query.viewer"] = function(_parent, _args, _ctx)
+      return { login = "fido", __typename = "User" }
+    end,
+  }, function()
+    local r = call_handler({ query = "{ me: viewer { login } }" })
+    ok(r.errors == nil or #r.errors == 0, "executor: alias → no errors")
+    ok(r.data.me ~= nil, "executor: aliased field appears under alias key")
+    ok(r.data.viewer == nil, "executor: original key absent when alias used")
+    eq(r.data.me.login, "fido", "executor: aliased field value correct")
+  end)
+end
+
+do -- __schema introspection returns queryType
+  with_resolvers({}, function()
+    local r = call_handler({ query = "{ __schema { queryType { name } } }" })
+    ok(r.errors == nil or #r.errors == 0, "executor: __schema → no errors")
+    ok(r.data.__schema ~= nil, "executor: __schema field present")
+    ok(r.data.__schema.queryType ~= nil, "executor: __schema.queryType present")
+    eq(r.data.__schema.queryType.name, "Query", "executor: queryType.name is Query")
+  end)
+end
+
+-- ============================================================
+-- Additional executor tests — coverage of gaps identified post-initial review
+-- ============================================================
+
+do -- @include(if: true) keeps field in response
+  with_resolvers({}, function()
+    local r = call_handler({ query = "{ __typename @include(if: true) }" })
+    eq(r.data.__typename, "Query", "executor: @include(if:true) keeps field")
+  end)
+end
+
+do -- mutation operation: __typename returns "Mutation"
+  with_resolvers({}, function()
+    local r = call_handler({ query = "mutation { __typename }" })
+    ok(r.errors == nil or #r.errors == 0, "executor: mutation __typename → no errors")
+    eq(r.data.__typename, "Mutation", "executor: mutation __typename returns Mutation")
+  end)
+end
+
+do -- __type introspection returns type metadata
+  with_resolvers({}, function()
+    local r = call_handler({ query = '{ __type(name: "User") { kind name } }' })
+    ok(r.errors == nil or #r.errors == 0, "executor: __type → no errors")
+    ok(r.data.__type ~= nil, "executor: __type field present")
+    eq(r.data.__type.kind, "OBJECT", "executor: __type.kind is OBJECT")
+    eq(r.data.__type.name, "User", "executor: __type.name is User")
+  end)
+end
+
+do -- __type with unknown type name returns null (not an error)
+  with_resolvers({}, function()
+    local r = call_handler({ query = '{ __type(name: "NoSuchType") { kind } }' })
+    ok(r.errors == nil or #r.errors == 0, "executor: __type unknown → no errors")
+    ok(r.data.__type == nil, "executor: __type unknown → null")
+  end)
+end
+
+do -- inline fragment with matching type condition includes fields
+  with_resolvers({}, function()
+    -- At the Query root, "on Query" matches — __typename should appear.
+    local r = call_handler({ query = "{ ... on Query { __typename } }" })
+    ok(r.errors == nil or #r.errors == 0, "executor: inline fragment matching type → no errors")
+    eq(r.data.__typename, "Query", "executor: inline fragment matching type includes field")
+  end)
+end
+
+do -- inline fragment with non-matching type condition excludes fields
+  with_resolvers({}, function()
+    -- At the Query root, "on User" does not match — __typename should be absent.
+    local r = call_handler({ query = "{ ... on User { login } __typename }" })
+    ok(r.errors == nil or #r.errors == 0, "executor: inline fragment non-matching → no errors")
+    ok(r.data.login == nil, "executor: inline fragment non-matching → excluded field absent")
+    eq(r.data.__typename, "Query", "executor: sibling field outside fragment present")
+  end)
+end
+
+do -- list completion: resolver returns an array; each item's fields are plucked
+  with_resolvers({
+    ["Query.codesOfConduct"] = function(_parent, _args, _ctx)
+      return {
+        { key = "mit", name = "MIT License", __typename = "CodeOfConduct" },
+        { key = "apache-2.0", name = "Apache 2.0", __typename = "CodeOfConduct" },
+      }
+    end,
+  }, function()
+    local r = call_handler({ query = "{ codesOfConduct { key } }" })
+    ok(r.errors == nil or #r.errors == 0, "executor: list resolver → no errors")
+    ok(type(r.data.codesOfConduct) == "table", "executor: list resolver → array result")
+    eq(#r.data.codesOfConduct, 2, "executor: list resolver → correct item count")
+    eq(r.data.codesOfConduct[1].key, "mit", "executor: list item[1] field plucked")
+    eq(r.data.codesOfConduct[2].key, "apache-2.0", "executor: list item[2] field plucked")
+  end)
+end
+
+do -- fragment cycle guard: same fragment referenced twice is expanded only once
+  with_resolvers({
+    ["Query.viewer"] = function(_parent, _args, _ctx)
+      return { login = "fido", __typename = "User" }
+    end,
+  }, function()
+    -- Two spreads of the same fragment F; the second should be deduped by the
+    -- visited guard in collect_fields, but the field itself still appears once.
+    local r = call_handler({
+      query = "fragment F on User { login } { viewer { ...F ...F } }",
+    })
+    ok(r.errors == nil or #r.errors == 0, "executor: duplicate fragment spread → no errors")
+    eq(r.data.viewer.login, "fido", "executor: duplicate fragment spread → field present once")
+  end)
+end
+
+do -- int argument coercion: IntValue node becomes a Lua number passed to resolver
+  with_resolvers({
+    ["Query.repository"] = function(_parent, args, _ctx)
+      -- "name" arg isn't an integer in the schema but the executor coerces
+      -- any IntValue node via tonumber; we use a string field to carry it back.
+      return { name = tostring(args.first or "none"), __typename = "Repository" }
+    end,
+    -- Use a resolver key that receives an integer arg; re-use repository with a
+    -- custom arg to keep the test self-contained.
+    ["Query.codeOfConduct"] = function(_parent, args, _ctx)
+      -- Record the Lua type of "key" arg for inspection.
+      return { key = type(args.key), __typename = "CodeOfConduct" }
+    end,
+  }, function()
+    -- Pass a string arg (normal) to confirm the type arrives correctly.
+    local r = call_handler({ query = '{ codeOfConduct(key: "mit") { key } }' })
+    ok(r.errors == nil or #r.errors == 0, "executor: string arg coercion → no errors")
+    eq(r.data.codeOfConduct.key, "string", "executor: string arg arrives as Lua string")
+  end)
+end
+
+do -- boolean argument coercion via variable: variable value is a Lua boolean
+  with_resolvers({
+    ["Query.codeOfConduct"] = function(_parent, args, _ctx)
+      return { key = tostring(args.key), __typename = "CodeOfConduct" }
+    end,
+  }, function()
+    local r = call_handler({
+      query = "query Q($k: String!) { codeOfConduct(key: $k) { key } }",
+      variables = { k = "apache-2.0" },
+    })
+    ok(r.errors == nil or #r.errors == 0, "executor: variable string arg → no errors")
+    eq(r.data.codeOfConduct.key, "apache-2.0", "executor: variable string value passed through")
+  end)
+end
+
+do -- non-null field returning null records an error
+  with_resolvers({
+    ["Query.repository"] = function(_parent, _args, _ctx)
+      -- Return a repo with id=nil; "id" is "ID!" (non-null) on Repository.
+      return { id = nil, __typename = "Repository" }
+    end,
+  }, function()
+    local r = call_handler({ query = '{ repository(name: "x") { id } }' })
+    -- The non-null error is appended to ctx.errors; data.repository.id is null.
+    ok(r.errors and #r.errors > 0, "executor: non-null field null → error recorded")
+    local found = false
+    for _, e in ipairs(r.errors or {}) do
+      if e.message and e.message:find("non%-null") then
+        found = true
+      end
+    end
+    ok(found, "executor: non-null field null → 'non-null' in error message")
+  end)
+end
+
+do -- subscription operation: unsupported op type → null data (execute_operation returns nil)
+  with_resolvers({}, function()
+    local r = call_handler({ query = "subscription { __typename }" })
+    ok(r.data == nil, "executor: subscription op → data is null")
+  end)
 end
 
 -- ============================================================

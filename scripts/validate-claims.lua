@@ -30,6 +30,9 @@ local CONFUSIO_NATIVE = {
   get_teapot = true,
   get_versions = true,
   get_zen = true,
+  -- graphql_handler is the fixed handler for POST /graphql across all backends;
+  -- backends populate graphql_resolvers rather than backend_impl.graphql_request.
+  graphql_request = true,
 }
 
 local csv_path = (arg and arg[1]) or "site/compatibility.csv" -- luacheck: globals arg
