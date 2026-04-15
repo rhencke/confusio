@@ -9,6 +9,7 @@
 --   graphql_handler()            — HTTP handler for POST /graphql; registered in catalog
 --   respond_graphql(data, errs)  — null-safe GraphQL response writer
 --   graphql_error(ctx, ...)      — error-recording helper called by resolvers
+--   graphql_cached(ctx, key, fn) — request-scoped cache helper for resolvers
 --   estimate_query_cost(op, vars) — query cost estimator; exposed for unit tests
 
 -- ---------------------------------------------------------------------------
@@ -79,6 +80,40 @@ function graphql_error(ctx, message, field_node, code) -- luacheck: globals grap
 
   ctx.errors[#ctx.errors + 1] = err
   return nil
+end
+
+-- ---------------------------------------------------------------------------
+-- graphql_cached
+-- ---------------------------------------------------------------------------
+
+-- Unique sentinel: distinguishes "key not yet fetched" (nil table entry) from
+-- "key was fetched and result was nil" (CACHE_MISS entry).
+local CACHE_MISS = {}
+
+-- Call fetch_fn() and cache the result under cache_key for this request.
+-- Returns the cached result on subsequent calls with the same key.
+--
+-- fetch_fn may return nil (e.g. resource not found); nil is cached via the
+-- CACHE_MISS sentinel so a second call does not re-invoke fetch_fn.
+--
+-- Cache key convention: "TypeName:local_id"  (e.g. "User:octocat",
+-- "Repository:octocat/hello-world").  Connection results (paginated lists)
+-- are not cached — their content varies by pagination args.
+--
+-- ctx.cache is created fresh per graphql_handler invocation; there is no
+-- cross-request cache.
+function graphql_cached(ctx, cache_key, fetch_fn) -- luacheck: globals graphql_cached
+  local hit = ctx.cache[cache_key]
+  if hit == nil then
+    -- Not yet fetched.
+    local result = fetch_fn()
+    ctx.cache[cache_key] = (result == nil) and CACHE_MISS or result
+    return result
+  elseif hit == CACHE_MISS then
+    return nil -- previously fetched, was nil
+  else
+    return hit
+  end
 end
 
 -- ---------------------------------------------------------------------------
@@ -639,13 +674,19 @@ graphql_resolvers["Query.nodes"] = function(_parent, args, ctx)
 end
 
 -- ---------------------------------------------------------------------------
--- estimate_query_cost
+-- estimate_query_cost / GRAPHQL_MAX_COST
 -- ---------------------------------------------------------------------------
+
+-- Maximum allowed estimated query cost.  Queries whose estimated cost exceeds
+-- this value are rejected before execution.  The default (10000) is enough for
+-- practical GitHub CLI and Octokit queries; override in Phase 2 via SCRIPTARGS.
+local GRAPHQL_MAX_COST = 10000
 
 -- Lightweight pre-execution cost estimator.  Walks the operation's selection
 -- set counting connection argument values (first/last), multiplying for nested
 -- connections.  The result is stored in ctx.rate_cost before execution so that
--- the Query.rateLimit resolver can report a non-zero cost value.
+-- the Query.rateLimit resolver can report a non-zero cost value, and so that
+-- the cost-limit gate can reject runaway queries before execution begins.
 --
 -- Cost rules (mirrors GitHub's documented model):
 --   - Each field with a first/last argument contributes (multiplier × value).
@@ -654,8 +695,7 @@ end
 --   - Minimum returned value is 1 (math.max(1, total)).
 --
 -- This is best-effort: fragment spreads are not walked in Phase 1, and
--- @skip/@include directives are not applied.  The value is used only to
--- populate rateLimit.cost for observability; it has no enforcement effect.
+-- @skip/@include directives are not applied.
 function estimate_query_cost(op, variables) -- luacheck: globals estimate_query_cost
   local cost = 0
   -- We need a minimal ctx for coerce_value (Variable nodes require variables +
@@ -732,6 +772,26 @@ function graphql_handler() -- luacheck: globals graphql_handler
   -- Step 1: decode request body.
   local raw = GetBody() or ""
   local req = DecodeJson(raw)
+  -- Step 1a: array body → batch request (rejected in Phase 1).
+  if type(req) == "table" and req[1] ~= nil then
+    respond_json(400, {
+      errors = {
+        { message = "GraphQL request batching is not supported; send one operation per request." },
+      },
+    })
+    return
+  end
+  -- Step 1b: APQ body → persisted queries not supported.
+  if type(req) == "table" and type(req.extensions) == "table" and req.extensions.persistedQuery then
+    respond_graphql(nil, {
+      {
+        message = "Persisted queries are not supported; send the full query string.",
+        extensions = { code = "PERSISTED_QUERY_NOT_SUPPORTED" },
+      },
+    })
+    return
+  end
+  -- Step 1c: missing or non-string query field.
   if not req or type(req.query) ~= "string" then
     respond_graphql(nil, {
       {
@@ -782,6 +842,7 @@ function graphql_handler() -- luacheck: globals graphql_handler
     variables = variables,
     errors = {},
     path = {},
+    cache = {}, -- request-scoped cache; see graphql_cached
   }
   -- Build variable_defs lookup: name → VariableDefinitionNode (for default values).
   ctx.variable_defs = {}
@@ -790,6 +851,23 @@ function graphql_handler() -- luacheck: globals graphql_handler
   end
   -- Estimate query cost before execution so rateLimit.cost reflects this query.
   ctx.rate_cost = estimate_query_cost(op, variables)
+  -- Step 5a: reject queries that exceed the cost ceiling.
+  if ctx.rate_cost > GRAPHQL_MAX_COST then
+    respond_graphql(nil, {
+      {
+        message = "query cost "
+          .. tostring(ctx.rate_cost)
+          .. " exceeds maximum allowed cost of "
+          .. tostring(GRAPHQL_MAX_COST),
+        extensions = {
+          code = "BAD_USER_INPUT",
+          estimatedCost = ctx.rate_cost,
+          maxAllowedCost = GRAPHQL_MAX_COST,
+        },
+      },
+    })
+    return
+  end
   local data = execute_operation(op, ctx)
 
   -- Step 6: write response.
