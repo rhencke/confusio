@@ -174,6 +174,7 @@ test-unit-functions: redbean.com
 test-unit-graphql: redbean.com
 	./redbean.com -i test/unit-graphql.lua
 	./redbean.com -i test/graphql-fragments-vars-directives.lua
+	./redbean.com -i test/graphql-node-id.lua
 
 # Sequential preamble (boot-path checks), then all backends in parallel
 test-unit: test-unit-functions test-unit-graphql confusio.com $(MOCKS) hurl

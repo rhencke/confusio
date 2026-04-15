@@ -18,6 +18,7 @@ globals = {
   "EncodeJson",
   "DecodeJson",
   "EncodeBase64",
+  "DecodeBase64",
   "EscapeParam",
   -- Redbean built-ins: routing
   "Route",
@@ -75,6 +76,11 @@ globals = {
   "respond_graphql",
   "graphql_error",
   "graphql_handler",
+  -- GraphQL translators: internal/graphql_translators.lua
+  "encode_node_id",
+  "decode_node_id",
+  "graphql_fetch",
+  "graphql_fetch_with_headers",
 }
 
 -- Exclude auto-generated files from linting
