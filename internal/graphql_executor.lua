@@ -568,16 +568,27 @@ graphql_resolvers["Query.nodes"] = function(_parent, args, ctx)
     append_error(ctx, "nodes requires an ids argument")
     return {}
   end
-  -- Use an explicit .n count so the list completer can preserve null slots
-  -- even when trailing entries are nil (Lua's # operator stops at the first nil).
-  local results = { n = #ids }
+  -- Null slots (unsupported type, malformed ID, or not-found) must be preserved as
+  -- nil in the parallel output array.  Lua's # operator stops at the first nil hole,
+  -- so we attach a __len metamethod that returns the explicit .n count instead.
+  -- The list completer in complete_value() already reads rawget(value, "n") for the
+  -- same reason; __len keeps external callers (tests, JSON encoders) consistent.
+  local n = #ids
+  local results = setmetatable({ n = n }, {
+    __len = function(t)
+      return rawget(t, "n") or 0
+    end,
+  })
   for i, id in ipairs(ids) do
     local type_name, local_id = decode_node_id(id)
     if type_name then
       local resolver = graphql_resolvers["node." .. type_name]
       if resolver then
         local ok, result = pcall(resolver, local_id, ctx)
-        results[i] = ok and result or nil
+        if ok and result ~= nil then
+          results[i] = result
+        end
+        -- else: results[i] stays nil (null for not-found or resolver error)
       end
       -- else: results[i] stays nil (null for unsupported type)
     end
