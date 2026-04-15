@@ -3179,3 +3179,97 @@ backend_impl = {
     )
   end,
 }
+
+-- ---------------------------------------------------------------------------
+-- GraphQL resolvers
+-- ---------------------------------------------------------------------------
+
+-- Query.repositoryOwner: look up a User or Organization by login.
+-- Tries /users/{login} first; falls back to /orgs/{login}.
+-- Returns a RepositoryOwner (User or Organization) or nil when not found.
+graphql_resolvers["Query.repositoryOwner"] = function(_parent, args, ctx)
+  if not args.login then
+    graphql_error(ctx, "repositoryOwner requires a login argument")
+    return nil
+  end
+  local udata, _ = graphql_fetch(fetch_json, base() .. "/users/" .. args.login)
+  if udata then
+    return graphql_translate_user(translate_user(udata))
+  end
+  local odata, _ = graphql_fetch(fetch_json, base() .. "/orgs/" .. args.login)
+  if odata then
+    return graphql_translate_org(odata)
+  end
+  return nil -- not found; null is valid per spec
+end
+
+-- node.Repository: fetch a repository by "owner/repo" local ID.
+graphql_resolvers["node.Repository"] = function(local_id, _ctx)
+  local data, _ = graphql_fetch(fetch_json, base() .. "/repos/" .. local_id)
+  if not data then
+    return nil
+  end
+  return graphql_translate_repo(translate_repo(data))
+end
+
+-- node.User: fetch a user by login.
+graphql_resolvers["node.User"] = function(local_id, _ctx)
+  local data, _ = graphql_fetch(fetch_json, base() .. "/users/" .. local_id)
+  if not data then
+    return nil
+  end
+  return graphql_translate_user(translate_user(data))
+end
+
+-- node.Organization: fetch an organization by login.
+graphql_resolvers["node.Organization"] = function(local_id, _ctx)
+  local data, _ = graphql_fetch(fetch_json, base() .. "/orgs/" .. local_id)
+  if not data then
+    return nil
+  end
+  return graphql_translate_org(data)
+end
+
+-- node.Issue: fetch an issue by "owner/repo/number" local ID.
+graphql_resolvers["node.Issue"] = function(local_id, _ctx)
+  local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ =
+    graphql_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo .. "/issues/" .. number)
+  if not data then
+    return nil
+  end
+  return graphql_translate_issue(translate_gitea_issue(data), owner, repo)
+end
+
+-- node.PullRequest: fetch a pull request by "owner/repo/number" local ID.
+graphql_resolvers["node.PullRequest"] = function(local_id, _ctx)
+  local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ =
+    graphql_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number)
+  if not data then
+    return nil
+  end
+  return graphql_translate_pr(translate_gitea_pull(data), owner, repo)
+end
+
+-- node.IssueComment: fetch an issue comment by "owner/repo/comment_id" local ID.
+graphql_resolvers["node.IssueComment"] = function(local_id, _ctx)
+  local owner, repo, cid = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ = graphql_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo .. "/issues/comments/" .. cid
+  )
+  if not data then
+    return nil
+  end
+  return graphql_translate_comment(translate_gitea_issue_comment(data), owner, repo)
+end

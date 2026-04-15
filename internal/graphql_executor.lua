@@ -355,8 +355,11 @@ complete_value = function(value, type_ref, field_node, type_name, ctx)
     end
     local inner_ref = type_ref:match("%[(.+)%]$") or type_ref:sub(2, -2)
     local result = {}
-    for i, item in ipairs(value) do
-      result[i] = complete_value(item, inner_ref, field_node, type_name, ctx)
+    -- Use value.n when present (set by resolvers that return sparse arrays, e.g.
+    -- Query.nodes where some entries are nil/null) to preserve the correct length.
+    local len = rawget(value, "n") or #value
+    for i = 1, len do
+      result[i] = complete_value(value[i], inner_ref, field_node, type_name, ctx)
     end
     return result
   end
@@ -522,6 +525,65 @@ local function graphql_validate(doc, op)
   local errors = {}
   validate_selection_set(op.selection_set, root_type, doc, {}, errors)
   return errors
+end
+
+-- ---------------------------------------------------------------------------
+-- graphql_handler
+-- ---------------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------------
+-- Query.node and Query.nodes — backend-independent dispatchers
+-- ---------------------------------------------------------------------------
+-- These resolvers live in the executor, not in backends, because they only
+-- decode the node ID and dispatch to a "node.TypeName" sub-resolver.  The
+-- sub-resolvers are backend-specific and registered by each backend file.
+
+graphql_resolvers["Query.node"] = function(_parent, args, ctx) -- luacheck: globals graphql_resolvers
+  local node_id = args.id
+  if not node_id then
+    append_error(ctx, "node requires an id argument")
+    return nil
+  end
+  local type_name, local_id = decode_node_id(node_id)
+  if not type_name then
+    append_error(ctx, "invalid node id: " .. tostring(node_id))
+    return nil
+  end
+  local resolver = graphql_resolvers["node." .. type_name]
+  if not resolver then
+    -- Unknown type: return null with no error (valid on a different server).
+    return nil
+  end
+  local ok, result = pcall(resolver, local_id, ctx)
+  if not ok then
+    append_error(ctx, "internal error resolving node: " .. type_name)
+    return nil
+  end
+  return result
+end
+
+graphql_resolvers["Query.nodes"] = function(_parent, args, ctx)
+  local ids = args.ids
+  if not ids or type(ids) ~= "table" then
+    append_error(ctx, "nodes requires an ids argument")
+    return {}
+  end
+  -- Use an explicit .n count so the list completer can preserve null slots
+  -- even when trailing entries are nil (Lua's # operator stops at the first nil).
+  local results = { n = #ids }
+  for i, id in ipairs(ids) do
+    local type_name, local_id = decode_node_id(id)
+    if type_name then
+      local resolver = graphql_resolvers["node." .. type_name]
+      if resolver then
+        local ok, result = pcall(resolver, local_id, ctx)
+        results[i] = ok and result or nil
+      end
+      -- else: results[i] stays nil (null for unsupported type)
+    end
+    -- else: results[i] stays nil (null for malformed ID — no per-item error per spec)
+  end
+  return results
 end
 
 -- ---------------------------------------------------------------------------

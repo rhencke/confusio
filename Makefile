@@ -175,6 +175,7 @@ test-unit-graphql: redbean.com
 	./redbean.com -i test/unit-graphql.lua
 	./redbean.com -i test/graphql-fragments-vars-directives.lua
 	./redbean.com -i test/graphql-node-id.lua
+	./redbean.com -i test/graphql-node-resolvers.lua
 	./redbean.com -i test/graphql-translators.lua
 	./redbean.com -i test/graphql-pagination.lua
 
