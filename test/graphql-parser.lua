@@ -1,40 +1,10 @@
 -- Unit tests for the GraphQL lexer and parser.
 -- Covers graphql_tokenize (lexer) and graphql_parse (parser/AST shape).
--- Run: sh redbean.com -i test/graphql-parser.lua
+-- Loaded by test/unit-graphql.lua; relies on shared state from the driver.
 -- ============================================================
 
--- Redirect /zip/internal/ → internal/ so tests run without a Redbean zip context.
-local _real_dofile = dofile
-function dofile(path) -- luacheck: globals dofile
-  if path and path:match("^/zip/internal/") then
-    return _real_dofile(path:sub(6))
-  end
-  return _real_dofile(path)
-end
-
-dofile("internal/graphql_parser.lua")
-
-dofile = _real_dofile -- luacheck: globals dofile
-
--- ============================================================
--- Assertion helpers
--- ============================================================
-
-local PASS, FAIL = 0, 0
-
-local function ok(cond, msg)
-  if cond then
-    PASS = PASS + 1
-    io.write("PASS  " .. msg .. "\n")
-  else
-    FAIL = FAIL + 1
-    io.write("FAIL  " .. msg .. "\n")
-  end
-end
-
-local function eq(a, b, msg)
-  ok(a == b, msg .. " (got " .. tostring(a) .. ", want " .. tostring(b) .. ")")
-end
+-- Globals provided by the driver (test/unit-graphql.lua):
+-- luacheck: globals ok eq PASS FAIL
 
 -- ============================================================
 -- Test helpers
@@ -612,13 +582,4 @@ end
 
 do -- bad unicode escape (not 4 hex digits)
   must_fail('{ field(x: "\\u00GG") { id } }', "bad unicode escape")
-end
-
--- ============================================================
--- Summary
--- ============================================================
-
-io.write(string.format("\n%d passed, %d failed\n", PASS, FAIL))
-if FAIL > 0 then
-  os.exit(1)
 end

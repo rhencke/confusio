@@ -83,6 +83,15 @@ eq(1, 1, "test harness: eq(1, 1) passes")
 
 dofile("test/graphql-errors.lua")
 dofile("test/graphql-executor.lua")
+dofile("test/graphql-parser.lua")
+dofile("test/graphql-schema.lua")
+dofile("test/graphql-node-id.lua")
+dofile("test/graphql-translators.lua")
+dofile("test/graphql-pagination.lua")
+dofile("test/graphql-node-resolvers.lua")
+dofile("test/graphql-ratelimit-viewer.lua")
+dofile("test/graphql-fragments-vars-directives.lua")
+dofile("test/graphql-batching-caching.lua")
 
 -- ============================================================
 -- Summary

@@ -1,40 +1,10 @@
 -- Unit tests for GQL-06: node ID encoding/decoding and graphql_fetch helpers.
 -- Covers encode_node_id, decode_node_id, graphql_fetch, and graphql_fetch_with_headers.
--- Run: sh redbean.com -i test/graphql-node-id.lua
+-- Loaded by test/unit-graphql.lua; relies on shared state from the driver.
 -- ============================================================
 
--- Redirect /zip/internal/ → internal/ so tests run without a Redbean zip context.
-local _real_dofile = dofile
-function dofile(path) -- luacheck: globals dofile
-  if path and path:match("^/zip/internal/") then
-    return _real_dofile(path:sub(6))
-  end
-  return _real_dofile(path)
-end
-
-dofile("internal/graphql_translators.lua")
-
-dofile = _real_dofile -- luacheck: globals dofile
-
--- ============================================================
--- Assertion helpers
--- ============================================================
-
-local PASS, FAIL = 0, 0
-
-local function ok(cond, msg)
-  if cond then
-    PASS = PASS + 1
-    io.write("PASS  " .. msg .. "\n")
-  else
-    FAIL = FAIL + 1
-    io.write("FAIL  " .. msg .. "\n")
-  end
-end
-
-local function eq(a, b, msg)
-  ok(a == b, msg .. " (got " .. tostring(a) .. ", want " .. tostring(b) .. ")")
-end
+-- Globals provided by the driver (test/unit-graphql.lua):
+-- luacheck: globals ok eq PASS FAIL
 
 -- ============================================================
 -- encode_node_id / decode_node_id
@@ -180,13 +150,4 @@ do -- nil headers from upstream: returns empty table instead of nil
   ok(data ~= nil, "graphql_fetch_with_headers: nil headers → data non-nil")
   ok(type(hdrs) == "table", "graphql_fetch_with_headers: nil headers → empty table returned")
   ok(err == nil, "graphql_fetch_with_headers: nil headers → no error")
-end
-
--- ============================================================
--- Summary
--- ============================================================
-
-io.write(string.format("\n%d passed, %d failed\n", PASS, FAIL))
-if FAIL > 0 then
-  os.exit(1)
 end

@@ -2,42 +2,11 @@
 -- Covers graphql_schema_type, graphql_schema_field, graphql_schema_base_type,
 -- graphql_schema_is_nonnull, graphql_schema_is_leaf, graphql_schema_expand_type,
 -- graphql_introspect_type, and graphql_introspect_schema.
--- Run: sh redbean.com -i test/graphql-schema.lua
+-- Loaded by test/unit-graphql.lua; relies on shared state from the driver.
 -- ============================================================
 
--- Redirect /zip/internal/ → internal/ so tests run without a Redbean zip context.
-local _real_dofile = dofile
-function dofile(path) -- luacheck: globals dofile
-  if path and path:match("^/zip/internal/") then
-    return _real_dofile(path:sub(6))
-  end
-  return _real_dofile(path)
-end
-
-dofile("internal/graphql_schema_data.lua")
-dofile("internal/graphql_schema.lua")
-
-dofile = _real_dofile -- luacheck: globals dofile
-
--- ============================================================
--- Assertion helpers
--- ============================================================
-
-local PASS, FAIL = 0, 0
-
-local function ok(cond, msg)
-  if cond then
-    PASS = PASS + 1
-    io.write("PASS  " .. msg .. "\n")
-  else
-    FAIL = FAIL + 1
-    io.write("FAIL  " .. msg .. "\n")
-  end
-end
-
-local function eq(a, b, msg)
-  ok(a == b, msg .. " (got " .. tostring(a) .. ", want " .. tostring(b) .. ")")
-end
+-- Globals provided by the driver (test/unit-graphql.lua):
+-- luacheck: globals ok eq PASS FAIL
 
 -- ============================================================
 -- graphql_schema_type
@@ -304,13 +273,4 @@ do -- directives array entries have required __Directive fields
     end
   end
   ok(found_skip, "introspect_schema: directives contains @skip")
-end
-
--- ============================================================
--- Summary
--- ============================================================
-
-io.write(string.format("\n%d passed, %d failed\n", PASS, FAIL))
-if FAIL > 0 then
-  os.exit(1)
 end

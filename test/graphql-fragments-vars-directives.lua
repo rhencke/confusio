@@ -2,64 +2,11 @@
 -- Covers named/inline fragments, cycle guard, interface type conditions,
 -- variable coercion and defaults, @skip/@include evaluation, and the three
 -- introspection meta-fields including the standard IntrospectionQuery.
--- Run: sh redbean.com -i test/graphql-fragments-vars-directives.lua
+-- Loaded by test/unit-graphql.lua; relies on shared state from the driver.
 -- ============================================================
 
--- Stub Redbean HTTP context APIs.
--- luacheck: push
--- luacheck: globals SetStatus SetHeader Write GetBody EncodeJson DecodeJson
-local _last_body, _req_body
-SetStatus = function(_code, _reason) end
-SetHeader = function(_k, _v) end
-Write = function(s)
-  _last_body = (_last_body or "") .. tostring(s)
-end
-GetBody = function()
-  return _req_body
-end
--- luacheck: pop
-
-local function reset_response()
-  _last_body = ""
-  _req_body = nil
-end
-
--- Redirect /zip/internal/ → internal/ so tests run without a Redbean zip context.
-local _real_dofile = dofile
-function dofile(path) -- luacheck: globals dofile
-  if path and path:match("^/zip/internal/") then
-    return _real_dofile(path:sub(6))
-  end
-  return _real_dofile(path)
-end
-
-dofile("internal/graphql_parser.lua")
-dofile("internal/graphql_schema_data.lua")
-dofile("internal/graphql_schema.lua")
-dofile("internal/http.lua")
-dofile("internal/graphql_executor.lua")
-
-dofile = _real_dofile -- luacheck: globals dofile
-
--- ============================================================
--- Assertion helpers
--- ============================================================
-
-local PASS, FAIL = 0, 0
-
-local function ok(cond, msg)
-  if cond then
-    PASS = PASS + 1
-    io.write("PASS  " .. msg .. "\n")
-  else
-    FAIL = FAIL + 1
-    io.write("FAIL  " .. msg .. "\n")
-  end
-end
-
-local function eq(a, b, msg)
-  ok(a == b, msg .. " (got " .. tostring(a) .. ", want " .. tostring(b) .. ")")
-end
+-- Globals provided by the driver (test/unit-graphql.lua):
+-- luacheck: globals ok eq PASS FAIL reset_response _last_status _last_body _req_body graphql_resolvers graphql_handler
 
 -- ============================================================
 -- Test helpers
@@ -525,13 +472,4 @@ do -- standard graphql-js IntrospectionQuery executes without error
       "introspection: IntrospectionQuery → directives array present"
     )
   end)
-end
-
--- ============================================================
--- Summary
--- ============================================================
-
-io.write(string.format("\n%d passed, %d failed\n", PASS, FAIL))
-if FAIL > 0 then
-  os.exit(1)
 end

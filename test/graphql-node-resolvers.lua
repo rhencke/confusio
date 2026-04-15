@@ -1,56 +1,10 @@
 -- Unit tests for Query.node, Query.nodes, and Query.repositoryOwner resolver dispatch.
 -- Covers the dispatcher logic in graphql_executor.lua and the resolver contract.
--- Run: sh redbean.com -i test/graphql-node-resolvers.lua
+-- Loaded by test/unit-graphql.lua; relies on shared state from the driver.
 -- ============================================================
 
--- Stub Redbean HTTP context APIs needed by http.lua and graphql_executor.lua.
--- luacheck: push
--- luacheck: globals SetStatus SetHeader Write GetBody
-SetStatus = function(_code, _reason) end
-SetHeader = function(_k, _v) end
-Write = function(_s) end
-GetBody = function()
-  return nil
-end
--- luacheck: pop
-
--- Redirect /zip/internal/ → internal/ so tests run without a Redbean zip context.
-local _real_dofile = dofile
-function dofile(path) -- luacheck: globals dofile
-  if path and path:match("^/zip/internal/") then
-    return _real_dofile(path:sub(6))
-  end
-  return _real_dofile(path)
-end
-
-dofile("internal/graphql_parser.lua")
-dofile("internal/graphql_schema_data.lua")
-dofile("internal/graphql_schema.lua")
-dofile("internal/http.lua")
-dofile("internal/graphql_translators.lua")
-dofile("internal/graphql_executor.lua")
-
-dofile = _real_dofile -- luacheck: globals dofile
-
--- ============================================================
--- Assertion helpers
--- ============================================================
-
-local PASS, FAIL = 0, 0
-
-local function ok(cond, msg)
-  if cond then
-    PASS = PASS + 1
-    io.write("PASS  " .. msg .. "\n")
-  else
-    FAIL = FAIL + 1
-    io.write("FAIL  " .. msg .. "\n")
-  end
-end
-
-local function eq(a, b, msg)
-  ok(a == b, msg .. " (got " .. tostring(a) .. ", want " .. tostring(b) .. ")")
-end
+-- Globals provided by the driver (test/unit-graphql.lua):
+-- luacheck: globals ok eq PASS FAIL graphql_resolvers encode_node_id decode_node_id
 
 -- Build a minimal execution context (errors array, no path).
 local function make_ctx()
@@ -279,13 +233,4 @@ do -- Issue node ID round-trip: translate_issue sets id; decode recovers owner/r
   eq(owner, "octocat", "Issue round-trip: owner parsed from local_id")
   eq(repo, "hello-world", "Issue round-trip: repo parsed from local_id")
   eq(number, "42", "Issue round-trip: number parsed from local_id")
-end
-
--- ============================================================
--- Summary
--- ============================================================
-
-io.write(string.format("\n%d passed, %d failed\n", PASS, FAIL))
-if FAIL > 0 then
-  os.exit(1)
 end

@@ -1,55 +1,9 @@
 -- Unit tests for batch/APQ rejection, cost-limit enforcement, and request-scoped cache.
--- Run: sh redbean.com -i test/graphql-batching-caching.lua
+-- Loaded by test/unit-graphql.lua; relies on shared state from the driver.
 -- ============================================================
 
--- Stub Redbean HTTP context APIs needed by http.lua and graphql_executor.lua.
--- luacheck: push
--- luacheck: globals SetStatus SetHeader Write GetBody
-SetStatus = function(_code, _reason) end
-SetHeader = function(_k, _v) end
-Write = function(_s) end
-GetBody = function()
-  return nil
-end
--- luacheck: pop
-
--- Redirect /zip/internal/ → internal/ so tests run without a Redbean zip context.
-local _real_dofile = dofile
-function dofile(path) -- luacheck: globals dofile
-  if path and path:match("^/zip/internal/") then
-    return _real_dofile(path:sub(6))
-  end
-  return _real_dofile(path)
-end
-
-dofile("internal/graphql_parser.lua")
-dofile("internal/graphql_schema_data.lua")
-dofile("internal/graphql_schema.lua")
-dofile("internal/http.lua")
-dofile("internal/graphql_translators.lua")
-dofile("internal/graphql_executor.lua")
-
-dofile = _real_dofile -- luacheck: globals dofile
-
--- ============================================================
--- Assertion helpers
--- ============================================================
-
-local PASS, FAIL = 0, 0
-
-local function ok(cond, msg)
-  if cond then
-    PASS = PASS + 1
-    io.write("PASS  " .. msg .. "\n")
-  else
-    FAIL = FAIL + 1
-    io.write("FAIL  " .. msg .. "\n")
-  end
-end
-
-local function eq(a, b, msg)
-  ok(a == b, msg .. " (got " .. tostring(a) .. ", want " .. tostring(b) .. ")")
-end
+-- Globals provided by the driver (test/unit-graphql.lua):
+-- luacheck: globals ok eq PASS FAIL SetStatus Write GetBody graphql_handler estimate_query_cost graphql_cached graphql_parse
 
 -- run_handler: invoke graphql_handler() with a given request body, capturing
 -- the HTTP status code and response body.  Returns (status, decoded_body).
@@ -291,13 +245,4 @@ do -- ctx.cache is initialised by graphql_handler (verified via a handler round-
   local status, r = run_handler(EncodeJson({ query = "{ rateLimit { cost } }" }))
   eq(status, 200, "graphql_cached: handler initialises ctx.cache (rateLimit round-trip → 200)")
   ok(r ~= nil and r.data ~= nil, "graphql_cached: handler response has data")
-end
-
--- ============================================================
--- Summary
--- ============================================================
-
-io.write(string.format("\n%d passed, %d failed\n", PASS, FAIL))
-if FAIL > 0 then
-  os.exit(1)
 end
