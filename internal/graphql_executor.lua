@@ -732,6 +732,26 @@ function graphql_handler() -- luacheck: globals graphql_handler
   -- Step 1: decode request body.
   local raw = GetBody() or ""
   local req = DecodeJson(raw)
+  -- Step 1a: array body → batch request (rejected in Phase 1).
+  if type(req) == "table" and req[1] ~= nil then
+    respond_json(400, {
+      errors = {
+        { message = "GraphQL request batching is not supported; send one operation per request." },
+      },
+    })
+    return
+  end
+  -- Step 1b: APQ body → persisted queries not supported.
+  if type(req) == "table" and type(req.extensions) == "table" and req.extensions.persistedQuery then
+    respond_graphql(nil, {
+      {
+        message = "Persisted queries are not supported; send the full query string.",
+        extensions = { code = "PERSISTED_QUERY_NOT_SUPPORTED" },
+      },
+    })
+    return
+  end
+  -- Step 1c: missing or non-string query field.
   if not req or type(req.query) ~= "string" then
     respond_graphql(nil, {
       {

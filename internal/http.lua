@@ -8,6 +8,7 @@ local HTTP_STATUS_TEXT = {
   [201] = "Created",
   [204] = "No Content",
   [302] = "Found",
+  [400] = "Bad Request",
   [401] = "Unauthorized",
   [404] = "Not Found",
   [405] = "Method Not Allowed",
