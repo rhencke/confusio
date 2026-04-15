@@ -241,3 +241,39 @@ jsonpath "$.data.repository.pullRequests.nodes[0].reviews.nodes" isCollection
 jsonpath "$.data.repository.pullRequests.nodes[0].reviews.nodes[0].state" == "APPROVED"
 jsonpath "$.data.repository.pullRequests.nodes[0].reviews.nodes[0].body" == "Looks good!"
 jsonpath "$.data.repository.pullRequests.nodes[0].reviews.nodes[0].author.login" == "octocat"
+
+# POST /graphql — Query.search REPOSITORY returns a SearchResultItemConnection
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ search(query: \"hello\", type: REPOSITORY, first: 5) { repositoryCount nodes { ... on Repository { name nameWithOwner } } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.search.repositoryCount" == 1
+jsonpath "$.data.search.nodes" isCollection
+jsonpath "$.data.search.nodes[0].name" == "hello-world"
+jsonpath "$.data.search.nodes[0].nameWithOwner" == "octocat/hello-world"
+
+# POST /graphql — Query.search USER returns a SearchResultItemConnection
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ search(query: \"octocat\", type: USER, first: 5) { userCount nodes { ... on User { login } } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.search.userCount" == 1
+jsonpath "$.data.search.nodes" isCollection
+jsonpath "$.data.search.nodes[0].login" == "octocat"
+
+# POST /graphql — Query.search ISSUE returns a SearchResultItemConnection
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ search(query: \"bug\", type: ISSUE, first: 5) { issueCount nodes { ... on Issue { number title state } } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.search.issueCount" == 1
+jsonpath "$.data.search.nodes" isCollection
+jsonpath "$.data.search.nodes[0].number" == 1
+jsonpath "$.data.search.nodes[0].title" == "Found a bug"
+jsonpath "$.data.search.nodes[0].state" == "OPEN"

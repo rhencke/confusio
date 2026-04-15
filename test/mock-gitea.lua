@@ -418,6 +418,7 @@ function OnHttpRequest()
     -- Search
     ["/api/v1/repos/search"] = { 200, '{"data":[' .. REPO .. '],"ok":true}' },
     ["/api/v1/users/search"] = { 200, '{"data":[' .. USER .. '],"ok":true}' },
+    ["/api/v1/repos/issues/search"] = { 200, "[" .. ISSUE .. "]" },
 
     -- Gitignore templates
     ["/api/v1/gitignores"] = { 200, '["C","Go","Python"]' },
