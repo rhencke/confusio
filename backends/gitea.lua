@@ -3203,6 +3203,17 @@ graphql_resolvers["Query.repositoryOwner"] = function(_parent, args, ctx)
   return nil -- not found; null is valid per spec
 end
 
+-- Query.viewer: resolve the authenticated user via GET /user.
+-- If the token is absent or rejected, graphql_fetch_or_error records a
+-- FORBIDDEN error and returns nil.
+graphql_resolvers["Query.viewer"] = function(_parent, _args, ctx)
+  local data = graphql_fetch_or_error(fetch_json, base() .. "/user", ctx, nil)
+  if not data then
+    return nil
+  end
+  return graphql_translate_user(translate_user(data))
+end
+
 -- node.Repository: fetch a repository by "owner/repo" local ID.
 graphql_resolvers["node.Repository"] = function(local_id, _ctx)
   local data, _ = graphql_fetch(fetch_json, base() .. "/repos/" .. local_id)
