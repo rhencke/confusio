@@ -166,22 +166,18 @@ site: redbean.com
 
 test: test-unit test-integration test-format test-lint validate-csv validate-tests validate-providers validate-claims validate-schema
 
-# Unit tests for .init.lua global functions (pure Lua, no HTTP server needed)
+# Pure-Lua unit tests (no HTTP server needed): .init.lua functions + GraphQL subsystem
 test-unit-functions: redbean.com
 	./redbean.com -i test/unit-init.lua
+	./redbean.com -i test/unit-graphql.lua
 
-# Unit tests for the GraphQL lexer and parser (pure Lua, no HTTP server needed)
+# Convenience alias: run only the GraphQL unit tests
+# unit-graphql.lua is the driver: loads shared state once, then dofiles all sub-files.
 test-unit-graphql: redbean.com
 	./redbean.com -i test/unit-graphql.lua
-	./redbean.com -i test/graphql-fragments-vars-directives.lua
-	./redbean.com -i test/graphql-node-id.lua
-	./redbean.com -i test/graphql-node-resolvers.lua
-	./redbean.com -i test/graphql-translators.lua
-	./redbean.com -i test/graphql-pagination.lua
-	./redbean.com -i test/graphql-ratelimit-viewer.lua
 
 # Sequential preamble (boot-path checks), then all backends in parallel
-test-unit: test-unit-functions test-unit-graphql confusio.com $(MOCKS) hurl
+test-unit: test-unit-functions confusio.com $(MOCKS) hurl
 	bash test/test-unit.sh
 	$(MAKE) -j$$(nproc) test-unit-backends
 

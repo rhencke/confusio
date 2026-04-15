@@ -4,41 +4,11 @@
 -- graphql_translate_label, graphql_translate_milestone, graphql_translate_comment,
 -- graphql_translate_commit, graphql_translate_ref, graphql_translate_release,
 -- graphql_translate_reaction, and the inline connection helper used by issue/PR.
--- Run: sh redbean.com -i test/graphql-translators.lua
+-- Loaded by test/unit-graphql.lua; relies on shared state from the driver.
 -- ============================================================
 
--- Redirect /zip/internal/ → internal/ so tests run without a Redbean zip context.
-local _real_dofile = dofile
-function dofile(path) -- luacheck: globals dofile
-  if path and path:match("^/zip/internal/") then
-    return _real_dofile(path:sub(6))
-  end
-  return _real_dofile(path)
-end
-
-dofile("internal/graphql_translators.lua")
-
-dofile = _real_dofile -- luacheck: globals dofile
-
--- ============================================================
--- Assertion helpers
--- ============================================================
-
-local PASS, FAIL = 0, 0
-
-local function ok(cond, msg)
-  if cond then
-    PASS = PASS + 1
-    io.write("PASS  " .. msg .. "\n")
-  else
-    FAIL = FAIL + 1
-    io.write("FAIL  " .. msg .. "\n")
-  end
-end
-
-local function eq(a, b, msg)
-  ok(a == b, msg .. " (got " .. tostring(a) .. ", want " .. tostring(b) .. ")")
-end
+-- Globals provided by the driver (test/unit-graphql.lua):
+-- luacheck: globals ok eq PASS FAIL
 
 -- ============================================================
 -- Sample REST fixtures
@@ -607,13 +577,4 @@ end
 do -- -1 content
   local r = graphql_translate_reaction({ id = 3, content = "-1" })
   eq(r.content, "THUMBS_DOWN", "translate_reaction: -1 → THUMBS_DOWN")
-end
-
--- ============================================================
--- Summary
--- ============================================================
-
-io.write(string.format("\n%d passed, %d failed\n", PASS, FAIL))
-if FAIL > 0 then
-  os.exit(1)
 end

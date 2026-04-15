@@ -1,47 +1,10 @@
 -- Unit tests for GraphQL pagination cursor helpers and connection builders.
 -- Tests: graphql_page_to_cursor, graphql_cursor_to_page, graphql_cursor_url,
 --        graphql_inline_connection, graphql_make_connection, typed wrappers.
+-- Loaded by test/unit-graphql.lua; relies on shared state from the driver.
 
--- Redirect /zip/internal/ → internal/ so dofile works outside the zip.
-local real_dofile = dofile
-dofile = function(path) -- luacheck: globals dofile
-  if path:sub(1, 5) == "/zip/" then
-    return real_dofile(path:sub(6))
-  end
-  return real_dofile(path)
-end
-
-real_dofile("internal/graphql_translators.lua")
-
--- Restore dofile so the test runner and any later modules are unaffected.
-dofile = real_dofile -- luacheck: globals dofile
-
--- ---------------------------------------------------------------------------
--- Minimal test harness (mirrors graphql-node-id.lua)
--- ---------------------------------------------------------------------------
-
-local passed = 0
-local failed = 0
-
-local function eq(got, expected, label)
-  if got == expected then
-    passed = passed + 1
-  else
-    failed = failed + 1
-    io.stderr:write(
-      string.format("FAIL [%s]: expected %s, got %s\n", label, tostring(expected), tostring(got))
-    )
-  end
-end
-
-local function ok(cond, label)
-  if cond then
-    passed = passed + 1
-  else
-    failed = failed + 1
-    io.stderr:write(string.format("FAIL [%s]: condition was false\n", label))
-  end
-end
+-- Globals provided by the driver (test/unit-graphql.lua):
+-- luacheck: globals ok eq PASS FAIL
 
 local function not_nil(v, label)
   ok(v ~= nil, label)
@@ -275,13 +238,3 @@ eq(wl.__typename, "LabelConnection", "graphql_labels_connection typename")
 
 local wref = graphql_refs_connection(wrap_nodes, wrap_args, nil, nil)
 eq(wref.__typename, "RefConnection", "graphql_refs_connection typename")
-
--- ---------------------------------------------------------------------------
--- Summary
--- ---------------------------------------------------------------------------
-
-local total = passed + failed
-io.stderr:write(string.format("graphql-pagination: %d/%d passed\n", passed, total))
-if failed > 0 then
-  os.exit(1)
-end
