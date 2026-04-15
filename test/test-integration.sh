@@ -17,5 +17,14 @@ else
 fi
 PID=$!
 trap "kill $PID 2>/dev/null || true; rm -rf $TMPDIR_INT" EXIT
+
+# The Gitea backend probes gitea.com at startup to check anonymous-access settings,
+# so the server may not be ready for up to ~10 seconds on a cold network path.
+# Poll until the root endpoint responds before handing off to hurl.
+for _i in $(seq 1 150); do
+  curl -sf --max-time 1 "http://localhost:$CONFUSIO_PORT/" >/dev/null 2>&1 && break
+  sleep 0.2
+done
+
 ./hurl --retry 10 --retry-interval 200 --connect-timeout 5 --max-time 15 \
   --variable host=localhost:$CONFUSIO_PORT test/gitea-root.hurl test/stub-apps.hurl
