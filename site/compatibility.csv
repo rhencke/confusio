@@ -1,5 +1,5 @@
 endpoint,azuredevops,bitbucket,bitbucket_datacenter,codeberg,codecommit,forgejo,gerrit,gitblit,gitbucket,gitea,gitlab,gogs,harness,kallithea,launchpad,notabug,onedev,pagure,phabricator,radicle,rhodecode,sourceforge,sourcehut,tuleap
-POST /graphql,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~,~
+POST /graphql,"~repository only; no issues, no viewer","~no labels, no reactions; commit email always empty",~no viewer; repository and issues work,y,n,y,~repository scalar fields only,n,y,y,y,"~no releases, no packages",n,n,~issues only; no repository scalar fields,y,n,~repository and issues; no pull requests,n,n,n,n,~repository only; issues/PRs absent,n
 GET /repos/{owner}/{repo},y,y,y,y,y,y,y,y,y,y,y,y,y,n,n,y,y,y,n,y,n,n,y,~
 PATCH /repos/{owner}/{repo},y,y,y,y,n,y,y,n,y,y,y,y,y,n,n,y,y,y,n,y,n,n,y,n
 DELETE /repos/{owner}/{repo},y,y,y,y,n,y,n,n,y,y,y,y,y,n,n,y,y,y,n,~stub; returns 405,n,n,y,n

@@ -51,6 +51,7 @@ PROVIDER_NAMES = {
 }
 
 GROUP_NAMES = {
+    "graphql":              "GraphQL",
     "meta":                 "Meta",
     "gitignore":            "Gitignore",
     "licenses":             "Licenses",
