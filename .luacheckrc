@@ -81,6 +81,19 @@ globals = {
   "decode_node_id",
   "graphql_fetch",
   "graphql_fetch_with_headers",
+  "graphql_translate_repo",
+  "graphql_translate_user",
+  "graphql_translate_org",
+  "graphql_translate_owner",
+  "graphql_translate_issue",
+  "graphql_translate_pr",
+  "graphql_translate_label",
+  "graphql_translate_milestone",
+  "graphql_translate_comment",
+  "graphql_translate_commit",
+  "graphql_translate_ref",
+  "graphql_translate_release",
+  "graphql_translate_reaction",
 }
 
 -- Exclude auto-generated files from linting
