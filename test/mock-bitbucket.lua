@@ -264,7 +264,12 @@ function OnHttpRequest()
     )
   elseif path == rb .. "/pullrequests/1/commits" then
     SetStatus(200, "OK")
-    json('{"values":[],"pagelen":30,"size":0,"page":1}')
+    json(
+      '{"values":[{"hash":"abc123def456","message":"Initial commit",'
+        .. '"date":"2011-01-26T19:01:12Z",'
+        .. '"author":{"raw":"Octocat","user":{"display_name":"Octocat","nickname":"octocat"}},'
+        .. '"parents":[]}],"pagelen":30,"size":1,"page":1}'
+    )
   elseif path == rb .. "/pullrequests/1/diffstat" then
     SetStatus(200, "OK")
     json(
@@ -339,7 +344,13 @@ function OnHttpRequest()
         .. '"links":{"avatar":{"href":""},"html":{"href":"http://bitbucket.org/octocat"}}}'
     )
 
-  -- Workspaces (used by search_users) ----------------------------------------
+  -- Workspaces ----------------------------------------------------------------
+  elseif path == "/2.0/workspaces/octocat" then
+    SetStatus(200, "OK")
+    json(
+      '{"uuid":"{5678}","slug":"octocat","name":"Octocat","type":"workspace",'
+        .. '"links":{"avatar":{"href":""},"html":{"href":"https://bitbucket.org/octocat"}}}'
+    )
   elseif path == "/2.0/workspaces" then
     SetStatus(200, "OK")
     json(
