@@ -1946,3 +1946,438 @@ backend_impl = {
     )
   end,
 }
+
+-- ---------------------------------------------------------------------------
+-- GraphQL resolvers
+-- ---------------------------------------------------------------------------
+
+-- Local pagination parameters for graphql_cursor_url.
+-- Bitbucket uses pagelen / page query parameters (not per_page).
+local GQL_PAGES = { per_page = "pagelen", page = "page" }
+
+-- Local helper: build a paginated Relay Connection from a Bitbucket list endpoint.
+-- Bitbucket wraps paginated responses in {"values":[...],"size":N,"pagelen":30,"page":1}.
+-- The total count comes from the response body's "size" field (not HTTP headers).
+local function bb_repo_connection(owner, repo_name, suffix, args, ctx, translate_fn, make_conn)
+  local url = graphql_cursor_url(
+    base() .. "/repositories/" .. owner .. "/" .. repo_name .. suffix,
+    args,
+    GQL_PAGES
+  )
+  local data, _, err = graphql_fetch_with_headers(fetch_json, url)
+  if not data then
+    graphql_error(ctx, err)
+    return nil
+  end
+  local total = data.size and tonumber(data.size) or nil
+  local nodes = {}
+  for _, item in ipairs(data.values or {}) do
+    nodes[#nodes + 1] = translate_fn(item)
+  end
+  return make_conn(nodes, args, total, ctx)
+end
+
+-- Query.repositoryOwner: look up a User or Organization (workspace) by login.
+-- Tries /users/{login} first; falls back to /workspaces/{login}.
+graphql_resolvers["Query.repositoryOwner"] = function(_parent, args, ctx)
+  if not args.login then
+    graphql_error(ctx, "repositoryOwner requires a login argument")
+    return nil
+  end
+  local udata, _ = graphql_fetch(fetch_json, base() .. "/users/" .. args.login)
+  if udata then
+    return graphql_translate_user(translate_bb_user(udata))
+  end
+  local wdata, _ = graphql_fetch(fetch_json, base() .. "/workspaces/" .. args.login)
+  if wdata then
+    return graphql_translate_org(translate_bb_workspace(wdata))
+  end
+  return nil
+end
+
+-- Query.viewer: resolve the authenticated user via GET /user.
+graphql_resolvers["Query.viewer"] = function(_parent, _args, ctx)
+  local data = graphql_fetch_or_error(fetch_json, base() .. "/user", ctx, nil)
+  if not data then
+    return nil
+  end
+  local u = graphql_translate_user(translate_bb_user(data))
+  u.isViewer = true
+  return u
+end
+
+-- Query.user: look up a User by login.
+graphql_resolvers["Query.user"] = function(_parent, args, ctx)
+  if not args.login then
+    graphql_error(ctx, "user requires a login argument")
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, base() .. "/users/" .. args.login)
+  if not data then
+    return nil
+  end
+  return graphql_translate_user(translate_bb_user(data))
+end
+
+-- Query.organization: look up a Bitbucket workspace as an Organization.
+graphql_resolvers["Query.organization"] = function(_parent, args, ctx)
+  if not args.login then
+    graphql_error(ctx, "organization requires a login argument")
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, base() .. "/workspaces/" .. args.login)
+  if not data then
+    return nil
+  end
+  return graphql_translate_org(translate_bb_workspace(data))
+end
+
+-- Query.repository: look up a Repository by owner and name.
+graphql_resolvers["Query.repository"] = function(_parent, args, ctx)
+  if not args.owner or not args.name then
+    graphql_error(ctx, "repository requires owner and name arguments")
+    return nil
+  end
+  local data, _ =
+    graphql_fetch(fetch_json, base() .. "/repositories/" .. args.owner .. "/" .. args.name)
+  if not data then
+    return nil
+  end
+  return graphql_translate_repo(translate_bb_repo(data))
+end
+
+-- node.Repository: fetch a repository by "owner/repo" local ID.
+graphql_resolvers["node.Repository"] = function(local_id, _ctx)
+  local data, _ = graphql_fetch(fetch_json, base() .. "/repositories/" .. local_id)
+  if not data then
+    return nil
+  end
+  return graphql_translate_repo(translate_bb_repo(data))
+end
+
+-- node.User: fetch a user by login.
+graphql_resolvers["node.User"] = function(local_id, _ctx)
+  local data, _ = graphql_fetch(fetch_json, base() .. "/users/" .. local_id)
+  if not data then
+    return nil
+  end
+  return graphql_translate_user(translate_bb_user(data))
+end
+
+-- node.Organization: fetch a workspace by slug.
+graphql_resolvers["node.Organization"] = function(local_id, _ctx)
+  local data, _ = graphql_fetch(fetch_json, base() .. "/workspaces/" .. local_id)
+  if not data then
+    return nil
+  end
+  return graphql_translate_org(translate_bb_workspace(data))
+end
+
+-- node.Issue: fetch an issue by "owner/repo/number" local ID.
+graphql_resolvers["node.Issue"] = function(local_id, _ctx)
+  local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ = graphql_fetch(
+    fetch_json,
+    base() .. "/repositories/" .. owner .. "/" .. repo .. "/issues/" .. number
+  )
+  if not data then
+    return nil
+  end
+  return graphql_translate_issue(translate_bb_issue(data), owner, repo)
+end
+
+-- node.PullRequest: fetch a pull request by "owner/repo/number" local ID.
+graphql_resolvers["node.PullRequest"] = function(local_id, _ctx)
+  local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ = graphql_fetch(
+    fetch_json,
+    base() .. "/repositories/" .. owner .. "/" .. repo .. "/pullrequests/" .. number
+  )
+  if not data then
+    return nil
+  end
+  return graphql_translate_pr(translate_bb_pull(data), owner, repo)
+end
+
+-- ---------------------------------------------------------------------------
+-- Repository connection sub-resolvers
+-- ---------------------------------------------------------------------------
+
+-- Repository.issues: paginated list of issues.
+graphql_resolvers["Repository.issues"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return bb_repo_connection(owner, name, "/issues", args, ctx, function(i)
+    return graphql_translate_issue(translate_bb_issue(i), owner, name)
+  end, graphql_issues_connection)
+end
+
+-- Repository.pullRequests: paginated list of pull requests.
+graphql_resolvers["Repository.pullRequests"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return bb_repo_connection(owner, name, "/pullrequests", args, ctx, function(p)
+    return graphql_translate_pr(translate_bb_pull(p), owner, name)
+  end, graphql_prs_connection)
+end
+
+-- Repository.milestones: paginated list of milestones.
+graphql_resolvers["Repository.milestones"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return bb_repo_connection(owner, name, "/milestones", args, ctx, function(m)
+    return graphql_translate_milestone(translate_bb_milestone(m), owner, name)
+  end, function(n, a, t, c)
+    return graphql_make_connection("Milestone", n, a, t, c)
+  end)
+end
+
+-- Repository.refs: paginated list of branches as Ref objects.
+-- Bitbucket branch objects use target.hash for the SHA; we normalise to commit.sha
+-- before passing to graphql_translate_ref.
+graphql_resolvers["Repository.refs"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return bb_repo_connection(owner, name, "/refs/branches", args, ctx, function(b)
+    -- Normalise Bitbucket branch shape to the {name, commit={sha}} expected by
+    -- graphql_translate_ref.
+    if b.target and not b.commit then
+      b.commit = { sha = b.target.hash }
+    end
+    return graphql_translate_ref(b, parent)
+  end, graphql_refs_connection)
+end
+
+-- Repository.defaultBranchRef: enrich the inline stub with full branch data.
+-- The parent already carries {__typename="Ref",name="main"} from graphql_translate_repo.
+graphql_resolvers["Repository.defaultBranchRef"] = function(parent, _args, _ctx)
+  local branch = parent.defaultBranchRef and parent.defaultBranchRef.name
+  if not branch then
+    return nil
+  end
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ = graphql_fetch(
+    fetch_json,
+    base() .. "/repositories/" .. owner .. "/" .. name .. "/refs/branches/" .. branch
+  )
+  if not data then
+    return nil
+  end
+  if data.target and not data.commit then
+    data.commit = { sha = data.target.hash }
+  end
+  return graphql_translate_ref(data, parent)
+end
+
+-- Repository.languages: fetch primary language as a LanguageConnection.
+-- Bitbucket exposes only the primary language via the repo object; no byte-count breakdown.
+-- Returns a single-entry connection when the repo has a language, empty otherwise.
+graphql_resolvers["Repository.languages"] = function(parent, _args, _ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, base() .. "/repositories/" .. owner .. "/" .. name)
+  if not data then
+    return nil
+  end
+  local lang = data.language
+  local nodes, edges = {}, {}
+  local total_size = 0
+  if lang and lang ~= "" then
+    local node = {
+      __typename = "Language",
+      id = encode_node_id("Language", lang),
+      name = lang,
+      color = nil,
+    }
+    nodes[1] = node
+    edges[1] = { cursor = "", node = node, size = 0 }
+  end
+  return {
+    __typename = "LanguageConnection",
+    totalCount = #nodes,
+    totalSize = total_size,
+    pageInfo = {
+      __typename = "PageInfo",
+      hasNextPage = false,
+      hasPreviousPage = false,
+      startCursor = nil,
+      endCursor = nil,
+    },
+    nodes = nodes,
+    edges = edges,
+  }
+end
+
+-- Issue.comments: paginated list of comments for a single issue.
+graphql_resolvers["Issue.comments"] = function(parent, args, ctx)
+  local _, local_id = decode_node_id(parent.id)
+  if not local_id then
+    return nil
+  end
+  local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local url = graphql_cursor_url(
+    base() .. "/repositories/" .. owner .. "/" .. repo .. "/issues/" .. number .. "/comments",
+    args,
+    GQL_PAGES
+  )
+  local data, _, err = graphql_fetch_with_headers(fetch_json, url)
+  if not data then
+    graphql_error(ctx, err)
+    return nil
+  end
+  local total = data.size and tonumber(data.size) or nil
+  local nodes = {}
+  for _, c in ipairs(data.values or {}) do
+    nodes[#nodes + 1] = graphql_translate_comment(translate_bb_issue_comment(c), owner, repo)
+  end
+  return graphql_make_connection("IssueComment", nodes, args, total, ctx)
+end
+
+-- PullRequest.commits: paginated commit list for a pull request.
+graphql_resolvers["PullRequest.commits"] = function(parent, args, ctx)
+  local _, local_id = decode_node_id(parent.id)
+  if not local_id then
+    return nil
+  end
+  local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local url = graphql_cursor_url(
+    base() .. "/repositories/" .. owner .. "/" .. repo .. "/pullrequests/" .. number .. "/commits",
+    args,
+    GQL_PAGES
+  )
+  local data, _, err = graphql_fetch_with_headers(fetch_json, url)
+  if not data then
+    graphql_error(ctx, err)
+    return nil
+  end
+  local total = data.size and tonumber(data.size) or nil
+  local nodes = {}
+  for _, c in ipairs(data.values or {}) do
+    local translated = translate_bb_commit(c)
+    local sha = translated.sha or ""
+    nodes[#nodes + 1] = {
+      __typename = "PullRequestCommit",
+      id = encode_node_id("PullRequestCommit", sha),
+      commit = graphql_translate_commit(translated),
+      url = translated.html_url,
+    }
+  end
+  return graphql_make_connection("PullRequestCommit", nodes, args, total, ctx)
+end
+
+-- PullRequest.reviews: paginated review list for a pull request.
+-- Bitbucket has no dedicated reviews endpoint; reviews are synthesized from
+-- PR participants with role=REVIEWER and approved=true.
+graphql_resolvers["PullRequest.reviews"] = function(parent, args, ctx)
+  local _, local_id = decode_node_id(parent.id)
+  if not local_id then
+    return nil
+  end
+  local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ = graphql_fetch(
+    fetch_json,
+    base() .. "/repositories/" .. owner .. "/" .. repo .. "/pullrequests/" .. number
+  )
+  if not data then
+    return nil
+  end
+  -- Reuse the existing REST translator to convert participants to review objects.
+  local reviews = translate_bb_participants_to_reviews(data.participants)
+  local nodes = {}
+  for _, r in ipairs(reviews) do
+    nodes[#nodes + 1] = graphql_translate_review(r, owner, repo)
+  end
+  return graphql_make_connection("PullRequestReview", nodes, args, #nodes, ctx)
+end
+
+-- ---------------------------------------------------------------------------
+-- Query.search
+-- ---------------------------------------------------------------------------
+
+-- Query.search: map GitHub GraphQL search to Bitbucket search endpoints.
+-- Supports REPOSITORY (via /repositories?q=name~"...") and USER
+-- (via /workspaces?q=slug~"..."). ISSUE search is not supported.
+graphql_resolvers["Query.search"] = function(_parent, args, _ctx)
+  local query = args.query or ""
+  local search_type = args.type or "REPOSITORY"
+  local per_page = args.first or 30
+  local q = EscapeParam(query)
+
+  local nodes = {}
+  local repo_count, user_count, issue_count = 0, 0, 0
+
+  if search_type == "REPOSITORY" then
+    local data, _ =
+      graphql_fetch(fetch_json, base() .. '/repositories?q=name~"' .. q .. '"&pagelen=' .. per_page)
+    if data and data.values then
+      for _, r in ipairs(data.values) do
+        nodes[#nodes + 1] = graphql_translate_repo(translate_bb_repo(r))
+      end
+      repo_count = data.size or #nodes
+    end
+  elseif search_type == "USER" then
+    local data, _ =
+      graphql_fetch(fetch_json, base() .. '/workspaces?q=slug~"' .. q .. '"&pagelen=' .. per_page)
+    if data and data.values then
+      for _, w in ipairs(data.values) do
+        nodes[#nodes + 1] = graphql_translate_user(translate_bb_workspace(w))
+      end
+      user_count = data.size or #nodes
+    end
+  end
+
+  local edges = {}
+  for _, node in ipairs(nodes) do
+    edges[#edges + 1] = {
+      __typename = "SearchResultItemEdge",
+      cursor = graphql_page_to_cursor(1),
+      node = node,
+    }
+  end
+  return {
+    __typename = "SearchResultItemConnection",
+    nodes = nodes,
+    edges = edges,
+    pageInfo = {
+      __typename = "PageInfo",
+      hasNextPage = false,
+      hasPreviousPage = false,
+      startCursor = #nodes > 0 and graphql_page_to_cursor(1) or nil,
+      endCursor = #nodes > 0 and graphql_page_to_cursor(1) or nil,
+    },
+    repositoryCount = repo_count,
+    userCount = user_count,
+    issueCount = issue_count,
+    codeCount = 0,
+    discussionCount = 0,
+    wikiCount = 0,
+  }
+end
