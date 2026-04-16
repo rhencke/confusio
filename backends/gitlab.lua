@@ -3988,3 +3988,183 @@ graphql_resolvers["node.Label"] = function(local_id, _ctx)
   end
   return graphql_translate_label(translate_gl_label(data), owner, repo)
 end
+
+-- ---------------------------------------------------------------------------
+-- Repository connection sub-resolvers
+-- ---------------------------------------------------------------------------
+
+-- Local helper: build a paginated Relay Connection from a GitLab list endpoint.
+-- Fetches page from graphql_cursor_url, reads X-Total for totalCount,
+-- translates items with translate_fn, and delegates to make_conn.
+local function gitlab_repo_connection(owner, repo, suffix, args, ctx, translate_fn, make_conn)
+  local url =
+    graphql_cursor_url(base() .. "/projects/" .. project_id(owner, repo) .. suffix, args, PAGES)
+  local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
+  if not data then
+    graphql_error(ctx, err)
+    return nil
+  end
+  local total = headers["X-Total"] and tonumber(headers["X-Total"])
+  local nodes = {}
+  for _, item in ipairs(data) do
+    nodes[#nodes + 1] = translate_fn(item)
+  end
+  return make_conn(nodes, args, total, ctx)
+end
+
+-- Repository.issues: paginated list of issues.
+-- GitLab issues are always real issues (no PR/issue mixing like Gitea).
+graphql_resolvers["Repository.issues"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return gitlab_repo_connection(owner, name, "/issues", args, ctx, function(i)
+    return graphql_translate_issue(translate_gl_issue(i), owner, name)
+  end, graphql_issues_connection)
+end
+
+-- Repository.pullRequests: paginated list of merge requests.
+graphql_resolvers["Repository.pullRequests"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return gitlab_repo_connection(owner, name, "/merge_requests", args, ctx, function(mr)
+    return graphql_translate_pr(translate_gl_mr(mr), owner, name)
+  end, graphql_prs_connection)
+end
+
+-- Repository.releases: paginated list of releases.
+-- GitLab releases use tag_name as identifier; we assign a synthetic integer id.
+graphql_resolvers["Repository.releases"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return gitlab_repo_connection(owner, name, "/releases", args, ctx, function(r)
+    return graphql_translate_release(translate_gl_release(r), owner, name)
+  end, function(n, a, t, c)
+    return graphql_make_connection("Release", n, a, t, c)
+  end)
+end
+
+-- Repository.labels: paginated list of labels.
+graphql_resolvers["Repository.labels"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return gitlab_repo_connection(owner, name, "/labels", args, ctx, function(l)
+    return graphql_translate_label(translate_gl_label(l), owner, name)
+  end, graphql_labels_connection)
+end
+
+-- Repository.milestones: paginated list of milestones.
+graphql_resolvers["Repository.milestones"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return gitlab_repo_connection(owner, name, "/milestones", args, ctx, function(m)
+    return graphql_translate_milestone(translate_gl_milestone(m), owner, name)
+  end, function(n, a, t, c)
+    return graphql_make_connection("Milestone", n, a, t, c)
+  end)
+end
+
+-- Repository.refs: paginated list of branches as Ref objects.
+-- GitLab branch objects use commit.id for the SHA; normalise to commit.sha.
+graphql_resolvers["Repository.refs"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return gitlab_repo_connection(owner, name, "/repository/branches", args, ctx, function(b)
+    if b.commit then
+      b.commit.sha = b.commit.id
+    end
+    return graphql_translate_ref(b, parent)
+  end, graphql_refs_connection)
+end
+
+-- Repository.collaborators: paginated list of project members as Users.
+-- GitLab uses /members (not /collaborators).
+graphql_resolvers["Repository.collaborators"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return gitlab_repo_connection(owner, name, "/members", args, ctx, function(m)
+    return graphql_translate_user(translate_gl_member(m))
+  end, function(n, a, t, c)
+    return graphql_make_connection("RepositoryCollaborator", n, a, t, c)
+  end)
+end
+
+-- Repository.defaultBranchRef: enrich the inline stub with full branch data.
+-- The parent already carries {__typename="Ref",name="main"} from graphql_translate_repo.
+-- GitLab branch objects use commit.id for the SHA; normalise to commit.sha.
+graphql_resolvers["Repository.defaultBranchRef"] = function(parent, _args, _ctx)
+  local branch = parent.defaultBranchRef and parent.defaultBranchRef.name
+  if not branch then
+    return nil
+  end
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ = graphql_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, name) .. "/repository/branches/" .. branch
+  )
+  if not data then
+    return nil
+  end
+  if data.commit then
+    data.commit.sha = data.commit.id
+  end
+  return graphql_translate_ref(data, parent)
+end
+
+-- Repository.languages: fetch language breakdown as a LanguageConnection.
+-- GitLab returns {"Language": percentage, ...} (percentages, not byte counts).
+-- We use the percentage as the "size" in edges since byte counts are unavailable.
+graphql_resolvers["Repository.languages"] = function(parent, _args, _ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ =
+    graphql_fetch(fetch_json, base() .. "/projects/" .. project_id(owner, name) .. "/languages")
+  if not data then
+    return nil
+  end
+  local nodes, edges = {}, {}
+  local total_size = 0
+  for lang_name, size in pairs(data) do
+    total_size = total_size + size
+    local node = {
+      __typename = "Language",
+      id = encode_node_id("Language", lang_name),
+      name = lang_name,
+      color = nil,
+    }
+    nodes[#nodes + 1] = node
+    edges[#edges + 1] = { cursor = "", node = node, size = size }
+  end
+  return {
+    __typename = "LanguageConnection",
+    totalCount = #nodes,
+    totalSize = total_size,
+    pageInfo = {
+      __typename = "PageInfo",
+      hasNextPage = false,
+      hasPreviousPage = false,
+      startCursor = nil,
+      endCursor = nil,
+    },
+    nodes = nodes,
+    edges = edges,
+  }
+end
