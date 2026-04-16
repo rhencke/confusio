@@ -4127,6 +4127,123 @@ graphql_resolvers["Repository.defaultBranchRef"] = function(parent, _args, _ctx)
   return graphql_translate_ref(data, parent)
 end
 
+-- ---------------------------------------------------------------------------
+-- Issue and PullRequest sub-resolvers
+-- ---------------------------------------------------------------------------
+
+-- Issue.comments: paginated list of notes for a single issue.
+-- GitLab notes are fetched from /projects/{id}/issues/{iid}/notes.
+-- Comment node IDs encode four segments (owner/repo/iid/note_id) so the
+-- node.IssueComment resolver can reconstruct the GitLab API path.
+graphql_resolvers["Issue.comments"] = function(parent, args, ctx)
+  local _, local_id = decode_node_id(parent.id)
+  if not local_id then
+    return nil
+  end
+  local owner, repo, iid = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local url = graphql_cursor_url(
+    base() .. "/projects/" .. project_id(owner, repo) .. "/issues/" .. iid .. "/notes",
+    args,
+    PAGES
+  )
+  local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
+  if not data then
+    graphql_error(ctx, err)
+    return nil
+  end
+  local total = headers["X-Total"] and tonumber(headers["X-Total"])
+  local nodes = {}
+  for _, n in ipairs(data) do
+    if not n.system then
+      local comment = graphql_translate_comment(translate_gl_note(n), owner, repo)
+      -- Override node ID to include the issue iid so node.IssueComment can fetch it back.
+      comment.id =
+        encode_node_id("IssueComment", owner .. "/" .. repo .. "/" .. iid .. "/" .. tostring(n.id))
+      nodes[#nodes + 1] = comment
+    end
+  end
+  return graphql_make_connection("IssueComment", nodes, args, total, ctx)
+end
+
+-- PullRequest.commits: paginated commit list for a merge request.
+-- GitLab MR commits use .id for the SHA and flat author/committer fields.
+graphql_resolvers["PullRequest.commits"] = function(parent, args, ctx)
+  local _, local_id = decode_node_id(parent.id)
+  if not local_id then
+    return nil
+  end
+  local owner, repo, iid = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local url = graphql_cursor_url(
+    base() .. "/projects/" .. project_id(owner, repo) .. "/merge_requests/" .. iid .. "/commits",
+    args,
+    PAGES
+  )
+  local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
+  if not data then
+    graphql_error(ctx, err)
+    return nil
+  end
+  local total = headers["X-Total"] and tonumber(headers["X-Total"])
+  local nodes = {}
+  for _, c in ipairs(data) do
+    -- Translate GitLab's flat commit format to the REST shape graphql_translate_commit expects.
+    local rest_commit = {
+      sha = c.id,
+      html_url = c.web_url or "",
+      commit = {
+        message = c.message,
+        author = { name = c.author_name, email = c.author_email, date = c.authored_date },
+        committer = {
+          name = c.committer_name or c.author_name,
+          email = c.committer_email or c.author_email,
+          date = c.committed_date or c.authored_date,
+        },
+      },
+    }
+    nodes[#nodes + 1] = {
+      __typename = "PullRequestCommit",
+      id = encode_node_id("PullRequestCommit", c.id or ""),
+      commit = graphql_translate_commit(rest_commit),
+      url = c.web_url or "",
+    }
+  end
+  return graphql_make_connection("PullRequestCommit", nodes, args, total, ctx)
+end
+
+-- PullRequest.reviews: MR approvals mapped to review objects.
+-- GitLab's approvals endpoint returns a single object (not a paginated list),
+-- so we fetch it directly and build an inline connection.
+graphql_resolvers["PullRequest.reviews"] = function(parent, args, ctx)
+  local _, local_id = decode_node_id(parent.id)
+  if not local_id then
+    return nil
+  end
+  local owner, repo, iid = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local data, err = graphql_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo) .. "/merge_requests/" .. iid .. "/approvals"
+  )
+  if not data then
+    graphql_error(ctx, err)
+    return nil
+  end
+  local reviews = translate_gl_approvals_to_reviews(data)
+  local nodes = {}
+  for _, r in ipairs(reviews) do
+    nodes[#nodes + 1] = graphql_translate_review(r, owner, repo)
+  end
+  return graphql_make_connection("PullRequestReview", nodes, args, #nodes, ctx)
+end
+
 -- Repository.languages: fetch language breakdown as a LanguageConnection.
 -- GitLab returns {"Language": percentage, ...} (percentages, not byte counts).
 -- We use the percentage as the "size" in edges since byte counts are unavailable.
