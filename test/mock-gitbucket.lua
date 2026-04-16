@@ -331,6 +331,11 @@ function OnHttpRequest()
     )
 
   -- Labels ------------------------------------------------------------------
+  elseif path == rb .. "/labels/1" then
+    SetStatus(200, "OK")
+    json(
+      '{"id":1,"name":"bug","color":"d73a4a","description":"","default":false,"node_id":"","url":""}'
+    )
   elseif path == rb .. "/labels/nosuchlabel" then
     SetStatus(404, "Not Found")
     json('{"message":"Not Found"}')
@@ -423,6 +428,14 @@ function OnHttpRequest()
     SetStatus(200, "OK")
     json('[{"id":1,"key":"ssh-rsa AAAAB3N...","title":"my key"}]')
 
+  -- Orgs -------------------------------------------------------------------
+  elseif path == "/api/v3/orgs/testorg" then
+    SetStatus(200, "OK")
+    json(
+      '{"login":"testorg","id":2,"node_id":"","avatar_url":"","html_url":"",'
+        .. '"type":"Organization","name":"Test Organization","description":"A test org"}'
+    )
+
   -- Teams -------------------------------------------------------------------
   elseif path == "/api/v3/orgs/testorg/teams" then
     SetStatus(200, "OK")
@@ -513,7 +526,12 @@ function OnHttpRequest()
     json(PR)
   elseif path == rb .. "/pulls/1/commits" then
     SetStatus(200, "OK")
-    json("[]")
+    json(
+      '[{"sha":"abc123def456","html_url":"http://localhost/octocat/hello-world/commit/abc123def456",'
+        .. '"commit":{"message":"Initial commit","author":{"name":"Octocat",'
+        .. '"email":"octocat@github.com","date":"2011-01-26T19:01:12Z"},'
+        .. '"committer":{"name":"Octocat","email":"octocat@github.com","date":"2011-01-26T19:01:12Z"}}}]'
+    )
   elseif path == rb .. "/pulls/1/files" then
     SetStatus(200, "OK")
     json("[]")
