@@ -4285,3 +4285,88 @@ graphql_resolvers["Repository.languages"] = function(parent, _args, _ctx)
     edges = edges,
   }
 end
+
+-- ---------------------------------------------------------------------------
+-- Query.search
+-- ---------------------------------------------------------------------------
+
+-- Query.search: map GitHub GraphQL search to GitLab search endpoints.
+-- Supports REPOSITORY, USER, and ISSUE types; all others return empty.
+-- GitLab uses /projects?search=, /users?search=, and /issues?search=.
+graphql_resolvers["Query.search"] = function(_parent, args, ctx)
+  local query = args.query or ""
+  local search_type = args.type or "REPOSITORY"
+  local per_page = args.first or 30
+  local q = EscapeParam(query)
+
+  local nodes = {}
+  local repo_count, user_count, issue_count = 0, 0, 0
+
+  if search_type == "REPOSITORY" then
+    local data, _, err = graphql_fetch_with_headers(
+      fetch_json,
+      base() .. "/projects?search=" .. q .. "&per_page=" .. per_page
+    )
+    if not data then
+      graphql_error(ctx, err)
+    else
+      for _, r in ipairs(data) do
+        nodes[#nodes + 1] = graphql_translate_repo(translate_gl_repo(r))
+      end
+      repo_count = #nodes
+    end
+  elseif search_type == "USER" then
+    local data, _, err = graphql_fetch_with_headers(
+      fetch_json,
+      base() .. "/users?search=" .. q .. "&per_page=" .. per_page
+    )
+    if not data then
+      graphql_error(ctx, err)
+    else
+      for _, u in ipairs(data) do
+        nodes[#nodes + 1] = graphql_translate_user(translate_gl_user(u))
+      end
+      user_count = #nodes
+    end
+  elseif search_type == "ISSUE" then
+    local data, _, err = graphql_fetch_with_headers(
+      fetch_json,
+      base() .. "/issues?search=" .. q .. "&per_page=" .. per_page
+    )
+    if not data then
+      graphql_error(ctx, err)
+    else
+      for _, i in ipairs(data) do
+        nodes[#nodes + 1] = graphql_translate_issue(translate_gl_issue(i))
+      end
+      issue_count = #nodes
+    end
+  end
+
+  local edges = {}
+  for _, node in ipairs(nodes) do
+    edges[#edges + 1] = {
+      __typename = "SearchResultItemEdge",
+      cursor = graphql_page_to_cursor(1),
+      node = node,
+    }
+  end
+  return {
+    __typename = "SearchResultItemConnection",
+    nodes = nodes,
+    edges = edges,
+    pageInfo = {
+      __typename = "PageInfo",
+      hasNextPage = false,
+      hasPreviousPage = false,
+      startCursor = #nodes > 0 and graphql_page_to_cursor(1) or nil,
+      endCursor = #nodes > 0 and graphql_page_to_cursor(1) or nil,
+    },
+    repositoryCount = repo_count,
+    userCount = user_count,
+    issueCount = issue_count,
+    codeCount = 0,
+    discussionCount = 0,
+    wikiCount = 0,
+  }
+end
