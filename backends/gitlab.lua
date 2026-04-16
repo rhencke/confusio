@@ -3770,3 +3770,606 @@ _b.delete_issue_reaction = function(owner, repo_name, issue_number, reaction_id)
     respond_json(503, {})
   end
 end
+
+-- ---------------------------------------------------------------------------
+-- GraphQL resolvers — Query root fields and node resolvers
+-- ---------------------------------------------------------------------------
+
+-- Helper: translate a GitLab group (from /groups/{id}) to GitHub org REST shape
+-- suitable for graphql_translate_org.
+local function translate_gl_group_to_org(g)
+  if not g then
+    return nil
+  end
+  return {
+    login = g.path or g.full_path or "",
+    name = g.name,
+    description = g.description,
+    avatar_url = g.avatar_url or "",
+    html_url = g.web_url or "",
+    blog = "",
+    email = "",
+    location = "",
+    created_at = g.created_at,
+  }
+end
+
+-- Helper: fetch a GitLab user by username.
+-- GitLab returns an array from /users?username=X; we take the first element.
+local function gl_fetch_user(username)
+  local data, err = graphql_fetch(fetch_json, base() .. "/users?username=" .. username)
+  if not data then
+    return nil, err
+  end
+  local u = data[1]
+  if not u then
+    return nil, "not found: user " .. username
+  end
+  return u, nil
+end
+
+-- Query.repositoryOwner: look up a User or Organization (GitLab group) by login.
+graphql_resolvers["Query.repositoryOwner"] = function(_parent, args, ctx)
+  if not args.login then
+    graphql_error(ctx, "repositoryOwner requires a login argument")
+    return nil
+  end
+  local udata, _ = gl_fetch_user(args.login)
+  if udata then
+    return graphql_translate_user(translate_gl_user(udata))
+  end
+  local gdata, _ = graphql_fetch(fetch_json, base() .. "/groups/" .. args.login)
+  if gdata then
+    return graphql_translate_org(translate_gl_group_to_org(gdata))
+  end
+  return nil
+end
+
+-- Query.viewer: resolve the authenticated user via GET /user.
+graphql_resolvers["Query.viewer"] = function(_parent, _args, ctx)
+  local data = graphql_fetch_or_error(fetch_json, base() .. "/user", ctx, nil)
+  if not data then
+    return nil
+  end
+  local u = graphql_translate_user(translate_gl_user(data))
+  u.isViewer = true
+  return u
+end
+
+-- Query.user: look up a User by login.
+graphql_resolvers["Query.user"] = function(_parent, args, ctx)
+  if not args.login then
+    graphql_error(ctx, "user requires a login argument")
+    return nil
+  end
+  local udata, _ = gl_fetch_user(args.login)
+  if not udata then
+    return nil
+  end
+  return graphql_translate_user(translate_gl_user(udata))
+end
+
+-- Query.organization: look up a GitLab group by path.
+graphql_resolvers["Query.organization"] = function(_parent, args, ctx)
+  if not args.login then
+    graphql_error(ctx, "organization requires a login argument")
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, base() .. "/groups/" .. args.login)
+  if not data then
+    return nil
+  end
+  return graphql_translate_org(translate_gl_group_to_org(data))
+end
+
+-- Query.repository: look up a Repository by owner and name.
+graphql_resolvers["Query.repository"] = function(_parent, args, ctx)
+  if not args.owner or not args.name then
+    graphql_error(ctx, "repository requires owner and name arguments")
+    return nil
+  end
+  local data, _ =
+    graphql_fetch(fetch_json, base() .. "/projects/" .. project_id(args.owner, args.name))
+  if not data then
+    return nil
+  end
+  return graphql_translate_repo(translate_gl_repo(data))
+end
+
+-- node.Repository: fetch a repository by "owner/repo" local ID.
+graphql_resolvers["node.Repository"] = function(local_id, _ctx)
+  local owner, repo = local_id:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, base() .. "/projects/" .. project_id(owner, repo))
+  if not data then
+    return nil
+  end
+  return graphql_translate_repo(translate_gl_repo(data))
+end
+
+-- node.User: fetch a user by login.
+graphql_resolvers["node.User"] = function(local_id, _ctx)
+  local udata, _ = gl_fetch_user(local_id)
+  if not udata then
+    return nil
+  end
+  return graphql_translate_user(translate_gl_user(udata))
+end
+
+-- node.Organization: fetch a group by path.
+graphql_resolvers["node.Organization"] = function(local_id, _ctx)
+  local data, _ = graphql_fetch(fetch_json, base() .. "/groups/" .. local_id)
+  if not data then
+    return nil
+  end
+  return graphql_translate_org(translate_gl_group_to_org(data))
+end
+
+-- node.Issue: fetch an issue by "owner/repo/iid" local ID.
+graphql_resolvers["node.Issue"] = function(local_id, _ctx)
+  local owner, repo, iid = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ = graphql_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo) .. "/issues/" .. iid
+  )
+  if not data then
+    return nil
+  end
+  return graphql_translate_issue(translate_gl_issue(data), owner, repo)
+end
+
+-- node.PullRequest: fetch a merge request by "owner/repo/iid" local ID.
+graphql_resolvers["node.PullRequest"] = function(local_id, _ctx)
+  local owner, repo, iid = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ = graphql_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo) .. "/merge_requests/" .. iid
+  )
+  if not data then
+    return nil
+  end
+  return graphql_translate_pr(translate_gl_mr(data), owner, repo)
+end
+
+-- node.IssueComment: fetch an issue note by "owner/repo/iid/note_id" local ID.
+-- GitLab notes require the issue iid in the path, so the local ID encodes four segments.
+graphql_resolvers["node.IssueComment"] = function(local_id, _ctx)
+  local owner, repo, iid, nid = local_id:match("^([^/]+)/([^/]+)/(%d+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ = graphql_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo) .. "/issues/" .. iid .. "/notes/" .. nid
+  )
+  if not data then
+    return nil
+  end
+  return graphql_translate_comment(translate_gl_note(data), owner, repo)
+end
+
+-- node.Release: fetch a release by "owner/repo/tag_name" local ID.
+-- GitLab identifies releases by tag_name, not integer ID.
+graphql_resolvers["node.Release"] = function(local_id, _ctx)
+  local owner, repo, tag = local_id:match("^([^/]+)/([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ = graphql_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo) .. "/releases/" .. tag
+  )
+  if not data then
+    return nil
+  end
+  return graphql_translate_release(translate_gl_release(data), owner, repo)
+end
+
+-- node.Label: fetch a label by "owner/repo/label_id" local ID.
+graphql_resolvers["node.Label"] = function(local_id, _ctx)
+  local owner, repo, lid = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ = graphql_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo) .. "/labels/" .. lid
+  )
+  if not data then
+    return nil
+  end
+  return graphql_translate_label(translate_gl_label(data), owner, repo)
+end
+
+-- ---------------------------------------------------------------------------
+-- Repository connection sub-resolvers
+-- ---------------------------------------------------------------------------
+
+-- Local helper: build a paginated Relay Connection from a GitLab list endpoint.
+-- Fetches page from graphql_cursor_url, reads X-Total for totalCount,
+-- translates items with translate_fn, and delegates to make_conn.
+local function gitlab_repo_connection(owner, repo, suffix, args, ctx, translate_fn, make_conn)
+  local url =
+    graphql_cursor_url(base() .. "/projects/" .. project_id(owner, repo) .. suffix, args, PAGES)
+  local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
+  if not data then
+    graphql_error(ctx, err)
+    return nil
+  end
+  local total = headers["X-Total"] and tonumber(headers["X-Total"])
+  local nodes = {}
+  for _, item in ipairs(data) do
+    nodes[#nodes + 1] = translate_fn(item)
+  end
+  return make_conn(nodes, args, total, ctx)
+end
+
+-- Repository.issues: paginated list of issues.
+-- GitLab issues are always real issues (no PR/issue mixing like Gitea).
+graphql_resolvers["Repository.issues"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return gitlab_repo_connection(owner, name, "/issues", args, ctx, function(i)
+    return graphql_translate_issue(translate_gl_issue(i), owner, name)
+  end, graphql_issues_connection)
+end
+
+-- Repository.pullRequests: paginated list of merge requests.
+graphql_resolvers["Repository.pullRequests"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return gitlab_repo_connection(owner, name, "/merge_requests", args, ctx, function(mr)
+    return graphql_translate_pr(translate_gl_mr(mr), owner, name)
+  end, graphql_prs_connection)
+end
+
+-- Repository.releases: paginated list of releases.
+-- GitLab releases use tag_name as identifier; we assign a synthetic integer id.
+graphql_resolvers["Repository.releases"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return gitlab_repo_connection(owner, name, "/releases", args, ctx, function(r)
+    local rel = graphql_translate_release(translate_gl_release(r), owner, name)
+    -- Override node ID to use tag_name so node.Release can fetch via /releases/{tag}
+    rel.id = encode_node_id("Release", owner .. "/" .. name .. "/" .. (r.tag_name or ""))
+    return rel
+  end, function(n, a, t, c)
+    return graphql_make_connection("Release", n, a, t, c)
+  end)
+end
+
+-- Repository.labels: paginated list of labels.
+graphql_resolvers["Repository.labels"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return gitlab_repo_connection(owner, name, "/labels", args, ctx, function(l)
+    return graphql_translate_label(translate_gl_label(l), owner, name)
+  end, graphql_labels_connection)
+end
+
+-- Repository.milestones: paginated list of milestones.
+graphql_resolvers["Repository.milestones"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return gitlab_repo_connection(owner, name, "/milestones", args, ctx, function(m)
+    return graphql_translate_milestone(translate_gl_milestone(m), owner, name)
+  end, function(n, a, t, c)
+    return graphql_make_connection("Milestone", n, a, t, c)
+  end)
+end
+
+-- Repository.refs: paginated list of branches as Ref objects.
+-- GitLab branch objects use commit.id for the SHA; normalise to commit.sha.
+graphql_resolvers["Repository.refs"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return gitlab_repo_connection(owner, name, "/repository/branches", args, ctx, function(b)
+    if b.commit then
+      b.commit.sha = b.commit.id
+    end
+    return graphql_translate_ref(b, parent)
+  end, graphql_refs_connection)
+end
+
+-- Repository.collaborators: paginated list of project members as Users.
+-- GitLab uses /members/all (not /collaborators) — consistent with the REST handler.
+graphql_resolvers["Repository.collaborators"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return gitlab_repo_connection(owner, name, "/members/all", args, ctx, function(m)
+    return graphql_translate_user(translate_gl_member(m))
+  end, function(n, a, t, c)
+    return graphql_make_connection("RepositoryCollaborator", n, a, t, c)
+  end)
+end
+
+-- Repository.defaultBranchRef: enrich the inline stub with full branch data.
+-- The parent already carries {__typename="Ref",name="main"} from graphql_translate_repo.
+-- GitLab branch objects use commit.id for the SHA; normalise to commit.sha.
+graphql_resolvers["Repository.defaultBranchRef"] = function(parent, _args, _ctx)
+  local branch = parent.defaultBranchRef and parent.defaultBranchRef.name
+  if not branch then
+    return nil
+  end
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ = graphql_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, name) .. "/repository/branches/" .. branch
+  )
+  if not data then
+    return nil
+  end
+  if data.commit then
+    data.commit.sha = data.commit.id
+  end
+  return graphql_translate_ref(data, parent)
+end
+
+-- ---------------------------------------------------------------------------
+-- Issue and PullRequest sub-resolvers
+-- ---------------------------------------------------------------------------
+
+-- Issue.comments: paginated list of notes for a single issue.
+-- GitLab notes are fetched from /projects/{id}/issues/{iid}/notes.
+-- Comment node IDs encode four segments (owner/repo/iid/note_id) so the
+-- node.IssueComment resolver can reconstruct the GitLab API path.
+graphql_resolvers["Issue.comments"] = function(parent, args, ctx)
+  local _, local_id = decode_node_id(parent.id)
+  if not local_id then
+    return nil
+  end
+  local owner, repo, iid = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local url = graphql_cursor_url(
+    base() .. "/projects/" .. project_id(owner, repo) .. "/issues/" .. iid .. "/notes",
+    args,
+    PAGES
+  )
+  local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
+  if not data then
+    graphql_error(ctx, err)
+    return nil
+  end
+  local total = headers["X-Total"] and tonumber(headers["X-Total"])
+  local nodes = {}
+  for _, n in ipairs(data) do
+    if not n.system then
+      local comment = graphql_translate_comment(translate_gl_note(n), owner, repo)
+      -- Override node ID to include the issue iid so node.IssueComment can fetch it back.
+      comment.id =
+        encode_node_id("IssueComment", owner .. "/" .. repo .. "/" .. iid .. "/" .. tostring(n.id))
+      nodes[#nodes + 1] = comment
+    end
+  end
+  return graphql_make_connection("IssueComment", nodes, args, total, ctx)
+end
+
+-- PullRequest.commits: paginated commit list for a merge request.
+-- GitLab MR commits use .id for the SHA and flat author/committer fields.
+graphql_resolvers["PullRequest.commits"] = function(parent, args, ctx)
+  local _, local_id = decode_node_id(parent.id)
+  if not local_id then
+    return nil
+  end
+  local owner, repo, iid = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local url = graphql_cursor_url(
+    base() .. "/projects/" .. project_id(owner, repo) .. "/merge_requests/" .. iid .. "/commits",
+    args,
+    PAGES
+  )
+  local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
+  if not data then
+    graphql_error(ctx, err)
+    return nil
+  end
+  local total = headers["X-Total"] and tonumber(headers["X-Total"])
+  local nodes = {}
+  for _, c in ipairs(data) do
+    -- Translate GitLab's flat commit format to the REST shape graphql_translate_commit expects.
+    local rest_commit = {
+      sha = c.id,
+      html_url = c.web_url or "",
+      commit = {
+        message = c.message,
+        author = { name = c.author_name, email = c.author_email, date = c.authored_date },
+        committer = {
+          name = c.committer_name or c.author_name,
+          email = c.committer_email or c.author_email,
+          date = c.committed_date or c.authored_date,
+        },
+      },
+    }
+    nodes[#nodes + 1] = {
+      __typename = "PullRequestCommit",
+      id = encode_node_id("PullRequestCommit", c.id or ""),
+      commit = graphql_translate_commit(rest_commit),
+      url = c.web_url or "",
+    }
+  end
+  return graphql_make_connection("PullRequestCommit", nodes, args, total, ctx)
+end
+
+-- PullRequest.reviews: MR approvals mapped to review objects.
+-- GitLab's approvals endpoint returns a single object (not a paginated list),
+-- so we fetch it directly and build an inline connection.
+graphql_resolvers["PullRequest.reviews"] = function(parent, args, ctx)
+  local _, local_id = decode_node_id(parent.id)
+  if not local_id then
+    return nil
+  end
+  local owner, repo, iid = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local data, err = graphql_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo) .. "/merge_requests/" .. iid .. "/approvals"
+  )
+  if not data then
+    graphql_error(ctx, err)
+    return nil
+  end
+  local reviews = translate_gl_approvals_to_reviews(data)
+  local nodes = {}
+  for _, r in ipairs(reviews) do
+    nodes[#nodes + 1] = graphql_translate_review(r, owner, repo)
+  end
+  return graphql_make_connection("PullRequestReview", nodes, args, #nodes, ctx)
+end
+
+-- Repository.languages: fetch language breakdown as a LanguageConnection.
+-- GitLab returns {"Language": percentage, ...} (percentages, not byte counts).
+-- We use the percentage as the "size" in edges since byte counts are unavailable.
+graphql_resolvers["Repository.languages"] = function(parent, _args, _ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ =
+    graphql_fetch(fetch_json, base() .. "/projects/" .. project_id(owner, name) .. "/languages")
+  if not data then
+    return nil
+  end
+  local nodes, edges = {}, {}
+  local total_size = 0
+  for lang_name, size in pairs(data) do
+    total_size = total_size + size
+    local node = {
+      __typename = "Language",
+      id = encode_node_id("Language", lang_name),
+      name = lang_name,
+      color = nil,
+    }
+    nodes[#nodes + 1] = node
+    edges[#edges + 1] = { cursor = "", node = node, size = size }
+  end
+  return {
+    __typename = "LanguageConnection",
+    totalCount = #nodes,
+    totalSize = total_size,
+    pageInfo = {
+      __typename = "PageInfo",
+      hasNextPage = false,
+      hasPreviousPage = false,
+      startCursor = nil,
+      endCursor = nil,
+    },
+    nodes = nodes,
+    edges = edges,
+  }
+end
+
+-- ---------------------------------------------------------------------------
+-- Query.search
+-- ---------------------------------------------------------------------------
+
+-- Query.search: map GitHub GraphQL search to GitLab search endpoints.
+-- Supports REPOSITORY, USER, and ISSUE types; all others return empty.
+-- GitLab uses /projects?search=, /users?search=, and /issues?search=.
+graphql_resolvers["Query.search"] = function(_parent, args, ctx)
+  local query = args.query or ""
+  local search_type = args.type or "REPOSITORY"
+  local per_page = args.first or 30
+  local q = EscapeParam(query)
+
+  local nodes = {}
+  local repo_count, user_count, issue_count = 0, 0, 0
+
+  if search_type == "REPOSITORY" then
+    local data, _, err = graphql_fetch_with_headers(
+      fetch_json,
+      base() .. "/projects?search=" .. q .. "&per_page=" .. per_page
+    )
+    if not data then
+      graphql_error(ctx, err)
+    else
+      for _, r in ipairs(data) do
+        nodes[#nodes + 1] = graphql_translate_repo(translate_gl_repo(r))
+      end
+      repo_count = #nodes
+    end
+  elseif search_type == "USER" then
+    local data, _, err = graphql_fetch_with_headers(
+      fetch_json,
+      base() .. "/users?search=" .. q .. "&per_page=" .. per_page
+    )
+    if not data then
+      graphql_error(ctx, err)
+    else
+      for _, u in ipairs(data) do
+        nodes[#nodes + 1] = graphql_translate_user(translate_gl_user(u))
+      end
+      user_count = #nodes
+    end
+  elseif search_type == "ISSUE" then
+    local data, _, err = graphql_fetch_with_headers(
+      fetch_json,
+      base() .. "/issues?search=" .. q .. "&per_page=" .. per_page
+    )
+    if not data then
+      graphql_error(ctx, err)
+    else
+      for _, i in ipairs(data) do
+        nodes[#nodes + 1] = graphql_translate_issue(translate_gl_issue(i))
+      end
+      issue_count = #nodes
+    end
+  end
+
+  local edges = {}
+  for _, node in ipairs(nodes) do
+    edges[#edges + 1] = {
+      __typename = "SearchResultItemEdge",
+      cursor = graphql_page_to_cursor(1),
+      node = node,
+    }
+  end
+  return {
+    __typename = "SearchResultItemConnection",
+    nodes = nodes,
+    edges = edges,
+    pageInfo = {
+      __typename = "PageInfo",
+      hasNextPage = false,
+      hasPreviousPage = false,
+      startCursor = #nodes > 0 and graphql_page_to_cursor(1) or nil,
+      endCursor = #nodes > 0 and graphql_page_to_cursor(1) or nil,
+    },
+    repositoryCount = repo_count,
+    userCount = user_count,
+    issueCount = issue_count,
+    codeCount = 0,
+    discussionCount = 0,
+    wikiCount = 0,
+  }
+end
