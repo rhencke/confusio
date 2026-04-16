@@ -1327,3 +1327,105 @@ _b.delete_git_ref = function(owner, repo_name, ref)
   end
   proxy_204({ 200, 202 }, pcall(Fetch, url, dopts))
 end
+
+-- GraphQL resolvers -----------------------------------------------------------
+-- BBS scope: Query.repository, Query.user, Repository.pullRequests.
+-- No GET /user → Query.viewer returns null (handled by default).
+-- No native issue tracker → issue resolvers omitted.
+
+-- Shared pagination helper for BBS /values arrays.
+-- BBS pagination uses start (offset) and limit (page size);
+-- graphql_cursor_url can't be used because BBS start = (page-1)*limit, not page number.
+local function bbs_repo_connection(owner, repo_name, suffix, args, ctx, translate_fn, make_conn)
+  local per_page = args.first or 30
+  local page = 1
+  if args.after then
+    local p = graphql_cursor_to_page(args.after)
+    if p then
+      page = p + 1
+    end
+  end
+  local start = (page - 1) * per_page
+  local url = repo_path(owner, repo_name) .. suffix
+  local sep = url:find("?", 1, true) and "&" or "?"
+  url = url .. sep .. "limit=" .. tostring(per_page)
+  if start > 0 then
+    url = url .. "&start=" .. tostring(start)
+  end
+  local data, _, err = graphql_fetch_with_headers(fetch_json, url)
+  if not data then
+    graphql_error(ctx, err)
+    return nil
+  end
+  local nodes = {}
+  for _, item in ipairs(data.values or {}) do
+    nodes[#nodes + 1] = translate_fn(item)
+  end
+  return make_conn(nodes, args, nil, ctx)
+end
+
+graphql_resolvers["Query.repository"] = function(_parent, args, ctx)
+  if not args.owner or not args.name then
+    graphql_error(ctx, "repository requires owner and name arguments")
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, repo_path(args.owner, args.name))
+  if not data then
+    return nil
+  end
+  return graphql_translate_repo(translate_bbs_repo(data))
+end
+
+graphql_resolvers["node.Repository"] = function(local_id, _ctx)
+  local owner, name = local_id:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, repo_path(owner, name))
+  if not data then
+    return nil
+  end
+  return graphql_translate_repo(translate_bbs_repo(data))
+end
+
+graphql_resolvers["Query.user"] = function(_parent, args, ctx)
+  if not args.login then
+    graphql_error(ctx, "user requires a login argument")
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, base() .. "/users/" .. args.login)
+  if not data then
+    return nil
+  end
+  return graphql_translate_user(translate_bbs_user(data))
+end
+
+graphql_resolvers["node.User"] = function(local_id, _ctx)
+  local data, _ = graphql_fetch(fetch_json, base() .. "/users/" .. local_id)
+  if not data then
+    return nil
+  end
+  return graphql_translate_user(translate_bbs_user(data))
+end
+
+graphql_resolvers["Repository.pullRequests"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return bbs_repo_connection(owner, name, "/pull-requests", args, ctx, function(pr)
+    return graphql_translate_pr(translate_bbs_pull(pr), owner, name)
+  end, graphql_prs_connection)
+end
+
+graphql_resolvers["node.PullRequest"] = function(local_id, _ctx)
+  local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, repo_path(owner, repo) .. "/pull-requests/" .. number)
+  if not data then
+    return nil
+  end
+  return graphql_translate_pr(translate_bbs_pull(data), owner, repo)
+end
