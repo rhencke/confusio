@@ -4043,7 +4043,10 @@ graphql_resolvers["Repository.releases"] = function(parent, args, ctx)
     return nil
   end
   return gitlab_repo_connection(owner, name, "/releases", args, ctx, function(r)
-    return graphql_translate_release(translate_gl_release(r), owner, name)
+    local rel = graphql_translate_release(translate_gl_release(r), owner, name)
+    -- Override node ID to use tag_name so node.Release can fetch via /releases/{tag}
+    rel.id = encode_node_id("Release", owner .. "/" .. name .. "/" .. (r.tag_name or ""))
+    return rel
   end, function(n, a, t, c)
     return graphql_make_connection("Release", n, a, t, c)
   end)
@@ -4089,13 +4092,13 @@ graphql_resolvers["Repository.refs"] = function(parent, args, ctx)
 end
 
 -- Repository.collaborators: paginated list of project members as Users.
--- GitLab uses /members (not /collaborators).
+-- GitLab uses /members/all (not /collaborators) — consistent with the REST handler.
 graphql_resolvers["Repository.collaborators"] = function(parent, args, ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
   end
-  return gitlab_repo_connection(owner, name, "/members", args, ctx, function(m)
+  return gitlab_repo_connection(owner, name, "/members/all", args, ctx, function(m)
     return graphql_translate_user(translate_gl_member(m))
   end, function(n, a, t, c)
     return graphql_make_connection("RepositoryCollaborator", n, a, t, c)

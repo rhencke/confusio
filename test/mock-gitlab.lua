@@ -36,6 +36,13 @@ function OnHttpRequest()
     -- get_user_repos (?owned=true&membership=true) and get_repositories (?visibility=public)
     SetStatus(200, "OK")
     json("[" .. PROJECT .. "]")
+  elseif path == "/api/v4/groups/testorg" then
+    SetStatus(200, "OK")
+    json(
+      '{"id":2,"name":"Test Organization","path":"testorg","description":"A test org",'
+        .. '"visibility":"public","web_url":"http://localhost/testorg","avatar_url":"",'
+        .. '"created_at":"2020-01-01T00:00:00Z"}'
+    )
   elseif path == "/api/v4/groups/testorg/projects" then
     SetStatus(200, "OK")
     json("[" .. PROJECT .. "]")
@@ -123,9 +130,6 @@ function OnHttpRequest()
   elseif path == pb .. "/members/all" then
     SetStatus(200, "OK")
     json('[{"id":1,"username":"octocat","avatar_url":"","access_level":50}]')
-  elseif path == "/api/v4/users" then
-    SetStatus(200, "OK")
-    json('[{"id":1,"username":"octocat","avatar_url":""}]')
   elseif path == pb .. "/members/1" then
     SetStatus(200, "OK")
     json('{"id":1,"username":"octocat","access_level":50}')
@@ -376,7 +380,14 @@ function OnHttpRequest()
     )
   elseif path == pb .. "/merge_requests/1/commits" then
     SetStatus(200, "OK")
-    json("[]")
+    json(
+      '[{"id":"abc123def456","message":"Fix the thing",'
+        .. '"author_name":"Octocat","author_email":"octocat@github.com",'
+        .. '"authored_date":"2020-01-01T00:00:00Z",'
+        .. '"committer_name":"Octocat","committer_email":"octocat@github.com",'
+        .. '"committed_date":"2020-01-01T00:00:00Z",'
+        .. '"web_url":"http://localhost/octocat/hello-world/-/commit/abc123def456"}]'
+    )
   elseif path == pb .. "/merge_requests/1/changes" then
     SetStatus(200, "OK")
     json(
@@ -503,6 +514,21 @@ function OnHttpRequest()
   elseif path == pb .. "/issues/1/award_emoji/9999" then
     SetStatus(404, "Not Found")
     json('{"message":"404 Award Emoji Not Found"}')
+
+  -- Global issue search (for Query.search ISSUE) --------------------------
+  elseif path == "/api/v4/issues" then
+    SetStatus(200, "OK")
+    local USER_OBJ = '{"id":1,"username":"octocat","name":"The Octocat","avatar_url":"",'
+      .. '"web_url":"http://localhost/octocat"}'
+    json(
+      '[{"id":1,"iid":1,"title":"Found a bug","description":"Bug description",'
+        .. '"state":"opened","author":'
+        .. USER_OBJ
+        .. ',"assignees":[],"labels":[],"milestone":null,'
+        .. '"user_notes_count":1,'
+        .. '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-02T00:00:00Z",'
+        .. '"closed_at":null,"web_url":"http://localhost/octocat/hello-world/-/issues/1"}]'
+    )
 
   -- Labels -----------------------------------------------------------------
   elseif path == pb .. "/labels" then
