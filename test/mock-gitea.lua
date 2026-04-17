@@ -65,6 +65,34 @@ function OnHttpRequest()
     .. '"created":"2020-01-01T00:00:00Z","updated":"2020-01-02T00:00:00Z",'
     .. '"closed":null,"html_url":"http://localhost/octocat/hello-world/issues/1"}'
 
+  -- Three issues in octocat/paged-repo for multi-page backward-pagination tests.
+  local PAGED_ISSUE_1 = '{"id":101,"number":1,"title":"Pagination test 1","body":"","state":"open","user":'
+    .. USER
+    .. ',"assignees":[],"labels":[],"milestone":null,"comments":0,'
+    .. '"created":"2020-01-01T00:00:00Z","updated":"2020-01-01T00:00:00Z",'
+    .. '"closed":null,"html_url":"http://localhost/octocat/paged-repo/issues/1"}'
+  local PAGED_ISSUE_2 = '{"id":102,"number":2,"title":"Pagination test 2","body":"","state":"open","user":'
+    .. USER
+    .. ',"assignees":[],"labels":[],"milestone":null,"comments":0,'
+    .. '"created":"2020-01-02T00:00:00Z","updated":"2020-01-02T00:00:00Z",'
+    .. '"closed":null,"html_url":"http://localhost/octocat/paged-repo/issues/2"}'
+  local PAGED_ISSUE_3 = '{"id":103,"number":3,"title":"Pagination test 3","body":"","state":"open","user":'
+    .. USER
+    .. ',"assignees":[],"labels":[],"milestone":null,"comments":0,'
+    .. '"created":"2020-01-03T00:00:00Z","updated":"2020-01-03T00:00:00Z",'
+    .. '"closed":null,"html_url":"http://localhost/octocat/paged-repo/issues/3"}'
+
+  local PAGED_REPO = '{"id":99,"name":"paged-repo","full_name":"octocat/paged-repo","private":false,'
+    .. '"owner":{"login":"octocat","id":1,"avatar_url":"","url":"","html_url":"","type":"User"},'
+    .. '"html_url":"http://localhost/octocat/paged-repo","description":"Repo for pagination tests",'
+    .. '"fork":false,"url":"","clone_url":"http://localhost/octocat/paged-repo.git",'
+    .. '"homepage":"","stargazers_count":0,"watchers_count":0,"language":null,'
+    .. '"has_issues":true,"has_wiki":false,"forks_count":0,"archived":false,"disabled":false,'
+    .. '"open_issues_count":3,"default_branch":"main","visibility":"public",'
+    .. '"forks":0,"open_issues":3,"watchers":0,'
+    .. '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-03T00:00:00Z",'
+    .. '"pushed_at":"2020-01-03T00:00:00Z"}'
+
   local ISSUE_COMMENT = '{"id":1,"body":"This is a comment","user":'
     .. USER
     .. ","
@@ -125,6 +153,7 @@ function OnHttpRequest()
     },
 
     -- Repos
+    ["/api/v1/repos/octocat/paged-repo"] = { 200, PAGED_REPO },
     ["/api/v1/repos/octocat/hello-world"] = { 200, REPO },
     ["PATCH /api/v1/repos/octocat/hello-world"] = { 200, REPO },
     ["DELETE /api/v1/repos/octocat/hello-world"] = { 204, nil },
@@ -800,6 +829,14 @@ function OnHttpRequest()
     SetStatus(200, "OK")
     SetHeader("Content-Type", "text/html; charset=UTF-8")
     Write("<p>Hello <strong>world</strong></p>\n")
+  elseif path == "/api/v1/repos/octocat/paged-repo/issues" then
+    -- Paginated issues for multi-page backward-pagination tests.
+    -- Three issues total (X-Total: 3); page param selects which one to return.
+    local page = tonumber(GetParam("page")) or 1
+    local item = (page == 3) and PAGED_ISSUE_3 or (page == 2) and PAGED_ISSUE_2 or PAGED_ISSUE_1
+    SetStatus(200, "OK")
+    SetHeader("X-Total", "3")
+    json("[" .. item .. "]")
   elseif path:find("^/api/v1/repos/octocat/hello%-world/contents/") then
     local file = path:match("^/api/v1/repos/octocat/hello%-world/contents/(.+)$") or "file"
     SetStatus(200, "OK")
