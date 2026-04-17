@@ -242,6 +242,51 @@ jsonpath "$.data.repository.pullRequests.nodes[0].reviews.nodes[0].state" == "AP
 jsonpath "$.data.repository.pullRequests.nodes[0].reviews.nodes[0].body" == "Looks good!"
 jsonpath "$.data.repository.pullRequests.nodes[0].reviews.nodes[0].author.login" == "octocat"
 
+# ---------------------------------------------------------------------------
+# Backward pagination (last / before)
+# ---------------------------------------------------------------------------
+
+# POST /graphql — issues(last: 1): single-page repo; hasPreviousPage false, hasNextPage false.
+# Mock returns X-Total: 1, so the two-pass resolves last_page = 1.
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ repository(owner: \"octocat\", name: \"hello-world\") { issues(last: 1) { totalCount pageInfo { hasNextPage hasPreviousPage startCursor endCursor } nodes { number } } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.repository.issues.totalCount" == 1
+jsonpath "$.data.repository.issues.pageInfo.hasNextPage" == false
+jsonpath "$.data.repository.issues.pageInfo.hasPreviousPage" == false
+jsonpath "$.data.repository.issues.pageInfo.startCursor" isString
+jsonpath "$.data.repository.issues.nodes[0].number" == 1
+
+# POST /graphql — issues(first: 1): capture endCursor for the before test below.
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ repository(owner: \"octocat\", name: \"hello-world\") { issues(first: 1) { pageInfo { endCursor } } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.repository.issues.pageInfo.endCursor" isString
+[Captures]
+issues_page1_cursor: jsonpath "$.data.repository.issues.pageInfo.endCursor"
+
+# POST /graphql — issues(last: 1, before: cursor(1)): nothing exists before page 1.
+# hasNextPage = true (cursor page 1 exists), hasPreviousPage = false, nodes empty.
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ repository(owner: \"octocat\", name: \"hello-world\") { issues(last: 1, before: \"{{issues_page1_cursor}}\") { totalCount pageInfo { hasNextPage hasPreviousPage } nodes { number } } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.repository.issues.totalCount" == 1
+jsonpath "$.data.repository.issues.pageInfo.hasNextPage" == true
+jsonpath "$.data.repository.issues.pageInfo.hasPreviousPage" == false
+jsonpath "$.data.repository.issues.nodes[0]" not exists
+
 # POST /graphql — Query.search REPOSITORY returns a SearchResultItemConnection
 POST http://{{host}}/graphql
 Content-Type: application/json
