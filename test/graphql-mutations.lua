@@ -106,10 +106,7 @@ do -- mutation resolver is called and result is returned
       ]],
     })
     ok(r.errors == nil or #r.errors == 0, "mutation: resolver dispatched → no errors")
-    ok(
-      r.data.createRepository ~= nil,
-      "mutation: resolver dispatched → payload present"
-    )
+    ok(r.data.createRepository ~= nil, "mutation: resolver dispatched → payload present")
     eq(
       r.data.createRepository.repository.nameWithOwner,
       "fido/bones",
@@ -182,7 +179,11 @@ do -- two mutations execute in order; both results present
     ["Mutation.addStar"] = function(_parent, _args, _ctx)
       call_order[#call_order + 1] = "addStar"
       return {
-        starrable = { nameWithOwner = "fido/treats", __typename = "Repository" },
+        starrable = {
+          id = "UmVwb3NpdG9yeToxMjM=",
+          viewerHasStarred = true,
+          __typename = "Repository",
+        },
         clientMutationId = nil,
       }
     end,
@@ -198,7 +199,7 @@ do -- two mutations execute in order; both results present
       query = [[
         mutation {
           addStar(input: { starrableId: "UmVwb3NpdG9yeToxMjM=" }) {
-            starrable { nameWithOwner }
+            starrable { id viewerHasStarred }
           }
           createRepository(input: { name: "new-repo", visibility: PUBLIC }) {
             repository { nameWithOwner }
@@ -207,6 +208,7 @@ do -- two mutations execute in order; both results present
       ]],
     })
     ok(r.errors == nil or #r.errors == 0, "mutation: serial execution → no errors")
+    ok(r.data ~= nil, "mutation: serial execution → data present")
     ok(r.data.addStar ~= nil, "mutation: serial execution → first result present")
     ok(r.data.createRepository ~= nil, "mutation: serial execution → second result present")
     eq(#call_order, 2, "mutation: serial execution → both resolvers called")
