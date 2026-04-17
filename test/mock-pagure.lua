@@ -114,7 +114,17 @@ function OnHttpRequest()
     json('{"user":{"username":"octocat","fullname":"The Octocat","avatar_url":""}}')
   elseif path == "/api/0/users" then
     SetStatus(200, "OK")
-    json('{"users":["octocat","hubot"],"total_users":2}')
+    local ufilter = GetParam("username")
+    if ufilter and ufilter ~= "" then
+      -- Pagure filters by username prefix; simulate by returning only octocat when queried.
+      if ("octocat"):find(ufilter, 1, true) then
+        json('{"users":["octocat"],"total_users":1}')
+      else
+        json('{"users":[],"total_users":0}')
+      end
+    else
+      json('{"users":["octocat","hubot"],"total_users":2}')
+    end
 
   -- Users' repos -----------------------------------------------------------
   elseif path:find("^/api/0/user/") then

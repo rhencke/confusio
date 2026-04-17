@@ -72,7 +72,8 @@ local function translate_srht_repo(r)
     archived = false,
     disabled = false,
     open_issues_count = 0,
-    default_branch = r.HEAD and r.HEAD.name or "main",
+    default_branch = r.HEAD and ((r.HEAD.name or ""):match("^refs/heads/(.+)") or r.HEAD.name)
+      or "main",
     visibility = vis == "private" and "private" or "public",
     forks = 0,
     open_issues = 0,
@@ -578,3 +579,110 @@ backend_impl = {
 -- Code scanning: Sourcehut has no native code scanning API.
 -- All code scanning endpoints fall back to the default handlers in .init.lua:
 -- list endpoints return 200 empty, per-resource endpoints return 501.
+
+-- GraphQL resolvers --------------------------------------------------------
+-- Sourcehut scope: Query.repository, Query.viewer, Repository.issues.
+-- No Query.user (no endpoint to fetch an arbitrary user by login).
+-- No Repository.pullRequests (Sourcehut has no PR model).
+
+-- Translate a Sourcehut user (canonical_name/name) into a GitHub REST-shaped
+-- user table suitable for graphql_translate_user.
+local function translate_srht_user_for_graphql(u)
+  if not u then
+    return {}
+  end
+  local canonical = u.canonical_name or ""
+  local login = canonical:sub(1, 1) == "~" and canonical:sub(2) or canonical
+  return {
+    login = login,
+    id = 0,
+    node_id = "",
+    avatar_url = "",
+    html_url = config.base_url .. "/" .. canonical,
+    type = "User",
+    site_admin = false,
+    name = u.name or canonical,
+    email = u.email or "",
+    blog = u.url or "",
+  }
+end
+
+graphql_resolvers["Query.repository"] = function(_parent, args, ctx)
+  if not args.owner or not args.name then
+    graphql_error(ctx, "repository requires owner and name arguments")
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, base() .. "/~" .. args.owner .. "/repos/" .. args.name)
+  if not data then
+    return nil
+  end
+  return graphql_translate_repo(translate_srht_repo(data))
+end
+
+graphql_resolvers["node.Repository"] = function(local_id, _ctx)
+  local owner, name = local_id:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, base() .. "/~" .. owner .. "/repos/" .. name)
+  if not data then
+    return nil
+  end
+  return graphql_translate_repo(translate_srht_repo(data))
+end
+
+graphql_resolvers["Query.viewer"] = function(_parent, _args, ctx)
+  local data = graphql_fetch_or_error(fetch_json, base() .. "/user", ctx, nil)
+  if not data then
+    return nil
+  end
+  local u = graphql_translate_user(translate_srht_user_for_graphql(data))
+  u.isViewer = true
+  return u
+end
+
+-- Repository.issues: paginated list of issues via todo.sr.ht trackers.
+-- Sourcehut pagination uses cursor-based results with a `limit` param;
+-- graphql_cursor_url cannot be used (no page-number param), so we build
+-- the URL manually like bbs_repo_connection does.
+local function srht_issue_connection(owner, repo_name, args, ctx)
+  local per_page = args.first or 30
+  local url = todo_base()
+    .. "/~"
+    .. owner
+    .. "/trackers/"
+    .. repo_name
+    .. "/tickets?limit="
+    .. tostring(per_page)
+  local data, _, err = graphql_fetch_with_headers(fetch_json, url)
+  if not data then
+    graphql_error(ctx, err)
+    return nil
+  end
+  local nodes = {}
+  for _, t in ipairs(data.results or {}) do
+    nodes[#nodes + 1] = graphql_translate_issue(translate_srht_ticket(t), owner, repo_name)
+  end
+  return graphql_issues_connection(nodes, args, nil, ctx)
+end
+
+graphql_resolvers["Repository.issues"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  return srht_issue_connection(owner, name, args, ctx)
+end
+
+graphql_resolvers["node.Issue"] = function(local_id, _ctx)
+  local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local url = todo_base() .. "/~" .. owner .. "/trackers/" .. repo .. "/tickets/" .. number
+  local data, _ = graphql_fetch(fetch_json, url)
+  if not data then
+    return nil
+  end
+  return graphql_translate_issue(translate_srht_ticket(data), owner, repo)
+end

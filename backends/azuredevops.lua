@@ -1916,3 +1916,32 @@ _b.delete_git_ref = function(owner, repo_name, ref)
   })
   proxy_204({ 200 }, fetch_json(url, "POST", del_body))
 end
+
+-- GraphQL resolvers -----------------------------------------------------------
+-- Minimum foothold: Query.repository and node.Repository only.
+-- ADO has no GET /user, so Query.viewer returns null (handled by default).
+-- Work Items ≠ GitHub Issues, so issue resolvers are omitted.
+
+graphql_resolvers["Query.repository"] = function(_parent, args, ctx)
+  if not args.owner or not args.name then
+    graphql_error(ctx, "repository requires owner and name arguments")
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, ado_url(repos_base(args.owner) .. "/" .. args.name))
+  if not data then
+    return nil
+  end
+  return graphql_translate_repo(translate_ado_repo(data))
+end
+
+graphql_resolvers["node.Repository"] = function(local_id, _ctx)
+  local owner, name = local_id:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, ado_url(repos_base(owner) .. "/" .. name))
+  if not data then
+    return nil
+  end
+  return graphql_translate_repo(translate_ado_repo(data))
+end
