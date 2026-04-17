@@ -57,7 +57,7 @@ HTTP 200
 jsonpath "$.data" == null
 jsonpath "$.errors[0].extensions.code" == "VALIDATION_ERROR"
 
-# POST /graphql — single-element array batch executes (Phase 2: doc 12)
+# POST /graphql — single-element array batch executes (Phase 2b: doc 12)
 POST http://{{host}}/graphql
 Content-Type: application/json
 [{"query": "{ __typename }"}]
@@ -66,3 +66,32 @@ HTTP 200
 [Asserts]
 jsonpath "$[0].data.__typename" == "Query"
 jsonpath "$[0].errors" not exists
+
+# POST /graphql — multi-element batch: two independent queries execute and return
+# results at their respective array indices (Phase 2b: GQL-23)
+POST http://{{host}}/graphql
+Content-Type: application/json
+[{"query": "{ __typename }"},{"query": "{ rateLimit { limit remaining } }"}]
+
+HTTP 200
+[Asserts]
+jsonpath "$[0].data.__typename" == "Query"
+jsonpath "$[0].errors" not exists
+jsonpath "$[1].data.rateLimit.limit" isInteger
+jsonpath "$[1].data.rateLimit.remaining" isInteger
+jsonpath "$[1].errors" not exists
+
+# POST /graphql — batch error isolation: a parse error in one operation does not
+# prevent other operations from succeeding (Phase 2b: GQL-23)
+POST http://{{host}}/graphql
+Content-Type: application/json
+[{"query": "{ __typename }"},{"query": "{ broken!!!"},{"query": "{ __schema { queryType { name } } }"}]
+
+HTTP 200
+[Asserts]
+jsonpath "$[0].data.__typename" == "Query"
+jsonpath "$[0].errors" not exists
+jsonpath "$[1].data" == null
+jsonpath "$[1].errors[0].extensions.code" == "PARSE_ERROR"
+jsonpath "$[2].data.__schema.queryType.name" == "Query"
+jsonpath "$[2].errors" not exists
