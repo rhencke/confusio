@@ -373,3 +373,231 @@ do -- closeIssue and reopenIssue resolvers are dispatched
     eq(r.data.reopenIssue.issue.state, "OPEN", "reopenIssue: resolver dispatched → state OPEN")
   end)
 end
+
+-- ============================================================
+-- Pull request mutation dispatch
+-- ============================================================
+
+-- Node IDs used in tests:
+--   Repository:octocat/hello-world      = UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk
+--   PullRequest:octocat/hello-world/1   = UHVsbFJlcXVlc3Q6b2N0b2NhdC9oZWxsby13b3JsZC8x
+
+do -- createPullRequest resolver is dispatched and returns pullRequest payload
+  with_resolvers({
+    ["Mutation.createPullRequest"] = function(_parent, _args, _ctx)
+      return {
+        pullRequest = {
+          number = 1,
+          title = "A great PR",
+          state = "OPEN",
+          __typename = "PullRequest",
+        },
+        clientMutationId = nil,
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          createPullRequest(input: {
+            repositoryId: "UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk",
+            title: "A great PR",
+            headRefName: "feature",
+            baseRefName: "main"
+          }) {
+            pullRequest { number title state }
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "createPullRequest: resolver dispatched → no errors")
+    ok(
+      r.data.createPullRequest ~= nil,
+      "createPullRequest: resolver dispatched → payload present"
+    )
+    eq(
+      r.data.createPullRequest.pullRequest.title,
+      "A great PR",
+      "createPullRequest: resolver dispatched → title returned"
+    )
+    eq(
+      r.data.createPullRequest.pullRequest.state,
+      "OPEN",
+      "createPullRequest: resolver dispatched → state returned"
+    )
+  end)
+end
+
+do -- createPullRequest clientMutationId round-trip
+  with_resolvers({
+    ["Mutation.createPullRequest"] = function(_parent, args, _ctx)
+      return {
+        pullRequest = {
+          number = 1,
+          title = "A great PR",
+          state = "OPEN",
+          __typename = "PullRequest",
+        },
+        clientMutationId = get_client_mutation_id(args),
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          createPullRequest(input: {
+            repositoryId: "UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk",
+            title: "A great PR",
+            headRefName: "feature",
+            baseRefName: "main",
+            clientMutationId: "pr-relay-1"
+          }) {
+            pullRequest { number }
+            clientMutationId
+          }
+        }
+      ]],
+    })
+    ok(
+      r.errors == nil or #r.errors == 0,
+      "createPullRequest: clientMutationId round-trip → no errors"
+    )
+    eq(
+      r.data.createPullRequest.clientMutationId,
+      "pr-relay-1",
+      "createPullRequest: clientMutationId round-trip → value echoed back"
+    )
+  end)
+end
+
+do -- updatePullRequest resolver is dispatched and returns pullRequest payload
+  with_resolvers({
+    ["Mutation.updatePullRequest"] = function(_parent, _args, _ctx)
+      return {
+        pullRequest = {
+          number = 1,
+          title = "A great PR",
+          state = "OPEN",
+          __typename = "PullRequest",
+        },
+        clientMutationId = nil,
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          updatePullRequest(input: {
+            pullRequestId: "UHVsbFJlcXVlc3Q6b2N0b2NhdC9oZWxsby13b3JsZC8x",
+            title: "Updated PR"
+          }) {
+            pullRequest { number title state }
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "updatePullRequest: resolver dispatched → no errors")
+    ok(
+      r.data.updatePullRequest ~= nil,
+      "updatePullRequest: resolver dispatched → payload present"
+    )
+    eq(
+      r.data.updatePullRequest.pullRequest.number,
+      1,
+      "updatePullRequest: resolver dispatched → number returned"
+    )
+  end)
+end
+
+do -- closePullRequest, reopenPullRequest, and mergePullRequest resolvers are dispatched
+  with_resolvers({
+    ["Mutation.closePullRequest"] = function(_parent, _args, _ctx)
+      return {
+        pullRequest = {
+          number = 1,
+          title = "A great PR",
+          state = "CLOSED",
+          __typename = "PullRequest",
+        },
+        clientMutationId = nil,
+      }
+    end,
+    ["Mutation.reopenPullRequest"] = function(_parent, _args, _ctx)
+      return {
+        pullRequest = {
+          number = 1,
+          title = "A great PR",
+          state = "OPEN",
+          __typename = "PullRequest",
+        },
+        clientMutationId = nil,
+      }
+    end,
+    ["Mutation.mergePullRequest"] = function(_parent, _args, _ctx)
+      return {
+        pullRequest = {
+          number = 1,
+          title = "A great PR",
+          state = "MERGED",
+          merged = true,
+          __typename = "PullRequest",
+        },
+        clientMutationId = nil,
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          closePullRequest(input: {
+            pullRequestId: "UHVsbFJlcXVlc3Q6b2N0b2NhdC9oZWxsby13b3JsZC8x"
+          }) {
+            pullRequest { number state }
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "closePullRequest: resolver dispatched → no errors")
+    eq(
+      r.data.closePullRequest.pullRequest.state,
+      "CLOSED",
+      "closePullRequest: resolver dispatched → state CLOSED"
+    )
+
+    r = call_handler({
+      query = [[
+        mutation {
+          reopenPullRequest(input: {
+            pullRequestId: "UHVsbFJlcXVlc3Q6b2N0b2NhdC9oZWxsby13b3JsZC8x"
+          }) {
+            pullRequest { number state }
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "reopenPullRequest: resolver dispatched → no errors")
+    eq(
+      r.data.reopenPullRequest.pullRequest.state,
+      "OPEN",
+      "reopenPullRequest: resolver dispatched → state OPEN"
+    )
+
+    r = call_handler({
+      query = [[
+        mutation {
+          mergePullRequest(input: {
+            pullRequestId: "UHVsbFJlcXVlc3Q6b2N0b2NhdC9oZWxsby13b3JsZC8x"
+          }) {
+            pullRequest { number state merged }
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "mergePullRequest: resolver dispatched → no errors")
+    eq(
+      r.data.mergePullRequest.pullRequest.state,
+      "MERGED",
+      "mergePullRequest: resolver dispatched → state MERGED"
+    )
+  end)
+end

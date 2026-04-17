@@ -4023,3 +4023,226 @@ graphql_resolvers["Mutation.reopenIssue"] = function(_parent, args, ctx)
     clientMutationId = cmid,
   }
 end
+
+-- Mutation.createPullRequest: open a new pull request in a repository.
+-- Input fields: repositoryId (required, Repository node ID), title (required),
+--   body, headRefName (required, source branch), baseRefName (required, target branch).
+-- Sends POST /repos/{owner}/{repo}/pulls and returns the created pull request.
+graphql_resolvers["Mutation.createPullRequest"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.repositoryId then
+    return graphql_error(
+      ctx,
+      "createPullRequest requires input.repositoryId",
+      nil,
+      "BAD_USER_INPUT"
+    )
+  end
+  if not input.title then
+    return graphql_error(ctx, "createPullRequest requires input.title", nil, "BAD_USER_INPUT")
+  end
+  if not input.headRefName then
+    return graphql_error(ctx, "createPullRequest requires input.headRefName", nil, "BAD_USER_INPUT")
+  end
+  if not input.baseRefName then
+    return graphql_error(ctx, "createPullRequest requires input.baseRefName", nil, "BAD_USER_INPUT")
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.repositoryId)
+  if t ~= "Repository" then
+    return graphql_error(ctx, "createPullRequest: invalid repositoryId", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo = lid:match("^([^/]+)/(.+)$")
+  if not owner then
+    return graphql_error(ctx, "createPullRequest: malformed repositoryId", nil, "BAD_USER_INPUT")
+  end
+  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls"
+  local body = EncodeJson({
+    title = input.title,
+    body = input.body,
+    head = input.headRefName,
+    base = input.baseRefName,
+  })
+  local data = graphql_fetch_or_error(fetch_json, path, ctx, nil, "POST", body)
+  if not data then
+    return nil
+  end
+  return {
+    pullRequest = graphql_translate_pr(translate_gitea_pull(data), owner, repo),
+    clientMutationId = cmid,
+  }
+end
+
+-- Mutation.updatePullRequest: update the title, body, and/or base branch of a pull request.
+-- Input fields: pullRequestId (required, PullRequest node ID), title, body, baseRefName.
+-- Sends PATCH /repos/{owner}/{repo}/pulls/{number}.
+graphql_resolvers["Mutation.updatePullRequest"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.pullRequestId then
+    return graphql_error(
+      ctx,
+      "updatePullRequest requires input.pullRequestId",
+      nil,
+      "BAD_USER_INPUT"
+    )
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.pullRequestId)
+  if t ~= "PullRequest" then
+    return graphql_error(ctx, "updatePullRequest: invalid pullRequestId", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo, number = lid:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return graphql_error(ctx, "updatePullRequest: malformed pullRequestId", nil, "BAD_USER_INPUT")
+  end
+  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number
+  local body = EncodeJson({ title = input.title, body = input.body, base = input.baseRefName })
+  local data = graphql_fetch_or_error(fetch_json, path, ctx, nil, "PATCH", body)
+  if not data then
+    return nil
+  end
+  return {
+    pullRequest = graphql_translate_pr(translate_gitea_pull(data), owner, repo),
+    clientMutationId = cmid,
+  }
+end
+
+-- Mutation.closePullRequest: close an open pull request.
+-- Input fields: pullRequestId (required, PullRequest node ID).
+-- Sends PATCH /repos/{owner}/{repo}/pulls/{number} with state=closed.
+graphql_resolvers["Mutation.closePullRequest"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.pullRequestId then
+    return graphql_error(
+      ctx,
+      "closePullRequest requires input.pullRequestId",
+      nil,
+      "BAD_USER_INPUT"
+    )
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.pullRequestId)
+  if t ~= "PullRequest" then
+    return graphql_error(ctx, "closePullRequest: invalid pullRequestId", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo, number = lid:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return graphql_error(ctx, "closePullRequest: malformed pullRequestId", nil, "BAD_USER_INPUT")
+  end
+  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number
+  local data =
+    graphql_fetch_or_error(fetch_json, path, ctx, nil, "PATCH", EncodeJson({ state = "closed" }))
+  if not data then
+    return nil
+  end
+  return {
+    pullRequest = graphql_translate_pr(translate_gitea_pull(data), owner, repo),
+    clientMutationId = cmid,
+  }
+end
+
+-- Mutation.reopenPullRequest: reopen a closed pull request.
+-- Input fields: pullRequestId (required, PullRequest node ID).
+-- Sends PATCH /repos/{owner}/{repo}/pulls/{number} with state=open.
+graphql_resolvers["Mutation.reopenPullRequest"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.pullRequestId then
+    return graphql_error(
+      ctx,
+      "reopenPullRequest requires input.pullRequestId",
+      nil,
+      "BAD_USER_INPUT"
+    )
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.pullRequestId)
+  if t ~= "PullRequest" then
+    return graphql_error(ctx, "reopenPullRequest: invalid pullRequestId", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo, number = lid:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return graphql_error(ctx, "reopenPullRequest: malformed pullRequestId", nil, "BAD_USER_INPUT")
+  end
+  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number
+  local data =
+    graphql_fetch_or_error(fetch_json, path, ctx, nil, "PATCH", EncodeJson({ state = "open" }))
+  if not data then
+    return nil
+  end
+  return {
+    pullRequest = graphql_translate_pr(translate_gitea_pull(data), owner, repo),
+    clientMutationId = cmid,
+  }
+end
+
+-- Mutation.mergePullRequest: merge an open pull request.
+-- Input fields: pullRequestId (required, PullRequest node ID), mergeMethod
+--   (MERGE/SQUASH/REBASE; defaults to MERGE), commitHeadline, commitBody.
+-- Sends POST /repos/{owner}/{repo}/pulls/{number}/merge (Gitea uses POST; GitHub uses PUT).
+-- The merge endpoint returns 204 No Content, so the PR is re-fetched to populate the payload.
+graphql_resolvers["Mutation.mergePullRequest"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.pullRequestId then
+    return graphql_error(
+      ctx,
+      "mergePullRequest requires input.pullRequestId",
+      nil,
+      "BAD_USER_INPUT"
+    )
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.pullRequestId)
+  if t ~= "PullRequest" then
+    return graphql_error(ctx, "mergePullRequest: invalid pullRequestId", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo, number = lid:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return graphql_error(ctx, "mergePullRequest: malformed pullRequestId", nil, "BAD_USER_INPUT")
+  end
+  -- Map GitHub mergeMethod enum to Gitea's Do field string.
+  local method_map = { MERGE = "merge", SQUASH = "squash", REBASE = "rebase" }
+  local do_method = method_map[input.mergeMethod or "MERGE"] or "merge"
+  local merge_path = base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number .. "/merge"
+  local merge_body = EncodeJson({
+    Do = do_method,
+    MergeTitleField = input.commitHeadline,
+    MergeMessageField = input.commitBody,
+  })
+  -- POST to Gitea's merge endpoint; it returns 204 No Content on success.
+  local ok, status = fetch_json(merge_path, "POST", merge_body)
+  if not ok then
+    graphql_error(ctx, "network error merging pull request", nil, "INTERNAL_ERROR")
+    return nil
+  end
+  if status == 401 or status == 403 then
+    graphql_error(ctx, "not authorized to merge pull request", nil, "FORBIDDEN")
+    return nil
+  end
+  if status == 404 then
+    graphql_error(ctx, "pull request not found", nil, "NOT_FOUND")
+    return nil
+  end
+  if status == 405 then
+    graphql_error(ctx, "pull request is not mergeable", nil, "UNPROCESSABLE")
+    return nil
+  end
+  if status ~= 204 then
+    graphql_error(
+      ctx,
+      "upstream error " .. tostring(status) .. " merging pull request",
+      nil,
+      "INTERNAL_ERROR"
+    )
+    return nil
+  end
+  -- Re-fetch the PR to return in the payload (merge returns 204, no body).
+  local pr_path = base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number
+  local pr_data = graphql_fetch_or_error(fetch_json, pr_path, ctx, nil)
+  if not pr_data then
+    return nil
+  end
+  return {
+    pullRequest = graphql_translate_pr(translate_gitea_pull(pr_data), owner, repo),
+    clientMutationId = cmid,
+  }
+end
