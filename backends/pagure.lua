@@ -805,14 +805,23 @@ graphql_resolvers["Repository.issues"] = function(parent, args, ctx)
   if not owner then
     return nil
   end
-  local url = graphql_cursor_url(base() .. "/" .. owner .. "/" .. name .. "/issues", args, PAGES)
+  local url_base = base() .. "/" .. owner .. "/" .. name .. "/issues"
+  local total
+  if args.last and not args.before then
+    local count_url = graphql_cursor_url(url_base, { first = 1 }, PAGES)
+    local pdata, _, _ = graphql_fetch_with_headers(fetch_json, count_url)
+    if pdata then
+      total = (type(pdata) == "table") and pdata.total_issues or nil
+    end
+  end
+  local url = graphql_cursor_url(url_base, args, PAGES, total)
   local data, _, err = graphql_fetch_with_headers(fetch_json, url)
   if not data then
     graphql_error(ctx, err)
     return nil
   end
   local items = (type(data) == "table") and (data.issues or {}) or {}
-  local total = (type(data) == "table") and data.total_issues or nil
+  total = ((type(data) == "table") and data.total_issues or nil) or total
   local nodes = {}
   for _, i in ipairs(items) do
     nodes[#nodes + 1] = graphql_translate_issue(translate_pagure_issue(i), owner, name)
@@ -827,15 +836,23 @@ graphql_resolvers["Repository.refs"] = function(parent, args, ctx)
   if not owner then
     return nil
   end
-  local url =
-    graphql_cursor_url(base() .. "/" .. owner .. "/" .. name .. "/git/branches", args, PAGES)
+  local url_base = base() .. "/" .. owner .. "/" .. name .. "/git/branches"
+  local total
+  if args.last and not args.before then
+    local count_url = graphql_cursor_url(url_base, { first = 1 }, PAGES)
+    local pdata, _, _ = graphql_fetch_with_headers(fetch_json, count_url)
+    if pdata then
+      total = (type(pdata) == "table") and pdata.total_branches or nil
+    end
+  end
+  local url = graphql_cursor_url(url_base, args, PAGES, total)
   local data, _, err = graphql_fetch_with_headers(fetch_json, url)
   if not data then
     graphql_error(ctx, err)
     return nil
   end
   local items = (type(data) == "table") and (data.branches or {}) or {}
-  local total = (type(data) == "table") and data.total_branches or nil
+  total = ((type(data) == "table") and data.total_branches or nil) or total
   local nodes = {}
   for _, b_name in ipairs(items) do
     -- Pagure branch list returns only names; no commit SHA is available.

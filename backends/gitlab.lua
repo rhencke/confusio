@@ -3993,18 +3993,25 @@ end
 -- Repository connection sub-resolvers
 -- ---------------------------------------------------------------------------
 
+-- Headers GitLab uses for the total item count.
+local GL_TOTAL_HEADERS = { "X-Total" }
+
 -- Local helper: build a paginated Relay Connection from a GitLab list endpoint.
--- Fetches page from graphql_cursor_url, reads X-Total for totalCount,
--- translates items with translate_fn, and delegates to make_conn.
+-- For backward pagination (last without before), prefetches total via a per_page=1 request
+-- so graphql_cursor_url can seek the correct last page on the subsequent full fetch.
 local function gitlab_repo_connection(owner, repo, suffix, args, ctx, translate_fn, make_conn)
-  local url =
-    graphql_cursor_url(base() .. "/projects/" .. project_id(owner, repo) .. suffix, args, PAGES)
+  local url_base = base() .. "/projects/" .. project_id(owner, repo) .. suffix
+  local total
+  if args.last and not args.before then
+    total = graphql_prefetch_total_from_headers(fetch_json, url_base, PAGES, GL_TOTAL_HEADERS)
+  end
+  local url = graphql_cursor_url(url_base, args, PAGES, total)
   local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
   if not data then
     graphql_error(ctx, err)
     return nil
   end
-  local total = headers["X-Total"] and tonumber(headers["X-Total"])
+  total = (headers["X-Total"] and tonumber(headers["X-Total"])) or total
   local nodes = {}
   for _, item in ipairs(data) do
     nodes[#nodes + 1] = translate_fn(item)
@@ -4147,17 +4154,18 @@ graphql_resolvers["Issue.comments"] = function(parent, args, ctx)
   if not owner then
     return nil
   end
-  local url = graphql_cursor_url(
-    base() .. "/projects/" .. project_id(owner, repo) .. "/issues/" .. iid .. "/notes",
-    args,
-    PAGES
-  )
+  local url_base = base() .. "/projects/" .. project_id(owner, repo) .. "/issues/" .. iid .. "/notes"
+  local total
+  if args.last and not args.before then
+    total = graphql_prefetch_total_from_headers(fetch_json, url_base, PAGES, GL_TOTAL_HEADERS)
+  end
+  local url = graphql_cursor_url(url_base, args, PAGES, total)
   local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
   if not data then
     graphql_error(ctx, err)
     return nil
   end
-  local total = headers["X-Total"] and tonumber(headers["X-Total"])
+  total = (headers["X-Total"] and tonumber(headers["X-Total"])) or total
   local nodes = {}
   for _, n in ipairs(data) do
     if not n.system then
@@ -4182,17 +4190,19 @@ graphql_resolvers["PullRequest.commits"] = function(parent, args, ctx)
   if not owner then
     return nil
   end
-  local url = graphql_cursor_url(
-    base() .. "/projects/" .. project_id(owner, repo) .. "/merge_requests/" .. iid .. "/commits",
-    args,
-    PAGES
-  )
+  local url_base =
+    base() .. "/projects/" .. project_id(owner, repo) .. "/merge_requests/" .. iid .. "/commits"
+  local total
+  if args.last and not args.before then
+    total = graphql_prefetch_total_from_headers(fetch_json, url_base, PAGES, GL_TOTAL_HEADERS)
+  end
+  local url = graphql_cursor_url(url_base, args, PAGES, total)
   local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
   if not data then
     graphql_error(ctx, err)
     return nil
   end
-  local total = headers["X-Total"] and tonumber(headers["X-Total"])
+  total = (headers["X-Total"] and tonumber(headers["X-Total"])) or total
   local nodes = {}
   for _, c in ipairs(data) do
     -- Translate GitLab's flat commit format to the REST shape graphql_translate_commit expects.

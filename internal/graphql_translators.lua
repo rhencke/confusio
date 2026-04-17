@@ -13,6 +13,7 @@
 --   graphql_page_to_cursor(page)
 --   graphql_cursor_to_page(cursor)
 --   graphql_cursor_url(url_base, args, param_names[, total])
+--   graphql_prefetch_total_from_headers(fetch_json, url_base, param_names, header_names)
 --   graphql_inline_connection(typename, nodes)
 --   graphql_make_connection(typename, nodes, args, total[, ctx])
 --   graphql_issues_connection(nodes, args, total[, ctx])
@@ -252,6 +253,33 @@ function graphql_cursor_url(url_base, args, param_names, total) -- luacheck: glo
     return url_base
   end
   return url_base .. sep .. table.concat(parts, "&")
+end
+
+-- graphql_prefetch_total_from_headers is global: lightweight prefetch for backward pagination.
+-- When a resolver needs to seek the last page (last: N without before cursor), it must know
+-- the total item count before building the URL.  This function fetches the collection endpoint
+-- with a page size of 1 to get the total from response headers without loading a full page.
+--
+-- Returns the total as a number, or nil when the headers are absent or the total is not found.
+-- Only call when args.last is set and args.before is absent.
+--
+-- fetch_json:   backend's local fetch function
+-- url_base:     collection URL base (without pagination params)
+-- param_names:  pagination param table, e.g. { per_page = "limit", page = "page" }
+-- header_names: ordered list of header names to try, e.g. { "X-Total", "X-Total-Count" }
+function graphql_prefetch_total_from_headers(fetch_json, url_base, param_names, header_names) -- luacheck: globals graphql_prefetch_total_from_headers
+  local count_url = graphql_cursor_url(url_base, { first = 1 }, param_names)
+  local _, headers, _ = graphql_fetch_with_headers(fetch_json, count_url)
+  if not headers then
+    return nil
+  end
+  for _, name in ipairs(header_names) do
+    local v = headers[name] and tonumber(headers[name])
+    if v then
+      return v
+    end
+  end
+  return nil
 end
 
 -- ---------------------------------------------------------------------------

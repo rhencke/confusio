@@ -1336,10 +1336,20 @@ end
 -- Shared pagination helper for BBS /values arrays.
 -- BBS pagination uses start (offset) and limit (page size);
 -- graphql_cursor_url can't be used because BBS start = (page-1)*limit, not page number.
+--
+-- Backward pagination (last/before):
+--   before: cursor(P) → page P-1, start (P-2)*limit (graphql_make_connection handles before(1))
+--   last: N without before → page 1 fallback (BBS has no total-count endpoint)
 local function bbs_repo_connection(owner, repo_name, suffix, args, ctx, translate_fn, make_conn)
-  local per_page = args.first or 30
+  local per_page = args.last or args.first or 30
   local page = 1
-  if args.after then
+  if args.before then
+    local before_page = graphql_cursor_to_page(args.before)
+    if before_page and before_page >= 2 then
+      page = before_page - 1
+    end
+    -- else: before page 1 or invalid → page 1; graphql_make_connection returns empty
+  elseif args.after then
     local p = graphql_cursor_to_page(args.after)
     if p then
       page = p + 1

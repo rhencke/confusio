@@ -87,6 +87,7 @@ globals = {
   "graphql_page_to_cursor",
   "graphql_cursor_to_page",
   "graphql_cursor_url",
+  "graphql_prefetch_total_from_headers",
   "graphql_inline_connection",
   "graphql_make_connection",
   "graphql_issues_connection",
