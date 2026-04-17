@@ -3357,6 +3357,22 @@ graphql_resolvers["node.Label"] = function(local_id, _ctx)
   return graphql_translate_label(translate_gitea_label(data), owner, repo)
 end
 
+-- node.Milestone: fetch a milestone by "owner/repo/number" local ID.
+graphql_resolvers["node.Milestone"] = function(local_id, _ctx)
+  local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ = graphql_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo .. "/milestones/" .. number
+  )
+  if not data then
+    return nil
+  end
+  return graphql_translate_milestone(data, owner, repo)
+end
+
 -- ---------------------------------------------------------------------------
 -- Repository connection sub-resolvers
 -- ---------------------------------------------------------------------------

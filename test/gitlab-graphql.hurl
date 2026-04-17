@@ -97,6 +97,17 @@ HTTP 200
 jsonpath "$.data.node.name" == "bug"
 jsonpath "$.data.node.color" == "d73a4a"
 
+# POST /graphql — node(Milestone) fetches a milestone by encoded node ID
+# Node ID for Milestone:octocat/hello-world/1 = TWlsZXN0b25lOm9jdG9jYXQvaGVsbG8td29ybGQvMQ==
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ node(id: \"TWlsZXN0b25lOm9jdG9jYXQvaGVsbG8td29ybGQvMQ==\") { ... on Milestone { title state } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.node.title" == "v1.0"
+jsonpath "$.data.node.state" == "OPEN"
+
 # POST /graphql — Repository.owner is inlined by the translator (no sub-resolver)
 POST http://{{host}}/graphql
 Content-Type: application/json
