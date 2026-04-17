@@ -1584,6 +1584,20 @@ graphql_resolvers["node.Ref"] = function(local_id, _ctx)
   return graphql_translate_ref(data, repo_stub)
 end
 
+-- node.Team: fetch a team by "org/slug" local ID.
+-- GitBucket is GitHub-compatible; /orgs/{org}/teams/{slug} returns the team directly.
+graphql_resolvers["node.Team"] = function(local_id, _ctx)
+  local org, slug = local_id:match("^([^/]+)/([^/]+)$")
+  if not org then
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, base() .. "/orgs/" .. org .. "/teams/" .. slug)
+  if not data then
+    return nil
+  end
+  return graphql_translate_team(data, org)
+end
+
 -- ---------------------------------------------------------------------------
 -- Repository connection sub-resolvers
 -- ---------------------------------------------------------------------------

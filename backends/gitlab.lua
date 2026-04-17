@@ -4061,6 +4061,20 @@ graphql_resolvers["node.Ref"] = function(local_id, _ctx)
   return graphql_translate_ref(data, repo_stub)
 end
 
+-- node.Team: fetch a team (subgroup) by "org/slug" local ID.
+-- GitLab teams map to subgroups; fetch by URL-encoded path /groups/{org}%2F{slug}.
+graphql_resolvers["node.Team"] = function(local_id, _ctx)
+  local org, slug = local_id:match("^([^/]+)/([^/]+)$")
+  if not org then
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, base() .. "/groups/" .. org .. "%2F" .. slug)
+  if not data then
+    return nil
+  end
+  return graphql_translate_team(translate_gl_team(data), org)
+end
+
 -- ---------------------------------------------------------------------------
 -- Repository connection sub-resolvers
 -- ---------------------------------------------------------------------------

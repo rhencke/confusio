@@ -125,6 +125,17 @@ HTTP 200
 jsonpath "$.data.node.name" == "main"
 jsonpath "$.data.node.prefix" == "refs/heads/"
 
+# POST /graphql — node(Team) fetches a team by encoded node ID
+# Node ID for Team:testorg/core = VGVhbTp0ZXN0b3JnL2NvcmU=
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ node(id: \"VGVhbTp0ZXN0b3JnL2NvcmU=\") { ... on Team { name slug } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.node.name" == "core"
+jsonpath "$.data.node.slug" == "core"
+
 # POST /graphql — Repository.owner is inlined by the translator (no sub-resolver)
 POST http://{{host}}/graphql
 Content-Type: application/json

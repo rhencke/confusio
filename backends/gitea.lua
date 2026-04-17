@@ -3410,6 +3410,24 @@ graphql_resolvers["node.Ref"] = function(local_id, _ctx)
   return graphql_translate_ref(data, repo_stub)
 end
 
+-- node.Team: fetch a team by "org/slug" local ID.
+-- Gitea teams use numeric IDs; resolve slug → ID via gitea_find_team_id, then fetch /teams/{id}.
+graphql_resolvers["node.Team"] = function(local_id, _ctx)
+  local org, slug = local_id:match("^([^/]+)/([^/]+)$")
+  if not org then
+    return nil
+  end
+  local id = gitea_find_team_id(org, slug)
+  if not id then
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, base() .. "/teams/" .. id)
+  if not data then
+    return nil
+  end
+  return graphql_translate_team(translate_gitea_team(data), org)
+end
+
 -- ---------------------------------------------------------------------------
 -- Repository connection sub-resolvers
 -- ---------------------------------------------------------------------------
