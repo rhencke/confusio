@@ -119,6 +119,17 @@ HTTP 200
 jsonpath "$.data.node.oid" == "abc123def456"
 jsonpath "$.data.node.message" == "Initial commit"
 
+# POST /graphql — node(Ref) fetches a branch ref by encoded node ID
+# Node ID for Ref:octocat/hello-world/refs/heads/main = UmVmOm9jdG9jYXQvaGVsbG8td29ybGQvcmVmcy9oZWFkcy9tYWlu
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ node(id: \"UmVmOm9jdG9jYXQvaGVsbG8td29ybGQvcmVmcy9oZWFkcy9tYWlu\") { ... on Ref { name prefix } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.node.name" == "main"
+jsonpath "$.data.node.prefix" == "refs/heads/"
+
 # POST /graphql — Repository.owner is inlined by the translator (no sub-resolver)
 POST http://{{host}}/graphql
 Content-Type: application/json

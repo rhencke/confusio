@@ -1564,6 +1564,26 @@ graphql_resolvers["node.Commit"] = function(local_id, _ctx)
   return graphql_translate_commit(data, owner, repo)
 end
 
+-- node.Ref: fetch a branch ref by "owner/repo/refs/heads/..." local ID.
+-- GitBucket branch objects are GitHub-compatible (commit.sha already present).
+graphql_resolvers["node.Ref"] = function(local_id, _ctx)
+  local owner, repo, ref_path = local_id:match("^([^/]+)/([^/]+)/(refs/.+)$")
+  if not owner then
+    return nil
+  end
+  local branch = ref_path:match("^refs/heads/(.+)$")
+  if not branch then
+    return nil
+  end
+  local data, _ =
+    graphql_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo .. "/branches/" .. branch)
+  if not data then
+    return nil
+  end
+  local repo_stub = { __typename = "Repository", nameWithOwner = owner .. "/" .. repo }
+  return graphql_translate_ref(data, repo_stub)
+end
+
 -- ---------------------------------------------------------------------------
 -- Repository connection sub-resolvers
 -- ---------------------------------------------------------------------------
