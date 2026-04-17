@@ -9,13 +9,13 @@ each phase.
 
 ## Phases
 
-| Phase | Scope | Gate |
-|---|---|---|
-| **0 — Schema prep** | Vendor SDL, write generator, produce `graphql_schema_data.lua` | Generated file committed; `make validate-schema` passes |
-| **1 — Query engine** | Parser, schema loader, executor, translators, Gitea resolvers, tests | `make test` green on gitea; `POST /graphql` works end-to-end for queries |
-| **1b — Additional backends** | Resolver registration for GitLab, GitBucket, Bitbucket, and others | Per-backend `<backend>-graphql.hurl` passes |
-| **2 — Mutations** | Mutation execution, write-side translators, Gitea mutation resolvers | `make test` green; mutation queries round-trip |
-| **2b — Batch & extras** | Batch requests, backward pagination, item-level cursors, APQ | Client compatibility tests pass |
+| Phase | Scope | Gate | Status |
+|---|---|---|---|
+| **0 — Schema prep** | Vendor SDL, write generator, produce `graphql_schema_data.lua` | Generated file committed; `make validate-schema` passes | ✅ complete |
+| **1 — Query engine** | Parser, schema loader, executor, translators, Gitea resolvers, tests | `make test` green on gitea; `POST /graphql` works end-to-end for queries | ✅ complete |
+| **1b — Additional backends** | Resolver registration for GitLab, GitBucket, Bitbucket, and others | Per-backend `<backend>-graphql.hurl` passes | ✅ complete |
+| **2 — Mutations** | Mutation execution, write-side translators, Gitea mutation resolvers | `make test` green; mutation queries round-trip | 🔜 next |
+| **2b — Batch & extras** | Batch requests, backward pagination, item-level cursors, APQ | Client compatibility tests pass | ⏳ future |
 
 ## Issue list
 
