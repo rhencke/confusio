@@ -406,7 +406,9 @@ function OnHttpRequest()
 
     -- Pull Requests
     ["/api/v1/repos/octocat/hello-world/pulls"] = { 200, "[" .. PR .. "]" },
+    ["POST /api/v1/repos/octocat/hello-world/pulls"] = { 201, PR },
     ["/api/v1/repos/octocat/hello-world/pulls/1"] = { 200, PR },
+    ["PATCH /api/v1/repos/octocat/hello-world/pulls/1"] = { 200, PR },
     ["/api/v1/repos/octocat/hello-world/pulls/1/commits"] = { 200, "[]" },
     ["/api/v1/repos/octocat/hello-world/pulls/1/files"] = { 200, "[]" },
     ["/api/v1/repos/octocat/hello-world/pulls/1/merge"] = { 204, nil },
