@@ -1154,3 +1154,89 @@ HTTP 200
 jsonpath "$.data.removeStar" not exists
 jsonpath "$.errors" isCollection
 jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.updateSubscription subscribes to a repository (SUBSCRIBED)
+# Node ID for Repository:octocat/hello-world = UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk
+# → PUT /api/v1/repos/octocat/hello-world/subscription, then GET /api/v1/repos/octocat/hello-world
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updateSubscription(input: { subscribableId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\", state: SUBSCRIBED }) { subscribable { ... on Repository { nameWithOwner } } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.updateSubscription.subscribable.nameWithOwner" == "octocat/hello-world"
+jsonpath "$.data.updateSubscription.clientMutationId" not exists
+
+# POST /graphql — Mutation.updateSubscription sets ignored state (IGNORED)
+# → PUT /api/v1/repos/octocat/hello-world/subscription
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updateSubscription(input: { subscribableId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\", state: IGNORED }) { subscribable { ... on Repository { nameWithOwner } } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.updateSubscription.subscribable.nameWithOwner" == "octocat/hello-world"
+
+# POST /graphql — Mutation.updateSubscription unsubscribes (UNSUBSCRIBED)
+# → DELETE /api/v1/repos/octocat/hello-world/subscription, then GET /api/v1/repos/octocat/hello-world
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updateSubscription(input: { subscribableId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\", state: UNSUBSCRIBED }) { subscribable { ... on Repository { nameWithOwner } } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.updateSubscription.subscribable.nameWithOwner" == "octocat/hello-world"
+
+# POST /graphql — Mutation.updateSubscription echoes back clientMutationId
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updateSubscription(input: { subscribableId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\", state: SUBSCRIBED, clientMutationId: \"sub-relay-1\" }) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.updateSubscription.clientMutationId" == "sub-relay-1"
+
+# POST /graphql — Mutation.updateSubscription without subscribableId returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updateSubscription(input: { state: SUBSCRIBED }) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.updateSubscription" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.updateSubscription without state returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updateSubscription(input: { subscribableId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\" }) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.updateSubscription" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.updateSubscription with wrong node type returns BAD_USER_INPUT
+# Node ID for User:octocat = VXNlcjpvY3RvY2F0
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updateSubscription(input: { subscribableId: \"VXNlcjpvY3RvY2F0\", state: SUBSCRIBED }) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.updateSubscription" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"

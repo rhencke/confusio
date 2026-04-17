@@ -888,3 +888,72 @@ do -- removeStar resolver is dispatched; payload contains starrable
     eq(r.data.removeStar.starrable.__typename, "Repository", "removeStar: starrable __typename")
   end)
 end
+
+do -- updateSubscription resolver is dispatched; payload contains subscribable
+  with_resolvers({
+    ["Mutation.updateSubscription"] = function(_parent, args, _ctx)
+      return {
+        subscribable = { __typename = "Repository" },
+        clientMutationId = get_client_mutation_id(args),
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          updateSubscription(input: {
+            subscribableId: "UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk",
+            state: SUBSCRIBED
+          }) {
+            subscribable { __typename }
+            clientMutationId
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "updateSubscription: resolver dispatched → no errors")
+    ok(
+      r.data.updateSubscription ~= nil,
+      "updateSubscription: resolver dispatched → payload present"
+    )
+    eq(
+      r.data.updateSubscription.subscribable.__typename,
+      "Repository",
+      "updateSubscription: subscribable __typename"
+    )
+  end)
+end
+
+do -- updateSubscription clientMutationId round-trip
+  with_resolvers({
+    ["Mutation.updateSubscription"] = function(_parent, args, _ctx)
+      return {
+        subscribable = { __typename = "Repository" },
+        clientMutationId = get_client_mutation_id(args),
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          updateSubscription(input: {
+            subscribableId: "UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk",
+            state: IGNORED,
+            clientMutationId: "sub-relay-1"
+          }) {
+            clientMutationId
+          }
+        }
+      ]],
+    })
+    ok(
+      r.errors == nil or #r.errors == 0,
+      "updateSubscription: clientMutationId round-trip → no errors"
+    )
+    eq(
+      r.data.updateSubscription.clientMutationId,
+      "sub-relay-1",
+      "updateSubscription: clientMutationId round-trip → value echoed back"
+    )
+  end)
+end

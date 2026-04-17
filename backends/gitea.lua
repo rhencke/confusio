@@ -4467,3 +4467,72 @@ graphql_resolvers["Mutation.removeStar"] = function(_parent, args, ctx)
     clientMutationId = cmid,
   }
 end
+
+graphql_resolvers["Mutation.updateSubscription"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.subscribableId then
+    return graphql_error(
+      ctx,
+      "updateSubscription requires input.subscribableId",
+      nil,
+      "BAD_USER_INPUT"
+    )
+  end
+  if not input.state then
+    return graphql_error(ctx, "updateSubscription requires input.state", nil, "BAD_USER_INPUT")
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.subscribableId)
+  if t ~= "Repository" then
+    return graphql_error(ctx, "updateSubscription: invalid subscribableId", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo = lid:match("^([^/]+)/(.+)$")
+  if not owner then
+    return graphql_error(ctx, "updateSubscription: malformed subscribableId", nil, "BAD_USER_INPUT")
+  end
+  local sub_path = base() .. "/repos/" .. owner .. "/" .. repo .. "/subscription"
+  local ok, status
+  if input.state == "UNSUBSCRIBED" then
+    -- Unsubscribe uses DELETE, which returns 204 No Content.
+    ok, status = fetch_json(sub_path, "DELETE")
+  else
+    -- SUBSCRIBED and IGNORED both use PUT with a JSON body; returns 200.
+    local body = EncodeJson({
+      subscribed = input.state == "SUBSCRIBED",
+      ignored = input.state == "IGNORED",
+    })
+    ok, status = fetch_json(sub_path, "PUT", body)
+  end
+  if not ok then
+    graphql_error(ctx, "network error updating subscription", nil, "INTERNAL_ERROR")
+    return nil
+  end
+  if status == 401 or status == 403 then
+    graphql_error(ctx, "not authorized to update subscription", nil, "FORBIDDEN")
+    return nil
+  end
+  if status == 404 then
+    graphql_error(ctx, "repository not found", nil, "NOT_FOUND")
+    return nil
+  end
+  local expected_status = input.state == "UNSUBSCRIBED" and 204 or 200
+  if status ~= expected_status then
+    graphql_error(
+      ctx,
+      "upstream error " .. tostring(status) .. " updating subscription",
+      nil,
+      "INTERNAL_ERROR"
+    )
+    return nil
+  end
+  -- Re-fetch the repository to return in the payload.
+  local repo_path = base() .. "/repos/" .. owner .. "/" .. repo
+  local repo_data = graphql_fetch_or_error(fetch_json, repo_path, ctx, nil)
+  if not repo_data then
+    return nil
+  end
+  return {
+    subscribable = graphql_translate_repo(translate_repo(repo_data)),
+    clientMutationId = cmid,
+  }
+end
