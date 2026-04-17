@@ -140,41 +140,146 @@ end
 
 ## Backward pagination (`last`/`before`)
 
-### Phase 1 limitation
+### Argument semantics
 
-Backward pagination requires either:
-- Backend support for reverse ordering, or
-- Knowing the total page count to seek from the end.
+| Arguments | Meaning | REST translation |
+|-----------|---------|-----------------|
+| `last: N` only | Last N items overall | two-pass: prefetch total → `per_page=N, page=ceil(total/N)` |
+| `last: N, before: cursor` | N items before cursor | `per_page=N, page=cursor_page-1` |
+| `before: cursor` only | Default page before cursor | `per_page=30, page=cursor_page-1` |
 
-Most REST backends support neither reliably.  Phase 1 returns an error for any request
-that uses `last` or `before`:
+### Two-pass total-prefetch strategy
+
+Seeking the last page requires knowing the total item count *before* building the REST URL.
+For `last: N` without a `before` cursor, resolvers use a two-pass approach:
+
+1. **Prefetch pass**: call `graphql_prefetch_total_from_headers` with `first: 1` to fetch
+   a single-item page and read the total-count header (`X-Total` / `X-Total-Count`).
+   This avoids downloading a full page of data we will discard.
+
+2. **Real pass**: call `graphql_cursor_url(url_base, args, param_names, total)` with the
+   fetched total so it computes `page = ceil(total / per_page)` and fetches the correct
+   last page.
 
 ```lua
-if args.last or args.before then
-  append_graphql_error(ctx,
-    "backward pagination (last/before) is not supported in this version")
-  return {
-    __typename  = typename .. "Connection",
-    total_count = 0,
-    page_info   = {
-      __typename         = "PageInfo",
-      has_next_page      = false,
-      has_previous_page  = false,
-      start_cursor       = nil,
-      end_cursor         = nil,
-    },
-    nodes = {},
-    edges = {},
-  }
+-- internal/graphql_translators.lua
+--
+-- Lightweight prefetch that returns the total item count from headers.
+-- Only call when args.last is set and args.before is absent.
+function graphql_prefetch_total_from_headers(fetch_json, url_base, param_names, header_names)
+  local count_url = graphql_cursor_url(url_base, { first = 1 }, param_names)
+  local _, headers, _ = graphql_fetch_with_headers(fetch_json, count_url)
+  if not headers then return nil end
+  for _, name in ipairs(header_names) do
+    local v = headers[name] and tonumber(headers[name])
+    if v then return v end
+  end
+  return nil
 end
 ```
 
-The error is added to `ctx.errors` and the field returns an empty connection (not `null`),
-so the rest of the query continues executing.  Clients that use only `first`/`after` are
-unaffected.
+Helper usage in a backend connection resolver:
 
-Backward pagination implementation is tracked as a Phase 2 item in
-[16-roadmap.md](16-roadmap.md).
+```lua
+local function gitea_repo_connection(owner, repo, suffix, args, ctx, translate_fn, make_conn)
+  local url_base = base() .. "/repos/" .. owner .. "/" .. repo .. suffix
+  local total
+  if args.last and not args.before then
+    total = graphql_prefetch_total_from_headers(
+      fetch_json, url_base, GITEA_PAGES, { "X-Total", "X-Total-Count" }
+    )
+  end
+  local url = graphql_cursor_url(url_base, args, GITEA_PAGES, total)
+  local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
+  if not data then
+    graphql_error(ctx, err)
+    return nil
+  end
+  total = gitea_total(headers) or total
+  -- translate + return make_conn(nodes, args, total, ctx)
+end
+```
+
+### URL construction for backward pagination
+
+`graphql_cursor_url` accepts an optional fourth argument `total`.  When `args.last` (or
+`args.before`) is detected, the backward-pagination branch runs:
+
+| Case | REST page |
+|------|-----------|
+| `last: N, before: cursor(P)` where P ≥ 2 | `page=P-1, per_page=N` |
+| `last: N, before: cursor(1)` or malformed cursor | `page=1, per_page=N` (edge: `make_connection` returns empty) |
+| `last: N` with `total` provided | `page=ceil(total/N), per_page=N` |
+| `last: N` without `total` | `page=1, per_page=N` (fallback; resolver uses two-pass) |
+
+### Connection assembly for backward pagination
+
+`graphql_make_connection` detects `args.last` or `args.before` and enters the backward
+branch:
+
+**`before: cursor(P)` where P ≥ 2 — one page before the cursor:**
+
+```lua
+local page = before_page - 1
+return {
+  pageInfo = {
+    hasNextPage     = true,  -- cursor page P proves items exist there
+    hasPreviousPage = page > 1,
+    startCursor     = graphql_page_to_cursor(page),
+    endCursor       = graphql_page_to_cursor(page),
+  },
+  totalCount = total or count,
+  nodes = nodes,
+  edges = edges,
+}
+```
+
+**`before: cursor(1)` or malformed cursor — nothing before the first page:**
+
+```lua
+return {
+  pageInfo = {
+    hasNextPage     = (before_page ~= nil and before_page >= 1),
+    hasPreviousPage = false,
+    startCursor     = nil,
+    endCursor       = nil,
+  },
+  totalCount = total or 0,
+  nodes = {},
+  edges = {},
+}
+```
+
+**`last: N` without `before` — last page overall:**
+
+```lua
+local page = total and math.max(1, math.ceil(total / per_page)) or 1
+local has_next = total ~= nil and (page * per_page) < total
+              or total == nil and count == per_page  -- heuristic fallback
+return {
+  pageInfo = {
+    hasNextPage     = has_next,
+    hasPreviousPage = page > 1,
+    ...
+  },
+  ...
+}
+```
+
+### Backends without total-count headers
+
+Backends that do not return `X-Total` / `X-Total-Count` (Bitbucket Cloud, Pagure,
+Sourcehut) cannot determine the total page count.  For `last: N` without `before`:
+
+- The two-pass prefetch returns `nil` (no header).
+- `graphql_cursor_url` falls back to `page=1`.
+- `graphql_make_connection` uses the page-full heuristic for `hasNextPage`.
+- `hasPreviousPage` is always `false` (page 1).
+
+Clients receive the first page of results when they ask for the last, which is incorrect
+but does not error.  This is documented in [14-backend-feasibility.md](14-backend-feasibility.md).
+
+`last: N, before: cursor` always works correctly (no total needed).
 
 ## `totalCount`
 
@@ -455,29 +560,59 @@ field names (camelCase) as their keys**, not REST field names (snake_case).
 
 ## Testing
 
-Unit tests in `test/graphql-pagination.lua`:
+### Unit tests — `test/graphql-pagination.lua`
+
+Forward pagination:
 
 - `graphql_page_to_cursor(1)` → deterministic base64 string.
 - `graphql_cursor_to_page(graphql_page_to_cursor(3))` → `3` (round-trip).
 - `graphql_cursor_to_page("invalid")` → `nil`.
-- `graphql_cursor_to_page(nil)` → `nil`.
 - `graphql_cursor_url(base, {first=10}, params)` → URL with `limit=10`, no `page` param.
 - `graphql_cursor_url(base, {first=10, after=cursor_for_page_2}, params)` → URL with
   `limit=10&page=3`.
 - `graphql_make_connection("Issue", nodes, {first=2}, nil)` where `#nodes==2`:
   `hasNextPage = true`, `hasPreviousPage = false`, `totalCount = 2`.
-- `graphql_make_connection("Issue", nodes, {first=5}, nil)` where `#nodes==3`:
-  `hasNextPage = false` (partial page).
 - `graphql_make_connection("Issue", nodes, {first=10, after=cursor_for_page_1}, 25)`:
-  page=2, `hasNextPage = (2*10)<25 = true`, `hasPreviousPage = true`.
-- `graphql_make_connection("Issue", nodes, {first=10, after=cursor_for_page_2}, 25)`:
-  page=3, `hasNextPage = (3*10)<25 = false`.
+  page=2, `hasNextPage = true`, `hasPreviousPage = true`.
+
+Backward pagination:
+
+- `graphql_cursor_url(base, {last=10}, params, 25)` → URL with `limit=10&page=3`
+  (`ceil(25/10)=3`).
+- `graphql_cursor_url(base, {last=10}, params)` (no total) → URL with `limit=10`, page 1
+  fallback.
+- `graphql_cursor_url(base, {last=10, before=cursor(3)}, params)` → URL with
+  `limit=10&page=2`.
+- `graphql_cursor_url(base, {last=5, before=cursor(1)}, params)` → URL with `limit=5`
+  (clamped to page 1; `make_connection` returns empty).
+- `graphql_make_connection("Issue", nodes, {last=10}, 25)`: page=3, `hasNextPage=false`,
+  `hasPreviousPage=true`.
+- `graphql_make_connection("Issue", nodes, {last=10}, 10)`: page=1, `hasNextPage=false`,
+  `hasPreviousPage=false`.
+- `graphql_make_connection("Issue", nodes, {last=3, before=cursor(3)}, 10)`: page=2,
+  `hasNextPage=true`, `hasPreviousPage=true`.
+- `graphql_make_connection("Issue", nodes, {last=3, before=cursor(1)}, 10)`: empty nodes,
+  `hasNextPage=true` (cursor(1) is valid), `hasPreviousPage=false`.
+- `graphql_make_connection("Issue", nodes, {before="notacursor"}, 10)`: empty nodes,
+  `hasNextPage=false` (malformed cursor), `hasPreviousPage=false`.
 - `graphql_inline_connection("Label", labels)`: `hasNextPage = false`,
   `hasPreviousPage = false`, `totalCount = #labels`.
-- Backward pagination: `graphql_make_connection` with `{last=5}` returns empty connection
-  and appends to `ctx.errors`.
 
-Integration: an executor test that selects
-`repository { issues(first: 2) { totalCount pageInfo { hasNextPage endCursor } nodes { title } } }`
-with a stub resolver returning 2 issues verifies the full connection shape is assembled and
-plucked correctly.
+### Unit tests — `test/gitea-graphql.hurl` (against mock)
+
+- `issues(last: 1)`: mock returns X-Total: 1 → two-pass resolves to page 1; 1 node,
+  `hasPreviousPage=false`, `hasNextPage=false`.
+- `issues(first: 1)` to capture `endCursor` (cursor for page 1), then
+  `issues(last: 1, before: endCursor)`: empty nodes (nothing before page 1),
+  `hasNextPage=true`, `hasPreviousPage=false`.
+
+### Integration tests — `test/integration-graphql-mutations.hurl` (live gitea.com)
+
+Run when `GITEA_TOKEN` is set.  Three issues are created inside `confusio-mutation-test`
+so the repo has enough data to exercise the two-pass path:
+
+- `issues(last: 1)` with total=3: prefetch returns 3, `last_page=3`; resolver fetches
+  page 3; `hasPreviousPage=true`, `hasNextPage=false`, `totalCount=3`.
+- `issues(first: 1)` to capture `endCursor` for page 1, then
+  `issues(last: 1, before: endCursor)`: empty nodes, `hasNextPage=true`,
+  `hasPreviousPage=false`, `totalCount=3`.

@@ -368,7 +368,11 @@ function OnHttpRequest()
     ["GET /api/v1/teams/1/repos/testorg/hello-world"] = { 204, nil },
 
     -- Issues
-    ["/api/v1/repos/octocat/hello-world/issues"] = { 200, "[" .. ISSUE .. "]" },
+    ["/api/v1/repos/octocat/hello-world/issues"] = {
+      200,
+      "[" .. ISSUE .. "]",
+      { ["X-Total"] = "1" },
+    },
     ["POST /api/v1/repos/octocat/hello-world/issues"] = { 201, ISSUE },
     ["/api/v1/repos/octocat/hello-world/issues/1"] = { 200, ISSUE },
     ["PATCH /api/v1/repos/octocat/hello-world/issues/1"] = { 200, ISSUE },

@@ -259,6 +259,82 @@ jsonpath "$.data.updateSubscription.subscribable.name" == "confusio-mutation-tes
 jsonpath "$.data.updateSubscription.clientMutationId" not exists
 
 # -----------------------------------------------------------------------
+# Backward pagination smoke tests
+#
+# Create two additional issues so the repo has 3 total, giving us enough
+# pages to exercise the two-pass total-prefetch path (last: 1 with 3 issues
+# triggers: prefetch → total=3, last_page=3, fetch page 3).
+# -----------------------------------------------------------------------
+
+# POST /graphql — create issue #2 for backward pagination testing
+POST http://{{host}}/graphql
+Authorization: token {{gitea_token}}
+Content-Type: application/json
+{"query": "mutation CreateIssue2($rid: ID!) { createIssue(input: { repositoryId: $rid, title: \"confusio pagination test issue 2\" }) { issue { id number } } }", "variables": {"rid": "{{repo_id}}"}}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.createIssue.issue.number" isInteger
+
+# POST /graphql — create issue #3 for backward pagination testing
+POST http://{{host}}/graphql
+Authorization: token {{gitea_token}}
+Content-Type: application/json
+{"query": "mutation CreateIssue3($rid: ID!) { createIssue(input: { repositoryId: $rid, title: \"confusio pagination test issue 3\" }) { issue { id number } } }", "variables": {"rid": "{{repo_id}}"}}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.createIssue.issue.number" isInteger
+
+# POST /graphql — issues(first: 1): capture endCursor for the before test below.
+POST http://{{host}}/graphql
+Authorization: token {{gitea_token}}
+Content-Type: application/json
+{"query": "query Fwd($id: ID!) { node(id: $id) { ... on Repository { issues(first: 1) { totalCount pageInfo { endCursor } } } } }", "variables": {"id": "{{repo_id}}"}}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.node.issues.totalCount" == 3
+jsonpath "$.data.node.issues.pageInfo.endCursor" isString
+[Captures]
+issues_page1_cursor: jsonpath "$.data.node.issues.pageInfo.endCursor"
+
+# POST /graphql — issues(last: 1): two-pass path — prefetch gives total=3,
+# last_page=3; resolver fetches page 3 and returns 1 issue.
+POST http://{{host}}/graphql
+Authorization: token {{gitea_token}}
+Content-Type: application/json
+{"query": "query Last($id: ID!) { node(id: $id) { ... on Repository { issues(last: 1) { totalCount pageInfo { hasNextPage hasPreviousPage startCursor endCursor } nodes { number } } } } }", "variables": {"id": "{{repo_id}}"}}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.node.issues.totalCount" == 3
+jsonpath "$.data.node.issues.pageInfo.hasNextPage" == false
+jsonpath "$.data.node.issues.pageInfo.hasPreviousPage" == true
+jsonpath "$.data.node.issues.pageInfo.startCursor" isString
+jsonpath "$.data.node.issues.nodes" isCollection
+jsonpath "$.data.node.issues.nodes[0].number" isInteger
+
+# POST /graphql — issues(last: 1, before: endCursor of page 1): page before first page
+# is empty; hasNextPage true (cursor page 1 exists), hasPreviousPage false.
+POST http://{{host}}/graphql
+Authorization: token {{gitea_token}}
+Content-Type: application/json
+{"query": "query Before($id: ID!, $c: String!) { node(id: $id) { ... on Repository { issues(last: 1, before: $c) { totalCount pageInfo { hasNextPage hasPreviousPage } nodes { number } } } } }", "variables": {"id": "{{repo_id}}", "c": "{{issues_page1_cursor}}"}}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.node.issues.totalCount" == 3
+jsonpath "$.data.node.issues.pageInfo.hasNextPage" == true
+jsonpath "$.data.node.issues.pageInfo.hasPreviousPage" == false
+jsonpath "$.data.node.issues.nodes[0]" not exists
+
+# -----------------------------------------------------------------------
 # Cleanup: delete the test repo (cascades to all issues and comments)
 # -----------------------------------------------------------------------
 

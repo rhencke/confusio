@@ -1333,19 +1333,33 @@ backend_impl = {
 -- GitBucket uses GitHub-compatible per_page / page query parameters.
 local GQL_PAGES = { per_page = "per_page", page = "page" }
 
+-- Headers GitBucket may return for the total item count (optional; absent on some endpoints).
+local GB_TOTAL_HEADERS = { "X-Total", "X-Total-Count" }
+
+-- Local helper: extract total from GitBucket response headers (nil when absent).
+local function gb_total(headers)
+  return (headers["X-Total"] and tonumber(headers["X-Total"]))
+    or (headers["X-Total-Count"] and tonumber(headers["X-Total-Count"]))
+end
+
 -- Local helper: build a paginated Relay Connection from a GitBucket list endpoint.
 -- GitBucket may return X-Total / X-Total-Count headers; if absent, the connection
 -- builder falls back to the count == per_page heuristic for hasNextPage.
+-- For backward pagination (last without before), prefetches total via a per_page=1 request
+-- when headers are expected; falls back to heuristic when not available.
 local function gb_repo_connection(owner, repo_name, suffix, args, ctx, translate_fn, make_conn)
-  local url =
-    graphql_cursor_url(base() .. "/repos/" .. owner .. "/" .. repo_name .. suffix, args, GQL_PAGES)
+  local url_base = base() .. "/repos/" .. owner .. "/" .. repo_name .. suffix
+  local total
+  if args.last and not args.before then
+    total = graphql_prefetch_total_from_headers(fetch_json, url_base, GQL_PAGES, GB_TOTAL_HEADERS)
+  end
+  local url = graphql_cursor_url(url_base, args, GQL_PAGES, total)
   local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
   if not data then
     graphql_error(ctx, err)
     return nil
   end
-  local total = (headers["X-Total"] and tonumber(headers["X-Total"]))
-    or (headers["X-Total-Count"] and tonumber(headers["X-Total-Count"]))
+  total = gb_total(headers) or total
   local nodes = {}
   for _, item in ipairs(data) do
     nodes[#nodes + 1] = translate_fn(item)
@@ -1532,15 +1546,18 @@ graphql_resolvers["Repository.issues"] = function(parent, args, ctx)
   if not owner then
     return nil
   end
-  local url =
-    graphql_cursor_url(base() .. "/repos/" .. owner .. "/" .. name .. "/issues", args, GQL_PAGES)
+  local url_base = base() .. "/repos/" .. owner .. "/" .. name .. "/issues"
+  local total
+  if args.last and not args.before then
+    total = graphql_prefetch_total_from_headers(fetch_json, url_base, GQL_PAGES, GB_TOTAL_HEADERS)
+  end
+  local url = graphql_cursor_url(url_base, args, GQL_PAGES, total)
   local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
   if not data then
     graphql_error(ctx, err)
     return nil
   end
-  local total = (headers["X-Total"] and tonumber(headers["X-Total"]))
-    or (headers["X-Total-Count"] and tonumber(headers["X-Total-Count"]))
+  total = gb_total(headers) or total
   local nodes = {}
   for _, item in ipairs(data) do
     if not item.pull_request then
@@ -1621,18 +1638,25 @@ graphql_resolvers["Issue.comments"] = function(parent, args, ctx)
   if not owner then
     return nil
   end
-  local url = graphql_cursor_url(
-    base() .. "/repos/" .. owner .. "/" .. repo .. "/issues/" .. number .. "/comments",
-    args,
-    GQL_PAGES
-  )
+  local url_base = base()
+    .. "/repos/"
+    .. owner
+    .. "/"
+    .. repo
+    .. "/issues/"
+    .. number
+    .. "/comments"
+  local total
+  if args.last and not args.before then
+    total = graphql_prefetch_total_from_headers(fetch_json, url_base, GQL_PAGES, GB_TOTAL_HEADERS)
+  end
+  local url = graphql_cursor_url(url_base, args, GQL_PAGES, total)
   local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
   if not data then
     graphql_error(ctx, err)
     return nil
   end
-  local total = (headers["X-Total"] and tonumber(headers["X-Total"]))
-    or (headers["X-Total-Count"] and tonumber(headers["X-Total-Count"]))
+  total = gb_total(headers) or total
   local nodes = {}
   for _, c in ipairs(data) do
     nodes[#nodes + 1] = graphql_translate_comment(c, owner, repo)
@@ -1650,18 +1674,18 @@ graphql_resolvers["PullRequest.commits"] = function(parent, args, ctx)
   if not owner then
     return nil
   end
-  local url = graphql_cursor_url(
-    base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number .. "/commits",
-    args,
-    GQL_PAGES
-  )
+  local url_base = base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number .. "/commits"
+  local total
+  if args.last and not args.before then
+    total = graphql_prefetch_total_from_headers(fetch_json, url_base, GQL_PAGES, GB_TOTAL_HEADERS)
+  end
+  local url = graphql_cursor_url(url_base, args, GQL_PAGES, total)
   local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
   if not data then
     graphql_error(ctx, err)
     return nil
   end
-  local total = (headers["X-Total"] and tonumber(headers["X-Total"]))
-    or (headers["X-Total-Count"] and tonumber(headers["X-Total-Count"]))
+  total = gb_total(headers) or total
   -- PullRequest.commits returns PullRequestCommitConnection, whose nodes are
   -- PullRequestCommit objects wrapping bare Commit objects.
   local nodes = {}

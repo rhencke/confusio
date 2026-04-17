@@ -1955,21 +1955,32 @@ backend_impl = {
 -- Bitbucket uses pagelen / page query parameters (not per_page).
 local GQL_PAGES = { per_page = "pagelen", page = "page" }
 
+-- Local helper: extract total from a Bitbucket paginated response body.
+local function bb_total(data)
+  return data.size and tonumber(data.size) or nil
+end
+
 -- Local helper: build a paginated Relay Connection from a Bitbucket list endpoint.
 -- Bitbucket wraps paginated responses in {"values":[...],"size":N,"pagelen":30,"page":1}.
 -- The total count comes from the response body's "size" field (not HTTP headers).
+-- For backward pagination (last without before), prefetches total via a pagelen=1 request.
 local function bb_repo_connection(owner, repo_name, suffix, args, ctx, translate_fn, make_conn)
-  local url = graphql_cursor_url(
-    base() .. "/repositories/" .. owner .. "/" .. repo_name .. suffix,
-    args,
-    GQL_PAGES
-  )
+  local url_base = base() .. "/repositories/" .. owner .. "/" .. repo_name .. suffix
+  local total
+  if args.last and not args.before then
+    local count_url = graphql_cursor_url(url_base, { first = 1 }, GQL_PAGES)
+    local pdata, _, _ = graphql_fetch_with_headers(fetch_json, count_url)
+    if pdata then
+      total = bb_total(pdata)
+    end
+  end
+  local url = graphql_cursor_url(url_base, args, GQL_PAGES, total)
   local data, _, err = graphql_fetch_with_headers(fetch_json, url)
   if not data then
     graphql_error(ctx, err)
     return nil
   end
-  local total = data.size and tonumber(data.size) or nil
+  total = bb_total(data) or total
   local nodes = {}
   for _, item in ipairs(data.values or {}) do
     nodes[#nodes + 1] = translate_fn(item)
@@ -2237,17 +2248,29 @@ graphql_resolvers["Issue.comments"] = function(parent, args, ctx)
   if not owner then
     return nil
   end
-  local url = graphql_cursor_url(
-    base() .. "/repositories/" .. owner .. "/" .. repo .. "/issues/" .. number .. "/comments",
-    args,
-    GQL_PAGES
-  )
+  local url_base = base()
+    .. "/repositories/"
+    .. owner
+    .. "/"
+    .. repo
+    .. "/issues/"
+    .. number
+    .. "/comments"
+  local total
+  if args.last and not args.before then
+    local count_url = graphql_cursor_url(url_base, { first = 1 }, GQL_PAGES)
+    local pdata, _, _ = graphql_fetch_with_headers(fetch_json, count_url)
+    if pdata then
+      total = bb_total(pdata)
+    end
+  end
+  local url = graphql_cursor_url(url_base, args, GQL_PAGES, total)
   local data, _, err = graphql_fetch_with_headers(fetch_json, url)
   if not data then
     graphql_error(ctx, err)
     return nil
   end
-  local total = data.size and tonumber(data.size) or nil
+  total = bb_total(data) or total
   local nodes = {}
   for _, c in ipairs(data.values or {}) do
     nodes[#nodes + 1] = graphql_translate_comment(translate_bb_issue_comment(c), owner, repo)
@@ -2265,17 +2288,29 @@ graphql_resolvers["PullRequest.commits"] = function(parent, args, ctx)
   if not owner then
     return nil
   end
-  local url = graphql_cursor_url(
-    base() .. "/repositories/" .. owner .. "/" .. repo .. "/pullrequests/" .. number .. "/commits",
-    args,
-    GQL_PAGES
-  )
+  local url_base = base()
+    .. "/repositories/"
+    .. owner
+    .. "/"
+    .. repo
+    .. "/pullrequests/"
+    .. number
+    .. "/commits"
+  local total
+  if args.last and not args.before then
+    local count_url = graphql_cursor_url(url_base, { first = 1 }, GQL_PAGES)
+    local pdata, _, _ = graphql_fetch_with_headers(fetch_json, count_url)
+    if pdata then
+      total = bb_total(pdata)
+    end
+  end
+  local url = graphql_cursor_url(url_base, args, GQL_PAGES, total)
   local data, _, err = graphql_fetch_with_headers(fetch_json, url)
   if not data then
     graphql_error(ctx, err)
     return nil
   end
-  local total = data.size and tonumber(data.size) or nil
+  total = bb_total(data) or total
   local nodes = {}
   for _, c in ipairs(data.values or {}) do
     local translated = translate_bb_commit(c)

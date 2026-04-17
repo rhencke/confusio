@@ -645,8 +645,10 @@ end
 -- Sourcehut pagination uses cursor-based results with a `limit` param;
 -- graphql_cursor_url cannot be used (no page-number param), so we build
 -- the URL manually like bbs_repo_connection does.
+-- Backward pagination (last/before): Sourcehut exposes no total count and no
+-- page-number addressing, so last: N returns the first N items (known limitation).
 local function srht_issue_connection(owner, repo_name, args, ctx)
-  local per_page = args.first or 30
+  local per_page = args.last or args.first or 30
   local url = todo_base()
     .. "/~"
     .. owner

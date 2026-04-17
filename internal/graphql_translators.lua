@@ -12,7 +12,8 @@
 --   graphql_fetch_or_error(fetch_json, path, ctx, field_node[, method[, body]])
 --   graphql_page_to_cursor(page)
 --   graphql_cursor_to_page(cursor)
---   graphql_cursor_url(url_base, args, param_names)
+--   graphql_cursor_url(url_base, args, param_names[, total])
+--   graphql_prefetch_total_from_headers(fetch_json, url_base, param_names, header_names)
 --   graphql_inline_connection(typename, nodes)
 --   graphql_make_connection(typename, nodes, args, total[, ctx])
 --   graphql_issues_connection(nodes, args, total[, ctx])
@@ -204,17 +205,40 @@ end
 
 -- graphql_cursor_url is global: builds a paginated REST URL from GraphQL connection args.
 -- url_base:    base REST URL (may already contain a query string)
--- args:        GraphQL connection arguments table; reads args.first (default 30) and args.after
+-- args:        GraphQL connection arguments table; reads first/after (forward) or last/before (backward)
 -- param_names: table mapping REST parameter names, e.g. { per_page = "limit", page = "page" }.
 --              Keys present in param_names are appended; omitted keys are skipped.
 --              The page parameter is only appended when the resolved page is > 1.
-function graphql_cursor_url(url_base, args, param_names) -- luacheck: globals graphql_cursor_url
-  local per_page = args.first or 30
-  local page = 1
-  if args.after then
-    local p = graphql_cursor_to_page(args.after)
-    if p then
-      page = p + 1
+-- total:       optional total item count (from a prior X-Total header); used to compute the
+--              last-page number for backward pagination with last but no before cursor.
+--
+-- Backward pagination (last/before):
+--   last: N, before: cursor(P)  → page P-1, per_page N  (P-1 < 1 clamps to 1; make_connection handles empty)
+--   last: N  (no before)        → page ceil(total/N) when total provided; page 1 otherwise (fallback)
+function graphql_cursor_url(url_base, args, param_names, total) -- luacheck: globals graphql_cursor_url
+  local per_page, page
+  if args.last or args.before then
+    -- Backward pagination.
+    per_page = args.last or 30
+    if args.before then
+      local before_page = graphql_cursor_to_page(args.before)
+      -- Clamp to 1 when before_page is absent, malformed, or ≤ 1.
+      -- graphql_make_connection detects the degenerate case and returns an empty connection.
+      page = (before_page and before_page >= 2) and (before_page - 1) or 1
+    elseif total and total > 0 then
+      page = math.max(1, math.ceil(total / per_page))
+    else
+      page = 1 -- fallback: no total available; resolver must use two-pass strategy for accuracy
+    end
+  else
+    -- Forward pagination.
+    per_page = args.first or 30
+    page = 1
+    if args.after then
+      local p = graphql_cursor_to_page(args.after)
+      if p then
+        page = p + 1
+      end
     end
   end
   local sep = url_base:find("?", 1, true) and "&" or "?"
@@ -229,6 +253,33 @@ function graphql_cursor_url(url_base, args, param_names) -- luacheck: globals gr
     return url_base
   end
   return url_base .. sep .. table.concat(parts, "&")
+end
+
+-- graphql_prefetch_total_from_headers is global: lightweight prefetch for backward pagination.
+-- When a resolver needs to seek the last page (last: N without before cursor), it must know
+-- the total item count before building the URL.  This function fetches the collection endpoint
+-- with a page size of 1 to get the total from response headers without loading a full page.
+--
+-- Returns the total as a number, or nil when the headers are absent or the total is not found.
+-- Only call when args.last is set and args.before is absent.
+--
+-- fetch_json:   backend's local fetch function
+-- url_base:     collection URL base (without pagination params)
+-- param_names:  pagination param table, e.g. { per_page = "limit", page = "page" }
+-- header_names: ordered list of header names to try, e.g. { "X-Total", "X-Total-Count" }
+function graphql_prefetch_total_from_headers(fetch_json, url_base, param_names, header_names) -- luacheck: globals graphql_prefetch_total_from_headers
+  local count_url = graphql_cursor_url(url_base, { first = 1 }, param_names)
+  local _, headers, _ = graphql_fetch_with_headers(fetch_json, count_url)
+  if not headers then
+    return nil
+  end
+  for _, name in ipairs(header_names) do
+    local v = headers[name] and tonumber(headers[name])
+    if v then
+      return v
+    end
+  end
+  return nil
 end
 
 -- ---------------------------------------------------------------------------
@@ -263,30 +314,94 @@ end
 -- nodes:    array of already-translated GraphQL objects for this page
 -- args:     GraphQL connection arguments (first, after, last, before)
 -- total:    total item count from the upstream header (X-Total / X-Total-Count), or nil
--- ctx:      optional GraphQL field context; when present, backward-pagination errors are
---           reported via graphql_error; when nil the error is silently dropped.
+-- _ctx:     reserved for future use; kept for call-site API compatibility
 --
--- Backward pagination (last/before) is not supported in Phase 1: returns an empty connection
--- with an error added to ctx when provided.
-function graphql_make_connection(typename, nodes, args, total, ctx) -- luacheck: globals graphql_make_connection
+-- Backward pagination (last/before):
+--   last: N, before: cursor(P)  → page P-1; hasNextPage = true (cursor page P exists)
+--   last: N  (no before)        → last page when total known; page 1 otherwise (resolver fallback)
+--   before: cursor(1) or malformed before → empty connection (nothing exists before page 1)
+function graphql_make_connection(typename, nodes, args, total, _ctx) -- luacheck: globals graphql_make_connection
   if args.last or args.before then
-    if ctx then
-      graphql_error(ctx, "backward pagination (last/before) is not supported in this version")
+    local per_page = args.last or 30
+    if args.before then
+      -- Backward pagination anchored to a before cursor.
+      local before_page = graphql_cursor_to_page(args.before)
+      if not before_page or before_page <= 1 then
+        -- Nothing exists before the first page (or cursor is malformed).
+        -- hasNextPage: true when cursor decoded to page 1 (that page does exist); false for garbage.
+        return {
+          __typename = typename .. "Connection",
+          totalCount = total or 0,
+          pageInfo = {
+            __typename = "PageInfo",
+            hasNextPage = (before_page ~= nil and before_page >= 1),
+            hasPreviousPage = false,
+            startCursor = nil,
+            endCursor = nil,
+          },
+          nodes = {},
+          edges = {},
+        }
+      end
+      -- before_page >= 2: the target page is one step before the cursor.
+      local page = before_page - 1
+      local count = #nodes
+      local start_cursor = count > 0 and graphql_page_to_cursor(page) or nil
+      local edges = {}
+      for i, node in ipairs(nodes) do
+        edges[i] =
+          { __typename = typename .. "Edge", cursor = graphql_page_to_cursor(page), node = node }
+      end
+      return {
+        __typename = typename .. "Connection",
+        totalCount = total or count,
+        pageInfo = {
+          __typename = "PageInfo",
+          hasNextPage = true, -- items exist at before_page and beyond (cursor proves it)
+          hasPreviousPage = page > 1,
+          startCursor = start_cursor,
+          endCursor = start_cursor,
+        },
+        nodes = nodes,
+        edges = edges,
+      }
+    else
+      -- Backward pagination from the end: last N items overall.
+      local page
+      if total and total > 0 then
+        page = math.max(1, math.ceil(total / per_page))
+      else
+        page = 1 -- fallback: no total; resolver should use two-pass strategy for accuracy
+      end
+      local count = #nodes
+      local has_next
+      if total ~= nil then
+        has_next = (page * per_page) < total -- always false for the computed last page
+      else
+        has_next = count == per_page -- heuristic when total is unknown
+      end
+      local start_cursor = count > 0 and graphql_page_to_cursor(page) or nil
+      local edges = {}
+      for i, node in ipairs(nodes) do
+        edges[i] =
+          { __typename = typename .. "Edge", cursor = graphql_page_to_cursor(page), node = node }
+      end
+      return {
+        __typename = typename .. "Connection",
+        totalCount = total or count,
+        pageInfo = {
+          __typename = "PageInfo",
+          hasNextPage = has_next,
+          hasPreviousPage = page > 1,
+          startCursor = start_cursor,
+          endCursor = start_cursor,
+        },
+        nodes = nodes,
+        edges = edges,
+      }
     end
-    return {
-      __typename = typename .. "Connection",
-      totalCount = 0,
-      pageInfo = {
-        __typename = "PageInfo",
-        hasNextPage = false,
-        hasPreviousPage = false,
-        startCursor = nil,
-        endCursor = nil,
-      },
-      nodes = {},
-      edges = {},
-    }
   end
+  -- Forward pagination.
   local per_page = args.first or 30
   local page = 1
   if args.after then

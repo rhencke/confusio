@@ -196,22 +196,202 @@ is_nil(mc_empty.pageInfo.endCursor, "make_connection empty endCursor nil")
 eq(#mc_empty.nodes, 0, "make_connection empty nodes")
 eq(#mc_empty.edges, 0, "make_connection empty edges")
 
--- Backward pagination: returns empty connection, no ctx error needed.
-local mc_back = graphql_make_connection("Issue", items, { last = 3 }, 10, nil)
-eq(mc_back.__typename, "IssueConnection", "backward pagination returns IssueConnection")
-eq(mc_back.totalCount, 0, "backward pagination totalCount=0")
-eq(#mc_back.nodes, 0, "backward pagination nodes empty")
+-- ---------------------------------------------------------------------------
+-- Backward pagination: graphql_cursor_url
+-- ---------------------------------------------------------------------------
 
--- Backward pagination with ctx: graphql_error is called.
--- We stub graphql_error temporarily to capture the call.
-local error_called = false
-local real_graphql_error = graphql_error -- luacheck: globals graphql_error
-graphql_error = function(_, _) -- luacheck: globals graphql_error
-  error_called = true
+-- last: N with known total → URL for the computed last page.
+local before_total_url = graphql_cursor_url(
+  "https://example.com/api/issues",
+  { last = 10 },
+  { per_page = "limit", page = "page" },
+  25 -- total; last_page = ceil(25/10) = 3
+)
+eq(
+  before_total_url,
+  "https://example.com/api/issues?limit=10&page=3",
+  "cursor_url backward: last+total → last page URL"
+)
+
+-- last: N with total that is an exact multiple → last_page = total/N (no remainder).
+local before_exact_url = graphql_cursor_url(
+  "https://example.com/api/issues",
+  { last = 10 },
+  { per_page = "limit", page = "page" },
+  20 -- total; last_page = ceil(20/10) = 2
+)
+eq(
+  before_exact_url,
+  "https://example.com/api/issues?limit=10&page=2",
+  "cursor_url backward: last+exact total → last page URL"
+)
+
+-- last: N without total → fallback to page 1 (no page param).
+local before_nototal_url = graphql_cursor_url(
+  "https://example.com/api/issues",
+  { last = 10 },
+  { per_page = "limit", page = "page" }
+)
+eq(
+  before_nototal_url,
+  "https://example.com/api/issues?limit=10",
+  "cursor_url backward: last without total → page 1"
+)
+
+-- before: cursor(P) where P > 1 → page P-1.
+local before_c3_url = graphql_cursor_url(
+  "https://example.com/api/issues",
+  { last = 10, before = graphql_page_to_cursor(3) },
+  { per_page = "limit", page = "page" }
+)
+eq(
+  before_c3_url,
+  "https://example.com/api/issues?limit=10&page=2",
+  "cursor_url backward: before cursor(3) → page 2"
+)
+
+-- before: cursor(2) → page 1 (no page param because page == 1).
+local before_c2_url = graphql_cursor_url(
+  "https://example.com/api/issues",
+  { last = 10, before = graphql_page_to_cursor(2) },
+  { per_page = "limit", page = "page" }
+)
+eq(
+  before_c2_url,
+  "https://example.com/api/issues?limit=10",
+  "cursor_url backward: before cursor(2) → page 1"
+)
+
+-- before: cursor(1) → clamps to page 1 (make_connection handles the empty case).
+local before_c1_url = graphql_cursor_url(
+  "https://example.com/api/issues",
+  { last = 5, before = graphql_page_to_cursor(1) },
+  { per_page = "limit", page = "page" }
+)
+eq(
+  before_c1_url,
+  "https://example.com/api/issues?limit=5",
+  "cursor_url backward: before cursor(1) → clamped to page 1"
+)
+
+-- before: malformed cursor → clamps to page 1.
+local before_bad_url = graphql_cursor_url(
+  "https://example.com/api/issues",
+  { before = "notacursor" },
+  { per_page = "limit", page = "page" }
+)
+eq(
+  before_bad_url,
+  "https://example.com/api/issues?limit=30",
+  "cursor_url backward: malformed before → page 1, default per_page"
+)
+
+-- ---------------------------------------------------------------------------
+-- Backward pagination: graphql_make_connection
+-- ---------------------------------------------------------------------------
+
+local items10 = {}
+for i = 1, 10 do
+  items10[i] = { id = i }
 end
-graphql_make_connection("Issue", items, { before = "somecursor" }, 10, {})
-graphql_error = real_graphql_error -- luacheck: globals graphql_error
-ok(error_called, "make_connection calls graphql_error for before arg with ctx")
+
+-- last: N with known total → last page, correct totalCount and flags.
+-- ceil(25/10) = 3; page 3 * 10 = 30 >= 25 → hasNextPage false.
+local mc_last_known = graphql_make_connection("Issue", items10, { last = 10 }, 25, nil)
+eq(mc_last_known.__typename, "IssueConnection", "backward last+total: typename")
+eq(mc_last_known.totalCount, 25, "backward last+total: totalCount from total")
+eq(mc_last_known.pageInfo.hasNextPage, false, "backward last+total: hasNextPage false (last page)")
+eq(
+  mc_last_known.pageInfo.hasPreviousPage,
+  true,
+  "backward last+total: hasPreviousPage true (page 3 > 1)"
+)
+not_nil(mc_last_known.pageInfo.startCursor, "backward last+total: startCursor non-nil")
+not_nil(mc_last_known.pageInfo.endCursor, "backward last+total: endCursor non-nil")
+eq(#mc_last_known.nodes, 10, "backward last+total: nodes length")
+eq(#mc_last_known.edges, 10, "backward last+total: edges length")
+eq(mc_last_known.edges[1].__typename, "IssueEdge", "backward last+total: edge typename")
+
+-- last: N with total = N (single page) → page 1, hasPreviousPage false.
+local mc_last_single = graphql_make_connection("Issue", items10, { last = 10 }, 10, nil)
+eq(mc_last_single.pageInfo.hasNextPage, false, "backward single-page: hasNextPage false")
+eq(
+  mc_last_single.pageInfo.hasPreviousPage,
+  false,
+  "backward single-page: hasPreviousPage false (page 1)"
+)
+
+-- last: N without total → fallback to page 1; count < per_page → hasNextPage false.
+local mc_last_nototal = graphql_make_connection("Issue", items, { last = 5 }, nil, nil)
+-- items has 3 entries, per_page = 5; 3 < 5 → hasNextPage false (heuristic).
+eq(
+  mc_last_nototal.pageInfo.hasNextPage,
+  false,
+  "backward no-total: hasNextPage false (count<per_page)"
+)
+eq(
+  mc_last_nototal.pageInfo.hasPreviousPage,
+  false,
+  "backward no-total: hasPreviousPage false (page 1 fallback)"
+)
+eq(mc_last_nototal.totalCount, 3, "backward no-total: totalCount from count")
+
+-- last: N without total and count == per_page → hasNextPage true (heuristic).
+local mc_last_full = graphql_make_connection("Issue", items, { last = 3 }, nil, nil)
+eq(
+  mc_last_full.pageInfo.hasNextPage,
+  true,
+  "backward no-total count==per_page: hasNextPage true (heuristic)"
+)
+
+-- before: cursor(P) where P > 1 → page P-1.
+-- before: cursor(3) → page 2; hasPreviousPage = true (page 2 > 1).
+local mc_before3 =
+  graphql_make_connection("Issue", items, { last = 3, before = graphql_page_to_cursor(3) }, 10, nil)
+eq(mc_before3.__typename, "IssueConnection", "backward before(3): typename")
+eq(mc_before3.totalCount, 10, "backward before(3): totalCount from total")
+eq(
+  mc_before3.pageInfo.hasNextPage,
+  true,
+  "backward before(3): hasNextPage true (cursor page exists)"
+)
+eq(
+  mc_before3.pageInfo.hasPreviousPage,
+  true,
+  "backward before(3): hasPreviousPage true (page 2 > 1)"
+)
+eq(#mc_before3.nodes, 3, "backward before(3): nodes length")
+not_nil(mc_before3.pageInfo.startCursor, "backward before(3): startCursor non-nil")
+
+-- before: cursor(2) → page 1; hasPreviousPage false.
+local mc_before2 =
+  graphql_make_connection("Issue", items, { last = 3, before = graphql_page_to_cursor(2) }, 10, nil)
+eq(mc_before2.pageInfo.hasNextPage, true, "backward before(2): hasNextPage true")
+eq(mc_before2.pageInfo.hasPreviousPage, false, "backward before(2): hasPreviousPage false (page 1)")
+
+-- before: cursor(1) → empty (nothing exists before page 1).
+local mc_before1 =
+  graphql_make_connection("Issue", items, { last = 3, before = graphql_page_to_cursor(1) }, 10, nil)
+eq(mc_before1.totalCount, 10, "backward before(1): totalCount preserved")
+eq(#mc_before1.nodes, 0, "backward before(1): nodes empty")
+eq(#mc_before1.edges, 0, "backward before(1): edges empty")
+eq(mc_before1.pageInfo.hasNextPage, true, "backward before(1): hasNextPage true (page 1 exists)")
+eq(mc_before1.pageInfo.hasPreviousPage, false, "backward before(1): hasPreviousPage false")
+is_nil(mc_before1.pageInfo.startCursor, "backward before(1): startCursor nil")
+
+-- before: malformed cursor → empty (can't determine position).
+local mc_bad_before = graphql_make_connection("Issue", items, { before = "notacursor" }, 10, nil)
+eq(#mc_bad_before.nodes, 0, "backward malformed before: nodes empty")
+eq(
+  mc_bad_before.pageInfo.hasNextPage,
+  false,
+  "backward malformed before: hasNextPage false (position unknown)"
+)
+eq(
+  mc_bad_before.pageInfo.hasPreviousPage,
+  false,
+  "backward malformed before: hasPreviousPage false"
+)
 
 -- ---------------------------------------------------------------------------
 -- Typed convenience wrappers

@@ -3360,23 +3360,34 @@ end
 -- ---------------------------------------------------------------------------
 -- Repository connection sub-resolvers
 -- ---------------------------------------------------------------------------
+-- Local pagination parameters for graphql_cursor_url (Gitea uses limit / page).
+local GITEA_PAGES = { per_page = "limit", page = "page" }
+-- Headers Gitea uses for the total item count.
+local GITEA_TOTAL_HEADERS = { "X-Total", "X-Total-Count" }
+
+-- Local helper: extract total from Gitea response headers.
+local function gitea_total(headers)
+  return (headers["X-Total"] and tonumber(headers["X-Total"]))
+    or (headers["X-Total-Count"] and tonumber(headers["X-Total-Count"]))
+end
+
 -- Local helper: build a paginated Relay Connection from a Gitea list endpoint.
--- Fetches page from graphql_cursor_url(base_suffix, args, {per_page="limit", page="page"}),
--- reads X-Total / X-Total-Count for totalCount, translates items with translate_fn(item),
--- and delegates to make_conn(nodes, args, total, ctx).
+-- For backward pagination (last without before), prefetches total via a limit=1 request
+-- so graphql_cursor_url can seek the correct last page on the subsequent full fetch.
 local function gitea_repo_connection(owner, repo, suffix, args, ctx, translate_fn, make_conn)
-  local url = graphql_cursor_url(
-    base() .. "/repos/" .. owner .. "/" .. repo .. suffix,
-    args,
-    { per_page = "limit", page = "page" }
-  )
+  local url_base = base() .. "/repos/" .. owner .. "/" .. repo .. suffix
+  local total
+  if args.last and not args.before then
+    total =
+      graphql_prefetch_total_from_headers(fetch_json, url_base, GITEA_PAGES, GITEA_TOTAL_HEADERS)
+  end
+  local url = graphql_cursor_url(url_base, args, GITEA_PAGES, total)
   local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
   if not data then
     graphql_error(ctx, err)
     return nil
   end
-  local total = (headers["X-Total"] and tonumber(headers["X-Total"]))
-    or (headers["X-Total-Count"] and tonumber(headers["X-Total-Count"]))
+  total = gitea_total(headers) or total
   local nodes = {}
   for _, item in ipairs(data) do
     nodes[#nodes + 1] = translate_fn(item)
@@ -3473,18 +3484,26 @@ graphql_resolvers["Issue.comments"] = function(parent, args, ctx)
   if not owner then
     return nil
   end
-  local url = graphql_cursor_url(
-    base() .. "/repos/" .. owner .. "/" .. repo .. "/issues/" .. number .. "/comments",
-    args,
-    { per_page = "limit", page = "page" }
-  )
+  local url_base = base()
+    .. "/repos/"
+    .. owner
+    .. "/"
+    .. repo
+    .. "/issues/"
+    .. number
+    .. "/comments"
+  local total
+  if args.last and not args.before then
+    total =
+      graphql_prefetch_total_from_headers(fetch_json, url_base, GITEA_PAGES, GITEA_TOTAL_HEADERS)
+  end
+  local url = graphql_cursor_url(url_base, args, GITEA_PAGES, total)
   local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
   if not data then
     graphql_error(ctx, err)
     return nil
   end
-  local total = (headers["X-Total"] and tonumber(headers["X-Total"]))
-    or (headers["X-Total-Count"] and tonumber(headers["X-Total-Count"]))
+  total = gitea_total(headers) or total
   local nodes = {}
   for _, c in ipairs(data) do
     nodes[#nodes + 1] = graphql_translate_comment(translate_gitea_issue_comment(c), owner, repo)
@@ -3504,18 +3523,19 @@ graphql_resolvers["PullRequest.commits"] = function(parent, args, ctx)
   if not owner then
     return nil
   end
-  local url = graphql_cursor_url(
-    base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number .. "/commits",
-    args,
-    { per_page = "limit", page = "page" }
-  )
+  local url_base = base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number .. "/commits"
+  local total
+  if args.last and not args.before then
+    total =
+      graphql_prefetch_total_from_headers(fetch_json, url_base, GITEA_PAGES, GITEA_TOTAL_HEADERS)
+  end
+  local url = graphql_cursor_url(url_base, args, GITEA_PAGES, total)
   local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
   if not data then
     graphql_error(ctx, err)
     return nil
   end
-  local total = (headers["X-Total"] and tonumber(headers["X-Total"]))
-    or (headers["X-Total-Count"] and tonumber(headers["X-Total-Count"]))
+  total = gitea_total(headers) or total
   -- PullRequest.commits returns PullRequestCommitConnection, whose nodes are
   -- PullRequestCommit objects (not bare Commit objects).  Each PullRequestCommit
   -- wraps the Commit so clients can query commits { nodes { commit { oid } } }.
@@ -3542,18 +3562,19 @@ graphql_resolvers["PullRequest.reviews"] = function(parent, args, ctx)
   if not owner then
     return nil
   end
-  local url = graphql_cursor_url(
-    base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number .. "/reviews",
-    args,
-    { per_page = "limit", page = "page" }
-  )
+  local url_base = base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number .. "/reviews"
+  local total
+  if args.last and not args.before then
+    total =
+      graphql_prefetch_total_from_headers(fetch_json, url_base, GITEA_PAGES, GITEA_TOTAL_HEADERS)
+  end
+  local url = graphql_cursor_url(url_base, args, GITEA_PAGES, total)
   local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
   if not data then
     graphql_error(ctx, err)
     return nil
   end
-  local total = (headers["X-Total"] and tonumber(headers["X-Total"]))
-    or (headers["X-Total-Count"] and tonumber(headers["X-Total-Count"]))
+  total = gitea_total(headers) or total
   local nodes = {}
   for _, r in ipairs(data) do
     nodes[#nodes + 1] = graphql_translate_review(translate_gitea_review(r), owner, repo)
