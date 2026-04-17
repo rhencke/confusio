@@ -40,48 +40,57 @@ clients may request either.
 
 ## Cursor encoding
 
-Confusio uses **page-number cursors**: a cursor encodes a 1-based page index.
+Confusio uses **item-level cursors**: a cursor encodes a 1-based page index and a 1-based
+item index within that page.
 
 ```
-cursor = EncodeBase64("page:" .. tostring(page_number))
+cursor = EncodeBase64("page:" .. tostring(page_number) .. ":" .. tostring(item_index))
 ```
 
-Examples:
+Examples (page 1, items 1–3):
 
-| Page | Cursor (base64 of `page:N`) |
-|------|-----------------------------|
-| 1 | `"cGFnZTox"` |
-| 2 | `"cGFnZToy"` |
-| 3 | `"cGFnZToz"` |
+| Page | Item | Cursor (base64 of `page:N:M`) |
+|------|------|-------------------------------|
+| 1 | 1 | `"cGFnZToxOjE="` |
+| 1 | 2 | `"cGFnZToxOjI="` |
+| 1 | 3 | `"cGFnZToxOjM="` |
+| 2 | 1 | `"cGFnZTI6MQ=="` |
 
-Decoding:
+Encoding and decoding:
 
 ```lua
 -- internal/graphql_translators.lua
 
-function graphql_page_to_cursor(page)
+-- index is optional; omitting it produces a legacy "page:N" cursor (still valid).
+function graphql_page_to_cursor(page, index)
+  if index then
+    return EncodeBase64("page:" .. tostring(page) .. ":" .. tostring(index))
+  end
   return EncodeBase64("page:" .. tostring(page))
 end
 
+-- Accepts both "page:N" (legacy) and "page:N:M" (item-level).
+-- Returns the 1-based page number; the item index is ignored for REST URL building.
 function graphql_cursor_to_page(cursor)
   if not cursor then return nil end
   local decoded = DecodeBase64(cursor)
   if not decoded then return nil end
-  return tonumber(decoded:match("^page:(%d+)$"))
+  local n = decoded:match("^page:(%d+)")
+  return n and tonumber(n)
 end
 ```
 
-`graphql_cursor_to_page` returns `nil` for any cursor that does not match the `page:N`
-format, including GitHub's real opaque cursors.  Resolvers treat a nil result the same as
-a missing cursor (start from page 1).
+`graphql_cursor_to_page` returns `nil` for any cursor that does not start with the
+`page:` prefix, including GitHub's real opaque cursors.  Resolvers treat a nil result the
+same as a missing cursor (start from page 1).
 
-### Why page-number cursors instead of offset cursors
+### Why page-number + item-index, not pure offsets
 
-Offset cursors (`offset:N`) would allow item-level precision but REST backends use page
-numbers.  Converting an offset to a page number requires knowing `per_page`, and if the
-client changes `first` between requests, the offset cursor becomes misaligned.
-Page-number cursors are stable: a cursor obtained with `first: 10` is still valid when
-reused with `first: 20` (it just shifts which page is fetched).
+Offset cursors (`offset:N`) are misaligned when the client changes `first` between
+requests.  By encoding only the page number for REST URL construction, item-level cursors
+remain stable across page-size changes: a cursor obtained with `first: 10` is still valid
+when reused with `first: 20` (it shifts which page is fetched, but the cursor itself does
+not become invalid).
 
 ## Forward pagination (`first`/`after`)
 
@@ -225,8 +234,8 @@ return {
   pageInfo = {
     hasNextPage     = true,  -- cursor page P proves items exist there
     hasPreviousPage = page > 1,
-    startCursor     = graphql_page_to_cursor(page),
-    endCursor       = graphql_page_to_cursor(page),
+    startCursor     = count > 0 and edges[1].cursor or nil,
+    endCursor       = count > 0 and edges[count].cursor or nil,
   },
   totalCount = total or count,
   nodes = nodes,
@@ -402,27 +411,25 @@ function graphql_make_connection(typename, nodes, args, total)
     has_next = (count == per_page)
   end
 
-  local start_cursor = count > 0 and graphql_page_to_cursor(page) or nil
-  local end_cursor   = start_cursor  -- same page; item-level cursors are a Phase 2 item
-
+  -- Each edge carries a unique item-level cursor: graphql_page_to_cursor(page, i).
   local edges = {}
   for i, node in ipairs(nodes) do
     edges[i] = {
       __typename = typename .. "Edge",
-      cursor     = graphql_page_to_cursor(page),
+      cursor     = graphql_page_to_cursor(page, i),
       node       = node,
     }
   end
 
   return {
-    __typename  = typename .. "Connection",
-    total_count = total or count,
-    page_info   = {
-      __typename         = "PageInfo",
-      has_next_page      = has_next,
-      has_previous_page  = page > 1,
-      start_cursor       = start_cursor,
-      end_cursor         = end_cursor,
+    __typename = typename .. "Connection",
+    totalCount = total or count,
+    pageInfo   = {
+      __typename      = "PageInfo",
+      hasNextPage     = has_next,
+      hasPreviousPage = page > 1,
+      startCursor     = count > 0 and edges[1].cursor or nil,
+      endCursor       = count > 0 and edges[count].cursor or nil,
     },
     nodes = nodes,
     edges = edges,
@@ -430,10 +437,9 @@ function graphql_make_connection(typename, nodes, args, total)
 end
 ```
 
-The `edges[i].cursor` is the same for all edges on the same page because page-number
-cursors encode the page, not the item offset.  Clients that iterate over `edges.cursor`
-will see repeated values on the same page; clients that only use `pageInfo.endCursor` for
-the next request are unaffected.  Item-level cursor precision is a Phase 2 item.
+Each `edges[i].cursor` uniquely identifies that item by page and position within the page.
+`startCursor` and `endCursor` are the first and last edge cursors respectively; they are
+distinct for multi-item pages and equal only when the page contains a single item.
 
 ## Convenience wrappers
 
@@ -562,16 +568,30 @@ field names (camelCase) as their keys**, not REST field names (snake_case).
 
 ### Unit tests — `test/graphql-pagination.lua`
 
+Cursor encoding (item-level):
+
+- `graphql_page_to_cursor(1, 1)` → non-nil; `graphql_cursor_to_page` returns `1`.
+- `graphql_page_to_cursor(3, 5)` → decodes to page `3`.
+- `graphql_page_to_cursor(1, 1) ~= graphql_page_to_cursor(1, 2)` (same page, different items).
+- `graphql_page_to_cursor(1, 1) ~= graphql_page_to_cursor(2, 1)` (different pages, same position).
+- `graphql_page_to_cursor(1) ~= graphql_page_to_cursor(1, 1)` (page-only vs item-level).
+- Legacy `page:N` cursors still decode correctly alongside item-level cursors.
+
 Forward pagination:
 
 - `graphql_page_to_cursor(1)` → deterministic base64 string.
-- `graphql_cursor_to_page(graphql_page_to_cursor(3))` → `3` (round-trip).
+- `graphql_cursor_to_page(graphql_page_to_cursor(3))` → `3` (round-trip, page-only form).
 - `graphql_cursor_to_page("invalid")` → `nil`.
 - `graphql_cursor_url(base, {first=10}, params)` → URL with `limit=10`, no `page` param.
 - `graphql_cursor_url(base, {first=10, after=cursor_for_page_2}, params)` → URL with
   `limit=10&page=3`.
+- `graphql_cursor_url(base, {first=10, after=graphql_page_to_cursor(2, 5)}, params)` →
+  URL with `limit=10&page=3` (item index ignored for URL building).
 - `graphql_make_connection("Issue", nodes, {first=2}, nil)` where `#nodes==2`:
-  `hasNextPage = true`, `hasPreviousPage = false`, `totalCount = 2`.
+  `hasNextPage = true`, `hasPreviousPage = false`, `totalCount = 2`,
+  `startCursor ~= endCursor` (two distinct item-level cursors).
+- `graphql_make_connection("Issue", [single_node], {first=10}, 1)`:
+  `startCursor == endCursor` (only one edge).
 - `graphql_make_connection("Issue", nodes, {first=10, after=cursor_for_page_1}, 25)`:
   page=2, `hasNextPage = true`, `hasPreviousPage = true`.
 
@@ -583,14 +603,16 @@ Backward pagination:
   fallback.
 - `graphql_cursor_url(base, {last=10, before=cursor(3)}, params)` → URL with
   `limit=10&page=2`.
+- `graphql_cursor_url(base, {last=10, before=graphql_page_to_cursor(3, 5)}, params)` →
+  URL with `limit=10&page=2` (item index ignored; before page 3 → fetch page 2).
 - `graphql_cursor_url(base, {last=5, before=cursor(1)}, params)` → URL with `limit=5`
   (clamped to page 1; `make_connection` returns empty).
 - `graphql_make_connection("Issue", nodes, {last=10}, 25)`: page=3, `hasNextPage=false`,
-  `hasPreviousPage=true`.
+  `hasPreviousPage=true`, `startCursor ~= endCursor` (10 distinct item-level cursors).
 - `graphql_make_connection("Issue", nodes, {last=10}, 10)`: page=1, `hasNextPage=false`,
   `hasPreviousPage=false`.
 - `graphql_make_connection("Issue", nodes, {last=3, before=cursor(3)}, 10)`: page=2,
-  `hasNextPage=true`, `hasPreviousPage=true`.
+  `hasNextPage=true`, `hasPreviousPage=true`, `startCursor ~= endCursor` (3 items).
 - `graphql_make_connection("Issue", nodes, {last=3, before=cursor(1)}, 10)`: empty nodes,
   `hasNextPage=true` (cursor(1) is valid), `hasPreviousPage=false`.
 - `graphql_make_connection("Issue", nodes, {before="notacursor"}, 10)`: empty nodes,

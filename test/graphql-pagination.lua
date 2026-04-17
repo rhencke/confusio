@@ -50,6 +50,38 @@ local node_id = EncodeBase64("Repository:owner/repo")
 is_nil(graphql_cursor_to_page(node_id), "cursor_to_page(node_id) is nil")
 
 -- ---------------------------------------------------------------------------
+-- graphql_page_to_cursor with item index (item-level cursors)
+-- ---------------------------------------------------------------------------
+
+-- Item-level cursor is non-nil and decodes to the correct page.
+local ci1_1 = graphql_page_to_cursor(1, 1)
+not_nil(ci1_1, "cursor(1,1) is non-nil")
+eq(graphql_cursor_to_page(ci1_1), 1, "cursor(1,1) decodes to page 1")
+
+local ci3_5 = graphql_page_to_cursor(3, 5)
+eq(graphql_cursor_to_page(ci3_5), 3, "cursor(3,5) decodes to page 3")
+
+-- Same page, different item indices → different cursors.
+local ci1_2 = graphql_page_to_cursor(1, 2)
+ok(ci1_1 ~= ci1_2, "cursor(1,1) ~= cursor(1,2)")
+
+-- Different pages, same item index → different cursors.
+local ci2_1 = graphql_page_to_cursor(2, 1)
+ok(ci1_1 ~= ci2_1, "cursor(1,1) ~= cursor(2,1)")
+
+-- Item-level cursor on page N differs from page-only cursor for page N.
+-- (graphql_page_to_cursor(1) encodes "page:1"; graphql_page_to_cursor(1,1) encodes "page:1:1")
+ok(graphql_page_to_cursor(1) ~= graphql_page_to_cursor(1, 1), "page-only ~= item-level cursor")
+
+-- Page-only cursors (old format) still decode correctly alongside item-level.
+eq(graphql_cursor_to_page(graphql_page_to_cursor(7)), 7, "page-only cursor(7) still decodes")
+eq(
+  graphql_cursor_to_page(graphql_page_to_cursor(7, 3)),
+  7,
+  "item-level cursor(7,3) decodes to page 7"
+)
+
+-- ---------------------------------------------------------------------------
 -- graphql_cursor_url
 -- ---------------------------------------------------------------------------
 
@@ -125,6 +157,31 @@ eq(
   "cursor_url: malformed after → page 1, no page param"
 )
 
+-- Item-level after cursor: page number is extracted; :M suffix is ignored for URL building.
+-- after: cursor(page:2:5) means "items after item 5 on page 2" → fetch page 3 (same as page-only).
+local url_item_after = graphql_cursor_url(
+  "https://example.com/api/repos",
+  { first = 10, after = graphql_page_to_cursor(2, 5) },
+  { per_page = "limit", page = "page" }
+)
+eq(
+  url_item_after,
+  "https://example.com/api/repos?limit=10&page=3",
+  "cursor_url: item-level after cursor(2,5) → page 3"
+)
+
+-- Item-level before cursor: page extracted correctly; before(3,5) → page 2.
+local url_item_before = graphql_cursor_url(
+  "https://example.com/api/issues",
+  { last = 10, before = graphql_page_to_cursor(3, 5) },
+  { per_page = "limit", page = "page" }
+)
+eq(
+  url_item_before,
+  "https://example.com/api/issues?limit=10&page=2",
+  "cursor_url: item-level before cursor(3,5) → page 2"
+)
+
 -- ---------------------------------------------------------------------------
 -- graphql_inline_connection
 -- ---------------------------------------------------------------------------
@@ -163,11 +220,40 @@ eq(mc1.pageInfo.hasNextPage, true, "make_connection hasNextPage true (3*1<10)")
 eq(mc1.pageInfo.hasPreviousPage, false, "make_connection hasPreviousPage false on page 1")
 not_nil(mc1.pageInfo.startCursor, "make_connection startCursor non-nil")
 not_nil(mc1.pageInfo.endCursor, "make_connection endCursor non-nil")
-eq(mc1.pageInfo.startCursor, mc1.pageInfo.endCursor, "make_connection start=end cursor")
+-- Item-level cursors: start and end cursors differ for multi-item pages.
+ok(
+  mc1.pageInfo.startCursor ~= mc1.pageInfo.endCursor,
+  "make_connection start≠end cursor (item-level)"
+)
+-- Both cursors decode to the same page number.
+eq(
+  graphql_cursor_to_page(mc1.pageInfo.startCursor),
+  graphql_cursor_to_page(mc1.pageInfo.endCursor),
+  "make_connection start/end on same page"
+)
 eq(#mc1.nodes, 3, "make_connection nodes length")
 eq(#mc1.edges, 3, "make_connection edges length")
 eq(mc1.edges[1].__typename, "IssueEdge", "make_connection edge __typename")
 not_nil(mc1.edges[1].cursor, "make_connection edge cursor non-nil")
+-- Each edge has a distinct item-level cursor.
+ok(mc1.edges[1].cursor ~= mc1.edges[2].cursor, "make_connection edge cursors are distinct")
+ok(mc1.edges[1].cursor == mc1.pageInfo.startCursor, "make_connection first edge is startCursor")
+ok(mc1.edges[3].cursor == mc1.pageInfo.endCursor, "make_connection last edge is endCursor")
+
+-- Single-item page: startCursor and endCursor are identical (only one edge).
+local single_item = { { id = 42 } }
+local mc_single = graphql_make_connection("Issue", single_item, { first = 10 }, 1, nil)
+not_nil(mc_single.pageInfo.startCursor, "make_connection single-item startCursor non-nil")
+not_nil(mc_single.pageInfo.endCursor, "make_connection single-item endCursor non-nil")
+eq(
+  mc_single.pageInfo.startCursor,
+  mc_single.pageInfo.endCursor,
+  "make_connection single-item start=end cursor"
+)
+ok(
+  mc_single.edges[1].cursor == mc_single.pageInfo.startCursor,
+  "make_connection single-item edge is startCursor"
+)
 
 -- Page 1, no total, has_next inferred from count == per_page.
 local mc_infer = graphql_make_connection("Repository", items, { first = 3 }, nil, nil)
@@ -308,6 +394,19 @@ eq(
 )
 not_nil(mc_last_known.pageInfo.startCursor, "backward last+total: startCursor non-nil")
 not_nil(mc_last_known.pageInfo.endCursor, "backward last+total: endCursor non-nil")
+-- Item-level: 10-item page produces distinct start/end cursors.
+ok(
+  mc_last_known.pageInfo.startCursor ~= mc_last_known.pageInfo.endCursor,
+  "backward last+total: startCursor≠endCursor (item-level, 10 items)"
+)
+ok(
+  mc_last_known.edges[1].cursor == mc_last_known.pageInfo.startCursor,
+  "backward last+total: first edge is startCursor"
+)
+ok(
+  mc_last_known.edges[10].cursor == mc_last_known.pageInfo.endCursor,
+  "backward last+total: last edge is endCursor"
+)
 eq(#mc_last_known.nodes, 10, "backward last+total: nodes length")
 eq(#mc_last_known.edges, 10, "backward last+total: edges length")
 eq(mc_last_known.edges[1].__typename, "IssueEdge", "backward last+total: edge typename")
@@ -362,6 +461,19 @@ eq(
 )
 eq(#mc_before3.nodes, 3, "backward before(3): nodes length")
 not_nil(mc_before3.pageInfo.startCursor, "backward before(3): startCursor non-nil")
+-- Item-level: 3-item page produces distinct cursors.
+ok(
+  mc_before3.pageInfo.startCursor ~= mc_before3.pageInfo.endCursor,
+  "backward before(3): startCursor≠endCursor (3 items)"
+)
+ok(
+  mc_before3.edges[1].cursor == mc_before3.pageInfo.startCursor,
+  "backward before(3): first edge is startCursor"
+)
+ok(
+  mc_before3.edges[3].cursor == mc_before3.pageInfo.endCursor,
+  "backward before(3): last edge is endCursor"
+)
 
 -- before: cursor(2) → page 1; hasPreviousPage false.
 local mc_before2 =

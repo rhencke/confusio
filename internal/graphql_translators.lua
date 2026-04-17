@@ -10,7 +10,7 @@
 --   graphql_fetch(fetch_json, path[, method[, body]])
 --   graphql_fetch_with_headers(fetch_json, path[, method[, body]])
 --   graphql_fetch_or_error(fetch_json, path, ctx, field_node[, method[, body]])
---   graphql_page_to_cursor(page)
+--   graphql_page_to_cursor(page[, index])
 --   graphql_cursor_to_page(cursor)
 --   graphql_cursor_url(url_base, args, param_names[, total])
 --   graphql_prefetch_total_from_headers(fetch_json, url_base, param_names, header_names)
@@ -185,12 +185,19 @@ end
 -- ---------------------------------------------------------------------------
 
 -- graphql_page_to_cursor is global: encodes a 1-based page number as a stable opaque cursor.
--- Page-number cursors are stable across page-size changes; clients should treat them as opaque.
-function graphql_page_to_cursor(page) -- luacheck: globals graphql_page_to_cursor
+-- An optional 1-based item index within the page may be supplied to produce an item-level cursor.
+-- Item-level cursors (page:N:M) uniquely identify each edge; page-only cursors (page:N) remain
+-- valid and are decoded by graphql_cursor_to_page as the same page number.
+-- Clients should treat all cursor values as opaque.
+function graphql_page_to_cursor(page, index) -- luacheck: globals graphql_page_to_cursor
+  if index then
+    return EncodeBase64("page:" .. tostring(page) .. ":" .. tostring(index))
+  end
   return EncodeBase64("page:" .. tostring(page))
 end
 
 -- graphql_cursor_to_page is global: decodes a cursor produced by graphql_page_to_cursor.
+-- Accepts both page-only cursors (page:N) and item-level cursors (page:N:M).
 -- Returns the 1-based page number on success, or nil if the cursor is absent or malformed.
 function graphql_cursor_to_page(cursor) -- luacheck: globals graphql_cursor_to_page
   if not cursor then
@@ -200,7 +207,10 @@ function graphql_cursor_to_page(cursor) -- luacheck: globals graphql_cursor_to_p
   if not decoded then
     return nil
   end
-  return tonumber(decoded:match("^page:(%d+)$"))
+  -- Accept both "page:N" (legacy) and "page:N:M" (item-level) formats.
+  -- The pattern captures N from either; the optional ":M" suffix is ignored.
+  local n = decoded:match("^page:(%d+)")
+  return n and tonumber(n)
 end
 
 -- graphql_cursor_url is global: builds a paginated REST URL from GraphQL connection args.
@@ -346,11 +356,10 @@ function graphql_make_connection(typename, nodes, args, total, _ctx) -- luacheck
       -- before_page >= 2: the target page is one step before the cursor.
       local page = before_page - 1
       local count = #nodes
-      local start_cursor = count > 0 and graphql_page_to_cursor(page) or nil
       local edges = {}
       for i, node in ipairs(nodes) do
         edges[i] =
-          { __typename = typename .. "Edge", cursor = graphql_page_to_cursor(page), node = node }
+          { __typename = typename .. "Edge", cursor = graphql_page_to_cursor(page, i), node = node }
       end
       return {
         __typename = typename .. "Connection",
@@ -359,8 +368,8 @@ function graphql_make_connection(typename, nodes, args, total, _ctx) -- luacheck
           __typename = "PageInfo",
           hasNextPage = true, -- items exist at before_page and beyond (cursor proves it)
           hasPreviousPage = page > 1,
-          startCursor = start_cursor,
-          endCursor = start_cursor,
+          startCursor = count > 0 and edges[1].cursor or nil,
+          endCursor = count > 0 and edges[count].cursor or nil,
         },
         nodes = nodes,
         edges = edges,
@@ -380,11 +389,10 @@ function graphql_make_connection(typename, nodes, args, total, _ctx) -- luacheck
       else
         has_next = count == per_page -- heuristic when total is unknown
       end
-      local start_cursor = count > 0 and graphql_page_to_cursor(page) or nil
       local edges = {}
       for i, node in ipairs(nodes) do
         edges[i] =
-          { __typename = typename .. "Edge", cursor = graphql_page_to_cursor(page), node = node }
+          { __typename = typename .. "Edge", cursor = graphql_page_to_cursor(page, i), node = node }
       end
       return {
         __typename = typename .. "Connection",
@@ -393,8 +401,8 @@ function graphql_make_connection(typename, nodes, args, total, _ctx) -- luacheck
           __typename = "PageInfo",
           hasNextPage = has_next,
           hasPreviousPage = page > 1,
-          startCursor = start_cursor,
-          endCursor = start_cursor,
+          startCursor = count > 0 and edges[1].cursor or nil,
+          endCursor = count > 0 and edges[count].cursor or nil,
         },
         nodes = nodes,
         edges = edges,
@@ -417,11 +425,10 @@ function graphql_make_connection(typename, nodes, args, total, _ctx) -- luacheck
   else
     has_next = count == per_page
   end
-  local start_cursor = count > 0 and graphql_page_to_cursor(page) or nil
   local edges = {}
   for i, node in ipairs(nodes) do
     edges[i] =
-      { __typename = typename .. "Edge", cursor = graphql_page_to_cursor(page), node = node }
+      { __typename = typename .. "Edge", cursor = graphql_page_to_cursor(page, i), node = node }
   end
   return {
     __typename = typename .. "Connection",
@@ -430,8 +437,8 @@ function graphql_make_connection(typename, nodes, args, total, _ctx) -- luacheck
       __typename = "PageInfo",
       hasNextPage = has_next,
       hasPreviousPage = page > 1,
-      startCursor = start_cursor,
-      endCursor = start_cursor,
+      startCursor = count > 0 and edges[1].cursor or nil,
+      endCursor = count > 0 and edges[count].cursor or nil,
     },
     nodes = nodes,
     edges = edges,
