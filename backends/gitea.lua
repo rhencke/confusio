@@ -3810,3 +3810,48 @@ graphql_resolvers["Mutation.updateRepository"] = function(_parent, args, ctx)
     clientMutationId = cmid,
   }
 end
+
+-- Mutation.deleteRepository: permanently delete a repository.
+-- Input fields: repositoryId (required, Repository node ID).
+-- Sends DELETE /repos/{owner}/{repo} and expects 204 No Content.
+-- The payload only contains the optional clientMutationId (no body to translate).
+graphql_resolvers["Mutation.deleteRepository"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.repositoryId then
+    return graphql_error(ctx, "deleteRepository requires input.repositoryId", nil, "BAD_USER_INPUT")
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.repositoryId)
+  if t ~= "Repository" then
+    return graphql_error(ctx, "deleteRepository: invalid repositoryId", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo = lid:match("^([^/]+)/(.+)$")
+  if not owner then
+    return graphql_error(ctx, "deleteRepository: malformed repositoryId", nil, "BAD_USER_INPUT")
+  end
+  local path = base() .. "/repos/" .. owner .. "/" .. repo
+  -- DELETE /repos/{owner}/{repo} returns 204 No Content on success — no JSON body to decode.
+  local ok, status = fetch_json(path, "DELETE")
+  if not ok then
+    graphql_error(ctx, "network error deleting repository", nil, "INTERNAL_ERROR")
+    return nil
+  end
+  if status == 401 or status == 403 then
+    graphql_error(ctx, "not authorized to delete repository", nil, "FORBIDDEN")
+    return nil
+  end
+  if status == 404 then
+    graphql_error(ctx, "repository not found", nil, "NOT_FOUND")
+    return nil
+  end
+  if status ~= 204 then
+    graphql_error(
+      ctx,
+      "upstream error " .. tostring(status) .. " deleting repository",
+      nil,
+      "INTERNAL_ERROR"
+    )
+    return nil
+  end
+  return { clientMutationId = cmid }
+end

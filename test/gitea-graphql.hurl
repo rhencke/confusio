@@ -422,3 +422,51 @@ HTTP 200
 jsonpath "$.data.updateRepository" not exists
 jsonpath "$.errors" isCollection
 jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.deleteRepository deletes a repository
+# Node ID for Repository:octocat/hello-world = UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { deleteRepository(input: { repositoryId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\" }) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.deleteRepository" exists
+
+# POST /graphql — Mutation.deleteRepository echoes back clientMutationId
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { deleteRepository(input: { repositoryId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\", clientMutationId: \"relay-del-1\" }) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.deleteRepository.clientMutationId" == "relay-del-1"
+
+# POST /graphql — Mutation.deleteRepository without repositoryId returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { deleteRepository(input: {}) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.deleteRepository" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.deleteRepository with wrong node type returns BAD_USER_INPUT
+# Node ID for User:octocat = VXNlcjpvY3RvY2F0
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { deleteRepository(input: { repositoryId: \"VXNlcjpvY3RvY2F0\" }) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.deleteRepository" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
