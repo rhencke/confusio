@@ -662,3 +662,297 @@ backend_impl = {
   -- Check suites have no Pagure equivalent; all suite endpoints fall back to
   -- the route_defaults stubs defined in .init.lua.
 }
+
+-- ---------------------------------------------------------------------------
+-- GraphQL resolvers
+-- ---------------------------------------------------------------------------
+
+-- Query.viewer: resolve the authenticated user via whoami then /user/{username}.
+graphql_resolvers["Query.viewer"] = function(_parent, _args, ctx)
+  local whoami, _ = graphql_fetch(fetch_json, base() .. "/-/whoami")
+  if not whoami then
+    graphql_error(ctx, "could not determine authenticated user", nil, "FORBIDDEN")
+    return nil
+  end
+  local username = whoami.username or ""
+  if username == "" then
+    graphql_error(ctx, "empty username from whoami", nil, "FORBIDDEN")
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, base() .. "/user/" .. username)
+  if not data then
+    return nil
+  end
+  local u = data.user or data
+  local gh_user = translate_pagure_user(u)
+  gh_user.email = (u.emails and u.emails[1]) or ""
+  local result = graphql_translate_user(gh_user)
+  result.isViewer = true
+  return result
+end
+
+-- Query.user: look up a User by login.
+graphql_resolvers["Query.user"] = function(_parent, args, ctx)
+  if not args.login then
+    graphql_error(ctx, "user requires a login argument")
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, base() .. "/user/" .. args.login)
+  if not data then
+    return nil
+  end
+  local u = data.user or data
+  local gh_user = translate_pagure_user(u)
+  gh_user.email = (u.emails and u.emails[1]) or ""
+  return graphql_translate_user(gh_user)
+end
+
+-- Query.repositoryOwner: look up a user by login.
+-- Pagure has no organization concept; all owners are users.
+graphql_resolvers["Query.repositoryOwner"] = function(_parent, args, ctx)
+  if not args.login then
+    graphql_error(ctx, "repositoryOwner requires a login argument")
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, base() .. "/user/" .. args.login)
+  if not data then
+    return nil
+  end
+  local u = data.user or data
+  local gh_user = translate_pagure_user(u)
+  gh_user.email = (u.emails and u.emails[1]) or ""
+  return graphql_translate_user(gh_user)
+end
+
+-- Query.repository: look up a Repository by owner and name.
+graphql_resolvers["Query.repository"] = function(_parent, args, ctx)
+  if not args.owner or not args.name then
+    graphql_error(ctx, "repository requires owner and name arguments")
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, base() .. "/" .. args.owner .. "/" .. args.name)
+  if not data then
+    return nil
+  end
+  return graphql_translate_repo(translate_pagure_repo(data))
+end
+
+-- node.Repository: fetch a repository by "owner/repo" local ID.
+graphql_resolvers["node.Repository"] = function(local_id, _ctx)
+  local data, _ = graphql_fetch(fetch_json, base() .. "/" .. local_id)
+  if not data then
+    return nil
+  end
+  return graphql_translate_repo(translate_pagure_repo(data))
+end
+
+-- node.User: fetch a user by login.
+graphql_resolvers["node.User"] = function(local_id, _ctx)
+  local data, _ = graphql_fetch(fetch_json, base() .. "/user/" .. local_id)
+  if not data then
+    return nil
+  end
+  local u = data.user or data
+  local gh_user = translate_pagure_user(u)
+  gh_user.email = (u.emails and u.emails[1]) or ""
+  return graphql_translate_user(gh_user)
+end
+
+-- node.Issue: fetch an issue by "owner/repo/number" local ID.
+-- Pagure uses /issue/{number} (singular) for individual issues.
+graphql_resolvers["node.Issue"] = function(local_id, _ctx)
+  local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ =
+    graphql_fetch(fetch_json, base() .. "/" .. owner .. "/" .. repo .. "/issue/" .. number)
+  if not data then
+    return nil
+  end
+  return graphql_translate_issue(translate_pagure_issue(data), owner, repo)
+end
+
+-- node.IssueComment: fetch a comment by "owner/repo/issue_number/comment_id" local ID.
+-- Pagure embeds comments in the issue; we fetch the issue and find the comment by id.
+graphql_resolvers["node.IssueComment"] = function(local_id, _ctx)
+  local owner, repo, issue_num, cid = local_id:match("^([^/]+)/([^/]+)/(%d+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local cid_n = tonumber(cid)
+  local data, _ =
+    graphql_fetch(fetch_json, base() .. "/" .. owner .. "/" .. repo .. "/issue/" .. issue_num)
+  if not data then
+    return nil
+  end
+  for _, c in ipairs(data.comments or {}) do
+    if c.id == cid_n then
+      local gh_comment = translate_pagure_comment(c)
+      local comment_node = graphql_translate_comment(gh_comment, owner, repo)
+      comment_node.id = encode_node_id(
+        "IssueComment",
+        owner .. "/" .. repo .. "/" .. issue_num .. "/" .. cid
+      )
+      return comment_node
+    end
+  end
+  return nil
+end
+
+-- Repository.issues: paginated list of issues.
+-- Pagure returns {"issues": [...], "total_issues": N}.
+graphql_resolvers["Repository.issues"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  local url = graphql_cursor_url(base() .. "/" .. owner .. "/" .. name .. "/issues", args, PAGES)
+  local data, _, err = graphql_fetch_with_headers(fetch_json, url)
+  if not data then
+    graphql_error(ctx, err)
+    return nil
+  end
+  local items = (type(data) == "table") and (data.issues or {}) or {}
+  local total = (type(data) == "table") and data.total_issues or nil
+  local nodes = {}
+  for _, i in ipairs(items) do
+    nodes[#nodes + 1] = graphql_translate_issue(translate_pagure_issue(i), owner, name)
+  end
+  return graphql_issues_connection(nodes, args, total, ctx)
+end
+
+-- Repository.refs: paginated list of branches as Ref objects.
+-- Pagure returns {"branches": ["name1", ...], "total_branches": N} — no commit SHAs.
+graphql_resolvers["Repository.refs"] = function(parent, args, ctx)
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  local url =
+    graphql_cursor_url(base() .. "/" .. owner .. "/" .. name .. "/git/branches", args, PAGES)
+  local data, _, err = graphql_fetch_with_headers(fetch_json, url)
+  if not data then
+    graphql_error(ctx, err)
+    return nil
+  end
+  local items = (type(data) == "table") and (data.branches or {}) or {}
+  local total = (type(data) == "table") and data.total_branches or nil
+  local nodes = {}
+  for _, b_name in ipairs(items) do
+    -- Pagure branch list returns only names; no commit SHA is available.
+    nodes[#nodes + 1] = graphql_translate_ref({ name = b_name }, parent)
+  end
+  return graphql_refs_connection(nodes, args, total, ctx)
+end
+
+-- Issue.comments: extract embedded comments from a Pagure issue.
+-- Pagure embeds all comments in the issue object; we re-fetch to get them.
+-- IssueComment node IDs use "owner/repo/issue_number/comment_id" for resolvability.
+graphql_resolvers["Issue.comments"] = function(parent, args, ctx)
+  local _, local_id = decode_node_id(parent.id)
+  if not local_id then
+    return nil
+  end
+  local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ =
+    graphql_fetch(fetch_json, base() .. "/" .. owner .. "/" .. repo .. "/issue/" .. number)
+  if not data then
+    graphql_error(ctx, "could not fetch issue comments")
+    return nil
+  end
+  local comments = data.comments or {}
+  local nodes = {}
+  for _, c in ipairs(comments) do
+    local gh_comment = translate_pagure_comment(c)
+    local comment_node = graphql_translate_comment(gh_comment, owner, repo)
+    comment_node.id = encode_node_id(
+      "IssueComment",
+      owner .. "/" .. repo .. "/" .. number .. "/" .. tostring(c.id or "")
+    )
+    nodes[#nodes + 1] = comment_node
+  end
+  return graphql_make_connection("IssueComment", nodes, args, #nodes, ctx)
+end
+
+-- Query.search: map GitHub GraphQL search to Pagure search endpoints.
+-- REPOSITORY: GET /projects?search={query}
+-- USER: GET /users?username={query}  (returns name list; build minimal user objects)
+-- ISSUE: Pagure has no simple keyword issue search; returns empty.
+graphql_resolvers["Query.search"] = function(_parent, args, ctx)
+  local query = args.query or ""
+  local search_type = args.type or "REPOSITORY"
+  local per_page = args.first or 30
+  local q = EscapeParam(query)
+
+  local nodes = {}
+  local repo_count, user_count, issue_count = 0, 0, 0
+
+  if search_type == "REPOSITORY" then
+    local data, _, err = graphql_fetch_with_headers(
+      fetch_json,
+      base() .. "/projects?search=" .. q .. "&per_page=" .. per_page
+    )
+    if not data then
+      graphql_error(ctx, err)
+    else
+      local items = (type(data) == "table") and (data.projects or {}) or {}
+      for _, r in ipairs(items) do
+        nodes[#nodes + 1] = graphql_translate_repo(translate_pagure_repo(r))
+      end
+      repo_count = #nodes
+    end
+  elseif search_type == "USER" then
+    local data, _, err = graphql_fetch_with_headers(
+      fetch_json,
+      base() .. "/users?username=" .. q .. "&per_page=" .. per_page
+    )
+    if not data then
+      graphql_error(ctx, err)
+    else
+      -- Pagure /users returns an array of login names, not full user objects.
+      local items = (type(data) == "table") and (data.users or {}) or {}
+      for _, u_name in ipairs(items) do
+        nodes[#nodes + 1] = graphql_translate_user({
+          login = u_name,
+          name = nil,
+          email = "",
+          avatar_url = "",
+          html_url = config.base_url .. "/" .. u_name,
+          site_admin = false,
+        })
+      end
+      user_count = #nodes
+    end
+  end
+
+  local edges = {}
+  for _, node in ipairs(nodes) do
+    edges[#edges + 1] = {
+      __typename = "SearchResultItemEdge",
+      cursor = graphql_page_to_cursor(1),
+      node = node,
+    }
+  end
+  return {
+    __typename = "SearchResultItemConnection",
+    nodes = nodes,
+    edges = edges,
+    pageInfo = {
+      __typename = "PageInfo",
+      hasNextPage = false,
+      hasPreviousPage = false,
+      startCursor = #nodes > 0 and graphql_page_to_cursor(1) or nil,
+      endCursor = #nodes > 0 and graphql_page_to_cursor(1) or nil,
+    },
+    repositoryCount = repo_count,
+    userCount = user_count,
+    issueCount = issue_count,
+    codeCount = 0,
+    discussionCount = 0,
+    wikiCount = 0,
+  }
+end
