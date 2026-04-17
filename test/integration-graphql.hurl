@@ -57,11 +57,12 @@ HTTP 200
 jsonpath "$.data" == null
 jsonpath "$.errors[0].extensions.code" == "VALIDATION_ERROR"
 
-# POST /graphql — batch rejection
+# POST /graphql — single-element array batch executes (Phase 2: doc 12)
 POST http://{{host}}/graphql
 Content-Type: application/json
 [{"query": "{ __typename }"}]
 
-HTTP 400
+HTTP 200
 [Asserts]
-jsonpath "$.errors[0].message" contains "batching is not supported"
+jsonpath "$[0].data.__typename" == "Query"
+jsonpath "$[0].errors" not exists

@@ -1,4 +1,4 @@
--- Unit tests for batch/APQ rejection, cost-limit enforcement, and request-scoped cache.
+-- Unit tests for batch execution (Phase 2), APQ rejection, cost-limit enforcement, and request-scoped cache.
 -- Loaded by test/unit-graphql.lua; relies on shared state from the driver.
 -- ============================================================
 
@@ -30,26 +30,110 @@ local function run_handler(body_str)
 end
 
 -- ============================================================
--- Batch rejection
+-- Batch execution (Phase 2)
 -- ============================================================
 
-do -- array body → HTTP 400, batching-not-supported message
-  local body = '[{"query":"{ viewer { login } }"},{"query":"{ rateLimit { cost } }"}]'
+do -- array body → HTTP 200, parallel array of result objects
+  local body = '[{"query":"{ rateLimit { cost } }"},{"query":"{ rateLimit { cost } }"}]'
   local status, r = run_handler(body)
-  eq(status, 400, "batch: array body → HTTP 400")
-  ok(r ~= nil, "batch: response is valid JSON")
-  ok(r.errors ~= nil and #r.errors == 1, "batch: exactly one error in response")
-  ok(
-    type(r.errors[1].message) == "string" and r.errors[1].message:find("batching") ~= nil,
-    "batch: error message mentions batching"
-  )
+  eq(status, 200, "batch: array body → HTTP 200")
+  ok(type(r) == "table", "batch: response decodes as a table (JSON array)")
+  ok(r[1] ~= nil and r[2] ~= nil, "batch: response has two elements")
+  ok(r[1].data ~= nil, "batch: first result has a data key")
+  ok(r[2].data ~= nil, "batch: second result has a data key")
 end
 
-do -- single-element array body also rejected (still a batch)
-  local body = '[{"query":"{ viewer { login } }"}]'
+do -- single-element array body → HTTP 200, one-element array result
+  local body = '[{"query":"{ rateLimit { cost } }"}]'
   local status, r = run_handler(body)
-  eq(status, 400, "batch: single-element array → HTTP 400")
-  ok(r.errors ~= nil and #r.errors == 1, "batch: single-element array → one error")
+  eq(status, 200, "batch: single-element array → HTTP 200")
+  ok(type(r) == "table" and r[1] ~= nil, "batch: single-element array → one result element")
+  ok(r[1].data ~= nil, "batch: single-element result has a data key")
+end
+
+-- run_handler_raw: like run_handler but returns the raw (undecoded) body string.
+-- Used for tests that must inspect the literal JSON, e.g. asserting "data":null is present.
+local function run_handler_raw(body_str)
+  local captured_status = nil
+  local captured_body = ""
+  local saved_set_status = SetStatus -- luacheck: globals SetStatus
+  local saved_write = Write -- luacheck: globals Write
+  local saved_get_body = GetBody -- luacheck: globals GetBody
+  SetStatus = function(code, _reason)
+    captured_status = code
+  end -- luacheck: globals SetStatus
+  Write = function(s)
+    captured_body = captured_body .. tostring(s)
+  end -- luacheck: globals Write
+  GetBody = function()
+    return body_str
+  end -- luacheck: globals GetBody
+  graphql_handler() -- luacheck: globals graphql_handler
+  SetStatus = saved_set_status -- luacheck: globals SetStatus
+  Write = saved_write -- luacheck: globals Write
+  GetBody = saved_get_body -- luacheck: globals GetBody
+  return captured_status, captured_body
+end
+
+do -- per-operation error isolation: parse error in first op does not prevent second op
+  local body = '[{"query":"{ unclosed_brace"},{"query":"{ rateLimit { cost } }"}]'
+  local status, r = run_handler(body)
+  eq(status, 200, "batch isolation: HTTP 200")
+  ok(r[1] ~= nil and r[2] ~= nil, "batch isolation: two results returned")
+  ok(
+    r[1].errors ~= nil and #r[1].errors > 0,
+    "batch isolation: first result has errors (parse failure)"
+  )
+  eq(
+    r[1].errors[1].extensions.code,
+    "PARSE_ERROR",
+    "batch isolation: first item error code is PARSE_ERROR"
+  )
+  ok(r[1].data == nil, "batch isolation: first result data is nil")
+  ok(r[2].data ~= nil, "batch isolation: second result has data (unaffected by first)")
+  ok(r[2].errors == nil or #r[2].errors == 0, "batch isolation: second result has no errors")
+end
+
+do -- batch item with nil data contains literal "data":null in the raw JSON (not a missing key)
+  -- This verifies encode_result's manual nil-data workaround (EncodeJson drops nil keys).
+  local _, raw = run_handler_raw('[{"query":"{ unclosed_brace"}]')
+  ok(raw:find('"data":null') ~= nil, 'batch nil-data: raw response contains "data":null')
+end
+
+do -- per-operation cost enforcement: each op is independently checked against the ceiling
+  local call_count = 0
+  local _saved = estimate_query_cost -- luacheck: globals estimate_query_cost
+  estimate_query_cost = function(_op, _vars) -- luacheck: globals estimate_query_cost
+    call_count = call_count + 1
+    return call_count == 1 and 10001 or 1
+  end
+  local body = '[{"query":"{ rateLimit { cost } }"},{"query":"{ rateLimit { cost } }"}]'
+  local status, r = run_handler(body)
+  estimate_query_cost = _saved -- luacheck: globals estimate_query_cost
+  eq(status, 200, "batch cost: HTTP 200")
+  ok(r[1] ~= nil and r[2] ~= nil, "batch cost: two results")
+  ok(r[1].errors ~= nil and #r[1].errors > 0, "batch cost: first item exceeded cost ceiling")
+  eq(
+    r[1].errors[1].extensions.code,
+    "BAD_USER_INPUT",
+    "batch cost: first item has BAD_USER_INPUT error"
+  )
+  ok(r[1].data == nil, "batch cost: first item data is nil")
+  ok(r[2].data ~= nil, "batch cost: second item executes normally (independent cost)")
+end
+
+do -- ordering: three-element batch returns results in input order
+  local body =
+    '[{"query":"{ __typename }"},{"query":"mutation { __typename }"},{"query":"{ rateLimit { cost } }"}]'
+  local status, r = run_handler(body)
+  eq(status, 200, "batch ordering: HTTP 200")
+  ok(r[1] ~= nil and r[2] ~= nil and r[3] ~= nil, "batch ordering: three results")
+  eq(r[1].data.__typename, "Query", "batch ordering: result[1] is Query.__typename")
+  eq(r[2].data.__typename, "Mutation", "batch ordering: result[2] is Mutation.__typename")
+  ok(
+    r[3].data ~= nil and r[3].data.rateLimit ~= nil,
+    "batch ordering: result[3] is rateLimit query"
+  )
 end
 
 -- ============================================================
