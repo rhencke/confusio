@@ -483,7 +483,7 @@ end
 -- graphql_translate_commit
 -- ============================================================
 
-do -- maps SHA, message, and headline
+do -- maps SHA, message, and headline; node ID is bare SHA without owner/repo context
   local c = graphql_translate_commit({
     sha = "abc123",
     commit = {
@@ -499,8 +499,54 @@ do -- maps SHA, message, and headline
   eq(c.messageHeadline, "Fix the bug", "translate_commit: messageHeadline is first line")
   eq(c.author.name, "Alice", "translate_commit: author.name")
   eq(c.author.email, "alice@example.com", "translate_commit: author.email")
-  eq(c.id, encode_node_id("Commit", "abc123"), "translate_commit: id")
+  eq(c.id, encode_node_id("Commit", "abc123"), "translate_commit: id without owner/repo")
   eq(c.url, "https://github.com/octocat/Hello-World/commit/abc123", "translate_commit: url")
+end
+
+do -- with owner/repo context, node ID embeds owner/repo/sha for re-fetchability
+  local c = graphql_translate_commit({
+    sha = "abc123",
+    commit = { message = "Fix", author = {}, committer = {} },
+  }, "octocat", "Hello-World")
+  eq(
+    c.id,
+    encode_node_id("Commit", "octocat/Hello-World/abc123"),
+    "translate_commit: id with owner/repo"
+  )
+  eq(c.oid, "abc123", "translate_commit: oid unchanged with owner/repo")
+end
+
+-- ============================================================
+-- graphql_translate_team
+-- ============================================================
+
+do -- maps name, slug, combinedSlug, privacy, and node ID
+  local t = graphql_translate_team({
+    id = 42,
+    name = "Core Team",
+    slug = "core-team",
+    description = "The core contributors",
+    privacy = "closed",
+  }, "myorg")
+  eq(t.__typename, "Team", "translate_team: __typename")
+  eq(t.databaseId, 42, "translate_team: databaseId")
+  eq(t.name, "Core Team", "translate_team: name")
+  eq(t.slug, "core-team", "translate_team: slug")
+  eq(t.combinedSlug, "myorg/core-team", "translate_team: combinedSlug")
+  eq(t.description, "The core contributors", "translate_team: description")
+  eq(t.privacy, "VISIBLE", "translate_team: privacy closed -> VISIBLE")
+  eq(t.id, encode_node_id("Team", "myorg/core-team"), "translate_team: id with org")
+end
+
+do -- without org, node ID is bare slug
+  local t = graphql_translate_team({ id = 7, name = "Ops", slug = "ops", privacy = "secret" })
+  eq(t.privacy, "SECRET", "translate_team: privacy secret -> SECRET")
+  eq(t.id, encode_node_id("Team", "ops"), "translate_team: id without org is bare slug")
+  eq(t.combinedSlug, "ops", "translate_team: combinedSlug without org is bare slug")
+end
+
+do -- nil input returns nil
+  eq(graphql_translate_team(nil), nil, "translate_team: nil input returns nil")
 end
 
 -- ============================================================

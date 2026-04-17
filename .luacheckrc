@@ -106,6 +106,7 @@ globals = {
   "graphql_translate_milestone",
   "graphql_translate_comment",
   "graphql_translate_commit",
+  "graphql_translate_team",
   "graphql_translate_ref",
   "graphql_translate_release",
   "graphql_translate_review",
