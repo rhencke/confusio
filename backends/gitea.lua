@@ -4367,3 +4367,103 @@ graphql_resolvers["Mutation.deleteIssueComment"] = function(_parent, args, ctx)
   end
   return { clientMutationId = cmid }
 end
+
+graphql_resolvers["Mutation.addStar"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.starrableId then
+    return graphql_error(ctx, "addStar requires input.starrableId", nil, "BAD_USER_INPUT")
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.starrableId)
+  if t ~= "Repository" then
+    return graphql_error(ctx, "addStar: invalid starrableId", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo = lid:match("^([^/]+)/(.+)$")
+  if not owner then
+    return graphql_error(ctx, "addStar: malformed starrableId", nil, "BAD_USER_INPUT")
+  end
+  local star_path = base() .. "/user/starred/" .. owner .. "/" .. repo
+  -- PUT returns 204 No Content on success.
+  local ok, status = fetch_json(star_path, "PUT")
+  if not ok then
+    graphql_error(ctx, "network error starring repository", nil, "INTERNAL_ERROR")
+    return nil
+  end
+  if status == 401 or status == 403 then
+    graphql_error(ctx, "not authorized to star repository", nil, "FORBIDDEN")
+    return nil
+  end
+  if status == 404 then
+    graphql_error(ctx, "repository not found", nil, "NOT_FOUND")
+    return nil
+  end
+  if status ~= 204 then
+    graphql_error(
+      ctx,
+      "upstream error " .. tostring(status) .. " starring repository",
+      nil,
+      "INTERNAL_ERROR"
+    )
+    return nil
+  end
+  -- Re-fetch the repository to return in the payload (star returns 204, no body).
+  local repo_path = base() .. "/repos/" .. owner .. "/" .. repo
+  local repo_data = graphql_fetch_or_error(fetch_json, repo_path, ctx, nil)
+  if not repo_data then
+    return nil
+  end
+  return {
+    starrable = graphql_translate_repo(translate_repo(repo_data)),
+    clientMutationId = cmid,
+  }
+end
+
+graphql_resolvers["Mutation.removeStar"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.starrableId then
+    return graphql_error(ctx, "removeStar requires input.starrableId", nil, "BAD_USER_INPUT")
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.starrableId)
+  if t ~= "Repository" then
+    return graphql_error(ctx, "removeStar: invalid starrableId", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo = lid:match("^([^/]+)/(.+)$")
+  if not owner then
+    return graphql_error(ctx, "removeStar: malformed starrableId", nil, "BAD_USER_INPUT")
+  end
+  local star_path = base() .. "/user/starred/" .. owner .. "/" .. repo
+  -- DELETE returns 204 No Content on success.
+  local ok, status = fetch_json(star_path, "DELETE")
+  if not ok then
+    graphql_error(ctx, "network error unstarring repository", nil, "INTERNAL_ERROR")
+    return nil
+  end
+  if status == 401 or status == 403 then
+    graphql_error(ctx, "not authorized to unstar repository", nil, "FORBIDDEN")
+    return nil
+  end
+  if status == 404 then
+    graphql_error(ctx, "repository not found", nil, "NOT_FOUND")
+    return nil
+  end
+  if status ~= 204 then
+    graphql_error(
+      ctx,
+      "upstream error " .. tostring(status) .. " unstarring repository",
+      nil,
+      "INTERNAL_ERROR"
+    )
+    return nil
+  end
+  -- Re-fetch the repository to return in the payload (unstar returns 204, no body).
+  local repo_path = base() .. "/repos/" .. owner .. "/" .. repo
+  local repo_data = graphql_fetch_or_error(fetch_json, repo_path, ctx, nil)
+  if not repo_data then
+    return nil
+  end
+  return {
+    starrable = graphql_translate_repo(translate_repo(repo_data)),
+    clientMutationId = cmid,
+  }
+end

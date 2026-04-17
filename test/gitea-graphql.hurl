@@ -1055,3 +1055,102 @@ HTTP 200
 jsonpath "$.data.deleteIssueComment" not exists
 jsonpath "$.errors" isCollection
 jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.addStar stars a repository
+# Node ID for Repository:octocat/hello-world = UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk
+# → PUT /api/v1/user/starred/octocat/hello-world, then GET /api/v1/repos/octocat/hello-world
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { addStar(input: { starrableId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\" }) { starrable { ... on Repository { nameWithOwner } } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.addStar.starrable.nameWithOwner" == "octocat/hello-world"
+jsonpath "$.data.addStar.clientMutationId" not exists
+
+# POST /graphql — Mutation.addStar echoes back clientMutationId
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { addStar(input: { starrableId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\", clientMutationId: \"star-relay-1\" }) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.addStar.clientMutationId" == "star-relay-1"
+
+# POST /graphql — Mutation.addStar without starrableId returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { addStar(input: {}) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.addStar" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.addStar with wrong node type returns BAD_USER_INPUT
+# Node ID for User:octocat = VXNlcjpvY3RvY2F0
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { addStar(input: { starrableId: \"VXNlcjpvY3RvY2F0\" }) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.addStar" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.removeStar unstars a repository
+# → DELETE /api/v1/user/starred/octocat/hello-world, then GET /api/v1/repos/octocat/hello-world
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { removeStar(input: { starrableId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\" }) { starrable { ... on Repository { nameWithOwner } } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.removeStar.starrable.nameWithOwner" == "octocat/hello-world"
+jsonpath "$.data.removeStar.clientMutationId" not exists
+
+# POST /graphql — Mutation.removeStar echoes back clientMutationId
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { removeStar(input: { starrableId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\", clientMutationId: \"star-relay-2\" }) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.removeStar.clientMutationId" == "star-relay-2"
+
+# POST /graphql — Mutation.removeStar without starrableId returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { removeStar(input: {}) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.removeStar" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.removeStar with wrong node type returns BAD_USER_INPUT
+# Node ID for User:octocat = VXNlcjpvY3RvY2F0
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { removeStar(input: { starrableId: \"VXNlcjpvY3RvY2F0\" }) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.removeStar" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
