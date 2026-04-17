@@ -662,3 +662,234 @@ HTTP 200
 jsonpath "$.data.reopenIssue" not exists
 jsonpath "$.errors" isCollection
 jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.createPullRequest creates a pull request
+# Node ID for Repository:octocat/hello-world = UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk
+# → POST /api/v1/repos/octocat/hello-world/pulls
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { createPullRequest(input: { repositoryId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\", title: \"A great PR\", headRefName: \"feature\", baseRefName: \"main\" }) { pullRequest { number title state headRefName baseRefName } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.createPullRequest.pullRequest.number" == 1
+jsonpath "$.data.createPullRequest.pullRequest.title" == "A great PR"
+jsonpath "$.data.createPullRequest.pullRequest.state" == "OPEN"
+jsonpath "$.data.createPullRequest.pullRequest.headRefName" == "feature"
+jsonpath "$.data.createPullRequest.pullRequest.baseRefName" == "main"
+jsonpath "$.data.createPullRequest.clientMutationId" not exists
+
+# POST /graphql — Mutation.createPullRequest echoes back clientMutationId
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { createPullRequest(input: { repositoryId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\", title: \"A great PR\", headRefName: \"feature\", baseRefName: \"main\", clientMutationId: \"pr-relay-1\" }) { pullRequest { number } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.createPullRequest.pullRequest.number" == 1
+jsonpath "$.data.createPullRequest.clientMutationId" == "pr-relay-1"
+
+# POST /graphql — Mutation.createPullRequest without repositoryId returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { createPullRequest(input: { title: \"A great PR\", headRefName: \"feature\", baseRefName: \"main\" }) { pullRequest { number } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.createPullRequest" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.createPullRequest without title returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { createPullRequest(input: { repositoryId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\", headRefName: \"feature\", baseRefName: \"main\" }) { pullRequest { number } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.createPullRequest" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.createPullRequest with wrong node type returns BAD_USER_INPUT
+# Node ID for User:octocat = VXNlcjpvY3RvY2F0
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { createPullRequest(input: { repositoryId: \"VXNlcjpvY3RvY2F0\", title: \"A great PR\", headRefName: \"feature\", baseRefName: \"main\" }) { pullRequest { number } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.createPullRequest" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.updatePullRequest updates a pull request
+# Node ID for PullRequest:octocat/hello-world/1 = UHVsbFJlcXVlc3Q6b2N0b2NhdC9oZWxsby13b3JsZC8x
+# → PATCH /api/v1/repos/octocat/hello-world/pulls/1
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updatePullRequest(input: { pullRequestId: \"UHVsbFJlcXVlc3Q6b2N0b2NhdC9oZWxsby13b3JsZC8x\", title: \"Updated PR\" }) { pullRequest { number title state } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.updatePullRequest.pullRequest.number" == 1
+jsonpath "$.data.updatePullRequest.pullRequest.title" == "A great PR"
+jsonpath "$.data.updatePullRequest.pullRequest.state" == "OPEN"
+jsonpath "$.data.updatePullRequest.clientMutationId" not exists
+
+# POST /graphql — Mutation.updatePullRequest echoes back clientMutationId
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updatePullRequest(input: { pullRequestId: \"UHVsbFJlcXVlc3Q6b2N0b2NhdC9oZWxsby13b3JsZC8x\", clientMutationId: \"pr-relay-2\" }) { pullRequest { number } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.updatePullRequest.clientMutationId" == "pr-relay-2"
+
+# POST /graphql — Mutation.updatePullRequest without pullRequestId returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updatePullRequest(input: { title: \"Updated PR\" }) { pullRequest { number } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.updatePullRequest" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.updatePullRequest with wrong node type returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updatePullRequest(input: { pullRequestId: \"VXNlcjpvY3RvY2F0\" }) { pullRequest { number } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.updatePullRequest" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.closePullRequest closes a pull request
+# → PATCH /api/v1/repos/octocat/hello-world/pulls/1 (state=closed)
+# Mock returns the PR fixture unchanged (state stays "open"); tests the REST call path.
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { closePullRequest(input: { pullRequestId: \"UHVsbFJlcXVlc3Q6b2N0b2NhdC9oZWxsby13b3JsZC8x\" }) { pullRequest { number state } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.closePullRequest.pullRequest.number" == 1
+jsonpath "$.data.closePullRequest.pullRequest.state" == "OPEN"
+jsonpath "$.data.closePullRequest.clientMutationId" not exists
+
+# POST /graphql — Mutation.closePullRequest echoes back clientMutationId
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { closePullRequest(input: { pullRequestId: \"UHVsbFJlcXVlc3Q6b2N0b2NhdC9oZWxsby13b3JsZC8x\", clientMutationId: \"close-pr-relay-1\" }) { pullRequest { number } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.closePullRequest.clientMutationId" == "close-pr-relay-1"
+
+# POST /graphql — Mutation.closePullRequest without pullRequestId returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { closePullRequest(input: {}) { pullRequest { number } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.closePullRequest" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.reopenPullRequest reopens a closed pull request
+# → PATCH /api/v1/repos/octocat/hello-world/pulls/1 (state=open)
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { reopenPullRequest(input: { pullRequestId: \"UHVsbFJlcXVlc3Q6b2N0b2NhdC9oZWxsby13b3JsZC8x\" }) { pullRequest { number state } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.reopenPullRequest.pullRequest.number" == 1
+jsonpath "$.data.reopenPullRequest.pullRequest.state" == "OPEN"
+jsonpath "$.data.reopenPullRequest.clientMutationId" not exists
+
+# POST /graphql — Mutation.reopenPullRequest echoes back clientMutationId
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { reopenPullRequest(input: { pullRequestId: \"UHVsbFJlcXVlc3Q6b2N0b2NhdC9oZWxsby13b3JsZC8x\", clientMutationId: \"reopen-pr-relay-1\" }) { pullRequest { number } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.reopenPullRequest.clientMutationId" == "reopen-pr-relay-1"
+
+# POST /graphql — Mutation.reopenPullRequest without pullRequestId returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { reopenPullRequest(input: {}) { pullRequest { number } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.reopenPullRequest" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.mergePullRequest merges a pull request
+# → POST /api/v1/repos/octocat/hello-world/pulls/1/merge (Gitea uses POST; returns 204)
+# → GET /api/v1/repos/octocat/hello-world/pulls/1 (re-fetch; mock returns open PR)
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { mergePullRequest(input: { pullRequestId: \"UHVsbFJlcXVlc3Q6b2N0b2NhdC9oZWxsby13b3JsZC8x\" }) { pullRequest { number state } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.mergePullRequest.pullRequest.number" == 1
+jsonpath "$.data.mergePullRequest.pullRequest.state" == "OPEN"
+jsonpath "$.data.mergePullRequest.clientMutationId" not exists
+
+# POST /graphql — Mutation.mergePullRequest echoes back clientMutationId
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { mergePullRequest(input: { pullRequestId: \"UHVsbFJlcXVlc3Q6b2N0b2NhdC9oZWxsby13b3JsZC8x\", clientMutationId: \"merge-pr-relay-1\" }) { pullRequest { number } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.mergePullRequest.clientMutationId" == "merge-pr-relay-1"
+
+# POST /graphql — Mutation.mergePullRequest without pullRequestId returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { mergePullRequest(input: {}) { pullRequest { number } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.mergePullRequest" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
