@@ -3734,3 +3734,124 @@ graphql_resolvers["Query.search"] = function(_parent, args, ctx)
     wikiCount = 0,
   }
 end
+
+-- ---------------------------------------------------------------------------
+-- GraphQL mutation resolvers
+-- ---------------------------------------------------------------------------
+
+-- Mutation.createRepository: create a new repository for the authenticated user or an org.
+-- Input fields: name (required), description, visibility, initializeWithReadme, ownerId.
+-- If ownerId decodes to an Organization, uses POST /orgs/{org}/repos; otherwise /user/repos.
+graphql_resolvers["Mutation.createRepository"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.name then
+    return graphql_error(ctx, "createRepository requires input.name", nil, "BAD_USER_INPUT")
+  end
+  local cmid = get_client_mutation_id(args)
+  local path
+  if input.ownerId then
+    local t, lid = decode_node_id(input.ownerId)
+    if t == "Organization" then
+      path = base() .. "/orgs/" .. lid .. "/repos"
+    end
+  end
+  path = path or (base() .. "/user/repos")
+  local body = EncodeJson({
+    name = input.name,
+    description = input.description,
+    private = input.visibility == "PRIVATE",
+    auto_init = input.initializeWithReadme,
+  })
+  local data = graphql_fetch_or_error(fetch_json, path, ctx, nil, "POST", body)
+  if not data then
+    return nil
+  end
+  return {
+    repository = graphql_translate_repo(translate_repo(data)),
+    clientMutationId = cmid,
+  }
+end
+
+-- Mutation.updateRepository: update metadata for an existing repository.
+-- Input fields: repositoryId (required, Repository node ID), name, description,
+--   visibility, hasIssuesEnabled, hasWikiEnabled, homepageUrl.
+-- Sends PATCH /repos/{owner}/{repo} with only the supplied fields.
+graphql_resolvers["Mutation.updateRepository"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.repositoryId then
+    return graphql_error(ctx, "updateRepository requires input.repositoryId", nil, "BAD_USER_INPUT")
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.repositoryId)
+  if t ~= "Repository" then
+    return graphql_error(ctx, "updateRepository: invalid repositoryId", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo = lid:match("^([^/]+)/(.+)$")
+  if not owner then
+    return graphql_error(ctx, "updateRepository: malformed repositoryId", nil, "BAD_USER_INPUT")
+  end
+  local path = base() .. "/repos/" .. owner .. "/" .. repo
+  -- Map visibility enum to Gitea's boolean private field; nil if not supplied.
+  local is_private = input.visibility and (input.visibility == "PRIVATE") or nil
+  local body = EncodeJson({
+    name = input.name,
+    description = input.description,
+    private = is_private,
+    has_issues = input.hasIssuesEnabled,
+    has_wiki = input.hasWikiEnabled,
+    website = input.homepageUrl,
+  })
+  local data = graphql_fetch_or_error(fetch_json, path, ctx, nil, "PATCH", body)
+  if not data then
+    return nil
+  end
+  return {
+    repository = graphql_translate_repo(translate_repo(data)),
+    clientMutationId = cmid,
+  }
+end
+
+-- Mutation.deleteRepository: permanently delete a repository.
+-- Input fields: repositoryId (required, Repository node ID).
+-- Sends DELETE /repos/{owner}/{repo} and expects 204 No Content.
+-- The payload only contains the optional clientMutationId (no body to translate).
+graphql_resolvers["Mutation.deleteRepository"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.repositoryId then
+    return graphql_error(ctx, "deleteRepository requires input.repositoryId", nil, "BAD_USER_INPUT")
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.repositoryId)
+  if t ~= "Repository" then
+    return graphql_error(ctx, "deleteRepository: invalid repositoryId", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo = lid:match("^([^/]+)/(.+)$")
+  if not owner then
+    return graphql_error(ctx, "deleteRepository: malformed repositoryId", nil, "BAD_USER_INPUT")
+  end
+  local path = base() .. "/repos/" .. owner .. "/" .. repo
+  -- DELETE /repos/{owner}/{repo} returns 204 No Content on success — no JSON body to decode.
+  local ok, status = fetch_json(path, "DELETE")
+  if not ok then
+    graphql_error(ctx, "network error deleting repository", nil, "INTERNAL_ERROR")
+    return nil
+  end
+  if status == 401 or status == 403 then
+    graphql_error(ctx, "not authorized to delete repository", nil, "FORBIDDEN")
+    return nil
+  end
+  if status == 404 then
+    graphql_error(ctx, "repository not found", nil, "NOT_FOUND")
+    return nil
+  end
+  if status ~= 204 then
+    graphql_error(
+      ctx,
+      "upstream error " .. tostring(status) .. " deleting repository",
+      nil,
+      "INTERNAL_ERROR"
+    )
+    return nil
+  end
+  return { clientMutationId = cmid }
+end

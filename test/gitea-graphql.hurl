@@ -277,3 +277,196 @@ jsonpath "$.data.search.nodes" isCollection
 jsonpath "$.data.search.nodes[0].number" == 1
 jsonpath "$.data.search.nodes[0].title" == "Found a bug"
 jsonpath "$.data.search.nodes[0].state" == "OPEN"
+
+# POST /graphql — Mutation.createRepository creates a repo for the authenticated user
+# (no ownerId → POST /api/v1/user/repos)
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { createRepository(input: { name: \"hello-world\", visibility: PUBLIC }) { repository { name nameWithOwner description visibility isPrivate } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.createRepository.repository.name" == "hello-world"
+jsonpath "$.data.createRepository.repository.nameWithOwner" == "octocat/hello-world"
+jsonpath "$.data.createRepository.repository.description" == "My first repo"
+jsonpath "$.data.createRepository.repository.visibility" == "PUBLIC"
+jsonpath "$.data.createRepository.repository.isPrivate" == false
+jsonpath "$.data.createRepository.clientMutationId" not exists
+
+# POST /graphql — Mutation.createRepository with clientMutationId echoes it back
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { createRepository(input: { name: \"hello-world\", visibility: PUBLIC, clientMutationId: \"relay-99\" }) { repository { name } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.createRepository.repository.name" == "hello-world"
+jsonpath "$.data.createRepository.clientMutationId" == "relay-99"
+
+# POST /graphql — Mutation.createRepository with org ownerId creates under the org
+# ownerId "T3JnYW5pemF0aW9uOnRlc3Rvcmc=" = base64("Organization:testorg")
+# → POST /api/v1/orgs/testorg/repos
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { createRepository(input: { name: \"hello-world\", visibility: PUBLIC, ownerId: \"T3JnYW5pemF0aW9uOnRlc3Rvcmc=\" }) { repository { name nameWithOwner } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.createRepository.repository.name" == "hello-world"
+jsonpath "$.data.createRepository.repository.nameWithOwner" == "octocat/hello-world"
+
+# POST /graphql — Mutation.createRepository creates a repo for the authenticated user
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { createRepository(input: { name: \"hello-world\", visibility: PUBLIC }) { repository { name nameWithOwner description } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.createRepository.repository.name" == "hello-world"
+jsonpath "$.data.createRepository.repository.nameWithOwner" == "octocat/hello-world"
+jsonpath "$.data.createRepository.repository.description" == "My first repo"
+jsonpath "$.data.createRepository" exists
+
+# POST /graphql — Mutation.createRepository echoes back clientMutationId
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { createRepository(input: { name: \"hello-world\", visibility: PUBLIC, clientMutationId: \"relay-42\" }) { repository { name } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.createRepository.repository.name" == "hello-world"
+jsonpath "$.data.createRepository.clientMutationId" == "relay-42"
+
+# POST /graphql — Mutation.createRepository with ownerId routes to org endpoint
+# Node ID for Organization:testorg = T3JnYW5pemF0aW9uOnRlc3Rvcmc=
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { createRepository(input: { name: \"hello-world\", visibility: PUBLIC, ownerId: \"T3JnYW5pemF0aW9uOnRlc3Rvcmc=\" }) { repository { name nameWithOwner } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.createRepository.repository.name" == "hello-world"
+jsonpath "$.data.createRepository.repository.nameWithOwner" == "octocat/hello-world"
+
+# POST /graphql — Mutation.createRepository without name returns BAD_USER_INPUT error
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { createRepository(input: { visibility: PUBLIC }) { repository { name } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.createRepository" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.updateRepository updates an existing repository
+# Node ID for Repository:octocat/hello-world = UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updateRepository(input: { repositoryId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\", description: \"Updated description\" }) { repository { name nameWithOwner description } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.updateRepository.repository.name" == "hello-world"
+jsonpath "$.data.updateRepository.repository.nameWithOwner" == "octocat/hello-world"
+jsonpath "$.data.updateRepository.repository.description" == "My first repo"
+jsonpath "$.data.updateRepository" exists
+
+# POST /graphql — Mutation.updateRepository echoes back clientMutationId
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updateRepository(input: { repositoryId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\", name: \"hello-world\", clientMutationId: \"relay-99\" }) { repository { name } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.updateRepository.repository.name" == "hello-world"
+jsonpath "$.data.updateRepository.clientMutationId" == "relay-99"
+
+# POST /graphql — Mutation.updateRepository without repositoryId returns BAD_USER_INPUT error
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updateRepository(input: { name: \"hello-world\" }) { repository { name } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.updateRepository" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.updateRepository with invalid repositoryId returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updateRepository(input: { repositoryId: \"dXNlcjoxMjM=\" }) { repository { name } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.updateRepository" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.deleteRepository deletes a repository
+# Node ID for Repository:octocat/hello-world = UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { deleteRepository(input: { repositoryId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\" }) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.deleteRepository" exists
+
+# POST /graphql — Mutation.deleteRepository echoes back clientMutationId
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { deleteRepository(input: { repositoryId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\", clientMutationId: \"relay-del-1\" }) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.deleteRepository.clientMutationId" == "relay-del-1"
+
+# POST /graphql — Mutation.deleteRepository without repositoryId returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { deleteRepository(input: {}) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.deleteRepository" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.deleteRepository with wrong node type returns BAD_USER_INPUT
+# Node ID for User:octocat = VXNlcjpvY3RvY2F0
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { deleteRepository(input: { repositoryId: \"VXNlcjpvY3RvY2F0\" }) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.deleteRepository" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
