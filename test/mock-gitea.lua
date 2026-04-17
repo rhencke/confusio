@@ -126,6 +126,8 @@ function OnHttpRequest()
 
     -- Repos
     ["/api/v1/repos/octocat/hello-world"] = { 200, REPO },
+    ["PATCH /api/v1/repos/octocat/hello-world"] = { 200, REPO },
+    ["DELETE /api/v1/repos/octocat/hello-world"] = { 204, nil },
     ["/api/v1/user/repos"] = {
       200,
       "[" .. REPO .. "]",
@@ -134,6 +136,7 @@ function OnHttpRequest()
           .. ' <http://upstream.example.com/api/v1/user/repos?page=5&limit=1>; rel="last"',
       },
     },
+    ["POST /api/v1/user/repos"] = { 201, REPO },
     ["/api/v1/users/octocat/repos"] = { 200, "[" .. REPO .. "]" },
     ["/api/v1/orgs/testorg/repos"] = {
       200,
@@ -148,6 +151,7 @@ function OnHttpRequest()
         .. '"created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",'
         .. '"pushed_at":"2020-01-01T00:00:00Z"}]',
     },
+    ["POST /api/v1/orgs/testorg/repos"] = { 201, REPO },
     ["/api/v1/repos/octocat/hello-world/topics"] = { 200, '{"topics":["lua","api"]}' },
     ["/api/v1/repos/octocat/hello-world/languages"] = { 200, '{"JavaScript":12345,"Lua":6789}' },
     ["/api/v1/repos/octocat/hello-world/contributors"] = {
@@ -763,7 +767,10 @@ function OnHttpRequest()
   local entry = routes[method .. " " .. path] or routes[path]
   if entry then
     local status, body, extra_headers = entry[1], entry[2], entry[3]
-    local reason = status == 200 and "OK" or status == 204 and "No Content" or "Not Found"
+    local reason = status == 200 and "OK"
+      or status == 201 and "Created"
+      or status == 204 and "No Content"
+      or "Not Found"
     SetStatus(status, reason)
     if extra_headers then
       for k, v in pairs(extra_headers) do
