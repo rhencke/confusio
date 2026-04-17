@@ -4246,3 +4246,124 @@ graphql_resolvers["Mutation.mergePullRequest"] = function(_parent, args, ctx)
     clientMutationId = cmid,
   }
 end
+
+-- ---------------------------------------------------------------------------
+-- Comment mutations
+-- ---------------------------------------------------------------------------
+
+-- Mutation.addComment: add a comment to an issue or pull request.
+-- Input fields: subjectId (required, Issue or PullRequest node ID), body (required).
+-- Sends POST /repos/{owner}/{repo}/issues/{number}/comments.
+-- Both Issue and PullRequest node IDs route to the /issues/{n}/comments path — Gitea
+-- uses the issues endpoint for PR comments too.
+-- The payload returns commentEdge (containing the new IssueComment) and clientMutationId.
+graphql_resolvers["Mutation.addComment"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.subjectId then
+    return graphql_error(ctx, "addComment requires input.subjectId", nil, "BAD_USER_INPUT")
+  end
+  if not input.body then
+    return graphql_error(ctx, "addComment requires input.body", nil, "BAD_USER_INPUT")
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.subjectId)
+  local owner, repo, number
+  if t == "Issue" or t == "PullRequest" then
+    owner, repo, number = lid:match("^([^/]+)/([^/]+)/(%d+)$")
+  end
+  if not owner then
+    return graphql_error(ctx, "addComment requires a valid issue or PR id", nil, "BAD_USER_INPUT")
+  end
+  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/issues/" .. number .. "/comments"
+  local body = EncodeJson({ body = input.body })
+  local data = graphql_fetch_or_error(fetch_json, path, ctx, nil, "POST", body)
+  if not data then
+    return nil
+  end
+  local comment = graphql_translate_comment(translate_gitea_issue_comment(data), owner, repo)
+  return {
+    commentEdge = {
+      __typename = "IssueCommentEdge",
+      cursor = graphql_page_to_cursor(1),
+      node = comment,
+    },
+    clientMutationId = cmid,
+  }
+end
+
+-- Mutation.updateIssueComment: update the body of an existing issue comment.
+-- Input fields: id (required, IssueComment node ID), body (required).
+-- Sends PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}.
+graphql_resolvers["Mutation.updateIssueComment"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.id then
+    return graphql_error(ctx, "updateIssueComment requires input.id", nil, "BAD_USER_INPUT")
+  end
+  if not input.body then
+    return graphql_error(ctx, "updateIssueComment requires input.body", nil, "BAD_USER_INPUT")
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.id)
+  if t ~= "IssueComment" then
+    return graphql_error(ctx, "updateIssueComment: invalid id", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo, cid = lid:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return graphql_error(ctx, "updateIssueComment: malformed id", nil, "BAD_USER_INPUT")
+  end
+  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/issues/comments/" .. cid
+  local body = EncodeJson({ body = input.body })
+  local data = graphql_fetch_or_error(fetch_json, path, ctx, nil, "PATCH", body)
+  if not data then
+    return nil
+  end
+  return {
+    issueComment = graphql_translate_comment(translate_gitea_issue_comment(data), owner, repo),
+    clientMutationId = cmid,
+  }
+end
+
+-- Mutation.deleteIssueComment: delete an issue comment.
+-- Input fields: id (required, IssueComment node ID).
+-- Sends DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}.
+-- Returns 204 No Content on success; the payload only contains the optional clientMutationId.
+graphql_resolvers["Mutation.deleteIssueComment"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.id then
+    return graphql_error(ctx, "deleteIssueComment requires input.id", nil, "BAD_USER_INPUT")
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.id)
+  if t ~= "IssueComment" then
+    return graphql_error(ctx, "deleteIssueComment: invalid id", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo, cid = lid:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return graphql_error(ctx, "deleteIssueComment: malformed id", nil, "BAD_USER_INPUT")
+  end
+  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/issues/comments/" .. cid
+  -- DELETE returns 204 No Content on success — no JSON body to decode.
+  local ok, status = fetch_json(path, "DELETE")
+  if not ok then
+    graphql_error(ctx, "network error deleting issue comment", nil, "INTERNAL_ERROR")
+    return nil
+  end
+  if status == 401 or status == 403 then
+    graphql_error(ctx, "not authorized to delete issue comment", nil, "FORBIDDEN")
+    return nil
+  end
+  if status == 404 then
+    graphql_error(ctx, "issue comment not found", nil, "NOT_FOUND")
+    return nil
+  end
+  if status ~= 204 then
+    graphql_error(
+      ctx,
+      "upstream error " .. tostring(status) .. " deleting issue comment",
+      nil,
+      "INTERNAL_ERROR"
+    )
+    return nil
+  end
+  return { clientMutationId = cmid }
+end
