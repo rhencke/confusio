@@ -371,3 +371,54 @@ HTTP 200
 jsonpath "$.data.createRepository" not exists
 jsonpath "$.errors" isCollection
 jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.updateRepository updates an existing repository
+# Node ID for Repository:octocat/hello-world = UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updateRepository(input: { repositoryId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\", description: \"Updated description\" }) { repository { name nameWithOwner description } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.updateRepository.repository.name" == "hello-world"
+jsonpath "$.data.updateRepository.repository.nameWithOwner" == "octocat/hello-world"
+jsonpath "$.data.updateRepository.repository.description" == "My first repo"
+jsonpath "$.data.updateRepository" exists
+
+# POST /graphql — Mutation.updateRepository echoes back clientMutationId
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updateRepository(input: { repositoryId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\", name: \"hello-world\", clientMutationId: \"relay-99\" }) { repository { name } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.updateRepository.repository.name" == "hello-world"
+jsonpath "$.data.updateRepository.clientMutationId" == "relay-99"
+
+# POST /graphql — Mutation.updateRepository without repositoryId returns BAD_USER_INPUT error
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updateRepository(input: { name: \"hello-world\" }) { repository { name } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.updateRepository" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.updateRepository with invalid repositoryId returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updateRepository(input: { repositoryId: \"dXNlcjoxMjM=\" }) { repository { name } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.updateRepository" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
