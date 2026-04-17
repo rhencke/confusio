@@ -601,3 +601,207 @@ do -- closePullRequest, reopenPullRequest, and mergePullRequest resolvers are di
     )
   end)
 end
+
+-- ============================================================
+-- Comment mutation dispatch
+-- ============================================================
+
+-- Node IDs used in tests:
+--   Issue:octocat/hello-world/1         = SXNzdWU6b2N0b2NhdC9oZWxsby13b3JsZC8x
+--   PullRequest:octocat/hello-world/1   = UHVsbFJlcXVlc3Q6b2N0b2NhdC9oZWxsby13b3JsZC8x
+--   IssueComment:octocat/hello-world/1  = SXNzdWVDb21tZW50Om9jdG9jYXQvaGVsbG8td29ybGQvMQ==
+
+do -- addComment resolver is dispatched with Issue subjectId and returns commentEdge
+  with_resolvers({
+    ["Mutation.addComment"] = function(_parent, _args, _ctx)
+      return {
+        commentEdge = {
+          __typename = "IssueCommentEdge",
+          cursor = "cGFnZTox",
+          node = { body = "This is a comment", __typename = "IssueComment" },
+        },
+        clientMutationId = nil,
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          addComment(input: {
+            subjectId: "SXNzdWU6b2N0b2NhdC9oZWxsby13b3JsZC8x",
+            body: "This is a comment"
+          }) {
+            commentEdge { node { body } }
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "addComment: resolver dispatched → no errors")
+    ok(r.data.addComment ~= nil, "addComment: resolver dispatched → payload present")
+    eq(
+      r.data.addComment.commentEdge.node.body,
+      "This is a comment",
+      "addComment: resolver dispatched → body returned"
+    )
+  end)
+end
+
+do -- addComment clientMutationId round-trip
+  with_resolvers({
+    ["Mutation.addComment"] = function(_parent, args, _ctx)
+      return {
+        commentEdge = {
+          __typename = "IssueCommentEdge",
+          cursor = "cGFnZTox",
+          node = { body = "This is a comment", __typename = "IssueComment" },
+        },
+        clientMutationId = get_client_mutation_id(args),
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          addComment(input: {
+            subjectId: "SXNzdWU6b2N0b2NhdC9oZWxsby13b3JsZC8x",
+            body: "This is a comment",
+            clientMutationId: "comment-relay-1"
+          }) {
+            commentEdge { node { body } }
+            clientMutationId
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "addComment: clientMutationId round-trip → no errors")
+    eq(
+      r.data.addComment.clientMutationId,
+      "comment-relay-1",
+      "addComment: clientMutationId round-trip → value echoed back"
+    )
+  end)
+end
+
+do -- updateIssueComment resolver is dispatched and returns issueComment payload
+  with_resolvers({
+    ["Mutation.updateIssueComment"] = function(_parent, _args, _ctx)
+      return {
+        issueComment = { body = "Updated comment", __typename = "IssueComment" },
+        clientMutationId = nil,
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          updateIssueComment(input: {
+            id: "SXNzdWVDb21tZW50Om9jdG9jYXQvaGVsbG8td29ybGQvMQ==",
+            body: "Updated comment"
+          }) {
+            issueComment { body }
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "updateIssueComment: resolver dispatched → no errors")
+    ok(
+      r.data.updateIssueComment ~= nil,
+      "updateIssueComment: resolver dispatched → payload present"
+    )
+    eq(
+      r.data.updateIssueComment.issueComment.body,
+      "Updated comment",
+      "updateIssueComment: resolver dispatched → body returned"
+    )
+  end)
+end
+
+do -- updateIssueComment clientMutationId round-trip
+  with_resolvers({
+    ["Mutation.updateIssueComment"] = function(_parent, args, _ctx)
+      return {
+        issueComment = { body = "Updated comment", __typename = "IssueComment" },
+        clientMutationId = get_client_mutation_id(args),
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          updateIssueComment(input: {
+            id: "SXNzdWVDb21tZW50Om9jdG9jYXQvaGVsbG8td29ybGQvMQ==",
+            body: "Updated comment",
+            clientMutationId: "comment-relay-2"
+          }) {
+            issueComment { body }
+            clientMutationId
+          }
+        }
+      ]],
+    })
+    ok(
+      r.errors == nil or #r.errors == 0,
+      "updateIssueComment: clientMutationId round-trip → no errors"
+    )
+    eq(
+      r.data.updateIssueComment.clientMutationId,
+      "comment-relay-2",
+      "updateIssueComment: clientMutationId round-trip → value echoed back"
+    )
+  end)
+end
+
+do -- deleteIssueComment resolver is dispatched; payload contains only clientMutationId
+  with_resolvers({
+    ["Mutation.deleteIssueComment"] = function(_parent, _args, _ctx)
+      return { clientMutationId = nil }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          deleteIssueComment(input: {
+            id: "SXNzdWVDb21tZW50Om9jdG9jYXQvaGVsbG8td29ybGQvMQ=="
+          }) {
+            clientMutationId
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "deleteIssueComment: resolver dispatched → no errors")
+    ok(
+      r.data.deleteIssueComment ~= nil,
+      "deleteIssueComment: resolver dispatched → payload present"
+    )
+  end)
+end
+
+do -- deleteIssueComment clientMutationId round-trip
+  with_resolvers({
+    ["Mutation.deleteIssueComment"] = function(_parent, args, _ctx)
+      return { clientMutationId = get_client_mutation_id(args) }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          deleteIssueComment(input: {
+            id: "SXNzdWVDb21tZW50Om9jdG9jYXQvaGVsbG8td29ybGQvMQ==",
+            clientMutationId: "comment-relay-3"
+          }) {
+            clientMutationId
+          }
+        }
+      ]],
+    })
+    ok(
+      r.errors == nil or #r.errors == 0,
+      "deleteIssueComment: clientMutationId round-trip → no errors"
+    )
+    eq(
+      r.data.deleteIssueComment.clientMutationId,
+      "comment-relay-3",
+      "deleteIssueComment: clientMutationId round-trip → value echoed back"
+    )
+  end)
+end

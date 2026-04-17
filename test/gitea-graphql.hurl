@@ -893,3 +893,165 @@ HTTP 200
 jsonpath "$.data.mergePullRequest" not exists
 jsonpath "$.errors" isCollection
 jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.addComment adds a comment to an issue
+# Node ID for Issue:octocat/hello-world/1 = SXNzdWU6b2N0b2NhdC9oZWxsby13b3JsZC8x
+# → POST /api/v1/repos/octocat/hello-world/issues/1/comments
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { addComment(input: { subjectId: \"SXNzdWU6b2N0b2NhdC9oZWxsby13b3JsZC8x\", body: \"This is a comment\" }) { commentEdge { node { body } } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.addComment.commentEdge.node.body" == "This is a comment"
+jsonpath "$.data.addComment.clientMutationId" not exists
+
+# POST /graphql — Mutation.addComment with PullRequest subjectId uses the /issues/{n}/comments path
+# Node ID for PullRequest:octocat/hello-world/1 = UHVsbFJlcXVlc3Q6b2N0b2NhdC9oZWxsby13b3JsZC8x
+# → POST /api/v1/repos/octocat/hello-world/issues/1/comments (same path as issues)
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { addComment(input: { subjectId: \"UHVsbFJlcXVlc3Q6b2N0b2NhdC9oZWxsby13b3JsZC8x\", body: \"This is a comment\" }) { commentEdge { node { body } } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.addComment.commentEdge.node.body" == "This is a comment"
+
+# POST /graphql — Mutation.addComment echoes back clientMutationId
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { addComment(input: { subjectId: \"SXNzdWU6b2N0b2NhdC9oZWxsby13b3JsZC8x\", body: \"This is a comment\", clientMutationId: \"comment-relay-1\" }) { commentEdge { node { body } } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.addComment.commentEdge.node.body" == "This is a comment"
+jsonpath "$.data.addComment.clientMutationId" == "comment-relay-1"
+
+# POST /graphql — Mutation.addComment without subjectId returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { addComment(input: { body: \"This is a comment\" }) { commentEdge { node { body } } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.addComment" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.addComment with wrong node type returns BAD_USER_INPUT
+# Node ID for User:octocat = VXNlcjpvY3RvY2F0
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { addComment(input: { subjectId: \"VXNlcjpvY3RvY2F0\", body: \"This is a comment\" }) { commentEdge { node { body } } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.addComment" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.updateIssueComment updates a comment
+# Node ID for IssueComment:octocat/hello-world/1 = SXNzdWVDb21tZW50Om9jdG9jYXQvaGVsbG8td29ybGQvMQ==
+# → PATCH /api/v1/repos/octocat/hello-world/issues/comments/1
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updateIssueComment(input: { id: \"SXNzdWVDb21tZW50Om9jdG9jYXQvaGVsbG8td29ybGQvMQ==\", body: \"Updated comment\" }) { issueComment { body } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.updateIssueComment.issueComment.body" == "This is a comment"
+jsonpath "$.data.updateIssueComment.clientMutationId" not exists
+
+# POST /graphql — Mutation.updateIssueComment echoes back clientMutationId
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updateIssueComment(input: { id: \"SXNzdWVDb21tZW50Om9jdG9jYXQvaGVsbG8td29ybGQvMQ==\", body: \"Updated comment\", clientMutationId: \"comment-relay-2\" }) { issueComment { body } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.updateIssueComment.clientMutationId" == "comment-relay-2"
+
+# POST /graphql — Mutation.updateIssueComment without id returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updateIssueComment(input: { body: \"Updated comment\" }) { issueComment { body } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.updateIssueComment" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.updateIssueComment with wrong node type returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updateIssueComment(input: { id: \"VXNlcjpvY3RvY2F0\", body: \"Updated comment\" }) { issueComment { body } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.updateIssueComment" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.deleteIssueComment deletes a comment
+# Node ID for IssueComment:octocat/hello-world/1 = SXNzdWVDb21tZW50Om9jdG9jYXQvaGVsbG8td29ybGQvMQ==
+# → DELETE /api/v1/repos/octocat/hello-world/issues/comments/1
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { deleteIssueComment(input: { id: \"SXNzdWVDb21tZW50Om9jdG9jYXQvaGVsbG8td29ybGQvMQ==\" }) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.deleteIssueComment" exists
+jsonpath "$.data.deleteIssueComment.clientMutationId" not exists
+
+# POST /graphql — Mutation.deleteIssueComment echoes back clientMutationId
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { deleteIssueComment(input: { id: \"SXNzdWVDb21tZW50Om9jdG9jYXQvaGVsbG8td29ybGQvMQ==\", clientMutationId: \"comment-relay-3\" }) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.deleteIssueComment.clientMutationId" == "comment-relay-3"
+
+# POST /graphql — Mutation.deleteIssueComment without id returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { deleteIssueComment(input: {}) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.deleteIssueComment" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.deleteIssueComment with wrong node type returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { deleteIssueComment(input: { id: \"VXNlcjpvY3RvY2F0\" }) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.deleteIssueComment" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
