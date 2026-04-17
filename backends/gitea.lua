@@ -3739,55 +3739,6 @@ end
 -- GraphQL mutation resolvers
 -- ---------------------------------------------------------------------------
 
--- Mutation.createRepository: create a new repository.
---
--- If input.ownerId is an Organisation node ID, POST to /api/v1/orgs/{org}/repos.
--- Otherwise (User node ID, or no ownerId), POST to /api/v1/user/repos.
---
--- GitHub visibility values: PUBLIC, PRIVATE, INTERNAL.
--- Gitea models visibility as the boolean `private` field.
-graphql_resolvers["Mutation.createRepository"] = function(_parent, args, ctx)
-  local input = (args or {}).input or {}
-  local cmid = get_client_mutation_id(args)
-
-  -- Determine the endpoint from the optional ownerId.
-  local url
-  if input.ownerId then
-    local kind, login = decode_node_id(input.ownerId)
-    if kind == "Organization" and login then
-      url = base() .. "/orgs/" .. login .. "/repos"
-    else
-      url = base() .. "/user/repos"
-    end
-  else
-    url = base() .. "/user/repos"
-  end
-
-  -- Map GitHub visibility to Gitea's boolean private flag.
-  local is_private = input.visibility == "PRIVATE" or input.visibility == "INTERNAL"
-
-  local body = EncodeJson({
-    name = input.name,
-    description = input.description,
-    private = is_private,
-    has_issues = input.hasIssuesEnabled,
-    has_wiki = input.hasWikiEnabled,
-    website = input.homepageUrl,
-  })
-
-  local data, err = graphql_fetch(fetch_json, url, "POST", body)
-  if not data then
-    graphql_error(ctx, err or "failed to create repository")
-    return nil
-  end
-
-  return {
-    __typename = "CreateRepositoryPayload",
-    repository = graphql_translate_repo(translate_repo(data)),
-    clientMutationId = cmid,
-  }
-end
-
 -- Mutation.createRepository: create a new repository for the authenticated user or an org.
 -- Input fields: name (required), description, visibility, initializeWithReadme, ownerId.
 -- If ownerId decodes to an Organization, uses POST /orgs/{org}/repos; otherwise /user/repos.
@@ -3812,6 +3763,45 @@ graphql_resolvers["Mutation.createRepository"] = function(_parent, args, ctx)
     auto_init = input.initializeWithReadme,
   })
   local data = graphql_fetch_or_error(fetch_json, path, ctx, nil, "POST", body)
+  if not data then
+    return nil
+  end
+  return {
+    repository = graphql_translate_repo(translate_repo(data)),
+    clientMutationId = cmid,
+  }
+end
+
+-- Mutation.updateRepository: update metadata for an existing repository.
+-- Input fields: repositoryId (required, Repository node ID), name, description,
+--   visibility, hasIssuesEnabled, hasWikiEnabled, homepageUrl.
+-- Sends PATCH /repos/{owner}/{repo} with only the supplied fields.
+graphql_resolvers["Mutation.updateRepository"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.repositoryId then
+    return graphql_error(ctx, "updateRepository requires input.repositoryId", nil, "BAD_USER_INPUT")
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.repositoryId)
+  if t ~= "Repository" then
+    return graphql_error(ctx, "updateRepository: invalid repositoryId", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo = lid:match("^([^/]+)/(.+)$")
+  if not owner then
+    return graphql_error(ctx, "updateRepository: malformed repositoryId", nil, "BAD_USER_INPUT")
+  end
+  local path = base() .. "/repos/" .. owner .. "/" .. repo
+  -- Map visibility enum to Gitea's boolean private field; nil if not supplied.
+  local is_private = input.visibility and (input.visibility == "PRIVATE") or nil
+  local body = EncodeJson({
+    name = input.name,
+    description = input.description,
+    private = is_private,
+    has_issues = input.hasIssuesEnabled,
+    has_wiki = input.hasWikiEnabled,
+    website = input.homepageUrl,
+  })
+  local data = graphql_fetch_or_error(fetch_json, path, ctx, nil, "PATCH", body)
   if not data then
     return nil
   end
