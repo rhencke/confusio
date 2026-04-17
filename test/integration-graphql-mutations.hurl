@@ -24,10 +24,12 @@ jsonpath "$.data.__typename" == "Mutation"
 jsonpath "$.errors" not exists
 
 # -----------------------------------------------------------------------
-# Repository mutation round-trip: createRepository → updateRepository → deleteRepository
+# Repository mutation round-trip: createRepository → updateRepository
 #
-# Uses a fixed repo name.  If a prior failed run left the repo behind,
-# delete confusio-mutation-test from your gitea.com account and re-run.
+# The repo is kept alive for the issue/comment tests below and deleted
+# at the very end of this file.  Uses a fixed repo name; if a prior
+# failed run left it behind, manually delete confusio-mutation-test
+# from your gitea.com account and re-run.
 # -----------------------------------------------------------------------
 
 # POST /graphql — createRepository: create a public test repo for the authenticated user
@@ -60,6 +62,108 @@ jsonpath "$.errors" not exists
 jsonpath "$.data.updateRepository.repository.name" == "confusio-mutation-test"
 jsonpath "$.data.updateRepository.repository.description" == "Updated by confusio integration test"
 jsonpath "$.data.updateRepository.clientMutationId" == "repo-update-relay-1"
+
+# -----------------------------------------------------------------------
+# Issue and comment mutation round-trip
+#
+# All resources live inside confusio-mutation-test; they are cleaned up
+# when the repo is deleted at the end of this file.
+# -----------------------------------------------------------------------
+
+# POST /graphql — createIssue: open an issue in the test repo
+POST http://{{host}}/graphql
+Authorization: token {{gitea_token}}
+Content-Type: application/json
+{"query": "mutation CreateIssue($rid: ID!) { createIssue(input: { repositoryId: $rid, title: \"confusio integration test issue\", body: \"This issue was created by the confusio integration test suite.\" }) { issue { id number title body state } clientMutationId } }", "variables": {"rid": "{{repo_id}}"}}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.createIssue.issue.title" == "confusio integration test issue"
+jsonpath "$.data.createIssue.issue.body" isString
+jsonpath "$.data.createIssue.issue.state" == "OPEN"
+jsonpath "$.data.createIssue.issue.number" isInteger
+jsonpath "$.data.createIssue.clientMutationId" not exists
+[Captures]
+issue_id: jsonpath "$.data.createIssue.issue.id"
+
+# POST /graphql — updateIssue: update title and echo clientMutationId
+POST http://{{host}}/graphql
+Authorization: token {{gitea_token}}
+Content-Type: application/json
+{"query": "mutation UpdateIssue($id: ID!) { updateIssue(input: { id: $id, title: \"confusio integration test issue (updated)\", clientMutationId: \"issue-update-relay-1\" }) { issue { title state } clientMutationId } }", "variables": {"id": "{{issue_id}}"}}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.updateIssue.issue.title" == "confusio integration test issue (updated)"
+jsonpath "$.data.updateIssue.issue.state" == "OPEN"
+jsonpath "$.data.updateIssue.clientMutationId" == "issue-update-relay-1"
+
+# POST /graphql — addComment: add a comment to the issue
+POST http://{{host}}/graphql
+Authorization: token {{gitea_token}}
+Content-Type: application/json
+{"query": "mutation AddComment($sid: ID!) { addComment(input: { subjectId: $sid, body: \"confusio integration test comment\" }) { commentEdge { node { id body } } clientMutationId } }", "variables": {"sid": "{{issue_id}}"}}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.addComment.commentEdge.node.body" == "confusio integration test comment"
+jsonpath "$.data.addComment.commentEdge.node.id" isString
+jsonpath "$.data.addComment.clientMutationId" not exists
+[Captures]
+comment_id: jsonpath "$.data.addComment.commentEdge.node.id"
+
+# POST /graphql — updateIssueComment: update the comment body and echo clientMutationId
+POST http://{{host}}/graphql
+Authorization: token {{gitea_token}}
+Content-Type: application/json
+{"query": "mutation UpdateComment($cid: ID!) { updateIssueComment(input: { id: $cid, body: \"confusio integration test comment (updated)\", clientMutationId: \"comment-update-relay-1\" }) { issueComment { body } clientMutationId } }", "variables": {"cid": "{{comment_id}}"}}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.updateIssueComment.issueComment.body" == "confusio integration test comment (updated)"
+jsonpath "$.data.updateIssueComment.clientMutationId" == "comment-update-relay-1"
+
+# POST /graphql — deleteIssueComment: delete the comment (tests delete path; issue cleaned up with repo)
+POST http://{{host}}/graphql
+Authorization: token {{gitea_token}}
+Content-Type: application/json
+{"query": "mutation DeleteComment($cid: ID!) { deleteIssueComment(input: { id: $cid }) { clientMutationId } }", "variables": {"cid": "{{comment_id}}"}}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+
+# POST /graphql — closeIssue: close the test issue
+POST http://{{host}}/graphql
+Authorization: token {{gitea_token}}
+Content-Type: application/json
+{"query": "mutation CloseIssue($id: ID!) { closeIssue(input: { issueId: $id, clientMutationId: \"close-relay-1\" }) { issue { state } clientMutationId } }", "variables": {"id": "{{issue_id}}"}}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.closeIssue.issue.state" == "CLOSED"
+jsonpath "$.data.closeIssue.clientMutationId" == "close-relay-1"
+
+# POST /graphql — reopenIssue: reopen to verify the round-trip completes
+POST http://{{host}}/graphql
+Authorization: token {{gitea_token}}
+Content-Type: application/json
+{"query": "mutation ReopenIssue($id: ID!) { reopenIssue(input: { issueId: $id }) { issue { state } clientMutationId } }", "variables": {"id": "{{issue_id}}"}}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.reopenIssue.issue.state" == "OPEN"
+jsonpath "$.data.reopenIssue.clientMutationId" not exists
+
+# -----------------------------------------------------------------------
+# Cleanup: delete the test repo (cascades to all issues and comments)
+# -----------------------------------------------------------------------
 
 # POST /graphql — deleteRepository: clean up the test repo (self-cleaning)
 POST http://{{host}}/graphql
