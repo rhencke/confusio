@@ -162,6 +162,103 @@ jsonpath "$.data.reopenIssue.issue.state" == "OPEN"
 jsonpath "$.data.reopenIssue.clientMutationId" not exists
 
 # -----------------------------------------------------------------------
+# Label mutation round-trip: createLabel → addLabelsToLabelable
+#
+# Label is created inside the test repo and added to the test issue.
+# Both are cleaned up automatically when the repo is deleted at the end.
+# -----------------------------------------------------------------------
+
+# POST /graphql — createLabel: create a label in the test repo
+POST http://{{host}}/graphql
+Authorization: token {{gitea_token}}
+Content-Type: application/json
+{"query": "mutation CreateLabel($rid: ID!) { createLabel(input: { repositoryId: $rid, name: \"confusio-test\", color: \"0075ca\", description: \"confusio integration test label\", clientMutationId: \"label-create-relay-1\" }) { label { id name color } clientMutationId } }", "variables": {"rid": "{{repo_id}}"}}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.createLabel.label.name" == "confusio-test"
+jsonpath "$.data.createLabel.label.color" isString
+jsonpath "$.data.createLabel.label.id" isString
+jsonpath "$.data.createLabel.clientMutationId" == "label-create-relay-1"
+[Captures]
+label_id: jsonpath "$.data.createLabel.label.id"
+
+# POST /graphql — addLabelsToLabelable: attach the new label to the test issue
+POST http://{{host}}/graphql
+Authorization: token {{gitea_token}}
+Content-Type: application/json
+{"query": "mutation AddLabel($lid: ID!, $iid: ID!) { addLabelsToLabelable(input: { labelableId: $iid, labelIds: [$lid] }) { labelable { ... on Issue { number title } } clientMutationId } }", "variables": {"lid": "{{label_id}}", "iid": "{{issue_id}}"}}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.addLabelsToLabelable.labelable.number" isInteger
+jsonpath "$.data.addLabelsToLabelable.clientMutationId" not exists
+
+# -----------------------------------------------------------------------
+# Star mutation round-trip: addStar → removeStar
+#
+# Uses the test repo (repo_id).  Toggling a star on your own repo is
+# allowed on gitea.com; the unstar leaves the state clean.
+# -----------------------------------------------------------------------
+
+# POST /graphql — addStar: star the test repo
+POST http://{{host}}/graphql
+Authorization: token {{gitea_token}}
+Content-Type: application/json
+{"query": "mutation AddStar($id: ID!) { addStar(input: { starrableId: $id, clientMutationId: \"star-add-relay-1\" }) { starrable { ... on Repository { name } } clientMutationId } }", "variables": {"id": "{{repo_id}}"}}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.addStar.starrable.name" == "confusio-mutation-test"
+jsonpath "$.data.addStar.clientMutationId" == "star-add-relay-1"
+
+# POST /graphql — removeStar: unstar the test repo (restores state)
+POST http://{{host}}/graphql
+Authorization: token {{gitea_token}}
+Content-Type: application/json
+{"query": "mutation RemoveStar($id: ID!) { removeStar(input: { starrableId: $id }) { starrable { ... on Repository { name } } clientMutationId } }", "variables": {"id": "{{repo_id}}"}}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.removeStar.starrable.name" == "confusio-mutation-test"
+jsonpath "$.data.removeStar.clientMutationId" not exists
+
+# -----------------------------------------------------------------------
+# Subscription mutation round-trip: updateSubscription SUBSCRIBED → UNSUBSCRIBED
+#
+# Subscribes to the test repo then immediately unsubscribes, leaving no
+# lasting watch state on gitea.com.
+# -----------------------------------------------------------------------
+
+# POST /graphql — updateSubscription: subscribe to the test repo
+POST http://{{host}}/graphql
+Authorization: token {{gitea_token}}
+Content-Type: application/json
+{"query": "mutation Subscribe($id: ID!) { updateSubscription(input: { subscribableId: $id, state: SUBSCRIBED, clientMutationId: \"sub-relay-1\" }) { subscribable { ... on Repository { name } } clientMutationId } }", "variables": {"id": "{{repo_id}}"}}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.updateSubscription.subscribable.name" == "confusio-mutation-test"
+jsonpath "$.data.updateSubscription.clientMutationId" == "sub-relay-1"
+
+# POST /graphql — updateSubscription: unsubscribe (restores state)
+POST http://{{host}}/graphql
+Authorization: token {{gitea_token}}
+Content-Type: application/json
+{"query": "mutation Unsubscribe($id: ID!) { updateSubscription(input: { subscribableId: $id, state: UNSUBSCRIBED }) { subscribable { ... on Repository { name } } clientMutationId } }", "variables": {"id": "{{repo_id}}"}}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.updateSubscription.subscribable.name" == "confusio-mutation-test"
+jsonpath "$.data.updateSubscription.clientMutationId" not exists
+
+# -----------------------------------------------------------------------
 # Cleanup: delete the test repo (cascades to all issues and comments)
 # -----------------------------------------------------------------------
 
