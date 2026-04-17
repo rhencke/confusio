@@ -92,6 +92,7 @@ dofile("test/graphql-node-resolvers.lua")
 dofile("test/graphql-ratelimit-viewer.lua")
 dofile("test/graphql-fragments-vars-directives.lua")
 dofile("test/graphql-batching-caching.lua")
+dofile("test/graphql-mutations.lua")
 
 -- ============================================================
 -- Summary

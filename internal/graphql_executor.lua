@@ -5,12 +5,13 @@
 --           graphql_schema_* (internal/graphql_schema.lua).
 --
 -- Globals exported:
---   graphql_resolvers            — table; backends populate at load time alongside backend_impl
---   graphql_handler()            — HTTP handler for POST /graphql; registered in catalog
---   respond_graphql(data, errs)  — null-safe GraphQL response writer
---   graphql_error(ctx, ...)      — error-recording helper called by resolvers
---   graphql_cached(ctx, key, fn) — request-scoped cache helper for resolvers
---   estimate_query_cost(op, vars) — query cost estimator; exposed for unit tests
+--   graphql_resolvers              — table; backends populate at load time alongside backend_impl
+--   graphql_handler()              — HTTP handler for POST /graphql; registered in catalog
+--   respond_graphql(data, errs)    — null-safe GraphQL response writer
+--   graphql_error(ctx, ...)        — error-recording helper called by resolvers
+--   graphql_cached(ctx, key, fn)   — request-scoped cache helper for resolvers
+--   estimate_query_cost(op, vars)  — query cost estimator; exposed for unit tests
+--   get_client_mutation_id(args)   — extract clientMutationId from mutation input; used by mutation resolvers
 
 -- ---------------------------------------------------------------------------
 -- Resolver registry
@@ -762,6 +763,27 @@ graphql_resolvers["Query.rateLimit"] = function(_parent, _args, ctx)
 end
 
 -- ---------------------------------------------------------------------------
+-- get_client_mutation_id
+-- ---------------------------------------------------------------------------
+
+-- Extract the optional Relay clientMutationId from a mutation args table.
+-- The Relay mutation specification requires every mutation input type to
+-- include an optional clientMutationId: String field; the payload type echoes
+-- it back unchanged.  Mutation resolvers call this helper to extract the value,
+-- strip it from the REST body (by never forwarding it), and include it in the
+-- returned payload table.
+--
+-- Usage in a mutation resolver:
+--   local cmid = get_client_mutation_id(args)
+--   ...REST call...
+--   return { repository = ..., clientMutationId = cmid }
+--
+-- Returns the string value, or nil if absent.
+function get_client_mutation_id(args) -- luacheck: globals get_client_mutation_id
+  return args and args.input and args.input.clientMutationId or nil
+end
+
+-- ---------------------------------------------------------------------------
 -- graphql_handler
 -- ---------------------------------------------------------------------------
 
@@ -823,6 +845,17 @@ function graphql_handler() -- luacheck: globals graphql_handler
     respond_graphql(nil, {
       {
         message = sel_err,
+        extensions = { code = "BAD_USER_INPUT" },
+      },
+    })
+    return
+  end
+
+  -- Step 3a: reject subscription operations (not supported).
+  if op.operation == "subscription" then
+    respond_graphql(nil, {
+      {
+        message = "subscriptions are not supported",
         extensions = { code = "BAD_USER_INPUT" },
       },
     })

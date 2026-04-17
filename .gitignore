@@ -2,3 +2,9 @@ _site/
 luacov.stats.out
 luacov.report.out
 .make-families.mk
+redbean.com
+confusio.com
+mock-*.com
+hurl
+stylua
+luacheck

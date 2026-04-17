@@ -13,6 +13,17 @@ header "Content-Type" == "application/json; charset=utf-8"
 jsonpath "$.data.__typename" == "Query"
 jsonpath "$.errors" not exists
 
+# POST /graphql — __typename on the Mutation root is always resolved
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "mutation { __typename }"}
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$.data.__typename" == "Mutation"
+jsonpath "$.errors" not exists
+
 # POST /graphql — batch request rejected with HTTP 400 (Phase 1: doc 12)
 POST http://{{host}}/graphql
 Content-Type: application/json
