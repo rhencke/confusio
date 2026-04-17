@@ -3357,6 +3357,77 @@ graphql_resolvers["node.Label"] = function(local_id, _ctx)
   return graphql_translate_label(translate_gitea_label(data), owner, repo)
 end
 
+-- node.Milestone: fetch a milestone by "owner/repo/number" local ID.
+graphql_resolvers["node.Milestone"] = function(local_id, _ctx)
+  local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ = graphql_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo .. "/milestones/" .. number
+  )
+  if not data then
+    return nil
+  end
+  return graphql_translate_milestone(data, owner, repo)
+end
+
+-- node.Commit: fetch a commit by "owner/repo/sha" local ID.
+graphql_resolvers["node.Commit"] = function(local_id, _ctx)
+  local owner, repo, sha = local_id:match("^([^/]+)/([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ =
+    graphql_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo .. "/git/commits/" .. sha)
+  if not data then
+    return nil
+  end
+  return graphql_translate_commit(data, owner, repo)
+end
+
+-- node.Ref: fetch a branch ref by "owner/repo/refs/heads/..." local ID.
+-- Gitea branch objects use commit.id for the SHA; normalise to commit.sha before translating.
+graphql_resolvers["node.Ref"] = function(local_id, _ctx)
+  local owner, repo, ref_path = local_id:match("^([^/]+)/([^/]+)/(refs/.+)$")
+  if not owner then
+    return nil
+  end
+  local branch = ref_path:match("^refs/heads/(.+)$")
+  if not branch then
+    return nil
+  end
+  local data, _ =
+    graphql_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo .. "/branches/" .. branch)
+  if not data then
+    return nil
+  end
+  if data.commit then
+    data.commit.sha = data.commit.id
+  end
+  local repo_stub = { __typename = "Repository", nameWithOwner = owner .. "/" .. repo }
+  return graphql_translate_ref(data, repo_stub)
+end
+
+-- node.Team: fetch a team by "org/slug" local ID.
+-- Gitea teams use numeric IDs; resolve slug → ID via gitea_find_team_id, then fetch /teams/{id}.
+graphql_resolvers["node.Team"] = function(local_id, _ctx)
+  local org, slug = local_id:match("^([^/]+)/([^/]+)$")
+  if not org then
+    return nil
+  end
+  local id = gitea_find_team_id(org, slug)
+  if not id then
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, base() .. "/teams/" .. id)
+  if not data then
+    return nil
+  end
+  return graphql_translate_team(translate_gitea_team(data), org)
+end
+
 -- ---------------------------------------------------------------------------
 -- Repository connection sub-resolvers
 -- ---------------------------------------------------------------------------
@@ -3545,7 +3616,7 @@ graphql_resolvers["PullRequest.commits"] = function(parent, args, ctx)
     nodes[#nodes + 1] = {
       __typename = "PullRequestCommit",
       id = encode_node_id("PullRequestCommit", sha),
-      commit = graphql_translate_commit(c),
+      commit = graphql_translate_commit(c, owner, repo),
       url = c.html_url,
     }
   end

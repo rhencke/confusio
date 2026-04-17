@@ -2318,7 +2318,7 @@ graphql_resolvers["PullRequest.commits"] = function(parent, args, ctx)
     nodes[#nodes + 1] = {
       __typename = "PullRequestCommit",
       id = encode_node_id("PullRequestCommit", sha),
-      commit = graphql_translate_commit(translated),
+      commit = graphql_translate_commit(translated, owner, repo),
       url = translated.html_url,
     }
   end

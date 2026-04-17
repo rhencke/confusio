@@ -31,7 +31,8 @@
 --   graphql_translate_label(l[, owner, repo])
 --   graphql_translate_milestone(m[, owner, repo])
 --   graphql_translate_comment(c[, owner, repo])
---   graphql_translate_commit(c)
+--   graphql_translate_commit(c[, owner, repo])
+--   graphql_translate_team(t[, org])
 --   graphql_translate_ref(r, repo)
 --   graphql_translate_release(r[, owner, repo])
 --   graphql_translate_review(r[, owner, repo])
@@ -608,11 +609,14 @@ function graphql_translate_comment(c, owner, repo) -- luacheck: globals graphql_
 end
 
 -- graphql_translate_commit is global: converts a GitHub REST commit to GraphQL Commit shape.
--- Node IDs for commits omit owner/repo context (Commit is a Phase 2 node resolver target).
-function graphql_translate_commit(c) -- luacheck: globals graphql_translate_commit
+-- owner and repo are optional; when provided they embed owner/repo in the node ID so the
+-- commit can be re-fetched via node().
+function graphql_translate_commit(c, owner, repo) -- luacheck: globals graphql_translate_commit
   if not c then
     return nil
   end
+  local sha = c.sha or ""
+  local local_id = (owner and repo) and (owner .. "/" .. repo .. "/" .. sha) or sha
   -- REST commits nest author/committer metadata under c.commit; bare objects have them at root.
   local git = c.commit or c
   local msg = git.message or c.message or ""
@@ -620,7 +624,7 @@ function graphql_translate_commit(c) -- luacheck: globals graphql_translate_comm
   local git_committer = git.committer or {}
   return {
     __typename = "Commit",
-    id = encode_node_id("Commit", c.sha or ""),
+    id = encode_node_id("Commit", local_id),
     oid = c.sha,
     message = msg,
     messageHeadline = msg:match("^([^\n]*)") or "",
@@ -641,6 +645,28 @@ function graphql_translate_commit(c) -- luacheck: globals graphql_translate_comm
     authoredDate = git_author.date,
     committedDate = git_committer.date,
     url = c.html_url,
+  }
+end
+
+-- graphql_translate_team is global: converts a GitHub REST team to GraphQL Team shape.
+-- org is optional; when provided it gives the team a resolvable node ID (org/slug).
+local TEAM_PRIVACY = { secret = "SECRET", closed = "VISIBLE" }
+function graphql_translate_team(t, org) -- luacheck: globals graphql_translate_team
+  if not t then
+    return nil
+  end
+  local slug = t.slug or ""
+  local local_id = (org and slug ~= "") and (org .. "/" .. slug) or slug
+  return {
+    __typename = "Team",
+    id = encode_node_id("Team", local_id),
+    databaseId = t.id,
+    name = t.name,
+    slug = slug,
+    combinedSlug = org and (org .. "/" .. slug) or slug,
+    description = (t.description and t.description ~= "") and t.description or nil,
+    privacy = TEAM_PRIVACY[t.privacy] or "VISIBLE",
+    notificationSetting = "NOTIFICATIONS_ENABLED",
   }
 end
 

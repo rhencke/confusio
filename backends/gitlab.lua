@@ -3989,6 +3989,92 @@ graphql_resolvers["node.Label"] = function(local_id, _ctx)
   return graphql_translate_label(translate_gl_label(data), owner, repo)
 end
 
+-- node.Milestone: fetch a milestone by "owner/repo/number" local ID.
+-- GitLab milestone numbers are iid (project-local); stored as number in the node ID.
+graphql_resolvers["node.Milestone"] = function(local_id, _ctx)
+  local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ = graphql_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo) .. "/milestones/" .. number
+  )
+  if not data then
+    return nil
+  end
+  return graphql_translate_milestone(translate_gl_milestone(data), owner, repo)
+end
+
+-- node.Commit: fetch a commit by "owner/repo/sha" local ID.
+-- GitLab returns a flat commit object; translate to REST shape before passing to the shared translator.
+graphql_resolvers["node.Commit"] = function(local_id, _ctx)
+  local owner, repo, sha = local_id:match("^([^/]+)/([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  local c, _ = graphql_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo) .. "/repository/commits/" .. sha
+  )
+  if not c then
+    return nil
+  end
+  local rest_commit = {
+    sha = c.id,
+    html_url = c.web_url or "",
+    commit = {
+      message = c.message,
+      author = { name = c.author_name, email = c.author_email, date = c.authored_date },
+      committer = {
+        name = c.committer_name or c.author_name,
+        email = c.committer_email or c.author_email,
+        date = c.committed_date or c.authored_date,
+      },
+    },
+  }
+  return graphql_translate_commit(rest_commit, owner, repo)
+end
+
+-- node.Ref: fetch a branch ref by "owner/repo/refs/heads/..." local ID.
+-- GitLab branch objects use commit.id for the SHA; normalise to commit.sha before translating.
+graphql_resolvers["node.Ref"] = function(local_id, _ctx)
+  local owner, repo, ref_path = local_id:match("^([^/]+)/([^/]+)/(refs/.+)$")
+  if not owner then
+    return nil
+  end
+  local branch = ref_path:match("^refs/heads/(.+)$")
+  if not branch then
+    return nil
+  end
+  local data, _ = graphql_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo) .. "/repository/branches/" .. branch
+  )
+  if not data then
+    return nil
+  end
+  if data.commit then
+    data.commit.sha = data.commit.id
+  end
+  local repo_stub = { __typename = "Repository", nameWithOwner = owner .. "/" .. repo }
+  return graphql_translate_ref(data, repo_stub)
+end
+
+-- node.Team: fetch a team (subgroup) by "org/slug" local ID.
+-- GitLab teams map to subgroups; fetch by URL-encoded path /groups/{org}%2F{slug}.
+graphql_resolvers["node.Team"] = function(local_id, _ctx)
+  local org, slug = local_id:match("^([^/]+)/([^/]+)$")
+  if not org then
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, base() .. "/groups/" .. org .. "%2F" .. slug)
+  if not data then
+    return nil
+  end
+  return graphql_translate_team(translate_gl_team(data), org)
+end
+
 -- ---------------------------------------------------------------------------
 -- Repository connection sub-resolvers
 -- ---------------------------------------------------------------------------
@@ -4231,7 +4317,7 @@ graphql_resolvers["PullRequest.commits"] = function(parent, args, ctx)
     nodes[#nodes + 1] = {
       __typename = "PullRequestCommit",
       id = encode_node_id("PullRequestCommit", c.id or ""),
-      commit = graphql_translate_commit(rest_commit),
+      commit = graphql_translate_commit(rest_commit, owner, repo),
       url = c.web_url or "",
     }
   end

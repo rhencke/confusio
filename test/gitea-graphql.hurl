@@ -97,6 +97,50 @@ HTTP 200
 jsonpath "$.data.node.name" == "bug"
 jsonpath "$.data.node.color" == "d73a4a"
 
+# POST /graphql — node(Milestone) fetches a milestone by encoded node ID
+# Node ID for Milestone:octocat/hello-world/1 = TWlsZXN0b25lOm9jdG9jYXQvaGVsbG8td29ybGQvMQ==
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ node(id: \"TWlsZXN0b25lOm9jdG9jYXQvaGVsbG8td29ybGQvMQ==\") { ... on Milestone { title state } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.node.title" == "v1.0"
+jsonpath "$.data.node.state" == "OPEN"
+
+# POST /graphql — node(Commit) fetches a commit by encoded node ID
+# Node ID for Commit:octocat/hello-world/abc123 = Q29tbWl0Om9jdG9jYXQvaGVsbG8td29ybGQvYWJjMTIz
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ node(id: \"Q29tbWl0Om9jdG9jYXQvaGVsbG8td29ybGQvYWJjMTIz\") { ... on Commit { oid message } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.node.oid" == "abc123def456"
+jsonpath "$.data.node.message" == "Initial commit"
+
+# POST /graphql — node(Ref) fetches a branch ref by encoded node ID
+# Node ID for Ref:octocat/hello-world/refs/heads/main = UmVmOm9jdG9jYXQvaGVsbG8td29ybGQvcmVmcy9oZWFkcy9tYWlu
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ node(id: \"UmVmOm9jdG9jYXQvaGVsbG8td29ybGQvcmVmcy9oZWFkcy9tYWlu\") { ... on Ref { name prefix } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.node.name" == "main"
+jsonpath "$.data.node.prefix" == "refs/heads/"
+
+# POST /graphql — node(Team) fetches a team by encoded node ID
+# Node ID for Team:testorg/core = VGVhbTp0ZXN0b3JnL2NvcmU=
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ node(id: \"VGVhbTp0ZXN0b3JnL2NvcmU=\") { ... on Team { name slug } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.node.name" == "core"
+jsonpath "$.data.node.slug" == "core"
+
 # POST /graphql — Repository.owner is inlined by the translator (no sub-resolver)
 POST http://{{host}}/graphql
 Content-Type: application/json

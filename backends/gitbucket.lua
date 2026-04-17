@@ -1534,6 +1534,70 @@ graphql_resolvers["node.Label"] = function(local_id, _ctx)
   return graphql_translate_label(data, owner, repo)
 end
 
+-- node.Milestone: fetch a milestone by "owner/repo/number" local ID.
+graphql_resolvers["node.Milestone"] = function(local_id, _ctx)
+  local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ = graphql_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo .. "/milestones/" .. number
+  )
+  if not data then
+    return nil
+  end
+  return graphql_translate_milestone(data, owner, repo)
+end
+
+-- node.Commit: fetch a commit by "owner/repo/sha" local ID.
+graphql_resolvers["node.Commit"] = function(local_id, _ctx)
+  local owner, repo, sha = local_id:match("^([^/]+)/([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ =
+    graphql_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo .. "/commits/" .. sha)
+  if not data then
+    return nil
+  end
+  return graphql_translate_commit(data, owner, repo)
+end
+
+-- node.Ref: fetch a branch ref by "owner/repo/refs/heads/..." local ID.
+-- GitBucket branch objects are GitHub-compatible (commit.sha already present).
+graphql_resolvers["node.Ref"] = function(local_id, _ctx)
+  local owner, repo, ref_path = local_id:match("^([^/]+)/([^/]+)/(refs/.+)$")
+  if not owner then
+    return nil
+  end
+  local branch = ref_path:match("^refs/heads/(.+)$")
+  if not branch then
+    return nil
+  end
+  local data, _ =
+    graphql_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo .. "/branches/" .. branch)
+  if not data then
+    return nil
+  end
+  local repo_stub = { __typename = "Repository", nameWithOwner = owner .. "/" .. repo }
+  return graphql_translate_ref(data, repo_stub)
+end
+
+-- node.Team: fetch a team by "org/slug" local ID.
+-- GitBucket is GitHub-compatible; /orgs/{org}/teams/{slug} returns the team directly.
+graphql_resolvers["node.Team"] = function(local_id, _ctx)
+  local org, slug = local_id:match("^([^/]+)/([^/]+)$")
+  if not org then
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, base() .. "/orgs/" .. org .. "/teams/" .. slug)
+  if not data then
+    return nil
+  end
+  return graphql_translate_team(data, org)
+end
+
 -- ---------------------------------------------------------------------------
 -- Repository connection sub-resolvers
 -- ---------------------------------------------------------------------------
@@ -1694,7 +1758,7 @@ graphql_resolvers["PullRequest.commits"] = function(parent, args, ctx)
     nodes[#nodes + 1] = {
       __typename = "PullRequestCommit",
       id = encode_node_id("PullRequestCommit", sha),
-      commit = graphql_translate_commit(c),
+      commit = graphql_translate_commit(c, owner, repo),
       url = c.html_url,
     }
   end
