@@ -3855,3 +3855,171 @@ graphql_resolvers["Mutation.deleteRepository"] = function(_parent, args, ctx)
   end
   return { clientMutationId = cmid }
 end
+
+-- ---------------------------------------------------------------------------
+-- Issue mutations
+-- ---------------------------------------------------------------------------
+
+-- Mutation.createIssue: create a new issue in a repository.
+-- Input fields: repositoryId (required, Repository node ID), title (required),
+--   body, labelIds (array of Label node IDs), assigneeIds (array of User node IDs),
+--   milestoneId (Milestone node ID).
+-- Sends POST /repos/{owner}/{repo}/issues and returns the created issue.
+graphql_resolvers["Mutation.createIssue"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.repositoryId then
+    return graphql_error(ctx, "createIssue requires input.repositoryId", nil, "BAD_USER_INPUT")
+  end
+  if not input.title then
+    return graphql_error(ctx, "createIssue requires input.title", nil, "BAD_USER_INPUT")
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.repositoryId)
+  if t ~= "Repository" then
+    return graphql_error(ctx, "createIssue: invalid repositoryId", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo = lid:match("^([^/]+)/(.+)$")
+  if not owner then
+    return graphql_error(ctx, "createIssue: malformed repositoryId", nil, "BAD_USER_INPUT")
+  end
+  -- Decode labelIds → integer label IDs (Gitea accepts numeric IDs).
+  local labels = {}
+  for _, lid_encoded in ipairs(input.labelIds or {}) do
+    local lt, llid = decode_node_id(lid_encoded)
+    if lt == "Label" then
+      local _, _, label_id = llid:match("^([^/]+)/([^/]+)/(.+)$")
+      if label_id then
+        labels[#labels + 1] = tonumber(label_id)
+      end
+    end
+  end
+  -- Decode assigneeIds → logins.
+  local assignees = {}
+  for _, aid_encoded in ipairs(input.assigneeIds or {}) do
+    local at, alid = decode_node_id(aid_encoded)
+    if at == "User" then
+      assignees[#assignees + 1] = alid
+    end
+  end
+  -- Decode milestoneId → integer milestone number.
+  local milestone_id
+  if input.milestoneId then
+    local mt, mlid = decode_node_id(input.milestoneId)
+    if mt == "Milestone" then
+      local _, _, mnum = mlid:match("^([^/]+)/([^/]+)/(.+)$")
+      if mnum then
+        milestone_id = tonumber(mnum)
+      end
+    end
+  end
+  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/issues"
+  local body = EncodeJson({
+    title = input.title,
+    body = input.body,
+    labels = #labels > 0 and labels or nil,
+    assignees = #assignees > 0 and assignees or nil,
+    milestone = milestone_id,
+  })
+  local data = graphql_fetch_or_error(fetch_json, path, ctx, nil, "POST", body)
+  if not data then
+    return nil
+  end
+  return {
+    issue = graphql_translate_issue(translate_gitea_issue(data), owner, repo),
+    clientMutationId = cmid,
+  }
+end
+
+-- Mutation.updateIssue: update the title, body, and/or state of an issue.
+-- Input fields: id (required, Issue node ID), title, body, state (OPEN or CLOSED).
+-- Sends PATCH /repos/{owner}/{repo}/issues/{number}.
+graphql_resolvers["Mutation.updateIssue"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.id then
+    return graphql_error(ctx, "updateIssue requires input.id", nil, "BAD_USER_INPUT")
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.id)
+  if t ~= "Issue" then
+    return graphql_error(ctx, "updateIssue: invalid id", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo, number = lid:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return graphql_error(ctx, "updateIssue: malformed id", nil, "BAD_USER_INPUT")
+  end
+  -- Map GitHub state enum to Gitea REST state string.
+  local state
+  if input.state == "CLOSED" then
+    state = "closed"
+  elseif input.state == "OPEN" then
+    state = "open"
+  end
+  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/issues/" .. number
+  local body = EncodeJson({ title = input.title, body = input.body, state = state })
+  local data = graphql_fetch_or_error(fetch_json, path, ctx, nil, "PATCH", body)
+  if not data then
+    return nil
+  end
+  return {
+    issue = graphql_translate_issue(translate_gitea_issue(data), owner, repo),
+    clientMutationId = cmid,
+  }
+end
+
+-- Mutation.closeIssue: close an open issue.
+-- Input fields: issueId (required, Issue node ID).
+-- Sends PATCH /repos/{owner}/{repo}/issues/{number} with state=closed.
+graphql_resolvers["Mutation.closeIssue"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.issueId then
+    return graphql_error(ctx, "closeIssue requires input.issueId", nil, "BAD_USER_INPUT")
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.issueId)
+  if t ~= "Issue" then
+    return graphql_error(ctx, "closeIssue: invalid issueId", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo, number = lid:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return graphql_error(ctx, "closeIssue: malformed issueId", nil, "BAD_USER_INPUT")
+  end
+  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/issues/" .. number
+  local data =
+    graphql_fetch_or_error(fetch_json, path, ctx, nil, "PATCH", EncodeJson({ state = "closed" }))
+  if not data then
+    return nil
+  end
+  return {
+    issue = graphql_translate_issue(translate_gitea_issue(data), owner, repo),
+    clientMutationId = cmid,
+  }
+end
+
+-- Mutation.reopenIssue: reopen a closed issue.
+-- Input fields: issueId (required, Issue node ID).
+-- Sends PATCH /repos/{owner}/{repo}/issues/{number} with state=open.
+graphql_resolvers["Mutation.reopenIssue"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.issueId then
+    return graphql_error(ctx, "reopenIssue requires input.issueId", nil, "BAD_USER_INPUT")
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.issueId)
+  if t ~= "Issue" then
+    return graphql_error(ctx, "reopenIssue: invalid issueId", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo, number = lid:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return graphql_error(ctx, "reopenIssue: malformed issueId", nil, "BAD_USER_INPUT")
+  end
+  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/issues/" .. number
+  local data =
+    graphql_fetch_or_error(fetch_json, path, ctx, nil, "PATCH", EncodeJson({ state = "open" }))
+  if not data then
+    return nil
+  end
+  return {
+    issue = graphql_translate_issue(translate_gitea_issue(data), owner, repo),
+    clientMutationId = cmid,
+  }
+end

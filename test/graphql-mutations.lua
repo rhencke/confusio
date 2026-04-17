@@ -229,3 +229,147 @@ do -- mutation validation error: unknown field on Mutation type
     "mutation: validation error → VALIDATION_ERROR code"
   )
 end
+
+-- ============================================================
+-- Issue mutation dispatch
+-- ============================================================
+
+-- Node IDs used in tests:
+--   Repository:octocat/hello-world = UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk
+--   Issue:octocat/hello-world/1    = SXNzdWU6b2N0b2NhdC9oZWxsby13b3JsZC8x
+
+do -- createIssue resolver is dispatched and returns issue payload
+  with_resolvers({
+    ["Mutation.createIssue"] = function(_parent, _args, _ctx)
+      return {
+        issue = { number = 1, title = "Found a bug", state = "OPEN", __typename = "Issue" },
+        clientMutationId = nil,
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          createIssue(input: {
+            repositoryId: "UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk",
+            title: "Found a bug"
+          }) {
+            issue { number title state }
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "createIssue: resolver dispatched → no errors")
+    ok(r.data.createIssue ~= nil, "createIssue: resolver dispatched → payload present")
+    eq(
+      r.data.createIssue.issue.title,
+      "Found a bug",
+      "createIssue: resolver dispatched → title returned"
+    )
+    eq(
+      r.data.createIssue.issue.state,
+      "OPEN",
+      "createIssue: resolver dispatched → state returned"
+    )
+  end)
+end
+
+do -- createIssue clientMutationId round-trip
+  with_resolvers({
+    ["Mutation.createIssue"] = function(_parent, args, _ctx)
+      return {
+        issue = { number = 1, title = "Found a bug", state = "OPEN", __typename = "Issue" },
+        clientMutationId = get_client_mutation_id(args),
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          createIssue(input: {
+            repositoryId: "UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk",
+            title: "Found a bug",
+            clientMutationId: "issue-relay-1"
+          }) {
+            issue { number }
+            clientMutationId
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "createIssue: clientMutationId round-trip → no errors")
+    eq(
+      r.data.createIssue.clientMutationId,
+      "issue-relay-1",
+      "createIssue: clientMutationId round-trip → value echoed back"
+    )
+  end)
+end
+
+do -- updateIssue resolver is dispatched and returns issue payload
+  with_resolvers({
+    ["Mutation.updateIssue"] = function(_parent, _args, _ctx)
+      return {
+        issue = { number = 1, title = "Found a bug", state = "OPEN", __typename = "Issue" },
+        clientMutationId = nil,
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          updateIssue(input: {
+            id: "SXNzdWU6b2N0b2NhdC9oZWxsby13b3JsZC8x",
+            title: "Updated bug"
+          }) {
+            issue { number title state }
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "updateIssue: resolver dispatched → no errors")
+    ok(r.data.updateIssue ~= nil, "updateIssue: resolver dispatched → payload present")
+    eq(r.data.updateIssue.issue.number, 1, "updateIssue: resolver dispatched → number returned")
+  end)
+end
+
+do -- closeIssue and reopenIssue resolvers are dispatched
+  with_resolvers({
+    ["Mutation.closeIssue"] = function(_parent, _args, _ctx)
+      return {
+        issue = { number = 1, title = "Found a bug", state = "CLOSED", __typename = "Issue" },
+        clientMutationId = nil,
+      }
+    end,
+    ["Mutation.reopenIssue"] = function(_parent, _args, _ctx)
+      return {
+        issue = { number = 1, title = "Found a bug", state = "OPEN", __typename = "Issue" },
+        clientMutationId = nil,
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          closeIssue(input: { issueId: "SXNzdWU6b2N0b2NhdC9oZWxsby13b3JsZC8x" }) {
+            issue { number state }
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "closeIssue: resolver dispatched → no errors")
+    eq(r.data.closeIssue.issue.state, "CLOSED", "closeIssue: resolver dispatched → state CLOSED")
+
+    r = call_handler({
+      query = [[
+        mutation {
+          reopenIssue(input: { issueId: "SXNzdWU6b2N0b2NhdC9oZWxsby13b3JsZC8x" }) {
+            issue { number state }
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "reopenIssue: resolver dispatched → no errors")
+    eq(r.data.reopenIssue.issue.state, "OPEN", "reopenIssue: resolver dispatched → state OPEN")
+  end)
+end
