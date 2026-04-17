@@ -229,3 +229,168 @@ do -- mutation validation error: unknown field on Mutation type
     "mutation: validation error → VALIDATION_ERROR code"
   )
 end
+
+-- ============================================================
+-- Issue mutation resolver dispatch
+-- ============================================================
+
+do -- createIssue resolver is dispatched and returns issue payload
+  local repo_id = encode_node_id("Repository", "octocat/hello-world")
+  with_resolvers({
+    ["Mutation.createIssue"] = function(_parent, _args, _ctx)
+      return {
+        issue = {
+          __typename = "Issue",
+          id = encode_node_id("Issue", "octocat/hello-world/1"),
+          number = 1,
+          title = "Found a bug",
+          state = "OPEN",
+        },
+        clientMutationId = nil,
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = string.format(
+        [[mutation { createIssue(input: { repositoryId: "%s", title: "Found a bug" }) { issue { number title state } clientMutationId } }]],
+        repo_id
+      ),
+    })
+    ok(r.errors == nil or #r.errors == 0, "createIssue: resolver dispatched → no errors")
+    ok(r.data.createIssue ~= nil, "createIssue: resolver dispatched → payload present")
+    eq(r.data.createIssue.issue.number, 1, "createIssue: payload → issue.number")
+    eq(r.data.createIssue.issue.title, "Found a bug", "createIssue: payload → issue.title")
+    eq(r.data.createIssue.issue.state, "OPEN", "createIssue: payload → issue.state open")
+  end)
+end
+
+do -- updateIssue resolver is dispatched and returns updated issue
+  local issue_id = encode_node_id("Issue", "octocat/hello-world/1")
+  with_resolvers({
+    ["Mutation.updateIssue"] = function(_parent, _args, _ctx)
+      return {
+        issue = {
+          __typename = "Issue",
+          id = encode_node_id("Issue", "octocat/hello-world/1"),
+          number = 1,
+          title = "Updated title",
+          state = "OPEN",
+        },
+        clientMutationId = nil,
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = string.format(
+        [[mutation { updateIssue(input: { id: "%s", title: "Updated title" }) { issue { number title state } } }]],
+        issue_id
+      ),
+    })
+    ok(r.errors == nil or #r.errors == 0, "updateIssue: resolver dispatched → no errors")
+    ok(r.data.updateIssue ~= nil, "updateIssue: resolver dispatched → payload present")
+    eq(r.data.updateIssue.issue.number, 1, "updateIssue: payload → issue.number")
+    eq(r.data.updateIssue.issue.title, "Updated title", "updateIssue: payload → issue.title")
+  end)
+end
+
+do -- closeIssue resolver is dispatched and returns closed issue
+  local issue_id = encode_node_id("Issue", "octocat/hello-world/1")
+  with_resolvers({
+    ["Mutation.closeIssue"] = function(_parent, _args, _ctx)
+      return {
+        issue = {
+          __typename = "Issue",
+          id = encode_node_id("Issue", "octocat/hello-world/1"),
+          number = 1,
+          title = "Found a bug",
+          state = "CLOSED",
+        },
+        clientMutationId = nil,
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = string.format(
+        [[mutation { closeIssue(input: { issueId: "%s" }) { issue { number state } } }]],
+        issue_id
+      ),
+    })
+    ok(r.errors == nil or #r.errors == 0, "closeIssue: resolver dispatched → no errors")
+    ok(r.data.closeIssue ~= nil, "closeIssue: resolver dispatched → payload present")
+    eq(r.data.closeIssue.issue.state, "CLOSED", "closeIssue: payload → issue.state closed")
+  end)
+end
+
+do -- reopenIssue resolver is dispatched and returns open issue
+  local issue_id = encode_node_id("Issue", "octocat/hello-world/1")
+  with_resolvers({
+    ["Mutation.reopenIssue"] = function(_parent, _args, _ctx)
+      return {
+        issue = {
+          __typename = "Issue",
+          id = encode_node_id("Issue", "octocat/hello-world/1"),
+          number = 1,
+          title = "Found a bug",
+          state = "OPEN",
+        },
+        clientMutationId = nil,
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = string.format(
+        [[mutation { reopenIssue(input: { issueId: "%s" }) { issue { number state } } }]],
+        issue_id
+      ),
+    })
+    ok(r.errors == nil or #r.errors == 0, "reopenIssue: resolver dispatched → no errors")
+    ok(r.data.reopenIssue ~= nil, "reopenIssue: resolver dispatched → payload present")
+    eq(r.data.reopenIssue.issue.state, "OPEN", "reopenIssue: payload → issue.state open")
+  end)
+end
+
+do -- createIssue: clientMutationId is echoed back in payload
+  local repo_id = encode_node_id("Repository", "octocat/hello-world")
+  with_resolvers({
+    ["Mutation.createIssue"] = function(_parent, args, _ctx)
+      local cmid = get_client_mutation_id(args)
+      return {
+        issue = {
+          __typename = "Issue",
+          id = encode_node_id("Issue", "octocat/hello-world/2"),
+          number = 2,
+          title = "New issue",
+          state = "OPEN",
+        },
+        clientMutationId = cmid,
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = string.format(
+        [[mutation { createIssue(input: { repositoryId: "%s", title: "New issue", clientMutationId: "relay-issue-7" }) { issue { number } clientMutationId } }]],
+        repo_id
+      ),
+    })
+    ok(r.errors == nil or #r.errors == 0, "createIssue: clientMutationId round-trip → no errors")
+    eq(
+      r.data.createIssue.clientMutationId,
+      "relay-issue-7",
+      "createIssue: clientMutationId round-trip → value echoed back"
+    )
+  end)
+end
+
+do -- closeIssue: no resolver registered → null payload (no crash)
+  local issue_id = encode_node_id("Issue", "octocat/hello-world/1")
+  with_resolvers({}, function()
+    local r = call_handler({
+      query = string.format(
+        [[mutation { closeIssue(input: { issueId: "%s" }) { clientMutationId } }]],
+        issue_id
+      ),
+    })
+    ok(r.data ~= nil, "closeIssue: no resolver → data not null at root")
+    ok(r.data.closeIssue == nil, "closeIssue: no resolver → payload is null")
+  end)
+end
