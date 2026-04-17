@@ -369,7 +369,9 @@ function OnHttpRequest()
 
     -- Issues
     ["/api/v1/repos/octocat/hello-world/issues"] = { 200, "[" .. ISSUE .. "]" },
+    ["POST /api/v1/repos/octocat/hello-world/issues"] = { 201, ISSUE },
     ["/api/v1/repos/octocat/hello-world/issues/1"] = { 200, ISSUE },
+    ["PATCH /api/v1/repos/octocat/hello-world/issues/1"] = { 200, ISSUE },
     ["/api/v1/repos/octocat/hello-world/issues/comments"] = { 200, "[" .. ISSUE_COMMENT .. "]" },
     ["/api/v1/repos/octocat/hello-world/issues/comments/1"] = { 200, ISSUE_COMMENT },
     ["/api/v1/repos/octocat/hello-world/issues/events"] = { 200, "[" .. ISSUE_EVENT .. "]" },
