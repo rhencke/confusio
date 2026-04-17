@@ -24,14 +24,15 @@ header "Content-Type" == "application/json; charset=utf-8"
 jsonpath "$.data.__typename" == "Mutation"
 jsonpath "$.errors" not exists
 
-# POST /graphql — batch request rejected with HTTP 400 (Phase 1: doc 12)
+# POST /graphql — single-element array batch returns HTTP 200 with a parallel array (Phase 2: doc 12)
 POST http://{{host}}/graphql
 Content-Type: application/json
 [{"query": "{ __typename }"}]
 
-HTTP 400
+HTTP 200
 [Asserts]
-jsonpath "$.errors[0].message" contains "batching is not supported"
+jsonpath "$[0].data.__typename" == "Query"
+jsonpath "$[0].errors" not exists
 
 # POST /graphql — APQ request rejected (Phase 1: doc 12)
 POST http://{{host}}/graphql

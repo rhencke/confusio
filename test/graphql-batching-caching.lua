@@ -30,26 +30,25 @@ local function run_handler(body_str)
 end
 
 -- ============================================================
--- Batch rejection
+-- Batch execution (Phase 2)
 -- ============================================================
 
-do -- array body → HTTP 400, batching-not-supported message
-  local body = '[{"query":"{ viewer { login } }"},{"query":"{ rateLimit { cost } }"}]'
+do -- array body → HTTP 200, parallel array of result objects
+  local body = '[{"query":"{ rateLimit { cost } }"},{"query":"{ rateLimit { cost } }"}]'
   local status, r = run_handler(body)
-  eq(status, 400, "batch: array body → HTTP 400")
-  ok(r ~= nil, "batch: response is valid JSON")
-  ok(r.errors ~= nil and #r.errors == 1, "batch: exactly one error in response")
-  ok(
-    type(r.errors[1].message) == "string" and r.errors[1].message:find("batching") ~= nil,
-    "batch: error message mentions batching"
-  )
+  eq(status, 200, "batch: array body → HTTP 200")
+  ok(type(r) == "table", "batch: response decodes as a table (JSON array)")
+  ok(r[1] ~= nil and r[2] ~= nil, "batch: response has two elements")
+  ok(r[1].data ~= nil, "batch: first result has a data key")
+  ok(r[2].data ~= nil, "batch: second result has a data key")
 end
 
-do -- single-element array body also rejected (still a batch)
-  local body = '[{"query":"{ viewer { login } }"}]'
+do -- single-element array body → HTTP 200, one-element array result
+  local body = '[{"query":"{ rateLimit { cost } }"}]'
   local status, r = run_handler(body)
-  eq(status, 400, "batch: single-element array → HTTP 400")
-  ok(r.errors ~= nil and #r.errors == 1, "batch: single-element array → one error")
+  eq(status, 200, "batch: single-element array → HTTP 200")
+  ok(type(r) == "table" and r[1] ~= nil, "batch: single-element array → one result element")
+  ok(r[1].data ~= nil, "batch: single-element result has a data key")
 end
 
 -- ============================================================

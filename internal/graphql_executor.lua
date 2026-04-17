@@ -914,6 +914,20 @@ end
 -- graphql_handler
 -- ---------------------------------------------------------------------------
 
+-- Render a single execute_single result table as a JSON object string.
+-- WHY MANUAL: EncodeJson({data = nil}) silently drops the key, producing
+-- {"errors":[...]} instead of the spec-required {"data":null,...}.
+-- Mirrors the same workaround used by respond_graphql for single-op responses.
+local function encode_result(result)
+  local data_json = (result.data ~= nil) and EncodeJson(result.data) or "null"
+  local errors = result.errors
+  if errors and #errors > 0 then
+    return '{"data":' .. data_json .. ',"errors":' .. EncodeJson(errors) .. "}"
+  else
+    return '{"data":' .. data_json .. "}"
+  end
+end
+
 -- graphql_handler is registered in the catalog as the fixed handler for
 -- POST /graphql.  Backends do NOT override this via backend_impl; they only
 -- populate graphql_resolvers.
@@ -921,13 +935,15 @@ function graphql_handler() -- luacheck: globals graphql_handler
   -- Step 1: decode request body.
   local raw = GetBody() or ""
   local req = DecodeJson(raw)
-  -- Step 1a: array body → batch request (rejected in Phase 1).
+  -- Step 1a: array body → batch request.  Execute each operation independently
+  -- and return a parallel array of {data, errors} result objects.
   if type(req) == "table" and req[1] ~= nil then
-    respond_json(400, {
-      errors = {
-        { message = "GraphQL request batching is not supported; send one operation per request." },
-      },
-    })
+    local parts = {}
+    for i, item in ipairs(req) do
+      parts[i] = encode_result(execute_single(item))
+    end
+    set_preamble(200)
+    Write("[" .. table.concat(parts, ",") .. "]")
     return
   end
   -- Single operation: delegate to execute_single and write the response.
