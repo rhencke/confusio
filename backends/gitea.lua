@@ -3378,7 +3378,8 @@ local function gitea_repo_connection(owner, repo, suffix, args, ctx, translate_f
   local url_base = base() .. "/repos/" .. owner .. "/" .. repo .. suffix
   local total
   if args.last and not args.before then
-    total = graphql_prefetch_total_from_headers(fetch_json, url_base, GITEA_PAGES, GITEA_TOTAL_HEADERS)
+    total =
+      graphql_prefetch_total_from_headers(fetch_json, url_base, GITEA_PAGES, GITEA_TOTAL_HEADERS)
   end
   local url = graphql_cursor_url(url_base, args, GITEA_PAGES, total)
   local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
@@ -3483,10 +3484,18 @@ graphql_resolvers["Issue.comments"] = function(parent, args, ctx)
   if not owner then
     return nil
   end
-  local url_base = base() .. "/repos/" .. owner .. "/" .. repo .. "/issues/" .. number .. "/comments"
+  local url_base = base()
+    .. "/repos/"
+    .. owner
+    .. "/"
+    .. repo
+    .. "/issues/"
+    .. number
+    .. "/comments"
   local total
   if args.last and not args.before then
-    total = graphql_prefetch_total_from_headers(fetch_json, url_base, GITEA_PAGES, GITEA_TOTAL_HEADERS)
+    total =
+      graphql_prefetch_total_from_headers(fetch_json, url_base, GITEA_PAGES, GITEA_TOTAL_HEADERS)
   end
   local url = graphql_cursor_url(url_base, args, GITEA_PAGES, total)
   local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
@@ -3517,7 +3526,8 @@ graphql_resolvers["PullRequest.commits"] = function(parent, args, ctx)
   local url_base = base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number .. "/commits"
   local total
   if args.last and not args.before then
-    total = graphql_prefetch_total_from_headers(fetch_json, url_base, GITEA_PAGES, GITEA_TOTAL_HEADERS)
+    total =
+      graphql_prefetch_total_from_headers(fetch_json, url_base, GITEA_PAGES, GITEA_TOTAL_HEADERS)
   end
   local url = graphql_cursor_url(url_base, args, GITEA_PAGES, total)
   local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
@@ -3555,7 +3565,8 @@ graphql_resolvers["PullRequest.reviews"] = function(parent, args, ctx)
   local url_base = base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number .. "/reviews"
   local total
   if args.last and not args.before then
-    total = graphql_prefetch_total_from_headers(fetch_json, url_base, GITEA_PAGES, GITEA_TOTAL_HEADERS)
+    total =
+      graphql_prefetch_total_from_headers(fetch_json, url_base, GITEA_PAGES, GITEA_TOTAL_HEADERS)
   end
   local url = graphql_cursor_url(url_base, args, GITEA_PAGES, total)
   local data, headers, err = graphql_fetch_with_headers(fetch_json, url)

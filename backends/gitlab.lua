@@ -4154,7 +4154,12 @@ graphql_resolvers["Issue.comments"] = function(parent, args, ctx)
   if not owner then
     return nil
   end
-  local url_base = base() .. "/projects/" .. project_id(owner, repo) .. "/issues/" .. iid .. "/notes"
+  local url_base = base()
+    .. "/projects/"
+    .. project_id(owner, repo)
+    .. "/issues/"
+    .. iid
+    .. "/notes"
   local total
   if args.last and not args.before then
     total = graphql_prefetch_total_from_headers(fetch_json, url_base, PAGES, GL_TOTAL_HEADERS)
@@ -4190,8 +4195,12 @@ graphql_resolvers["PullRequest.commits"] = function(parent, args, ctx)
   if not owner then
     return nil
   end
-  local url_base =
-    base() .. "/projects/" .. project_id(owner, repo) .. "/merge_requests/" .. iid .. "/commits"
+  local url_base = base()
+    .. "/projects/"
+    .. project_id(owner, repo)
+    .. "/merge_requests/"
+    .. iid
+    .. "/commits"
   local total
   if args.last and not args.before then
     total = graphql_prefetch_total_from_headers(fetch_json, url_base, PAGES, GL_TOTAL_HEADERS)

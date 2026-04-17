@@ -2248,8 +2248,14 @@ graphql_resolvers["Issue.comments"] = function(parent, args, ctx)
   if not owner then
     return nil
   end
-  local url_base =
-    base() .. "/repositories/" .. owner .. "/" .. repo .. "/issues/" .. number .. "/comments"
+  local url_base = base()
+    .. "/repositories/"
+    .. owner
+    .. "/"
+    .. repo
+    .. "/issues/"
+    .. number
+    .. "/comments"
   local total
   if args.last and not args.before then
     local count_url = graphql_cursor_url(url_base, { first = 1 }, GQL_PAGES)
@@ -2282,8 +2288,14 @@ graphql_resolvers["PullRequest.commits"] = function(parent, args, ctx)
   if not owner then
     return nil
   end
-  local url_base =
-    base() .. "/repositories/" .. owner .. "/" .. repo .. "/pullrequests/" .. number .. "/commits"
+  local url_base = base()
+    .. "/repositories/"
+    .. owner
+    .. "/"
+    .. repo
+    .. "/pullrequests/"
+    .. number
+    .. "/commits"
   local total
   if args.last and not args.before then
     local count_url = graphql_cursor_url(url_base, { first = 1 }, GQL_PAGES)

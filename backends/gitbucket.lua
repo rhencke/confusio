@@ -1638,7 +1638,14 @@ graphql_resolvers["Issue.comments"] = function(parent, args, ctx)
   if not owner then
     return nil
   end
-  local url_base = base() .. "/repos/" .. owner .. "/" .. repo .. "/issues/" .. number .. "/comments"
+  local url_base = base()
+    .. "/repos/"
+    .. owner
+    .. "/"
+    .. repo
+    .. "/issues/"
+    .. number
+    .. "/comments"
   local total
   if args.last and not args.before then
     total = graphql_prefetch_total_from_headers(fetch_json, url_base, GQL_PAGES, GB_TOTAL_HEADERS)
