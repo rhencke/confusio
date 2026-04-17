@@ -163,11 +163,25 @@ eq(mc1.pageInfo.hasNextPage, true, "make_connection hasNextPage true (3*1<10)")
 eq(mc1.pageInfo.hasPreviousPage, false, "make_connection hasPreviousPage false on page 1")
 not_nil(mc1.pageInfo.startCursor, "make_connection startCursor non-nil")
 not_nil(mc1.pageInfo.endCursor, "make_connection endCursor non-nil")
-eq(mc1.pageInfo.startCursor, mc1.pageInfo.endCursor, "make_connection start=end cursor")
+-- Item-level cursors: start and end cursors differ for multi-item pages.
+ok(
+  mc1.pageInfo.startCursor ~= mc1.pageInfo.endCursor,
+  "make_connection start≠end cursor (item-level)"
+)
+-- Both cursors decode to the same page number.
+eq(
+  graphql_cursor_to_page(mc1.pageInfo.startCursor),
+  graphql_cursor_to_page(mc1.pageInfo.endCursor),
+  "make_connection start/end on same page"
+)
 eq(#mc1.nodes, 3, "make_connection nodes length")
 eq(#mc1.edges, 3, "make_connection edges length")
 eq(mc1.edges[1].__typename, "IssueEdge", "make_connection edge __typename")
 not_nil(mc1.edges[1].cursor, "make_connection edge cursor non-nil")
+-- Each edge has a distinct item-level cursor.
+ok(mc1.edges[1].cursor ~= mc1.edges[2].cursor, "make_connection edge cursors are distinct")
+ok(mc1.edges[1].cursor == mc1.pageInfo.startCursor, "make_connection first edge is startCursor")
+ok(mc1.edges[3].cursor == mc1.pageInfo.endCursor, "make_connection last edge is endCursor")
 
 -- Page 1, no total, has_next inferred from count == per_page.
 local mc_infer = graphql_make_connection("Repository", items, { first = 3 }, nil, nil)
