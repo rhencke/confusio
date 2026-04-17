@@ -29,3 +29,14 @@ done
 ./hurl --retry 10 --retry-interval 200 --connect-timeout 5 --max-time 15 \
   --variable host=localhost:$CONFUSIO_PORT test/gitea-root.hurl test/stub-apps.hurl \
   test/integration-graphql.hurl
+
+# Phase 2: auth-gated GraphQL mutation smoke tests.
+# Skipped when GITEA_TOKEN is absent (e.g. CI without the secret, anonymous runs).
+if [ -n "${GITEA_TOKEN:-}" ]; then
+  ./hurl --retry 3 --retry-interval 200 --connect-timeout 5 --max-time 30 \
+    --variable host=localhost:$CONFUSIO_PORT \
+    --variable gitea_token="$GITEA_TOKEN" \
+    test/integration-graphql-mutations.hurl
+else
+  echo "GITEA_TOKEN not set — skipping authenticated GraphQL mutation integration tests"
+fi
