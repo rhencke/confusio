@@ -945,13 +945,14 @@ graphql_resolvers["Query.search"] = function(_parent, args, ctx)
   end
 
   local edges = {}
-  for _, node in ipairs(nodes) do
-    edges[#edges + 1] = {
+  for i, node in ipairs(nodes) do
+    edges[i] = {
       __typename = "SearchResultItemEdge",
-      cursor = graphql_page_to_cursor(1),
+      cursor = graphql_page_to_cursor(1, i),
       node = node,
     }
   end
+  local n = #edges
   return {
     __typename = "SearchResultItemConnection",
     nodes = nodes,
@@ -960,8 +961,8 @@ graphql_resolvers["Query.search"] = function(_parent, args, ctx)
       __typename = "PageInfo",
       hasNextPage = false,
       hasPreviousPage = false,
-      startCursor = #nodes > 0 and graphql_page_to_cursor(1) or nil,
-      endCursor = #nodes > 0 and graphql_page_to_cursor(1) or nil,
+      startCursor = n > 0 and edges[1].cursor or nil,
+      endCursor = n > 0 and edges[n].cursor or nil,
     },
     repositoryCount = repo_count,
     userCount = user_count,
