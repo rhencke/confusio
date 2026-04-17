@@ -4367,3 +4367,283 @@ graphql_resolvers["Mutation.deleteIssueComment"] = function(_parent, args, ctx)
   end
   return { clientMutationId = cmid }
 end
+
+graphql_resolvers["Mutation.addStar"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.starrableId then
+    return graphql_error(ctx, "addStar requires input.starrableId", nil, "BAD_USER_INPUT")
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.starrableId)
+  if t ~= "Repository" then
+    return graphql_error(ctx, "addStar: invalid starrableId", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo = lid:match("^([^/]+)/(.+)$")
+  if not owner then
+    return graphql_error(ctx, "addStar: malformed starrableId", nil, "BAD_USER_INPUT")
+  end
+  local star_path = base() .. "/user/starred/" .. owner .. "/" .. repo
+  -- PUT returns 204 No Content on success.
+  local ok, status = fetch_json(star_path, "PUT")
+  if not ok then
+    graphql_error(ctx, "network error starring repository", nil, "INTERNAL_ERROR")
+    return nil
+  end
+  if status == 401 or status == 403 then
+    graphql_error(ctx, "not authorized to star repository", nil, "FORBIDDEN")
+    return nil
+  end
+  if status == 404 then
+    graphql_error(ctx, "repository not found", nil, "NOT_FOUND")
+    return nil
+  end
+  if status ~= 204 then
+    graphql_error(
+      ctx,
+      "upstream error " .. tostring(status) .. " starring repository",
+      nil,
+      "INTERNAL_ERROR"
+    )
+    return nil
+  end
+  -- Re-fetch the repository to return in the payload (star returns 204, no body).
+  local repo_path = base() .. "/repos/" .. owner .. "/" .. repo
+  local repo_data = graphql_fetch_or_error(fetch_json, repo_path, ctx, nil)
+  if not repo_data then
+    return nil
+  end
+  return {
+    starrable = graphql_translate_repo(translate_repo(repo_data)),
+    clientMutationId = cmid,
+  }
+end
+
+graphql_resolvers["Mutation.removeStar"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.starrableId then
+    return graphql_error(ctx, "removeStar requires input.starrableId", nil, "BAD_USER_INPUT")
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.starrableId)
+  if t ~= "Repository" then
+    return graphql_error(ctx, "removeStar: invalid starrableId", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo = lid:match("^([^/]+)/(.+)$")
+  if not owner then
+    return graphql_error(ctx, "removeStar: malformed starrableId", nil, "BAD_USER_INPUT")
+  end
+  local star_path = base() .. "/user/starred/" .. owner .. "/" .. repo
+  -- DELETE returns 204 No Content on success.
+  local ok, status = fetch_json(star_path, "DELETE")
+  if not ok then
+    graphql_error(ctx, "network error unstarring repository", nil, "INTERNAL_ERROR")
+    return nil
+  end
+  if status == 401 or status == 403 then
+    graphql_error(ctx, "not authorized to unstar repository", nil, "FORBIDDEN")
+    return nil
+  end
+  if status == 404 then
+    graphql_error(ctx, "repository not found", nil, "NOT_FOUND")
+    return nil
+  end
+  if status ~= 204 then
+    graphql_error(
+      ctx,
+      "upstream error " .. tostring(status) .. " unstarring repository",
+      nil,
+      "INTERNAL_ERROR"
+    )
+    return nil
+  end
+  -- Re-fetch the repository to return in the payload (unstar returns 204, no body).
+  local repo_path = base() .. "/repos/" .. owner .. "/" .. repo
+  local repo_data = graphql_fetch_or_error(fetch_json, repo_path, ctx, nil)
+  if not repo_data then
+    return nil
+  end
+  return {
+    starrable = graphql_translate_repo(translate_repo(repo_data)),
+    clientMutationId = cmid,
+  }
+end
+
+graphql_resolvers["Mutation.updateSubscription"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.subscribableId then
+    return graphql_error(
+      ctx,
+      "updateSubscription requires input.subscribableId",
+      nil,
+      "BAD_USER_INPUT"
+    )
+  end
+  if not input.state then
+    return graphql_error(ctx, "updateSubscription requires input.state", nil, "BAD_USER_INPUT")
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.subscribableId)
+  if t ~= "Repository" then
+    return graphql_error(ctx, "updateSubscription: invalid subscribableId", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo = lid:match("^([^/]+)/(.+)$")
+  if not owner then
+    return graphql_error(ctx, "updateSubscription: malformed subscribableId", nil, "BAD_USER_INPUT")
+  end
+  local sub_path = base() .. "/repos/" .. owner .. "/" .. repo .. "/subscription"
+  local ok, status
+  if input.state == "UNSUBSCRIBED" then
+    -- Unsubscribe uses DELETE, which returns 204 No Content.
+    ok, status = fetch_json(sub_path, "DELETE")
+  else
+    -- SUBSCRIBED and IGNORED both use PUT with a JSON body; returns 200.
+    local body = EncodeJson({
+      subscribed = input.state == "SUBSCRIBED",
+      ignored = input.state == "IGNORED",
+    })
+    ok, status = fetch_json(sub_path, "PUT", body)
+  end
+  if not ok then
+    graphql_error(ctx, "network error updating subscription", nil, "INTERNAL_ERROR")
+    return nil
+  end
+  if status == 401 or status == 403 then
+    graphql_error(ctx, "not authorized to update subscription", nil, "FORBIDDEN")
+    return nil
+  end
+  if status == 404 then
+    graphql_error(ctx, "repository not found", nil, "NOT_FOUND")
+    return nil
+  end
+  local expected_status = input.state == "UNSUBSCRIBED" and 204 or 200
+  if status ~= expected_status then
+    graphql_error(
+      ctx,
+      "upstream error " .. tostring(status) .. " updating subscription",
+      nil,
+      "INTERNAL_ERROR"
+    )
+    return nil
+  end
+  -- Re-fetch the repository to return in the payload.
+  local repo_path = base() .. "/repos/" .. owner .. "/" .. repo
+  local repo_data = graphql_fetch_or_error(fetch_json, repo_path, ctx, nil)
+  if not repo_data then
+    return nil
+  end
+  return {
+    subscribable = graphql_translate_repo(translate_repo(repo_data)),
+    clientMutationId = cmid,
+  }
+end
+
+graphql_resolvers["Mutation.createLabel"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.repositoryId then
+    return graphql_error(ctx, "createLabel requires input.repositoryId", nil, "BAD_USER_INPUT")
+  end
+  if not input.name then
+    return graphql_error(ctx, "createLabel requires input.name", nil, "BAD_USER_INPUT")
+  end
+  if not input.color then
+    return graphql_error(ctx, "createLabel requires input.color", nil, "BAD_USER_INPUT")
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.repositoryId)
+  if t ~= "Repository" then
+    return graphql_error(ctx, "createLabel: invalid repositoryId", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo = lid:match("^([^/]+)/(.+)$")
+  if not owner then
+    return graphql_error(ctx, "createLabel: malformed repositoryId", nil, "BAD_USER_INPUT")
+  end
+  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/labels"
+  -- GitHub sends color without '#'; Gitea expects '#' prefix.
+  local body = EncodeJson({
+    name = input.name,
+    color = "#" .. input.color,
+    description = input.description,
+  })
+  local data = graphql_fetch_or_error(fetch_json, path, ctx, nil, "POST", body)
+  if not data then
+    return nil
+  end
+  return {
+    label = graphql_translate_label(translate_gitea_label(data), owner, repo),
+    clientMutationId = cmid,
+  }
+end
+
+graphql_resolvers["Mutation.addLabelsToLabelable"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.labelableId then
+    return graphql_error(
+      ctx,
+      "addLabelsToLabelable requires input.labelableId",
+      nil,
+      "BAD_USER_INPUT"
+    )
+  end
+  if not input.labelIds or #input.labelIds == 0 then
+    return graphql_error(ctx, "addLabelsToLabelable requires input.labelIds", nil, "BAD_USER_INPUT")
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.labelableId)
+  if t ~= "Issue" and t ~= "PullRequest" then
+    return graphql_error(ctx, "addLabelsToLabelable: invalid labelableId", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo, number = lid:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return graphql_error(ctx, "addLabelsToLabelable: malformed labelableId", nil, "BAD_USER_INPUT")
+  end
+  -- Decode each Label node ID and extract the Gitea integer label ID.
+  local label_ids = {}
+  for _, label_node_id in ipairs(input.labelIds) do
+    local lt, llid = decode_node_id(label_node_id)
+    if lt ~= "Label" then
+      return graphql_error(ctx, "addLabelsToLabelable: invalid labelId", nil, "BAD_USER_INPUT")
+    end
+    -- Label local_id is "owner/repo/integer_id"
+    local label_id = llid:match("/(%d+)$")
+    if not label_id then
+      return graphql_error(ctx, "addLabelsToLabelable: malformed labelId", nil, "BAD_USER_INPUT")
+    end
+    label_ids[#label_ids + 1] = tonumber(label_id)
+  end
+  -- Both issues and PRs share the /issues/{n}/labels endpoint in Gitea.
+  local labels_path = base()
+    .. "/repos/"
+    .. owner
+    .. "/"
+    .. repo
+    .. "/issues/"
+    .. number
+    .. "/labels"
+  local body = EncodeJson({ labels = label_ids })
+  -- POST returns 200 with the updated label list; we discard it and re-fetch the full item.
+  local labels_ok = graphql_fetch_or_error(fetch_json, labels_path, ctx, nil, "POST", body)
+  if labels_ok == nil then
+    return nil
+  end
+  -- Re-fetch the issue or PR to populate the labelable payload field.
+  local item_data
+  if t == "PullRequest" then
+    local pr_path = base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number
+    local pr_data = graphql_fetch_or_error(fetch_json, pr_path, ctx, nil)
+    if not pr_data then
+      return nil
+    end
+    item_data = graphql_translate_pr(translate_gitea_pull(pr_data), owner, repo)
+  else
+    local issue_path = base() .. "/repos/" .. owner .. "/" .. repo .. "/issues/" .. number
+    local issue_data = graphql_fetch_or_error(fetch_json, issue_path, ctx, nil)
+    if not issue_data then
+      return nil
+    end
+    item_data = graphql_translate_issue(translate_gitea_issue(issue_data), owner, repo)
+  end
+  return {
+    labelable = item_data,
+    clientMutationId = cmid,
+  }
+end

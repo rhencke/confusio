@@ -397,6 +397,7 @@ function OnHttpRequest()
     -- Labels
     ["/api/v1/repos/octocat/hello-world/labels"] = { 200, "[" .. LABEL .. "]" },
     ["/api/v1/repos/octocat/hello-world/labels?limit=50"] = { 200, "[" .. LABEL .. "]" },
+    ["POST /api/v1/repos/octocat/hello-world/labels"] = { 201, LABEL },
     ["/api/v1/repos/octocat/hello-world/labels/1"] = { 200, LABEL },
 
     -- Milestones

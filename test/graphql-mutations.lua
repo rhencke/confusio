@@ -805,3 +805,247 @@ do -- deleteIssueComment clientMutationId round-trip
     )
   end)
 end
+
+do -- addStar resolver is dispatched; payload contains starrable
+  with_resolvers({
+    ["Mutation.addStar"] = function(_parent, args, _ctx)
+      return {
+        starrable = { __typename = "Repository" },
+        clientMutationId = get_client_mutation_id(args),
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          addStar(input: {
+            starrableId: "UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk"
+          }) {
+            starrable { __typename }
+            clientMutationId
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "addStar: resolver dispatched → no errors")
+    ok(r.data.addStar ~= nil, "addStar: resolver dispatched → payload present")
+    eq(r.data.addStar.starrable.__typename, "Repository", "addStar: starrable __typename")
+  end)
+end
+
+do -- addStar clientMutationId round-trip
+  with_resolvers({
+    ["Mutation.addStar"] = function(_parent, args, _ctx)
+      return {
+        starrable = { __typename = "Repository" },
+        clientMutationId = get_client_mutation_id(args),
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          addStar(input: {
+            starrableId: "UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk",
+            clientMutationId: "star-relay-1"
+          }) {
+            clientMutationId
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "addStar: clientMutationId round-trip → no errors")
+    eq(
+      r.data.addStar.clientMutationId,
+      "star-relay-1",
+      "addStar: clientMutationId round-trip → value echoed back"
+    )
+  end)
+end
+
+do -- removeStar resolver is dispatched; payload contains starrable
+  with_resolvers({
+    ["Mutation.removeStar"] = function(_parent, args, _ctx)
+      return {
+        starrable = { __typename = "Repository" },
+        clientMutationId = get_client_mutation_id(args),
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          removeStar(input: {
+            starrableId: "UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk"
+          }) {
+            starrable { __typename }
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "removeStar: resolver dispatched → no errors")
+    ok(r.data.removeStar ~= nil, "removeStar: resolver dispatched → payload present")
+    eq(r.data.removeStar.starrable.__typename, "Repository", "removeStar: starrable __typename")
+  end)
+end
+
+do -- updateSubscription resolver is dispatched; payload contains subscribable
+  with_resolvers({
+    ["Mutation.updateSubscription"] = function(_parent, args, _ctx)
+      return {
+        subscribable = { __typename = "Repository" },
+        clientMutationId = get_client_mutation_id(args),
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          updateSubscription(input: {
+            subscribableId: "UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk",
+            state: SUBSCRIBED
+          }) {
+            subscribable { __typename }
+            clientMutationId
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "updateSubscription: resolver dispatched → no errors")
+    ok(
+      r.data.updateSubscription ~= nil,
+      "updateSubscription: resolver dispatched → payload present"
+    )
+    eq(
+      r.data.updateSubscription.subscribable.__typename,
+      "Repository",
+      "updateSubscription: subscribable __typename"
+    )
+  end)
+end
+
+do -- updateSubscription clientMutationId round-trip
+  with_resolvers({
+    ["Mutation.updateSubscription"] = function(_parent, args, _ctx)
+      return {
+        subscribable = { __typename = "Repository" },
+        clientMutationId = get_client_mutation_id(args),
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          updateSubscription(input: {
+            subscribableId: "UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk",
+            state: IGNORED,
+            clientMutationId: "sub-relay-1"
+          }) {
+            clientMutationId
+          }
+        }
+      ]],
+    })
+    ok(
+      r.errors == nil or #r.errors == 0,
+      "updateSubscription: clientMutationId round-trip → no errors"
+    )
+    eq(
+      r.data.updateSubscription.clientMutationId,
+      "sub-relay-1",
+      "updateSubscription: clientMutationId round-trip → value echoed back"
+    )
+  end)
+end
+
+do -- createLabel resolver is dispatched; payload contains label
+  with_resolvers({
+    ["Mutation.createLabel"] = function(_parent, args, _ctx)
+      return {
+        label = { __typename = "Label", name = args.input.name },
+        clientMutationId = get_client_mutation_id(args),
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          createLabel(input: {
+            repositoryId: "UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk",
+            name: "bug",
+            color: "d73a4a"
+          }) {
+            label { name }
+            clientMutationId
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "createLabel: resolver dispatched → no errors")
+    ok(r.data.createLabel ~= nil, "createLabel: resolver dispatched → payload present")
+    eq(r.data.createLabel.label.name, "bug", "createLabel: label name returned")
+  end)
+end
+
+do -- createLabel clientMutationId round-trip
+  with_resolvers({
+    ["Mutation.createLabel"] = function(_parent, args, _ctx)
+      return {
+        label = { __typename = "Label", name = args.input.name },
+        clientMutationId = get_client_mutation_id(args),
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          createLabel(input: {
+            repositoryId: "UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk",
+            name: "bug",
+            color: "d73a4a",
+            clientMutationId: "label-relay-1"
+          }) {
+            clientMutationId
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "createLabel: clientMutationId round-trip → no errors")
+    eq(
+      r.data.createLabel.clientMutationId,
+      "label-relay-1",
+      "createLabel: clientMutationId round-trip → value echoed back"
+    )
+  end)
+end
+
+do -- addLabelsToLabelable resolver is dispatched; payload contains labelable
+  with_resolvers({
+    ["Mutation.addLabelsToLabelable"] = function(_parent, args, _ctx)
+      return {
+        labelable = { __typename = "Issue", number = 1 },
+        clientMutationId = get_client_mutation_id(args),
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          addLabelsToLabelable(input: {
+            labelableId: "SXNzdWU6b2N0b2NhdC9oZWxsby13b3JsZC8x",
+            labelIds: ["TGFiZWw6b2N0b2NhdC9oZWxsby13b3JsZC8x"]
+          }) {
+            labelable { ... on Issue { number } }
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "addLabelsToLabelable: resolver dispatched → no errors")
+    ok(r.data.addLabelsToLabelable ~= nil, "addLabelsToLabelable: payload present")
+    eq(
+      r.data.addLabelsToLabelable.labelable.number,
+      1,
+      "addLabelsToLabelable: labelable.number returned"
+    )
+  end)
+end
