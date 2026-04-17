@@ -784,44 +784,40 @@ function get_client_mutation_id(args) -- luacheck: globals get_client_mutation_i
 end
 
 -- ---------------------------------------------------------------------------
--- graphql_handler
+-- execute_single
 -- ---------------------------------------------------------------------------
 
--- graphql_handler is registered in the catalog as the fixed handler for
--- POST /graphql.  Backends do NOT override this via backend_impl; they only
--- populate graphql_resolvers.
-function graphql_handler() -- luacheck: globals graphql_handler
-  -- Step 1: decode request body.
-  local raw = GetBody() or ""
-  local req = DecodeJson(raw)
-  -- Step 1a: array body → batch request (rejected in Phase 1).
-  if type(req) == "table" and req[1] ~= nil then
-    respond_json(400, {
-      errors = {
-        { message = "GraphQL request batching is not supported; send one operation per request." },
-      },
-    })
-    return
-  end
+-- Run one GraphQL operation object through the full pipeline and return a
+-- result table.  The caller is responsible for writing the HTTP response.
+--
+-- req    — decoded JSON table for a single operation (must not be a batch array).
+-- Returns { data = <table|nil>, errors = <array> }
+--   data   is nil for request/validation errors; a partial table for field errors.
+--   errors is always an array (possibly empty).
+local function execute_single(req)
   -- Step 1b: APQ body → persisted queries not supported.
   if type(req) == "table" and type(req.extensions) == "table" and req.extensions.persistedQuery then
-    respond_graphql(nil, {
-      {
-        message = "Persisted queries are not supported; send the full query string.",
-        extensions = { code = "PERSISTED_QUERY_NOT_SUPPORTED" },
+    return {
+      data = nil,
+      errors = {
+        {
+          message = "Persisted queries are not supported; send the full query string.",
+          extensions = { code = "PERSISTED_QUERY_NOT_SUPPORTED" },
+        },
       },
-    })
-    return
+    }
   end
   -- Step 1c: missing or non-string query field.
   if not req or type(req.query) ~= "string" then
-    respond_graphql(nil, {
-      {
-        message = "POST /graphql requires a JSON body with a 'query' field",
-        extensions = { code = "BAD_USER_INPUT" },
+    return {
+      data = nil,
+      errors = {
+        {
+          message = "POST /graphql requires a JSON body with a 'query' field",
+          extensions = { code = "BAD_USER_INPUT" },
+        },
       },
-    })
-    return
+    }
   end
   local source = req.query
   local variables = type(req.variables) == "table" and req.variables or {}
@@ -830,43 +826,48 @@ function graphql_handler() -- luacheck: globals graphql_handler
   -- Step 2: parse.
   local doc, parse_err = graphql_parse(source)
   if not doc then
-    respond_graphql(nil, {
-      {
-        message = parse_err,
-        extensions = { code = "PARSE_ERROR" },
+    return {
+      data = nil,
+      errors = {
+        {
+          message = parse_err,
+          extensions = { code = "PARSE_ERROR" },
+        },
       },
-    })
-    return
+    }
   end
 
   -- Step 3: select operation.
   local op, sel_err = select_operation(doc, op_name)
   if not op then
-    respond_graphql(nil, {
-      {
-        message = sel_err,
-        extensions = { code = "BAD_USER_INPUT" },
+    return {
+      data = nil,
+      errors = {
+        {
+          message = sel_err,
+          extensions = { code = "BAD_USER_INPUT" },
+        },
       },
-    })
-    return
+    }
   end
 
   -- Step 3a: reject subscription operations (not supported).
   if op.operation == "subscription" then
-    respond_graphql(nil, {
-      {
-        message = "subscriptions are not supported",
-        extensions = { code = "BAD_USER_INPUT" },
+    return {
+      data = nil,
+      errors = {
+        {
+          message = "subscriptions are not supported",
+          extensions = { code = "BAD_USER_INPUT" },
+        },
       },
-    })
-    return
+    }
   end
 
   -- Step 4: validate.
   local verrs = graphql_validate(doc, op)
   if #verrs > 0 then
-    respond_graphql(nil, verrs)
-    return
+    return { data = nil, errors = verrs }
   end
 
   -- Step 5: execute.
@@ -886,23 +887,50 @@ function graphql_handler() -- luacheck: globals graphql_handler
   ctx.rate_cost = estimate_query_cost(op, variables)
   -- Step 5a: reject queries that exceed the cost ceiling.
   if ctx.rate_cost > GRAPHQL_MAX_COST then
-    respond_graphql(nil, {
-      {
-        message = "query cost "
-          .. tostring(ctx.rate_cost)
-          .. " exceeds maximum allowed cost of "
-          .. tostring(GRAPHQL_MAX_COST),
-        extensions = {
-          code = "BAD_USER_INPUT",
-          estimatedCost = ctx.rate_cost,
-          maxAllowedCost = GRAPHQL_MAX_COST,
+    return {
+      data = nil,
+      errors = {
+        {
+          message = "query cost "
+            .. tostring(ctx.rate_cost)
+            .. " exceeds maximum allowed cost of "
+            .. tostring(GRAPHQL_MAX_COST),
+          extensions = {
+            code = "BAD_USER_INPUT",
+            estimatedCost = ctx.rate_cost,
+            maxAllowedCost = GRAPHQL_MAX_COST,
+          },
         },
+      },
+    }
+  end
+  local data = execute_operation(op, ctx)
+
+  -- Step 6: assemble result.
+  return { data = data, errors = ctx.errors }
+end
+
+-- ---------------------------------------------------------------------------
+-- graphql_handler
+-- ---------------------------------------------------------------------------
+
+-- graphql_handler is registered in the catalog as the fixed handler for
+-- POST /graphql.  Backends do NOT override this via backend_impl; they only
+-- populate graphql_resolvers.
+function graphql_handler() -- luacheck: globals graphql_handler
+  -- Step 1: decode request body.
+  local raw = GetBody() or ""
+  local req = DecodeJson(raw)
+  -- Step 1a: array body → batch request (rejected in Phase 1).
+  if type(req) == "table" and req[1] ~= nil then
+    respond_json(400, {
+      errors = {
+        { message = "GraphQL request batching is not supported; send one operation per request." },
       },
     })
     return
   end
-  local data = execute_operation(op, ctx)
-
-  -- Step 6: write response.
-  respond_graphql(data, ctx.errors)
+  -- Single operation: delegate to execute_single and write the response.
+  local result = execute_single(req)
+  respond_graphql(result.data, result.errors)
 end
