@@ -1240,3 +1240,106 @@ HTTP 200
 jsonpath "$.data.updateSubscription" not exists
 jsonpath "$.errors" isCollection
 jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.createLabel creates a label in a repository
+# Node ID for Repository:octocat/hello-world = UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk
+# → POST /api/v1/repos/octocat/hello-world/labels
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { createLabel(input: { repositoryId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\", name: \"bug\", color: \"d73a4a\" }) { label { name color } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.createLabel.label.name" == "bug"
+jsonpath "$.data.createLabel.label.color" == "d73a4a"
+jsonpath "$.data.createLabel.clientMutationId" not exists
+
+# POST /graphql — Mutation.createLabel echoes back clientMutationId
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { createLabel(input: { repositoryId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\", name: \"bug\", color: \"d73a4a\", clientMutationId: \"label-relay-1\" }) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.createLabel.clientMutationId" == "label-relay-1"
+
+# POST /graphql — Mutation.createLabel without repositoryId returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { createLabel(input: { name: \"bug\", color: \"d73a4a\" }) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.createLabel" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.createLabel with wrong node type returns BAD_USER_INPUT
+# Node ID for User:octocat = VXNlcjpvY3RvY2F0
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { createLabel(input: { repositoryId: \"VXNlcjpvY3RvY2F0\", name: \"bug\", color: \"d73a4a\" }) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.createLabel" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.addLabelsToLabelable adds a label to an issue
+# Node ID for Issue:octocat/hello-world/1 = SXNzdWU6b2N0b2NhdC9oZWxsby13b3JsZC8x
+# Node ID for Label:octocat/hello-world/1 = TGFiZWw6b2N0b2NhdC9oZWxsby13b3JsZC8x
+# → POST /api/v1/repos/octocat/hello-world/issues/1/labels, then GET /api/v1/repos/octocat/hello-world/issues/1
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { addLabelsToLabelable(input: { labelableId: \"SXNzdWU6b2N0b2NhdC9oZWxsby13b3JsZC8x\", labelIds: [\"TGFiZWw6b2N0b2NhdC9oZWxsby13b3JsZC8x\"] }) { labelable { ... on Issue { number title } } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.addLabelsToLabelable.labelable.number" == 1
+jsonpath "$.data.addLabelsToLabelable.labelable.title" isString
+jsonpath "$.data.addLabelsToLabelable.clientMutationId" not exists
+
+# POST /graphql — Mutation.addLabelsToLabelable echoes back clientMutationId
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { addLabelsToLabelable(input: { labelableId: \"SXNzdWU6b2N0b2NhdC9oZWxsby13b3JsZC8x\", labelIds: [\"TGFiZWw6b2N0b2NhdC9oZWxsby13b3JsZC8x\"], clientMutationId: \"label-relay-2\" }) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.addLabelsToLabelable.clientMutationId" == "label-relay-2"
+
+# POST /graphql — Mutation.addLabelsToLabelable without labelableId returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { addLabelsToLabelable(input: { labelIds: [\"TGFiZWw6b2N0b2NhdC9oZWxsby13b3JsZC8x\"] }) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.addLabelsToLabelable" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.addLabelsToLabelable with wrong labelable node type returns BAD_USER_INPUT
+# Node ID for User:octocat = VXNlcjpvY3RvY2F0
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { addLabelsToLabelable(input: { labelableId: \"VXNlcjpvY3RvY2F0\", labelIds: [\"TGFiZWw6b2N0b2NhdC9oZWxsby13b3JsZC8x\"] }) { clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.addLabelsToLabelable" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"

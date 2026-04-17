@@ -957,3 +957,95 @@ do -- updateSubscription clientMutationId round-trip
     )
   end)
 end
+
+do -- createLabel resolver is dispatched; payload contains label
+  with_resolvers({
+    ["Mutation.createLabel"] = function(_parent, args, _ctx)
+      return {
+        label = { __typename = "Label", name = args.input.name },
+        clientMutationId = get_client_mutation_id(args),
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          createLabel(input: {
+            repositoryId: "UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk",
+            name: "bug",
+            color: "d73a4a"
+          }) {
+            label { name }
+            clientMutationId
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "createLabel: resolver dispatched → no errors")
+    ok(r.data.createLabel ~= nil, "createLabel: resolver dispatched → payload present")
+    eq(r.data.createLabel.label.name, "bug", "createLabel: label name returned")
+  end)
+end
+
+do -- createLabel clientMutationId round-trip
+  with_resolvers({
+    ["Mutation.createLabel"] = function(_parent, args, _ctx)
+      return {
+        label = { __typename = "Label", name = args.input.name },
+        clientMutationId = get_client_mutation_id(args),
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          createLabel(input: {
+            repositoryId: "UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk",
+            name: "bug",
+            color: "d73a4a",
+            clientMutationId: "label-relay-1"
+          }) {
+            clientMutationId
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "createLabel: clientMutationId round-trip → no errors")
+    eq(
+      r.data.createLabel.clientMutationId,
+      "label-relay-1",
+      "createLabel: clientMutationId round-trip → value echoed back"
+    )
+  end)
+end
+
+do -- addLabelsToLabelable resolver is dispatched; payload contains labelable
+  with_resolvers({
+    ["Mutation.addLabelsToLabelable"] = function(_parent, args, _ctx)
+      return {
+        labelable = { __typename = "Issue", number = 1 },
+        clientMutationId = get_client_mutation_id(args),
+      }
+    end,
+  }, function()
+    local r = call_handler({
+      query = [[
+        mutation {
+          addLabelsToLabelable(input: {
+            labelableId: "SXNzdWU6b2N0b2NhdC9oZWxsby13b3JsZC8x",
+            labelIds: ["TGFiZWw6b2N0b2NhdC9oZWxsby13b3JsZC8x"]
+          }) {
+            labelable { ... on Issue { number } }
+          }
+        }
+      ]],
+    })
+    ok(r.errors == nil or #r.errors == 0, "addLabelsToLabelable: resolver dispatched → no errors")
+    ok(r.data.addLabelsToLabelable ~= nil, "addLabelsToLabelable: payload present")
+    eq(
+      r.data.addLabelsToLabelable.labelable.number,
+      1,
+      "addLabelsToLabelable: labelable.number returned"
+    )
+  end)
+end

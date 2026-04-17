@@ -4536,3 +4536,114 @@ graphql_resolvers["Mutation.updateSubscription"] = function(_parent, args, ctx)
     clientMutationId = cmid,
   }
 end
+
+graphql_resolvers["Mutation.createLabel"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.repositoryId then
+    return graphql_error(ctx, "createLabel requires input.repositoryId", nil, "BAD_USER_INPUT")
+  end
+  if not input.name then
+    return graphql_error(ctx, "createLabel requires input.name", nil, "BAD_USER_INPUT")
+  end
+  if not input.color then
+    return graphql_error(ctx, "createLabel requires input.color", nil, "BAD_USER_INPUT")
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.repositoryId)
+  if t ~= "Repository" then
+    return graphql_error(ctx, "createLabel: invalid repositoryId", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo = lid:match("^([^/]+)/(.+)$")
+  if not owner then
+    return graphql_error(ctx, "createLabel: malformed repositoryId", nil, "BAD_USER_INPUT")
+  end
+  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/labels"
+  -- GitHub sends color without '#'; Gitea expects '#' prefix.
+  local body = EncodeJson({
+    name = input.name,
+    color = "#" .. input.color,
+    description = input.description,
+  })
+  local data = graphql_fetch_or_error(fetch_json, path, ctx, nil, "POST", body)
+  if not data then
+    return nil
+  end
+  return {
+    label = graphql_translate_label(translate_gitea_label(data), owner, repo),
+    clientMutationId = cmid,
+  }
+end
+
+graphql_resolvers["Mutation.addLabelsToLabelable"] = function(_parent, args, ctx)
+  local input = args and args.input
+  if not input or not input.labelableId then
+    return graphql_error(
+      ctx,
+      "addLabelsToLabelable requires input.labelableId",
+      nil,
+      "BAD_USER_INPUT"
+    )
+  end
+  if not input.labelIds or #input.labelIds == 0 then
+    return graphql_error(ctx, "addLabelsToLabelable requires input.labelIds", nil, "BAD_USER_INPUT")
+  end
+  local cmid = get_client_mutation_id(args)
+  local t, lid = decode_node_id(input.labelableId)
+  if t ~= "Issue" and t ~= "PullRequest" then
+    return graphql_error(ctx, "addLabelsToLabelable: invalid labelableId", nil, "BAD_USER_INPUT")
+  end
+  local owner, repo, number = lid:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return graphql_error(ctx, "addLabelsToLabelable: malformed labelableId", nil, "BAD_USER_INPUT")
+  end
+  -- Decode each Label node ID and extract the Gitea integer label ID.
+  local label_ids = {}
+  for _, label_node_id in ipairs(input.labelIds) do
+    local lt, llid = decode_node_id(label_node_id)
+    if lt ~= "Label" then
+      return graphql_error(ctx, "addLabelsToLabelable: invalid labelId", nil, "BAD_USER_INPUT")
+    end
+    -- Label local_id is "owner/repo/integer_id"
+    local label_id = llid:match("/(%d+)$")
+    if not label_id then
+      return graphql_error(ctx, "addLabelsToLabelable: malformed labelId", nil, "BAD_USER_INPUT")
+    end
+    label_ids[#label_ids + 1] = tonumber(label_id)
+  end
+  -- Both issues and PRs share the /issues/{n}/labels endpoint in Gitea.
+  local labels_path = base()
+    .. "/repos/"
+    .. owner
+    .. "/"
+    .. repo
+    .. "/issues/"
+    .. number
+    .. "/labels"
+  local body = EncodeJson({ labels = label_ids })
+  -- POST returns 200 with the updated label list; we discard it and re-fetch the full item.
+  local labels_ok = graphql_fetch_or_error(fetch_json, labels_path, ctx, nil, "POST", body)
+  if labels_ok == nil then
+    return nil
+  end
+  -- Re-fetch the issue or PR to populate the labelable payload field.
+  local item_data
+  if t == "PullRequest" then
+    local pr_path = base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number
+    local pr_data = graphql_fetch_or_error(fetch_json, pr_path, ctx, nil)
+    if not pr_data then
+      return nil
+    end
+    item_data = graphql_translate_pr(translate_gitea_pull(pr_data), owner, repo)
+  else
+    local issue_path = base() .. "/repos/" .. owner .. "/" .. repo .. "/issues/" .. number
+    local issue_data = graphql_fetch_or_error(fetch_json, issue_path, ctx, nil)
+    if not issue_data then
+      return nil
+    end
+    item_data = graphql_translate_issue(translate_gitea_issue(issue_data), owner, repo)
+  end
+  return {
+    labelable = item_data,
+    clientMutationId = cmid,
+  }
+end
