@@ -4006,6 +4006,36 @@ graphql_resolvers["node.Milestone"] = function(local_id, _ctx)
   return graphql_translate_milestone(translate_gl_milestone(data), owner, repo)
 end
 
+-- node.Commit: fetch a commit by "owner/repo/sha" local ID.
+-- GitLab returns a flat commit object; translate to REST shape before passing to the shared translator.
+graphql_resolvers["node.Commit"] = function(local_id, _ctx)
+  local owner, repo, sha = local_id:match("^([^/]+)/([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  local c, _ = graphql_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo) .. "/repository/commits/" .. sha
+  )
+  if not c then
+    return nil
+  end
+  local rest_commit = {
+    sha = c.id,
+    html_url = c.web_url or "",
+    commit = {
+      message = c.message,
+      author = { name = c.author_name, email = c.author_email, date = c.authored_date },
+      committer = {
+        name = c.committer_name or c.author_name,
+        email = c.committer_email or c.author_email,
+        date = c.committed_date or c.authored_date,
+      },
+    },
+  }
+  return graphql_translate_commit(rest_commit, owner, repo)
+end
+
 -- ---------------------------------------------------------------------------
 -- Repository connection sub-resolvers
 -- ---------------------------------------------------------------------------

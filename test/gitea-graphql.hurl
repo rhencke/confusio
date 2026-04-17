@@ -108,6 +108,17 @@ HTTP 200
 jsonpath "$.data.node.title" == "v1.0"
 jsonpath "$.data.node.state" == "OPEN"
 
+# POST /graphql — node(Commit) fetches a commit by encoded node ID
+# Node ID for Commit:octocat/hello-world/abc123 = Q29tbWl0Om9jdG9jYXQvaGVsbG8td29ybGQvYWJjMTIz
+POST http://{{host}}/graphql
+Content-Type: application/json
+{"query": "{ node(id: \"Q29tbWl0Om9jdG9jYXQvaGVsbG8td29ybGQvYWJjMTIz\") { ... on Commit { oid message } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.node.oid" == "abc123def456"
+jsonpath "$.data.node.message" == "Initial commit"
+
 # POST /graphql — Repository.owner is inlined by the translator (no sub-resolver)
 POST http://{{host}}/graphql
 Content-Type: application/json

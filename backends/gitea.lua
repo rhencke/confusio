@@ -3373,6 +3373,20 @@ graphql_resolvers["node.Milestone"] = function(local_id, _ctx)
   return graphql_translate_milestone(data, owner, repo)
 end
 
+-- node.Commit: fetch a commit by "owner/repo/sha" local ID.
+graphql_resolvers["node.Commit"] = function(local_id, _ctx)
+  local owner, repo, sha = local_id:match("^([^/]+)/([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ =
+    graphql_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo .. "/git/commits/" .. sha)
+  if not data then
+    return nil
+  end
+  return graphql_translate_commit(data, owner, repo)
+end
+
 -- ---------------------------------------------------------------------------
 -- Repository connection sub-resolvers
 -- ---------------------------------------------------------------------------
