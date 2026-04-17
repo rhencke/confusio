@@ -470,3 +470,224 @@ HTTP 200
 jsonpath "$.data.deleteRepository" not exists
 jsonpath "$.errors" isCollection
 jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.createIssue creates an issue in the given repository
+# repositoryId "UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk" = base64("Repository:octocat/hello-world")
+# → POST /api/v1/repos/octocat/hello-world/issues
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { createIssue(input: { repositoryId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\", title: \"Found a bug\" }) { issue { number title state } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.createIssue.issue.number" == 1
+jsonpath "$.data.createIssue.issue.title" == "Found a bug"
+jsonpath "$.data.createIssue.issue.state" == "OPEN"
+jsonpath "$.data.createIssue.clientMutationId" not exists
+
+# POST /graphql — Mutation.createIssue echoes back clientMutationId
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { createIssue(input: { repositoryId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\", title: \"Found a bug\", clientMutationId: \"relay-ci-1\" }) { issue { number } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.createIssue.issue.number" == 1
+jsonpath "$.data.createIssue.clientMutationId" == "relay-ci-1"
+
+# POST /graphql — Mutation.createIssue without repositoryId returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { createIssue(input: { title: \"Found a bug\" }) { issue { number } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.createIssue" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.createIssue without title returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { createIssue(input: { repositoryId: \"UmVwb3NpdG9yeTpvY3RvY2F0L2hlbGxvLXdvcmxk\" }) { issue { number } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.createIssue" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.createIssue with wrong node type returns BAD_USER_INPUT
+# Node ID for User:octocat = VXNlcjpvY3RvY2F0
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { createIssue(input: { repositoryId: \"VXNlcjpvY3RvY2F0\", title: \"Found a bug\" }) { issue { number } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.createIssue" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.updateIssue updates an issue
+# issueId "SXNzdWU6b2N0b2NhdC9oZWxsby13b3JsZC8x" = base64("Issue:octocat/hello-world/1")
+# → PATCH /api/v1/repos/octocat/hello-world/issues/1
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updateIssue(input: { id: \"SXNzdWU6b2N0b2NhdC9oZWxsby13b3JsZC8x\", title: \"Found a bug\" }) { issue { number title state } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.updateIssue.issue.number" == 1
+jsonpath "$.data.updateIssue.issue.title" == "Found a bug"
+jsonpath "$.data.updateIssue.issue.state" isString
+jsonpath "$.data.updateIssue.clientMutationId" not exists
+
+# POST /graphql — Mutation.updateIssue echoes back clientMutationId
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updateIssue(input: { id: \"SXNzdWU6b2N0b2NhdC9oZWxsby13b3JsZC8x\", title: \"Found a bug\", clientMutationId: \"relay-ui-1\" }) { issue { number } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.updateIssue.issue.number" == 1
+jsonpath "$.data.updateIssue.clientMutationId" == "relay-ui-1"
+
+# POST /graphql — Mutation.updateIssue without id returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updateIssue(input: { title: \"Found a bug\" }) { issue { number } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.updateIssue" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.updateIssue with wrong node type returns BAD_USER_INPUT
+# Node ID for User:octocat = VXNlcjpvY3RvY2F0
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { updateIssue(input: { id: \"VXNlcjpvY3RvY2F0\", title: \"Found a bug\" }) { issue { number } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.updateIssue" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.closeIssue closes an issue
+# issueId "SXNzdWU6b2N0b2NhdC9oZWxsby13b3JsZC8x" = base64("Issue:octocat/hello-world/1")
+# → PATCH /api/v1/repos/octocat/hello-world/issues/1 with state=closed
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { closeIssue(input: { issueId: \"SXNzdWU6b2N0b2NhdC9oZWxsby13b3JsZC8x\" }) { issue { number state } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.closeIssue.issue.number" == 1
+jsonpath "$.data.closeIssue.issue.state" isString
+jsonpath "$.data.closeIssue.clientMutationId" not exists
+
+# POST /graphql — Mutation.closeIssue echoes back clientMutationId
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { closeIssue(input: { issueId: \"SXNzdWU6b2N0b2NhdC9oZWxsby13b3JsZC8x\", clientMutationId: \"relay-close-1\" }) { issue { number } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.closeIssue.issue.number" == 1
+jsonpath "$.data.closeIssue.clientMutationId" == "relay-close-1"
+
+# POST /graphql — Mutation.closeIssue without issueId returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { closeIssue(input: {}) { issue { number } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.closeIssue" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.closeIssue with wrong node type returns BAD_USER_INPUT
+# Node ID for User:octocat = VXNlcjpvY3RvY2F0
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { closeIssue(input: { issueId: \"VXNlcjpvY3RvY2F0\" }) { issue { number } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.closeIssue" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.reopenIssue reopens an issue
+# issueId "SXNzdWU6b2N0b2NhdC9oZWxsby13b3JsZC8x" = base64("Issue:octocat/hello-world/1")
+# → PATCH /api/v1/repos/octocat/hello-world/issues/1 with state=open
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { reopenIssue(input: { issueId: \"SXNzdWU6b2N0b2NhdC9oZWxsby13b3JsZC8x\" }) { issue { number state } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.reopenIssue.issue.number" == 1
+jsonpath "$.data.reopenIssue.issue.state" isString
+jsonpath "$.data.reopenIssue.clientMutationId" not exists
+
+# POST /graphql — Mutation.reopenIssue echoes back clientMutationId
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { reopenIssue(input: { issueId: \"SXNzdWU6b2N0b2NhdC9oZWxsby13b3JsZC8x\", clientMutationId: \"relay-reopen-1\" }) { issue { number } clientMutationId } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.errors" not exists
+jsonpath "$.data.reopenIssue.issue.number" == 1
+jsonpath "$.data.reopenIssue.clientMutationId" == "relay-reopen-1"
+
+# POST /graphql — Mutation.reopenIssue without issueId returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { reopenIssue(input: {}) { issue { number } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.reopenIssue" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
+
+# POST /graphql — Mutation.reopenIssue with wrong node type returns BAD_USER_INPUT
+POST http://{{host}}/graphql
+Authorization: token testtoken
+Content-Type: application/json
+{"query": "mutation { reopenIssue(input: { issueId: \"VXNlcjpvY3RvY2F0\" }) { issue { number } } }"}
+
+HTTP 200
+[Asserts]
+jsonpath "$.data.reopenIssue" not exists
+jsonpath "$.errors" isCollection
+jsonpath "$.errors[0].extensions.code" == "BAD_USER_INPUT"
