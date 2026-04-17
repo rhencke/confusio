@@ -790,10 +790,8 @@ graphql_resolvers["node.IssueComment"] = function(local_id, _ctx)
     if c.id == cid_n then
       local gh_comment = translate_pagure_comment(c)
       local comment_node = graphql_translate_comment(gh_comment, owner, repo)
-      comment_node.id = encode_node_id(
-        "IssueComment",
-        owner .. "/" .. repo .. "/" .. issue_num .. "/" .. cid
-      )
+      comment_node.id =
+        encode_node_id("IssueComment", owner .. "/" .. repo .. "/" .. issue_num .. "/" .. cid)
       return comment_node
     end
   end
