@@ -2343,132 +2343,209 @@ end)
 
 -- Deploy keys ---------------------------------------------------------------
 
+local deploy_keys = {}
+
+deploy_keys.list = function(owner, repo_name)
+  local url = append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+deploy_keys.create = function(owner, repo_name, body)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys", "POST", body)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+deploy_keys.get = function(owner, repo_name, key_id)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys/" .. key_id)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+deploy_keys.delete = function(owner, repo_name, key_id)
+  local ok, status =
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys/" .. key_id, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting deploy key")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting deploy key")
+  end
+  return true, nil
+end
+
 -- GET /repos/{owner}/{repo}/keys
 b:rest("get_repo_keys", function(owner, repo_name)
-  proxy_json_paged(
-    nil,
-    PAGES,
-    fetch_json(
-      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys", PAGES)
-    )
-  )
+  cap_rest_paged(deploy_keys.list(owner, repo_name))
 end)
 
 -- POST /repos/{owner}/{repo}/keys
 b:rest("post_repo_keys", function(owner, repo_name)
-  proxy_json_created(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys", "POST", GetBody())
-  )
+  cap_rest_created(deploy_keys.create(owner, repo_name, GetBody()))
 end)
 
 -- GET /repos/{owner}/{repo}/keys/{key_id}
 b:rest("get_repo_key", function(owner, repo_name, key_id)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys/" .. key_id)
-  )
+  cap_rest_respond(deploy_keys.get(owner, repo_name, key_id))
 end)
 
 -- DELETE /repos/{owner}/{repo}/keys/{key_id}
 b:rest("delete_repo_key", function(owner, repo_name, key_id)
-  proxy_204(
-    { 200 },
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys/" .. key_id, "DELETE")
-  )
+  cap_rest_204(deploy_keys.delete(owner, repo_name, key_id))
 end)
 
 -- Webhooks ------------------------------------------------------------------
 
--- GET /repos/{owner}/{repo}/hooks
-b:rest("get_repo_hooks", function(owner, repo_name)
-  proxy_json_paged(
-    nil,
-    PAGES,
-    fetch_json(
-      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks", PAGES)
-    )
-  )
-end)
+local webhooks = {}
 
--- POST /repos/{owner}/{repo}/hooks
-b:rest("post_repo_hooks", function(owner, repo_name)
-  proxy_json_created(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks", "POST", GetBody())
-  )
-end)
-
--- GET /repos/{owner}/{repo}/hooks/{hook_id}
-b:rest("get_repo_hook", function(owner, repo_name, hook_id)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id)
-  )
-end)
-
--- PATCH /repos/{owner}/{repo}/hooks/{hook_id}
-b:rest("patch_repo_hook", function(owner, repo_name, hook_id)
-  proxy_json(
-    nil,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id,
-      "PATCH",
-      GetBody()
-    )
-  )
-end)
-
--- DELETE /repos/{owner}/{repo}/hooks/{hook_id}
-b:rest("delete_repo_hook", function(owner, repo_name, hook_id)
-  proxy_204(
-    { 200 },
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id, "DELETE")
-  )
-end)
-
--- GET /repos/{owner}/{repo}/hooks/{hook_id}/config
--- Gitea stores config inline in the hook object; extract the config sub-object.
-b:rest("get_repo_hook_config", function(owner, repo_name, hook_id)
-  proxy_json(function(hook)
-    return hook.config or {}
-  end, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id))
-end)
-
--- PATCH /repos/{owner}/{repo}/hooks/{hook_id}/config
--- Gitea has no separate config endpoint; merge into a full PATCH.
-b:rest("patch_repo_hook_config", function(owner, repo_name, hook_id)
-  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id
-  -- Fetch current hook, merge new config, write back.
-  local ok, status, _, body = fetch_json(url)
-  if not ok or status ~= 200 then
-    if ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
-    return
+webhooks.list = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
   end
-  local hook = DecodeJson(body) or {}
-  local new_config = DecodeJson(GetBody() or "{}")
+  return items, hdrs, nil
+end
+
+webhooks.create = function(owner, repo_name, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+webhooks.get = function(owner, repo_name, hook_id)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+webhooks.update = function(owner, repo_name, hook_id, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id,
+    "PATCH",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+webhooks.delete = function(owner, repo_name, hook_id)
+  local ok, status =
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting webhook")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting webhook")
+  end
+  return true, nil
+end
+
+-- Gitea stores config inline in the hook object; extract the config sub-object.
+webhooks.get_config = function(owner, repo_name, hook_id)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id)
+  if not raw then
+    return nil, err
+  end
+  return raw.config or {}, nil
+end
+
+-- Gitea has no separate config endpoint; merge new_config into a full PATCH.
+webhooks.update_config = function(owner, repo_name, hook_id, new_config)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id
+  local hook, err = cap_fetch(fetch_json, url)
+  if not hook then
+    return nil, err
+  end
   hook.config = hook.config or {}
   for k, v in pairs(new_config) do
     hook.config[k] = v
   end
-  proxy_json(function(h)
-    return h.config or {}
-  end, fetch_json(url, "PATCH", EncodeJson(hook)))
+  local updated, err2 = cap_fetch(fetch_json, url, "PATCH", EncodeJson(hook))
+  if not updated then
+    return nil, err2
+  end
+  return updated.config or {}, nil
+end
+
+webhooks.test = function(owner, repo_name, hook_id)
+  local ok, status = fetch_json(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id .. "/tests",
+    "POST"
+  )
+  if not ok then
+    return nil, cap_err(0, "network error testing webhook")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " testing webhook")
+  end
+  return true, nil
+end
+
+-- GET /repos/{owner}/{repo}/hooks
+b:rest("get_repo_hooks", function(owner, repo_name)
+  cap_rest_paged(webhooks.list(owner, repo_name))
+end)
+
+-- POST /repos/{owner}/{repo}/hooks
+b:rest("post_repo_hooks", function(owner, repo_name)
+  cap_rest_created(webhooks.create(owner, repo_name, GetBody()))
+end)
+
+-- GET /repos/{owner}/{repo}/hooks/{hook_id}
+b:rest("get_repo_hook", function(owner, repo_name, hook_id)
+  cap_rest_respond(webhooks.get(owner, repo_name, hook_id))
+end)
+
+-- PATCH /repos/{owner}/{repo}/hooks/{hook_id}
+b:rest("patch_repo_hook", function(owner, repo_name, hook_id)
+  cap_rest_respond(webhooks.update(owner, repo_name, hook_id, GetBody()))
+end)
+
+-- DELETE /repos/{owner}/{repo}/hooks/{hook_id}
+b:rest("delete_repo_hook", function(owner, repo_name, hook_id)
+  cap_rest_204(webhooks.delete(owner, repo_name, hook_id))
+end)
+
+-- GET /repos/{owner}/{repo}/hooks/{hook_id}/config
+b:rest("get_repo_hook_config", function(owner, repo_name, hook_id)
+  cap_rest_respond(webhooks.get_config(owner, repo_name, hook_id))
+end)
+
+-- PATCH /repos/{owner}/{repo}/hooks/{hook_id}/config
+b:rest("patch_repo_hook_config", function(owner, repo_name, hook_id)
+  local new_config = DecodeJson(GetBody() or "{}") or {}
+  cap_rest_respond(webhooks.update_config(owner, repo_name, hook_id, new_config))
 end)
 
 -- POST /repos/{owner}/{repo}/hooks/{hook_id}/tests
 b:rest("post_repo_hook_test", function(owner, repo_name, hook_id)
-  proxy_204(
-    { 200 },
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id .. "/tests",
-      "POST"
-    )
-  )
+  cap_rest_204(webhooks.test(owner, repo_name, hook_id))
 end)
 
 -- Users' repos --------------------------------------------------------------
@@ -5823,5 +5900,7 @@ b:capability("collaborators", collaborators)
 b:capability("forks", forks)
 b:capability("commit_comments", commit_comments)
 b:capability("releases", releases)
+b:capability("deploy_keys", deploy_keys)
+b:capability("webhooks", webhooks)
 b:set_allow_anonymous(_allow_anon)
 b:build()
