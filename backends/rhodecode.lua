@@ -1,5 +1,5 @@
 -- RhodeCode backend handler overrides.
-backend_impl = {
+app.backend_impl = {
   get_root = function()
     proxy_health_check(pcall(Fetch, config.base_url .. "/_admin/api", make_fetch_opts("bearer")))
   end,

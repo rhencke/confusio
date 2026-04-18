@@ -28,12 +28,12 @@ dofile("/zip/internal/graphql_schema.lua")
 dofile("/zip/internal/graphql_executor.lua")
 dofile("/zip/internal/graphql_translators.lua")
 dofile("/zip/internal/families.lua")
+dofile("/zip/internal/context.lua")
 
--- backend_impl is global: set by backends/<name>.lua at startup.
-backend_impl = {}
--- backend_allow_anonymous is global: backends that require sign-in set this to false
--- at startup (after checking the provider's API settings). Default: allow.
-backend_allow_anonymous = true
+-- Build the app context.  Backends write directly to app.backend_impl and
+-- app.allow_anonymous at load time; no post-load sync needed.
+app = make_app(config)
+
 if config.backend ~= "" then
   assert(config.backend:match("^[%a][%w_]*$"), "invalid backend name: " .. config.backend)
   dofile("/zip/backends/" .. config.backend .. ".lua")

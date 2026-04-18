@@ -135,7 +135,7 @@ local function find_project(shortname)
   return nil
 end
 
-backend_impl = {
+app.backend_impl = {
   get_root = function()
     proxy_health_check(pcall(Fetch, base() .. "/projects?limit=1", auth()))
   end,

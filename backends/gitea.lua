@@ -20,12 +20,12 @@ local proxy_handler_created = _t.proxy_handler_created
 local proxy_handler_paged = _t.proxy_handler_paged
 
 -- Check if this Gitea instance allows anonymous access.
--- Sets the global backend_allow_anonymous so OnHttpRequest can gate unauthenticated requests.
+-- Sets app.allow_anonymous so OnHttpRequest can gate unauthenticated requests.
 do
   local ok, status, _, body = pcall(Fetch, base() .. "/settings/api", nil)
   if ok and status == 200 then
     local settings = DecodeJson(body) or {}
-    backend_allow_anonymous = settings.require_signin_view ~= true
+    app.allow_anonymous = settings.require_signin_view ~= true
   end
 end
 
@@ -739,7 +739,7 @@ local function delete_gitea_reaction(url, reaction_id)
   proxy_204({ 200 }, fetch_json(url, "DELETE", '{"content":"' .. content .. '"}'))
 end
 
-backend_impl = {
+app.backend_impl = {
   -- Health check
   get_root = function()
     proxy_health_check(pcall(Fetch, base() .. "/version", auth()))

@@ -2,7 +2,7 @@
 if config.base_url == "" then
   config.base_url = "https://sourceforge.net"
 end
-backend_impl = {
+app.backend_impl = {
   get_root = function()
     proxy_health_check(pcall(Fetch, config.base_url .. "/rest/p"))
   end,

@@ -96,7 +96,7 @@ local function check_page()
   return true
 end
 
-backend_impl = {
+app.backend_impl = {
   get_root = function()
     proxy_health_check(pcall(Fetch, base() .. "/repos", auth()))
   end,

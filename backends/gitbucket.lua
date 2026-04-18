@@ -28,7 +28,7 @@ local gb_to_gh = {
   warning = { status = "completed", conclusion = "neutral" },
 }
 
-backend_impl = {
+app.backend_impl = {
   get_root = function()
     proxy_health_check(pcall(Fetch, base() .. "/rate_limit", auth()))
   end,

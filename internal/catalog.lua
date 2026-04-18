@@ -12,7 +12,7 @@
 -- group_name matches the test file suffix (<backend>-<group>.hurl) and the
 -- compatibility matrix sections in site/compatibility.csv.
 --
--- Backends override handlers by setting backend_impl.<name>. Parametric
+-- Backends override handlers by setting app.backend_impl.<name>. Parametric
 -- captures from {param} segments are passed positionally to the handler.
 -- ---------------------------------------------------------------------------
 
@@ -22,7 +22,7 @@ local endpoint_sections = {
     {
       -- GraphQL API (https://docs.github.com/en/graphql)
       -- graphql_handler is the fixed handler for all backends; backends populate
-      -- graphql_resolvers rather than overriding backend_impl.graphql_request.
+      -- graphql_resolvers rather than overriding app.backend_impl.graphql_request.
       { "POST /graphql", "graphql_request", graphql_handler },
     },
   },

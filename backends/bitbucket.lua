@@ -619,7 +619,7 @@ local function snippet_url(gist_id)
   return base() .. "/snippets/" .. ws .. "/" .. eid
 end
 
-backend_impl = {
+app.backend_impl = {
   get_root = function()
     proxy_health_check(pcall(Fetch, base() .. "/user", auth()))
   end,

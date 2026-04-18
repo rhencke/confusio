@@ -554,7 +554,7 @@ local GL_STATUS_TO_CHECK_RUN = {
   canceled = { status = "completed", conclusion = "cancelled" },
 }
 
-backend_impl = {
+app.backend_impl = {
   get_root = function()
     proxy_health_check(pcall(Fetch, base() .. "/version", auth()))
   end,
@@ -3334,7 +3334,7 @@ local function translate_gl_vuln_list(arr)
   return result
 end
 
-local _b = backend_impl
+local _b = app.backend_impl
 
 _b.list_repo_dependabot_alerts = function(owner, repo_name)
   proxy_json_paged(

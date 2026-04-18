@@ -91,7 +91,7 @@ local function translate_radicle_repos(repos)
   return translate_list(translate_radicle_repo, repos)
 end
 
-backend_impl = {
+app.backend_impl = {
   get_root = function()
     proxy_health_check(pcall(Fetch, base(), auth()))
   end,
