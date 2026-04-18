@@ -740,14 +740,10 @@ b:rest("post_org_repos", function(org)
 end)
 
 -- GET /repos/{owner}/{repo}/topics
-b:rest(
-  "get_repo_topics",
-  proxy_handler(function(p)
-    return { names = p.topics or {} }
-  end, function(owner, repo_name)
-    return base() .. "/projects/" .. project_id(owner, repo_name)
-  end)
-)
+b:rest("get_repo_topics", function(owner, repo_name)
+  local data, err = repos.get_topics(owner, repo_name)
+  cap_rest_respond(data, err)
+end)
 
 -- PUT /repos/{owner}/{repo}/topics
 b:rest("put_repo_topics", function(owner, repo_name)
