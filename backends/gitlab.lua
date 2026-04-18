@@ -4411,76 +4411,69 @@ end)
 -- Check suites have no GitLab equivalent; all suite endpoints fall back to
 -- the route_defaults stubs defined in .init.lua.
 
--- Packages (org via GitLab group packages API) --------------------------------
+-- ---------------------------------------------------------------------------
+-- Packages capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translation for GitLab group package registry operations.
+-- Maps GitLab package objects to the GitHub Packages REST shape.
+-- Paged list operations: (items, headers, nil) or (nil, nil, err).
+-- Single-item operations: (data, nil) or (nil, err).
+-- Delete operations: (true, nil) or (nil, err).
 
-b:rest("get_org_packages", function(org)
-  local pkg_type = GetParam("package_type") or ""
-  local url = base() .. "/groups/" .. org .. "/packages"
-  if pkg_type ~= "" then
-    url = url .. "?package_type=" .. pkg_type
-  end
-  url = append_page_params(url, PAGES)
-  proxy_json_paged(function(entries)
-    local pkgs = {}
-    for i, p in ipairs(entries) do
-      pkgs[i] = {
-        id = p.id,
-        name = p.name or "",
-        package_type = p.package_type or "",
-        url = "",
-        html_url = p._links and p._links.web_path or "",
-        version_count = 1,
-        visibility = "public",
-        owner = nil,
-        repository = nil,
-        created_at = p.created_at,
-        updated_at = p.created_at,
-      }
-    end
-    return pkgs
-  end, PAGES, fetch_json(url))
-end)
+local packages_cap = {}
 
-b:rest("get_org_package", function(org, pkg_type, pkg_name)
-  local url = base()
-    .. "/groups/"
-    .. org
-    .. "/packages?package_type="
-    .. pkg_type
-    .. "&package_name="
-    .. pkg_name
-    .. "&per_page=100"
-  local ok, status, _, body = fetch_json(url)
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
-  end
-  local entries = DecodeJson(body) or {}
-  if #entries == 0 then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  local p = entries[1]
-  respond_json(200, {
+-- Helper: translate a single GitLab package entry to GitHub Packages format.
+local function translate_gl_package(p, version_count)
+  return {
     id = p.id,
     name = p.name or "",
     package_type = p.package_type or "",
     url = "",
     html_url = p._links and p._links.web_path or "",
-    version_count = #entries,
+    version_count = version_count or 1,
     visibility = "public",
     owner = nil,
     repository = nil,
     created_at = p.created_at,
     updated_at = p.created_at,
-  })
-end)
+  }
+end
 
-b:rest("delete_org_package", function(org, pkg_type, pkg_name)
+-- Helper: translate a single GitLab package entry to GitHub package version format.
+local function translate_gl_package_version(p)
+  return {
+    id = p.id,
+    name = p.version or "",
+    url = "",
+    package_html_url = "",
+    html_url = p._links and p._links.web_path or "",
+    license = "",
+    description = "",
+    created_at = p.created_at,
+    updated_at = p.created_at,
+    deleted_at = nil,
+    metadata = { package_type = p.package_type or "" },
+  }
+end
+
+-- list_org: paginated list of packages for an org (GitLab group), optionally
+-- filtered by package_type.  pkg_type may be "" to list all types.
+packages_cap.list_org = function(org, pkg_type)
+  local url = base() .. "/groups/" .. org .. "/packages"
+  if pkg_type and pkg_type ~= "" then
+    url = url .. "?package_type=" .. pkg_type
+  end
+  url = append_page_params(url, PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gl_package, items), hdrs, nil
+end
+
+-- get_org: fetch a single package from an org by type+name.
+-- Returns (package_data, nil) or (nil, err).
+packages_cap.get_org = function(org, pkg_type, pkg_name)
   local url = base()
     .. "/groups/"
     .. org
@@ -4489,27 +4482,44 @@ b:rest("delete_org_package", function(org, pkg_type, pkg_name)
     .. "&package_name="
     .. pkg_name
     .. "&per_page=100"
-  local ok, status, _, body = fetch_json(url)
-  if not ok then
-    respond_json(503, {})
-    return
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
   end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
-  end
-  local entries = DecodeJson(body) or {}
+  local entries = type(raw) == "table" and raw or {}
   if #entries == 0 then
-    respond_json(404, { message = "Not Found" })
-    return
+    return nil, cap_err(404, "Not Found")
+  end
+  return translate_gl_package(entries[1], #entries), nil
+end
+
+-- delete_org: delete all versions of a package from an org by type+name.
+-- Returns (true, nil) on success or (nil, err).
+packages_cap.delete_org = function(org, pkg_type, pkg_name)
+  local url = base()
+    .. "/groups/"
+    .. org
+    .. "/packages?package_type="
+    .. pkg_type
+    .. "&package_name="
+    .. pkg_name
+    .. "&per_page=100"
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
+  end
+  local entries = type(raw) == "table" and raw or {}
+  if #entries == 0 then
+    return nil, cap_err(404, "Not Found")
   end
   for _, p in ipairs(entries) do
     fetch_json(base() .. "/projects/" .. p.project_id .. "/packages/" .. p.id, "DELETE")
   end
-  set_preamble(204)
-end)
+  return true, nil
+end
 
-b:rest("get_org_package_versions", function(org, pkg_type, pkg_name)
+-- list_org_versions: paginated list of versions of a package in an org.
+packages_cap.list_org_versions = function(org, pkg_type, pkg_name)
   local url = base()
     .. "/groups/"
     .. org
@@ -4518,28 +4528,16 @@ b:rest("get_org_package_versions", function(org, pkg_type, pkg_name)
     .. "&package_name="
     .. pkg_name
   url = append_page_params(url, PAGES)
-  proxy_json_paged(function(entries)
-    local versions = {}
-    for i, p in ipairs(entries) do
-      versions[i] = {
-        id = p.id,
-        name = p.version or "",
-        url = "",
-        package_html_url = "",
-        html_url = p._links and p._links.web_path or "",
-        license = "",
-        description = "",
-        created_at = p.created_at,
-        updated_at = p.created_at,
-        deleted_at = nil,
-        metadata = { package_type = p.package_type or "" },
-      }
-    end
-    return versions
-  end, PAGES, fetch_json(url))
-end)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gl_package_version, items), hdrs, nil
+end
 
-b:rest("get_org_package_version", function(org, pkg_type, pkg_name, version_id)
+-- get_org_version: fetch a single package version from an org by version_id.
+-- Returns (version_data, nil) or (nil, err).
+packages_cap.get_org_version = function(org, pkg_type, pkg_name, version_id)
   local url = base()
     .. "/groups/"
     .. org
@@ -4548,38 +4546,22 @@ b:rest("get_org_package_version", function(org, pkg_type, pkg_name, version_id)
     .. "&package_name="
     .. pkg_name
     .. "&per_page=100"
-  local ok, status, _, body = fetch_json(url)
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
   end
   local vid = tonumber(version_id)
-  for _, p in ipairs(DecodeJson(body) or {}) do
+  for _, p in ipairs(type(raw) == "table" and raw or {}) do
     if p.id == vid then
-      respond_json(200, {
-        id = p.id,
-        name = p.version or "",
-        url = "",
-        package_html_url = "",
-        html_url = p._links and p._links.web_path or "",
-        license = "",
-        description = "",
-        created_at = p.created_at,
-        updated_at = p.created_at,
-        deleted_at = nil,
-        metadata = { package_type = p.package_type or "" },
-      })
-      return
+      return translate_gl_package_version(p), nil
     end
   end
-  respond_json(404, { message = "Not Found" })
-end)
+  return nil, cap_err(404, "Not Found")
+end
 
-b:rest("delete_org_package_version", function(org, pkg_type, pkg_name, version_id)
+-- delete_org_version: delete a single package version from an org by version_id.
+-- Returns (true, nil) on success or (nil, err).
+packages_cap.delete_org_version = function(org, pkg_type, pkg_name, version_id)
   local url = base()
     .. "/groups/"
     .. org
@@ -4588,33 +4570,59 @@ b:rest("delete_org_package_version", function(org, pkg_type, pkg_name, version_i
     .. "&package_name="
     .. pkg_name
     .. "&per_page=100"
-  local ok, status, _, body = fetch_json(url)
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
   end
   local vid = tonumber(version_id)
-  for _, p in ipairs(DecodeJson(body) or {}) do
+  for _, p in ipairs(type(raw) == "table" and raw or {}) do
     if p.id == vid then
       local dopts = auth() or {}
       dopts.method = "DELETE"
       local dok, dstatus =
         pcall(Fetch, base() .. "/projects/" .. p.project_id .. "/packages/" .. p.id, dopts)
-      if dok and dstatus == 204 then
-        set_preamble(204)
-      elseif dok then
-        respond_json(dstatus, {})
-      else
-        respond_json(503, {})
+      if not dok then
+        return nil, cap_err(0, "network error deleting package version " .. tostring(version_id))
       end
-      return
+      if dstatus ~= 204 then
+        return nil,
+          cap_err(dstatus, "upstream error " .. tostring(dstatus) .. " deleting package version")
+      end
+      return true, nil
     end
   end
-  respond_json(404, { message = "Not Found" })
+  return nil, cap_err(404, "Not Found")
+end
+
+b:rest("get_org_packages", function(org)
+  local pkg_type = GetParam("package_type") or ""
+  local items, hdrs, err = packages_cap.list_org(org, pkg_type)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
+
+b:rest("get_org_package", function(org, pkg_type, pkg_name)
+  local data, err = packages_cap.get_org(org, pkg_type, pkg_name)
+  cap_rest_respond(data, err)
+end)
+
+b:rest("delete_org_package", function(org, pkg_type, pkg_name)
+  local ok, err = packages_cap.delete_org(org, pkg_type, pkg_name)
+  cap_rest_204(ok, err)
+end)
+
+b:rest("get_org_package_versions", function(org, pkg_type, pkg_name)
+  local items, hdrs, err = packages_cap.list_org_versions(org, pkg_type, pkg_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
+
+b:rest("get_org_package_version", function(org, pkg_type, pkg_name, version_id)
+  local data, err = packages_cap.get_org_version(org, pkg_type, pkg_name, version_id)
+  cap_rest_respond(data, err)
+end)
+
+b:rest("delete_org_package_version", function(org, pkg_type, pkg_name, version_id)
+  local ok, err = packages_cap.delete_org_version(org, pkg_type, pkg_name, version_id)
+  cap_rest_204(ok, err)
 end)
 
 -- ---------------------------------------------------------------------------
@@ -4795,66 +4803,17 @@ local function translate_gl_vulnerability(v)
   }
 end
 
-local function translate_gl_vuln_list(arr)
-  local result = {}
-  for _, v in ipairs(arr) do
-    result[#result + 1] = translate_gl_vulnerability(v)
-  end
-  return result
-end
+-- ---------------------------------------------------------------------------
+-- Security capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translation for GitLab vulnerability (Dependabot) and secret
+-- detection (Secret Scanning) operations.
+-- Paged list operations: (items, headers, nil) or (nil, nil, err).
+-- Single-item operations: (data, nil) or (nil, err).
 
-b:rest("list_repo_dependabot_alerts", function(owner, repo_name)
-  proxy_json_paged(
-    translate_gl_vuln_list,
-    PAGES,
-    fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/vulnerabilities")
-  )
-end)
+local security_cap = {}
 
-b:rest("get_repo_dependabot_alert", function(owner, repo_name, alert_number)
-  proxy_json(
-    translate_gl_vulnerability,
-    fetch_json(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/vulnerabilities/" .. alert_number
-    )
-  )
-end)
-
-b:rest("update_repo_dependabot_alert", function(_owner, _repo_name, alert_number)
-  local req = DecodeJson(GetBody() or "{}")
-  local action = GH_STATE_TO_GL_ACTION[req.state or ""] or "revert-to-detected"
-  local gl_url = base() .. "/vulnerabilities/" .. alert_number .. "/" .. action
-  local ok, status, _, body = fetch_json(gl_url, "POST", EncodeJson({}))
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
-  end
-  respond_json(200, translate_gl_vulnerability(DecodeJson(body) or {}))
-end)
-
-b:rest("list_org_dependabot_alerts", function(org)
-  proxy_json_paged(
-    translate_gl_vuln_list,
-    PAGES,
-    fetch_json(base() .. "/groups/" .. org .. "/vulnerabilities")
-  )
-end)
-
--- Secret Scanning via GitLab Secret Detection ----------------------------------
---
--- GitLab Secret Detection stores findings as vulnerabilities with
--- report_type=secret_detection. Endpoint mapping:
---   GET  /repos/{owner}/{repo}/secret-scanning/alerts       → GET  /projects/:id/vulnerabilities?report_type=secret_detection
---   GET  /repos/{owner}/{repo}/secret-scanning/alerts/{n}   → GET  /projects/:id/vulnerabilities/:n
---   PATCH /repos/{owner}/{repo}/secret-scanning/alerts/{n}  → POST /vulnerabilities/:n/dismiss|revert-to-detected|resolve
---   GET  /orgs/{org}/secret-scanning/alerts                 → GET  /groups/:org/vulnerabilities?report_type=secret_detection
---
--- Alert locations, push-protection bypasses, pattern configurations, and
--- scan history have no GitLab equivalent and fall back to defaults.
+-- Secret Scanning state/reason mappings (shared with security_cap operations).
 --
 -- GitLab dismissed_reason → GitHub resolution:
 --   false_positive   → false_positive
@@ -4921,61 +4880,166 @@ local function translate_gl_secret_alert(v)
   }
 end
 
-local function translate_gl_secret_list(arr)
-  local result = {}
-  for _, v in ipairs(arr) do
-    result[#result + 1] = translate_gl_secret_alert(v)
+-- list_repo_dependabot: paginated list of dependabot (vulnerability) alerts for a repo.
+security_cap.list_repo_dependabot = function(owner, repo_name)
+  local url = append_page_params(
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/vulnerabilities",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
   end
-  return result
+  return translate_list(translate_gl_vulnerability, items), hdrs, nil
 end
 
-b:rest("list_repo_secret_scanning_alerts", function(owner, repo_name)
-  proxy_json_paged(
-    translate_gl_secret_list,
-    PAGES,
-    fetch_json(
-      base()
-        .. "/projects/"
-        .. project_id(owner, repo_name)
-        .. "/vulnerabilities?report_type=secret_detection"
-    )
+-- get_repo_dependabot: fetch a single dependabot alert by number.
+security_cap.get_repo_dependabot = function(owner, repo_name, alert_number)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/vulnerabilities/" .. alert_number
   )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_vulnerability(raw), nil
+end
+
+-- update_repo_dependabot: update (dismiss/reopen) a dependabot alert.
+-- body: raw GitHub-format JSON string with a "state" field.
+security_cap.update_repo_dependabot = function(_owner, _repo_name, alert_number, body)
+  local req = DecodeJson(body or "{}")
+  local action = GH_STATE_TO_GL_ACTION[req.state or ""] or "revert-to-detected"
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/vulnerabilities/" .. alert_number .. "/" .. action,
+    "POST",
+    EncodeJson({})
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_vulnerability(raw), nil
+end
+
+-- list_org_dependabot: paginated list of dependabot alerts for an org (GitLab group).
+security_cap.list_org_dependabot = function(org)
+  local url = append_page_params(base() .. "/groups/" .. org .. "/vulnerabilities", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gl_vulnerability, items), hdrs, nil
+end
+
+-- list_repo_secret: paginated list of secret-scanning alerts for a repo.
+security_cap.list_repo_secret = function(owner, repo_name)
+  local url = append_page_params(
+    base()
+      .. "/projects/"
+      .. project_id(owner, repo_name)
+      .. "/vulnerabilities?report_type=secret_detection",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gl_secret_alert, items), hdrs, nil
+end
+
+-- list_org_secret: paginated list of secret-scanning alerts for an org.
+security_cap.list_org_secret = function(org)
+  local url = append_page_params(
+    base() .. "/groups/" .. org .. "/vulnerabilities?report_type=secret_detection",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gl_secret_alert, items), hdrs, nil
+end
+
+-- get_secret: fetch a single secret-scanning alert by number.
+security_cap.get_secret = function(owner, repo_name, alert_number)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/vulnerabilities/" .. alert_number
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_secret_alert(raw), nil
+end
+
+-- update_secret: update (dismiss/reopen/resolve) a secret-scanning alert.
+-- body: raw GitHub-format JSON string with a "state" field.
+security_cap.update_secret = function(_owner, _repo_name, alert_number, body)
+  local req = DecodeJson(body or "{}")
+  local action = GH_SECRET_STATE_TO_GL_ACTION[req.state or ""] or "revert-to-detected"
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/vulnerabilities/" .. alert_number .. "/" .. action,
+    "POST",
+    EncodeJson({})
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_secret_alert(raw), nil
+end
+
+b:rest("list_repo_dependabot_alerts", function(owner, repo_name)
+  local items, hdrs, err = security_cap.list_repo_dependabot(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
+
+b:rest("get_repo_dependabot_alert", function(owner, repo_name, alert_number)
+  local data, err = security_cap.get_repo_dependabot(owner, repo_name, alert_number)
+  cap_rest_respond(data, err)
+end)
+
+b:rest("update_repo_dependabot_alert", function(owner, repo_name, alert_number)
+  local data, err = security_cap.update_repo_dependabot(owner, repo_name, alert_number, GetBody())
+  cap_rest_respond(data, err)
+end)
+
+b:rest("list_org_dependabot_alerts", function(org)
+  local items, hdrs, err = security_cap.list_org_dependabot(org)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
+
+b:rest("list_repo_secret_scanning_alerts", function(owner, repo_name)
+  local items, hdrs, err = security_cap.list_repo_secret(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 b:rest("list_org_secret_scanning_alerts", function(org)
-  proxy_json_paged(
-    translate_gl_secret_list,
-    PAGES,
-    fetch_json(base() .. "/groups/" .. org .. "/vulnerabilities?report_type=secret_detection")
-  )
+  local items, hdrs, err = security_cap.list_org_secret(org)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 b:rest("get_secret_scanning_alert", function(owner, repo_name, alert_number)
-  proxy_json(
-    translate_gl_secret_alert,
-    fetch_json(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/vulnerabilities/" .. alert_number
-    )
-  )
+  local data, err = security_cap.get_secret(owner, repo_name, alert_number)
+  cap_rest_respond(data, err)
 end)
 
-b:rest("update_secret_scanning_alert", function(_owner, _repo_name, alert_number)
-  local req = DecodeJson(GetBody() or "{}")
-  local action = GH_SECRET_STATE_TO_GL_ACTION[req.state or ""] or "revert-to-detected"
-  local gl_url = base() .. "/vulnerabilities/" .. alert_number .. "/" .. action
-  local ok, status, _, body = fetch_json(gl_url, "POST", EncodeJson({}))
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
-  end
-  respond_json(200, translate_gl_secret_alert(DecodeJson(body) or {}))
+b:rest("update_secret_scanning_alert", function(owner, repo_name, alert_number)
+  local data, err = security_cap.update_secret(owner, repo_name, alert_number, GetBody())
+  cap_rest_respond(data, err)
 end)
 
--- Gists (GitLab Snippets) ----------------------------------------------------
+-- ---------------------------------------------------------------------------
+-- Gists capability module (GitLab Snippets)
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translation for GitLab snippet operations mapped to GitHub gists.
+-- Single-item operations: (data, nil) or (nil, err).
+-- List operations: (items, nil) or (nil, err).  (Not paginated — GitLab snippet
+-- lists are small and proxy_json_list was used in the original code.)
+-- Delete operations: (true, nil) or (nil, err).
+
+local gists_cap = {}
 
 local function translate_gl_snippet_author(a)
   if not a then
@@ -5019,10 +5083,6 @@ local function translate_gl_snippet(s)
   }
 end
 
-local function translate_gl_snippets(data)
-  return translate_list(translate_gl_snippet, data)
-end
-
 local function translate_gl_snippet_note(n)
   if not n then
     return {}
@@ -5038,11 +5098,7 @@ local function translate_gl_snippet_note(n)
   }
 end
 
-local function translate_gl_snippet_notes(data)
-  return translate_list(translate_gl_snippet_note, data)
-end
-
--- Convert a GitHub gist create/update request body to GitLab snippet format.
+-- Helper: convert a GitHub gist create/update request body to GitLab snippet format.
 local function gl_snippet_req(req)
   local gl = {}
   if req.description ~= nil then
@@ -5063,86 +5119,195 @@ local function gl_snippet_req(req)
   return EncodeJson(gl)
 end
 
-local function delete_snippet(url)
-  local opts = auth() or {}
-  opts.method = "DELETE"
-  proxy_204({ 200 }, pcall(Fetch, url, opts))
+-- list: list own snippets (mapped to authenticated user's gists).
+gists_cap.list = function()
+  local raw, err = cap_fetch(fetch_json, base() .. "/snippets")
+  if not raw then
+    return nil, err
+  end
+  return translate_list(translate_gl_snippet, type(raw) == "table" and raw or {}), nil
+end
+
+-- list_public: list public snippets (mapped to public gists).
+gists_cap.list_public = function()
+  local raw, err = cap_fetch(fetch_json, base() .. "/snippets/public")
+  if not raw then
+    return nil, err
+  end
+  return translate_list(translate_gl_snippet, type(raw) == "table" and raw or {}), nil
+end
+
+-- create: create a new snippet from a GitHub gist request body.
+gists_cap.create = function(body)
+  local req = DecodeJson(body or "{}") or {}
+  local raw, err = cap_fetch(fetch_json, base() .. "/snippets", "POST", gl_snippet_req(req))
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_snippet(raw), nil
+end
+
+-- get: fetch a single snippet by ID.
+gists_cap.get = function(id)
+  local raw, err = cap_fetch(fetch_json, base() .. "/snippets/" .. id)
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_snippet(raw), nil
+end
+
+-- update: update (PUT) a snippet from a GitHub gist request body.
+gists_cap.update = function(id, body)
+  local req = DecodeJson(body or "{}") or {}
+  local raw, err = cap_fetch(fetch_json, base() .. "/snippets/" .. id, "PUT", gl_snippet_req(req))
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_snippet(raw), nil
+end
+
+-- delete: delete a snippet by ID.
+-- Returns (true, nil) on 200/204 success or (nil, err) on failure.
+gists_cap.delete = function(id)
+  local dopts = auth() or {}
+  dopts.method = "DELETE"
+  local ok, status = pcall(Fetch, base() .. "/snippets/" .. id, dopts)
+  if not ok then
+    return nil, cap_err(0, "network error deleting snippet " .. tostring(id))
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting snippet")
+  end
+  return true, nil
+end
+
+-- list_comments: list notes (comments) on a snippet.
+gists_cap.list_comments = function(id)
+  local raw, err = cap_fetch(fetch_json, base() .. "/snippets/" .. id .. "/notes")
+  if not raw then
+    return nil, err
+  end
+  return translate_list(translate_gl_snippet_note, type(raw) == "table" and raw or {}), nil
+end
+
+-- create_comment: add a note to a snippet.
+gists_cap.create_comment = function(id, body)
+  local req = DecodeJson(body or "{}") or {}
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/snippets/" .. id .. "/notes",
+    "POST",
+    EncodeJson({ body = req.body or "" })
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_snippet_note(raw), nil
+end
+
+-- get_comment: fetch a single note on a snippet.
+gists_cap.get_comment = function(id, comment_id)
+  local raw, err = cap_fetch(fetch_json, base() .. "/snippets/" .. id .. "/notes/" .. comment_id)
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_snippet_note(raw), nil
+end
+
+-- update_comment: update a note on a snippet.
+gists_cap.update_comment = function(id, comment_id, body)
+  local req = DecodeJson(body or "{}") or {}
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/snippets/" .. id .. "/notes/" .. comment_id,
+    "PUT",
+    EncodeJson({ body = req.body or "" })
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_snippet_note(raw), nil
+end
+
+-- delete_comment: delete a note on a snippet.
+-- Returns (true, nil) on 200/204 success or (nil, err) on failure.
+gists_cap.delete_comment = function(id, comment_id)
+  local dopts = auth() or {}
+  dopts.method = "DELETE"
+  local ok, status = pcall(Fetch, base() .. "/snippets/" .. id .. "/notes/" .. comment_id, dopts)
+  if not ok then
+    return nil,
+      cap_err(
+        0,
+        "network error deleting snippet comment " .. tostring(id) .. "/" .. tostring(comment_id)
+      )
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil,
+      cap_err(status, "upstream error " .. tostring(status) .. " deleting snippet comment")
+  end
+  return true, nil
 end
 
 b:rest("get_gists", function()
-  proxy_json_list(translate_gl_snippets, fetch_json(base() .. "/snippets"))
+  local data, err = gists_cap.list()
+  cap_rest_respond(data, err)
 end)
 
 b:rest("get_gists_public", function()
-  proxy_json_list(translate_gl_snippets, fetch_json(base() .. "/snippets/public"))
+  local data, err = gists_cap.list_public()
+  cap_rest_respond(data, err)
 end)
 
 b:rest("post_gists", function()
-  local req = DecodeJson(GetBody() or "{}") or {}
-  proxy_json_created(
-    translate_gl_snippet,
-    fetch_json(base() .. "/snippets", "POST", gl_snippet_req(req))
-  )
+  local data, err = gists_cap.create(GetBody())
+  cap_rest_created(data, err)
 end)
 
 b:rest("get_gist", function(id)
-  proxy_json(translate_gl_snippet, fetch_json(base() .. "/snippets/" .. id))
+  local data, err = gists_cap.get(id)
+  cap_rest_respond(data, err)
 end)
 
 b:rest("patch_gist", function(id)
-  local req = DecodeJson(GetBody() or "{}") or {}
-  proxy_json(
-    translate_gl_snippet,
-    fetch_json(base() .. "/snippets/" .. id, "PUT", gl_snippet_req(req))
-  )
+  local data, err = gists_cap.update(id, GetBody())
+  cap_rest_respond(data, err)
 end)
 
 b:rest("delete_gist", function(id)
-  delete_snippet(base() .. "/snippets/" .. id)
+  local ok, err = gists_cap.delete(id)
+  cap_rest_204(ok, err)
 end)
 
 b:rest("get_gist_comments", function(id)
-  proxy_json_list(translate_gl_snippet_notes, fetch_json(base() .. "/snippets/" .. id .. "/notes"))
+  local data, err = gists_cap.list_comments(id)
+  cap_rest_respond(data, err)
 end)
 
 b:rest("post_gist_comment", function(id)
-  local req = DecodeJson(GetBody() or "{}") or {}
-  proxy_json_created(
-    translate_gl_snippet_note,
-    fetch_json(
-      base() .. "/snippets/" .. id .. "/notes",
-      "POST",
-      EncodeJson({ body = req.body or "" })
-    )
-  )
+  local data, err = gists_cap.create_comment(id, GetBody())
+  cap_rest_created(data, err)
 end)
 
 b:rest("get_gist_comment", function(id, comment_id)
-  proxy_json(
-    translate_gl_snippet_note,
-    fetch_json(base() .. "/snippets/" .. id .. "/notes/" .. comment_id)
-  )
+  local data, err = gists_cap.get_comment(id, comment_id)
+  cap_rest_respond(data, err)
 end)
 
 b:rest("patch_gist_comment", function(id, comment_id)
-  local req = DecodeJson(GetBody() or "{}") or {}
-  proxy_json(
-    translate_gl_snippet_note,
-    fetch_json(
-      base() .. "/snippets/" .. id .. "/notes/" .. comment_id,
-      "PUT",
-      EncodeJson({ body = req.body or "" })
-    )
-  )
+  local data, err = gists_cap.update_comment(id, comment_id, GetBody())
+  cap_rest_respond(data, err)
 end)
 
 b:rest("delete_gist_comment", function(id, comment_id)
-  delete_snippet(base() .. "/snippets/" .. id .. "/notes/" .. comment_id)
+  local ok, err = gists_cap.delete_comment(id, comment_id)
+  cap_rest_204(ok, err)
 end)
 
 b:rest("get_user_gists", function(_username)
   -- GitLab doesn't expose per-user public snippet lists; approximate with own snippets.
-  proxy_json_list(translate_gl_snippets, fetch_json(base() .. "/snippets"))
+  local data, err = gists_cap.list()
+  cap_rest_respond(data, err)
 end)
 
 -- ── Reactions (GitLab award emoji) ────────────────────────────────────────────
@@ -5863,4 +6028,7 @@ b:capability("gitignore", gitignore_cap)
 b:capability("licenses", licenses_cap)
 b:capability("markdown", markdown_cap)
 b:capability("git_db", git_db_cap)
+b:capability("packages", packages_cap)
+b:capability("security", security_cap)
+b:capability("gists", gists_cap)
 b:build()
