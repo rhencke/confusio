@@ -4836,48 +4836,63 @@ end)
 -- ---------------------------------------------------------------------------
 -- Search capability module
 -- ---------------------------------------------------------------------------
--- Wraps Gitea's search endpoints and returns GitHub-shaped search envelopes.
--- Gitea repo and user search wrap results in {"data": [...]}.
--- The search envelope contains {total_count, incomplete_results, items}.
+-- Wraps Gitea's repo/user search endpoints.  Gitea wraps results in
+-- {"data":[...],"ok":true}; each operation extracts and translates the array.
+-- Operations return (items_array, nil) on success or (nil, err) on failure.
 
 local search_cap = {}
 
--- repos: search repositories by query string.
--- Returns ({total_count, incomplete_results, items}, nil) on success or (nil, err) on failure.
+-- repos: search for repositories matching a query string.
+-- Returns (translated_repo_array, nil) or (nil, err).
 search_cap.repos = function(q)
   local url = append_page_params(base() .. "/repos/search?q=" .. q, PAGES)
   local raw, err = cap_fetch(fetch_json, url)
   if not raw then
     return nil, err
   end
-  local items = translate_list(translate_repo, raw.data or {})
-  return { total_count = #items, incomplete_results = false, items = items }, nil
+  return translate_list(translate_repo, raw.data or {}), nil
 end
 
--- users: search users by query string.
--- Returns ({total_count, incomplete_results, items}, nil) on success or (nil, err) on failure.
+-- users: search for users matching a query string.
+-- Returns (translated_user_array, nil) or (nil, err).
 search_cap.users = function(q)
   local url = append_page_params(base() .. "/users/search?q=" .. q, PAGES)
   local raw, err = cap_fetch(fetch_json, url)
   if not raw then
     return nil, err
   end
-  local items = translate_list(translate_user, raw.data or {})
-  return { total_count = #items, incomplete_results = false, items = items }, nil
+  return translate_list(translate_user, raw.data or {}), nil
+end
+
+-- search_rest_respond: write a GitHub search envelope from a translated items array.
+-- Mirrors the proxy_search_envelope shape: {total_count, incomplete_results, items}.
+-- Uses string concatenation for "items" so that an empty Lua table {} is written
+-- as "[]" (JSON array) rather than "{}" (JSON object) which EncodeJson would produce.
+local function search_rest_respond(items, err)
+  if not items then
+    respond_json(err.status == 0 and 503 or err.status, {})
+    return
+  end
+  set_preamble()
+  Write(
+    '{"total_count":'
+      .. #items
+      .. ',"incomplete_results":false,"items":'
+      .. (#items > 0 and EncodeJson(items) or "[]")
+      .. "}"
+  )
 end
 
 -- Search -----------------------------------------------------------------------
 
 -- GET /search/repositories — maps to Gitea GET /repos/search
 b:rest("search_repositories", function()
-  local data, err = search_cap.repos(GetParam("q") or "")
-  cap_rest_respond(data, err)
+  search_rest_respond(search_cap.repos(GetParam("q") or ""))
 end)
 
 -- GET /search/users — maps to Gitea GET /users/search
 b:rest("search_users", function()
-  local data, err = search_cap.users(GetParam("q") or "")
-  cap_rest_respond(data, err)
+  search_rest_respond(search_cap.users(GetParam("q") or ""))
 end)
 
 -- Packages (org) ---------------------------------------------------------------
