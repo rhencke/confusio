@@ -14,7 +14,6 @@ local PAGES = { per_page = "per_page", page = "page" }
 local _t = make_backend_transport("bearer", PAGES)
 local fetch_json = _t.fetch_json
 local proxy_handler = _t.proxy_handler
-local proxy_handler_created = _t.proxy_handler_created
 local proxy_handler_paged = _t.proxy_handler_paged
 
 local project_id = owner_repo_id
@@ -1200,6 +1199,548 @@ statuses_cap.create_check_run = function(owner, repo_name, body)
     return nil, err
   end
   return translate_gl_status_to_check_run(raw, sha), nil
+end
+
+-- GitLab award emoji → GitHub reaction content (8 supported types).
+local GL_EMOJI_TO_CONTENT = {
+  thumbsup = "+1",
+  thumbsdown = "-1",
+  laughing = "laugh",
+  confused = "confused",
+  heart = "heart",
+  tada = "hooray",
+  rocket = "rocket",
+  eyes = "eyes",
+}
+local CONTENT_TO_GL_EMOJI = {
+  ["+1"] = "thumbsup",
+  ["-1"] = "thumbsdown",
+  laugh = "laughing",
+  confused = "confused",
+  heart = "heart",
+  hooray = "tada",
+  rocket = "rocket",
+  eyes = "eyes",
+}
+
+local function translate_gl_award(a)
+  if not a then
+    return {}
+  end
+  local user = translate_gl_user(a.user or {})
+  return {
+    id = a.id,
+    node_id = "",
+    user = user,
+    content = GL_EMOJI_TO_CONTENT[a.name] or a.name,
+    created_at = a.created_at or "2020-01-01T00:00:00Z",
+  }
+end
+
+local function translate_gl_awards(awards)
+  return translate_list(translate_gl_award, awards)
+end
+
+-- ---------------------------------------------------------------------------
+-- Issues capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translate_gl_issue / translate_gl_note for all issue and
+-- issue-comment operations.  REST handlers call cap_rest_* adapters.
+-- Single-item operations: (data, nil) on success, (nil, err) on failure.
+-- Paged list operations:  (items, headers, nil) or (nil, nil, err).
+
+local issues_cap = {}
+
+-- list: paginated list of issues for a repository.
+issues_cap.list = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_gl_issues(items), hdrs, nil
+end
+
+-- get: fetch a single issue by iid.
+issues_cap.get = function(owner, repo_name, issue_number)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_issue(raw), nil
+end
+
+-- create: open a new issue.  body is raw GitHub-format JSON string.
+issues_cap.create = function(owner, repo_name, body)
+  local req = DecodeJson(body or "{}")
+  local gl = {}
+  if req.title then
+    gl.title = req.title
+  end
+  if req.body then
+    gl.description = req.body
+  end
+  if req.milestone then
+    gl.milestone_id = req.milestone
+  end
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues",
+    "POST",
+    EncodeJson(gl)
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_issue(raw), nil
+end
+
+-- update: partially update an issue.  body is raw GitHub-format JSON string.
+issues_cap.update = function(owner, repo_name, issue_number, body)
+  local req = DecodeJson(body or "{}")
+  local gl = {}
+  if req.title then
+    gl.title = req.title
+  end
+  if req.body then
+    gl.description = req.body
+  end
+  if req.state then
+    gl.state_event = req.state == "closed" and "close" or "reopen"
+  end
+  if req.milestone then
+    gl.milestone_id = req.milestone
+  end
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number,
+    "PUT",
+    EncodeJson(gl)
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_issue(raw), nil
+end
+
+-- list_comments: paginated list of notes (comments) on an issue.
+issues_cap.list_comments = function(owner, repo_name, issue_number)
+  local url = append_page_params(
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number .. "/notes",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_gl_notes(items), hdrs, nil
+end
+
+-- create_comment: add a note (comment) to an issue.
+issues_cap.create_comment = function(owner, repo_name, issue_number, body)
+  local req = DecodeJson(body or "{}")
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number .. "/notes",
+    "POST",
+    EncodeJson({ body = req.body })
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_note(raw), nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Labels capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translate_gl_label for all label operations (repo-level and
+-- per-issue label assignment/removal).
+-- Single-item operations: (data, nil) on success, (nil, err) on failure.
+-- Paged list operations:  (items, headers, nil) or (nil, nil, err).
+-- Delete operations:      (true, nil) on success, (nil, err) on failure.
+
+local labels_cap = {}
+
+-- Helper: extract GitHub-shape label list from a raw GitLab issue body (which
+-- stores labels as either strings or label objects depending on scope).
+local function issue_labels_from_raw(issue)
+  local labels = {}
+  for _, l in ipairs((issue or {}).labels or {}) do
+    if type(l) == "table" then
+      labels[#labels + 1] = translate_gl_label(l)
+    else
+      labels[#labels + 1] = {
+        id = 0,
+        node_id = "",
+        url = "",
+        name = l,
+        color = "",
+        description = "",
+        default = false,
+      }
+    end
+  end
+  return labels
+end
+
+-- list_repo: paginated list of labels for a repository.
+labels_cap.list_repo = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/projects/" .. project_id(owner, repo_name) .. "/labels", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_gl_labels(items), hdrs, nil
+end
+
+-- create_repo: create a label in a repository.  body is raw GitHub-format JSON.
+labels_cap.create_repo = function(owner, repo_name, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/labels",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_label(raw), nil
+end
+
+-- get_repo: fetch a single repository label by name.
+labels_cap.get_repo = function(owner, repo_name, label_name)
+  local id = gl_find_label_id(owner, repo_name, label_name)
+  if not id then
+    return nil, cap_err(404, "Label not found")
+  end
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/labels/" .. id
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_label(raw), nil
+end
+
+-- update_repo: update a repository label by name.  body is raw GitHub-format JSON.
+labels_cap.update_repo = function(owner, repo_name, label_name, body)
+  local id = gl_find_label_id(owner, repo_name, label_name)
+  if not id then
+    return nil, cap_err(404, "Label not found")
+  end
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/labels/" .. id,
+    "PUT",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_label(raw), nil
+end
+
+-- delete_repo: delete a repository label by name.
+-- Returns (true, nil) on success or (nil, err) on failure.
+labels_cap.delete_repo = function(owner, repo_name, label_name)
+  local id = gl_find_label_id(owner, repo_name, label_name)
+  if not id then
+    return nil, cap_err(404, "Label not found")
+  end
+  local ok, status =
+    fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/labels/" .. id, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting label " .. label_name)
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting label")
+  end
+  return true, nil
+end
+
+-- list_issue: return the labels currently on a single issue.
+labels_cap.list_issue = function(owner, repo_name, issue_number)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number
+  )
+  if not raw then
+    return nil, err
+  end
+  return issue_labels_from_raw(raw), nil
+end
+
+-- set_issue: add labels to an issue (merge with existing).
+-- new_labels is an array of label name strings.
+labels_cap.set_issue = function(owner, repo_name, issue_number, new_labels)
+  -- Fetch current labels first so we can merge.
+  local existing_raw, existing_err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number
+  )
+  if not existing_raw then
+    return nil, existing_err
+  end
+  local all_labels = existing_raw.labels or {}
+  for _, name in ipairs(new_labels or {}) do
+    all_labels[#all_labels + 1] = name
+  end
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number,
+    "PUT",
+    EncodeJson({ labels = all_labels })
+  )
+  if not raw then
+    return nil, err
+  end
+  return issue_labels_from_raw(raw), nil
+end
+
+-- replace_issue: replace all labels on an issue.
+-- label_names is an array of label name strings.
+labels_cap.replace_issue = function(owner, repo_name, issue_number, label_names)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number,
+    "PUT",
+    EncodeJson({ labels = label_names or {} })
+  )
+  if not raw then
+    return nil, err
+  end
+  return issue_labels_from_raw(raw), nil
+end
+
+-- delete_issue_all: remove all labels from an issue.
+-- Returns (true, nil) on success or (nil, err) on failure.
+labels_cap.delete_issue_all = function(owner, repo_name, issue_number)
+  local ok, status = fetch_json(
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number,
+    "PUT",
+    EncodeJson({ labels = {} })
+  )
+  if not ok then
+    return nil,
+      cap_err(0, "network error removing all labels from issue " .. tostring(issue_number))
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " removing labels")
+  end
+  return true, nil
+end
+
+-- delete_issue_one: remove a single named label from an issue.
+-- Returns (true, nil) on success or (nil, err) on failure.
+labels_cap.delete_issue_one = function(owner, repo_name, issue_number, label_name)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number
+  )
+  if not raw then
+    return nil, err
+  end
+  local labels = {}
+  for _, l in ipairs(raw.labels or {}) do
+    local name = type(l) == "table" and l.name or l
+    if name ~= label_name then
+      labels[#labels + 1] = name
+    end
+  end
+  local ok, status = fetch_json(
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number,
+    "PUT",
+    EncodeJson({ labels = labels })
+  )
+  if not ok then
+    return nil, cap_err(0, "network error removing label " .. label_name)
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " removing label")
+  end
+  return true, nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Milestones capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translate_gl_milestone for all milestone operations.
+-- Single-item operations: (data, nil) on success, (nil, err) on failure.
+-- Paged list operations:  (items, headers, nil) or (nil, nil, err).
+-- Delete operations:      (true, nil) on success, (nil, err) on failure.
+
+local milestones_cap = {}
+
+-- list: paginated list of milestones for a repository.
+milestones_cap.list = function(owner, repo_name)
+  local url = append_page_params(
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/milestones",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_gl_milestones(items), hdrs, nil
+end
+
+-- create: create a milestone.  body is raw GitHub-format JSON string.
+milestones_cap.create = function(owner, repo_name, body)
+  local req = DecodeJson(body or "{}")
+  local gl = {}
+  if req.title then
+    gl.title = req.title
+  end
+  if req.description then
+    gl.description = req.description
+  end
+  if req.due_on then
+    gl.due_date = req.due_on
+  end
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/milestones",
+    "POST",
+    EncodeJson(gl)
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_milestone(raw), nil
+end
+
+-- get: fetch a single milestone by number (iid).
+milestones_cap.get = function(owner, repo_name, milestone_number)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/milestones/" .. milestone_number
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_milestone(raw), nil
+end
+
+-- update: partially update a milestone.  body is raw GitHub-format JSON string.
+milestones_cap.update = function(owner, repo_name, milestone_number, body)
+  local req = DecodeJson(body or "{}")
+  local gl = {}
+  if req.title then
+    gl.title = req.title
+  end
+  if req.description then
+    gl.description = req.description
+  end
+  if req.state then
+    gl.state_event = req.state == "closed" and "close" or "activate"
+  end
+  if req.due_on then
+    gl.due_date = req.due_on
+  end
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/milestones/" .. milestone_number,
+    "PUT",
+    EncodeJson(gl)
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_milestone(raw), nil
+end
+
+-- delete: permanently remove a milestone.
+-- Returns (true, nil) on success or (nil, err) on failure.
+milestones_cap.delete = function(owner, repo_name, milestone_number)
+  local ok, status = fetch_json(
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/milestones/" .. milestone_number,
+    "DELETE"
+  )
+  if not ok then
+    return nil, cap_err(0, "network error deleting milestone " .. tostring(milestone_number))
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting milestone")
+  end
+  return true, nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Reactions capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translate_gl_award for all reaction (award emoji) operations.
+-- Paged list operations:  (items, headers, nil) or (nil, nil, err).
+-- Single-item operations: (data, nil) on success, (nil, err) on failure.
+-- Delete operations:      (true, nil) on success, (nil, err) on failure.
+
+local reactions_cap = {}
+
+-- list_issue: paginated list of reactions for an issue.
+reactions_cap.list_issue = function(owner, repo_name, issue_number)
+  local url = append_page_params(
+    base()
+      .. "/projects/"
+      .. project_id(owner, repo_name)
+      .. "/issues/"
+      .. issue_number
+      .. "/award_emoji",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_gl_awards(items), hdrs, nil
+end
+
+-- create_issue: add a reaction to an issue.  body is raw GitHub-format JSON string.
+reactions_cap.create_issue = function(owner, repo_name, issue_number, body)
+  local req = DecodeJson(body or "{}") or {}
+  local emoji = CONTENT_TO_GL_EMOJI[req.content or ""] or req.content or ""
+  local raw, err = cap_fetch(
+    fetch_json,
+    base()
+      .. "/projects/"
+      .. project_id(owner, repo_name)
+      .. "/issues/"
+      .. issue_number
+      .. "/award_emoji",
+    "POST",
+    EncodeJson({ name = emoji })
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_award(raw), nil
+end
+
+-- delete_issue: remove a reaction from an issue by reaction id.
+-- Returns (true, nil) on success or (nil, err) on failure.
+reactions_cap.delete_issue = function(owner, repo_name, issue_number, reaction_id)
+  local ok, status = fetch_json(
+    base()
+      .. "/projects/"
+      .. project_id(owner, repo_name)
+      .. "/issues/"
+      .. issue_number
+      .. "/award_emoji/"
+      .. reaction_id,
+    "DELETE"
+  )
+  if not ok then
+    return nil, cap_err(0, "network error deleting reaction " .. tostring(reaction_id))
+  end
+  if status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting reaction")
+  end
+  return true, nil
 end
 
 local b = make_backend_builder()
@@ -2659,355 +3200,133 @@ end)
 -- Issues -------------------------------------------------------------------
 
 -- GET /repos/{owner}/{repo}/issues
-b:rest(
-  "get_repo_issues",
-  proxy_handler_paged(translate_gl_issues, function(o, r)
-    return append_page_params(base() .. "/projects/" .. project_id(o, r) .. "/issues", PAGES)
-  end)
-)
+b:rest("get_repo_issues", function(owner, repo_name)
+  local items, hdrs, err = issues_cap.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
 -- POST /repos/{owner}/{repo}/issues
-b:rest(
-  "post_repo_issues",
-  proxy_handler_created(translate_gl_issue, function(o, r)
-    local req = DecodeJson(GetBody() or "{}")
-    local gl = {}
-    if req.title then
-      gl.title = req.title
-    end
-    if req.body then
-      gl.description = req.body
-    end
-    if req.milestone then
-      gl.milestone_id = req.milestone
-    end
-    return base() .. "/projects/" .. project_id(o, r) .. "/issues", "POST", EncodeJson(gl)
-  end)
-)
+b:rest("post_repo_issues", function(owner, repo_name)
+  local data, err = issues_cap.create(owner, repo_name, GetBody())
+  cap_rest_created(data, err)
+end)
 
 -- GET /repos/{owner}/{repo}/issues/{issue_number}
-b:rest(
-  "get_repo_issue",
-  proxy_handler(translate_gl_issue, function(o, r, n)
-    return base() .. "/projects/" .. project_id(o, r) .. "/issues/" .. n
-  end)
-)
+b:rest("get_repo_issue", function(owner, repo_name, issue_number)
+  local data, err = issues_cap.get(owner, repo_name, issue_number)
+  cap_rest_respond(data, err)
+end)
 
 -- PATCH /repos/{owner}/{repo}/issues/{issue_number}
-b:rest(
-  "patch_repo_issue",
-  proxy_handler(translate_gl_issue, function(o, r, n)
-    local req = DecodeJson(GetBody() or "{}")
-    local gl = {}
-    if req.title then
-      gl.title = req.title
-    end
-    if req.body then
-      gl.description = req.body
-    end
-    if req.state then
-      gl.state_event = req.state == "closed" and "close" or "reopen"
-    end
-    if req.milestone then
-      gl.milestone_id = req.milestone
-    end
-    return base() .. "/projects/" .. project_id(o, r) .. "/issues/" .. n, "PUT", EncodeJson(gl)
-  end)
-)
+b:rest("patch_repo_issue", function(owner, repo_name, issue_number)
+  local data, err = issues_cap.update(owner, repo_name, issue_number, GetBody())
+  cap_rest_respond(data, err)
+end)
 
 -- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
-b:rest(
-  "get_issue_comments",
-  proxy_handler_paged(translate_gl_notes, function(o, r, n)
-    return append_page_params(
-      base() .. "/projects/" .. project_id(o, r) .. "/issues/" .. n .. "/notes",
-      PAGES
-    )
-  end)
-)
+b:rest("get_issue_comments", function(owner, repo_name, issue_number)
+  local items, hdrs, err = issues_cap.list_comments(owner, repo_name, issue_number)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
 -- POST /repos/{owner}/{repo}/issues/{issue_number}/comments
-b:rest(
-  "post_issue_comment",
-  proxy_handler_created(translate_gl_note, function(o, r, n)
-    local req = DecodeJson(GetBody() or "{}")
-    return base() .. "/projects/" .. project_id(o, r) .. "/issues/" .. n .. "/notes",
-      "POST",
-      EncodeJson({ body = req.body })
-  end)
-)
+b:rest("post_issue_comment", function(owner, repo_name, issue_number)
+  local data, err = issues_cap.create_comment(owner, repo_name, issue_number, GetBody())
+  cap_rest_created(data, err)
+end)
 
 -- GET /repos/{owner}/{repo}/issues/{issue_number}/labels
 b:rest("get_issue_labels", function(owner, repo_name, issue_number)
-  -- Fetch the issue and extract its labels.
-  local ok, status, _, body =
-    fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number)
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
-  end
-  local issue = DecodeJson(body) or {}
-  local labels = {}
-  for _, l in ipairs(issue.labels or {}) do
-    if type(l) == "table" then
-      labels[#labels + 1] = translate_gl_label(l)
-    else
-      labels[#labels + 1] = {
-        id = 0,
-        node_id = "",
-        url = "",
-        name = l,
-        color = "",
-        description = "",
-        default = false,
-      }
-    end
-  end
-  respond_json(200, labels)
+  local data, err = labels_cap.list_issue(owner, repo_name, issue_number)
+  cap_rest_respond(data, err)
 end)
 
 -- POST /repos/{owner}/{repo}/issues/{issue_number}/labels
 b:rest("post_issue_labels", function(owner, repo_name, issue_number)
   local req = DecodeJson(GetBody() or "{}")
-  local existing_ok, existing_status, _, existing_body =
-    fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number)
-  if not existing_ok or existing_status ~= 200 then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  local issue = DecodeJson(existing_body) or {}
-  local all_labels = issue.labels or {}
-  for _, name in ipairs(req.labels or {}) do
-    all_labels[#all_labels + 1] = name
-  end
-  proxy_json(
-    function(i)
-      local labels = {}
-      for _, l in ipairs(i.labels or {}) do
-        if type(l) == "table" then
-          labels[#labels + 1] = translate_gl_label(l)
-        else
-          labels[#labels + 1] = {
-            id = 0,
-            node_id = "",
-            url = "",
-            name = l,
-            color = "",
-            description = "",
-            default = false,
-          }
-        end
-      end
-      return labels
-    end,
-    fetch_json(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number,
-      "PUT",
-      EncodeJson({ labels = all_labels })
-    )
-  )
+  local data, err = labels_cap.set_issue(owner, repo_name, issue_number, req.labels or {})
+  cap_rest_respond(data, err)
 end)
 
 -- PUT /repos/{owner}/{repo}/issues/{issue_number}/labels  (replace all)
 b:rest("put_issue_labels", function(owner, repo_name, issue_number)
   local req = DecodeJson(GetBody() or "{}")
-  proxy_json(
-    function(i)
-      local labels = {}
-      for _, l in ipairs(i.labels or {}) do
-        if type(l) == "table" then
-          labels[#labels + 1] = translate_gl_label(l)
-        else
-          labels[#labels + 1] = {
-            id = 0,
-            node_id = "",
-            url = "",
-            name = l,
-            color = "",
-            description = "",
-            default = false,
-          }
-        end
-      end
-      return labels
-    end,
-    fetch_json(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number,
-      "PUT",
-      EncodeJson({ labels = req.labels or {} })
-    )
-  )
+  local data, err = labels_cap.replace_issue(owner, repo_name, issue_number, req.labels or {})
+  cap_rest_respond(data, err)
 end)
 
 -- DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels  (remove all)
 b:rest("delete_issue_labels", function(owner, repo_name, issue_number)
-  proxy_204(
-    { 200 },
-    fetch_json(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number,
-      "PUT",
-      EncodeJson({ labels = {} })
-    )
-  )
+  local ok, err = labels_cap.delete_issue_all(owner, repo_name, issue_number)
+  cap_rest_204(ok, err)
 end)
 
 -- DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}
 b:rest("delete_issue_label", function(owner, repo_name, issue_number, label_name)
-  local ok, status, _, body =
-    fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number)
-  if not ok or status ~= 200 then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  local issue = DecodeJson(body) or {}
-  local labels = {}
-  for _, l in ipairs(issue.labels or {}) do
-    local name = type(l) == "table" and l.name or l
-    if name ~= label_name then
-      labels[#labels + 1] = name
-    end
-  end
-  local upok, upstatus = fetch_json(
-    base() .. "/projects/" .. project_id(owner, repo_name) .. "/issues/" .. issue_number,
-    "PUT",
-    EncodeJson({ labels = labels })
-  )
-  proxy_204({ 200 }, upok, upstatus)
+  local ok, err = labels_cap.delete_issue_one(owner, repo_name, issue_number, label_name)
+  cap_rest_204(ok, err)
 end)
 
 -- GET /repos/{owner}/{repo}/labels
-b:rest(
-  "get_repo_labels",
-  proxy_handler_paged(translate_gl_labels, function(o, r)
-    return append_page_params(base() .. "/projects/" .. project_id(o, r) .. "/labels", PAGES)
-  end)
-)
+b:rest("get_repo_labels", function(owner, repo_name)
+  local items, hdrs, err = labels_cap.list_repo(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
 -- POST /repos/{owner}/{repo}/labels
-b:rest(
-  "post_repo_labels",
-  proxy_handler_created(translate_gl_label, function(o, r)
-    return base() .. "/projects/" .. project_id(o, r) .. "/labels", "POST", GetBody()
-  end)
-)
+b:rest("post_repo_labels", function(owner, repo_name)
+  local data, err = labels_cap.create_repo(owner, repo_name, GetBody())
+  cap_rest_created(data, err)
+end)
 
 -- GET /repos/{owner}/{repo}/labels/{name}
 b:rest("get_repo_label", function(owner, repo_name, label_name)
-  local id = gl_find_label_id(owner, repo_name, label_name)
-  if not id then
-    respond_json(404, { message = "Label not found" })
-    return
-  end
-  proxy_json(
-    translate_gl_label,
-    fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/labels/" .. id)
-  )
+  local data, err = labels_cap.get_repo(owner, repo_name, label_name)
+  cap_rest_respond(data, err)
 end)
 
 -- PATCH /repos/{owner}/{repo}/labels/{name}
 b:rest("patch_repo_label", function(owner, repo_name, label_name)
-  local id = gl_find_label_id(owner, repo_name, label_name)
-  if not id then
-    respond_json(404, { message = "Label not found" })
-    return
-  end
-  proxy_json(
-    translate_gl_label,
-    fetch_json(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/labels/" .. id,
-      "PUT",
-      GetBody()
-    )
-  )
+  local data, err = labels_cap.update_repo(owner, repo_name, label_name, GetBody())
+  cap_rest_respond(data, err)
 end)
 
 -- DELETE /repos/{owner}/{repo}/labels/{name}
 b:rest("delete_repo_label", function(owner, repo_name, label_name)
-  local id = gl_find_label_id(owner, repo_name, label_name)
-  if not id then
-    respond_json(404, { message = "Label not found" })
-    return
-  end
-  local dopts = auth() or {}
-  dopts.method = "DELETE"
-  local ok, status =
-    pcall(Fetch, base() .. "/projects/" .. project_id(owner, repo_name) .. "/labels/" .. id, dopts)
-  proxy_204({ 200 }, ok, status)
+  local ok, err = labels_cap.delete_repo(owner, repo_name, label_name)
+  cap_rest_204(ok, err)
 end)
 
 -- Milestones ----------------------------------------------------------------
 
 -- GET /repos/{owner}/{repo}/milestones
-b:rest(
-  "get_repo_milestones",
-  proxy_handler_paged(translate_gl_milestones, function(o, r)
-    return append_page_params(base() .. "/projects/" .. project_id(o, r) .. "/milestones", PAGES)
-  end)
-)
+b:rest("get_repo_milestones", function(owner, repo_name)
+  local items, hdrs, err = milestones_cap.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
 -- POST /repos/{owner}/{repo}/milestones
-b:rest(
-  "post_repo_milestones",
-  proxy_handler_created(translate_gl_milestone, function(o, r)
-    local req = DecodeJson(GetBody() or "{}")
-    local gl = {}
-    if req.title then
-      gl.title = req.title
-    end
-    if req.description then
-      gl.description = req.description
-    end
-    if req.due_on then
-      gl.due_date = req.due_on
-    end
-    return base() .. "/projects/" .. project_id(o, r) .. "/milestones", "POST", EncodeJson(gl)
-  end)
-)
+b:rest("post_repo_milestones", function(owner, repo_name)
+  local data, err = milestones_cap.create(owner, repo_name, GetBody())
+  cap_rest_created(data, err)
+end)
 
 -- GET /repos/{owner}/{repo}/milestones/{milestone_number}
-b:rest(
-  "get_repo_milestone",
-  proxy_handler(translate_gl_milestone, function(o, r, n)
-    return base() .. "/projects/" .. project_id(o, r) .. "/milestones/" .. n
-  end)
-)
+b:rest("get_repo_milestone", function(owner, repo_name, milestone_number)
+  local data, err = milestones_cap.get(owner, repo_name, milestone_number)
+  cap_rest_respond(data, err)
+end)
 
 -- PATCH /repos/{owner}/{repo}/milestones/{milestone_number}
-b:rest(
-  "patch_repo_milestone",
-  proxy_handler(translate_gl_milestone, function(o, r, n)
-    local req = DecodeJson(GetBody() or "{}")
-    local gl = {}
-    if req.title then
-      gl.title = req.title
-    end
-    if req.description then
-      gl.description = req.description
-    end
-    if req.state then
-      gl.state_event = req.state == "closed" and "close" or "activate"
-    end
-    if req.due_on then
-      gl.due_date = req.due_on
-    end
-    return base() .. "/projects/" .. project_id(o, r) .. "/milestones/" .. n, "PUT", EncodeJson(gl)
-  end)
-)
+b:rest("patch_repo_milestone", function(owner, repo_name, milestone_number)
+  local data, err = milestones_cap.update(owner, repo_name, milestone_number, GetBody())
+  cap_rest_respond(data, err)
+end)
 
 -- DELETE /repos/{owner}/{repo}/milestones/{milestone_number}
 b:rest("delete_repo_milestone", function(owner, repo_name, milestone_number)
-  local dopts = auth() or {}
-  dopts.method = "DELETE"
-  local ok, status = pcall(
-    Fetch,
-    base() .. "/projects/" .. project_id(owner, repo_name) .. "/milestones/" .. milestone_number,
-    dopts
-  )
-  proxy_204({ 200 }, ok, status)
+  local ok, err = milestones_cap.delete(owner, repo_name, milestone_number)
+  cap_rest_204(ok, err)
 end)
 
 -- Assignees -----------------------------------------------------------------
@@ -4155,96 +4474,21 @@ b:rest("get_user_gists", function(_username)
 end)
 
 -- ── Reactions (GitLab award emoji) ────────────────────────────────────────────
--- GitLab award emoji → GitHub reaction content (8 supported types).
-local GL_EMOJI_TO_CONTENT = {
-  thumbsup = "+1",
-  thumbsdown = "-1",
-  laughing = "laugh",
-  confused = "confused",
-  heart = "heart",
-  tada = "hooray",
-  rocket = "rocket",
-  eyes = "eyes",
-}
-local CONTENT_TO_GL_EMOJI = {
-  ["+1"] = "thumbsup",
-  ["-1"] = "thumbsdown",
-  laugh = "laughing",
-  confused = "confused",
-  heart = "heart",
-  hooray = "tada",
-  rocket = "rocket",
-  eyes = "eyes",
-}
-
-local function translate_gl_award(a)
-  if not a then
-    return {}
-  end
-  local user = translate_gl_user(a.user or {})
-  return {
-    id = a.id,
-    node_id = "",
-    user = user,
-    content = GL_EMOJI_TO_CONTENT[a.name] or a.name,
-    created_at = a.created_at or "2020-01-01T00:00:00Z",
-  }
-end
-
-local function translate_gl_awards(awards)
-  return translate_list(translate_gl_award, awards)
-end
 
 -- Issue reactions: GitLab has full award_emoji support on issues.
-b:rest(
-  "get_issue_reactions",
-  proxy_handler_paged(translate_gl_awards, function(owner, repo_name, issue_number)
-    return append_page_params(
-      base()
-        .. "/projects/"
-        .. project_id(owner, repo_name)
-        .. "/issues/"
-        .. issue_number
-        .. "/award_emoji",
-      PAGES
-    )
-  end)
-)
+b:rest("get_issue_reactions", function(owner, repo_name, issue_number)
+  local items, hdrs, err = reactions_cap.list_issue(owner, repo_name, issue_number)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
-b:rest(
-  "post_issue_reaction",
-  proxy_handler_created(translate_gl_award, function(owner, repo_name, issue_number)
-    local req = DecodeJson(GetBody() or "{}") or {}
-    local emoji = CONTENT_TO_GL_EMOJI[req.content or ""] or req.content or ""
-    return base()
-      .. "/projects/"
-      .. project_id(owner, repo_name)
-      .. "/issues/"
-      .. issue_number
-      .. "/award_emoji",
-      "POST",
-      EncodeJson({ name = emoji })
-  end)
-)
+b:rest("post_issue_reaction", function(owner, repo_name, issue_number)
+  local data, err = reactions_cap.create_issue(owner, repo_name, issue_number, GetBody())
+  cap_rest_created(data, err)
+end)
 
 b:rest("delete_issue_reaction", function(owner, repo_name, issue_number, reaction_id)
-  local url = base()
-    .. "/projects/"
-    .. project_id(owner, repo_name)
-    .. "/issues/"
-    .. issue_number
-    .. "/award_emoji/"
-    .. reaction_id
-  local dopts = auth() or {}
-  dopts.method = "DELETE"
-  local ok, status, _, body = pcall(Fetch, url, dopts)
-  if ok and status == 204 then
-    SetStatus(204, "No Content")
-  elseif ok then
-    respond_json(status, DecodeJson(body) or {})
-  else
-    respond_json(503, {})
-  end
+  local ok, err = reactions_cap.delete_issue(owner, repo_name, issue_number, reaction_id)
+  cap_rest_204(ok, err)
 end)
 
 -- ---------------------------------------------------------------------------
@@ -4929,4 +5173,8 @@ b:capability("orgs", orgs)
 b:capability("branches", branches)
 b:capability("commits", commits)
 b:capability("statuses", statuses_cap)
+b:capability("issues", issues_cap)
+b:capability("labels", labels_cap)
+b:capability("milestones", milestones_cap)
+b:capability("reactions", reactions_cap)
 b:build()
