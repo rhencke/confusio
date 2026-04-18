@@ -16,7 +16,6 @@ local PAGES = { per_page = "limit", page = "page" }
 local _t = make_backend_transport("token", PAGES)
 local fetch_json = _t.fetch_json
 local proxy_handler = _t.proxy_handler
-local proxy_handler_created = _t.proxy_handler_created
 local proxy_handler_paged = _t.proxy_handler_paged
 
 -- Check if this Gitea instance allows anonymous access.
@@ -283,10 +282,6 @@ local function translate_gitea_review(r)
   }
 end
 
-local function translate_gitea_reviews(reviews)
-  return translate_list(translate_gitea_review, reviews)
-end
-
 -- Map a Gitea inline review comment to GitHub format.
 local function translate_gitea_review_comment(c)
   if not c then
@@ -309,10 +304,6 @@ local function translate_gitea_review_comment(c)
     pull_request_url = "",
     url = "",
   }
-end
-
-local function translate_gitea_review_comments(comments)
-  return translate_list(translate_gitea_review_comment, comments)
 end
 
 -- Normalise a Gitea branch object to GitHub shape.
@@ -3766,193 +3757,248 @@ b:rest("patch_repo_pull", function(owner, repo_name, number)
   cap_rest_respond(data, err)
 end)
 
--- GET /repos/{owner}/{repo}/pulls/{pull_number}/commits
-b:rest(
-  "get_pull_commits",
-  proxy_handler_paged(nil, function(o, r, n)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/commits",
-      PAGES
-    )
-  end)
-)
+-- PR sub-resources (commits, files, merge, reviewers, reviews) ---------------
 
--- GET /repos/{owner}/{repo}/pulls/{pull_number}/files
-b:rest(
-  "get_pull_files",
-  proxy_handler_paged(nil, function(o, r, n)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/files",
-      PAGES
-    )
-  end)
-)
+local pr_subs = {}
 
--- GET /repos/{owner}/{repo}/pulls/{pull_number}/merge
+pr_subs.list_commits = function(owner, repo_name, pull_number)
+  local url = append_page_params(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/commits",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+pr_subs.list_files = function(owner, repo_name, pull_number)
+  local url = append_page_params(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/files",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
 -- Gitea returns 204 if merged, 404 if not — same semantics as GitHub.
-b:rest("get_pull_merge", function(owner, repo_name, pull_number)
+-- Returns (true, nil) if merged, (false, nil) if not, (nil, err) on error.
+pr_subs.check_merged = function(owner, repo_name, pull_number)
   local ok, status = fetch_json(
     base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/merge"
   )
-  if ok and status == 204 then
-    SetStatus(204, "No Content")
-  elseif ok and status == 404 then
-    respond_json(404, { message = "Pull Request is not merged" })
-  elseif ok then
-    respond_json(status, {})
-  else
-    respond_json(503, {})
+  if not ok then
+    return nil, cap_err(0, "network error checking merge status")
   end
-end)
+  if status == 204 then
+    return true, nil
+  end
+  if status == 404 then
+    return false, nil
+  end
+  return nil, cap_err(status, "upstream error " .. tostring(status))
+end
 
--- PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge
 -- GitHub uses PUT; Gitea uses POST.
-b:rest("put_pull_merge", function(owner, repo_name, pull_number)
-  proxy_204(
-    nil,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/merge",
-      "POST",
-      GetBody()
-    )
+pr_subs.merge = function(owner, repo_name, pull_number, body)
+  local ok, status = fetch_json(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/merge",
+    "POST",
+    body
   )
-end)
+  if not ok then
+    return nil, cap_err(0, "network error merging PR")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " merging PR")
+  end
+  return true, nil
+end
 
--- GET /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
-b:rest(
-  "get_pull_requested_reviewers",
-  proxy_handler(nil, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/requested_reviewers"
-  end)
-)
-
--- POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
-b:rest(
-  "post_pull_requested_reviewers",
-  proxy_handler(nil, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/requested_reviewers",
-      "POST",
-      GetBody()
-  end)
-)
-
--- DELETE /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
-b:rest("delete_pull_requested_reviewers", function(owner, repo_name, pull_number)
-  proxy_204(
-    { 200 },
-    fetch_json(
-      base()
-        .. "/repos/"
-        .. owner
-        .. "/"
-        .. repo_name
-        .. "/pulls/"
-        .. pull_number
-        .. "/requested_reviewers",
-      "DELETE",
-      GetBody()
-    )
-  )
-end)
-
--- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews
-b:rest(
-  "get_pull_reviews",
-  proxy_handler_paged(translate_gitea_reviews, function(o, r, n)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/reviews",
-      PAGES
-    )
-  end)
-)
-
--- POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews
-b:rest(
-  "post_pull_review",
-  proxy_handler_created(translate_gitea_review, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/reviews", "POST", GetBody()
-  end)
-)
-
--- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
-b:rest(
-  "get_pull_review",
-  proxy_handler(translate_gitea_review, function(o, r, n, id)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/reviews/" .. id
-  end)
-)
-
--- DELETE /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
-b:rest("delete_pull_review", function(owner, repo_name, pull_number, review_id)
-  proxy_204(
-    { 200 },
-    fetch_json(
-      base()
-        .. "/repos/"
-        .. owner
-        .. "/"
-        .. repo_name
-        .. "/pulls/"
-        .. pull_number
-        .. "/reviews/"
-        .. review_id,
-      "DELETE"
-    )
-  )
-end)
-
--- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments
-b:rest(
-  "get_pull_review_comments",
-  proxy_handler(translate_gitea_review_comments, function(o, r, n, id)
-    return base()
+pr_subs.get_requested_reviewers = function(owner, repo_name, pull_number)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base()
       .. "/repos/"
-      .. o
+      .. owner
       .. "/"
-      .. r
+      .. repo_name
       .. "/pulls/"
-      .. n
-      .. "/reviews/"
-      .. id
-      .. "/comments"
-  end)
-)
-
--- PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/dismissals
--- GitHub uses PUT; Gitea uses POST.
-b:rest("put_pull_review_dismissal", function(owner, repo_name, pull_number, review_id)
-  proxy_json(
-    translate_gitea_review,
-    fetch_json(
-      base()
-        .. "/repos/"
-        .. owner
-        .. "/"
-        .. repo_name
-        .. "/pulls/"
-        .. pull_number
-        .. "/reviews/"
-        .. review_id
-        .. "/dismissals",
-      "POST",
-      GetBody()
-    )
+      .. pull_number
+      .. "/requested_reviewers"
   )
-end)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
 
--- GET /repos/{owner}/{repo}/pulls/{pull_number}/comments
+pr_subs.add_requested_reviewers = function(owner, repo_name, pull_number, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base()
+      .. "/repos/"
+      .. owner
+      .. "/"
+      .. repo_name
+      .. "/pulls/"
+      .. pull_number
+      .. "/requested_reviewers",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+pr_subs.delete_requested_reviewers = function(owner, repo_name, pull_number, body)
+  local ok, status = fetch_json(
+    base()
+      .. "/repos/"
+      .. owner
+      .. "/"
+      .. repo_name
+      .. "/pulls/"
+      .. pull_number
+      .. "/requested_reviewers",
+    "DELETE",
+    body
+  )
+  if not ok then
+    return nil, cap_err(0, "network error deleting requested reviewers")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil,
+      cap_err(status, "upstream error " .. tostring(status) .. " deleting requested reviewers")
+  end
+  return true, nil
+end
+
+pr_subs.list_reviews = function(owner, repo_name, pull_number)
+  local url = append_page_params(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/reviews",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gitea_review, items), hdrs, nil
+end
+
+pr_subs.create_review = function(owner, repo_name, pull_number, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/reviews",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_review(raw), nil
+end
+
+pr_subs.get_review = function(owner, repo_name, pull_number, review_id)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base()
+      .. "/repos/"
+      .. owner
+      .. "/"
+      .. repo_name
+      .. "/pulls/"
+      .. pull_number
+      .. "/reviews/"
+      .. review_id
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_review(raw), nil
+end
+
+pr_subs.delete_review = function(owner, repo_name, pull_number, review_id)
+  local ok, status = fetch_json(
+    base()
+      .. "/repos/"
+      .. owner
+      .. "/"
+      .. repo_name
+      .. "/pulls/"
+      .. pull_number
+      .. "/reviews/"
+      .. review_id,
+    "DELETE"
+  )
+  if not ok then
+    return nil, cap_err(0, "network error deleting review")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting review")
+  end
+  return true, nil
+end
+
+pr_subs.list_review_comments = function(owner, repo_name, pull_number, review_id)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base()
+      .. "/repos/"
+      .. owner
+      .. "/"
+      .. repo_name
+      .. "/pulls/"
+      .. pull_number
+      .. "/reviews/"
+      .. review_id
+      .. "/comments"
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_list(translate_gitea_review_comment, raw), nil
+end
+
+-- GitHub uses PUT; Gitea uses POST for dismissal.
+pr_subs.dismiss_review = function(owner, repo_name, pull_number, review_id, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base()
+      .. "/repos/"
+      .. owner
+      .. "/"
+      .. repo_name
+      .. "/pulls/"
+      .. pull_number
+      .. "/reviews/"
+      .. review_id
+      .. "/dismissals",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_review(raw), nil
+end
+
 -- Aggregates inline review comments across all reviews for the PR.
-b:rest("get_pull_comments", function(owner, repo_name, pull_number)
+pr_subs.list_comments = function(owner, repo_name, pull_number)
   local ok, status, _, body = fetch_json(
     base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/reviews"
   )
   if not ok then
-    respond_json(503, {})
-    return
+    return nil, cap_err(0, "network error listing PR review comments")
   end
   if status ~= 200 then
-    respond_json(status, {})
-    return
+    return nil, cap_err(status, "upstream error " .. tostring(status))
   end
   local reviews = DecodeJson(body) or {}
   local all_comments = {}
@@ -3975,7 +4021,89 @@ b:rest("get_pull_comments", function(owner, repo_name, pull_number)
       end
     end
   end
-  respond_json(200, all_comments)
+  return all_comments, nil
+end
+
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/commits
+b:rest("get_pull_commits", function(owner, repo_name, pull_number)
+  cap_rest_paged(pr_subs.list_commits(owner, repo_name, pull_number))
+end)
+
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/files
+b:rest("get_pull_files", function(owner, repo_name, pull_number)
+  cap_rest_paged(pr_subs.list_files(owner, repo_name, pull_number))
+end)
+
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/merge
+-- Gitea returns 204 if merged, 404 if not — same semantics as GitHub.
+b:rest("get_pull_merge", function(owner, repo_name, pull_number)
+  local merged, err = pr_subs.check_merged(owner, repo_name, pull_number)
+  if err then
+    respond_json(err.status == 0 and 503 or err.status, {})
+    return
+  end
+  if merged then
+    SetStatus(204, "No Content")
+  else
+    respond_json(404, { message = "Pull Request is not merged" })
+  end
+end)
+
+-- PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge  (GitHub PUT → Gitea POST)
+b:rest("put_pull_merge", function(owner, repo_name, pull_number)
+  cap_rest_204(pr_subs.merge(owner, repo_name, pull_number, GetBody()))
+end)
+
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
+b:rest("get_pull_requested_reviewers", function(owner, repo_name, pull_number)
+  cap_rest_respond(pr_subs.get_requested_reviewers(owner, repo_name, pull_number))
+end)
+
+-- POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
+b:rest("post_pull_requested_reviewers", function(owner, repo_name, pull_number)
+  cap_rest_respond(pr_subs.add_requested_reviewers(owner, repo_name, pull_number, GetBody()))
+end)
+
+-- DELETE /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
+b:rest("delete_pull_requested_reviewers", function(owner, repo_name, pull_number)
+  cap_rest_204(pr_subs.delete_requested_reviewers(owner, repo_name, pull_number, GetBody()))
+end)
+
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews
+b:rest("get_pull_reviews", function(owner, repo_name, pull_number)
+  cap_rest_paged(pr_subs.list_reviews(owner, repo_name, pull_number))
+end)
+
+-- POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews
+b:rest("post_pull_review", function(owner, repo_name, pull_number)
+  cap_rest_created(pr_subs.create_review(owner, repo_name, pull_number, GetBody()))
+end)
+
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
+b:rest("get_pull_review", function(owner, repo_name, pull_number, review_id)
+  cap_rest_respond(pr_subs.get_review(owner, repo_name, pull_number, review_id))
+end)
+
+-- DELETE /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
+b:rest("delete_pull_review", function(owner, repo_name, pull_number, review_id)
+  cap_rest_204(pr_subs.delete_review(owner, repo_name, pull_number, review_id))
+end)
+
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments
+b:rest("get_pull_review_comments", function(owner, repo_name, pull_number, review_id)
+  cap_rest_respond(pr_subs.list_review_comments(owner, repo_name, pull_number, review_id))
+end)
+
+-- PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/dismissals
+-- GitHub uses PUT; Gitea uses POST.
+b:rest("put_pull_review_dismissal", function(owner, repo_name, pull_number, review_id)
+  cap_rest_respond(pr_subs.dismiss_review(owner, repo_name, pull_number, review_id, GetBody()))
+end)
+
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/comments
+-- Aggregates inline review comments across all reviews for the PR.
+b:rest("get_pull_comments", function(owner, repo_name, pull_number)
+  cap_rest_respond(pr_subs.list_comments(owner, repo_name, pull_number))
 end)
 
 -- Checks (via Gitea commit statuses) ------------------------------------------
@@ -6102,5 +6230,6 @@ b:capability("gpg_keys", gpg_keys)
 b:capability("user_emails", user_emails)
 b:capability("reactions", reactions_cap)
 b:capability("issue_events", issue_events_cap)
+b:capability("pr_subs", pr_subs)
 b:set_allow_anonymous(_allow_anon)
 b:build()
