@@ -2,11 +2,13 @@
 
 *confusio linguarum* — the confusion of tongues.
 
-A REST API shim that implements a subset of GitHub's API, translating requests to other git hosting providers under the hood.
+A GitHub API shim — REST and GraphQL — that translates requests to other git hosting providers under the hood.
 
 ## What it is
 
 GitHub's API is the lingua franca of git hosting tools. Other providers speak their own dialects. Confusio stands in the middle, translating.
+
+It implements both the GitHub REST API (`GET /repos/{owner}/{repo}`, etc.) and the GitHub GraphQL API (`POST /graphql`), routing each request to the equivalent call on the configured backend. Queries, mutations, Relay pagination, introspection, and batch requests are all supported.
 
 Built with [Redbean](https://redbean.dev) — a single-file web server containing a Lua interpreter, distributed as a self-extracting zip.
 
@@ -104,7 +106,7 @@ Confusio never stores or logs tokens. The raw token value passes through unchang
 
 ## Status
 
-Early design stage.
+Active. REST and GraphQL APIs are implemented and tested across 24 backends. GraphQL support covers queries, mutations, Relay pagination, batch requests, and introspection — all phases of the [GraphQL roadmap](docs/graphql/16-roadmap.md) are complete.
 
 ## Compatibility
 
