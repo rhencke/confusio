@@ -54,5 +54,7 @@ concerns), and finish with **13–16** (validation and delivery plan).
 
 ## Status
 
-All documents are design-phase only.  No production code has been written.  Implementation
-tracks the issue decomposition in [16-roadmap.md](16-roadmap.md).
+Implementation is complete.  All phases of the [rollout roadmap](16-roadmap.md) have shipped:
+Phase 0 (schema), Phase 1 (query engine + Gitea resolvers), Phase 1b (additional backends),
+Phase 2 (mutations), and Phase 2b (batch requests, backward pagination, item-level cursors,
+additional node resolvers).  These documents serve as reference for the design decisions made.
