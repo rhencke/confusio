@@ -209,10 +209,6 @@ local function translate_gitea_reaction(r)
   }
 end
 
-local function translate_gitea_reactions(reactions)
-  return translate_list(translate_gitea_reaction, reactions)
-end
-
 -- Map a Gitea pull request branch reference to GitHub format.
 local function translate_gitea_pr_branch(b)
   if not b then
@@ -719,17 +715,6 @@ end
 local function reaction_content_from_id(reaction_id)
   local code = tonumber(reaction_id) and (tonumber(reaction_id) % 10) or nil
   return code and REACTION_BY_CODE[code] or nil
-end
-
--- DELETE a Gitea reaction by URL and synthesized reaction_id.
--- Sends {"content":"..."} body; returns 204 on success.
-local function delete_gitea_reaction(url, reaction_id)
-  local content = reaction_content_from_id(reaction_id)
-  if not content then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  proxy_204({ 200 }, fetch_json(url, "DELETE", '{"content":"' .. content .. '"}'))
 end
 
 local b = make_backend_builder()
@@ -3139,30 +3124,67 @@ b:rest("delete_repo_issue_comment", function(owner, repo_name, comment_id)
   cap_rest_204(ok, err)
 end)
 
--- GET /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions
-b:rest(
-  "get_repo_issue_comment_reactions",
-  proxy_handler_paged(translate_gitea_reactions, function(o, r, id)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments/" .. id .. "/reactions",
-      PAGES
-    )
-  end)
-)
+-- Reactions ------------------------------------------------------------------
 
--- POST /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions
-b:rest(
-  "post_repo_issue_comment_reaction",
-  proxy_handler_created(translate_gitea_reaction, function(o, r, id)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments/" .. id .. "/reactions",
-      "POST",
-      GetBody()
-  end)
-)
+-- Internal: delete a reaction by synthesized ID; returns (true, nil) or (nil, err).
+local function cap_delete_reaction(url, reaction_id)
+  local content = reaction_content_from_id(reaction_id)
+  if not content then
+    return nil, cap_err(404, "Not Found")
+  end
+  local ok, status = fetch_json(url, "DELETE", '{"content":"' .. content .. '"}')
+  if not ok then
+    return nil, cap_err(0, "network error deleting reaction")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting reaction")
+  end
+  return true, nil
+end
 
--- DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{reaction_id}
-b:rest("delete_repo_issue_comment_reaction", function(owner, repo_name, comment_id, reaction_id)
-  delete_gitea_reaction(
+local reactions_cap = {}
+
+reactions_cap.list_comment = function(owner, repo_name, comment_id)
+  local url = append_page_params(
+    base()
+      .. "/repos/"
+      .. owner
+      .. "/"
+      .. repo_name
+      .. "/issues/comments/"
+      .. comment_id
+      .. "/reactions",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gitea_reaction, items), hdrs, nil
+end
+
+reactions_cap.create_comment = function(owner, repo_name, comment_id, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base()
+      .. "/repos/"
+      .. owner
+      .. "/"
+      .. repo_name
+      .. "/issues/comments/"
+      .. comment_id
+      .. "/reactions",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_reaction(raw), nil
+end
+
+reactions_cap.delete_comment = function(owner, repo_name, comment_id, reaction_id)
+  return cap_delete_reaction(
     base()
       .. "/repos/"
       .. owner
@@ -3173,23 +3195,113 @@ b:rest("delete_repo_issue_comment_reaction", function(owner, repo_name, comment_
       .. "/reactions",
     reaction_id
   )
+end
+
+reactions_cap.list_issue = function(owner, repo_name, issue_number)
+  local url = append_page_params(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/reactions",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gitea_reaction, items), hdrs, nil
+end
+
+reactions_cap.create_issue = function(owner, repo_name, issue_number, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/reactions",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_reaction(raw), nil
+end
+
+reactions_cap.delete_issue = function(owner, repo_name, issue_number, reaction_id)
+  return cap_delete_reaction(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/reactions",
+    reaction_id
+  )
+end
+
+-- Issue events and timeline --------------------------------------------------
+
+local issue_events_cap = {}
+
+issue_events_cap.list_repo = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/events", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+issue_events_cap.get = function(owner, repo_name, event_id)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/events/" .. event_id
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+issue_events_cap.list_issue = function(owner, repo_name, issue_number)
+  local url = append_page_params(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/events",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+issue_events_cap.list_timeline = function(owner, repo_name, issue_number)
+  local url = append_page_params(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/timeline",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+-- GET /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions
+b:rest("get_repo_issue_comment_reactions", function(owner, repo_name, comment_id)
+  cap_rest_paged(reactions_cap.list_comment(owner, repo_name, comment_id))
+end)
+
+-- POST /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions
+b:rest("post_repo_issue_comment_reaction", function(owner, repo_name, comment_id)
+  cap_rest_created(reactions_cap.create_comment(owner, repo_name, comment_id, GetBody()))
+end)
+
+-- DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{reaction_id}
+b:rest("delete_repo_issue_comment_reaction", function(owner, repo_name, comment_id, reaction_id)
+  cap_rest_204(reactions_cap.delete_comment(owner, repo_name, comment_id, reaction_id))
 end)
 
 -- GET /repos/{owner}/{repo}/issues/events  (all issue events in repo)
-b:rest(
-  "get_repo_issue_events",
-  proxy_handler_paged(nil, function(o, r)
-    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/issues/events", PAGES)
-  end)
-)
+b:rest("get_repo_issue_events", function(owner, repo_name)
+  cap_rest_paged(issue_events_cap.list_repo(owner, repo_name))
+end)
 
 -- GET /repos/{owner}/{repo}/issues/events/{event_id}
-b:rest(
-  "get_repo_issue_event",
-  proxy_handler(nil, function(o, r, id)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/events/" .. id
-  end)
-)
+b:rest("get_repo_issue_event", function(owner, repo_name, event_id)
+  cap_rest_respond(issue_events_cap.get(owner, repo_name, event_id))
+end)
 
 -- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
 b:rest("get_issue_comments", function(owner, repo_name, issue_number)
@@ -3204,54 +3316,28 @@ b:rest("post_issue_comment", function(owner, repo_name, issue_number)
 end)
 
 -- GET /repos/{owner}/{repo}/issues/{issue_number}/events
-b:rest(
-  "get_issue_events",
-  proxy_handler_paged(nil, function(o, r, n)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/events",
-      PAGES
-    )
-  end)
-)
+b:rest("get_issue_events", function(owner, repo_name, issue_number)
+  cap_rest_paged(issue_events_cap.list_issue(owner, repo_name, issue_number))
+end)
 
 -- GET /repos/{owner}/{repo}/issues/{issue_number}/timeline
-b:rest(
-  "get_issue_timeline",
-  proxy_handler_paged(nil, function(o, r, n)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/timeline",
-      PAGES
-    )
-  end)
-)
+b:rest("get_issue_timeline", function(owner, repo_name, issue_number)
+  cap_rest_paged(issue_events_cap.list_timeline(owner, repo_name, issue_number))
+end)
 
 -- GET /repos/{owner}/{repo}/issues/{issue_number}/reactions
-b:rest(
-  "get_issue_reactions",
-  proxy_handler_paged(translate_gitea_reactions, function(o, r, n)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/reactions",
-      PAGES
-    )
-  end)
-)
+b:rest("get_issue_reactions", function(owner, repo_name, issue_number)
+  cap_rest_paged(reactions_cap.list_issue(owner, repo_name, issue_number))
+end)
 
 -- POST /repos/{owner}/{repo}/issues/{issue_number}/reactions
-b:rest(
-  "post_issue_reaction",
-  proxy_handler_created(translate_gitea_reaction, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/reactions",
-      "POST",
-      GetBody()
-  end)
-)
+b:rest("post_issue_reaction", function(owner, repo_name, issue_number)
+  cap_rest_created(reactions_cap.create_issue(owner, repo_name, issue_number, GetBody()))
+end)
 
 -- DELETE /repos/{owner}/{repo}/issues/{issue_number}/reactions/{reaction_id}
 b:rest("delete_issue_reaction", function(owner, repo_name, issue_number, reaction_id)
-  delete_gitea_reaction(
-    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/reactions",
-    reaction_id
-  )
+  cap_rest_204(reactions_cap.delete_issue(owner, repo_name, issue_number, reaction_id))
 end)
 
 -- GET /repos/{owner}/{repo}/issues/{issue_number}/labels
@@ -6014,5 +6100,7 @@ b:capability("webhooks", webhooks)
 b:capability("ssh_keys", ssh_keys)
 b:capability("gpg_keys", gpg_keys)
 b:capability("user_emails", user_emails)
+b:capability("reactions", reactions_cap)
+b:capability("issue_events", issue_events_cap)
 b:set_allow_anonymous(_allow_anon)
 b:build()
