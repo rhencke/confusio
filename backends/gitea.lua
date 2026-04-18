@@ -20,12 +20,13 @@ local proxy_handler_created = _t.proxy_handler_created
 local proxy_handler_paged = _t.proxy_handler_paged
 
 -- Check if this Gitea instance allows anonymous access.
--- Sets app.allow_anonymous so OnHttpRequest can gate unauthenticated requests.
+-- Stored in _allow_anon; committed to app context via b:set_allow_anonymous() at the end.
+local _allow_anon = true -- default
 do
   local ok, status, _, body = pcall(Fetch, base() .. "/settings/api", nil)
   if ok and status == 200 then
     local settings = DecodeJson(body) or {}
-    app.allow_anonymous = settings.require_signin_view ~= true
+    _allow_anon = settings.require_signin_view ~= true
   end
 end
 
@@ -739,789 +740,759 @@ local function delete_gitea_reaction(url, reaction_id)
   proxy_204({ 200 }, fetch_json(url, "DELETE", '{"content":"' .. content .. '"}'))
 end
 
-app.backend_impl = {
-  -- Health check
-  get_root = function()
-    proxy_health_check(pcall(Fetch, base() .. "/version", auth()))
-  end,
+local b = make_backend_builder()
 
-  get_rate_limit = proxy_handler(function(data)
+-- Health check
+b:rest("get_root", function()
+  proxy_health_check(pcall(Fetch, base() .. "/version", auth()))
+end)
+
+b:rest(
+  "get_rate_limit",
+  proxy_handler(function(data)
     return { rate = data.rate or data }
   end, function()
     return base() .. "/rate_limit"
-  end),
+  end)
+)
 
-  -- GET /gitignore/templates
-  get_gitignore_templates = function()
-    proxy_json(nil, fetch_json(base() .. "/gitignores"))
-  end,
+-- GET /gitignore/templates
+b:rest("get_gitignore_templates", function()
+  proxy_json(nil, fetch_json(base() .. "/gitignores"))
+end)
 
-  -- GET /gitignore/templates/{name}
-  get_gitignore_template = function(name)
-    proxy_json(nil, fetch_json(base() .. "/gitignores/" .. name))
-  end,
+-- GET /gitignore/templates/{name}
+b:rest("get_gitignore_template", function(name)
+  proxy_json(nil, fetch_json(base() .. "/gitignores/" .. name))
+end)
 
-  -- GET /licenses
-  get_licenses = function()
-    proxy_json(nil, fetch_json(base() .. "/licenses"))
-  end,
+-- GET /licenses
+b:rest("get_licenses", function()
+  proxy_json(nil, fetch_json(base() .. "/licenses"))
+end)
 
-  -- GET /licenses/{license}
-  get_license = function(license_name)
-    proxy_json(nil, fetch_json(base() .. "/licenses/" .. license_name))
-  end,
+-- GET /licenses/{license}
+b:rest("get_license", function(license_name)
+  proxy_json(nil, fetch_json(base() .. "/licenses/" .. license_name))
+end)
 
-  -- GET /repos/{owner}/{repo}/license
-  -- Gitea has no dedicated endpoint; combine contents/LICENSE with repo license metadata.
-  get_repo_license = function(owner, repo_name)
-    local ok, status, _, body =
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/LICENSE")
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local content = DecodeJson(body) or {}
-    local rok, rstatus, _, rbody = fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name)
-    if rok and rstatus == 200 then
-      content.license = (DecodeJson(rbody) or {}).license
-    end
-    respond_json(200, content)
-  end,
+-- GET /repos/{owner}/{repo}/license
+-- Gitea has no dedicated endpoint; combine contents/LICENSE with repo license metadata.
+b:rest("get_repo_license", function(owner, repo_name)
+  local ok, status, _, body =
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/LICENSE")
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local content = DecodeJson(body) or {}
+  local rok, rstatus, _, rbody = fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name)
+  if rok and rstatus == 200 then
+    content.license = (DecodeJson(rbody) or {}).license
+  end
+  respond_json(200, content)
+end)
 
-  -- GET /repos/{owner}/{repo}
-  get_repo = function(owner, repo_name)
-    proxy_json(translate_repo, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name))
-  end,
+-- GET /repos/{owner}/{repo}
+b:rest("get_repo", function(owner, repo_name)
+  proxy_json(translate_repo, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name))
+end)
 
-  -- PATCH /repos/{owner}/{repo}
-  patch_repo = function(owner, repo_name)
-    proxy_json(
-      translate_repo,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name, "PATCH", GetBody())
-    )
-  end,
+-- PATCH /repos/{owner}/{repo}
+b:rest("patch_repo", function(owner, repo_name)
+  proxy_json(
+    translate_repo,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name, "PATCH", GetBody())
+  )
+end)
 
-  -- DELETE /repos/{owner}/{repo}
-  delete_repo = function(owner, repo_name)
-    local url = base() .. "/repos/" .. owner .. "/" .. repo_name
-    local dopts = auth() or {}
-    dopts.method = "DELETE"
-    proxy_204(nil, pcall(Fetch, url, dopts))
-  end,
+-- DELETE /repos/{owner}/{repo}
+b:rest("delete_repo", function(owner, repo_name)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name
+  local dopts = auth() or {}
+  dopts.method = "DELETE"
+  proxy_204(nil, pcall(Fetch, url, dopts))
+end)
 
-  -- GET /user/repos
-  get_user_repos = function()
-    proxy_json_paged(
-      translate_repos,
-      PAGES,
-      fetch_json(append_page_params(base() .. "/user/repos", PAGES))
-    )
-  end,
+-- GET /user/repos
+b:rest("get_user_repos", function()
+  proxy_json_paged(
+    translate_repos,
+    PAGES,
+    fetch_json(append_page_params(base() .. "/user/repos", PAGES))
+  )
+end)
 
-  -- POST /user/repos
-  post_user_repos = function()
-    proxy_json_created(translate_repo, fetch_json(base() .. "/user/repos", "POST", GetBody()))
-  end,
+-- POST /user/repos
+b:rest("post_user_repos", function()
+  proxy_json_created(translate_repo, fetch_json(base() .. "/user/repos", "POST", GetBody()))
+end)
 
-  -- GET /orgs/{org}/repos
-  get_org_repos = function(org)
-    proxy_json_paged(
-      translate_repos,
-      PAGES,
-      fetch_json(append_page_params(base() .. "/orgs/" .. org .. "/repos", PAGES))
-    )
-  end,
+-- GET /orgs/{org}/repos
+b:rest("get_org_repos", function(org)
+  proxy_json_paged(
+    translate_repos,
+    PAGES,
+    fetch_json(append_page_params(base() .. "/orgs/" .. org .. "/repos", PAGES))
+  )
+end)
 
-  -- POST /orgs/{org}/repos
-  post_org_repos = function(org)
-    proxy_json_created(
-      translate_repo,
-      fetch_json(base() .. "/orgs/" .. org .. "/repos", "POST", GetBody())
-    )
-  end,
+-- POST /orgs/{org}/repos
+b:rest("post_org_repos", function(org)
+  proxy_json_created(
+    translate_repo,
+    fetch_json(base() .. "/orgs/" .. org .. "/repos", "POST", GetBody())
+  )
+end)
 
-  -- GET /repos/{owner}/{repo}/topics
-  get_repo_topics = function(owner, repo_name)
-    proxy_json(function(t)
+-- GET /repos/{owner}/{repo}/topics
+b:rest("get_repo_topics", function(owner, repo_name)
+  proxy_json(function(t)
+    return { names = t.topics or t.names or {} }
+  end, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/topics"))
+end)
+
+-- PUT /repos/{owner}/{repo}/topics
+b:rest("put_repo_topics", function(owner, repo_name)
+  local req = DecodeJson(GetBody() or "{}")
+  proxy_json(
+    function(t)
       return { names = t.topics or t.names or {} }
-    end, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/topics"))
-  end,
-
-  -- PUT /repos/{owner}/{repo}/topics
-  put_repo_topics = function(owner, repo_name)
-    local req = DecodeJson(GetBody() or "{}")
-    proxy_json(
-      function(t)
-        return { names = t.topics or t.names or {} }
-      end,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/topics",
-        "PUT",
-        EncodeJson({ topics = req.names or {} })
-      )
+    end,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/topics",
+      "PUT",
+      EncodeJson({ topics = req.names or {} })
     )
-  end,
+  )
+end)
 
-  -- GET /repos/{owner}/{repo}/languages
-  -- Both Gitea and GitHub return { "Language": bytes } — pass through.
-  get_repo_languages = function(owner, repo_name)
-    proxy_json(nil, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/languages"))
-  end,
+-- GET /repos/{owner}/{repo}/languages
+-- Both Gitea and GitHub return { "Language": bytes } — pass through.
+b:rest("get_repo_languages", function(owner, repo_name)
+  proxy_json(nil, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/languages"))
+end)
 
-  -- GET /repos/{owner}/{repo}/contributors
-  -- Gitea uses "contributions"; GitHub uses "contributions" — same key, pass through.
-  get_repo_contributors = function(owner, repo_name)
-    proxy_json_paged(
-      nil,
-      PAGES,
-      fetch_json(
-        append_page_params(
-          base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contributors",
-          PAGES
-        )
-      )
+-- GET /repos/{owner}/{repo}/contributors
+-- Gitea uses "contributions"; GitHub uses "contributions" — same key, pass through.
+b:rest("get_repo_contributors", function(owner, repo_name)
+  proxy_json_paged(
+    nil,
+    PAGES,
+    fetch_json(
+      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contributors", PAGES)
     )
-  end,
+  )
+end)
 
-  -- GET /repos/{owner}/{repo}/tags
-  -- Both Gitea and GitHub return [{ name, commit: { sha, url }, ... }] — pass through.
-  get_repo_tags = function(owner, repo_name)
-    proxy_json_paged(
-      nil,
-      PAGES,
-      fetch_json(
-        append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/tags", PAGES)
-      )
+-- GET /repos/{owner}/{repo}/tags
+-- Both Gitea and GitHub return [{ name, commit: { sha, url }, ... }] — pass through.
+b:rest("get_repo_tags", function(owner, repo_name)
+  proxy_json_paged(
+    nil,
+    PAGES,
+    fetch_json(
+      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/tags", PAGES)
     )
-  end,
+  )
+end)
 
-  -- Branches ------------------------------------------------------------------
+-- Branches ------------------------------------------------------------------
 
-  -- Gitea branch objects use commit.id instead of GitHub's commit.sha.
-  -- GET /repos/{owner}/{repo}/branches
-  get_repo_branches = function(owner, repo_name)
-    local function tr_branches(branches)
-      for _, b in ipairs(branches or {}) do
-        if b.commit then
-          b.commit.sha = b.commit.id
-        end
+-- Gitea branch objects use commit.id instead of GitHub's commit.sha.
+-- GET /repos/{owner}/{repo}/branches
+b:rest("get_repo_branches", function(owner, repo_name)
+  local function tr_branches(branches)
+    for _, br in ipairs(branches or {}) do
+      if br.commit then
+        br.commit.sha = br.commit.id
       end
-      return branches or {}
     end
-    proxy_json_paged(
-      tr_branches,
-      PAGES,
-      fetch_json(
-        append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/branches", PAGES)
+    return branches or {}
+  end
+  proxy_json_paged(
+    tr_branches,
+    PAGES,
+    fetch_json(
+      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/branches", PAGES)
+    )
+  )
+end)
+
+-- GET /repos/{owner}/{repo}/branches/{branch}
+b:rest("get_repo_branch", function(owner, repo_name, branch)
+  proxy_json(function(br)
+    if br and br.commit then
+      br.commit.sha = br.commit.id
+    end
+    return br or {}
+  end, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/branches/" .. branch))
+end)
+
+-- Commits -------------------------------------------------------------------
+
+-- GET /repos/{owner}/{repo}/commits
+b:rest("get_repo_commits", function(owner, repo_name)
+  proxy_json_paged(
+    nil,
+    PAGES,
+    fetch_json(
+      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/commits", PAGES)
+    )
+  )
+end)
+
+-- GET /repos/{owner}/{repo}/commits/{ref}
+b:rest("get_repo_commit", function(owner, repo_name, ref)
+  proxy_json(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/commits/" .. ref)
+  )
+end)
+
+-- Statuses ------------------------------------------------------------------
+
+-- GET /repos/{owner}/{repo}/commits/{ref}/statuses
+b:rest("get_commit_statuses", function(owner, repo_name, ref)
+  proxy_json_paged(
+    nil,
+    PAGES,
+    fetch_json(
+      append_page_params(
+        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. ref,
+        PAGES
       )
     )
-  end,
+  )
+end)
 
-  -- GET /repos/{owner}/{repo}/branches/{branch}
-  get_repo_branch = function(owner, repo_name, branch)
-    proxy_json(function(b)
-      if b and b.commit then
-        b.commit.sha = b.commit.id
-      end
-      return b or {}
-    end, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/branches/" .. branch))
-  end,
+-- GET /repos/{owner}/{repo}/commits/{ref}/status  (combined)
+b:rest("get_commit_combined_status", function(owner, repo_name, ref)
+  proxy_json(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/commits/" .. ref .. "/statuses"
+    )
+  )
+end)
 
-  -- Commits -------------------------------------------------------------------
+-- POST /repos/{owner}/{repo}/statuses/{sha}
+b:rest("post_commit_status", function(owner, repo_name, sha)
+  proxy_json_created(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. sha,
+      "POST",
+      GetBody()
+    )
+  )
+end)
 
-  -- GET /repos/{owner}/{repo}/commits
-  get_repo_commits = function(owner, repo_name)
-    proxy_json_paged(
-      nil,
-      PAGES,
-      fetch_json(
-        append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/commits", PAGES)
+-- Contents ------------------------------------------------------------------
+
+-- GET /repos/{owner}/{repo}/readme
+b:rest("get_repo_readme", function(owner, repo_name)
+  proxy_json(nil, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/readme"))
+end)
+
+-- GET /repos/{owner}/{repo}/readme/{dir}
+b:rest("get_repo_readme_dir", function(owner, repo_name, dir)
+  proxy_json(nil, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/readme/" .. dir))
+end)
+
+-- GET /repos/{owner}/{repo}/contents/{path}
+b:rest("get_repo_content", function(owner, repo_name, path)
+  proxy_json(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/" .. path)
+  )
+end)
+
+-- PUT /repos/{owner}/{repo}/contents/{path}
+b:rest("put_repo_content", function(owner, repo_name, path)
+  proxy_json(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/" .. path,
+      "PUT",
+      GetBody()
+    )
+  )
+end)
+
+-- DELETE /repos/{owner}/{repo}/contents/{path}
+b:rest("delete_repo_content", function(owner, repo_name, path)
+  proxy_json(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/" .. path,
+      "DELETE",
+      GetBody()
+    )
+  )
+end)
+
+-- GET /repos/{owner}/{repo}/tarball/{ref} — redirect to Gitea's archive URL
+b:rest("get_repo_tarball", function(owner, repo_name, ref)
+  SetStatus(302, "Found")
+  SetHeader(
+    "Location",
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/archive/" .. ref .. ".tar.gz"
+  )
+  Write("")
+end)
+
+-- GET /repos/{owner}/{repo}/zipball/{ref} — redirect to Gitea's archive URL
+b:rest("get_repo_zipball", function(owner, repo_name, ref)
+  SetStatus(302, "Found")
+  SetHeader(
+    "Location",
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/archive/" .. ref .. ".zip"
+  )
+  Write("")
+end)
+
+-- Compare -------------------------------------------------------------------
+
+-- GET /repos/{owner}/{repo}/compare/{basehead}
+-- Gitea uses /{owner}/{repo}/compare/{base}...{head} (3 dots) in UI, but
+-- the API endpoint uses {base}...{head} or {base}..{head} in the basehead param.
+b:rest("get_repo_compare", function(owner, repo_name, basehead)
+  proxy_json(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/compare/" .. basehead)
+  )
+end)
+
+-- Collaborators -------------------------------------------------------------
+
+-- GET /repos/{owner}/{repo}/collaborators
+b:rest("get_repo_collaborators", function(owner, repo_name)
+  proxy_json_paged(
+    nil,
+    PAGES,
+    fetch_json(
+      append_page_params(
+        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators",
+        PAGES
       )
     )
-  end,
+  )
+end)
 
-  -- GET /repos/{owner}/{repo}/commits/{ref}
-  get_repo_commit = function(owner, repo_name, ref)
-    proxy_json(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/commits/" .. ref)
-    )
-  end,
+-- GET /repos/{owner}/{repo}/collaborators/{username} — 204 if collaborator, 404 if not
+b:rest("get_repo_collaborator", function(owner, repo_name, username)
+  local ok, status = pcall(
+    Fetch,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
+    auth()
+  )
+  if ok and status == 204 then
+    SetStatus(204, "No Content")
+  elseif ok then
+    respond_json(status, { message = "Not a collaborator" })
+  else
+    respond_json(503, {})
+  end
+end)
 
-  -- Statuses ------------------------------------------------------------------
-
-  -- GET /repos/{owner}/{repo}/commits/{ref}/statuses
-  get_commit_statuses = function(owner, repo_name, ref)
-    proxy_json_paged(
-      nil,
-      PAGES,
-      fetch_json(
-        append_page_params(
-          base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. ref,
-          PAGES
-        )
-      )
-    )
-  end,
-
-  -- GET /repos/{owner}/{repo}/commits/{ref}/status  (combined)
-  get_commit_combined_status = function(owner, repo_name, ref)
-    proxy_json(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/commits/" .. ref .. "/statuses"
-      )
-    )
-  end,
-
-  -- POST /repos/{owner}/{repo}/statuses/{sha}
-  post_commit_status = function(owner, repo_name, sha)
-    proxy_json_created(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. sha,
-        "POST",
-        GetBody()
-      )
-    )
-  end,
-
-  -- Contents ------------------------------------------------------------------
-
-  -- GET /repos/{owner}/{repo}/readme
-  get_repo_readme = function(owner, repo_name)
-    proxy_json(nil, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/readme"))
-  end,
-
-  -- GET /repos/{owner}/{repo}/readme/{dir}
-  get_repo_readme_dir = function(owner, repo_name, dir)
-    proxy_json(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/readme/" .. dir)
-    )
-  end,
-
-  -- GET /repos/{owner}/{repo}/contents/{path}
-  get_repo_content = function(owner, repo_name, path)
-    proxy_json(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/" .. path)
-    )
-  end,
-
-  -- PUT /repos/{owner}/{repo}/contents/{path}
-  put_repo_content = function(owner, repo_name, path)
-    proxy_json(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/" .. path,
-        "PUT",
-        GetBody()
-      )
-    )
-  end,
-
-  -- DELETE /repos/{owner}/{repo}/contents/{path}
-  delete_repo_content = function(owner, repo_name, path)
-    proxy_json(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/" .. path,
-        "DELETE",
-        GetBody()
-      )
-    )
-  end,
-
-  -- GET /repos/{owner}/{repo}/tarball/{ref} — redirect to Gitea's archive URL
-  get_repo_tarball = function(owner, repo_name, ref)
-    SetStatus(302, "Found")
-    SetHeader(
-      "Location",
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/archive/" .. ref .. ".tar.gz"
-    )
-    Write("")
-  end,
-
-  -- GET /repos/{owner}/{repo}/zipball/{ref} — redirect to Gitea's archive URL
-  get_repo_zipball = function(owner, repo_name, ref)
-    SetStatus(302, "Found")
-    SetHeader(
-      "Location",
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/archive/" .. ref .. ".zip"
-    )
-    Write("")
-  end,
-
-  -- Compare -------------------------------------------------------------------
-
-  -- GET /repos/{owner}/{repo}/compare/{basehead}
-  -- Gitea uses /{owner}/{repo}/compare/{base}...{head} (3 dots) in UI, but
-  -- the API endpoint uses {base}...{head} or {base}..{head} in the basehead param.
-  get_repo_compare = function(owner, repo_name, basehead)
-    proxy_json(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/compare/" .. basehead)
-    )
-  end,
-
-  -- Collaborators -------------------------------------------------------------
-
-  -- GET /repos/{owner}/{repo}/collaborators
-  get_repo_collaborators = function(owner, repo_name)
-    proxy_json_paged(
-      nil,
-      PAGES,
-      fetch_json(
-        append_page_params(
-          base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators",
-          PAGES
-        )
-      )
-    )
-  end,
-
-  -- GET /repos/{owner}/{repo}/collaborators/{username} — 204 if collaborator, 404 if not
-  get_repo_collaborator = function(owner, repo_name, username)
-    local ok, status = pcall(
-      Fetch,
+-- PUT /repos/{owner}/{repo}/collaborators/{username}
+b:rest("put_repo_collaborator", function(owner, repo_name, username)
+  proxy_204(
+    { 201 },
+    fetch_json(
       base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
-      auth()
+      "PUT",
+      GetBody()
     )
-    if ok and status == 204 then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, { message = "Not a collaborator" })
+  )
+end)
+
+-- DELETE /repos/{owner}/{repo}/collaborators/{username}
+b:rest("delete_repo_collaborator", function(owner, repo_name, username)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
+      "DELETE"
+    )
+  )
+end)
+
+-- GET /repos/{owner}/{repo}/collaborators/{username}/permission
+b:rest("get_repo_collaborator_permission", function(owner, repo_name, username)
+  proxy_json(
+    nil,
+    fetch_json(
+      base()
+        .. "/repos/"
+        .. owner
+        .. "/"
+        .. repo_name
+        .. "/collaborators/"
+        .. username
+        .. "/permission"
+    )
+  )
+end)
+
+-- Forks ---------------------------------------------------------------------
+
+-- GET /repos/{owner}/{repo}/forks
+b:rest("get_repo_forks", function(owner, repo_name)
+  proxy_json_paged(
+    translate_repos,
+    PAGES,
+    fetch_json(
+      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/forks", PAGES)
+    )
+  )
+end)
+
+-- POST /repos/{owner}/{repo}/forks
+b:rest("post_repo_forks", function(owner, repo_name)
+  proxy_json_created(
+    translate_repo,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/forks", "POST", GetBody())
+  )
+end)
+
+-- Releases ------------------------------------------------------------------
+
+-- GET /repos/{owner}/{repo}/releases
+b:rest("get_repo_releases", function(owner, repo_name)
+  proxy_json_paged(
+    nil,
+    PAGES,
+    fetch_json(
+      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases", PAGES)
+    )
+  )
+end)
+
+-- POST /repos/{owner}/{repo}/releases
+b:rest("post_repo_releases", function(owner, repo_name)
+  proxy_json_created(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases", "POST", GetBody())
+  )
+end)
+
+-- GET /repos/{owner}/{repo}/releases/latest
+b:rest("get_repo_release_latest", function(owner, repo_name)
+  proxy_json(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/latest")
+  )
+end)
+
+-- GET /repos/{owner}/{repo}/releases/tags/{tag}
+b:rest("get_repo_release_by_tag", function(owner, repo_name, tag)
+  proxy_json(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/tags/" .. tag)
+  )
+end)
+
+-- GET /repos/{owner}/{repo}/releases/{release_id}
+b:rest("get_repo_release", function(owner, repo_name, release_id)
+  proxy_json(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id)
+  )
+end)
+
+-- PATCH /repos/{owner}/{repo}/releases/{release_id}
+b:rest("patch_repo_release", function(owner, repo_name, release_id)
+  proxy_json(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id,
+      "PATCH",
+      GetBody()
+    )
+  )
+end)
+
+-- DELETE /repos/{owner}/{repo}/releases/{release_id}
+b:rest("delete_repo_release", function(owner, repo_name, release_id)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id,
+      "DELETE"
+    )
+  )
+end)
+
+-- GET /repos/{owner}/{repo}/releases/{release_id}/assets
+b:rest("get_repo_release_assets", function(owner, repo_name, release_id)
+  proxy_json_paged(
+    nil,
+    PAGES,
+    fetch_json(
+      append_page_params(
+        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id .. "/assets",
+        PAGES
+      )
+    )
+  )
+end)
+
+-- POST /repos/{owner}/{repo}/releases/{release_id}/assets — multipart; pass through
+b:rest("post_repo_release_assets", function(owner, repo_name, release_id)
+  -- Gitea uses the same multipart upload path; proxy the entire request.
+  -- The Content-Type header (multipart/form-data) must be forwarded.
+  local url = base()
+    .. "/repos/"
+    .. owner
+    .. "/"
+    .. repo_name
+    .. "/releases/"
+    .. release_id
+    .. "/assets"
+  local opts = auth() or {}
+  opts.method = "POST"
+  opts.body = GetBody()
+  opts.headers = opts.headers or {}
+  opts.headers["Content-Type"] = GetHeader("Content-Type") or "application/octet-stream"
+  proxy_json_created(nil, pcall(Fetch, url, opts))
+end)
+
+-- GET /repos/{owner}/{repo}/releases/assets/{asset_id}
+b:rest("get_repo_release_asset", function(owner, repo_name, asset_id)
+  proxy_json(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/assets/" .. asset_id)
+  )
+end)
+
+-- PATCH /repos/{owner}/{repo}/releases/assets/{asset_id}
+b:rest("patch_repo_release_asset", function(owner, repo_name, asset_id)
+  proxy_json(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/assets/" .. asset_id,
+      "PATCH",
+      GetBody()
+    )
+  )
+end)
+
+-- DELETE /repos/{owner}/{repo}/releases/assets/{asset_id}
+b:rest("delete_repo_release_asset", function(owner, repo_name, asset_id)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/assets/" .. asset_id,
+      "DELETE"
+    )
+  )
+end)
+
+-- Deploy keys ---------------------------------------------------------------
+
+-- GET /repos/{owner}/{repo}/keys
+b:rest("get_repo_keys", function(owner, repo_name)
+  proxy_json_paged(
+    nil,
+    PAGES,
+    fetch_json(
+      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys", PAGES)
+    )
+  )
+end)
+
+-- POST /repos/{owner}/{repo}/keys
+b:rest("post_repo_keys", function(owner, repo_name)
+  proxy_json_created(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys", "POST", GetBody())
+  )
+end)
+
+-- GET /repos/{owner}/{repo}/keys/{key_id}
+b:rest("get_repo_key", function(owner, repo_name, key_id)
+  proxy_json(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys/" .. key_id)
+  )
+end)
+
+-- DELETE /repos/{owner}/{repo}/keys/{key_id}
+b:rest("delete_repo_key", function(owner, repo_name, key_id)
+  proxy_204(
+    { 200 },
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys/" .. key_id, "DELETE")
+  )
+end)
+
+-- Webhooks ------------------------------------------------------------------
+
+-- GET /repos/{owner}/{repo}/hooks
+b:rest("get_repo_hooks", function(owner, repo_name)
+  proxy_json_paged(
+    nil,
+    PAGES,
+    fetch_json(
+      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks", PAGES)
+    )
+  )
+end)
+
+-- POST /repos/{owner}/{repo}/hooks
+b:rest("post_repo_hooks", function(owner, repo_name)
+  proxy_json_created(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks", "POST", GetBody())
+  )
+end)
+
+-- GET /repos/{owner}/{repo}/hooks/{hook_id}
+b:rest("get_repo_hook", function(owner, repo_name, hook_id)
+  proxy_json(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id)
+  )
+end)
+
+-- PATCH /repos/{owner}/{repo}/hooks/{hook_id}
+b:rest("patch_repo_hook", function(owner, repo_name, hook_id)
+  proxy_json(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id,
+      "PATCH",
+      GetBody()
+    )
+  )
+end)
+
+-- DELETE /repos/{owner}/{repo}/hooks/{hook_id}
+b:rest("delete_repo_hook", function(owner, repo_name, hook_id)
+  proxy_204(
+    { 200 },
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id, "DELETE")
+  )
+end)
+
+-- GET /repos/{owner}/{repo}/hooks/{hook_id}/config
+-- Gitea stores config inline in the hook object; extract the config sub-object.
+b:rest("get_repo_hook_config", function(owner, repo_name, hook_id)
+  proxy_json(function(hook)
+    return hook.config or {}
+  end, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id))
+end)
+
+-- PATCH /repos/{owner}/{repo}/hooks/{hook_id}/config
+-- Gitea has no separate config endpoint; merge into a full PATCH.
+b:rest("patch_repo_hook_config", function(owner, repo_name, hook_id)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id
+  -- Fetch current hook, merge new config, write back.
+  local ok, status, _, body = fetch_json(url)
+  if not ok or status ~= 200 then
+    if ok then
+      respond_json(status, {})
     else
       respond_json(503, {})
     end
-  end,
+    return
+  end
+  local hook = DecodeJson(body) or {}
+  local new_config = DecodeJson(GetBody() or "{}")
+  hook.config = hook.config or {}
+  for k, v in pairs(new_config) do
+    hook.config[k] = v
+  end
+  proxy_json(function(h)
+    return h.config or {}
+  end, fetch_json(url, "PATCH", EncodeJson(hook)))
+end)
 
-  -- PUT /repos/{owner}/{repo}/collaborators/{username}
-  put_repo_collaborator = function(owner, repo_name, username)
-    proxy_204(
-      { 201 },
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
-        "PUT",
-        GetBody()
-      )
+-- POST /repos/{owner}/{repo}/hooks/{hook_id}/tests
+b:rest("post_repo_hook_test", function(owner, repo_name, hook_id)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id .. "/tests",
+      "POST"
     )
-  end,
+  )
+end)
 
-  -- DELETE /repos/{owner}/{repo}/collaborators/{username}
-  delete_repo_collaborator = function(owner, repo_name, username)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
-        "DELETE"
-      )
+-- Users' repos --------------------------------------------------------------
+
+-- GET /users/{username}/repos
+b:rest("get_users_repos", function(username)
+  proxy_json_paged(
+    translate_repos,
+    PAGES,
+    fetch_json(append_page_params(base() .. "/users/" .. username .. "/repos", PAGES))
+  )
+end)
+
+-- GET /repositories (public repos list) — use Gitea's repo search
+b:rest("get_repositories", function()
+  proxy_json_paged(function(data)
+    return translate_repos(data.data or {})
+  end, PAGES, fetch_json(append_page_params(base() .. "/repos/search", PAGES)))
+end)
+
+-- Commit comments -----------------------------------------------------------
+
+-- GET /repos/{owner}/{repo}/comments
+b:rest("get_repo_comments", function(owner, repo_name)
+  proxy_json_paged(
+    nil,
+    PAGES,
+    fetch_json(
+      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments", PAGES)
     )
-  end,
+  )
+end)
 
-  -- GET /repos/{owner}/{repo}/collaborators/{username}/permission
-  get_repo_collaborator_permission = function(owner, repo_name, username)
-    proxy_json(
-      nil,
-      fetch_json(
-        base()
-          .. "/repos/"
-          .. owner
-          .. "/"
-          .. repo_name
-          .. "/collaborators/"
-          .. username
-          .. "/permission"
-      )
+-- GET /repos/{owner}/{repo}/comments/{comment_id}
+b:rest("get_repo_comment", function(owner, repo_name, comment_id)
+  proxy_json(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments/" .. comment_id)
+  )
+end)
+
+-- PATCH /repos/{owner}/{repo}/comments/{comment_id}
+b:rest("patch_repo_comment", function(owner, repo_name, comment_id)
+  proxy_json(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments/" .. comment_id,
+      "PATCH",
+      GetBody()
     )
-  end,
+  )
+end)
 
-  -- Forks ---------------------------------------------------------------------
-
-  -- GET /repos/{owner}/{repo}/forks
-  get_repo_forks = function(owner, repo_name)
-    proxy_json_paged(
-      translate_repos,
-      PAGES,
-      fetch_json(
-        append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/forks", PAGES)
-      )
+-- DELETE /repos/{owner}/{repo}/comments/{comment_id}
+b:rest("delete_repo_comment", function(owner, repo_name, comment_id)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments/" .. comment_id,
+      "DELETE"
     )
-  end,
+  )
+end)
 
-  -- POST /repos/{owner}/{repo}/forks
-  post_repo_forks = function(owner, repo_name)
-    proxy_json_created(
-      translate_repo,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/forks", "POST", GetBody())
-    )
-  end,
-
-  -- Releases ------------------------------------------------------------------
-
-  -- GET /repos/{owner}/{repo}/releases
-  get_repo_releases = function(owner, repo_name)
-    proxy_json_paged(
-      nil,
-      PAGES,
-      fetch_json(
-        append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases", PAGES)
-      )
-    )
-  end,
-
-  -- POST /repos/{owner}/{repo}/releases
-  post_repo_releases = function(owner, repo_name)
-    proxy_json_created(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases", "POST", GetBody())
-    )
-  end,
-
-  -- GET /repos/{owner}/{repo}/releases/latest
-  get_repo_release_latest = function(owner, repo_name)
-    proxy_json(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/latest")
-    )
-  end,
-
-  -- GET /repos/{owner}/{repo}/releases/tags/{tag}
-  get_repo_release_by_tag = function(owner, repo_name, tag)
-    proxy_json(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/tags/" .. tag)
-    )
-  end,
-
-  -- GET /repos/{owner}/{repo}/releases/{release_id}
-  get_repo_release = function(owner, repo_name, release_id)
-    proxy_json(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id)
-    )
-  end,
-
-  -- PATCH /repos/{owner}/{repo}/releases/{release_id}
-  patch_repo_release = function(owner, repo_name, release_id)
-    proxy_json(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id,
-        "PATCH",
-        GetBody()
-      )
-    )
-  end,
-
-  -- DELETE /repos/{owner}/{repo}/releases/{release_id}
-  delete_repo_release = function(owner, repo_name, release_id)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id,
-        "DELETE"
-      )
-    )
-  end,
-
-  -- GET /repos/{owner}/{repo}/releases/{release_id}/assets
-  get_repo_release_assets = function(owner, repo_name, release_id)
-    proxy_json_paged(
-      nil,
-      PAGES,
-      fetch_json(
-        append_page_params(
-          base()
-            .. "/repos/"
-            .. owner
-            .. "/"
-            .. repo_name
-            .. "/releases/"
-            .. release_id
-            .. "/assets",
-          PAGES
-        )
-      )
-    )
-  end,
-
-  -- POST /repos/{owner}/{repo}/releases/{release_id}/assets — multipart; pass through
-  post_repo_release_assets = function(owner, repo_name, release_id)
-    -- Gitea uses the same multipart upload path; proxy the entire request.
-    -- The Content-Type header (multipart/form-data) must be forwarded.
-    local url = base()
-      .. "/repos/"
-      .. owner
-      .. "/"
-      .. repo_name
-      .. "/releases/"
-      .. release_id
-      .. "/assets"
-    local opts = auth() or {}
-    opts.method = "POST"
-    opts.body = GetBody()
-    opts.headers = opts.headers or {}
-    opts.headers["Content-Type"] = GetHeader("Content-Type") or "application/octet-stream"
-    proxy_json_created(nil, pcall(Fetch, url, opts))
-  end,
-
-  -- GET /repos/{owner}/{repo}/releases/assets/{asset_id}
-  get_repo_release_asset = function(owner, repo_name, asset_id)
-    proxy_json(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/assets/" .. asset_id
-      )
-    )
-  end,
-
-  -- PATCH /repos/{owner}/{repo}/releases/assets/{asset_id}
-  patch_repo_release_asset = function(owner, repo_name, asset_id)
-    proxy_json(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/assets/" .. asset_id,
-        "PATCH",
-        GetBody()
-      )
-    )
-  end,
-
-  -- DELETE /repos/{owner}/{repo}/releases/assets/{asset_id}
-  delete_repo_release_asset = function(owner, repo_name, asset_id)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/assets/" .. asset_id,
-        "DELETE"
-      )
-    )
-  end,
-
-  -- Deploy keys ---------------------------------------------------------------
-
-  -- GET /repos/{owner}/{repo}/keys
-  get_repo_keys = function(owner, repo_name)
-    proxy_json_paged(
-      nil,
-      PAGES,
-      fetch_json(
-        append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys", PAGES)
-      )
-    )
-  end,
-
-  -- POST /repos/{owner}/{repo}/keys
-  post_repo_keys = function(owner, repo_name)
-    proxy_json_created(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys", "POST", GetBody())
-    )
-  end,
-
-  -- GET /repos/{owner}/{repo}/keys/{key_id}
-  get_repo_key = function(owner, repo_name, key_id)
-    proxy_json(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys/" .. key_id)
-    )
-  end,
-
-  -- DELETE /repos/{owner}/{repo}/keys/{key_id}
-  delete_repo_key = function(owner, repo_name, key_id)
-    proxy_204(
-      { 200 },
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys/" .. key_id, "DELETE")
-    )
-  end,
-
-  -- Webhooks ------------------------------------------------------------------
-
-  -- GET /repos/{owner}/{repo}/hooks
-  get_repo_hooks = function(owner, repo_name)
-    proxy_json_paged(
-      nil,
-      PAGES,
-      fetch_json(
-        append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks", PAGES)
-      )
-    )
-  end,
-
-  -- POST /repos/{owner}/{repo}/hooks
-  post_repo_hooks = function(owner, repo_name)
-    proxy_json_created(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks", "POST", GetBody())
-    )
-  end,
-
-  -- GET /repos/{owner}/{repo}/hooks/{hook_id}
-  get_repo_hook = function(owner, repo_name, hook_id)
-    proxy_json(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id)
-    )
-  end,
-
-  -- PATCH /repos/{owner}/{repo}/hooks/{hook_id}
-  patch_repo_hook = function(owner, repo_name, hook_id)
-    proxy_json(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id,
-        "PATCH",
-        GetBody()
-      )
-    )
-  end,
-
-  -- DELETE /repos/{owner}/{repo}/hooks/{hook_id}
-  delete_repo_hook = function(owner, repo_name, hook_id)
-    proxy_204(
-      { 200 },
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id, "DELETE")
-    )
-  end,
-
-  -- GET /repos/{owner}/{repo}/hooks/{hook_id}/config
-  -- Gitea stores config inline in the hook object; extract the config sub-object.
-  get_repo_hook_config = function(owner, repo_name, hook_id)
-    proxy_json(function(hook)
-      return hook.config or {}
-    end, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id))
-  end,
-
-  -- PATCH /repos/{owner}/{repo}/hooks/{hook_id}/config
-  -- Gitea has no separate config endpoint; merge into a full PATCH.
-  patch_repo_hook_config = function(owner, repo_name, hook_id)
-    local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id
-    -- Fetch current hook, merge new config, write back.
-    local ok, status, _, body = fetch_json(url)
-    if not ok or status ~= 200 then
-      if ok then
-        respond_json(status, {})
-      else
-        respond_json(503, {})
-      end
-      return
-    end
-    local hook = DecodeJson(body) or {}
-    local new_config = DecodeJson(GetBody() or "{}")
-    hook.config = hook.config or {}
-    for k, v in pairs(new_config) do
-      hook.config[k] = v
-    end
-    proxy_json(function(h)
-      return h.config or {}
-    end, fetch_json(url, "PATCH", EncodeJson(hook)))
-  end,
-
-  -- POST /repos/{owner}/{repo}/hooks/{hook_id}/tests
-  post_repo_hook_test = function(owner, repo_name, hook_id)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id .. "/tests",
-        "POST"
-      )
-    )
-  end,
-
-  -- Users' repos --------------------------------------------------------------
-
-  -- GET /users/{username}/repos
-  get_users_repos = function(username)
-    proxy_json_paged(
-      translate_repos,
-      PAGES,
-      fetch_json(append_page_params(base() .. "/users/" .. username .. "/repos", PAGES))
-    )
-  end,
-
-  -- GET /repositories (public repos list) — use Gitea's repo search
-  get_repositories = function()
-    proxy_json_paged(function(data)
-      return translate_repos(data.data or {})
-    end, PAGES, fetch_json(append_page_params(base() .. "/repos/search", PAGES)))
-  end,
-
-  -- Commit comments -----------------------------------------------------------
-
-  -- GET /repos/{owner}/{repo}/comments
-  get_repo_comments = function(owner, repo_name)
-    proxy_json_paged(
-      nil,
-      PAGES,
-      fetch_json(
-        append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments", PAGES)
-      )
-    )
-  end,
-
-  -- GET /repos/{owner}/{repo}/comments/{comment_id}
-  get_repo_comment = function(owner, repo_name, comment_id)
-    proxy_json(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments/" .. comment_id)
-    )
-  end,
-
-  -- PATCH /repos/{owner}/{repo}/comments/{comment_id}
-  patch_repo_comment = function(owner, repo_name, comment_id)
-    proxy_json(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments/" .. comment_id,
-        "PATCH",
-        GetBody()
-      )
-    )
-  end,
-
-  -- DELETE /repos/{owner}/{repo}/comments/{comment_id}
-  delete_repo_comment = function(owner, repo_name, comment_id)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments/" .. comment_id,
-        "DELETE"
-      )
-    )
-  end,
-
-  -- GET /repos/{owner}/{repo}/commits/{commit_sha}/comments
-  get_commit_comments = function(owner, repo_name, commit_sha)
-    proxy_json_paged(
-      nil,
-      PAGES,
-      fetch_json(
-        append_page_params(
-          base()
-            .. "/repos/"
-            .. owner
-            .. "/"
-            .. repo_name
-            .. "/git/commits/"
-            .. commit_sha
-            .. "/notes",
-          PAGES
-        )
-      )
-    )
-  end,
-
-  -- POST /repos/{owner}/{repo}/commits/{commit_sha}/comments
-  post_commit_comment = function(owner, repo_name, commit_sha)
-    proxy_json_created(
-      nil,
-      fetch_json(
+-- GET /repos/{owner}/{repo}/commits/{commit_sha}/comments
+b:rest("get_commit_comments", function(owner, repo_name, commit_sha)
+  proxy_json_paged(
+    nil,
+    PAGES,
+    fetch_json(
+      append_page_params(
         base()
           .. "/repos/"
           .. owner
@@ -1530,1044 +1501,1198 @@ app.backend_impl = {
           .. "/git/commits/"
           .. commit_sha
           .. "/notes",
-        "POST",
-        GetBody()
-      )
-    )
-  end,
-
-  -- Users ---------------------------------------------------------------------
-
-  -- GET /user
-  get_user = proxy_handler(translate_user, function()
-    return base() .. "/user"
-  end),
-
-  -- PATCH /user
-  patch_user = function()
-    proxy_json(translate_user, fetch_json(base() .. "/user/settings", "PATCH", GetBody()))
-  end,
-
-  -- GET /users/{username}
-  get_users_username = proxy_handler(translate_user, function(u)
-    return base() .. "/users/" .. u
-  end),
-
-  -- GET /users
-  get_users = proxy_handler_paged(translate_users, function()
-    return append_page_params(base() .. "/admin/users", PAGES)
-  end),
-
-  -- GET /user/followers
-  get_user_followers = proxy_handler_paged(translate_users, function()
-    return append_page_params(base() .. "/user/followers", PAGES)
-  end),
-
-  -- GET /user/following
-  get_user_following = proxy_handler_paged(translate_users, function()
-    return append_page_params(base() .. "/user/following", PAGES)
-  end),
-
-  -- GET /user/following/{username} — 204 if following, 404 if not
-  get_user_is_following = function(username)
-    local ok, status = pcall(Fetch, base() .. "/user/following/" .. username, auth())
-    if ok and status == 204 then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(404, { message = "Not Following" })
-    else
-      respond_json(503, {})
-    end
-  end,
-
-  -- PUT /user/following/{username}
-  put_user_following = function(username)
-    set_204_or_error("PUT", base() .. "/user/following/" .. username)
-  end,
-
-  -- DELETE /user/following/{username}
-  delete_user_following = function(username)
-    set_204_or_error("DELETE", base() .. "/user/following/" .. username)
-  end,
-
-  -- GET /users/{username}/followers
-  get_users_followers = function(username)
-    proxy_users_follow_list(username, "followers")
-  end,
-
-  -- GET /users/{username}/following
-  get_users_following = function(username)
-    proxy_users_follow_list(username, "following")
-  end,
-
-  -- SSH Keys ------------------------------------------------------------------
-
-  -- GET /user/keys
-  get_user_keys = proxy_handler_paged(nil, function()
-    return append_page_params(base() .. "/user/keys", PAGES)
-  end),
-
-  -- POST /user/keys
-  post_user_keys = function()
-    proxy_json_created(nil, fetch_json(base() .. "/user/keys", "POST", GetBody()))
-  end,
-
-  -- GET /user/keys/{key_id}
-  get_user_key = proxy_handler(nil, function(id)
-    return base() .. "/user/keys/" .. id
-  end),
-
-  -- DELETE /user/keys/{key_id}
-  delete_user_key = function(key_id)
-    proxy_204({ 200 }, fetch_json(base() .. "/user/keys/" .. key_id, "DELETE"))
-  end,
-
-  -- GET /users/{username}/keys
-  get_users_keys = proxy_handler_paged(nil, function(u)
-    return append_page_params(base() .. "/users/" .. u .. "/keys", PAGES)
-  end),
-
-  -- GPG Keys ------------------------------------------------------------------
-
-  -- GET /user/gpg_keys
-  get_user_gpg_keys = proxy_handler_paged(nil, function()
-    return append_page_params(base() .. "/user/gpg_keys", PAGES)
-  end),
-
-  -- POST /user/gpg_keys
-  post_user_gpg_keys = function()
-    proxy_json_created(nil, fetch_json(base() .. "/user/gpg_keys", "POST", GetBody()))
-  end,
-
-  -- GET /user/gpg_keys/{gpg_key_id}
-  get_user_gpg_key = proxy_handler(nil, function(id)
-    return base() .. "/user/gpg_keys/" .. id
-  end),
-
-  -- DELETE /user/gpg_keys/{gpg_key_id}
-  delete_user_gpg_key = function(gpg_key_id)
-    proxy_204({ 200 }, fetch_json(base() .. "/user/gpg_keys/" .. gpg_key_id, "DELETE"))
-  end,
-
-  -- GET /users/{username}/gpg_keys
-  get_users_gpg_keys = proxy_handler_paged(nil, function(u)
-    return append_page_params(base() .. "/users/" .. u .. "/gpg_keys", PAGES)
-  end),
-
-  -- Emails --------------------------------------------------------------------
-
-  -- GET /user/emails
-  get_user_emails = proxy_handler(nil, function()
-    return base() .. "/user/emails"
-  end),
-
-  -- POST /user/emails
-  post_user_emails = function()
-    proxy_json_created(nil, fetch_json(base() .. "/user/emails", "POST", GetBody()))
-  end,
-
-  -- DELETE /user/emails
-  delete_user_emails = function()
-    local opts = auth() or {}
-    opts.method = "DELETE"
-    opts.body = GetBody()
-    opts.headers = opts.headers or {}
-    opts.headers["Content-Type"] = "application/json"
-    proxy_204({ 200 }, pcall(Fetch, base() .. "/user/emails", opts))
-  end,
-
-  -- GET /user/public_emails — Gitea has no separate endpoint; filter verified from /user/emails
-  get_user_public_emails = proxy_handler(filter_verified_emails, function()
-    return base() .. "/user/emails"
-  end),
-
-  -- Teams ---------------------------------------------------------------------
-  -- Gitea teams use numeric IDs, not slugs.  find_team_id lists all teams for
-  -- the org and matches by lowercased, slugified name.
-
-  -- GET /orgs/{org}/teams
-  get_org_teams = function(org)
-    proxy_json_paged(function(teams)
-      for i, t in ipairs(teams) do
-        teams[i] = translate_gitea_team(t)
-      end
-      return teams
-    end, PAGES, fetch_json(append_page_params(base() .. "/orgs/" .. org .. "/teams", PAGES)))
-  end,
-
-  -- POST /orgs/{org}/teams
-  post_org_teams = function(org)
-    local req = DecodeJson(GetBody() or "{}")
-    local body = {
-      name = req.name,
-      description = req.description,
-      permission = req.permission == "admin" and "owner" or (req.permission or "read"),
-      units = { "repo.code", "repo.issues", "repo.pulls", "repo.releases" },
-      includes_all_repositories = false,
-    }
-    proxy_json_created(
-      translate_gitea_team,
-      fetch_json(base() .. "/orgs/" .. org .. "/teams", "POST", EncodeJson(body))
-    )
-  end,
-
-  -- GET /orgs/{org}/teams/{team_slug}
-  get_org_team = function(org, slug)
-    local id = gitea_find_team_id(org, slug)
-    if not id then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    proxy_json(translate_gitea_team, fetch_json(base() .. "/teams/" .. id))
-  end,
-
-  -- PATCH /orgs/{org}/teams/{team_slug}
-  patch_org_team = function(org, slug)
-    local id = gitea_find_team_id(org, slug)
-    if not id then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    local req = DecodeJson(GetBody() or "{}")
-    local body = {}
-    if req.name then
-      body.name = req.name
-    end
-    if req.description then
-      body.description = req.description
-    end
-    if req.permission then
-      body.permission = req.permission == "admin" and "owner" or req.permission
-    end
-    proxy_json(
-      translate_gitea_team,
-      fetch_json(base() .. "/teams/" .. id, "PATCH", EncodeJson(body))
-    )
-  end,
-
-  -- DELETE /orgs/{org}/teams/{team_slug}
-  delete_org_team = function(org, slug)
-    local id = gitea_find_team_id(org, slug)
-    if not id then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    local opts = auth() or {}
-    opts.method = "DELETE"
-    proxy_204(nil, pcall(Fetch, base() .. "/teams/" .. id, opts))
-  end,
-
-  -- GET /orgs/{org}/teams/{team_slug}/members
-  get_org_team_members = function(org, slug)
-    local id = gitea_find_team_id(org, slug)
-    if not id then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    proxy_json_paged(
-      translate_users,
-      PAGES,
-      fetch_json(append_page_params(base() .. "/teams/" .. id .. "/members", PAGES))
-    )
-  end,
-
-  -- GET /orgs/{org}/teams/{team_slug}/memberships/{username}
-  get_org_team_membership = function(org, slug, username)
-    local id = gitea_find_team_id(org, slug)
-    if not id then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    local ok, status = pcall(Fetch, base() .. "/teams/" .. id .. "/members/" .. username, auth())
-    if ok and status == 204 then
-      respond_json(200, { url = "", role = "member", state = "active" })
-    elseif ok then
-      respond_json(404, { message = "Not Found" })
-    else
-      respond_json(503, {})
-    end
-  end,
-
-  -- PUT /orgs/{org}/teams/{team_slug}/memberships/{username}
-  put_org_team_membership = function(org, slug, username)
-    local id = gitea_find_team_id(org, slug)
-    if not id then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    local opts = auth() or {}
-    opts.method = "PUT"
-    local ok, status = pcall(Fetch, base() .. "/teams/" .. id .. "/members/" .. username, opts)
-    if ok and (status == 204 or status == 200) then
-      respond_json(200, { url = "", role = "member", state = "active" })
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
-  end,
-
-  -- DELETE /orgs/{org}/teams/{team_slug}/memberships/{username}
-  delete_org_team_membership = function(org, slug, username)
-    local id = gitea_find_team_id(org, slug)
-    if not id then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    local opts = auth() or {}
-    opts.method = "DELETE"
-    proxy_204(nil, pcall(Fetch, base() .. "/teams/" .. id .. "/members/" .. username, opts))
-  end,
-
-  -- GET /orgs/{org}/teams/{team_slug}/repos
-  get_org_team_repos = function(org, slug)
-    local id = gitea_find_team_id(org, slug)
-    if not id then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    proxy_json_paged(function(repos)
-      for i, r in ipairs(repos) do
-        repos[i] = translate_repo(r)
-      end
-      return repos
-    end, PAGES, fetch_json(append_page_params(base() .. "/teams/" .. id .. "/repos", PAGES)))
-  end,
-
-  -- GET /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
-  get_org_team_repo = function(org, slug, owner, repo_name)
-    local id = gitea_find_team_id(org, slug)
-    if not id then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    local ok, status, _, body =
-      fetch_json(base() .. "/teams/" .. id .. "/repos/" .. owner .. "/" .. repo_name)
-    if ok and (status == 204 or status == 200) then
-      local r = (status == 200 and DecodeJson(body)) or {}
-      respond_json(200, translate_repo(r))
-    elseif ok then
-      respond_json(404, { message = "Not Found" })
-    else
-      respond_json(503, {})
-    end
-  end,
-
-  -- PUT /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
-  put_org_team_repo = function(org, slug, owner, repo_name)
-    local id = gitea_find_team_id(org, slug)
-    if not id then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    local opts = auth() or {}
-    opts.method = "PUT"
-    proxy_204(
-      nil,
-      pcall(Fetch, base() .. "/teams/" .. id .. "/repos/" .. owner .. "/" .. repo_name, opts)
-    )
-  end,
-
-  -- DELETE /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
-  delete_org_team_repo = function(org, slug, owner, repo_name)
-    local id = gitea_find_team_id(org, slug)
-    if not id then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    local opts = auth() or {}
-    opts.method = "DELETE"
-    proxy_204(
-      nil,
-      pcall(Fetch, base() .. "/teams/" .. id .. "/repos/" .. owner .. "/" .. repo_name, opts)
-    )
-  end,
-
-  -- Issues -------------------------------------------------------------------
-
-  -- GET /repos/{owner}/{repo}/issues
-  get_repo_issues = proxy_handler_paged(translate_gitea_issues, function(o, r)
-    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/issues", PAGES)
-  end),
-
-  -- POST /repos/{owner}/{repo}/issues
-  post_repo_issues = proxy_handler_created(translate_gitea_issue, function(o, r)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues", "POST", GetBody()
-  end),
-
-  -- GET /repos/{owner}/{repo}/issues/{issue_number}
-  get_repo_issue = proxy_handler(translate_gitea_issue, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n
-  end),
-
-  -- PATCH /repos/{owner}/{repo}/issues/{issue_number}
-  patch_repo_issue = proxy_handler(translate_gitea_issue, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n, "PATCH", GetBody()
-  end),
-
-  -- GET /repos/{owner}/{repo}/issues/comments  (all issue comments in repo)
-  get_repo_issue_comments = proxy_handler_paged(translate_gitea_issue_comments, function(o, r)
-    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments", PAGES)
-  end),
-
-  -- GET /repos/{owner}/{repo}/issues/comments/{comment_id}
-  get_repo_issue_comment = proxy_handler(translate_gitea_issue_comment, function(o, r, id)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments/" .. id
-  end),
-
-  -- PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}
-  patch_repo_issue_comment = proxy_handler(translate_gitea_issue_comment, function(o, r, id)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments/" .. id, "PATCH", GetBody()
-  end),
-
-  -- DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}
-  delete_repo_issue_comment = function(owner, repo_name, comment_id)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/comments/" .. comment_id,
-        "DELETE"
-      )
-    )
-  end,
-
-  -- GET /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions
-  get_repo_issue_comment_reactions = proxy_handler_paged(
-    translate_gitea_reactions,
-    function(o, r, id)
-      return append_page_params(
-        base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments/" .. id .. "/reactions",
         PAGES
       )
-    end
-  ),
+    )
+  )
+end)
 
-  -- POST /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions
-  post_repo_issue_comment_reaction = proxy_handler_created(
-    translate_gitea_reaction,
-    function(o, r, id)
-      return base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments/" .. id .. "/reactions",
-        "POST",
-        GetBody()
-    end
-  ),
+-- POST /repos/{owner}/{repo}/commits/{commit_sha}/comments
+b:rest("post_commit_comment", function(owner, repo_name, commit_sha)
+  proxy_json_created(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/commits/" .. commit_sha .. "/notes",
+      "POST",
+      GetBody()
+    )
+  )
+end)
 
-  -- DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{reaction_id}
-  delete_repo_issue_comment_reaction = function(owner, repo_name, comment_id, reaction_id)
-    delete_gitea_reaction(
+-- Users ---------------------------------------------------------------------
+
+-- GET /user
+b:rest(
+  "get_user",
+  proxy_handler(translate_user, function()
+    return base() .. "/user"
+  end)
+)
+
+-- PATCH /user
+b:rest("patch_user", function()
+  proxy_json(translate_user, fetch_json(base() .. "/user/settings", "PATCH", GetBody()))
+end)
+
+-- GET /users/{username}
+b:rest(
+  "get_users_username",
+  proxy_handler(translate_user, function(u)
+    return base() .. "/users/" .. u
+  end)
+)
+
+-- GET /users
+b:rest(
+  "get_users",
+  proxy_handler_paged(translate_users, function()
+    return append_page_params(base() .. "/admin/users", PAGES)
+  end)
+)
+
+-- GET /user/followers
+b:rest(
+  "get_user_followers",
+  proxy_handler_paged(translate_users, function()
+    return append_page_params(base() .. "/user/followers", PAGES)
+  end)
+)
+
+-- GET /user/following
+b:rest(
+  "get_user_following",
+  proxy_handler_paged(translate_users, function()
+    return append_page_params(base() .. "/user/following", PAGES)
+  end)
+)
+
+-- GET /user/following/{username} — 204 if following, 404 if not
+b:rest("get_user_is_following", function(username)
+  local ok, status = pcall(Fetch, base() .. "/user/following/" .. username, auth())
+  if ok and status == 204 then
+    SetStatus(204, "No Content")
+  elseif ok then
+    respond_json(404, { message = "Not Following" })
+  else
+    respond_json(503, {})
+  end
+end)
+
+-- PUT /user/following/{username}
+b:rest("put_user_following", function(username)
+  set_204_or_error("PUT", base() .. "/user/following/" .. username)
+end)
+
+-- DELETE /user/following/{username}
+b:rest("delete_user_following", function(username)
+  set_204_or_error("DELETE", base() .. "/user/following/" .. username)
+end)
+
+-- GET /users/{username}/followers
+b:rest("get_users_followers", function(username)
+  proxy_users_follow_list(username, "followers")
+end)
+
+-- GET /users/{username}/following
+b:rest("get_users_following", function(username)
+  proxy_users_follow_list(username, "following")
+end)
+
+-- SSH Keys ------------------------------------------------------------------
+
+-- GET /user/keys
+b:rest(
+  "get_user_keys",
+  proxy_handler_paged(nil, function()
+    return append_page_params(base() .. "/user/keys", PAGES)
+  end)
+)
+
+-- POST /user/keys
+b:rest("post_user_keys", function()
+  proxy_json_created(nil, fetch_json(base() .. "/user/keys", "POST", GetBody()))
+end)
+
+-- GET /user/keys/{key_id}
+b:rest(
+  "get_user_key",
+  proxy_handler(nil, function(id)
+    return base() .. "/user/keys/" .. id
+  end)
+)
+
+-- DELETE /user/keys/{key_id}
+b:rest("delete_user_key", function(key_id)
+  proxy_204({ 200 }, fetch_json(base() .. "/user/keys/" .. key_id, "DELETE"))
+end)
+
+-- GET /users/{username}/keys
+b:rest(
+  "get_users_keys",
+  proxy_handler_paged(nil, function(u)
+    return append_page_params(base() .. "/users/" .. u .. "/keys", PAGES)
+  end)
+)
+
+-- GPG Keys ------------------------------------------------------------------
+
+-- GET /user/gpg_keys
+b:rest(
+  "get_user_gpg_keys",
+  proxy_handler_paged(nil, function()
+    return append_page_params(base() .. "/user/gpg_keys", PAGES)
+  end)
+)
+
+-- POST /user/gpg_keys
+b:rest("post_user_gpg_keys", function()
+  proxy_json_created(nil, fetch_json(base() .. "/user/gpg_keys", "POST", GetBody()))
+end)
+
+-- GET /user/gpg_keys/{gpg_key_id}
+b:rest(
+  "get_user_gpg_key",
+  proxy_handler(nil, function(id)
+    return base() .. "/user/gpg_keys/" .. id
+  end)
+)
+
+-- DELETE /user/gpg_keys/{gpg_key_id}
+b:rest("delete_user_gpg_key", function(gpg_key_id)
+  proxy_204({ 200 }, fetch_json(base() .. "/user/gpg_keys/" .. gpg_key_id, "DELETE"))
+end)
+
+-- GET /users/{username}/gpg_keys
+b:rest(
+  "get_users_gpg_keys",
+  proxy_handler_paged(nil, function(u)
+    return append_page_params(base() .. "/users/" .. u .. "/gpg_keys", PAGES)
+  end)
+)
+
+-- Emails --------------------------------------------------------------------
+
+-- GET /user/emails
+b:rest(
+  "get_user_emails",
+  proxy_handler(nil, function()
+    return base() .. "/user/emails"
+  end)
+)
+
+-- POST /user/emails
+b:rest("post_user_emails", function()
+  proxy_json_created(nil, fetch_json(base() .. "/user/emails", "POST", GetBody()))
+end)
+
+-- DELETE /user/emails
+b:rest("delete_user_emails", function()
+  local opts = auth() or {}
+  opts.method = "DELETE"
+  opts.body = GetBody()
+  opts.headers = opts.headers or {}
+  opts.headers["Content-Type"] = "application/json"
+  proxy_204({ 200 }, pcall(Fetch, base() .. "/user/emails", opts))
+end)
+
+-- GET /user/public_emails — Gitea has no separate endpoint; filter verified from /user/emails
+b:rest(
+  "get_user_public_emails",
+  proxy_handler(filter_verified_emails, function()
+    return base() .. "/user/emails"
+  end)
+)
+
+-- Teams ---------------------------------------------------------------------
+-- Gitea teams use numeric IDs, not slugs.  find_team_id lists all teams for
+-- the org and matches by lowercased, slugified name.
+
+-- GET /orgs/{org}/teams
+b:rest("get_org_teams", function(org)
+  proxy_json_paged(function(teams)
+    for i, t in ipairs(teams) do
+      teams[i] = translate_gitea_team(t)
+    end
+    return teams
+  end, PAGES, fetch_json(append_page_params(base() .. "/orgs/" .. org .. "/teams", PAGES)))
+end)
+
+-- POST /orgs/{org}/teams
+b:rest("post_org_teams", function(org)
+  local req = DecodeJson(GetBody() or "{}")
+  local body = {
+    name = req.name,
+    description = req.description,
+    permission = req.permission == "admin" and "owner" or (req.permission or "read"),
+    units = { "repo.code", "repo.issues", "repo.pulls", "repo.releases" },
+    includes_all_repositories = false,
+  }
+  proxy_json_created(
+    translate_gitea_team,
+    fetch_json(base() .. "/orgs/" .. org .. "/teams", "POST", EncodeJson(body))
+  )
+end)
+
+-- GET /orgs/{org}/teams/{team_slug}
+b:rest("get_org_team", function(org, slug)
+  local id = gitea_find_team_id(org, slug)
+  if not id then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  proxy_json(translate_gitea_team, fetch_json(base() .. "/teams/" .. id))
+end)
+
+-- PATCH /orgs/{org}/teams/{team_slug}
+b:rest("patch_org_team", function(org, slug)
+  local id = gitea_find_team_id(org, slug)
+  if not id then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  local req = DecodeJson(GetBody() or "{}")
+  local body = {}
+  if req.name then
+    body.name = req.name
+  end
+  if req.description then
+    body.description = req.description
+  end
+  if req.permission then
+    body.permission = req.permission == "admin" and "owner" or req.permission
+  end
+  proxy_json(translate_gitea_team, fetch_json(base() .. "/teams/" .. id, "PATCH", EncodeJson(body)))
+end)
+
+-- DELETE /orgs/{org}/teams/{team_slug}
+b:rest("delete_org_team", function(org, slug)
+  local id = gitea_find_team_id(org, slug)
+  if not id then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  local opts = auth() or {}
+  opts.method = "DELETE"
+  proxy_204(nil, pcall(Fetch, base() .. "/teams/" .. id, opts))
+end)
+
+-- GET /orgs/{org}/teams/{team_slug}/members
+b:rest("get_org_team_members", function(org, slug)
+  local id = gitea_find_team_id(org, slug)
+  if not id then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  proxy_json_paged(
+    translate_users,
+    PAGES,
+    fetch_json(append_page_params(base() .. "/teams/" .. id .. "/members", PAGES))
+  )
+end)
+
+-- GET /orgs/{org}/teams/{team_slug}/memberships/{username}
+b:rest("get_org_team_membership", function(org, slug, username)
+  local id = gitea_find_team_id(org, slug)
+  if not id then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  local ok, status = pcall(Fetch, base() .. "/teams/" .. id .. "/members/" .. username, auth())
+  if ok and status == 204 then
+    respond_json(200, { url = "", role = "member", state = "active" })
+  elseif ok then
+    respond_json(404, { message = "Not Found" })
+  else
+    respond_json(503, {})
+  end
+end)
+
+-- PUT /orgs/{org}/teams/{team_slug}/memberships/{username}
+b:rest("put_org_team_membership", function(org, slug, username)
+  local id = gitea_find_team_id(org, slug)
+  if not id then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  local opts = auth() or {}
+  opts.method = "PUT"
+  local ok, status = pcall(Fetch, base() .. "/teams/" .. id .. "/members/" .. username, opts)
+  if ok and (status == 204 or status == 200) then
+    respond_json(200, { url = "", role = "member", state = "active" })
+  elseif ok then
+    respond_json(status, {})
+  else
+    respond_json(503, {})
+  end
+end)
+
+-- DELETE /orgs/{org}/teams/{team_slug}/memberships/{username}
+b:rest("delete_org_team_membership", function(org, slug, username)
+  local id = gitea_find_team_id(org, slug)
+  if not id then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  local opts = auth() or {}
+  opts.method = "DELETE"
+  proxy_204(nil, pcall(Fetch, base() .. "/teams/" .. id .. "/members/" .. username, opts))
+end)
+
+-- GET /orgs/{org}/teams/{team_slug}/repos
+b:rest("get_org_team_repos", function(org, slug)
+  local id = gitea_find_team_id(org, slug)
+  if not id then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  proxy_json_paged(function(repos)
+    for i, r in ipairs(repos) do
+      repos[i] = translate_repo(r)
+    end
+    return repos
+  end, PAGES, fetch_json(append_page_params(base() .. "/teams/" .. id .. "/repos", PAGES)))
+end)
+
+-- GET /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
+b:rest("get_org_team_repo", function(org, slug, owner, repo_name)
+  local id = gitea_find_team_id(org, slug)
+  if not id then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  local ok, status, _, body =
+    fetch_json(base() .. "/teams/" .. id .. "/repos/" .. owner .. "/" .. repo_name)
+  if ok and (status == 204 or status == 200) then
+    local r = (status == 200 and DecodeJson(body)) or {}
+    respond_json(200, translate_repo(r))
+  elseif ok then
+    respond_json(404, { message = "Not Found" })
+  else
+    respond_json(503, {})
+  end
+end)
+
+-- PUT /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
+b:rest("put_org_team_repo", function(org, slug, owner, repo_name)
+  local id = gitea_find_team_id(org, slug)
+  if not id then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  local opts = auth() or {}
+  opts.method = "PUT"
+  proxy_204(
+    nil,
+    pcall(Fetch, base() .. "/teams/" .. id .. "/repos/" .. owner .. "/" .. repo_name, opts)
+  )
+end)
+
+-- DELETE /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
+b:rest("delete_org_team_repo", function(org, slug, owner, repo_name)
+  local id = gitea_find_team_id(org, slug)
+  if not id then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  local opts = auth() or {}
+  opts.method = "DELETE"
+  proxy_204(
+    nil,
+    pcall(Fetch, base() .. "/teams/" .. id .. "/repos/" .. owner .. "/" .. repo_name, opts)
+  )
+end)
+
+-- Issues -------------------------------------------------------------------
+
+-- GET /repos/{owner}/{repo}/issues
+b:rest(
+  "get_repo_issues",
+  proxy_handler_paged(translate_gitea_issues, function(o, r)
+    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/issues", PAGES)
+  end)
+)
+
+-- POST /repos/{owner}/{repo}/issues
+b:rest(
+  "post_repo_issues",
+  proxy_handler_created(translate_gitea_issue, function(o, r)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/issues", "POST", GetBody()
+  end)
+)
+
+-- GET /repos/{owner}/{repo}/issues/{issue_number}
+b:rest(
+  "get_repo_issue",
+  proxy_handler(translate_gitea_issue, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n
+  end)
+)
+
+-- PATCH /repos/{owner}/{repo}/issues/{issue_number}
+b:rest(
+  "patch_repo_issue",
+  proxy_handler(translate_gitea_issue, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n, "PATCH", GetBody()
+  end)
+)
+
+-- GET /repos/{owner}/{repo}/issues/comments  (all issue comments in repo)
+b:rest(
+  "get_repo_issue_comments",
+  proxy_handler_paged(translate_gitea_issue_comments, function(o, r)
+    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments", PAGES)
+  end)
+)
+
+-- GET /repos/{owner}/{repo}/issues/comments/{comment_id}
+b:rest(
+  "get_repo_issue_comment",
+  proxy_handler(translate_gitea_issue_comment, function(o, r, id)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments/" .. id
+  end)
+)
+
+-- PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}
+b:rest(
+  "patch_repo_issue_comment",
+  proxy_handler(translate_gitea_issue_comment, function(o, r, id)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments/" .. id, "PATCH", GetBody()
+  end)
+)
+
+-- DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}
+b:rest("delete_repo_issue_comment", function(owner, repo_name, comment_id)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/comments/" .. comment_id,
+      "DELETE"
+    )
+  )
+end)
+
+-- GET /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions
+b:rest(
+  "get_repo_issue_comment_reactions",
+  proxy_handler_paged(translate_gitea_reactions, function(o, r, id)
+    return append_page_params(
+      base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments/" .. id .. "/reactions",
+      PAGES
+    )
+  end)
+)
+
+-- POST /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions
+b:rest(
+  "post_repo_issue_comment_reaction",
+  proxy_handler_created(translate_gitea_reaction, function(o, r, id)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments/" .. id .. "/reactions",
+      "POST",
+      GetBody()
+  end)
+)
+
+-- DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{reaction_id}
+b:rest("delete_repo_issue_comment_reaction", function(owner, repo_name, comment_id, reaction_id)
+  delete_gitea_reaction(
+    base()
+      .. "/repos/"
+      .. owner
+      .. "/"
+      .. repo_name
+      .. "/issues/comments/"
+      .. comment_id
+      .. "/reactions",
+    reaction_id
+  )
+end)
+
+-- GET /repos/{owner}/{repo}/issues/events  (all issue events in repo)
+b:rest(
+  "get_repo_issue_events",
+  proxy_handler_paged(nil, function(o, r)
+    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/issues/events", PAGES)
+  end)
+)
+
+-- GET /repos/{owner}/{repo}/issues/events/{event_id}
+b:rest(
+  "get_repo_issue_event",
+  proxy_handler(nil, function(o, r, id)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/events/" .. id
+  end)
+)
+
+-- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
+b:rest(
+  "get_issue_comments",
+  proxy_handler_paged(translate_gitea_issue_comments, function(o, r, n)
+    return append_page_params(
+      base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/comments",
+      PAGES
+    )
+  end)
+)
+
+-- POST /repos/{owner}/{repo}/issues/{issue_number}/comments
+b:rest(
+  "post_issue_comment",
+  proxy_handler_created(translate_gitea_issue_comment, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/comments", "POST", GetBody()
+  end)
+)
+
+-- GET /repos/{owner}/{repo}/issues/{issue_number}/events
+b:rest(
+  "get_issue_events",
+  proxy_handler_paged(nil, function(o, r, n)
+    return append_page_params(
+      base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/events",
+      PAGES
+    )
+  end)
+)
+
+-- GET /repos/{owner}/{repo}/issues/{issue_number}/timeline
+b:rest(
+  "get_issue_timeline",
+  proxy_handler_paged(nil, function(o, r, n)
+    return append_page_params(
+      base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/timeline",
+      PAGES
+    )
+  end)
+)
+
+-- GET /repos/{owner}/{repo}/issues/{issue_number}/reactions
+b:rest(
+  "get_issue_reactions",
+  proxy_handler_paged(translate_gitea_reactions, function(o, r, n)
+    return append_page_params(
+      base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/reactions",
+      PAGES
+    )
+  end)
+)
+
+-- POST /repos/{owner}/{repo}/issues/{issue_number}/reactions
+b:rest(
+  "post_issue_reaction",
+  proxy_handler_created(translate_gitea_reaction, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/reactions",
+      "POST",
+      GetBody()
+  end)
+)
+
+-- DELETE /repos/{owner}/{repo}/issues/{issue_number}/reactions/{reaction_id}
+b:rest("delete_issue_reaction", function(owner, repo_name, issue_number, reaction_id)
+  delete_gitea_reaction(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/reactions",
+    reaction_id
+  )
+end)
+
+-- GET /repos/{owner}/{repo}/issues/{issue_number}/labels
+b:rest(
+  "get_issue_labels",
+  proxy_handler(translate_gitea_labels, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/labels"
+  end)
+)
+
+-- POST /repos/{owner}/{repo}/issues/{issue_number}/labels
+-- GitHub body: { labels: ["name1", ...] }; Gitea body: { labels: [id1, ...] }
+-- Look up each name to find its ID.
+b:rest("post_issue_labels", function(owner, repo_name, issue_number)
+  local req = DecodeJson(GetBody() or "{}")
+  local ids = {}
+  for _, name in ipairs(req.labels or {}) do
+    local id = gitea_find_label_id(owner, repo_name, name)
+    if id then
+      ids[#ids + 1] = id
+    end
+  end
+  proxy_json(
+    translate_gitea_labels,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/labels",
+      "POST",
+      EncodeJson({ labels = ids })
+    )
+  )
+end)
+
+-- PUT /repos/{owner}/{repo}/issues/{issue_number}/labels  (replace all)
+b:rest("put_issue_labels", function(owner, repo_name, issue_number)
+  local req = DecodeJson(GetBody() or "{}")
+  local ids = {}
+  for _, name in ipairs(req.labels or {}) do
+    local id = gitea_find_label_id(owner, repo_name, name)
+    if id then
+      ids[#ids + 1] = id
+    end
+  end
+  proxy_json(
+    translate_gitea_labels,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/labels",
+      "PUT",
+      EncodeJson({ labels = ids })
+    )
+  )
+end)
+
+-- DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels  (remove all)
+b:rest("delete_issue_labels", function(owner, repo_name, issue_number)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/labels",
+      "DELETE"
+    )
+  )
+end)
+
+-- DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}
+-- GitHub uses the label name; Gitea uses the numeric label ID.
+b:rest("delete_issue_label", function(owner, repo_name, issue_number, label_name)
+  local id = gitea_find_label_id(owner, repo_name, label_name)
+  if not id then
+    respond_json(404, { message = "Label not found" })
+    return
+  end
+  proxy_204(
+    { 200 },
+    fetch_json(
       base()
         .. "/repos/"
         .. owner
         .. "/"
         .. repo_name
-        .. "/issues/comments/"
-        .. comment_id
-        .. "/reactions",
-      reaction_id
+        .. "/issues/"
+        .. issue_number
+        .. "/labels/"
+        .. id,
+      "DELETE"
     )
-  end,
+  )
+end)
 
-  -- GET /repos/{owner}/{repo}/issues/events  (all issue events in repo)
-  get_repo_issue_events = proxy_handler_paged(nil, function(o, r)
-    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/issues/events", PAGES)
-  end),
-
-  -- GET /repos/{owner}/{repo}/issues/events/{event_id}
-  get_repo_issue_event = proxy_handler(nil, function(o, r, id)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/events/" .. id
-  end),
-
-  -- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
-  get_issue_comments = proxy_handler_paged(translate_gitea_issue_comments, function(o, r, n)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/comments",
-      PAGES
+-- PUT /repos/{owner}/{repo}/issues/{issue_number}/lock
+b:rest("put_issue_lock", function(owner, repo_name, issue_number)
+  local opts = auth() or {}
+  opts.method = "PUT"
+  opts.body = GetBody()
+  opts.headers = opts.headers or {}
+  opts.headers["Content-Type"] = "application/json"
+  proxy_204(
+    nil,
+    pcall(
+      Fetch,
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/lock",
+      opts
     )
-  end),
+  )
+end)
 
-  -- POST /repos/{owner}/{repo}/issues/{issue_number}/comments
-  post_issue_comment = proxy_handler_created(translate_gitea_issue_comment, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/comments", "POST", GetBody()
-  end),
+-- DELETE /repos/{owner}/{repo}/issues/{issue_number}/lock
+b:rest("delete_issue_lock", function(owner, repo_name, issue_number)
+  set_204_or_error(
+    "DELETE",
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/lock"
+  )
+end)
 
-  -- GET /repos/{owner}/{repo}/issues/{issue_number}/events
-  get_issue_events = proxy_handler_paged(nil, function(o, r, n)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/events",
-      PAGES
-    )
-  end),
-
-  -- GET /repos/{owner}/{repo}/issues/{issue_number}/timeline
-  get_issue_timeline = proxy_handler_paged(nil, function(o, r, n)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/timeline",
-      PAGES
-    )
-  end),
-
-  -- GET /repos/{owner}/{repo}/issues/{issue_number}/reactions
-  get_issue_reactions = proxy_handler_paged(translate_gitea_reactions, function(o, r, n)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/reactions",
-      PAGES
-    )
-  end),
-
-  -- POST /repos/{owner}/{repo}/issues/{issue_number}/reactions
-  post_issue_reaction = proxy_handler_created(translate_gitea_reaction, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/reactions",
-      "POST",
-      GetBody()
-  end),
-
-  -- DELETE /repos/{owner}/{repo}/issues/{issue_number}/reactions/{reaction_id}
-  delete_issue_reaction = function(owner, repo_name, issue_number, reaction_id)
-    delete_gitea_reaction(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/reactions",
-      reaction_id
-    )
-  end,
-
-  -- GET /repos/{owner}/{repo}/issues/{issue_number}/labels
-  get_issue_labels = proxy_handler(translate_gitea_labels, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/labels"
-  end),
-
-  -- POST /repos/{owner}/{repo}/issues/{issue_number}/labels
-  -- GitHub body: { labels: ["name1", ...] }; Gitea body: { labels: [id1, ...] }
-  -- Look up each name to find its ID.
-  post_issue_labels = function(owner, repo_name, issue_number)
-    local req = DecodeJson(GetBody() or "{}")
-    local ids = {}
-    for _, name in ipairs(req.labels or {}) do
-      local id = gitea_find_label_id(owner, repo_name, name)
-      if id then
-        ids[#ids + 1] = id
-      end
-    end
-    proxy_json(
-      translate_gitea_labels,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/labels",
-        "POST",
-        EncodeJson({ labels = ids })
-      )
-    )
-  end,
-
-  -- PUT /repos/{owner}/{repo}/issues/{issue_number}/labels  (replace all)
-  put_issue_labels = function(owner, repo_name, issue_number)
-    local req = DecodeJson(GetBody() or "{}")
-    local ids = {}
-    for _, name in ipairs(req.labels or {}) do
-      local id = gitea_find_label_id(owner, repo_name, name)
-      if id then
-        ids[#ids + 1] = id
-      end
-    end
-    proxy_json(
-      translate_gitea_labels,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/labels",
-        "PUT",
-        EncodeJson({ labels = ids })
-      )
-    )
-  end,
-
-  -- DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels  (remove all)
-  delete_issue_labels = function(owner, repo_name, issue_number)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/labels",
-        "DELETE"
-      )
-    )
-  end,
-
-  -- DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}
-  -- GitHub uses the label name; Gitea uses the numeric label ID.
-  delete_issue_label = function(owner, repo_name, issue_number, label_name)
-    local id = gitea_find_label_id(owner, repo_name, label_name)
-    if not id then
-      respond_json(404, { message = "Label not found" })
-      return
-    end
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base()
-          .. "/repos/"
-          .. owner
-          .. "/"
-          .. repo_name
-          .. "/issues/"
-          .. issue_number
-          .. "/labels/"
-          .. id,
-        "DELETE"
-      )
-    )
-  end,
-
-  -- PUT /repos/{owner}/{repo}/issues/{issue_number}/lock
-  put_issue_lock = function(owner, repo_name, issue_number)
-    local opts = auth() or {}
-    opts.method = "PUT"
-    opts.body = GetBody()
-    opts.headers = opts.headers or {}
-    opts.headers["Content-Type"] = "application/json"
-    proxy_204(
-      nil,
-      pcall(
-        Fetch,
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/lock",
-        opts
-      )
-    )
-  end,
-
-  -- DELETE /repos/{owner}/{repo}/issues/{issue_number}/lock
-  delete_issue_lock = function(owner, repo_name, issue_number)
-    set_204_or_error(
-      "DELETE",
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/lock"
-    )
-  end,
-
-  -- POST /repos/{owner}/{repo}/issues/{issue_number}/assignees
-  post_issue_assignees = proxy_handler(translate_gitea_issue, function(o, r, n)
+-- POST /repos/{owner}/{repo}/issues/{issue_number}/assignees
+b:rest(
+  "post_issue_assignees",
+  proxy_handler(translate_gitea_issue, function(o, r, n)
     return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/assignees",
       "POST",
       GetBody()
-  end),
+  end)
+)
 
-  -- DELETE /repos/{owner}/{repo}/issues/{issue_number}/assignees
-  delete_issue_assignees = proxy_handler(translate_gitea_issue, function(o, r, n)
+-- DELETE /repos/{owner}/{repo}/issues/{issue_number}/assignees
+b:rest(
+  "delete_issue_assignees",
+  proxy_handler(translate_gitea_issue, function(o, r, n)
     return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/assignees",
       "DELETE",
       GetBody()
-  end),
+  end)
+)
 
-  -- GET /repos/{owner}/{repo}/issues/{issue_number}/assignees/{assignee}
-  -- Gitea has no direct endpoint; check the issue's assignees list.
-  get_issue_assignee = function(owner, repo_name, issue_number, assignee)
-    local ok, status, _, body =
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number)
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local issue = DecodeJson(body) or {}
-    for _, u in ipairs(issue.assignees or {}) do
-      if u.login == assignee then
-        SetStatus(204, "No Content")
-        return
-      end
-    end
-    respond_json(404, { message = "Not an assignee" })
-  end,
-
-  -- Assignees -----------------------------------------------------------------
-
-  -- GET /repos/{owner}/{repo}/assignees  (users eligible for assignment)
-  get_repo_assignees = proxy_handler_paged(translate_users, function(o, r)
-    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/assignees", PAGES)
-  end),
-
-  -- Labels (repo-level) -------------------------------------------------------
-
-  -- GET /repos/{owner}/{repo}/labels
-  get_repo_labels = proxy_handler_paged(translate_gitea_labels, function(o, r)
-    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/labels", PAGES)
-  end),
-
-  -- POST /repos/{owner}/{repo}/labels
-  post_repo_labels = proxy_handler_created(translate_gitea_label, function(o, r)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/labels", "POST", GetBody()
-  end),
-
-  -- GET /repos/{owner}/{repo}/labels/{name}
-  -- GitHub uses label name in the URL; Gitea uses numeric ID.
-  get_repo_label = function(owner, repo_name, label_name)
-    local id = gitea_find_label_id(owner, repo_name, label_name)
-    if not id then
-      respond_json(404, { message = "Label not found" })
-      return
-    end
-    proxy_json(
-      translate_gitea_label,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/labels/" .. id)
-    )
-  end,
-
-  -- PATCH /repos/{owner}/{repo}/labels/{name}
-  patch_repo_label = function(owner, repo_name, label_name)
-    local id = gitea_find_label_id(owner, repo_name, label_name)
-    if not id then
-      respond_json(404, { message = "Label not found" })
-      return
-    end
-    proxy_json(
-      translate_gitea_label,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/labels/" .. id,
-        "PATCH",
-        GetBody()
-      )
-    )
-  end,
-
-  -- DELETE /repos/{owner}/{repo}/labels/{name}
-  delete_repo_label = function(owner, repo_name, label_name)
-    local id = gitea_find_label_id(owner, repo_name, label_name)
-    if not id then
-      respond_json(404, { message = "Label not found" })
-      return
-    end
-    proxy_204(
-      { 200 },
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/labels/" .. id, "DELETE")
-    )
-  end,
-
-  -- Milestones ----------------------------------------------------------------
-
-  -- GET /repos/{owner}/{repo}/milestones
-  get_repo_milestones = proxy_handler_paged(translate_gitea_milestones, function(o, r)
-    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/milestones", PAGES)
-  end),
-
-  -- POST /repos/{owner}/{repo}/milestones
-  post_repo_milestones = proxy_handler_created(translate_gitea_milestone, function(o, r)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/milestones", "POST", GetBody()
-  end),
-
-  -- GET /repos/{owner}/{repo}/milestones/{milestone_number}
-  get_repo_milestone = proxy_handler(translate_gitea_milestone, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/milestones/" .. n
-  end),
-
-  -- PATCH /repos/{owner}/{repo}/milestones/{milestone_number}
-  patch_repo_milestone = proxy_handler(translate_gitea_milestone, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/milestones/" .. n, "PATCH", GetBody()
-  end),
-
-  -- DELETE /repos/{owner}/{repo}/milestones/{milestone_number}
-  delete_repo_milestone = function(owner, repo_name, milestone_number)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/milestones/" .. milestone_number,
-        "DELETE"
-      )
-    )
-  end,
-
-  -- GET /repos/{owner}/{repo}/milestones/{milestone_number}/labels
-  get_repo_milestone_labels = proxy_handler(translate_gitea_labels, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/milestones/" .. n .. "/labels"
-  end),
-
-  -- Legacy team-by-id endpoints (GitHub /teams/{team_id} → Gitea /teams/{id}).
-  -- No slug lookup needed — the caller already provides the numeric ID.
-
-  -- GET /user/teams
-  get_user_teams = function()
-    proxy_json_paged(function(teams)
-      for i, t in ipairs(teams) do
-        teams[i] = translate_gitea_team(t)
-      end
-      return teams
-    end, PAGES, fetch_json(append_page_params(base() .. "/user/teams", PAGES)))
-  end,
-
-  -- GET /teams/{team_id}
-  get_team = function(team_id)
-    proxy_json(translate_gitea_team, fetch_json(base() .. "/teams/" .. team_id))
-  end,
-
-  -- PATCH /teams/{team_id}
-  patch_team = function(team_id)
-    local req = DecodeJson(GetBody() or "{}")
-    local body = {}
-    if req.name then
-      body.name = req.name
-    end
-    if req.description then
-      body.description = req.description
-    end
-    if req.permission then
-      body.permission = req.permission == "admin" and "owner" or req.permission
-    end
-    proxy_json(
-      translate_gitea_team,
-      fetch_json(base() .. "/teams/" .. team_id, "PATCH", EncodeJson(body))
-    )
-  end,
-
-  -- DELETE /teams/{team_id}
-  delete_team = function(team_id)
-    set_204_or_error("DELETE", base() .. "/teams/" .. team_id)
-  end,
-
-  -- GET /teams/{team_id}/members
-  get_team_members = function(team_id)
-    proxy_json_paged(
-      translate_users,
-      PAGES,
-      fetch_json(append_page_params(base() .. "/teams/" .. team_id .. "/members", PAGES))
-    )
-  end,
-
-  -- GET /teams/{team_id}/members/{username} — deprecated legacy endpoint
-  get_team_member = function(team_id, username)
-    local ok, status =
-      pcall(Fetch, base() .. "/teams/" .. team_id .. "/members/" .. username, auth())
-    if ok and status == 204 then
+-- GET /repos/{owner}/{repo}/issues/{issue_number}/assignees/{assignee}
+-- Gitea has no direct endpoint; check the issue's assignees list.
+b:rest("get_issue_assignee", function(owner, repo_name, issue_number, assignee)
+  local ok, status, _, body =
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local issue = DecodeJson(body) or {}
+  for _, u in ipairs(issue.assignees or {}) do
+    if u.login == assignee then
       SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(404, { message = "Not Found" })
-    else
-      respond_json(503, {})
+      return
     end
-  end,
+  end
+  respond_json(404, { message = "Not an assignee" })
+end)
 
-  -- PUT /teams/{team_id}/members/{username} — deprecated legacy endpoint
-  put_team_member = function(team_id, username)
-    local opts = auth() or {}
-    opts.method = "PUT"
-    proxy_204(
-      { 200 },
-      pcall(Fetch, base() .. "/teams/" .. team_id .. "/members/" .. username, opts)
+-- Assignees -----------------------------------------------------------------
+
+-- GET /repos/{owner}/{repo}/assignees  (users eligible for assignment)
+b:rest(
+  "get_repo_assignees",
+  proxy_handler_paged(translate_users, function(o, r)
+    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/assignees", PAGES)
+  end)
+)
+
+-- Labels (repo-level) -------------------------------------------------------
+
+-- GET /repos/{owner}/{repo}/labels
+b:rest(
+  "get_repo_labels",
+  proxy_handler_paged(translate_gitea_labels, function(o, r)
+    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/labels", PAGES)
+  end)
+)
+
+-- POST /repos/{owner}/{repo}/labels
+b:rest(
+  "post_repo_labels",
+  proxy_handler_created(translate_gitea_label, function(o, r)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/labels", "POST", GetBody()
+  end)
+)
+
+-- GET /repos/{owner}/{repo}/labels/{name}
+-- GitHub uses label name in the URL; Gitea uses numeric ID.
+b:rest("get_repo_label", function(owner, repo_name, label_name)
+  local id = gitea_find_label_id(owner, repo_name, label_name)
+  if not id then
+    respond_json(404, { message = "Label not found" })
+    return
+  end
+  proxy_json(
+    translate_gitea_label,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/labels/" .. id)
+  )
+end)
+
+-- PATCH /repos/{owner}/{repo}/labels/{name}
+b:rest("patch_repo_label", function(owner, repo_name, label_name)
+  local id = gitea_find_label_id(owner, repo_name, label_name)
+  if not id then
+    respond_json(404, { message = "Label not found" })
+    return
+  end
+  proxy_json(
+    translate_gitea_label,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/labels/" .. id,
+      "PATCH",
+      GetBody()
     )
-  end,
+  )
+end)
 
-  -- DELETE /teams/{team_id}/members/{username} — deprecated legacy endpoint
-  delete_team_member = function(team_id, username)
-    set_204_or_error("DELETE", base() .. "/teams/" .. team_id .. "/members/" .. username)
-  end,
+-- DELETE /repos/{owner}/{repo}/labels/{name}
+b:rest("delete_repo_label", function(owner, repo_name, label_name)
+  local id = gitea_find_label_id(owner, repo_name, label_name)
+  if not id then
+    respond_json(404, { message = "Label not found" })
+    return
+  end
+  proxy_204(
+    { 200 },
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/labels/" .. id, "DELETE")
+  )
+end)
 
-  -- GET /teams/{team_id}/memberships/{username}
-  get_team_membership = function(team_id, username)
-    local ok, status =
-      pcall(Fetch, base() .. "/teams/" .. team_id .. "/members/" .. username, auth())
-    if ok and status == 204 then
-      respond_json(200, { url = "", role = "member", state = "active" })
-    elseif ok then
-      respond_json(404, { message = "Not Found" })
-    else
-      respond_json(503, {})
-    end
-  end,
+-- Milestones ----------------------------------------------------------------
 
-  -- PUT /teams/{team_id}/memberships/{username}
-  put_team_membership = function(team_id, username)
-    local opts = auth() or {}
-    opts.method = "PUT"
-    local ok, status = pcall(Fetch, base() .. "/teams/" .. team_id .. "/members/" .. username, opts)
-    if ok and (status == 204 or status == 200) then
-      respond_json(200, { url = "", role = "member", state = "active" })
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
-  end,
+-- GET /repos/{owner}/{repo}/milestones
+b:rest(
+  "get_repo_milestones",
+  proxy_handler_paged(translate_gitea_milestones, function(o, r)
+    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/milestones", PAGES)
+  end)
+)
 
-  -- DELETE /teams/{team_id}/memberships/{username}
-  delete_team_membership = function(team_id, username)
-    set_204_or_error("DELETE", base() .. "/teams/" .. team_id .. "/members/" .. username)
-  end,
+-- POST /repos/{owner}/{repo}/milestones
+b:rest(
+  "post_repo_milestones",
+  proxy_handler_created(translate_gitea_milestone, function(o, r)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/milestones", "POST", GetBody()
+  end)
+)
 
-  -- GET /teams/{team_id}/repos
-  get_team_repos = function(team_id)
-    proxy_json_paged(function(repos)
-      for i, r in ipairs(repos) do
-        repos[i] = translate_repo(r)
-      end
-      return repos
-    end, PAGES, fetch_json(
-      append_page_params(base() .. "/teams/" .. team_id .. "/repos", PAGES)
-    ))
-  end,
+-- GET /repos/{owner}/{repo}/milestones/{milestone_number}
+b:rest(
+  "get_repo_milestone",
+  proxy_handler(translate_gitea_milestone, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/milestones/" .. n
+  end)
+)
 
-  -- GET /teams/{team_id}/repos/{owner}/{repo}
-  get_team_repo = function(team_id, owner, repo_name)
-    local ok, status, _, body =
-      fetch_json(base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name)
-    if ok and (status == 204 or status == 200) then
-      local r = (status == 200 and DecodeJson(body)) or {}
-      respond_json(200, translate_repo(r))
-    elseif ok then
-      respond_json(404, { message = "Not Found" })
-    else
-      respond_json(503, {})
-    end
-  end,
+-- PATCH /repos/{owner}/{repo}/milestones/{milestone_number}
+b:rest(
+  "patch_repo_milestone",
+  proxy_handler(translate_gitea_milestone, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/milestones/" .. n, "PATCH", GetBody()
+  end)
+)
 
-  -- PUT /teams/{team_id}/repos/{owner}/{repo}
-  put_team_repo = function(team_id, owner, repo_name)
-    local opts = auth() or {}
-    opts.method = "PUT"
-    proxy_204(
-      nil,
-      pcall(Fetch, base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name, opts)
+-- DELETE /repos/{owner}/{repo}/milestones/{milestone_number}
+b:rest("delete_repo_milestone", function(owner, repo_name, milestone_number)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/milestones/" .. milestone_number,
+      "DELETE"
     )
-  end,
+  )
+end)
 
-  -- DELETE /teams/{team_id}/repos/{owner}/{repo}
-  delete_team_repo = function(team_id, owner, repo_name)
-    set_204_or_error(
-      "DELETE",
-      base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name
-    )
-  end,
+-- GET /repos/{owner}/{repo}/milestones/{milestone_number}/labels
+b:rest(
+  "get_repo_milestone_labels",
+  proxy_handler(translate_gitea_labels, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/milestones/" .. n .. "/labels"
+  end)
+)
 
-  -- Pull Requests ---------------------------------------------------------------
+-- Legacy team-by-id endpoints (GitHub /teams/{team_id} → Gitea /teams/{id}).
+-- No slug lookup needed — the caller already provides the numeric ID.
 
-  -- GET /repos/{owner}/{repo}/pulls
-  get_repo_pulls = proxy_handler_paged(translate_gitea_pulls, function(o, r)
+-- GET /user/teams
+b:rest("get_user_teams", function()
+  proxy_json_paged(function(teams)
+    for i, t in ipairs(teams) do
+      teams[i] = translate_gitea_team(t)
+    end
+    return teams
+  end, PAGES, fetch_json(append_page_params(base() .. "/user/teams", PAGES)))
+end)
+
+-- GET /teams/{team_id}
+b:rest("get_team", function(team_id)
+  proxy_json(translate_gitea_team, fetch_json(base() .. "/teams/" .. team_id))
+end)
+
+-- PATCH /teams/{team_id}
+b:rest("patch_team", function(team_id)
+  local req = DecodeJson(GetBody() or "{}")
+  local body = {}
+  if req.name then
+    body.name = req.name
+  end
+  if req.description then
+    body.description = req.description
+  end
+  if req.permission then
+    body.permission = req.permission == "admin" and "owner" or req.permission
+  end
+  proxy_json(
+    translate_gitea_team,
+    fetch_json(base() .. "/teams/" .. team_id, "PATCH", EncodeJson(body))
+  )
+end)
+
+-- DELETE /teams/{team_id}
+b:rest("delete_team", function(team_id)
+  set_204_or_error("DELETE", base() .. "/teams/" .. team_id)
+end)
+
+-- GET /teams/{team_id}/members
+b:rest("get_team_members", function(team_id)
+  proxy_json_paged(
+    translate_users,
+    PAGES,
+    fetch_json(append_page_params(base() .. "/teams/" .. team_id .. "/members", PAGES))
+  )
+end)
+
+-- GET /teams/{team_id}/members/{username} — deprecated legacy endpoint
+b:rest("get_team_member", function(team_id, username)
+  local ok, status = pcall(Fetch, base() .. "/teams/" .. team_id .. "/members/" .. username, auth())
+  if ok and status == 204 then
+    SetStatus(204, "No Content")
+  elseif ok then
+    respond_json(404, { message = "Not Found" })
+  else
+    respond_json(503, {})
+  end
+end)
+
+-- PUT /teams/{team_id}/members/{username} — deprecated legacy endpoint
+b:rest("put_team_member", function(team_id, username)
+  local opts = auth() or {}
+  opts.method = "PUT"
+  proxy_204({ 200 }, pcall(Fetch, base() .. "/teams/" .. team_id .. "/members/" .. username, opts))
+end)
+
+-- DELETE /teams/{team_id}/members/{username} — deprecated legacy endpoint
+b:rest("delete_team_member", function(team_id, username)
+  set_204_or_error("DELETE", base() .. "/teams/" .. team_id .. "/members/" .. username)
+end)
+
+-- GET /teams/{team_id}/memberships/{username}
+b:rest("get_team_membership", function(team_id, username)
+  local ok, status = pcall(Fetch, base() .. "/teams/" .. team_id .. "/members/" .. username, auth())
+  if ok and status == 204 then
+    respond_json(200, { url = "", role = "member", state = "active" })
+  elseif ok then
+    respond_json(404, { message = "Not Found" })
+  else
+    respond_json(503, {})
+  end
+end)
+
+-- PUT /teams/{team_id}/memberships/{username}
+b:rest("put_team_membership", function(team_id, username)
+  local opts = auth() or {}
+  opts.method = "PUT"
+  local ok, status = pcall(Fetch, base() .. "/teams/" .. team_id .. "/members/" .. username, opts)
+  if ok and (status == 204 or status == 200) then
+    respond_json(200, { url = "", role = "member", state = "active" })
+  elseif ok then
+    respond_json(status, {})
+  else
+    respond_json(503, {})
+  end
+end)
+
+-- DELETE /teams/{team_id}/memberships/{username}
+b:rest("delete_team_membership", function(team_id, username)
+  set_204_or_error("DELETE", base() .. "/teams/" .. team_id .. "/members/" .. username)
+end)
+
+-- GET /teams/{team_id}/repos
+b:rest("get_team_repos", function(team_id)
+  proxy_json_paged(function(repos)
+    for i, r in ipairs(repos) do
+      repos[i] = translate_repo(r)
+    end
+    return repos
+  end, PAGES, fetch_json(append_page_params(base() .. "/teams/" .. team_id .. "/repos", PAGES)))
+end)
+
+-- GET /teams/{team_id}/repos/{owner}/{repo}
+b:rest("get_team_repo", function(team_id, owner, repo_name)
+  local ok, status, _, body =
+    fetch_json(base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name)
+  if ok and (status == 204 or status == 200) then
+    local r = (status == 200 and DecodeJson(body)) or {}
+    respond_json(200, translate_repo(r))
+  elseif ok then
+    respond_json(404, { message = "Not Found" })
+  else
+    respond_json(503, {})
+  end
+end)
+
+-- PUT /teams/{team_id}/repos/{owner}/{repo}
+b:rest("put_team_repo", function(team_id, owner, repo_name)
+  local opts = auth() or {}
+  opts.method = "PUT"
+  proxy_204(
+    nil,
+    pcall(Fetch, base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name, opts)
+  )
+end)
+
+-- DELETE /teams/{team_id}/repos/{owner}/{repo}
+b:rest("delete_team_repo", function(team_id, owner, repo_name)
+  set_204_or_error(
+    "DELETE",
+    base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name
+  )
+end)
+
+-- Pull Requests ---------------------------------------------------------------
+
+-- GET /repos/{owner}/{repo}/pulls
+b:rest(
+  "get_repo_pulls",
+  proxy_handler_paged(translate_gitea_pulls, function(o, r)
     return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/pulls", PAGES)
-  end),
+  end)
+)
 
-  -- POST /repos/{owner}/{repo}/pulls
-  post_repo_pulls = proxy_handler_created(translate_gitea_pull, function(o, r)
+-- POST /repos/{owner}/{repo}/pulls
+b:rest(
+  "post_repo_pulls",
+  proxy_handler_created(translate_gitea_pull, function(o, r)
     return base() .. "/repos/" .. o .. "/" .. r .. "/pulls", "POST", GetBody()
-  end),
+  end)
+)
 
-  -- GET /repos/{owner}/{repo}/pulls/{pull_number}
-  get_repo_pull = proxy_handler(translate_gitea_pull, function(o, r, n)
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}
+b:rest(
+  "get_repo_pull",
+  proxy_handler(translate_gitea_pull, function(o, r, n)
     return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n
-  end),
+  end)
+)
 
-  -- PATCH /repos/{owner}/{repo}/pulls/{pull_number}
-  patch_repo_pull = proxy_handler(translate_gitea_pull, function(o, r, n)
+-- PATCH /repos/{owner}/{repo}/pulls/{pull_number}
+b:rest(
+  "patch_repo_pull",
+  proxy_handler(translate_gitea_pull, function(o, r, n)
     return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n, "PATCH", GetBody()
-  end),
+  end)
+)
 
-  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/commits
-  get_pull_commits = proxy_handler_paged(nil, function(o, r, n)
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/commits
+b:rest(
+  "get_pull_commits",
+  proxy_handler_paged(nil, function(o, r, n)
     return append_page_params(
       base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/commits",
       PAGES
     )
-  end),
+  end)
+)
 
-  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/files
-  get_pull_files = proxy_handler_paged(nil, function(o, r, n)
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/files
+b:rest(
+  "get_pull_files",
+  proxy_handler_paged(nil, function(o, r, n)
     return append_page_params(
       base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/files",
       PAGES
     )
-  end),
+  end)
+)
 
-  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/merge
-  -- Gitea returns 204 if merged, 404 if not — same semantics as GitHub.
-  get_pull_merge = function(owner, repo_name, pull_number)
-    local ok, status = fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/merge"
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/merge
+-- Gitea returns 204 if merged, 404 if not — same semantics as GitHub.
+b:rest("get_pull_merge", function(owner, repo_name, pull_number)
+  local ok, status = fetch_json(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/merge"
+  )
+  if ok and status == 204 then
+    SetStatus(204, "No Content")
+  elseif ok and status == 404 then
+    respond_json(404, { message = "Pull Request is not merged" })
+  elseif ok then
+    respond_json(status, {})
+  else
+    respond_json(503, {})
+  end
+end)
+
+-- PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge
+-- GitHub uses PUT; Gitea uses POST.
+b:rest("put_pull_merge", function(owner, repo_name, pull_number)
+  proxy_204(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/merge",
+      "POST",
+      GetBody()
     )
-    if ok and status == 204 then
-      SetStatus(204, "No Content")
-    elseif ok and status == 404 then
-      respond_json(404, { message = "Pull Request is not merged" })
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
-  end,
+  )
+end)
 
-  -- PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge
-  -- GitHub uses PUT; Gitea uses POST.
-  put_pull_merge = function(owner, repo_name, pull_number)
-    proxy_204(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/merge",
-        "POST",
-        GetBody()
-      )
-    )
-  end,
-
-  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
-  get_pull_requested_reviewers = proxy_handler(nil, function(o, r, n)
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
+b:rest(
+  "get_pull_requested_reviewers",
+  proxy_handler(nil, function(o, r, n)
     return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/requested_reviewers"
-  end),
+  end)
+)
 
-  -- POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
-  post_pull_requested_reviewers = proxy_handler(nil, function(o, r, n)
+-- POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
+b:rest(
+  "post_pull_requested_reviewers",
+  proxy_handler(nil, function(o, r, n)
     return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/requested_reviewers",
       "POST",
       GetBody()
-  end),
+  end)
+)
 
-  -- DELETE /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
-  delete_pull_requested_reviewers = function(owner, repo_name, pull_number)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base()
-          .. "/repos/"
-          .. owner
-          .. "/"
-          .. repo_name
-          .. "/pulls/"
-          .. pull_number
-          .. "/requested_reviewers",
-        "DELETE",
-        GetBody()
-      )
+-- DELETE /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
+b:rest("delete_pull_requested_reviewers", function(owner, repo_name, pull_number)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base()
+        .. "/repos/"
+        .. owner
+        .. "/"
+        .. repo_name
+        .. "/pulls/"
+        .. pull_number
+        .. "/requested_reviewers",
+      "DELETE",
+      GetBody()
     )
-  end,
+  )
+end)
 
-  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews
-  get_pull_reviews = proxy_handler_paged(translate_gitea_reviews, function(o, r, n)
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews
+b:rest(
+  "get_pull_reviews",
+  proxy_handler_paged(translate_gitea_reviews, function(o, r, n)
     return append_page_params(
       base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/reviews",
       PAGES
     )
-  end),
+  end)
+)
 
-  -- POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews
-  post_pull_review = proxy_handler_created(translate_gitea_review, function(o, r, n)
+-- POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews
+b:rest(
+  "post_pull_review",
+  proxy_handler_created(translate_gitea_review, function(o, r, n)
     return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/reviews", "POST", GetBody()
-  end),
+  end)
+)
 
-  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
-  get_pull_review = proxy_handler(translate_gitea_review, function(o, r, n, id)
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
+b:rest(
+  "get_pull_review",
+  proxy_handler(translate_gitea_review, function(o, r, n, id)
     return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/reviews/" .. id
-  end),
+  end)
+)
 
-  -- DELETE /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
-  delete_pull_review = function(owner, repo_name, pull_number, review_id)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base()
-          .. "/repos/"
-          .. owner
-          .. "/"
-          .. repo_name
-          .. "/pulls/"
-          .. pull_number
-          .. "/reviews/"
-          .. review_id,
-        "DELETE"
-      )
+-- DELETE /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
+b:rest("delete_pull_review", function(owner, repo_name, pull_number, review_id)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base()
+        .. "/repos/"
+        .. owner
+        .. "/"
+        .. repo_name
+        .. "/pulls/"
+        .. pull_number
+        .. "/reviews/"
+        .. review_id,
+      "DELETE"
     )
-  end,
+  )
+end)
 
-  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments
-  get_pull_review_comments = proxy_handler(translate_gitea_review_comments, function(o, r, n, id)
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments
+b:rest(
+  "get_pull_review_comments",
+  proxy_handler(translate_gitea_review_comments, function(o, r, n, id)
     return base()
       .. "/repos/"
       .. o
@@ -2578,607 +2703,632 @@ app.backend_impl = {
       .. "/reviews/"
       .. id
       .. "/comments"
-  end),
+  end)
+)
 
-  -- PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/dismissals
-  -- GitHub uses PUT; Gitea uses POST.
-  put_pull_review_dismissal = function(owner, repo_name, pull_number, review_id)
-    proxy_json(
-      translate_gitea_review,
-      fetch_json(
-        base()
-          .. "/repos/"
-          .. owner
-          .. "/"
-          .. repo_name
-          .. "/pulls/"
-          .. pull_number
-          .. "/reviews/"
-          .. review_id
-          .. "/dismissals",
-        "POST",
-        GetBody()
-      )
+-- PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/dismissals
+-- GitHub uses PUT; Gitea uses POST.
+b:rest("put_pull_review_dismissal", function(owner, repo_name, pull_number, review_id)
+  proxy_json(
+    translate_gitea_review,
+    fetch_json(
+      base()
+        .. "/repos/"
+        .. owner
+        .. "/"
+        .. repo_name
+        .. "/pulls/"
+        .. pull_number
+        .. "/reviews/"
+        .. review_id
+        .. "/dismissals",
+      "POST",
+      GetBody()
     )
-  end,
+  )
+end)
 
-  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/comments
-  -- Aggregates inline review comments across all reviews for the PR.
-  get_pull_comments = function(owner, repo_name, pull_number)
-    local ok, status, _, body = fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/reviews"
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/comments
+-- Aggregates inline review comments across all reviews for the PR.
+b:rest("get_pull_comments", function(owner, repo_name, pull_number)
+  local ok, status, _, body = fetch_json(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/reviews"
+  )
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local reviews = DecodeJson(body) or {}
+  local all_comments = {}
+  for _, rev in ipairs(reviews) do
+    local cok, cstatus, _, cbody = fetch_json(
+      base()
+        .. "/repos/"
+        .. owner
+        .. "/"
+        .. repo_name
+        .. "/pulls/"
+        .. pull_number
+        .. "/reviews/"
+        .. rev.id
+        .. "/comments"
     )
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local reviews = DecodeJson(body) or {}
-    local all_comments = {}
-    for _, rev in ipairs(reviews) do
-      local cok, cstatus, _, cbody = fetch_json(
-        base()
-          .. "/repos/"
-          .. owner
-          .. "/"
-          .. repo_name
-          .. "/pulls/"
-          .. pull_number
-          .. "/reviews/"
-          .. rev.id
-          .. "/comments"
-      )
-      if cok and cstatus == 200 then
-        for _, c in ipairs(DecodeJson(cbody) or {}) do
-          all_comments[#all_comments + 1] = translate_gitea_review_comment(c)
-        end
+    if cok and cstatus == 200 then
+      for _, c in ipairs(DecodeJson(cbody) or {}) do
+        all_comments[#all_comments + 1] = translate_gitea_review_comment(c)
       end
     end
-    respond_json(200, all_comments)
-  end,
+  end
+  respond_json(200, all_comments)
+end)
 
-  -- Checks (via Gitea commit statuses) ------------------------------------------
+-- Checks (via Gitea commit statuses) ------------------------------------------
 
-  -- POST /repos/{owner}/{repo}/check-runs
-  -- Maps to Gitea POST /api/v1/repos/{owner}/{repo}/statuses/{sha}.
-  post_check_runs = function(owner, repo_name)
-    local req = DecodeJson(GetBody() or "{}") or {}
-    local sha = req.head_sha or ""
-    local gitea_body = gh_check_run_to_gitea_status(req)
-    proxy_json_created(
-      translate_gitea_status_to_check_run,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. sha,
-        "POST",
-        gitea_body
-      )
+-- POST /repos/{owner}/{repo}/check-runs
+-- Maps to Gitea POST /api/v1/repos/{owner}/{repo}/statuses/{sha}.
+b:rest("post_check_runs", function(owner, repo_name)
+  local req = DecodeJson(GetBody() or "{}") or {}
+  local sha = req.head_sha or ""
+  local gitea_body = gh_check_run_to_gitea_status(req)
+  proxy_json_created(
+    translate_gitea_status_to_check_run,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. sha,
+      "POST",
+      gitea_body
     )
-  end,
+  )
+end)
 
-  -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
-  -- Maps to Gitea GET /api/v1/repos/{owner}/{repo}/statuses/{ref}.
-  get_commit_check_runs = function(owner, repo_name, ref)
-    local ok, status, _, body = fetch_json(
-      append_page_params(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. ref,
-        PAGES
-      )
+-- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
+-- Maps to Gitea GET /api/v1/repos/{owner}/{repo}/statuses/{ref}.
+b:rest("get_commit_check_runs", function(owner, repo_name, ref)
+  local ok, status, _, body = fetch_json(
+    append_page_params(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. ref,
+      PAGES
     )
-    if ok and status == 200 then
-      local statuses = DecodeJson(body) or {}
-      local runs = translate_gitea_statuses_to_check_runs(statuses)
-      respond_json(200, {
-        total_count = #runs,
-        check_runs = runs,
-      })
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
-  end,
-
-  -- Check Suites — no Gitea equivalent; all are stubs --------------------
-
-  -- POST /repos/{owner}/{repo}/check-suites
-  post_check_suites = function(owner, repo_name)
-    respond_json(201, {
-      id = 1,
-      node_id = "",
-      head_sha = "",
-      status = "completed",
-      conclusion = "success",
-      app = { id = 0, slug = "", name = "" },
-      repository = { full_name = owner .. "/" .. repo_name },
-    })
-  end,
-
-  -- Search -----------------------------------------------------------------------
-
-  -- GET /search/repositories — maps to Gitea GET /repos/search
-  search_repositories = function()
-    local q = GetParam("q") or ""
-    proxy_search(translate_repo, append_page_params(base() .. "/repos/search?q=" .. q, PAGES))
-  end,
-
-  -- GET /search/users — maps to Gitea GET /users/search
-  search_users = function()
-    local q = GetParam("q") or ""
-    proxy_search(translate_user, append_page_params(base() .. "/users/search?q=" .. q, PAGES))
-  end,
-
-  -- Packages (org) ---------------------------------------------------------------
-
-  get_org_packages = function(org)
-    pkg_list(org)
-  end,
-  get_org_package = function(org, pkg_type, pkg_name)
-    pkg_get(org, pkg_type, pkg_name)
-  end,
-  delete_org_package = function(org, pkg_type, pkg_name)
-    pkg_delete(org, pkg_type, pkg_name)
-  end,
-  get_org_package_versions = function(org, pkg_type, pkg_name)
-    pkg_versions(org, pkg_type, pkg_name)
-  end,
-  get_org_package_version = function(org, pkg_type, pkg_name, version_id)
-    pkg_get_version(org, pkg_type, pkg_name, version_id)
-  end,
-  delete_org_package_version = function(org, pkg_type, pkg_name, version_id)
-    pkg_delete_version(org, pkg_type, pkg_name, version_id)
-  end,
-
-  -- Packages (authenticated user) ------------------------------------------------
-
-  get_user_packages = function()
-    local login = resolve_user_login()
-    if not login then
-      respond_json(401, { message = "Requires authentication" })
-      return
-    end
-    pkg_list(login)
-  end,
-  get_user_package = function(pkg_type, pkg_name)
-    local login = resolve_user_login()
-    if not login then
-      respond_json(401, { message = "Requires authentication" })
-      return
-    end
-    pkg_get(login, pkg_type, pkg_name)
-  end,
-  delete_user_package = function(pkg_type, pkg_name)
-    local login = resolve_user_login()
-    if not login then
-      respond_json(401, { message = "Requires authentication" })
-      return
-    end
-    pkg_delete(login, pkg_type, pkg_name)
-  end,
-  get_user_package_versions = function(pkg_type, pkg_name)
-    local login = resolve_user_login()
-    if not login then
-      respond_json(401, { message = "Requires authentication" })
-      return
-    end
-    pkg_versions(login, pkg_type, pkg_name)
-  end,
-  get_user_package_version = function(pkg_type, pkg_name, version_id)
-    local login = resolve_user_login()
-    if not login then
-      respond_json(401, { message = "Requires authentication" })
-      return
-    end
-    pkg_get_version(login, pkg_type, pkg_name, version_id)
-  end,
-  delete_user_package_version = function(pkg_type, pkg_name, version_id)
-    local login = resolve_user_login()
-    if not login then
-      respond_json(401, { message = "Requires authentication" })
-      return
-    end
-    pkg_delete_version(login, pkg_type, pkg_name, version_id)
-  end,
-
-  -- Pages (https://docs.github.com/en/rest/pages) ---------------------------------
-  -- Gitea has no native GitHub Pages API.  We synthesize a minimal GET response
-  -- by checking whether the repo has a "gh-pages" branch.  Write, build, and
-  -- deployment endpoints have no Gitea equivalent and fall back to the default
-  -- pages_not_implemented (501) handler.
-
-  get_repo_pages = function(owner, repo_name)
-    local ok, status, _, _ =
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/branches/gh-pages")
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
+  )
+  if ok and status == 200 then
+    local statuses = DecodeJson(body) or {}
+    local runs = translate_gitea_statuses_to_check_runs(statuses)
     respond_json(200, {
-      url = "",
-      status = "built",
-      cname = nil,
-      custom_404 = false,
-      html_url = config.base_url .. "/" .. owner .. "/" .. repo_name,
-      source = { branch = "gh-pages", path = "/" },
-      public = true,
-      https_enforced = false,
-      build_type = "legacy",
+      total_count = #runs,
+      check_runs = runs,
     })
-  end,
+  elseif ok then
+    respond_json(status, {})
+  else
+    respond_json(503, {})
+  end
+end)
 
-  -- Packages (public user) -------------------------------------------------------
+-- Check Suites — no Gitea equivalent; all are stubs --------------------
 
-  get_users_packages = function(username)
-    pkg_list(username)
-  end,
-  get_users_package = function(username, pkg_type, pkg_name)
-    pkg_get(username, pkg_type, pkg_name)
-  end,
-  delete_users_package = function(username, pkg_type, pkg_name)
-    pkg_delete(username, pkg_type, pkg_name)
-  end,
-  get_users_package_versions = function(username, pkg_type, pkg_name)
-    pkg_versions(username, pkg_type, pkg_name)
-  end,
-  get_users_package_version = function(username, pkg_type, pkg_name, version_id)
-    pkg_get_version(username, pkg_type, pkg_name, version_id)
-  end,
-  delete_users_package_version = function(username, pkg_type, pkg_name, version_id)
-    pkg_delete_version(username, pkg_type, pkg_name, version_id)
-  end,
+-- POST /repos/{owner}/{repo}/check-suites
+b:rest("post_check_suites", function(owner, repo_name)
+  respond_json(201, {
+    id = 1,
+    node_id = "",
+    head_sha = "",
+    status = "completed",
+    conclusion = "success",
+    app = { id = 0, slug = "", name = "" },
+    repository = { full_name = owner .. "/" .. repo_name },
+  })
+end)
 
-  -- Markdown -------------------------------------------------------------------
+-- Search -----------------------------------------------------------------------
 
-  -- POST /markdown → POST /api/v1/markdown
-  -- Gitea accepts the same JSON body as GitHub and returns rendered HTML.
-  render_markdown = function()
-    local opts = auth() or {}
-    opts.method = "POST"
-    opts.body = GetBody()
-    opts.headers = opts.headers or {}
-    opts.headers["Content-Type"] = GetHeader("Content-Type") or "application/json"
-    local ok, status, headers, body = pcall(Fetch, base() .. "/markdown", opts)
-    if not ok then
-      respond_json(503, {})
-      return
+-- GET /search/repositories — maps to Gitea GET /repos/search
+b:rest("search_repositories", function()
+  local q = GetParam("q") or ""
+  proxy_search(translate_repo, append_page_params(base() .. "/repos/search?q=" .. q, PAGES))
+end)
+
+-- GET /search/users — maps to Gitea GET /users/search
+b:rest("search_users", function()
+  local q = GetParam("q") or ""
+  proxy_search(translate_user, append_page_params(base() .. "/users/search?q=" .. q, PAGES))
+end)
+
+-- Packages (org) ---------------------------------------------------------------
+
+b:rest("get_org_packages", function(org)
+  pkg_list(org)
+end)
+
+b:rest("get_org_package", function(org, pkg_type, pkg_name)
+  pkg_get(org, pkg_type, pkg_name)
+end)
+
+b:rest("delete_org_package", function(org, pkg_type, pkg_name)
+  pkg_delete(org, pkg_type, pkg_name)
+end)
+
+b:rest("get_org_package_versions", function(org, pkg_type, pkg_name)
+  pkg_versions(org, pkg_type, pkg_name)
+end)
+
+b:rest("get_org_package_version", function(org, pkg_type, pkg_name, version_id)
+  pkg_get_version(org, pkg_type, pkg_name, version_id)
+end)
+
+b:rest("delete_org_package_version", function(org, pkg_type, pkg_name, version_id)
+  pkg_delete_version(org, pkg_type, pkg_name, version_id)
+end)
+
+-- Packages (authenticated user) ------------------------------------------------
+
+b:rest("get_user_packages", function()
+  local login = resolve_user_login()
+  if not login then
+    respond_json(401, { message = "Requires authentication" })
+    return
+  end
+  pkg_list(login)
+end)
+
+b:rest("get_user_package", function(pkg_type, pkg_name)
+  local login = resolve_user_login()
+  if not login then
+    respond_json(401, { message = "Requires authentication" })
+    return
+  end
+  pkg_get(login, pkg_type, pkg_name)
+end)
+
+b:rest("delete_user_package", function(pkg_type, pkg_name)
+  local login = resolve_user_login()
+  if not login then
+    respond_json(401, { message = "Requires authentication" })
+    return
+  end
+  pkg_delete(login, pkg_type, pkg_name)
+end)
+
+b:rest("get_user_package_versions", function(pkg_type, pkg_name)
+  local login = resolve_user_login()
+  if not login then
+    respond_json(401, { message = "Requires authentication" })
+    return
+  end
+  pkg_versions(login, pkg_type, pkg_name)
+end)
+
+b:rest("get_user_package_version", function(pkg_type, pkg_name, version_id)
+  local login = resolve_user_login()
+  if not login then
+    respond_json(401, { message = "Requires authentication" })
+    return
+  end
+  pkg_get_version(login, pkg_type, pkg_name, version_id)
+end)
+
+b:rest("delete_user_package_version", function(pkg_type, pkg_name, version_id)
+  local login = resolve_user_login()
+  if not login then
+    respond_json(401, { message = "Requires authentication" })
+    return
+  end
+  pkg_delete_version(login, pkg_type, pkg_name, version_id)
+end)
+
+-- Pages (https://docs.github.com/en/rest/pages) ---------------------------------
+-- Gitea has no native GitHub Pages API.  We synthesize a minimal GET response
+-- by checking whether the repo has a "gh-pages" branch.  Write, build, and
+-- deployment endpoints have no Gitea equivalent and fall back to the default
+-- pages_not_implemented (501) handler.
+
+b:rest("get_repo_pages", function(owner, repo_name)
+  local ok, status, _, _ =
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/branches/gh-pages")
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  respond_json(200, {
+    url = "",
+    status = "built",
+    cname = nil,
+    custom_404 = false,
+    html_url = config.base_url .. "/" .. owner .. "/" .. repo_name,
+    source = { branch = "gh-pages", path = "/" },
+    public = true,
+    https_enforced = false,
+    build_type = "legacy",
+  })
+end)
+
+-- Packages (public user) -------------------------------------------------------
+
+b:rest("get_users_packages", function(username)
+  pkg_list(username)
+end)
+
+b:rest("get_users_package", function(username, pkg_type, pkg_name)
+  pkg_get(username, pkg_type, pkg_name)
+end)
+
+b:rest("delete_users_package", function(username, pkg_type, pkg_name)
+  pkg_delete(username, pkg_type, pkg_name)
+end)
+
+b:rest("get_users_package_versions", function(username, pkg_type, pkg_name)
+  pkg_versions(username, pkg_type, pkg_name)
+end)
+
+b:rest("get_users_package_version", function(username, pkg_type, pkg_name, version_id)
+  pkg_get_version(username, pkg_type, pkg_name, version_id)
+end)
+
+b:rest("delete_users_package_version", function(username, pkg_type, pkg_name, version_id)
+  pkg_delete_version(username, pkg_type, pkg_name, version_id)
+end)
+
+-- Markdown -------------------------------------------------------------------
+
+-- POST /markdown → POST /api/v1/markdown
+-- Gitea accepts the same JSON body as GitHub and returns rendered HTML.
+b:rest("render_markdown", function()
+  local opts = auth() or {}
+  opts.method = "POST"
+  opts.body = GetBody()
+  opts.headers = opts.headers or {}
+  opts.headers["Content-Type"] = GetHeader("Content-Type") or "application/json"
+  local ok, status, headers, body = pcall(Fetch, base() .. "/markdown", opts)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  local ct = (headers and (headers["Content-Type"] or headers["content-type"])) or "text/html"
+  set_preamble(status, ct)
+  Write(body or "")
+end)
+
+-- POST /markdown/raw → POST /api/v1/markdown/raw
+-- Gitea accepts raw markdown text and returns rendered HTML.
+b:rest("render_markdown_raw", function()
+  local opts = auth() or {}
+  opts.method = "POST"
+  opts.body = GetBody()
+  opts.headers = opts.headers or {}
+  opts.headers["Content-Type"] = "text/plain"
+  local ok, status, headers, body = pcall(Fetch, base() .. "/markdown/raw", opts)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  local ct = (headers and (headers["Content-Type"] or headers["content-type"])) or "text/html"
+  set_preamble(status, ct)
+  Write(body or "")
+end)
+
+-- Actions ------------------------------------------------------------------
+-- Gitea natively supports secrets, variables, and runners (repo + org level).
+-- Workflow runs, artifacts, caches, jobs, OIDC, and permissions use defaults.
+--
+-- Secrets: list/get/delete only. GitHub encrypts secrets with NaCl before
+-- sending; Gitea stores plaintext. The wire formats are incompatible, so
+-- create/update (PUT) falls back to the default 501 handler.
+
+b:rest("get_repo_actions_secrets", function(owner, repo)
+  proxy_actions_list(
+    "secrets",
+    translate_gitea_actions_secret,
+    base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/secrets"
+  )
+end)
+
+b:rest("get_repo_actions_secret", function(owner, repo, secret_name)
+  proxy_json(
+    translate_gitea_actions_secret,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/secrets/" .. secret_name)
+  )
+end)
+
+b:rest("delete_repo_actions_secret", function(owner, repo, secret_name)
+  set_204_or_error(
+    "DELETE",
+    base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/secrets/" .. secret_name
+  )
+end)
+
+b:rest("get_org_actions_secrets", function(org)
+  proxy_actions_list(
+    "secrets",
+    translate_gitea_actions_secret,
+    base() .. "/orgs/" .. org .. "/actions/secrets"
+  )
+end)
+
+b:rest("get_org_actions_secret", function(org, secret_name)
+  proxy_json(
+    translate_gitea_actions_secret,
+    fetch_json(base() .. "/orgs/" .. org .. "/actions/secrets/" .. secret_name)
+  )
+end)
+
+b:rest("delete_org_actions_secret", function(org, secret_name)
+  set_204_or_error("DELETE", base() .. "/orgs/" .. org .. "/actions/secrets/" .. secret_name)
+end)
+
+-- Variables: full CRUD. Gitea uses PUT for updates; GitHub uses PATCH.
+b:rest("get_repo_actions_variables", function(owner, repo)
+  proxy_actions_list(
+    "variables",
+    translate_gitea_actions_variable,
+    base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables"
+  )
+end)
+
+b:rest("get_repo_actions_variable", function(owner, repo, name)
+  proxy_json(
+    translate_gitea_actions_variable,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables/" .. name)
+  )
+end)
+
+b:rest("post_repo_actions_variable", function(owner, repo)
+  proxy_json_created(
+    translate_gitea_actions_variable,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables",
+      "POST",
+      GetBody()
+    )
+  )
+end)
+
+b:rest("patch_repo_actions_variable", function(owner, repo, name)
+  proxy_204(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables/" .. name,
+      "PUT",
+      GetBody()
+    )
+  )
+end)
+
+b:rest("delete_repo_actions_variable", function(owner, repo, name)
+  set_204_or_error(
+    "DELETE",
+    base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables/" .. name
+  )
+end)
+
+b:rest("get_org_actions_variables", function(org)
+  proxy_actions_list(
+    "variables",
+    translate_gitea_actions_variable,
+    base() .. "/orgs/" .. org .. "/actions/variables"
+  )
+end)
+
+b:rest("get_org_actions_variable", function(org, name)
+  proxy_json(
+    translate_gitea_actions_variable,
+    fetch_json(base() .. "/orgs/" .. org .. "/actions/variables/" .. name)
+  )
+end)
+
+b:rest("post_org_actions_variable", function(org)
+  proxy_json_created(
+    translate_gitea_actions_variable,
+    fetch_json(base() .. "/orgs/" .. org .. "/actions/variables", "POST", GetBody())
+  )
+end)
+
+b:rest("patch_org_actions_variable", function(org, name)
+  proxy_204(
+    nil,
+    fetch_json(base() .. "/orgs/" .. org .. "/actions/variables/" .. name, "PUT", GetBody())
+  )
+end)
+
+b:rest("delete_org_actions_variable", function(org, name)
+  set_204_or_error("DELETE", base() .. "/orgs/" .. org .. "/actions/variables/" .. name)
+end)
+
+-- Runners: list only (individual runner operations not proxied).
+b:rest("get_repo_actions_runners", function(owner, repo)
+  proxy_actions_list(
+    "runners",
+    translate_gitea_actions_runner,
+    base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/runners"
+  )
+end)
+
+b:rest("get_org_actions_runners", function(org)
+  proxy_actions_list(
+    "runners",
+    translate_gitea_actions_runner,
+    base() .. "/orgs/" .. org .. "/actions/runners"
+  )
+end)
+
+-- Git database (https://docs.github.com/en/rest/git) -----------------------
+
+-- GET /repos/{owner}/{repo}/git/blobs/{file_sha}
+b:rest("get_git_blob", function(owner, repo_name, file_sha)
+  proxy_json(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/blobs/" .. file_sha)
+  )
+end)
+
+-- GET /repos/{owner}/{repo}/git/commits/{commit_sha}
+b:rest("get_git_commit", function(owner, repo_name, commit_sha)
+  proxy_json(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/commits/" .. commit_sha)
+  )
+end)
+
+-- GET /repos/{owner}/{repo}/git/matching-refs/{ref}
+-- Gitea: GET /repos/{owner}/{repo}/git/refs/{ref} returns an array.
+b:rest("list_git_matching_refs", function(owner, repo_name, ref)
+  proxy_json(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs/" .. ref)
+  )
+end)
+
+-- GET /repos/{owner}/{repo}/git/ref/{ref}
+-- GitHub returns a single ref object; Gitea returns an array — take the first element.
+b:rest("get_git_ref", function(owner, repo_name, ref)
+  proxy_json(function(arr)
+    if type(arr) == "table" and arr[1] then
+      return arr[1]
     end
-    local ct = (headers and (headers["Content-Type"] or headers["content-type"])) or "text/html"
-    set_preamble(status, ct)
-    Write(body or "")
-  end,
+    return arr
+  end, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs/" .. ref))
+end)
 
-  -- POST /markdown/raw → POST /api/v1/markdown/raw
-  -- Gitea accepts raw markdown text and returns rendered HTML.
-  render_markdown_raw = function()
-    local opts = auth() or {}
-    opts.method = "POST"
-    opts.body = GetBody()
-    opts.headers = opts.headers or {}
-    opts.headers["Content-Type"] = "text/plain"
-    local ok, status, headers, body = pcall(Fetch, base() .. "/markdown/raw", opts)
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    local ct = (headers and (headers["Content-Type"] or headers["content-type"])) or "text/html"
-    set_preamble(status, ct)
-    Write(body or "")
-  end,
+-- POST /repos/{owner}/{repo}/git/refs
+b:rest("create_git_ref", function(owner, repo_name)
+  proxy_json_created(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs", "POST", GetBody())
+  )
+end)
 
-  -- Actions ------------------------------------------------------------------
-  -- Gitea natively supports secrets, variables, and runners (repo + org level).
-  -- Workflow runs, artifacts, caches, jobs, OIDC, and permissions use defaults.
-  --
-  -- Secrets: list/get/delete only. GitHub encrypts secrets with NaCl before
-  -- sending; Gitea stores plaintext. The wire formats are incompatible, so
-  -- create/update (PUT) falls back to the default 501 handler.
+-- DELETE /repos/{owner}/{repo}/git/refs/{ref}
+b:rest("delete_git_ref", function(owner, repo_name, ref)
+  set_204_or_error(
+    "DELETE",
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs/" .. ref
+  )
+end)
 
-  get_repo_actions_secrets = function(owner, repo)
-    proxy_actions_list(
-      "secrets",
-      translate_gitea_actions_secret,
-      base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/secrets"
-    )
-  end,
-  get_repo_actions_secret = function(owner, repo, secret_name)
-    proxy_json(
-      translate_gitea_actions_secret,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/secrets/" .. secret_name)
-    )
-  end,
-  delete_repo_actions_secret = function(owner, repo, secret_name)
-    set_204_or_error(
-      "DELETE",
-      base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/secrets/" .. secret_name
-    )
-  end,
+-- GET /repos/{owner}/{repo}/git/tags/{tag_sha}
+b:rest("get_git_tag", function(owner, repo_name, tag_sha)
+  proxy_json(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/tags/" .. tag_sha)
+  )
+end)
 
-  get_org_actions_secrets = function(org)
-    proxy_actions_list(
-      "secrets",
-      translate_gitea_actions_secret,
-      base() .. "/orgs/" .. org .. "/actions/secrets"
-    )
-  end,
-  get_org_actions_secret = function(org, secret_name)
-    proxy_json(
-      translate_gitea_actions_secret,
-      fetch_json(base() .. "/orgs/" .. org .. "/actions/secrets/" .. secret_name)
-    )
-  end,
-  delete_org_actions_secret = function(org, secret_name)
-    set_204_or_error("DELETE", base() .. "/orgs/" .. org .. "/actions/secrets/" .. secret_name)
-  end,
+-- POST /repos/{owner}/{repo}/git/tags
+b:rest("create_git_tag", function(owner, repo_name)
+  proxy_json_created(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/tags", "POST", GetBody())
+  )
+end)
 
-  -- Variables: full CRUD. Gitea uses PUT for updates; GitHub uses PATCH.
-  get_repo_actions_variables = function(owner, repo)
-    proxy_actions_list(
-      "variables",
-      translate_gitea_actions_variable,
-      base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables"
-    )
-  end,
-  get_repo_actions_variable = function(owner, repo, name)
-    proxy_json(
-      translate_gitea_actions_variable,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables/" .. name)
-    )
-  end,
-  post_repo_actions_variable = function(owner, repo)
-    proxy_json_created(
-      translate_gitea_actions_variable,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables",
-        "POST",
-        GetBody()
-      )
-    )
-  end,
-  patch_repo_actions_variable = function(owner, repo, name)
-    proxy_204(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables/" .. name,
-        "PUT",
-        GetBody()
-      )
-    )
-  end,
-  delete_repo_actions_variable = function(owner, repo, name)
-    set_204_or_error(
-      "DELETE",
-      base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables/" .. name
-    )
-  end,
+-- GET /repos/{owner}/{repo}/git/trees/{tree_sha}
+b:rest("get_git_tree", function(owner, repo_name, tree_sha)
+  proxy_json(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/trees/" .. tree_sha)
+  )
+end)
 
-  get_org_actions_variables = function(org)
-    proxy_actions_list(
-      "variables",
-      translate_gitea_actions_variable,
-      base() .. "/orgs/" .. org .. "/actions/variables"
+-- Activity (https://docs.github.com/en/rest/activity)
+-- Gitea supports starring, watching, and subscription endpoints.
+-- Events feeds and notifications have no Gitea equivalent.
+
+b:rest("get_repo_stargazers", function(owner, repo_name)
+  proxy_json_paged(
+    translate_users,
+    PAGES,
+    fetch_json(
+      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/stargazers", PAGES)
     )
-  end,
-  get_org_actions_variable = function(org, name)
-    proxy_json(
-      translate_gitea_actions_variable,
-      fetch_json(base() .. "/orgs/" .. org .. "/actions/variables/" .. name)
+  )
+end)
+
+b:rest("get_repo_subscribers", function(owner, repo_name)
+  proxy_json_paged(
+    translate_users,
+    PAGES,
+    fetch_json(
+      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscribers", PAGES)
     )
-  end,
-  post_org_actions_variable = function(org)
-    proxy_json_created(
-      translate_gitea_actions_variable,
-      fetch_json(base() .. "/orgs/" .. org .. "/actions/variables", "POST", GetBody())
+  )
+end)
+
+b:rest("get_repo_subscription", function(owner, repo_name)
+  proxy_json(nil, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscription"))
+end)
+
+b:rest("put_repo_subscription", function(owner, repo_name)
+  proxy_json(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscription",
+      "PUT",
+      GetBody()
     )
-  end,
-  patch_org_actions_variable = function(org, name)
-    proxy_204(
-      nil,
-      fetch_json(base() .. "/orgs/" .. org .. "/actions/variables/" .. name, "PUT", GetBody())
-    )
-  end,
-  delete_org_actions_variable = function(org, name)
-    set_204_or_error("DELETE", base() .. "/orgs/" .. org .. "/actions/variables/" .. name)
-  end,
+  )
+end)
 
-  -- Runners: list only (individual runner operations not proxied).
-  get_repo_actions_runners = function(owner, repo)
-    proxy_actions_list(
-      "runners",
-      translate_gitea_actions_runner,
-      base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/runners"
-    )
-  end,
-  get_org_actions_runners = function(org)
-    proxy_actions_list(
-      "runners",
-      translate_gitea_actions_runner,
-      base() .. "/orgs/" .. org .. "/actions/runners"
-    )
-  end,
+b:rest("delete_repo_subscription", function(owner, repo_name)
+  set_204_or_error("DELETE", base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscription")
+end)
 
-  -- Git database (https://docs.github.com/en/rest/git) -----------------------
+b:rest("get_user_starred", function()
+  proxy_json_paged(
+    translate_repos,
+    PAGES,
+    fetch_json(append_page_params(base() .. "/user/starred", PAGES))
+  )
+end)
 
-  -- GET /repos/{owner}/{repo}/git/blobs/{file_sha}
-  get_git_blob = function(owner, repo_name, file_sha)
-    proxy_json(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/blobs/" .. file_sha)
-    )
-  end,
+b:rest("get_user_starred_repo", function(owner, repo_name)
+  local ok, status = fetch_json(base() .. "/user/starred/" .. owner .. "/" .. repo_name)
+  if ok and status == 204 then
+    SetStatus(204, "No Content")
+  elseif ok and status == 404 then
+    respond_json(404, { message = "Not Found" })
+  elseif ok then
+    respond_json(status, {})
+  else
+    respond_json(503, {})
+  end
+end)
 
-  -- GET /repos/{owner}/{repo}/git/commits/{commit_sha}
-  get_git_commit = function(owner, repo_name, commit_sha)
-    proxy_json(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/commits/" .. commit_sha)
-    )
-  end,
+b:rest("put_user_starred_repo", function(owner, repo_name)
+  set_204_or_error("PUT", base() .. "/user/starred/" .. owner .. "/" .. repo_name)
+end)
 
-  -- GET /repos/{owner}/{repo}/git/matching-refs/{ref}
-  -- Gitea: GET /repos/{owner}/{repo}/git/refs/{ref} returns an array.
-  list_git_matching_refs = function(owner, repo_name, ref)
-    proxy_json(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs/" .. ref)
-    )
-  end,
+b:rest("delete_user_starred_repo", function(owner, repo_name)
+  set_204_or_error("DELETE", base() .. "/user/starred/" .. owner .. "/" .. repo_name)
+end)
 
-  -- GET /repos/{owner}/{repo}/git/ref/{ref}
-  -- GitHub returns a single ref object; Gitea returns an array — take the first element.
-  get_git_ref = function(owner, repo_name, ref)
-    proxy_json(function(arr)
-      if type(arr) == "table" and arr[1] then
-        return arr[1]
-      end
-      return arr
-    end, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs/" .. ref))
-  end,
+b:rest("get_user_subscriptions", function()
+  proxy_json_paged(
+    translate_repos,
+    PAGES,
+    fetch_json(append_page_params(base() .. "/user/subscriptions", PAGES))
+  )
+end)
 
-  -- POST /repos/{owner}/{repo}/git/refs
-  create_git_ref = function(owner, repo_name)
-    proxy_json_created(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs", "POST", GetBody())
-    )
-  end,
+b:rest("get_users_starred", function(username)
+  proxy_json_paged(
+    translate_repos,
+    PAGES,
+    fetch_json(append_page_params(base() .. "/users/" .. username .. "/starred", PAGES))
+  )
+end)
 
-  -- DELETE /repos/{owner}/{repo}/git/refs/{ref}
-  delete_git_ref = function(owner, repo_name, ref)
-    set_204_or_error(
-      "DELETE",
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs/" .. ref
-    )
-  end,
-
-  -- GET /repos/{owner}/{repo}/git/tags/{tag_sha}
-  get_git_tag = function(owner, repo_name, tag_sha)
-    proxy_json(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/tags/" .. tag_sha)
-    )
-  end,
-
-  -- POST /repos/{owner}/{repo}/git/tags
-  create_git_tag = function(owner, repo_name)
-    proxy_json_created(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/tags", "POST", GetBody())
-    )
-  end,
-
-  -- GET /repos/{owner}/{repo}/git/trees/{tree_sha}
-  get_git_tree = function(owner, repo_name, tree_sha)
-    proxy_json(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/trees/" .. tree_sha)
-    )
-  end,
-
-  -- Activity (https://docs.github.com/en/rest/activity)
-  -- Gitea supports starring, watching, and subscription endpoints.
-  -- Events feeds and notifications have no Gitea equivalent.
-
-  get_repo_stargazers = function(owner, repo_name)
-    proxy_json_paged(
-      translate_users,
-      PAGES,
-      fetch_json(
-        append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/stargazers", PAGES)
-      )
-    )
-  end,
-
-  get_repo_subscribers = function(owner, repo_name)
-    proxy_json_paged(
-      translate_users,
-      PAGES,
-      fetch_json(
-        append_page_params(
-          base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscribers",
-          PAGES
-        )
-      )
-    )
-  end,
-
-  get_repo_subscription = function(owner, repo_name)
-    proxy_json(nil, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscription"))
-  end,
-
-  put_repo_subscription = function(owner, repo_name)
-    proxy_json(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscription",
-        "PUT",
-        GetBody()
-      )
-    )
-  end,
-
-  delete_repo_subscription = function(owner, repo_name)
-    set_204_or_error("DELETE", base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscription")
-  end,
-
-  get_user_starred = function()
-    proxy_json_paged(
-      translate_repos,
-      PAGES,
-      fetch_json(append_page_params(base() .. "/user/starred", PAGES))
-    )
-  end,
-
-  get_user_starred_repo = function(owner, repo_name)
-    local ok, status = fetch_json(base() .. "/user/starred/" .. owner .. "/" .. repo_name)
-    if ok and status == 204 then
-      SetStatus(204, "No Content")
-    elseif ok and status == 404 then
-      respond_json(404, { message = "Not Found" })
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
-  end,
-
-  put_user_starred_repo = function(owner, repo_name)
-    set_204_or_error("PUT", base() .. "/user/starred/" .. owner .. "/" .. repo_name)
-  end,
-
-  delete_user_starred_repo = function(owner, repo_name)
-    set_204_or_error("DELETE", base() .. "/user/starred/" .. owner .. "/" .. repo_name)
-  end,
-
-  get_user_subscriptions = function()
-    proxy_json_paged(
-      translate_repos,
-      PAGES,
-      fetch_json(append_page_params(base() .. "/user/subscriptions", PAGES))
-    )
-  end,
-
-  get_users_starred = function(username)
-    proxy_json_paged(
-      translate_repos,
-      PAGES,
-      fetch_json(append_page_params(base() .. "/users/" .. username .. "/starred", PAGES))
-    )
-  end,
-
-  get_users_subscriptions = function(username)
-    proxy_json_paged(
-      translate_repos,
-      PAGES,
-      fetch_json(append_page_params(base() .. "/users/" .. username .. "/subscriptions", PAGES))
-    )
-  end,
-}
+b:rest("get_users_subscriptions", function(username)
+  proxy_json_paged(
+    translate_repos,
+    PAGES,
+    fetch_json(append_page_params(base() .. "/users/" .. username .. "/subscriptions", PAGES))
+  )
+end)
 
 -- ---------------------------------------------------------------------------
 -- GraphQL resolvers
@@ -3187,7 +3337,7 @@ app.backend_impl = {
 -- Query.repositoryOwner: look up a User or Organization by login.
 -- Tries /users/{login} first; falls back to /orgs/{login}.
 -- Returns a RepositoryOwner (User or Organization) or nil when not found.
-graphql_resolvers["Query.repositoryOwner"] = function(_parent, args, ctx)
+b:graphql("Query.repositoryOwner", function(_parent, args, ctx)
   if not args.login then
     graphql_error(ctx, "repositoryOwner requires a login argument")
     return nil
@@ -3201,12 +3351,12 @@ graphql_resolvers["Query.repositoryOwner"] = function(_parent, args, ctx)
     return graphql_translate_org(odata)
   end
   return nil -- not found; null is valid per spec
-end
+end)
 
 -- Query.viewer: resolve the authenticated user via GET /user.
 -- If the token is absent or rejected, graphql_fetch_or_error records a
 -- FORBIDDEN error and returns nil.
-graphql_resolvers["Query.viewer"] = function(_parent, _args, ctx)
+b:graphql("Query.viewer", function(_parent, _args, ctx)
   local data = graphql_fetch_or_error(fetch_json, base() .. "/user", ctx, nil)
   if not data then
     return nil
@@ -3214,37 +3364,37 @@ graphql_resolvers["Query.viewer"] = function(_parent, _args, ctx)
   local u = graphql_translate_user(translate_user(data))
   u.isViewer = true
   return u
-end
+end)
 
 -- node.Repository: fetch a repository by "owner/repo" local ID.
-graphql_resolvers["node.Repository"] = function(local_id, _ctx)
+b:graphql("node.Repository", function(local_id, _ctx)
   local data, _ = graphql_fetch(fetch_json, base() .. "/repos/" .. local_id)
   if not data then
     return nil
   end
   return graphql_translate_repo(translate_repo(data))
-end
+end)
 
 -- node.User: fetch a user by login.
-graphql_resolvers["node.User"] = function(local_id, _ctx)
+b:graphql("node.User", function(local_id, _ctx)
   local data, _ = graphql_fetch(fetch_json, base() .. "/users/" .. local_id)
   if not data then
     return nil
   end
   return graphql_translate_user(translate_user(data))
-end
+end)
 
 -- node.Organization: fetch an organization by login.
-graphql_resolvers["node.Organization"] = function(local_id, _ctx)
+b:graphql("node.Organization", function(local_id, _ctx)
   local data, _ = graphql_fetch(fetch_json, base() .. "/orgs/" .. local_id)
   if not data then
     return nil
   end
   return graphql_translate_org(data)
-end
+end)
 
 -- node.Issue: fetch an issue by "owner/repo/number" local ID.
-graphql_resolvers["node.Issue"] = function(local_id, _ctx)
+b:graphql("node.Issue", function(local_id, _ctx)
   local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
   if not owner then
     return nil
@@ -3255,10 +3405,10 @@ graphql_resolvers["node.Issue"] = function(local_id, _ctx)
     return nil
   end
   return graphql_translate_issue(translate_gitea_issue(data), owner, repo)
-end
+end)
 
 -- node.PullRequest: fetch a pull request by "owner/repo/number" local ID.
-graphql_resolvers["node.PullRequest"] = function(local_id, _ctx)
+b:graphql("node.PullRequest", function(local_id, _ctx)
   local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
   if not owner then
     return nil
@@ -3269,10 +3419,10 @@ graphql_resolvers["node.PullRequest"] = function(local_id, _ctx)
     return nil
   end
   return graphql_translate_pr(translate_gitea_pull(data), owner, repo)
-end
+end)
 
 -- node.IssueComment: fetch an issue comment by "owner/repo/comment_id" local ID.
-graphql_resolvers["node.IssueComment"] = function(local_id, _ctx)
+b:graphql("node.IssueComment", function(local_id, _ctx)
   local owner, repo, cid = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
   if not owner then
     return nil
@@ -3285,11 +3435,11 @@ graphql_resolvers["node.IssueComment"] = function(local_id, _ctx)
     return nil
   end
   return graphql_translate_comment(translate_gitea_issue_comment(data), owner, repo)
-end
+end)
 
 -- Query.user: look up a User by login.
 -- Returns nil (and no error) when the user does not exist.
-graphql_resolvers["Query.user"] = function(_parent, args, ctx)
+b:graphql("Query.user", function(_parent, args, ctx)
   if not args.login then
     graphql_error(ctx, "user requires a login argument")
     return nil
@@ -3299,11 +3449,11 @@ graphql_resolvers["Query.user"] = function(_parent, args, ctx)
     return nil
   end
   return graphql_translate_user(translate_user(data))
-end
+end)
 
 -- Query.organization: look up an Organization by login.
 -- Returns nil (and no error) when the organization does not exist.
-graphql_resolvers["Query.organization"] = function(_parent, args, ctx)
+b:graphql("Query.organization", function(_parent, args, ctx)
   if not args.login then
     graphql_error(ctx, "organization requires a login argument")
     return nil
@@ -3313,11 +3463,11 @@ graphql_resolvers["Query.organization"] = function(_parent, args, ctx)
     return nil
   end
   return graphql_translate_org(data)
-end
+end)
 
 -- Query.repository: look up a Repository by owner login and repo name.
 -- Returns nil (and no error) when the repository does not exist.
-graphql_resolvers["Query.repository"] = function(_parent, args, ctx)
+b:graphql("Query.repository", function(_parent, args, ctx)
   if not args.owner or not args.name then
     graphql_error(ctx, "repository requires owner and name arguments")
     return nil
@@ -3327,10 +3477,10 @@ graphql_resolvers["Query.repository"] = function(_parent, args, ctx)
     return nil
   end
   return graphql_translate_repo(translate_repo(data))
-end
+end)
 
 -- node.Release: fetch a release by "owner/repo/release_id" local ID.
-graphql_resolvers["node.Release"] = function(local_id, _ctx)
+b:graphql("node.Release", function(local_id, _ctx)
   local owner, repo, rid = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
   if not owner then
     return nil
@@ -3341,10 +3491,10 @@ graphql_resolvers["node.Release"] = function(local_id, _ctx)
     return nil
   end
   return graphql_translate_release(data, owner, repo)
-end
+end)
 
 -- node.Label: fetch a label by "owner/repo/label_id" local ID.
-graphql_resolvers["node.Label"] = function(local_id, _ctx)
+b:graphql("node.Label", function(local_id, _ctx)
   local owner, repo, lid = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
   if not owner then
     return nil
@@ -3355,10 +3505,10 @@ graphql_resolvers["node.Label"] = function(local_id, _ctx)
     return nil
   end
   return graphql_translate_label(translate_gitea_label(data), owner, repo)
-end
+end)
 
 -- node.Milestone: fetch a milestone by "owner/repo/number" local ID.
-graphql_resolvers["node.Milestone"] = function(local_id, _ctx)
+b:graphql("node.Milestone", function(local_id, _ctx)
   local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
   if not owner then
     return nil
@@ -3371,10 +3521,10 @@ graphql_resolvers["node.Milestone"] = function(local_id, _ctx)
     return nil
   end
   return graphql_translate_milestone(data, owner, repo)
-end
+end)
 
 -- node.Commit: fetch a commit by "owner/repo/sha" local ID.
-graphql_resolvers["node.Commit"] = function(local_id, _ctx)
+b:graphql("node.Commit", function(local_id, _ctx)
   local owner, repo, sha = local_id:match("^([^/]+)/([^/]+)/(.+)$")
   if not owner then
     return nil
@@ -3385,11 +3535,11 @@ graphql_resolvers["node.Commit"] = function(local_id, _ctx)
     return nil
   end
   return graphql_translate_commit(data, owner, repo)
-end
+end)
 
 -- node.Ref: fetch a branch ref by "owner/repo/refs/heads/..." local ID.
 -- Gitea branch objects use commit.id for the SHA; normalise to commit.sha before translating.
-graphql_resolvers["node.Ref"] = function(local_id, _ctx)
+b:graphql("node.Ref", function(local_id, _ctx)
   local owner, repo, ref_path = local_id:match("^([^/]+)/([^/]+)/(refs/.+)$")
   if not owner then
     return nil
@@ -3408,11 +3558,11 @@ graphql_resolvers["node.Ref"] = function(local_id, _ctx)
   end
   local repo_stub = { __typename = "Repository", nameWithOwner = owner .. "/" .. repo }
   return graphql_translate_ref(data, repo_stub)
-end
+end)
 
 -- node.Team: fetch a team by "org/slug" local ID.
 -- Gitea teams use numeric IDs; resolve slug → ID via gitea_find_team_id, then fetch /teams/{id}.
-graphql_resolvers["node.Team"] = function(local_id, _ctx)
+b:graphql("node.Team", function(local_id, _ctx)
   local org, slug = local_id:match("^([^/]+)/([^/]+)$")
   if not org then
     return nil
@@ -3426,7 +3576,7 @@ graphql_resolvers["node.Team"] = function(local_id, _ctx)
     return nil
   end
   return graphql_translate_team(translate_gitea_team(data), org)
-end
+end)
 
 -- ---------------------------------------------------------------------------
 -- Repository connection sub-resolvers
@@ -3468,7 +3618,7 @@ end
 
 -- Repository.issues: paginated list of issues (excluding pull requests).
 -- Passes type=issues so Gitea omits PRs from the response.
-graphql_resolvers["Repository.issues"] = function(parent, args, ctx)
+b:graphql("Repository.issues", function(parent, args, ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
@@ -3476,10 +3626,10 @@ graphql_resolvers["Repository.issues"] = function(parent, args, ctx)
   return gitea_repo_connection(owner, name, "/issues?type=issues", args, ctx, function(i)
     return graphql_translate_issue(translate_gitea_issue(i), owner, name)
   end, graphql_issues_connection)
-end
+end)
 
 -- Repository.pullRequests: paginated list of pull requests.
-graphql_resolvers["Repository.pullRequests"] = function(parent, args, ctx)
+b:graphql("Repository.pullRequests", function(parent, args, ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
@@ -3487,11 +3637,11 @@ graphql_resolvers["Repository.pullRequests"] = function(parent, args, ctx)
   return gitea_repo_connection(owner, name, "/pulls", args, ctx, function(p)
     return graphql_translate_pr(translate_gitea_pull(p), owner, name)
   end, graphql_prs_connection)
-end
+end)
 
 -- Repository.releases: paginated list of releases.
 -- Gitea release objects are already GitHub-REST-compatible; no intermediate translator needed.
-graphql_resolvers["Repository.releases"] = function(parent, args, ctx)
+b:graphql("Repository.releases", function(parent, args, ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
@@ -3501,10 +3651,10 @@ graphql_resolvers["Repository.releases"] = function(parent, args, ctx)
   end, function(n, a, t, c)
     return graphql_make_connection("Release", n, a, t, c)
   end)
-end
+end)
 
 -- Repository.labels: paginated list of labels.
-graphql_resolvers["Repository.labels"] = function(parent, args, ctx)
+b:graphql("Repository.labels", function(parent, args, ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
@@ -3512,10 +3662,10 @@ graphql_resolvers["Repository.labels"] = function(parent, args, ctx)
   return gitea_repo_connection(owner, name, "/labels", args, ctx, function(l)
     return graphql_translate_label(translate_gitea_label(l), owner, name)
   end, graphql_labels_connection)
-end
+end)
 
 -- Repository.milestones: paginated list of milestones.
-graphql_resolvers["Repository.milestones"] = function(parent, args, ctx)
+b:graphql("Repository.milestones", function(parent, args, ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
@@ -3525,28 +3675,28 @@ graphql_resolvers["Repository.milestones"] = function(parent, args, ctx)
   end, function(n, a, t, c)
     return graphql_make_connection("Milestone", n, a, t, c)
   end)
-end
+end)
 
 -- Repository.refs: paginated list of branches as Ref objects.
 -- Gitea branch objects use commit.id for the SHA; we normalise to commit.sha before
 -- passing to graphql_translate_ref (which uses r.commit.sha).
-graphql_resolvers["Repository.refs"] = function(parent, args, ctx)
+b:graphql("Repository.refs", function(parent, args, ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
   end
-  return gitea_repo_connection(owner, name, "/branches", args, ctx, function(b)
-    if b.commit then
-      b.commit.sha = b.commit.id
+  return gitea_repo_connection(owner, name, "/branches", args, ctx, function(br)
+    if br.commit then
+      br.commit.sha = br.commit.id
     end
-    return graphql_translate_ref(b, parent)
+    return graphql_translate_ref(br, parent)
   end, graphql_refs_connection)
-end
+end)
 
 -- Issue.comments: paginated list of comments for a single issue.
 -- Decodes the Issue node ID to extract owner/repo/number, then fetches
 -- /api/v1/repos/{owner}/{repo}/issues/{number}/comments.
-graphql_resolvers["Issue.comments"] = function(parent, args, ctx)
+b:graphql("Issue.comments", function(parent, args, ctx)
   local _, local_id = decode_node_id(parent.id)
   if not local_id then
     return nil
@@ -3580,12 +3730,12 @@ graphql_resolvers["Issue.comments"] = function(parent, args, ctx)
     nodes[#nodes + 1] = graphql_translate_comment(translate_gitea_issue_comment(c), owner, repo)
   end
   return graphql_make_connection("IssueComment", nodes, args, total, ctx)
-end
+end)
 
 -- PullRequest.commits: paginated commit list for a pull request.
 -- Decodes the PullRequest node ID (PullRequest:owner/repo/number) for coordinates,
 -- then fetches /api/v1/repos/{owner}/{repo}/pulls/{number}/commits.
-graphql_resolvers["PullRequest.commits"] = function(parent, args, ctx)
+b:graphql("PullRequest.commits", function(parent, args, ctx)
   local _, local_id = decode_node_id(parent.id)
   if not local_id then
     return nil
@@ -3621,10 +3771,10 @@ graphql_resolvers["PullRequest.commits"] = function(parent, args, ctx)
     }
   end
   return graphql_make_connection("PullRequestCommit", nodes, args, total, ctx)
-end
+end)
 
 -- PullRequest.reviews: paginated review list for a pull request.
-graphql_resolvers["PullRequest.reviews"] = function(parent, args, ctx)
+b:graphql("PullRequest.reviews", function(parent, args, ctx)
   local _, local_id = decode_node_id(parent.id)
   if not local_id then
     return nil
@@ -3651,10 +3801,10 @@ graphql_resolvers["PullRequest.reviews"] = function(parent, args, ctx)
     nodes[#nodes + 1] = graphql_translate_review(translate_gitea_review(r), owner, repo)
   end
   return graphql_make_connection("PullRequestReview", nodes, args, total, ctx)
-end
+end)
 
 -- Repository.collaborators: paginated list of collaborators as Users.
-graphql_resolvers["Repository.collaborators"] = function(parent, args, ctx)
+b:graphql("Repository.collaborators", function(parent, args, ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
@@ -3664,14 +3814,14 @@ graphql_resolvers["Repository.collaborators"] = function(parent, args, ctx)
   end, function(n, a, t, c)
     return graphql_make_connection("RepositoryCollaborator", n, a, t, c)
   end)
-end
+end)
 
 -- Repository.defaultBranchRef: enrich the inline stub with full branch data.
 -- The parent already carries {__typename="Ref",name="main"} from graphql_translate_repo.
 -- This resolver makes a second call to get the commit SHA.
 -- Gitea branch objects use commit.id for the SHA; we normalise to commit.sha before
 -- passing to graphql_translate_ref.
-graphql_resolvers["Repository.defaultBranchRef"] = function(parent, _args, _ctx)
+b:graphql("Repository.defaultBranchRef", function(parent, _args, _ctx)
   local branch = parent.defaultBranchRef and parent.defaultBranchRef.name
   if not branch then
     return nil
@@ -3689,12 +3839,12 @@ graphql_resolvers["Repository.defaultBranchRef"] = function(parent, _args, _ctx)
     data.commit.sha = data.commit.id
   end
   return graphql_translate_ref(data, parent)
-end
+end)
 
 -- Repository.languages: fetch language byte-count breakdown as a LanguageConnection.
 -- Gitea returns {"Language": bytes, ...}; we convert to the Relay Connection shape.
 -- Language colours are not available from Gitea's API; color is always nil.
-graphql_resolvers["Repository.languages"] = function(parent, _args, _ctx)
+b:graphql("Repository.languages", function(parent, _args, _ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
@@ -3731,7 +3881,7 @@ graphql_resolvers["Repository.languages"] = function(parent, _args, _ctx)
     nodes = nodes,
     edges = edges,
   }
-end
+end)
 
 -- ---------------------------------------------------------------------------
 -- Query.search
@@ -3753,7 +3903,7 @@ end
 
 -- Query.search: map GitHub GraphQL search to Gitea search endpoints.
 -- Supports REPOSITORY, USER, and ISSUE types; all others return empty.
-graphql_resolvers["Query.search"] = function(_parent, args, ctx)
+b:graphql("Query.search", function(_parent, args, ctx)
   local query = args.query or ""
   local search_type = args.type or "REPOSITORY"
   local per_page = args.first or 30
@@ -3826,7 +3976,7 @@ graphql_resolvers["Query.search"] = function(_parent, args, ctx)
     discussionCount = 0,
     wikiCount = 0,
   }
-end
+end)
 
 -- ---------------------------------------------------------------------------
 -- GraphQL mutation resolvers
@@ -3835,7 +3985,7 @@ end
 -- Mutation.createRepository: create a new repository for the authenticated user or an org.
 -- Input fields: name (required), description, visibility, initializeWithReadme, ownerId.
 -- If ownerId decodes to an Organization, uses POST /orgs/{org}/repos; otherwise /user/repos.
-graphql_resolvers["Mutation.createRepository"] = function(_parent, args, ctx)
+b:graphql("Mutation.createRepository", function(_parent, args, ctx)
   local input = args and args.input
   if not input or not input.name then
     return graphql_error(ctx, "createRepository requires input.name", nil, "BAD_USER_INPUT")
@@ -3863,13 +4013,13 @@ graphql_resolvers["Mutation.createRepository"] = function(_parent, args, ctx)
     repository = graphql_translate_repo(translate_repo(data)),
     clientMutationId = cmid,
   }
-end
+end)
 
 -- Mutation.updateRepository: update metadata for an existing repository.
 -- Input fields: repositoryId (required, Repository node ID), name, description,
 --   visibility, hasIssuesEnabled, hasWikiEnabled, homepageUrl.
 -- Sends PATCH /repos/{owner}/{repo} with only the supplied fields.
-graphql_resolvers["Mutation.updateRepository"] = function(_parent, args, ctx)
+b:graphql("Mutation.updateRepository", function(_parent, args, ctx)
   local input = args and args.input
   if not input or not input.repositoryId then
     return graphql_error(ctx, "updateRepository requires input.repositoryId", nil, "BAD_USER_INPUT")
@@ -3902,13 +4052,13 @@ graphql_resolvers["Mutation.updateRepository"] = function(_parent, args, ctx)
     repository = graphql_translate_repo(translate_repo(data)),
     clientMutationId = cmid,
   }
-end
+end)
 
 -- Mutation.deleteRepository: permanently delete a repository.
 -- Input fields: repositoryId (required, Repository node ID).
 -- Sends DELETE /repos/{owner}/{repo} and expects 204 No Content.
 -- The payload only contains the optional clientMutationId (no body to translate).
-graphql_resolvers["Mutation.deleteRepository"] = function(_parent, args, ctx)
+b:graphql("Mutation.deleteRepository", function(_parent, args, ctx)
   local input = args and args.input
   if not input or not input.repositoryId then
     return graphql_error(ctx, "deleteRepository requires input.repositoryId", nil, "BAD_USER_INPUT")
@@ -3947,7 +4097,7 @@ graphql_resolvers["Mutation.deleteRepository"] = function(_parent, args, ctx)
     return nil
   end
   return { clientMutationId = cmid }
-end
+end)
 
 -- ---------------------------------------------------------------------------
 -- Issue mutations
@@ -3958,7 +4108,7 @@ end
 --   body, labelIds (array of Label node IDs), assigneeIds (array of User node IDs),
 --   milestoneId (Milestone node ID).
 -- Sends POST /repos/{owner}/{repo}/issues and returns the created issue.
-graphql_resolvers["Mutation.createIssue"] = function(_parent, args, ctx)
+b:graphql("Mutation.createIssue", function(_parent, args, ctx)
   local input = args and args.input
   if not input or not input.repositoryId then
     return graphql_error(ctx, "createIssue requires input.repositoryId", nil, "BAD_USER_INPUT")
@@ -4021,12 +4171,12 @@ graphql_resolvers["Mutation.createIssue"] = function(_parent, args, ctx)
     issue = graphql_translate_issue(translate_gitea_issue(data), owner, repo),
     clientMutationId = cmid,
   }
-end
+end)
 
 -- Mutation.updateIssue: update the title, body, and/or state of an issue.
 -- Input fields: id (required, Issue node ID), title, body, state (OPEN or CLOSED).
 -- Sends PATCH /repos/{owner}/{repo}/issues/{number}.
-graphql_resolvers["Mutation.updateIssue"] = function(_parent, args, ctx)
+b:graphql("Mutation.updateIssue", function(_parent, args, ctx)
   local input = args and args.input
   if not input or not input.id then
     return graphql_error(ctx, "updateIssue requires input.id", nil, "BAD_USER_INPUT")
@@ -4057,12 +4207,12 @@ graphql_resolvers["Mutation.updateIssue"] = function(_parent, args, ctx)
     issue = graphql_translate_issue(translate_gitea_issue(data), owner, repo),
     clientMutationId = cmid,
   }
-end
+end)
 
 -- Mutation.closeIssue: close an open issue.
 -- Input fields: issueId (required, Issue node ID).
 -- Sends PATCH /repos/{owner}/{repo}/issues/{number} with state=closed.
-graphql_resolvers["Mutation.closeIssue"] = function(_parent, args, ctx)
+b:graphql("Mutation.closeIssue", function(_parent, args, ctx)
   local input = args and args.input
   if not input or not input.issueId then
     return graphql_error(ctx, "closeIssue requires input.issueId", nil, "BAD_USER_INPUT")
@@ -4086,12 +4236,12 @@ graphql_resolvers["Mutation.closeIssue"] = function(_parent, args, ctx)
     issue = graphql_translate_issue(translate_gitea_issue(data), owner, repo),
     clientMutationId = cmid,
   }
-end
+end)
 
 -- Mutation.reopenIssue: reopen a closed issue.
 -- Input fields: issueId (required, Issue node ID).
 -- Sends PATCH /repos/{owner}/{repo}/issues/{number} with state=open.
-graphql_resolvers["Mutation.reopenIssue"] = function(_parent, args, ctx)
+b:graphql("Mutation.reopenIssue", function(_parent, args, ctx)
   local input = args and args.input
   if not input or not input.issueId then
     return graphql_error(ctx, "reopenIssue requires input.issueId", nil, "BAD_USER_INPUT")
@@ -4115,13 +4265,13 @@ graphql_resolvers["Mutation.reopenIssue"] = function(_parent, args, ctx)
     issue = graphql_translate_issue(translate_gitea_issue(data), owner, repo),
     clientMutationId = cmid,
   }
-end
+end)
 
 -- Mutation.createPullRequest: open a new pull request in a repository.
 -- Input fields: repositoryId (required, Repository node ID), title (required),
 --   body, headRefName (required, source branch), baseRefName (required, target branch).
 -- Sends POST /repos/{owner}/{repo}/pulls and returns the created pull request.
-graphql_resolvers["Mutation.createPullRequest"] = function(_parent, args, ctx)
+b:graphql("Mutation.createPullRequest", function(_parent, args, ctx)
   local input = args and args.input
   if not input or not input.repositoryId then
     return graphql_error(
@@ -4164,12 +4314,12 @@ graphql_resolvers["Mutation.createPullRequest"] = function(_parent, args, ctx)
     pullRequest = graphql_translate_pr(translate_gitea_pull(data), owner, repo),
     clientMutationId = cmid,
   }
-end
+end)
 
 -- Mutation.updatePullRequest: update the title, body, and/or base branch of a pull request.
 -- Input fields: pullRequestId (required, PullRequest node ID), title, body, baseRefName.
 -- Sends PATCH /repos/{owner}/{repo}/pulls/{number}.
-graphql_resolvers["Mutation.updatePullRequest"] = function(_parent, args, ctx)
+b:graphql("Mutation.updatePullRequest", function(_parent, args, ctx)
   local input = args and args.input
   if not input or not input.pullRequestId then
     return graphql_error(
@@ -4198,12 +4348,12 @@ graphql_resolvers["Mutation.updatePullRequest"] = function(_parent, args, ctx)
     pullRequest = graphql_translate_pr(translate_gitea_pull(data), owner, repo),
     clientMutationId = cmid,
   }
-end
+end)
 
 -- Mutation.closePullRequest: close an open pull request.
 -- Input fields: pullRequestId (required, PullRequest node ID).
 -- Sends PATCH /repos/{owner}/{repo}/pulls/{number} with state=closed.
-graphql_resolvers["Mutation.closePullRequest"] = function(_parent, args, ctx)
+b:graphql("Mutation.closePullRequest", function(_parent, args, ctx)
   local input = args and args.input
   if not input or not input.pullRequestId then
     return graphql_error(
@@ -4232,12 +4382,12 @@ graphql_resolvers["Mutation.closePullRequest"] = function(_parent, args, ctx)
     pullRequest = graphql_translate_pr(translate_gitea_pull(data), owner, repo),
     clientMutationId = cmid,
   }
-end
+end)
 
 -- Mutation.reopenPullRequest: reopen a closed pull request.
 -- Input fields: pullRequestId (required, PullRequest node ID).
 -- Sends PATCH /repos/{owner}/{repo}/pulls/{number} with state=open.
-graphql_resolvers["Mutation.reopenPullRequest"] = function(_parent, args, ctx)
+b:graphql("Mutation.reopenPullRequest", function(_parent, args, ctx)
   local input = args and args.input
   if not input or not input.pullRequestId then
     return graphql_error(
@@ -4266,14 +4416,14 @@ graphql_resolvers["Mutation.reopenPullRequest"] = function(_parent, args, ctx)
     pullRequest = graphql_translate_pr(translate_gitea_pull(data), owner, repo),
     clientMutationId = cmid,
   }
-end
+end)
 
 -- Mutation.mergePullRequest: merge an open pull request.
 -- Input fields: pullRequestId (required, PullRequest node ID), mergeMethod
 --   (MERGE/SQUASH/REBASE; defaults to MERGE), commitHeadline, commitBody.
 -- Sends POST /repos/{owner}/{repo}/pulls/{number}/merge (Gitea uses POST; GitHub uses PUT).
 -- The merge endpoint returns 204 No Content, so the PR is re-fetched to populate the payload.
-graphql_resolvers["Mutation.mergePullRequest"] = function(_parent, args, ctx)
+b:graphql("Mutation.mergePullRequest", function(_parent, args, ctx)
   local input = args and args.input
   if not input or not input.pullRequestId then
     return graphql_error(
@@ -4338,7 +4488,7 @@ graphql_resolvers["Mutation.mergePullRequest"] = function(_parent, args, ctx)
     pullRequest = graphql_translate_pr(translate_gitea_pull(pr_data), owner, repo),
     clientMutationId = cmid,
   }
-end
+end)
 
 -- ---------------------------------------------------------------------------
 -- Comment mutations
@@ -4350,7 +4500,7 @@ end
 -- Both Issue and PullRequest node IDs route to the /issues/{n}/comments path — Gitea
 -- uses the issues endpoint for PR comments too.
 -- The payload returns commentEdge (containing the new IssueComment) and clientMutationId.
-graphql_resolvers["Mutation.addComment"] = function(_parent, args, ctx)
+b:graphql("Mutation.addComment", function(_parent, args, ctx)
   local input = args and args.input
   if not input or not input.subjectId then
     return graphql_error(ctx, "addComment requires input.subjectId", nil, "BAD_USER_INPUT")
@@ -4382,12 +4532,12 @@ graphql_resolvers["Mutation.addComment"] = function(_parent, args, ctx)
     },
     clientMutationId = cmid,
   }
-end
+end)
 
 -- Mutation.updateIssueComment: update the body of an existing issue comment.
 -- Input fields: id (required, IssueComment node ID), body (required).
 -- Sends PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}.
-graphql_resolvers["Mutation.updateIssueComment"] = function(_parent, args, ctx)
+b:graphql("Mutation.updateIssueComment", function(_parent, args, ctx)
   local input = args and args.input
   if not input or not input.id then
     return graphql_error(ctx, "updateIssueComment requires input.id", nil, "BAD_USER_INPUT")
@@ -4414,13 +4564,13 @@ graphql_resolvers["Mutation.updateIssueComment"] = function(_parent, args, ctx)
     issueComment = graphql_translate_comment(translate_gitea_issue_comment(data), owner, repo),
     clientMutationId = cmid,
   }
-end
+end)
 
 -- Mutation.deleteIssueComment: delete an issue comment.
 -- Input fields: id (required, IssueComment node ID).
 -- Sends DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}.
 -- Returns 204 No Content on success; the payload only contains the optional clientMutationId.
-graphql_resolvers["Mutation.deleteIssueComment"] = function(_parent, args, ctx)
+b:graphql("Mutation.deleteIssueComment", function(_parent, args, ctx)
   local input = args and args.input
   if not input or not input.id then
     return graphql_error(ctx, "deleteIssueComment requires input.id", nil, "BAD_USER_INPUT")
@@ -4459,9 +4609,9 @@ graphql_resolvers["Mutation.deleteIssueComment"] = function(_parent, args, ctx)
     return nil
   end
   return { clientMutationId = cmid }
-end
+end)
 
-graphql_resolvers["Mutation.addStar"] = function(_parent, args, ctx)
+b:graphql("Mutation.addStar", function(_parent, args, ctx)
   local input = args and args.input
   if not input or not input.starrableId then
     return graphql_error(ctx, "addStar requires input.starrableId", nil, "BAD_USER_INPUT")
@@ -4509,9 +4659,9 @@ graphql_resolvers["Mutation.addStar"] = function(_parent, args, ctx)
     starrable = graphql_translate_repo(translate_repo(repo_data)),
     clientMutationId = cmid,
   }
-end
+end)
 
-graphql_resolvers["Mutation.removeStar"] = function(_parent, args, ctx)
+b:graphql("Mutation.removeStar", function(_parent, args, ctx)
   local input = args and args.input
   if not input or not input.starrableId then
     return graphql_error(ctx, "removeStar requires input.starrableId", nil, "BAD_USER_INPUT")
@@ -4559,9 +4709,9 @@ graphql_resolvers["Mutation.removeStar"] = function(_parent, args, ctx)
     starrable = graphql_translate_repo(translate_repo(repo_data)),
     clientMutationId = cmid,
   }
-end
+end)
 
-graphql_resolvers["Mutation.updateSubscription"] = function(_parent, args, ctx)
+b:graphql("Mutation.updateSubscription", function(_parent, args, ctx)
   local input = args and args.input
   if not input or not input.subscribableId then
     return graphql_error(
@@ -4628,9 +4778,9 @@ graphql_resolvers["Mutation.updateSubscription"] = function(_parent, args, ctx)
     subscribable = graphql_translate_repo(translate_repo(repo_data)),
     clientMutationId = cmid,
   }
-end
+end)
 
-graphql_resolvers["Mutation.createLabel"] = function(_parent, args, ctx)
+b:graphql("Mutation.createLabel", function(_parent, args, ctx)
   local input = args and args.input
   if not input or not input.repositoryId then
     return graphql_error(ctx, "createLabel requires input.repositoryId", nil, "BAD_USER_INPUT")
@@ -4665,9 +4815,9 @@ graphql_resolvers["Mutation.createLabel"] = function(_parent, args, ctx)
     label = graphql_translate_label(translate_gitea_label(data), owner, repo),
     clientMutationId = cmid,
   }
-end
+end)
 
-graphql_resolvers["Mutation.addLabelsToLabelable"] = function(_parent, args, ctx)
+b:graphql("Mutation.addLabelsToLabelable", function(_parent, args, ctx)
   local input = args and args.input
   if not input or not input.labelableId then
     return graphql_error(
@@ -4739,4 +4889,7 @@ graphql_resolvers["Mutation.addLabelsToLabelable"] = function(_parent, args, ctx
     labelable = item_data,
     clientMutationId = cmid,
   }
-end
+end)
+
+b:set_allow_anonymous(_allow_anon)
+b:build()
