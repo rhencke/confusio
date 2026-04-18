@@ -270,9 +270,11 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
   or Makefile variables — both are derived from this table.
 - **`load_family_backend(root)`** is the helper alias backends call instead of raw `dofile`.
   It reads the alias's entry from `provider_families[root].aliases[config.backend]`, sets
-  `config.base_url` from `default_url` when none was supplied, dofiles the root backend,
-  then clears any `app.backend_impl` keys matching the alias's `strip` patterns. All of this
-  replaces the old per-file `dofile` + manual `for k in pairs(app.backend_impl)` strip loops.
+  `config.base_url` from `default_url` when none was supplied, declares the alias's strip
+  patterns in `app._family_strip`, then dofiles the root backend.  The root backend's
+  builder reads `app._family_strip` in `b:build()` and excludes matching REST keys — no
+  post-hoc `app.backend_impl` mutation needed.  `app._family_strip` is cleared to nil
+  after dofile returns so it doesn't affect other code.
 - **`strip` patterns are Lua patterns, not exact names.** `"_package"` matches any key
   containing `_package` (e.g. `list_packages`, `get_package`). Keep patterns tight enough
   not to accidentally strip unrelated keys.
