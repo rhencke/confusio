@@ -204,514 +204,507 @@ local function translate_onedev_commit(c)
   }
 end
 
-app.backend_impl = {
-  get_root = function()
-    proxy_health_check(pcall(Fetch, base() .. "/server-version", auth()))
-  end,
+local b = make_backend_builder()
+b:rest("get_root", function()
+  proxy_health_check(pcall(Fetch, base() .. "/server-version", auth()))
+end)
 
-  get_repo = function(owner, repo_name)
-    local id = resolve_project_id(owner, repo_name)
-    if not id then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    proxy_json(translate_onedev_repo, fetch_json(base() .. "/projects/" .. id))
-  end,
+b:rest("get_repo", function(owner, repo_name)
+  local id = resolve_project_id(owner, repo_name)
+  if not id then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  proxy_json(translate_onedev_repo, fetch_json(base() .. "/projects/" .. id))
+end)
 
-  patch_repo = function(owner, repo_name)
-    local id = resolve_project_id(owner, repo_name)
-    if not id then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    proxy_json(
-      translate_onedev_repo,
-      fetch_json(base() .. "/projects/" .. id, "PATCH", translate_onedev_req(GetBody()))
-    )
-  end,
+b:rest("patch_repo", function(owner, repo_name)
+  local id = resolve_project_id(owner, repo_name)
+  if not id then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  proxy_json(
+    translate_onedev_repo,
+    fetch_json(base() .. "/projects/" .. id, "PATCH", translate_onedev_req(GetBody()))
+  )
+end)
 
-  delete_repo = function(owner, repo_name)
-    local id = resolve_project_id(owner, repo_name)
-    if not id then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    local dopts = auth() or {}
-    dopts.method = "DELETE"
-    proxy_204({ 200 }, pcall(Fetch, base() .. "/projects/" .. id, dopts))
-  end,
+b:rest("delete_repo", function(owner, repo_name)
+  local id = resolve_project_id(owner, repo_name)
+  if not id then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  local dopts = auth() or {}
+  dopts.method = "DELETE"
+  proxy_204({ 200 }, pcall(Fetch, base() .. "/projects/" .. id, dopts))
+end)
 
-  get_user_repos = function()
-    -- OneDev uses offset-based pagination: count=N, offset=(page-1)*N
-    local count = tonumber(GetParam("per_page")) or 30
-    local page = tonumber(GetParam("page")) or 1
-    proxy_json(
-      translate_onedev_repos,
-      fetch_json(base() .. "/projects?count=" .. count .. "&offset=" .. ((page - 1) * count))
-    )
-  end,
+b:rest("get_user_repos", function()
+  -- OneDev uses offset-based pagination: count=N, offset=(page-1)*N
+  local count = tonumber(GetParam("per_page")) or 30
+  local page = tonumber(GetParam("page")) or 1
+  proxy_json(
+    translate_onedev_repos,
+    fetch_json(base() .. "/projects?count=" .. count .. "&offset=" .. ((page - 1) * count))
+  )
+end)
 
-  post_user_repos = function()
-    proxy_json_created(
-      translate_onedev_repo,
-      fetch_json(base() .. "/projects", "POST", translate_onedev_req(GetBody()))
-    )
-  end,
+b:rest("post_user_repos", function()
+  proxy_json_created(
+    translate_onedev_repo,
+    fetch_json(base() .. "/projects", "POST", translate_onedev_req(GetBody()))
+  )
+end)
 
-  get_org_repos = function(org)
-    -- OneDev groups/orgs map to parent projects; query by parent path.
-    local query = "%22Parent%22+is+%22" .. org .. "%22"
-    local count = tonumber(GetParam("per_page")) or 30
-    local page = tonumber(GetParam("page")) or 1
-    proxy_json(
-      translate_onedev_repos,
-      fetch_json(
-        base()
-          .. "/projects?query="
-          .. query
-          .. "&count="
-          .. count
-          .. "&offset="
-          .. ((page - 1) * count)
-      )
-    )
-  end,
-
-  post_org_repos = function(org)
-    local req = DecodeJson(GetBody() or "{}")
-    local od = {
-      name = req.name,
-      description = req.description or "",
-      public = not (req.private or false),
-      parent = { path = org },
-    }
-    proxy_json_created(
-      translate_onedev_repo,
-      fetch_json(base() .. "/projects", "POST", EncodeJson(od))
-    )
-  end,
-
-  -- Branches ------------------------------------------------------------------
-  -- OneDev: GET /~api/projects/{id}/branches → [{ name, commitHash }]
-
-  get_repo_branches = function(owner, repo_name)
-    local id = resolve_project_id(owner, repo_name)
-    if not id then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    local count = tonumber(GetParam("per_page")) or 30
-    local page = tonumber(GetParam("page")) or 1
-    proxy_json(
-      function(branches)
-        return translate_list(translate_onedev_branch, branches)
-      end,
-      fetch_json(
-        base()
-          .. "/projects/"
-          .. id
-          .. "/branches?count="
-          .. count
-          .. "&offset="
-          .. ((page - 1) * count)
-      )
-    )
-  end,
-
-  get_repo_branch = function(owner, repo_name, branch)
-    local id = resolve_project_id(owner, repo_name)
-    if not id then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    -- OneDev: GET /~api/projects/{id}/branches?query=name+is+{branch}&count=1
-    local query = "%22Name%22+is+%22" .. branch .. "%22"
-    proxy_json(function(branches)
-      local b = (branches or {})[1]
-      if not b then
-        return {}
-      end
-      return translate_onedev_branch(b)
-    end, fetch_json(base() .. "/projects/" .. id .. "/branches?query=" .. query .. "&count=1"))
-  end,
-
-  -- Commits -------------------------------------------------------------------
-  -- OneDev: GET /~api/projects/{id}/commits?revision={ref}&count={n}&offset={offset}
-  -- Returns [{ hash, message, author, committer }]
-
-  get_repo_commits = function(owner, repo_name)
-    local id = resolve_project_id(owner, repo_name)
-    if not id then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    local ref = GetParam("sha") or ""
-    local count = tonumber(GetParam("per_page")) or 30
-    local page = tonumber(GetParam("page")) or 1
-    local url = base()
-      .. "/projects/"
-      .. id
-      .. "/commits?count="
-      .. count
-      .. "&offset="
-      .. ((page - 1) * count)
-    if ref ~= "" then
-      url = url .. "&revision=" .. ref
-    end
-    proxy_json(function(commits)
-      return translate_list(translate_onedev_commit, commits)
-    end, fetch_json(url))
-  end,
-
-  get_repo_commit = function(owner, repo_name, ref)
-    local id = resolve_project_id(owner, repo_name)
-    if not id then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    proxy_json(
-      translate_onedev_commit,
-      fetch_json(base() .. "/projects/" .. id .. "/commits/" .. ref)
-    )
-  end,
-
-  -- Tags ----------------------------------------------------------------------
-
-  get_repo_tags = function(owner, repo_name)
-    local id = resolve_project_id(owner, repo_name)
-    if not id then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    -- OneDev returns [{ name, commitHash }]
-    proxy_json(function(tags)
-      tags = tags or {}
-      local result = {}
-      for _, t in ipairs(tags) do
-        result[#result + 1] =
-          { name = t.name or "", commit = { sha = t.commitHash or "", url = "" } }
-      end
-      return result
-    end, fetch_json(base() .. "/projects/" .. id .. "/tags"))
-  end,
-
-  -- Contents ------------------------------------------------------------------
-  -- OneDev: GET /~api/blobs/{projectId}/{revision}/{path}
-  -- Returns raw file content; we wrap it in a GitHub-shaped object.
-
-  get_repo_content = function(owner, repo_name, path)
-    local id = resolve_project_id(owner, repo_name)
-    if not id then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    local ref = GetParam("ref") or "HEAD"
-    local url = base() .. "/blobs/" .. id .. "/" .. ref .. "/" .. path
-    local ok, status, _, body = fetch_json(url)
-    if ok and status == 200 then
-      respond_json(200, {
-        type = "file",
-        name = path:match("[^/]+$") or path,
-        path = path,
-        sha = "",
-        size = #body,
-        encoding = "base64",
-        content = EncodeBase64(body),
-      })
-    elseif ok then
-      respond_json(status, { message = "Error" })
-    else
-      respond_json(503, {})
-    end
-  end,
-
-  -- Forks ---------------------------------------------------------------------
-
-  post_repo_forks = function(owner, repo_name)
-    local id = resolve_project_id(owner, repo_name)
-    if not id then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    proxy_json_created(
-      translate_onedev_repo,
-      fetch_json(base() .. "/projects/" .. id .. "/forks", "POST", GetBody())
-    )
-  end,
-
-  -- Users' repos --------------------------------------------------------------
-
-  get_users_repos = function(username)
-    local query = "%22Owner%22+is+%22" .. username .. "%22"
-    local count = tonumber(GetParam("per_page")) or 30
-    local page = tonumber(GetParam("page")) or 1
-    proxy_json(
-      translate_onedev_repos,
-      fetch_json(
-        base()
-          .. "/projects?query="
-          .. query
-          .. "&count="
-          .. count
-          .. "&offset="
-          .. ((page - 1) * count)
-      )
-    )
-  end,
-
-  -- Public repos list ---------------------------------------------------------
-
-  get_repositories = function()
-    local query = "%22Public%22+is+%22true%22"
-    local count = tonumber(GetParam("per_page")) or 30
-    local page = tonumber(GetParam("page")) or 1
-    proxy_json(
-      translate_onedev_repos,
-      fetch_json(
-        base()
-          .. "/projects?query="
-          .. query
-          .. "&count="
-          .. count
-          .. "&offset="
-          .. ((page - 1) * count)
-      )
-    )
-  end,
-
-  -- Users ---------------------------------------------------------------------
-
-  -- GET /users
-  get_users = function()
-    local count = GetParam("per_page") or "30"
-    local page = tonumber(GetParam("page")) or 1
-    local offset = (page - 1) * (tonumber(count) or 30)
-    proxy_json(function(users)
-      return translate_list(translate_onedev_user, users)
-    end, fetch_json(base() .. "/users?offset=" .. offset .. "&count=" .. count))
-  end,
-
-  -- GET /users/{username} — query by name, take first match
-  get_users_username = proxy_handler(function(users)
-    local u = (users and users[1]) or {}
-    return translate_onedev_user(u)
-  end, function(username)
-    return base() .. "/users?query=name+is+%22" .. username .. "%22&count=1"
-  end),
-
-  -- Issues --------------------------------------------------------------------
-  -- OneDev: GET /~api/issues?query="Project" is "owner/repo"&count=N&offset=O
-
-  get_repo_issues = function(owner, repo_name)
-    local path = owner ~= "" and (owner .. "/" .. repo_name) or repo_name
-    local count = tonumber(GetParam("per_page")) or 30
-    local page = tonumber(GetParam("page")) or 1
-    local state = GetParam("state") or "open"
-    local query = "%22Project%22+is+%22" .. path .. "%22"
-    if state == "closed" then
-      query = query .. "+%22State%22+is+%22Closed%22"
-    elseif state ~= "all" then
-      query = query .. "+%22State%22+is+%22Open%22"
-    end
-    proxy_json(
-      function(issues)
-        return translate_list(translate_onedev_issue, issues)
-      end,
-      fetch_json(
-        base()
-          .. "/issues?query="
-          .. query
-          .. "&count="
-          .. count
-          .. "&offset="
-          .. ((page - 1) * count)
-      )
-    )
-  end,
-
-  -- GET /repos/{owner}/{repo}/issues/{issue_number}
-  -- OneDev: query by project path + per-project number, take first result.
-  get_repo_issue = function(owner, repo_name, issue_number)
-    local path = owner ~= "" and (owner .. "/" .. repo_name) or repo_name
-    local query = "%22Project%22+is+%22"
-      .. path
-      .. "%22+%22Number%22+is+%22"
-      .. issue_number
-      .. "%22"
-    local ok, status, _, body = fetch_json(base() .. "/issues?query=" .. query .. "&count=1")
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local issues = DecodeJson(body) or {}
-    if not issues[1] then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    respond_json(200, translate_onedev_issue(issues[1]))
-  end,
-
-  -- POST /repos/{owner}/{repo}/issues
-  post_repo_issues = function(owner, repo_name)
-    local id = resolve_project_id(owner, repo_name)
-    if not id then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    local req = DecodeJson(GetBody() or "{}")
-    local od = { projectId = id, title = req.title or "", description = req.body or "" }
-    proxy_json_created(
-      translate_onedev_issue,
-      fetch_json(base() .. "/issues", "POST", EncodeJson(od))
-    )
-  end,
-
-  -- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
-  -- OneDev: resolve global issue ID first, then query /~api/issue-comments.
-  get_issue_comments = function(owner, repo_name, issue_number)
-    local path = owner ~= "" and (owner .. "/" .. repo_name) or repo_name
-    local nq = "%22Project%22+is+%22" .. path .. "%22+%22Number%22+is+%22" .. issue_number .. "%22"
-    local ok, status, _, body = fetch_json(base() .. "/issues?query=" .. nq .. "&count=1")
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local issues = DecodeJson(body) or {}
-    if not issues[1] then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    local issue_id = issues[1].id
-    local count = tonumber(GetParam("per_page")) or 30
-    local page = tonumber(GetParam("page")) or 1
-    local cq = "%22Issue%22+is+%22" .. issue_id .. "%22"
-    proxy_json(
-      function(comments)
-        return translate_list(translate_onedev_issue_comment, comments)
-      end,
-      fetch_json(
-        base()
-          .. "/issue-comments?query="
-          .. cq
-          .. "&count="
-          .. count
-          .. "&offset="
-          .. ((page - 1) * count)
-      )
-    )
-  end,
-
-  -- POST /repos/{owner}/{repo}/issues/{issue_number}/comments
-  post_issue_comment = function(owner, repo_name, issue_number)
-    local path = owner ~= "" and (owner .. "/" .. repo_name) or repo_name
-    local nq = "%22Project%22+is+%22" .. path .. "%22+%22Number%22+is+%22" .. issue_number .. "%22"
-    local ok, status, _, body = fetch_json(base() .. "/issues?query=" .. nq .. "&count=1")
-    if not ok or status ~= 200 then
-      respond_json(status or 503, {})
-      return
-    end
-    local issues = DecodeJson(body) or {}
-    if not issues[1] then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    local issue_id = issues[1].id
-    local req = DecodeJson(GetBody() or "{}")
-    local od = { issueId = issue_id, content = req.body or "" }
-    proxy_json_created(
-      translate_onedev_issue_comment,
-      fetch_json(base() .. "/issue-comments", "POST", EncodeJson(od))
-    )
-  end,
-
-  -- Checks (via OneDev CI builds) -----------------------------------------------
-  --
-  -- OneDev CI builds are the natural mapping for GitHub Check Runs.
-  --   • GET commits/{ref}/check-runs → query /~api/builds by project + commit hash.
-  --   • POST check-runs              → stub (no API to push an external check status).
-  --   • GET/PATCH by check_run_id   → minimal stub (would need a reverse-lookup).
-  --   • Check Suites have no OneDev equivalent; all suite endpoints are stubs.
-  --   • Annotations are always empty.
-  --
-  -- OneDev build status → GitHub status/conclusion mapping:
-  --   WAITING    → status=queued,      conclusion=null
-  --   RUNNING    → status=in_progress, conclusion=null
-  --   SUCCESSFUL → status=completed,   conclusion=success
-  --   FAILED     → status=completed,   conclusion=failure
-  --   CANCELLED  → status=completed,   conclusion=cancelled
-  --   TIMED_OUT  → status=completed,   conclusion=timed_out
-
-  -- POST /repos/{owner}/{repo}/check-runs
-  -- OneDev has no external check-status push API; falls back to route_default stub.
-
-  -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
-  -- Maps to OneDev GET /~api/builds?query="Project" is "owner/repo" "Commit" is "{ref}".
-  -- OneDev build objects: { id, number, jobName, status, commitHash, refName, project }
-  get_commit_check_runs = function(owner, repo_name, ref)
-    local path = owner ~= "" and (owner .. "/" .. repo_name) or repo_name
-    local query = "%22Project%22+is+%22" .. path .. "%22+%22Commit%22+is+%22" .. ref .. "%22"
-    local count = tonumber(GetParam("per_page")) or 30
-    local page = tonumber(GetParam("page")) or 1
-    local ok, status, _, body = fetch_json(
+b:rest("get_org_repos", function(org)
+  -- OneDev groups/orgs map to parent projects; query by parent path.
+  local query = "%22Parent%22+is+%22" .. org .. "%22"
+  local count = tonumber(GetParam("per_page")) or 30
+  local page = tonumber(GetParam("page")) or 1
+  proxy_json(
+    translate_onedev_repos,
+    fetch_json(
       base()
-        .. "/builds?query="
+        .. "/projects?query="
         .. query
         .. "&count="
         .. count
         .. "&offset="
         .. ((page - 1) * count)
     )
-    if not ok then
-      respond_json(503, {})
-      return
+  )
+end)
+
+b:rest("post_org_repos", function(org)
+  local req = DecodeJson(GetBody() or "{}")
+  local od = {
+    name = req.name,
+    description = req.description or "",
+    public = not (req.private or false),
+    parent = { path = org },
+  }
+  proxy_json_created(
+    translate_onedev_repo,
+    fetch_json(base() .. "/projects", "POST", EncodeJson(od))
+  )
+end)
+
+-- Branches ------------------------------------------------------------------
+-- OneDev: GET /~api/projects/{id}/branches → [{ name, commitHash }]
+
+b:rest("get_repo_branches", function(owner, repo_name)
+  local id = resolve_project_id(owner, repo_name)
+  if not id then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  local count = tonumber(GetParam("per_page")) or 30
+  local page = tonumber(GetParam("page")) or 1
+  proxy_json(
+    function(branches)
+      return translate_list(translate_onedev_branch, branches)
+    end,
+    fetch_json(
+      base()
+        .. "/projects/"
+        .. id
+        .. "/branches?count="
+        .. count
+        .. "&offset="
+        .. ((page - 1) * count)
+    )
+  )
+end)
+
+b:rest("get_repo_branch", function(owner, repo_name, branch)
+  local id = resolve_project_id(owner, repo_name)
+  if not id then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  -- OneDev: GET /~api/projects/{id}/branches?query=name+is+{branch}&count=1
+  local query = "%22Name%22+is+%22" .. branch .. "%22"
+  proxy_json(function(branches)
+    local br = (branches or {})[1]
+    if not br then
+      return {}
     end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
+    return translate_onedev_branch(br)
+  end, fetch_json(base() .. "/projects/" .. id .. "/branches?query=" .. query .. "&count=1"))
+end)
+
+-- Commits -------------------------------------------------------------------
+-- OneDev: GET /~api/projects/{id}/commits?revision={ref}&count={n}&offset={offset}
+-- Returns [{ hash, message, author, committer }]
+
+b:rest("get_repo_commits", function(owner, repo_name)
+  local id = resolve_project_id(owner, repo_name)
+  if not id then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  local ref = GetParam("sha") or ""
+  local count = tonumber(GetParam("per_page")) or 30
+  local page = tonumber(GetParam("page")) or 1
+  local url = base()
+    .. "/projects/"
+    .. id
+    .. "/commits?count="
+    .. count
+    .. "&offset="
+    .. ((page - 1) * count)
+  if ref ~= "" then
+    url = url .. "&revision=" .. ref
+  end
+  proxy_json(function(commits)
+    return translate_list(translate_onedev_commit, commits)
+  end, fetch_json(url))
+end)
+
+b:rest("get_repo_commit", function(owner, repo_name, ref)
+  local id = resolve_project_id(owner, repo_name)
+  if not id then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  proxy_json(
+    translate_onedev_commit,
+    fetch_json(base() .. "/projects/" .. id .. "/commits/" .. ref)
+  )
+end)
+
+-- Tags ----------------------------------------------------------------------
+
+b:rest("get_repo_tags", function(owner, repo_name)
+  local id = resolve_project_id(owner, repo_name)
+  if not id then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  -- OneDev returns [{ name, commitHash }]
+  proxy_json(function(tags)
+    tags = tags or {}
+    local result = {}
+    for _, t in ipairs(tags) do
+      result[#result + 1] = { name = t.name or "", commit = { sha = t.commitHash or "", url = "" } }
     end
-    local builds = DecodeJson(body) or {}
-    local runs = {}
-    for _, b in ipairs(builds) do
-      local od_status = b.status or "WAITING"
-      local od_to_gh = {
-        WAITING = { status = "queued", conclusion = nil },
-        RUNNING = { status = "in_progress", conclusion = nil },
-        SUCCESSFUL = { status = "completed", conclusion = "success" },
-        CANCELLED = { status = "completed", conclusion = "cancelled" },
-        TIMED_OUT = { status = "completed", conclusion = "timed_out" },
-      }
-      local mapped = od_to_gh[od_status] or { status = "completed", conclusion = "failure" }
-      local gh_status, gh_conclusion = mapped.status, mapped.conclusion
-      runs[#runs + 1] = {
-        id = b.id or 0,
-        node_id = "",
-        head_sha = b.commitHash or ref,
-        name = b.jobName or tostring(b.number or b.id or 0),
-        status = gh_status,
-        conclusion = gh_conclusion,
-        started_at = nil,
-        completed_at = gh_status == "completed" and "" or nil,
-        output = {
-          title = b.jobName or "",
-          summary = b.jobName or "",
-          text = "",
-          annotations_count = 0,
-          annotations_url = "",
-        },
-        url = "",
-        html_url = b.id and (config.base_url .. "/" .. path .. "/~builds/" .. (b.number or b.id))
-          or "",
-        details_url = "",
-      }
-    end
-    respond_json(200, { total_count = #runs, check_runs = runs })
-  end,
-}
+    return result
+  end, fetch_json(base() .. "/projects/" .. id .. "/tags"))
+end)
+
+-- Contents ------------------------------------------------------------------
+-- OneDev: GET /~api/blobs/{projectId}/{revision}/{path}
+-- Returns raw file content; we wrap it in a GitHub-shaped object.
+
+b:rest("get_repo_content", function(owner, repo_name, path)
+  local id = resolve_project_id(owner, repo_name)
+  if not id then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  local ref = GetParam("ref") or "HEAD"
+  local url = base() .. "/blobs/" .. id .. "/" .. ref .. "/" .. path
+  local ok, status, _, body = fetch_json(url)
+  if ok and status == 200 then
+    respond_json(200, {
+      type = "file",
+      name = path:match("[^/]+$") or path,
+      path = path,
+      sha = "",
+      size = #body,
+      encoding = "base64",
+      content = EncodeBase64(body),
+    })
+  elseif ok then
+    respond_json(status, { message = "Error" })
+  else
+    respond_json(503, {})
+  end
+end)
+
+-- Forks ---------------------------------------------------------------------
+
+b:rest("post_repo_forks", function(owner, repo_name)
+  local id = resolve_project_id(owner, repo_name)
+  if not id then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  proxy_json_created(
+    translate_onedev_repo,
+    fetch_json(base() .. "/projects/" .. id .. "/forks", "POST", GetBody())
+  )
+end)
+
+-- Users' repos --------------------------------------------------------------
+
+b:rest("get_users_repos", function(username)
+  local query = "%22Owner%22+is+%22" .. username .. "%22"
+  local count = tonumber(GetParam("per_page")) or 30
+  local page = tonumber(GetParam("page")) or 1
+  proxy_json(
+    translate_onedev_repos,
+    fetch_json(
+      base()
+        .. "/projects?query="
+        .. query
+        .. "&count="
+        .. count
+        .. "&offset="
+        .. ((page - 1) * count)
+    )
+  )
+end)
+
+-- Public repos list ---------------------------------------------------------
+
+b:rest("get_repositories", function()
+  local query = "%22Public%22+is+%22true%22"
+  local count = tonumber(GetParam("per_page")) or 30
+  local page = tonumber(GetParam("page")) or 1
+  proxy_json(
+    translate_onedev_repos,
+    fetch_json(
+      base()
+        .. "/projects?query="
+        .. query
+        .. "&count="
+        .. count
+        .. "&offset="
+        .. ((page - 1) * count)
+    )
+  )
+end)
+
+-- Users ---------------------------------------------------------------------
+
+-- GET /users
+b:rest("get_users", function()
+  local count = GetParam("per_page") or "30"
+  local page = tonumber(GetParam("page")) or 1
+  local offset = (page - 1) * (tonumber(count) or 30)
+  proxy_json(function(users)
+    return translate_list(translate_onedev_user, users)
+  end, fetch_json(base() .. "/users?offset=" .. offset .. "&count=" .. count))
+end)
+
+-- GET /users/{username} — query by name, take first match
+b:rest(
+  "get_users_username",
+  proxy_handler(function(users)
+    local u = (users and users[1]) or {}
+    return translate_onedev_user(u)
+  end, function(username)
+    return base() .. "/users?query=name+is+%22" .. username .. "%22&count=1"
+  end)
+)
+
+-- Issues --------------------------------------------------------------------
+-- OneDev: GET /~api/issues?query="Project" is "owner/repo"&count=N&offset=O
+
+b:rest("get_repo_issues", function(owner, repo_name)
+  local path = owner ~= "" and (owner .. "/" .. repo_name) or repo_name
+  local count = tonumber(GetParam("per_page")) or 30
+  local page = tonumber(GetParam("page")) or 1
+  local state = GetParam("state") or "open"
+  local query = "%22Project%22+is+%22" .. path .. "%22"
+  if state == "closed" then
+    query = query .. "+%22State%22+is+%22Closed%22"
+  elseif state ~= "all" then
+    query = query .. "+%22State%22+is+%22Open%22"
+  end
+  proxy_json(
+    function(issues)
+      return translate_list(translate_onedev_issue, issues)
+    end,
+    fetch_json(
+      base()
+        .. "/issues?query="
+        .. query
+        .. "&count="
+        .. count
+        .. "&offset="
+        .. ((page - 1) * count)
+    )
+  )
+end)
+
+-- GET /repos/{owner}/{repo}/issues/{issue_number}
+-- OneDev: query by project path + per-project number, take first result.
+b:rest("get_repo_issue", function(owner, repo_name, issue_number)
+  local path = owner ~= "" and (owner .. "/" .. repo_name) or repo_name
+  local query = "%22Project%22+is+%22" .. path .. "%22+%22Number%22+is+%22" .. issue_number .. "%22"
+  local ok, status, _, body = fetch_json(base() .. "/issues?query=" .. query .. "&count=1")
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local issues = DecodeJson(body) or {}
+  if not issues[1] then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  respond_json(200, translate_onedev_issue(issues[1]))
+end)
+
+-- POST /repos/{owner}/{repo}/issues
+b:rest("post_repo_issues", function(owner, repo_name)
+  local id = resolve_project_id(owner, repo_name)
+  if not id then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  local req = DecodeJson(GetBody() or "{}")
+  local od = { projectId = id, title = req.title or "", description = req.body or "" }
+  proxy_json_created(
+    translate_onedev_issue,
+    fetch_json(base() .. "/issues", "POST", EncodeJson(od))
+  )
+end)
+
+-- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
+-- OneDev: resolve global issue ID first, then query /~api/issue-comments.
+b:rest("get_issue_comments", function(owner, repo_name, issue_number)
+  local path = owner ~= "" and (owner .. "/" .. repo_name) or repo_name
+  local nq = "%22Project%22+is+%22" .. path .. "%22+%22Number%22+is+%22" .. issue_number .. "%22"
+  local ok, status, _, body = fetch_json(base() .. "/issues?query=" .. nq .. "&count=1")
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local issues = DecodeJson(body) or {}
+  if not issues[1] then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  local issue_id = issues[1].id
+  local count = tonumber(GetParam("per_page")) or 30
+  local page = tonumber(GetParam("page")) or 1
+  local cq = "%22Issue%22+is+%22" .. issue_id .. "%22"
+  proxy_json(
+    function(comments)
+      return translate_list(translate_onedev_issue_comment, comments)
+    end,
+    fetch_json(
+      base()
+        .. "/issue-comments?query="
+        .. cq
+        .. "&count="
+        .. count
+        .. "&offset="
+        .. ((page - 1) * count)
+    )
+  )
+end)
+
+-- POST /repos/{owner}/{repo}/issues/{issue_number}/comments
+b:rest("post_issue_comment", function(owner, repo_name, issue_number)
+  local path = owner ~= "" and (owner .. "/" .. repo_name) or repo_name
+  local nq = "%22Project%22+is+%22" .. path .. "%22+%22Number%22+is+%22" .. issue_number .. "%22"
+  local ok, status, _, body = fetch_json(base() .. "/issues?query=" .. nq .. "&count=1")
+  if not ok or status ~= 200 then
+    respond_json(status or 503, {})
+    return
+  end
+  local issues = DecodeJson(body) or {}
+  if not issues[1] then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  local issue_id = issues[1].id
+  local req = DecodeJson(GetBody() or "{}")
+  local od = { issueId = issue_id, content = req.body or "" }
+  proxy_json_created(
+    translate_onedev_issue_comment,
+    fetch_json(base() .. "/issue-comments", "POST", EncodeJson(od))
+  )
+end)
+
+-- Checks (via OneDev CI builds) -----------------------------------------------
+--
+-- OneDev CI builds are the natural mapping for GitHub Check Runs.
+--   • GET commits/{ref}/check-runs → query /~api/builds by project + commit hash.
+--   • POST check-runs              → stub (no API to push an external check status).
+--   • GET/PATCH by check_run_id   → minimal stub (would need a reverse-lookup).
+--   • Check Suites have no OneDev equivalent; all suite endpoints are stubs.
+--   • Annotations are always empty.
+--
+-- OneDev build status → GitHub status/conclusion mapping:
+--   WAITING    → status=queued,      conclusion=null
+--   RUNNING    → status=in_progress, conclusion=null
+--   SUCCESSFUL → status=completed,   conclusion=success
+--   FAILED     → status=completed,   conclusion=failure
+--   CANCELLED  → status=completed,   conclusion=cancelled
+--   TIMED_OUT  → status=completed,   conclusion=timed_out
+
+-- POST /repos/{owner}/{repo}/check-runs
+-- OneDev has no external check-status push API; falls back to route_default stub.
+
+-- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
+-- Maps to OneDev GET /~api/builds?query="Project" is "owner/repo" "Commit" is "{ref}".
+-- OneDev build objects: { id, number, jobName, status, commitHash, refName, project }
+b:rest("get_commit_check_runs", function(owner, repo_name, ref)
+  local path = owner ~= "" and (owner .. "/" .. repo_name) or repo_name
+  local query = "%22Project%22+is+%22" .. path .. "%22+%22Commit%22+is+%22" .. ref .. "%22"
+  local count = tonumber(GetParam("per_page")) or 30
+  local page = tonumber(GetParam("page")) or 1
+  local ok, status, _, body = fetch_json(
+    base() .. "/builds?query=" .. query .. "&count=" .. count .. "&offset=" .. ((page - 1) * count)
+  )
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local builds = DecodeJson(body) or {}
+  local runs = {}
+  for _, br in ipairs(builds) do
+    local od_status = br.status or "WAITING"
+    local od_to_gh = {
+      WAITING = { status = "queued", conclusion = nil },
+      RUNNING = { status = "in_progress", conclusion = nil },
+      SUCCESSFUL = { status = "completed", conclusion = "success" },
+      CANCELLED = { status = "completed", conclusion = "cancelled" },
+      TIMED_OUT = { status = "completed", conclusion = "timed_out" },
+    }
+    local mapped = od_to_gh[od_status] or { status = "completed", conclusion = "failure" }
+    local gh_status, gh_conclusion = mapped.status, mapped.conclusion
+    runs[#runs + 1] = {
+      id = br.id or 0,
+      node_id = "",
+      head_sha = br.commitHash or ref,
+      name = br.jobName or tostring(br.number or br.id or 0),
+      status = gh_status,
+      conclusion = gh_conclusion,
+      started_at = nil,
+      completed_at = gh_status == "completed" and "" or nil,
+      output = {
+        title = br.jobName or "",
+        summary = br.jobName or "",
+        text = "",
+        annotations_count = 0,
+        annotations_url = "",
+      },
+      url = "",
+      html_url = br.id and (config.base_url .. "/" .. path .. "/~builds/" .. (br.number or br.id))
+        or "",
+      details_url = "",
+    }
+  end
+  respond_json(200, { total_count = #runs, check_runs = runs })
+end)
+
+b:build()

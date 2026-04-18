@@ -220,13 +220,15 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
 | Routes and default handler stubs | `endpoint_sections` in `internal/catalog.lua` | route registration, `defaults` table wire-up, compatibility matrix sections, test file discovery, `make dump-endpoints` / `validate-tests` / `validate-csv` / `site` |
 | Provider family membership | `provider_families` in `internal/families.lua` | mock building via `.make-families.mk` (auto-generated), `make validate-providers`, `load_family_backend` behavior |
 | Backend transport scaffold | `make_backend_transport` in `internal/transport.lua` | `fetch_json`, `proxy_json*`, `proxy_204`, `proxy_json_list`, `proxy_health_check`, pagination params — all consumed by backends via the transport object |
-| Application module layout | nine `internal/*.lua` files, dofile'd in fixed order by `.init.lua` | the full global surface for backends; see "Internal module layout" for load order and exported globals |
+| Application module layout | ten `internal/*.lua` files, dofile'd in fixed order by `.init.lua` | the full global surface for backends; see "Internal module layout" for load order and exported globals |
 
 **Adding an endpoint**: touch `internal/catalog.lua` (`endpoint_sections`) and `internal/defaults.lua`, plus per-backend overrides in `backends/<name>.lua` if native support is needed.
 
 **Adding a standalone backend**: create `backends/<name>.lua`, add `<name>` to `BACKENDS` in the Makefile, create hurl test files, add a `site/compatibility.csv` column.
 
 **Adding a family-alias backend**: update `provider_families` in `internal/families.lua` (the single declaration), create a one-line `backends/<alias>.lua` calling `load_family_backend`, add to `BACKENDS` — no mock file needed.
+
+**Backend registration**: all backends must use `make_backend_builder()` / `b:rest()` / `b:graphql()` / `b:build()`. Direct assignment to `app.backend_impl` or `graphql_resolvers` is forbidden. `make validate-builders` enforces this and is wired into `make test`.
 
 ### Redbean
 
@@ -270,9 +272,11 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
   or Makefile variables — both are derived from this table.
 - **`load_family_backend(root)`** is the helper alias backends call instead of raw `dofile`.
   It reads the alias's entry from `provider_families[root].aliases[config.backend]`, sets
-  `config.base_url` from `default_url` when none was supplied, dofiles the root backend,
-  then clears any `app.backend_impl` keys matching the alias's `strip` patterns. All of this
-  replaces the old per-file `dofile` + manual `for k in pairs(app.backend_impl)` strip loops.
+  `config.base_url` from `default_url` when none was supplied, declares the alias's strip
+  patterns in `app._family_strip`, then dofiles the root backend.  The root backend's
+  builder reads `app._family_strip` in `b:build()` and excludes matching REST keys — no
+  post-hoc `app.backend_impl` mutation needed.  `app._family_strip` is cleared to nil
+  after dofile returns so it doesn't affect other code.
 - **`strip` patterns are Lua patterns, not exact names.** `"_package"` matches any key
   containing `_package` (e.g. `list_packages`, `get_package`). Keep patterns tight enough
   not to accidentally strip unrelated keys.
@@ -349,7 +353,7 @@ Do **not** use `proxy_search_envelope` when:
 
 ### Internal module layout
 
-The nine `internal/` modules are loaded by `.init.lua` in a fixed order. Each exports only globals — no `require`/`return` pattern; `dofile` runs in global scope.
+The ten `internal/` modules are loaded by `.init.lua` in a fixed order. Each exports only globals — no `require`/`return` pattern; `dofile` runs in global scope.
 
 **Load order and exports:**
 
@@ -360,14 +364,16 @@ The nine `internal/` modules are loaded by `.init.lua` in a fixed order. Each ex
 | `transport.lua` | `append_page_params`, `make_fetch_opts`, `make_proxy_handler`, `make_backend_transport` | backends |
 | `translators.lua` | `owner_repo_id`, `translate_repo`, `translate_user`, `translate_migration` | backends |
 | `families.lua` | `provider_families`, `load_family_backend` | backends + Makefile scripts |
-| *(backend loaded here)* | writes `app.backend_impl`; Gitea writes `app.allow_anonymous` | dispatch |
+| `registry.lua` | `make_backend_builder` | backends |
+| *(backend loaded here)* | calls `b:build()` to populate `app.backend_impl` and `graphql_resolvers`; Gitea sets `app.allow_anonymous` | dispatch |
 | `defaults.lua` | `defaults` (table of handler functions) | catalog |
 | `router.lua` | `route_add`, `route_match`, `path_known` | catalog, dispatch |
 | `catalog.lua` | `endpoints` (flat array); registers routes via `route_add` | dispatch, scripts |
 | `dispatch.lua` | `OnHttpRequest` | Redbean (entry point) |
 
 **Global surface for backend authors** (backends can call any of these):
-- App context (write target): `app.backend_impl`, `app.allow_anonymous`, `app.config`
+- App context (write target): `app.allow_anonymous`, `app.config` — never assign `app.backend_impl` directly
+- Builder (required): `make_backend_builder` — call `b:rest(name, fn)`, `b:graphql(key, fn)`, `b:set_allow_anonymous(v)`, then `b:build()` to commit; see `internal/registry.lua`
 - Response: `set_preamble`, `respond_json`
 - Proxy: all of `proxy.lua`'s exports
 - Transport: all of `transport.lua`'s exports

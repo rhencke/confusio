@@ -115,132 +115,133 @@ local function list_repos_by_prefix(prefix)
   return result, 200
 end
 
-app.backend_impl = {
-  get_root = function()
-    proxy_health_check(pcall(Fetch, rpc() .. "?req=LIST_REPOSITORIES", auth()))
-  end,
+local b = make_backend_builder()
+b:rest("get_root", function()
+  proxy_health_check(pcall(Fetch, rpc() .. "?req=LIST_REPOSITORIES", auth()))
+end)
 
-  get_repo = function(owner, repo_name)
-    local gitblit_name = owner .. "/" .. repo_name .. ".git"
-    local ok, status, _, body = fetch_rpc("GET_REPOSITORY", "&name=" .. gitblit_name)
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local r = DecodeJson(body) or {}
-    if not r.name then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    respond_json(200, translate_repo(r))
-  end,
+b:rest("get_repo", function(owner, repo_name)
+  local gitblit_name = owner .. "/" .. repo_name .. ".git"
+  local ok, status, _, body = fetch_rpc("GET_REPOSITORY", "&name=" .. gitblit_name)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local r = DecodeJson(body) or {}
+  if not r.name then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  respond_json(200, translate_repo(r))
+end)
 
-  get_org_repos = function(org)
-    local repos, status = list_repos_by_prefix(org .. "/")
-    if not repos then
-      respond_json(status, {})
-      return
-    end
-    respond_json(200, repos)
-  end,
+b:rest("get_org_repos", function(org)
+  local repos, status = list_repos_by_prefix(org .. "/")
+  if not repos then
+    respond_json(status, {})
+    return
+  end
+  respond_json(200, repos)
+end)
 
-  get_users_repos = function(username)
-    local repos, status = list_repos_by_prefix(username .. "/")
-    if not repos then
-      respond_json(status, {})
-      return
-    end
-    respond_json(200, repos)
-  end,
+b:rest("get_users_repos", function(username)
+  local repos, status = list_repos_by_prefix(username .. "/")
+  if not repos then
+    respond_json(status, {})
+    return
+  end
+  respond_json(200, repos)
+end)
 
-  get_repositories = function()
-    local repos, status = list_repos_by_prefix("")
-    if not repos then
-      respond_json(status, {})
-      return
-    end
-    respond_json(200, repos)
-  end,
+b:rest("get_repositories", function()
+  local repos, status = list_repos_by_prefix("")
+  if not repos then
+    respond_json(status, {})
+    return
+  end
+  respond_json(200, repos)
+end)
 
-  get_users_username = function(username)
-    local ok, status, _, body = fetch_rpc("GET_USER", "&name=" .. username)
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local u = DecodeJson(body) or {}
-    if not u.name then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    respond_json(200, translate_user(u))
-  end,
+b:rest("get_users_username", function(username)
+  local ok, status, _, body = fetch_rpc("GET_USER", "&name=" .. username)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local u = DecodeJson(body) or {}
+  if not u.name then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  respond_json(200, translate_user(u))
+end)
 
-  get_users = function()
-    local ok, status, _, body = fetch_rpc("LIST_USERS")
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local users = DecodeJson(body) or {}
-    local result = {}
-    for _, u in ipairs(users) do
-      result[#result + 1] = translate_user(u)
-    end
-    respond_json(200, result)
-  end,
+b:rest("get_users", function()
+  local ok, status, _, body = fetch_rpc("LIST_USERS")
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local users = DecodeJson(body) or {}
+  local result = {}
+  for _, u in ipairs(users) do
+    result[#result + 1] = translate_user(u)
+  end
+  respond_json(200, result)
+end)
 
-  search_repositories = function()
-    local q = (GetParam("q") or ""):lower()
-    local repos, status = list_repos_by_prefix("")
-    if not repos then
-      respond_json(status, {})
-      return
-    end
-    local items = repos
-    if q ~= "" then
-      items = {}
-      for _, r in ipairs(repos) do
-        if
-          (r.name or ""):lower():find(q, 1, true) or (r.full_name or ""):lower():find(q, 1, true)
-        then
-          items[#items + 1] = r
-        end
+b:rest("search_repositories", function()
+  local q = (GetParam("q") or ""):lower()
+  local repos, status = list_repos_by_prefix("")
+  if not repos then
+    respond_json(status, {})
+    return
+  end
+  local items = repos
+  if q ~= "" then
+    items = {}
+    for _, r in ipairs(repos) do
+      if
+        (r.name or ""):lower():find(q, 1, true) or (r.full_name or ""):lower():find(q, 1, true)
+      then
+        items[#items + 1] = r
       end
     end
-    respond_json(200, { total_count = #items, incomplete_results = false, items = items })
-  end,
+  end
+  respond_json(200, { total_count = #items, incomplete_results = false, items = items })
+end)
 
-  search_users = function()
-    local q = (GetParam("q") or ""):lower()
-    local ok, status, _, body = fetch_rpc("LIST_USERS")
-    if not ok then
-      respond_json(503, {})
-      return
+b:rest("search_users", function()
+  local q = (GetParam("q") or ""):lower()
+  local ok, status, _, body = fetch_rpc("LIST_USERS")
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local users = DecodeJson(body) or {}
+  local items = {}
+  for _, u in ipairs(users) do
+    if q == "" or (u.name or ""):lower():find(q, 1, true) then
+      items[#items + 1] = translate_user(u)
     end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local users = DecodeJson(body) or {}
-    local items = {}
-    for _, u in ipairs(users) do
-      if q == "" or (u.name or ""):lower():find(q, 1, true) then
-        items[#items + 1] = translate_user(u)
-      end
-    end
-    respond_json(200, { total_count = #items, incomplete_results = false, items = items })
-  end,
-}
+  end
+  respond_json(200, { total_count = #items, incomplete_results = false, items = items })
+end)
+
+b:build()

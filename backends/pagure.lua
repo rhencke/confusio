@@ -190,141 +190,155 @@ local pagure_to_gh = {
   canceled = { status = "completed", conclusion = "cancelled" },
 }
 
-app.backend_impl = {
-  get_root = function()
-    proxy_health_check(pcall(Fetch, base() .. "/version", auth()))
-  end,
+local b = make_backend_builder()
+b:rest("get_root", function()
+  proxy_health_check(pcall(Fetch, base() .. "/version", auth()))
+end)
 
-  get_repo = proxy_handler(translate_pagure_repo, function(owner, repo_name)
+b:rest(
+  "get_repo",
+  proxy_handler(translate_pagure_repo, function(owner, repo_name)
     return base() .. "/" .. owner .. "/" .. repo_name
-  end),
+  end)
+)
 
-  patch_repo = function(owner, repo_name)
-    -- Pagure: update project description via POST /api/0/{owner}/{repo}/modify
-    local url = base() .. "/" .. owner .. "/" .. repo_name .. "/modify"
-    local req = DecodeJson(GetBody() or "{}")
-    local pg = {}
-    if req.description then
-      pg.description = req.description
-    end
-    if req.private ~= nil then
-      pg.private = req.private
-    end
-    -- Pagure /modify returns { "repo": {...} }
-    proxy_json(function(resp)
-      return translate_pagure_repo(resp.repo or resp)
-    end, fetch_json(url, "POST", EncodeJson(pg)))
-  end,
+b:rest("patch_repo", function(owner, repo_name)
+  -- Pagure: update project description via POST /api/0/{owner}/{repo}/modify
+  local url = base() .. "/" .. owner .. "/" .. repo_name .. "/modify"
+  local req = DecodeJson(GetBody() or "{}")
+  local pg = {}
+  if req.description then
+    pg.description = req.description
+  end
+  if req.private ~= nil then
+    pg.private = req.private
+  end
+  -- Pagure /modify returns { "repo": {...} }
+  proxy_json(function(resp)
+    return translate_pagure_repo(resp.repo or resp)
+  end, fetch_json(url, "POST", EncodeJson(pg)))
+end)
 
-  delete_repo = function(owner, repo_name)
-    -- Pagure: delete project via POST /api/0/{owner}/{repo}/delete
-    local url = base() .. "/" .. owner .. "/" .. repo_name .. "/delete"
-    proxy_204({ 200 }, fetch_json(url, "POST", "{}"))
-  end,
+b:rest("delete_repo", function(owner, repo_name)
+  -- Pagure: delete project via POST /api/0/{owner}/{repo}/delete
+  local url = base() .. "/" .. owner .. "/" .. repo_name .. "/delete"
+  proxy_204({ 200 }, fetch_json(url, "POST", "{}"))
+end)
 
-  get_user_repos = function()
-    -- Pagure: /api/0/projects?author={user} — need to know the authenticated user first
-    local ok, status, _, ubody = fetch_json(base() .. "/-/whoami")
-    if not ok or status ~= 200 then
-      respond_json(503, {})
-      return
-    end
-    local me = DecodeJson(ubody)
-    local username = me.username or me.name or ""
-    proxy_json(function(data)
-      return translate_list(translate_pagure_repo, data.projects)
-    end, fetch_json(append_page_params(base() .. "/user/" .. username .. "/projects", PAGES)))
-  end,
+b:rest("get_user_repos", function()
+  -- Pagure: /api/0/projects?author={user} — need to know the authenticated user first
+  local ok, status, _, ubody = fetch_json(base() .. "/-/whoami")
+  if not ok or status ~= 200 then
+    respond_json(503, {})
+    return
+  end
+  local me = DecodeJson(ubody)
+  local username = me.username or me.name or ""
+  proxy_json(function(data)
+    return translate_list(translate_pagure_repo, data.projects)
+  end, fetch_json(append_page_params(base() .. "/user/" .. username .. "/projects", PAGES)))
+end)
 
-  post_user_repos = function()
-    -- Pagure: create project via POST /api/0/new
-    local req = DecodeJson(GetBody() or "{}")
-    local pg = {
-      name = req.name,
-      description = req.description or "",
-      private = req.private or false,
-    }
-    proxy_json_created(function(resp)
-      return translate_pagure_repo(resp.project or resp)
-    end, fetch_json(base() .. "/new", "POST", EncodeJson(pg)))
-  end,
+b:rest("post_user_repos", function()
+  -- Pagure: create project via POST /api/0/new
+  local req = DecodeJson(GetBody() or "{}")
+  local pg = {
+    name = req.name,
+    description = req.description or "",
+    private = req.private or false,
+  }
+  proxy_json_created(function(resp)
+    return translate_pagure_repo(resp.project or resp)
+  end, fetch_json(base() .. "/new", "POST", EncodeJson(pg)))
+end)
 
-  get_org_repos = proxy_handler(function(data)
+b:rest(
+  "get_org_repos",
+  proxy_handler(function(data)
     return translate_list(translate_pagure_repo, data.projects)
   end, function(namespace)
     return append_page_params(base() .. "/projects?namespace=" .. namespace, PAGES)
-  end),
+  end)
+)
 
-  post_org_repos = function(namespace)
-    -- Pagure: create project with namespace
-    local req = DecodeJson(GetBody() or "{}")
-    local pg = {
-      name = req.name,
-      description = req.description or "",
-      private = req.private or false,
-      namespace = namespace,
-    }
-    proxy_json_created(function(resp)
-      return translate_pagure_repo(resp.project or resp)
-    end, fetch_json(base() .. "/new", "POST", EncodeJson(pg)))
-  end,
+b:rest("post_org_repos", function(namespace)
+  -- Pagure: create project with namespace
+  local req = DecodeJson(GetBody() or "{}")
+  local pg = {
+    name = req.name,
+    description = req.description or "",
+    private = req.private or false,
+    namespace = namespace,
+  }
+  proxy_json_created(function(resp)
+    return translate_pagure_repo(resp.project or resp)
+  end, fetch_json(base() .. "/new", "POST", EncodeJson(pg)))
+end)
 
-  get_repo_topics = proxy_handler(function(r)
+b:rest(
+  "get_repo_topics",
+  proxy_handler(function(r)
     return { names = r.tags or {} }
   end, function(owner, repo_name)
     return base() .. "/" .. owner .. "/" .. repo_name
-  end),
+  end)
+)
 
-  put_repo_topics = function(owner, repo_name)
-    -- Pagure: set tags via POST /api/0/{owner}/{repo}/modify with tags field
-    local url = base() .. "/" .. owner .. "/" .. repo_name .. "/modify"
-    local req = DecodeJson(GetBody() or "{}")
-    proxy_json(function(resp)
-      local r = resp.repo or resp
-      return { names = r.tags or {} }
-    end, fetch_json(url, "POST", EncodeJson({ tags = req.names or {} })))
-  end,
+b:rest("put_repo_topics", function(owner, repo_name)
+  -- Pagure: set tags via POST /api/0/{owner}/{repo}/modify with tags field
+  local url = base() .. "/" .. owner .. "/" .. repo_name .. "/modify"
+  local req = DecodeJson(GetBody() or "{}")
+  proxy_json(function(resp)
+    local r = resp.repo or resp
+    return { names = r.tags or {} }
+  end, fetch_json(url, "POST", EncodeJson({ tags = req.names or {} })))
+end)
 
-  -- Branches ------------------------------------------------------------------
-  -- Pagure: GET /api/0/{owner}/{repo}/git/branches → { branches: ["main", ...] }
-  -- No commit SHAs in branch list response.
+-- Branches ------------------------------------------------------------------
+-- Pagure: GET /api/0/{owner}/{repo}/git/branches → { branches: ["main", ...] }
+-- No commit SHAs in branch list response.
 
-  get_repo_branches = proxy_handler(function(data)
+b:rest(
+  "get_repo_branches",
+  proxy_handler(function(data)
     return translate_list(translate_pagure_branch, data.branches)
   end, function(owner, repo_name)
     return base() .. "/" .. owner .. "/" .. repo_name .. "/git/branches"
-  end),
+  end)
+)
 
-  -- Commits -------------------------------------------------------------------
-  -- Pagure: GET /api/0/{owner}/{repo}/commits?branch={branch}&limit={n}&start={offset}
+-- Commits -------------------------------------------------------------------
+-- Pagure: GET /api/0/{owner}/{repo}/commits?branch={branch}&limit={n}&start={offset}
 
-  get_repo_commits = function(owner, repo_name)
-    local branch = GetParam("sha") or GetParam("branch") or ""
-    local limit = GetParam("per_page") or "30"
-    local page = tonumber(GetParam("page")) or 1
-    local limit_n = tonumber(limit) or 30
-    local start = (page - 1) * limit_n
-    local url = base()
-      .. "/"
-      .. owner
-      .. "/"
-      .. repo_name
-      .. "/commits?limit="
-      .. limit
-      .. "&start="
-      .. start
-    if branch ~= "" then
-      url = url .. "&branch=" .. branch
-    end
-    proxy_json(function(data)
-      return translate_list(translate_pagure_commit, data.commits)
-    end, fetch_json(url))
-  end,
+b:rest("get_repo_commits", function(owner, repo_name)
+  local branch = GetParam("sha") or GetParam("branch") or ""
+  local limit = GetParam("per_page") or "30"
+  local page = tonumber(GetParam("page")) or 1
+  local limit_n = tonumber(limit) or 30
+  local start = (page - 1) * limit_n
+  local url = base()
+    .. "/"
+    .. owner
+    .. "/"
+    .. repo_name
+    .. "/commits?limit="
+    .. limit
+    .. "&start="
+    .. start
+  if branch ~= "" then
+    url = url .. "&branch=" .. branch
+  end
+  proxy_json(function(data)
+    return translate_list(translate_pagure_commit, data.commits)
+  end, fetch_json(url))
+end)
 
-  -- Tags ----------------------------------------------------------------------
-  -- Pagure returns { "tags": ["v1.0", ...] } — just tag names, no commit info
+-- Tags ----------------------------------------------------------------------
+-- Pagure returns { "tags": ["v1.0", ...] } — just tag names, no commit info
 
-  get_repo_tags = proxy_handler(function(data)
+b:rest(
+  "get_repo_tags",
+  proxy_handler(function(data)
     local tags = {}
     for _, name in ipairs(data.tags or {}) do
       tags[#tags + 1] = { name = name, commit = { sha = "", url = "" } }
@@ -332,41 +346,19 @@ app.backend_impl = {
     return tags
   end, function(owner, repo_name)
     return base() .. "/" .. owner .. "/" .. repo_name .. "/git/tags"
-  end),
+  end)
+)
 
-  -- Contents ------------------------------------------------------------------
-  -- Pagure: GET /api/0/{owner}/{repo}/raw/{path}?ref={ref} — returns raw bytes.
-  -- We base64-encode and return a GitHub-shaped content object.
+-- Contents ------------------------------------------------------------------
+-- Pagure: GET /api/0/{owner}/{repo}/raw/{path}?ref={ref} — returns raw bytes.
+-- We base64-encode and return a GitHub-shaped content object.
 
-  get_repo_readme = function(owner, repo_name)
-    local ref = GetParam("ref") or ""
-    -- Try common README filenames in order.
-    local candidates = { "README.md", "README", "readme.md", "README.rst" }
-    for _, fname in ipairs(candidates) do
-      local url = base() .. "/" .. owner .. "/" .. repo_name .. "/raw/" .. fname
-      if ref ~= "" then
-        url = url .. "?ref=" .. ref
-      end
-      local ok, status, _, body = fetch_json(url)
-      if ok and status == 200 then
-        respond_json(200, {
-          type = "file",
-          name = fname,
-          path = fname,
-          sha = "",
-          size = #body,
-          encoding = "base64",
-          content = EncodeBase64(body),
-        })
-        return
-      end
-    end
-    respond_json(404, { message = "Not Found" })
-  end,
-
-  get_repo_content = function(owner, repo_name, path)
-    local ref = GetParam("ref") or ""
-    local url = base() .. "/" .. owner .. "/" .. repo_name .. "/raw/" .. path
+b:rest("get_repo_readme", function(owner, repo_name)
+  local ref = GetParam("ref") or ""
+  -- Try common README filenames in order.
+  local candidates = { "README.md", "README", "readme.md", "README.rst" }
+  for _, fname in ipairs(candidates) do
+    local url = base() .. "/" .. owner .. "/" .. repo_name .. "/raw/" .. fname
     if ref ~= "" then
       url = url .. "?ref=" .. ref
     end
@@ -374,78 +366,106 @@ app.backend_impl = {
     if ok and status == 200 then
       respond_json(200, {
         type = "file",
-        name = path:match("[^/]+$") or path,
-        path = path,
+        name = fname,
+        path = fname,
         sha = "",
         size = #body,
         encoding = "base64",
         content = EncodeBase64(body),
       })
-    elseif ok then
-      respond_json(status, { message = "Error" })
-    else
-      respond_json(503, {})
+      return
     end
-  end,
+  end
+  respond_json(404, { message = "Not Found" })
+end)
 
-  -- Forks ---------------------------------------------------------------------
-  -- Pagure: POST /api/0/fork with form body
+b:rest("get_repo_content", function(owner, repo_name, path)
+  local ref = GetParam("ref") or ""
+  local url = base() .. "/" .. owner .. "/" .. repo_name .. "/raw/" .. path
+  if ref ~= "" then
+    url = url .. "?ref=" .. ref
+  end
+  local ok, status, _, body = fetch_json(url)
+  if ok and status == 200 then
+    respond_json(200, {
+      type = "file",
+      name = path:match("[^/]+$") or path,
+      path = path,
+      sha = "",
+      size = #body,
+      encoding = "base64",
+      content = EncodeBase64(body),
+    })
+  elseif ok then
+    respond_json(status, { message = "Error" })
+  else
+    respond_json(503, {})
+  end
+end)
 
-  get_repo_forks = proxy_handler(function(data)
+-- Forks ---------------------------------------------------------------------
+-- Pagure: POST /api/0/fork with form body
+
+b:rest(
+  "get_repo_forks",
+  proxy_handler(function(data)
     return translate_list(translate_pagure_repo, data.forks)
   end, function(owner, repo_name)
     return base() .. "/" .. owner .. "/" .. repo_name
-  end),
+  end)
+)
 
-  post_repo_forks = function(owner, repo_name)
-    -- Pagure fork endpoint expects form-encoded body
-    local req = DecodeJson(GetBody() or "{}")
-    local fopts = auth() or {}
-    fopts.method = "POST"
-    fopts.body = "repo=" .. repo_name .. "&namespace=" .. owner
-    if req.organization then
-      fopts.body = fopts.body .. "&username=" .. req.organization
-    end
-    fopts.headers = fopts.headers or {}
-    fopts.headers["Content-Type"] = "application/x-www-form-urlencoded"
-    proxy_json_created(function(resp)
-      return translate_pagure_repo(resp.project or resp)
-    end, pcall(Fetch, base() .. "/fork", fopts))
-  end,
+b:rest("post_repo_forks", function(owner, repo_name)
+  -- Pagure fork endpoint expects form-encoded body
+  local req = DecodeJson(GetBody() or "{}")
+  local fopts = auth() or {}
+  fopts.method = "POST"
+  fopts.body = "repo=" .. repo_name .. "&namespace=" .. owner
+  if req.organization then
+    fopts.body = fopts.body .. "&username=" .. req.organization
+  end
+  fopts.headers = fopts.headers or {}
+  fopts.headers["Content-Type"] = "application/x-www-form-urlencoded"
+  proxy_json_created(function(resp)
+    return translate_pagure_repo(resp.project or resp)
+  end, pcall(Fetch, base() .. "/fork", fopts))
+end)
 
-  -- Users ---------------------------------------------------------------------
+-- Users ---------------------------------------------------------------------
 
-  -- GET /user — two-step: whoami then full profile
-  get_user = function()
-    local ok, status, _, ubody = fetch_json(base() .. "/-/whoami")
-    if not ok or status ~= 200 then
-      respond_json(503, {})
-      return
-    end
-    local me = DecodeJson(ubody) or {}
-    local username = me.username or ""
-    if username == "" then
-      respond_json(503, {})
-      return
-    end
-    proxy_json(function(data)
-      local u = data.user or data
-      return {
-        login = u.username or "",
-        id = 0,
-        node_id = "",
-        avatar_url = u.avatar_url or "",
-        html_url = config.base_url .. "/" .. (u.username or ""),
-        type = "User",
-        site_admin = false,
-        name = u.fullname or "",
-        email = (u.emails and u.emails[1]) or "",
-      }
-    end, fetch_json(base() .. "/user/" .. username))
-  end,
+-- GET /user — two-step: whoami then full profile
+b:rest("get_user", function()
+  local ok, status, _, ubody = fetch_json(base() .. "/-/whoami")
+  if not ok or status ~= 200 then
+    respond_json(503, {})
+    return
+  end
+  local me = DecodeJson(ubody) or {}
+  local username = me.username or ""
+  if username == "" then
+    respond_json(503, {})
+    return
+  end
+  proxy_json(function(data)
+    local u = data.user or data
+    return {
+      login = u.username or "",
+      id = 0,
+      node_id = "",
+      avatar_url = u.avatar_url or "",
+      html_url = config.base_url .. "/" .. (u.username or ""),
+      type = "User",
+      site_admin = false,
+      name = u.fullname or "",
+      email = (u.emails and u.emails[1]) or "",
+    }
+  end, fetch_json(base() .. "/user/" .. username))
+end)
 
-  -- GET /users/{username}
-  get_users_username = proxy_handler(function(data)
+-- GET /users/{username}
+b:rest(
+  "get_users_username",
+  proxy_handler(function(data)
     local u = data.user or data
     return {
       login = u.username or "",
@@ -459,10 +479,13 @@ app.backend_impl = {
     }
   end, function(username)
     return base() .. "/user/" .. username
-  end),
+  end)
+)
 
-  -- GET /users
-  get_users = proxy_handler(function(data)
+-- GET /users
+b:rest(
+  "get_users",
+  proxy_handler(function(data)
     local users = {}
     for _, name in ipairs(data.users or {}) do
       users[#users + 1] = {
@@ -478,197 +501,206 @@ app.backend_impl = {
     return users
   end, function()
     return base() .. "/users"
-  end),
+  end)
+)
 
-  -- Users' repos --------------------------------------------------------------
+-- Users' repos --------------------------------------------------------------
 
-  get_users_repos = proxy_handler(function(data)
+b:rest(
+  "get_users_repos",
+  proxy_handler(function(data)
     return translate_list(translate_pagure_repo, data.repos or data.projects)
   end, function(username)
     return append_page_params(base() .. "/user/" .. username .. "/projects", PAGES)
-  end),
+  end)
+)
 
-  -- Public repos list ---------------------------------------------------------
+-- Public repos list ---------------------------------------------------------
 
-  get_repositories = function()
-    proxy_json(function(data)
-      return translate_list(translate_pagure_repo, data.projects)
-    end, fetch_json(append_page_params(base() .. "/repos", PAGES)))
-  end,
+b:rest("get_repositories", function()
+  proxy_json(function(data)
+    return translate_list(translate_pagure_repo, data.projects)
+  end, fetch_json(append_page_params(base() .. "/repos", PAGES)))
+end)
 
-  -- Issues --------------------------------------------------------------------
+-- Issues --------------------------------------------------------------------
 
-  get_repo_issues = proxy_handler(translate_pagure_issues, function(o, r)
+b:rest(
+  "get_repo_issues",
+  proxy_handler(translate_pagure_issues, function(o, r)
     return append_page_params(base() .. "/" .. o .. "/" .. r .. "/issues", PAGES)
-  end),
+  end)
+)
 
-  -- Pagure uses /issue/{id} (singular) for individual issues
-  get_repo_issue = proxy_handler(translate_pagure_issue, function(o, r, n)
+-- Pagure uses /issue/{id} (singular) for individual issues
+b:rest(
+  "get_repo_issue",
+  proxy_handler(translate_pagure_issue, function(o, r, n)
     return base() .. "/" .. o .. "/" .. r .. "/issue/" .. n
-  end),
+  end)
+)
 
-  get_issue_comments = function(owner, repo_name, issue_number)
-    -- Pagure returns comments embedded in the issue object
-    local ok, status, _, body =
-      fetch_json(base() .. "/" .. owner .. "/" .. repo_name .. "/issue/" .. issue_number)
-    if not ok then
-      respond_json(503, {})
-      return
+b:rest("get_issue_comments", function(owner, repo_name, issue_number)
+  -- Pagure returns comments embedded in the issue object
+  local ok, status, _, body =
+    fetch_json(base() .. "/" .. owner .. "/" .. repo_name .. "/issue/" .. issue_number)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local issue = DecodeJson(body or "{}") or {}
+  respond_json(200, translate_list(translate_pagure_comment, issue.comments))
+end)
+
+b:rest("get_repo_labels", function(_owner, _repo_name)
+  -- Pagure has no repo-level label list endpoint; return empty list
+  respond_json(200, {})
+end)
+
+-- Checks (via Pagure commit flags) ------------------------------------------
+--
+-- Pagure exposes a flags API for CI status at:
+--   GET  /api/0/{owner}/{repo}/c/{commit}/flag  — list flags on a commit
+--   POST /api/0/{owner}/{repo}/c/{commit}/flag  — create/update a flag
+--
+-- Pagure flag fields: uid, username, percent, comment, url, status,
+--   date_created, date_updated
+-- Pagure flag statuses: "success", "failure", "error", "pending", "canceled"
+--
+-- GitHub → Pagure state:
+--   queued/in_progress          → pending
+--   completed/success|neutral|skipped → success
+--   completed/failure           → failure
+--   completed/(other)           → error
+--
+-- Pagure → GitHub:
+--   pending   → status=in_progress, conclusion=nil
+--   success   → status=completed,   conclusion=success
+--   failure   → status=completed,   conclusion=failure
+--   error     → status=completed,   conclusion=failure
+--   canceled  → status=completed,   conclusion=cancelled
+
+b:rest("post_check_runs", function(owner, repo_name)
+  local req = DecodeJson(GetBody() or "{}") or {}
+  local sha = req.head_sha or ""
+  local status = req.status or "queued"
+  local conclusion = req.conclusion
+  local gh_conclusion_to_pagure = {
+    success = "success",
+    neutral = "success",
+    skipped = "success",
+    cancelled = "canceled",
+    failure = "failure",
+  }
+  local pg_status = status == "completed" and (gh_conclusion_to_pagure[conclusion] or "error")
+    or "pending"
+  local url = base() .. "/" .. owner .. "/" .. repo_name .. "/c/" .. sha .. "/flag"
+  local flag = {
+    username = req.name or "",
+    percent = (pg_status == "success") and 100 or (pg_status == "pending" and 0 or 0),
+    comment = (req.output and req.output.summary) or req.name or "",
+    url = req.details_url or "",
+    uid = req.name or sha,
+    status = pg_status,
+  }
+  local function translate(f)
+    if not f then
+      return {}
     end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local issue = DecodeJson(body or "{}") or {}
-    respond_json(200, translate_list(translate_pagure_comment, issue.comments))
-  end,
-
-  get_repo_labels = function(_owner, _repo_name)
-    -- Pagure has no repo-level label list endpoint; return empty list
-    respond_json(200, {})
-  end,
-
-  -- Checks (via Pagure commit flags) ------------------------------------------
-  --
-  -- Pagure exposes a flags API for CI status at:
-  --   GET  /api/0/{owner}/{repo}/c/{commit}/flag  — list flags on a commit
-  --   POST /api/0/{owner}/{repo}/c/{commit}/flag  — create/update a flag
-  --
-  -- Pagure flag fields: uid, username, percent, comment, url, status,
-  --   date_created, date_updated
-  -- Pagure flag statuses: "success", "failure", "error", "pending", "canceled"
-  --
-  -- GitHub → Pagure state:
-  --   queued/in_progress          → pending
-  --   completed/success|neutral|skipped → success
-  --   completed/failure           → failure
-  --   completed/(other)           → error
-  --
-  -- Pagure → GitHub:
-  --   pending   → status=in_progress, conclusion=nil
-  --   success   → status=completed,   conclusion=success
-  --   failure   → status=completed,   conclusion=failure
-  --   error     → status=completed,   conclusion=failure
-  --   canceled  → status=completed,   conclusion=cancelled
-
-  post_check_runs = function(owner, repo_name)
-    local req = DecodeJson(GetBody() or "{}") or {}
-    local sha = req.head_sha or ""
-    local status = req.status or "queued"
-    local conclusion = req.conclusion
-    local gh_conclusion_to_pagure = {
-      success = "success",
-      neutral = "success",
-      skipped = "success",
-      cancelled = "canceled",
-      failure = "failure",
+    local s = f.status or "pending"
+    local mapped = pagure_to_gh[s] or { status = "completed", conclusion = "failure" }
+    local gh_status, gh_conclusion = mapped.status, mapped.conclusion
+    return {
+      id = 1,
+      node_id = "",
+      head_sha = sha,
+      name = f.username or req.name or "",
+      status = gh_status,
+      conclusion = gh_conclusion,
+      started_at = f.date_created,
+      completed_at = gh_status == "completed" and f.date_updated or nil,
+      output = {
+        title = f.comment or "",
+        summary = f.comment or "",
+        text = "",
+        annotations_count = 0,
+        annotations_url = "",
+      },
+      url = "",
+      html_url = f.url or "",
+      details_url = f.url or "",
     }
-    local pg_status = status == "completed" and (gh_conclusion_to_pagure[conclusion] or "error")
-      or "pending"
-    local url = base() .. "/" .. owner .. "/" .. repo_name .. "/c/" .. sha .. "/flag"
-    local flag = {
-      username = req.name or "",
-      percent = (pg_status == "success") and 100 or (pg_status == "pending" and 0 or 0),
-      comment = (req.output and req.output.summary) or req.name or "",
-      url = req.details_url or "",
-      uid = req.name or sha,
-      status = pg_status,
+  end
+  local ok, pg_status_code, _, body = fetch_json(url, "POST", EncodeJson(flag))
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  -- Pagure returns the created flag object
+  local resp = DecodeJson(body or "{}") or {}
+  local flag_obj = resp.flag or flag
+  if pg_status_code == 200 or pg_status_code == 201 then
+    respond_json(201, translate(flag_obj))
+  else
+    respond_json(pg_status_code, {})
+  end
+end)
+
+b:rest("get_commit_check_runs", function(owner, repo_name, ref)
+  local url = base() .. "/" .. owner .. "/" .. repo_name .. "/c/" .. ref .. "/flag"
+  local ok, status, _, body = fetch_json(url)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local data = DecodeJson(body or "{}") or {}
+  local flags = data.flags or {}
+  local runs = {}
+  for i, f in ipairs(flags) do
+    local s = f.status or "pending"
+    local mapped = pagure_to_gh[s] or { status = "completed", conclusion = "failure" }
+    local gh_status, gh_conclusion = mapped.status, mapped.conclusion
+    runs[i] = {
+      id = i,
+      node_id = "",
+      head_sha = ref,
+      name = f.username or "",
+      status = gh_status,
+      conclusion = gh_conclusion,
+      started_at = f.date_created,
+      completed_at = gh_status == "completed" and f.date_updated or nil,
+      output = {
+        title = f.comment or "",
+        summary = f.comment or "",
+        text = "",
+        annotations_count = 0,
+        annotations_url = "",
+      },
+      url = "",
+      html_url = f.url or "",
+      details_url = f.url or "",
     }
-    local function translate(f)
-      if not f then
-        return {}
-      end
-      local s = f.status or "pending"
-      local mapped = pagure_to_gh[s] or { status = "completed", conclusion = "failure" }
-      local gh_status, gh_conclusion = mapped.status, mapped.conclusion
-      return {
-        id = 1,
-        node_id = "",
-        head_sha = sha,
-        name = f.username or req.name or "",
-        status = gh_status,
-        conclusion = gh_conclusion,
-        started_at = f.date_created,
-        completed_at = gh_status == "completed" and f.date_updated or nil,
-        output = {
-          title = f.comment or "",
-          summary = f.comment or "",
-          text = "",
-          annotations_count = 0,
-          annotations_url = "",
-        },
-        url = "",
-        html_url = f.url or "",
-        details_url = f.url or "",
-      }
-    end
-    local ok, pg_status_code, _, body = fetch_json(url, "POST", EncodeJson(flag))
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    -- Pagure returns the created flag object
-    local resp = DecodeJson(body or "{}") or {}
-    local flag_obj = resp.flag or flag
-    if pg_status_code == 200 or pg_status_code == 201 then
-      respond_json(201, translate(flag_obj))
-    else
-      respond_json(pg_status_code, {})
-    end
-  end,
+  end
+  respond_json(200, { total_count = #runs, check_runs = runs })
+end)
 
-  get_commit_check_runs = function(owner, repo_name, ref)
-    local url = base() .. "/" .. owner .. "/" .. repo_name .. "/c/" .. ref .. "/flag"
-    local ok, status, _, body = fetch_json(url)
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local data = DecodeJson(body or "{}") or {}
-    local flags = data.flags or {}
-    local runs = {}
-    for i, f in ipairs(flags) do
-      local s = f.status or "pending"
-      local mapped = pagure_to_gh[s] or { status = "completed", conclusion = "failure" }
-      local gh_status, gh_conclusion = mapped.status, mapped.conclusion
-      runs[i] = {
-        id = i,
-        node_id = "",
-        head_sha = ref,
-        name = f.username or "",
-        status = gh_status,
-        conclusion = gh_conclusion,
-        started_at = f.date_created,
-        completed_at = gh_status == "completed" and f.date_updated or nil,
-        output = {
-          title = f.comment or "",
-          summary = f.comment or "",
-          text = "",
-          annotations_count = 0,
-          annotations_url = "",
-        },
-        url = "",
-        html_url = f.url or "",
-        details_url = f.url or "",
-      }
-    end
-    respond_json(200, { total_count = #runs, check_runs = runs })
-  end,
-
-  -- Check suites have no Pagure equivalent; all suite endpoints fall back to
-  -- the route_defaults stubs defined in .init.lua.
-}
+-- Check suites have no Pagure equivalent; all suite endpoints fall back to
+-- the route_defaults stubs defined in .init.lua.
 
 -- ---------------------------------------------------------------------------
 -- GraphQL resolvers
 -- ---------------------------------------------------------------------------
 
 -- Query.viewer: resolve the authenticated user via whoami then /user/{username}.
-graphql_resolvers["Query.viewer"] = function(_parent, _args, ctx)
+b:graphql("Query.viewer", function(_parent, _args, ctx)
   local whoami, _ = graphql_fetch(fetch_json, base() .. "/-/whoami")
   if not whoami then
     graphql_error(ctx, "could not determine authenticated user", nil, "FORBIDDEN")
@@ -689,10 +721,10 @@ graphql_resolvers["Query.viewer"] = function(_parent, _args, ctx)
   local result = graphql_translate_user(gh_user)
   result.isViewer = true
   return result
-end
+end)
 
 -- Query.user: look up a User by login.
-graphql_resolvers["Query.user"] = function(_parent, args, ctx)
+b:graphql("Query.user", function(_parent, args, ctx)
   if not args.login then
     graphql_error(ctx, "user requires a login argument")
     return nil
@@ -705,11 +737,11 @@ graphql_resolvers["Query.user"] = function(_parent, args, ctx)
   local gh_user = translate_pagure_user(u)
   gh_user.email = (u.emails and u.emails[1]) or ""
   return graphql_translate_user(gh_user)
-end
+end)
 
 -- Query.repositoryOwner: look up a user by login.
 -- Pagure has no organization concept; all owners are users.
-graphql_resolvers["Query.repositoryOwner"] = function(_parent, args, ctx)
+b:graphql("Query.repositoryOwner", function(_parent, args, ctx)
   if not args.login then
     graphql_error(ctx, "repositoryOwner requires a login argument")
     return nil
@@ -722,10 +754,10 @@ graphql_resolvers["Query.repositoryOwner"] = function(_parent, args, ctx)
   local gh_user = translate_pagure_user(u)
   gh_user.email = (u.emails and u.emails[1]) or ""
   return graphql_translate_user(gh_user)
-end
+end)
 
 -- Query.repository: look up a Repository by owner and name.
-graphql_resolvers["Query.repository"] = function(_parent, args, ctx)
+b:graphql("Query.repository", function(_parent, args, ctx)
   if not args.owner or not args.name then
     graphql_error(ctx, "repository requires owner and name arguments")
     return nil
@@ -735,19 +767,19 @@ graphql_resolvers["Query.repository"] = function(_parent, args, ctx)
     return nil
   end
   return graphql_translate_repo(translate_pagure_repo(data))
-end
+end)
 
 -- node.Repository: fetch a repository by "owner/repo" local ID.
-graphql_resolvers["node.Repository"] = function(local_id, _ctx)
+b:graphql("node.Repository", function(local_id, _ctx)
   local data, _ = graphql_fetch(fetch_json, base() .. "/" .. local_id)
   if not data then
     return nil
   end
   return graphql_translate_repo(translate_pagure_repo(data))
-end
+end)
 
 -- node.User: fetch a user by login.
-graphql_resolvers["node.User"] = function(local_id, _ctx)
+b:graphql("node.User", function(local_id, _ctx)
   local data, _ = graphql_fetch(fetch_json, base() .. "/user/" .. local_id)
   if not data then
     return nil
@@ -756,11 +788,11 @@ graphql_resolvers["node.User"] = function(local_id, _ctx)
   local gh_user = translate_pagure_user(u)
   gh_user.email = (u.emails and u.emails[1]) or ""
   return graphql_translate_user(gh_user)
-end
+end)
 
 -- node.Issue: fetch an issue by "owner/repo/number" local ID.
 -- Pagure uses /issue/{number} (singular) for individual issues.
-graphql_resolvers["node.Issue"] = function(local_id, _ctx)
+b:graphql("node.Issue", function(local_id, _ctx)
   local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
   if not owner then
     return nil
@@ -771,11 +803,11 @@ graphql_resolvers["node.Issue"] = function(local_id, _ctx)
     return nil
   end
   return graphql_translate_issue(translate_pagure_issue(data), owner, repo)
-end
+end)
 
 -- node.IssueComment: fetch a comment by "owner/repo/issue_number/comment_id" local ID.
 -- Pagure embeds comments in the issue; we fetch the issue and find the comment by id.
-graphql_resolvers["node.IssueComment"] = function(local_id, _ctx)
+b:graphql("node.IssueComment", function(local_id, _ctx)
   local owner, repo, issue_num, cid = local_id:match("^([^/]+)/([^/]+)/(%d+)/(%d+)$")
   if not owner then
     return nil
@@ -796,11 +828,11 @@ graphql_resolvers["node.IssueComment"] = function(local_id, _ctx)
     end
   end
   return nil
-end
+end)
 
 -- Repository.issues: paginated list of issues.
 -- Pagure returns {"issues": [...], "total_issues": N}.
-graphql_resolvers["Repository.issues"] = function(parent, args, ctx)
+b:graphql("Repository.issues", function(parent, args, ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
@@ -827,11 +859,11 @@ graphql_resolvers["Repository.issues"] = function(parent, args, ctx)
     nodes[#nodes + 1] = graphql_translate_issue(translate_pagure_issue(i), owner, name)
   end
   return graphql_issues_connection(nodes, args, total, ctx)
-end
+end)
 
 -- Repository.refs: paginated list of branches as Ref objects.
 -- Pagure returns {"branches": ["name1", ...], "total_branches": N} — no commit SHAs.
-graphql_resolvers["Repository.refs"] = function(parent, args, ctx)
+b:graphql("Repository.refs", function(parent, args, ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
@@ -859,12 +891,12 @@ graphql_resolvers["Repository.refs"] = function(parent, args, ctx)
     nodes[#nodes + 1] = graphql_translate_ref({ name = b_name }, parent)
   end
   return graphql_refs_connection(nodes, args, total, ctx)
-end
+end)
 
 -- Issue.comments: extract embedded comments from a Pagure issue.
 -- Pagure embeds all comments in the issue object; we re-fetch to get them.
 -- IssueComment node IDs use "owner/repo/issue_number/comment_id" for resolvability.
-graphql_resolvers["Issue.comments"] = function(parent, args, ctx)
+b:graphql("Issue.comments", function(parent, args, ctx)
   local _, local_id = decode_node_id(parent.id)
   if not local_id then
     return nil
@@ -891,13 +923,13 @@ graphql_resolvers["Issue.comments"] = function(parent, args, ctx)
     nodes[#nodes + 1] = comment_node
   end
   return graphql_make_connection("IssueComment", nodes, args, #nodes, ctx)
-end
+end)
 
 -- Query.search: map GitHub GraphQL search to Pagure search endpoints.
 -- REPOSITORY: GET /projects?search={query}
 -- USER: GET /users?username={query}  (returns name list; build minimal user objects)
 -- ISSUE: Pagure has no simple keyword issue search; returns empty.
-graphql_resolvers["Query.search"] = function(_parent, args, ctx)
+b:graphql("Query.search", function(_parent, args, ctx)
   local query = args.query or ""
   local search_type = args.type or "REPOSITORY"
   local per_page = args.first or 30
@@ -971,4 +1003,6 @@ graphql_resolvers["Query.search"] = function(_parent, args, ctx)
     discussionCount = 0,
     wikiCount = 0,
   }
-end
+end)
+
+b:build()

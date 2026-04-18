@@ -123,95 +123,109 @@ local function gerrit_repos_from_dict(data)
   return repos
 end
 
-app.backend_impl = {
-  get_root = function()
-    proxy_health_check(pcall(Fetch, config.base_url .. "/config/server/version", auth()))
-  end,
-  get_repo = proxy_handler(translate_gerrit_repo, function(owner, repo_name)
+local b = make_backend_builder()
+b:rest("get_root", function()
+  proxy_health_check(pcall(Fetch, config.base_url .. "/config/server/version", auth()))
+end)
+b:rest(
+  "get_repo",
+  proxy_handler(translate_gerrit_repo, function(owner, repo_name)
     return base() .. "/projects/" .. project_id(owner, repo_name)
-  end),
+  end)
+)
 
-  patch_repo = function(owner, repo_name)
-    local req = DecodeJson(GetBody() or "{}")
-    local g = {}
-    if req.description then
-      g.description = req.description
-    end
-    proxy_json(
-      function(r)
-        return translate_gerrit_repo(r, owner, repo_name)
-      end,
-      fetch_json(
-        base() .. "/projects/" .. project_id(owner, repo_name) .. "/config",
-        "PUT",
-        EncodeJson(g)
-      )
+b:rest("patch_repo", function(owner, repo_name)
+  local req = DecodeJson(GetBody() or "{}")
+  local g = {}
+  if req.description then
+    g.description = req.description
+  end
+  proxy_json(
+    function(r)
+      return translate_gerrit_repo(r, owner, repo_name)
+    end,
+    fetch_json(
+      base() .. "/projects/" .. project_id(owner, repo_name) .. "/config",
+      "PUT",
+      EncodeJson(g)
     )
-  end,
+  )
+end)
 
-  -- Gerrit: GET /a/projects/ → dict of project_name → project_info
-  get_user_repos = function()
-    local limit = GetParam("per_page") or "30"
-    local skip = ((tonumber(GetParam("page")) or 1) - 1) * (tonumber(limit) or 30)
-    local url = base() .. "/projects/?n=" .. limit .. (skip > 0 and ("&S=" .. skip) or "")
-    proxy_json(gerrit_repos_from_dict, fetch_json(url))
-  end,
+-- Gerrit: GET /a/projects/ → dict of project_name → project_info
+b:rest("get_user_repos", function()
+  local limit = GetParam("per_page") or "30"
+  local skip = ((tonumber(GetParam("page")) or 1) - 1) * (tonumber(limit) or 30)
+  local url = base() .. "/projects/?n=" .. limit .. (skip > 0 and ("&S=" .. skip) or "")
+  proxy_json(gerrit_repos_from_dict, fetch_json(url))
+end)
 
-  get_users_repos = function(username)
-    local limit = GetParam("per_page") or "30"
-    local skip = ((tonumber(GetParam("page")) or 1) - 1) * (tonumber(limit) or 30)
-    local url = base()
-      .. "/projects/?p="
-      .. username
-      .. "%2F&n="
-      .. limit
-      .. (skip > 0 and ("&S=" .. skip) or "")
-    proxy_json(gerrit_repos_from_dict, fetch_json(url))
-  end,
+b:rest("get_users_repos", function(username)
+  local limit = GetParam("per_page") or "30"
+  local skip = ((tonumber(GetParam("page")) or 1) - 1) * (tonumber(limit) or 30)
+  local url = base()
+    .. "/projects/?p="
+    .. username
+    .. "%2F&n="
+    .. limit
+    .. (skip > 0 and ("&S=" .. skip) or "")
+  proxy_json(gerrit_repos_from_dict, fetch_json(url))
+end)
 
-  get_repositories = function()
-    local limit = GetParam("per_page") or "30"
-    local skip = ((tonumber(GetParam("page")) or 1) - 1) * (tonumber(limit) or 30)
-    local url = base() .. "/projects/?n=" .. limit .. (skip > 0 and ("&S=" .. skip) or "")
-    proxy_json(gerrit_repos_from_dict, fetch_json(url))
-  end,
+b:rest("get_repositories", function()
+  local limit = GetParam("per_page") or "30"
+  local skip = ((tonumber(GetParam("page")) or 1) - 1) * (tonumber(limit) or 30)
+  local url = base() .. "/projects/?n=" .. limit .. (skip > 0 and ("&S=" .. skip) or "")
+  proxy_json(gerrit_repos_from_dict, fetch_json(url))
+end)
 
-  -- Branches ------------------------------------------------------------------
-  -- GET /a/projects/{id}/branches/ → [{ ref, revision }]
+-- Branches ------------------------------------------------------------------
+-- GET /a/projects/{id}/branches/ → [{ ref, revision }]
 
-  get_repo_branches = proxy_handler(function(branches)
+b:rest(
+  "get_repo_branches",
+  proxy_handler(function(branches)
     local result = {}
-    for _, b in ipairs(branches or {}) do
-      if b.ref and b.ref:match("^refs/heads/") then
-        result[#result + 1] = translate_gerrit_branch(b)
+    for _, br in ipairs(branches or {}) do
+      if br.ref and br.ref:match("^refs/heads/") then
+        result[#result + 1] = translate_gerrit_branch(br)
       end
     end
     return result
   end, function(owner, repo_name)
     return base() .. "/projects/" .. project_id(owner, repo_name) .. "/branches/"
-  end),
+  end)
+)
 
-  get_repo_branch = proxy_handler(translate_gerrit_branch, function(owner, repo_name, branch)
+b:rest(
+  "get_repo_branch",
+  proxy_handler(translate_gerrit_branch, function(owner, repo_name, branch)
     return base()
       .. "/projects/"
       .. project_id(owner, repo_name)
       .. "/branches/refs%2Fheads%2F"
       .. branch
-  end),
+  end)
+)
 
-  -- Tags ----------------------------------------------------------------------
-  -- GET /a/projects/{id}/tags/ → [{ ref, revision, object }]
+-- Tags ----------------------------------------------------------------------
+-- GET /a/projects/{id}/tags/ → [{ ref, revision, object }]
 
-  get_repo_tags = proxy_handler(function(tags)
+b:rest(
+  "get_repo_tags",
+  proxy_handler(function(tags)
     return translate_list(translate_gerrit_tag, tags)
   end, function(owner, repo_name)
     return base() .. "/projects/" .. project_id(owner, repo_name) .. "/tags/"
-  end),
+  end)
+)
 
-  -- Commits -------------------------------------------------------------------
-  -- Gerrit: GET /a/projects/{id}/commits/{sha}
+-- Commits -------------------------------------------------------------------
+-- Gerrit: GET /a/projects/{id}/commits/{sha}
 
-  get_repo_commit = proxy_handler(function(c)
+b:rest(
+  "get_repo_commit",
+  proxy_handler(function(c)
     if not c then
       return {}
     end
@@ -231,91 +245,93 @@ app.backend_impl = {
     }
   end, function(owner, repo_name, ref)
     return base() .. "/projects/" .. project_id(owner, repo_name) .. "/commits/" .. ref
-  end),
+  end)
+)
 
-  -- Users ---------------------------------------------------------------------
-  -- These handlers cannot use proxy_json: Gerrit prefixes every JSON response
-  -- with ")]}'\n" to prevent XSS cross-domain reads.  gerrit_decode strips that
-  -- prefix before passing the body to DecodeJson.
+-- Users ---------------------------------------------------------------------
+-- These handlers cannot use proxy_json: Gerrit prefixes every JSON response
+-- with ")]}'\n" to prevent XSS cross-domain reads.  gerrit_decode strips that
+-- prefix before passing the body to DecodeJson.
 
-  -- GET /user — authenticated user
-  get_user = function()
-    local ok, status, _, body = fetch_json(base() .. "/accounts/self?o=DETAILS")
-    if ok and status == 200 then
-      respond_json(200, translate_gerrit_user(gerrit_decode(body)))
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
-  end,
+-- GET /user — authenticated user
+b:rest("get_user", function()
+  local ok, status, _, body = fetch_json(base() .. "/accounts/self?o=DETAILS")
+  if ok and status == 200 then
+    respond_json(200, translate_gerrit_user(gerrit_decode(body)))
+  elseif ok then
+    respond_json(status, {})
+  else
+    respond_json(503, {})
+  end
+end)
 
-  -- GET /users/{username}
-  get_users_username = function(username)
-    local ok, status, _, body = fetch_json(base() .. "/accounts/" .. username .. "?o=DETAILS")
-    if ok and status == 200 then
-      respond_json(200, translate_gerrit_user(gerrit_decode(body)))
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
-  end,
+-- GET /users/{username}
+b:rest("get_users_username", function(username)
+  local ok, status, _, body = fetch_json(base() .. "/accounts/" .. username .. "?o=DETAILS")
+  if ok and status == 200 then
+    respond_json(200, translate_gerrit_user(gerrit_decode(body)))
+  elseif ok then
+    respond_json(status, {})
+  else
+    respond_json(503, {})
+  end
+end)
 
-  -- GET /users — search active accounts
-  get_users = function()
-    local limit = GetParam("per_page") or "30"
-    local page = tonumber(GetParam("page")) or 1
-    local skip = (page - 1) * (tonumber(limit) or 30)
-    local url = base()
-      .. "/accounts/?q=is:active&o=DETAILS&n="
-      .. limit
-      .. (skip > 0 and ("&S=" .. skip) or "")
-    local ok, status, _, body = fetch_json(url)
-    if ok and status == 200 then
-      respond_json(200, translate_list(translate_gerrit_user, gerrit_decode(body)))
-    elseif ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
-  end,
+-- GET /users — search active accounts
+b:rest("get_users", function()
+  local limit = GetParam("per_page") or "30"
+  local page = tonumber(GetParam("page")) or 1
+  local skip = (page - 1) * (tonumber(limit) or 30)
+  local url = base()
+    .. "/accounts/?q=is:active&o=DETAILS&n="
+    .. limit
+    .. (skip > 0 and ("&S=" .. skip) or "")
+  local ok, status, _, body = fetch_json(url)
+  if ok and status == 200 then
+    respond_json(200, translate_list(translate_gerrit_user, gerrit_decode(body)))
+  elseif ok then
+    respond_json(status, {})
+  else
+    respond_json(503, {})
+  end
+end)
 
-  -- Issues -----------------------------------------------------------------------
-  -- Gerrit has no native issue tracker; it is a code-review system only.
-  -- All issues, labels, milestones, and assignees endpoints fall back to the
-  -- default empty-list / 404 handlers defined in .init.lua.
+-- Issues -----------------------------------------------------------------------
+-- Gerrit has no native issue tracker; it is a code-review system only.
+-- All issues, labels, milestones, and assignees endpoints fall back to the
+-- default empty-list / 404 handlers defined in .init.lua.
 
-  -- Contents ------------------------------------------------------------------
-  -- Cannot use proxy_json: Gerrit returns the raw base64-encoded file bytes
-  -- directly (no JSON envelope), so DecodeJson is not applicable.
+-- Contents ------------------------------------------------------------------
+-- Cannot use proxy_json: Gerrit returns the raw base64-encoded file bytes
+-- directly (no JSON envelope), so DecodeJson is not applicable.
 
-  get_repo_content = function(owner, repo_name, path)
-    local ref = GetParam("ref") or "HEAD"
-    local url = base()
-      .. "/projects/"
-      .. project_id(owner, repo_name)
-      .. "/branches/"
-      .. ref
-      .. "/files/"
-      .. path
-      .. "/content"
-    local ok, status, _, body = fetch_json(url)
-    if ok and status == 200 then
-      -- Gerrit returns already-base64-encoded content
-      respond_json(200, {
-        type = "file",
-        name = path:match("[^/]+$") or path,
-        path = path,
-        sha = "",
-        size = 0,
-        encoding = "base64",
-        content = body,
-      })
-    elseif ok then
-      respond_json(status, { message = "Error" })
-    else
-      respond_json(503, {})
-    end
-  end,
-}
+b:rest("get_repo_content", function(owner, repo_name, path)
+  local ref = GetParam("ref") or "HEAD"
+  local url = base()
+    .. "/projects/"
+    .. project_id(owner, repo_name)
+    .. "/branches/"
+    .. ref
+    .. "/files/"
+    .. path
+    .. "/content"
+  local ok, status, _, body = fetch_json(url)
+  if ok and status == 200 then
+    -- Gerrit returns already-base64-encoded content
+    respond_json(200, {
+      type = "file",
+      name = path:match("[^/]+$") or path,
+      path = path,
+      sha = "",
+      size = 0,
+      encoding = "base64",
+      content = body,
+    })
+  elseif ok then
+    respond_json(status, { message = "Error" })
+  else
+    respond_json(503, {})
+  end
+end)
+
+b:build()

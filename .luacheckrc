@@ -49,6 +49,8 @@ globals = {
   -- App context: constructed in .init.lua, holds config + backend state
   "app",
   "make_app",
+  -- Backend builder: internal/registry.lua; backends use this instead of mutating globals
+  "make_backend_builder",
   -- Default stub handlers: populated by internal/defaults.lua, read by the catalog in .init.lua
   "defaults",
   -- Router: populated by internal/router.lua, used by the catalog and OnHttpRequest in .init.lua

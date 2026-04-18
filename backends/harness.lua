@@ -184,479 +184,510 @@ local function translate_harness_hook_req(body_str)
   })
 end
 
-app.backend_impl = {
-  get_root = function()
-    proxy_health_check(pcall(Fetch, base(), auth()))
-  end,
+local b = make_backend_builder()
+b:rest("get_root", function()
+  proxy_health_check(pcall(Fetch, base(), auth()))
+end)
 
-  get_repo = proxy_handler(translate_harness_repo, function(owner, repo_name)
+b:rest(
+  "get_repo",
+  proxy_handler(translate_harness_repo, function(owner, repo_name)
     return base() .. "/repos/" .. repo_ref(owner, repo_name)
-  end),
+  end)
+)
 
-  patch_repo = function(owner, repo_name)
-    proxy_json(
-      translate_harness_repo,
-      fetch_json(
-        base() .. "/repos/" .. repo_ref(owner, repo_name),
-        "PATCH",
-        translate_harness_req(GetBody())
-      )
+b:rest("patch_repo", function(owner, repo_name)
+  proxy_json(
+    translate_harness_repo,
+    fetch_json(
+      base() .. "/repos/" .. repo_ref(owner, repo_name),
+      "PATCH",
+      translate_harness_req(GetBody())
     )
-  end,
+  )
+end)
 
-  delete_repo = function(owner, repo_name)
-    local url = base() .. "/repos/" .. repo_ref(owner, repo_name)
-    local dopts = auth() or {}
-    dopts.method = "DELETE"
-    proxy_204({ 200 }, pcall(Fetch, url, dopts))
-  end,
+b:rest("delete_repo", function(owner, repo_name)
+  local url = base() .. "/repos/" .. repo_ref(owner, repo_name)
+  local dopts = auth() or {}
+  dopts.method = "DELETE"
+  proxy_204({ 200 }, pcall(Fetch, url, dopts))
+end)
 
-  get_user_repos = proxy_handler(translate_harness_repos, function()
+b:rest(
+  "get_user_repos",
+  proxy_handler(translate_harness_repos, function()
     return append_page_params(base() .. "/repos", PAGES)
-  end),
+  end)
+)
 
-  post_user_repos = function()
-    proxy_json_created(
-      translate_harness_repo,
-      fetch_json(base() .. "/repos", "POST", translate_harness_req(GetBody()))
-    )
-  end,
+b:rest("post_user_repos", function()
+  proxy_json_created(
+    translate_harness_repo,
+    fetch_json(base() .. "/repos", "POST", translate_harness_req(GetBody()))
+  )
+end)
 
-  get_org_repos = proxy_handler(translate_harness_repos, function(space)
+b:rest(
+  "get_org_repos",
+  proxy_handler(translate_harness_repos, function(space)
     return append_page_params(base() .. "/spaces/" .. space .. "/repos", PAGES)
-  end),
+  end)
+)
 
-  post_org_repos = function(space)
-    local req = DecodeJson(GetBody() or "{}")
-    req.parent_ref = space
-    proxy_json_created(
-      translate_harness_repo,
-      fetch_json(base() .. "/repos", "POST", EncodeJson(req))
+b:rest("post_org_repos", function(space)
+  local req = DecodeJson(GetBody() or "{}")
+  req.parent_ref = space
+  proxy_json_created(
+    translate_harness_repo,
+    fetch_json(base() .. "/repos", "POST", EncodeJson(req))
+  )
+end)
+
+-- GET /repos/{owner}/{repo}/tags
+b:rest("get_repo_tags", function(owner, repo_name)
+  proxy_json(
+    function(tags)
+      tags = tags or {}
+      for i, t in ipairs(tags) do
+        tags[i] = { name = t.name, commit = { sha = t.sha or t.target or "", url = "" } }
+      end
+      return tags
+    end,
+    fetch_json(
+      append_page_params(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/tags", PAGES)
     )
-  end,
+  )
+end)
 
-  -- GET /repos/{owner}/{repo}/tags
-  get_repo_tags = function(owner, repo_name)
-    proxy_json(
-      function(tags)
-        tags = tags or {}
-        for i, t in ipairs(tags) do
-          tags[i] = { name = t.name, commit = { sha = t.sha or t.target or "", url = "" } }
-        end
-        return tags
-      end,
-      fetch_json(
-        append_page_params(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/tags", PAGES)
-      )
+-- Branches ------------------------------------------------------------------
+
+b:rest("get_repo_branches", function(owner, repo_name)
+  proxy_json(
+    function(branches)
+      branches = branches or {}
+      for i, br in ipairs(branches) do
+        branches[i] = translate_harness_branch(br)
+      end
+      return branches
+    end,
+    fetch_json(
+      append_page_params(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/branches", PAGES)
     )
-  end,
+  )
+end)
 
-  -- Branches ------------------------------------------------------------------
-
-  get_repo_branches = function(owner, repo_name)
-    proxy_json(
-      function(branches)
-        branches = branches or {}
-        for i, b in ipairs(branches) do
-          branches[i] = translate_harness_branch(b)
-        end
-        return branches
-      end,
-      fetch_json(
-        append_page_params(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/branches", PAGES)
-      )
-    )
-  end,
-
-  get_repo_branch = proxy_handler(translate_harness_branch, function(owner, repo_name, branch)
+b:rest(
+  "get_repo_branch",
+  proxy_handler(translate_harness_branch, function(owner, repo_name, branch)
     return base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/branches/" .. branch
-  end),
+  end)
+)
 
-  -- Commits -------------------------------------------------------------------
+-- Commits -------------------------------------------------------------------
 
-  get_repo_commits = function(owner, repo_name)
-    local ref = GetParam("sha") or ""
-    local url = base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/commits"
-    if ref ~= "" then
-      url = url .. "?git_ref=" .. ref
+b:rest("get_repo_commits", function(owner, repo_name)
+  local ref = GetParam("sha") or ""
+  local url = base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/commits"
+  if ref ~= "" then
+    url = url .. "?git_ref=" .. ref
+  end
+  url = append_page_params(url, PAGES)
+  proxy_json(function(commits)
+    commits = commits or {}
+    for i, c in ipairs(commits) do
+      commits[i] = translate_harness_commit(c)
     end
-    url = append_page_params(url, PAGES)
-    proxy_json(function(commits)
-      commits = commits or {}
-      for i, c in ipairs(commits) do
-        commits[i] = translate_harness_commit(c)
-      end
-      return commits
-    end, fetch_json(url))
-  end,
+    return commits
+  end, fetch_json(url))
+end)
 
-  get_repo_commit = proxy_handler(translate_harness_commit, function(owner, repo_name, ref)
+b:rest(
+  "get_repo_commit",
+  proxy_handler(translate_harness_commit, function(owner, repo_name, ref)
     return base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/commits/" .. ref
-  end),
+  end)
+)
 
-  -- Statuses ------------------------------------------------------------------
-  -- Harness uses /check/commits/{sha} for CI results.
+-- Statuses ------------------------------------------------------------------
+-- Harness uses /check/commits/{sha} for CI results.
 
-  get_commit_statuses = proxy_handler(nil, function(owner, repo_name, ref)
+b:rest(
+  "get_commit_statuses",
+  proxy_handler(nil, function(owner, repo_name, ref)
     return base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/check/commits/" .. ref
-  end),
+  end)
+)
 
-  get_commit_combined_status = proxy_handler(nil, function(owner, repo_name, ref)
+b:rest(
+  "get_commit_combined_status",
+  proxy_handler(nil, function(owner, repo_name, ref)
     return base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/check/commits/" .. ref
-  end),
+  end)
+)
 
-  post_commit_status = function(owner, repo_name, sha)
-    proxy_json_created(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/check/commits/" .. sha,
-        "POST",
-        GetBody()
-      )
+b:rest("post_commit_status", function(owner, repo_name, sha)
+  proxy_json_created(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/check/commits/" .. sha,
+      "POST",
+      GetBody()
     )
-  end,
+  )
+end)
 
-  -- Contents ------------------------------------------------------------------
-  -- Harness content API returns the same shape as GitHub (type, name, path, sha, encoding, content).
+-- Contents ------------------------------------------------------------------
+-- Harness content API returns the same shape as GitHub (type, name, path, sha, encoding, content).
 
-  get_repo_readme = function(owner, repo_name)
-    -- Harness has no dedicated readme endpoint; fetch root contents and find README.
-    local ref = GetParam("ref") or ""
-    local url = base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/content/README.md"
-    if ref ~= "" then
-      url = url .. "?git_ref=" .. ref
+b:rest("get_repo_readme", function(owner, repo_name)
+  -- Harness has no dedicated readme endpoint; fetch root contents and find README.
+  local ref = GetParam("ref") or ""
+  local url = base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/content/README.md"
+  if ref ~= "" then
+    url = url .. "?git_ref=" .. ref
+  end
+  proxy_json(nil, fetch_json(url))
+end)
+
+b:rest("get_repo_content", function(owner, repo_name, path)
+  local ref = GetParam("ref") or ""
+  local url = base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/content/" .. path
+  if ref ~= "" then
+    url = url .. "?git_ref=" .. ref
+  end
+  proxy_json(function(data)
+    -- Directory listing: Harness returns { type="dir", entries=[...] }; GitHub expects array.
+    if data and data.type == "dir" then
+      return data.entries or {}
     end
-    proxy_json(nil, fetch_json(url))
-  end,
+    return data or {}
+  end, fetch_json(url))
+end)
 
-  get_repo_content = function(owner, repo_name, path)
-    local ref = GetParam("ref") or ""
-    local url = base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/content/" .. path
-    if ref ~= "" then
-      url = url .. "?git_ref=" .. ref
-    end
-    proxy_json(function(data)
-      -- Directory listing: Harness returns { type="dir", entries=[...] }; GitHub expects array.
-      if data and data.type == "dir" then
-        return data.entries or {}
-      end
-      return data or {}
-    end, fetch_json(url))
-  end,
-
-  put_repo_content = function(owner, repo_name, path)
-    proxy_json(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/content/" .. path,
-        "PUT",
-        GetBody()
-      )
+b:rest("put_repo_content", function(owner, repo_name, path)
+  proxy_json(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/content/" .. path,
+      "PUT",
+      GetBody()
     )
-  end,
+  )
+end)
 
-  delete_repo_content = function(owner, repo_name, path)
-    proxy_json(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/content/" .. path,
-        "DELETE",
-        GetBody()
-      )
+b:rest("delete_repo_content", function(owner, repo_name, path)
+  proxy_json(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/content/" .. path,
+      "DELETE",
+      GetBody()
     )
-  end,
+  )
+end)
 
-  -- Forks ---------------------------------------------------------------------
+-- Forks ---------------------------------------------------------------------
 
-  get_repo_forks = proxy_handler(translate_harness_repos, function(owner, repo_name)
+b:rest(
+  "get_repo_forks",
+  proxy_handler(translate_harness_repos, function(owner, repo_name)
     return append_page_params(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/forks", PAGES)
-  end),
+  end)
+)
 
-  post_repo_forks = function(owner, repo_name)
-    proxy_json_created(
-      translate_harness_repo,
-      fetch_json(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/fork", "POST", GetBody())
+b:rest("post_repo_forks", function(owner, repo_name)
+  proxy_json_created(
+    translate_harness_repo,
+    fetch_json(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/fork", "POST", GetBody())
+  )
+end)
+
+-- Deploy keys ---------------------------------------------------------------
+
+b:rest("get_repo_keys", function(owner, repo_name)
+  proxy_json(
+    function(keys)
+      keys = keys or {}
+      for i, k in ipairs(keys) do
+        keys[i] = translate_harness_key(k)
+      end
+      return keys
+    end,
+    fetch_json(
+      append_page_params(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/keys", PAGES)
     )
-  end,
+  )
+end)
 
-  -- Deploy keys ---------------------------------------------------------------
+b:rest("post_repo_keys", function(owner, repo_name)
+  local req = DecodeJson(GetBody() or "{}")
+  local h = {
+    identifier = req.title or "",
+    public_key = req.key or "",
+    usage = req.read_only and "read" or "readwrite",
+  }
+  proxy_json_created(
+    translate_harness_key,
+    fetch_json(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/keys", "POST", EncodeJson(h))
+  )
+end)
 
-  get_repo_keys = function(owner, repo_name)
-    proxy_json(
-      function(keys)
-        keys = keys or {}
-        for i, k in ipairs(keys) do
-          keys[i] = translate_harness_key(k)
-        end
-        return keys
-      end,
-      fetch_json(
-        append_page_params(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/keys", PAGES)
-      )
-    )
-  end,
-
-  post_repo_keys = function(owner, repo_name)
-    local req = DecodeJson(GetBody() or "{}")
-    local h = {
-      identifier = req.title or "",
-      public_key = req.key or "",
-      usage = req.read_only and "read" or "readwrite",
-    }
-    proxy_json_created(
-      translate_harness_key,
-      fetch_json(
-        base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/keys",
-        "POST",
-        EncodeJson(h)
-      )
-    )
-  end,
-
-  get_repo_key = proxy_handler(translate_harness_key, function(owner, repo_name, key_id)
+b:rest(
+  "get_repo_key",
+  proxy_handler(translate_harness_key, function(owner, repo_name, key_id)
     return base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/keys/" .. key_id
-  end),
+  end)
+)
 
-  delete_repo_key = function(owner, repo_name, key_id)
-    proxy_204(
-      { 200 },
-      fetch_json(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/keys/" .. key_id, "DELETE")
+b:rest("delete_repo_key", function(owner, repo_name, key_id)
+  proxy_204(
+    { 200 },
+    fetch_json(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/keys/" .. key_id, "DELETE")
+  )
+end)
+
+-- Webhooks ------------------------------------------------------------------
+
+b:rest("get_repo_hooks", function(owner, repo_name)
+  proxy_json(
+    function(hooks)
+      hooks = hooks or {}
+      for i, h in ipairs(hooks) do
+        hooks[i] = translate_harness_hook(h)
+      end
+      return hooks
+    end,
+    fetch_json(
+      append_page_params(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/webhooks", PAGES)
     )
-  end,
+  )
+end)
 
-  -- Webhooks ------------------------------------------------------------------
-
-  get_repo_hooks = function(owner, repo_name)
-    proxy_json(
-      function(hooks)
-        hooks = hooks or {}
-        for i, h in ipairs(hooks) do
-          hooks[i] = translate_harness_hook(h)
-        end
-        return hooks
-      end,
-      fetch_json(
-        append_page_params(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/webhooks", PAGES)
-      )
+b:rest("post_repo_hooks", function(owner, repo_name)
+  proxy_json_created(
+    translate_harness_hook,
+    fetch_json(
+      base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/webhooks",
+      "POST",
+      translate_harness_hook_req(GetBody())
     )
-  end,
+  )
+end)
 
-  post_repo_hooks = function(owner, repo_name)
-    proxy_json_created(
-      translate_harness_hook,
-      fetch_json(
-        base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/webhooks",
-        "POST",
-        translate_harness_hook_req(GetBody())
-      )
-    )
-  end,
-
-  get_repo_hook = proxy_handler(translate_harness_hook, function(owner, repo_name, hook_id)
+b:rest(
+  "get_repo_hook",
+  proxy_handler(translate_harness_hook, function(owner, repo_name, hook_id)
     return base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/webhooks/" .. hook_id
-  end),
+  end)
+)
 
-  patch_repo_hook = function(owner, repo_name, hook_id)
-    proxy_json(
-      translate_harness_hook,
-      fetch_json(
-        base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/webhooks/" .. hook_id,
-        "PATCH",
-        translate_harness_hook_req(GetBody())
-      )
+b:rest("patch_repo_hook", function(owner, repo_name, hook_id)
+  proxy_json(
+    translate_harness_hook,
+    fetch_json(
+      base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/webhooks/" .. hook_id,
+      "PATCH",
+      translate_harness_hook_req(GetBody())
     )
-  end,
+  )
+end)
 
-  delete_repo_hook = function(owner, repo_name, hook_id)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/webhooks/" .. hook_id,
-        "DELETE"
-      )
+b:rest("delete_repo_hook", function(owner, repo_name, hook_id)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/webhooks/" .. hook_id,
+      "DELETE"
     )
-  end,
+  )
+end)
 
-  -- Hook config ---------------------------------------------------------------
+-- Hook config ---------------------------------------------------------------
 
-  get_repo_hook_config = function(owner, repo_name, hook_id)
-    proxy_json(function(h)
-      return (translate_harness_hook(h)).config or {}
-    end, fetch_json(
-      base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/webhooks/" .. hook_id
-    ))
-  end,
+b:rest("get_repo_hook_config", function(owner, repo_name, hook_id)
+  proxy_json(function(h)
+    return (translate_harness_hook(h)).config or {}
+  end, fetch_json(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/webhooks/" .. hook_id))
+end)
 
-  patch_repo_hook_config = function(owner, repo_name, hook_id)
-    local url = base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/webhooks/" .. hook_id
-    local ok, status, _, body = fetch_json(url)
-    if not ok or status ~= 200 then
-      if ok then
-        respond_json(status, {})
-      else
-        respond_json(503, {})
-      end
-      return
-    end
-    local hook = DecodeJson(body) or {}
-    local new_cfg = DecodeJson(GetBody() or "{}")
-    if new_cfg.url then
-      hook.url = new_cfg.url
-    end
-    proxy_json(function(h)
-      return (translate_harness_hook(h)).config or {}
-    end, fetch_json(url, "PATCH", EncodeJson(hook)))
-  end,
-
-  post_repo_hook_test = function(owner, repo_name, hook_id)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/webhooks/" .. hook_id .. "/test",
-        "POST"
-      )
-    )
-  end,
-
-  -- Languages -----------------------------------------------------------------
-
-  get_repo_languages = proxy_handler(nil, function(owner, repo_name)
-    return base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/languages"
-  end),
-
-  -- Archive -------------------------------------------------------------------
-
-  get_repo_tarball = function(owner, repo_name, ref)
-    SetStatus(302, "Found")
-    SetHeader(
-      "Location",
-      base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/archive?format=tar.gz&git_ref=" .. ref
-    )
-    Write("")
-  end,
-
-  get_repo_zipball = function(owner, repo_name, ref)
-    SetStatus(302, "Found")
-    SetHeader(
-      "Location",
-      base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/archive?format=zip&git_ref=" .. ref
-    )
-    Write("")
-  end,
-
-  -- Users' repos --------------------------------------------------------------
-
-  get_users_repos = proxy_handler(translate_harness_repos, function(username)
-    return append_page_params(base() .. "/spaces/" .. username .. "/repos", PAGES)
-  end),
-
-  -- Users ---------------------------------------------------------------------
-
-  -- GET /user
-  get_user = function()
-    proxy_json(function(u)
-      if not u then
-        return {}
-      end
-      return {
-        login = u.uid or "",
-        id = u.id or 0,
-        node_id = "",
-        avatar_url = u.url or "",
-        html_url = "",
-        type = "User",
-        site_admin = u.admin or false,
-        name = u.display_name or "",
-        email = u.email or "",
-      }
-    end, fetch_json(base() .. "/user"))
-  end,
-
-  -- Checks (via Harness Code /check/commits/{sha}) --------------------------------
-  --
-  -- Harness Code stores CI results as check statuses on commit SHAs.  Each check
-  -- entry has id, status, check_suite_name, started, and ended fields.
-  --   • GET commits/{ref}/check-runs → GET /check/commits/{sha}
-  --   • Check Suites have no native equivalent; all suite endpoints are stubs.
-  --
-  -- Status mapping (Harness → GitHub):
-  --   running/pending → status=in_progress, conclusion=null
-  --   success         → status=completed,   conclusion=success
-  --   failure/error   → status=completed,   conclusion=failure
-  --   cancelled       → status=completed,   conclusion=cancelled
-
-  -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
-  -- Maps to Harness Code GET /check/commits/{sha}.
-  get_commit_check_runs = function(owner, repo_name, ref)
-    local ok, status, _, body =
-      fetch_json(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/check/commits/" .. ref)
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
+b:rest("patch_repo_hook_config", function(owner, repo_name, hook_id)
+  local url = base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/webhooks/" .. hook_id
+  local ok, status, _, body = fetch_json(url)
+  if not ok or status ~= 200 then
+    if ok then
       respond_json(status, {})
-      return
+    else
+      respond_json(503, {})
     end
-    local list = DecodeJson(body) or {}
-    local runs = {}
-    for _, c in ipairs(list) do
-      local s = c.status or "pending"
-      local harness_to_gh = {
-        success = { status = "completed", conclusion = "success" },
-        failure = { status = "completed", conclusion = "failure" },
-        error = { status = "completed", conclusion = "failure" },
-        cancelled = { status = "completed", conclusion = "cancelled" },
-      }
-      local mapped = harness_to_gh[s] or { status = "in_progress", conclusion = nil }
-      local gh_status, gh_conclusion = mapped.status, mapped.conclusion
-      runs[#runs + 1] = {
-        id = c.id or 0,
-        node_id = "",
-        head_sha = ref,
-        name = c.check_suite_name or tostring(c.id or 0),
-        status = gh_status,
-        conclusion = gh_conclusion,
-        started_at = c.started,
-        completed_at = gh_status == "completed" and (c.ended or c.started) or nil,
-        output = {
-          title = c.check_suite_name or "",
-          summary = c.check_suite_name or "",
-          text = "",
-          annotations_count = 0,
-          annotations_url = "",
-        },
-        url = "",
-        html_url = "",
-        details_url = "",
-      }
+    return
+  end
+  local hook = DecodeJson(body) or {}
+  local new_cfg = DecodeJson(GetBody() or "{}")
+  if new_cfg.url then
+    hook.url = new_cfg.url
+  end
+  proxy_json(function(h)
+    return (translate_harness_hook(h)).config or {}
+  end, fetch_json(url, "PATCH", EncodeJson(hook)))
+end)
+
+b:rest("post_repo_hook_test", function(owner, repo_name, hook_id)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/webhooks/" .. hook_id .. "/test",
+      "POST"
+    )
+  )
+end)
+
+-- Languages -----------------------------------------------------------------
+
+b:rest(
+  "get_repo_languages",
+  proxy_handler(nil, function(owner, repo_name)
+    return base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/languages"
+  end)
+)
+
+-- Archive -------------------------------------------------------------------
+
+b:rest("get_repo_tarball", function(owner, repo_name, ref)
+  SetStatus(302, "Found")
+  SetHeader(
+    "Location",
+    base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/archive?format=tar.gz&git_ref=" .. ref
+  )
+  Write("")
+end)
+
+b:rest("get_repo_zipball", function(owner, repo_name, ref)
+  SetStatus(302, "Found")
+  SetHeader(
+    "Location",
+    base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/archive?format=zip&git_ref=" .. ref
+  )
+  Write("")
+end)
+
+-- Users' repos --------------------------------------------------------------
+
+b:rest(
+  "get_users_repos",
+  proxy_handler(translate_harness_repos, function(username)
+    return append_page_params(base() .. "/spaces/" .. username .. "/repos", PAGES)
+  end)
+)
+
+-- Users ---------------------------------------------------------------------
+
+-- GET /user
+b:rest("get_user", function()
+  proxy_json(function(u)
+    if not u then
+      return {}
     end
-    respond_json(200, { total_count = #runs, check_runs = runs })
-  end,
+    return {
+      login = u.uid or "",
+      id = u.id or 0,
+      node_id = "",
+      avatar_url = u.url or "",
+      html_url = "",
+      type = "User",
+      site_admin = u.admin or false,
+      name = u.display_name or "",
+      email = u.email or "",
+    }
+  end, fetch_json(base() .. "/user"))
+end)
 
-  -- Issues -----------------------------------------------------------------------
-  -- Harness Code has no native issue tracker.
-  -- Issue management in the Harness platform is handled via Jira integration.
-  -- All issues, labels, milestones, and assignees endpoints fall back to the
-  -- default empty-list / 404 handlers defined in .init.lua.
+-- Checks (via Harness Code /check/commits/{sha}) --------------------------------
+--
+-- Harness Code stores CI results as check statuses on commit SHAs.  Each check
+-- entry has id, status, check_suite_name, started, and ended fields.
+--   • GET commits/{ref}/check-runs → GET /check/commits/{sha}
+--   • Check Suites have no native equivalent; all suite endpoints are stubs.
+--
+-- Status mapping (Harness → GitHub):
+--   running/pending → status=in_progress, conclusion=null
+--   success         → status=completed,   conclusion=success
+--   failure/error   → status=completed,   conclusion=failure
+--   cancelled       → status=completed,   conclusion=cancelled
 
-  -- PATCH /user
-  patch_user = function()
-    proxy_json(function(u)
-      if not u then
-        return {}
-      end
-      return {
-        login = u.uid or "",
-        id = u.id or 0,
-        node_id = "",
-        avatar_url = u.url or "",
-        html_url = "",
-        type = "User",
-        site_admin = u.admin or false,
-        name = u.display_name or "",
-        email = u.email or "",
-      }
-    end, fetch_json(base() .. "/user", "PATCH", GetBody()))
-  end,
-}
+-- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
+-- Maps to Harness Code GET /check/commits/{sha}.
+b:rest("get_commit_check_runs", function(owner, repo_name, ref)
+  local ok, status, _, body =
+    fetch_json(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/check/commits/" .. ref)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local list = DecodeJson(body) or {}
+  local runs = {}
+  for _, c in ipairs(list) do
+    local s = c.status or "pending"
+    local harness_to_gh = {
+      success = { status = "completed", conclusion = "success" },
+      failure = { status = "completed", conclusion = "failure" },
+      error = { status = "completed", conclusion = "failure" },
+      cancelled = { status = "completed", conclusion = "cancelled" },
+    }
+    local mapped = harness_to_gh[s] or { status = "in_progress", conclusion = nil }
+    local gh_status, gh_conclusion = mapped.status, mapped.conclusion
+    runs[#runs + 1] = {
+      id = c.id or 0,
+      node_id = "",
+      head_sha = ref,
+      name = c.check_suite_name or tostring(c.id or 0),
+      status = gh_status,
+      conclusion = gh_conclusion,
+      started_at = c.started,
+      completed_at = gh_status == "completed" and (c.ended or c.started) or nil,
+      output = {
+        title = c.check_suite_name or "",
+        summary = c.check_suite_name or "",
+        text = "",
+        annotations_count = 0,
+        annotations_url = "",
+      },
+      url = "",
+      html_url = "",
+      details_url = "",
+    }
+  end
+  respond_json(200, { total_count = #runs, check_runs = runs })
+end)
+
+-- Issues -----------------------------------------------------------------------
+-- Harness Code has no native issue tracker.
+-- Issue management in the Harness platform is handled via Jira integration.
+-- All issues, labels, milestones, and assignees endpoints fall back to the
+-- default empty-list / 404 handlers defined in .init.lua.
+
+-- PATCH /user
+b:rest("patch_user", function()
+  proxy_json(function(u)
+    if not u then
+      return {}
+    end
+    return {
+      login = u.uid or "",
+      id = u.id or 0,
+      node_id = "",
+      avatar_url = u.url or "",
+      html_url = "",
+      type = "User",
+      site_admin = u.admin or false,
+      name = u.display_name or "",
+      email = u.email or "",
+    }
+  end, fetch_json(base() .. "/user", "PATCH", GetBody()))
+end)
+
+b:build()

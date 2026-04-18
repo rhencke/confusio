@@ -126,7 +126,7 @@ endef
 
 $(foreach b,$(BACKENDS),$(eval $(call BACKEND_RULE,$(b))))
 
-.PHONY: build site dump-endpoints dump-families dump-claims validate-csv validate-tests validate-providers validate-claims generate-schema validate-schema test test-unit test-unit-functions test-unit-graphql test-unit-backends test-integration validate-mock test-format test-lint test-coverage clean
+.PHONY: build site dump-endpoints dump-families dump-claims validate-csv validate-tests validate-providers validate-claims validate-builders generate-schema validate-schema test test-unit test-unit-functions test-unit-graphql test-unit-backends test-integration validate-mock test-format test-lint test-coverage clean
 
 build: confusio.com
 
@@ -151,6 +151,17 @@ dump-claims: redbean.com
 validate-claims: redbean.com
 	./redbean.com -i scripts/dump-claims.lua $(BACKENDS) 2>/dev/null | ./redbean.com -i scripts/validate-claims.lua site/compatibility.csv
 
+validate-builders:
+	@if grep -rn 'app\.backend_impl\s*=' backends/ 2>/dev/null | grep -v '^Binary'; then \
+	  echo "ERROR: backend(s) still use direct app.backend_impl assignment; use make_backend_builder():b:build() instead" >&2; \
+	  exit 1; \
+	fi
+	@if grep -rn 'graphql_resolvers\[' backends/ 2>/dev/null | grep -v '^Binary'; then \
+	  echo "ERROR: backend(s) still use direct graphql_resolvers assignment; use b:graphql() instead" >&2; \
+	  exit 1; \
+	fi
+	@echo "validate-builders OK"
+
 generate-schema: redbean.com
 	./redbean.com -i scripts/gen-graphql-schema.lua
 
@@ -164,7 +175,7 @@ site: redbean.com
 	./redbean.com -i scripts/dump-endpoints.lua 2>/dev/null | \
 	  python3 scripts/gen-matrix.py - site/compatibility.csv site/index.html _site/index.html
 
-test: test-unit test-integration test-format test-lint validate-csv validate-tests validate-providers validate-claims validate-schema
+test: test-unit test-integration test-format test-lint validate-csv validate-tests validate-providers validate-claims validate-schema validate-builders
 
 # Pure-Lua unit tests (no HTTP server needed): .init.lua functions + GraphQL subsystem
 test-unit-functions: redbean.com

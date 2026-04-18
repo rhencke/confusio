@@ -135,121 +135,122 @@ local function find_project(shortname)
   return nil
 end
 
-app.backend_impl = {
-  get_root = function()
-    proxy_health_check(pcall(Fetch, base() .. "/projects?limit=1", auth()))
-  end,
+local b = make_backend_builder()
+b:rest("get_root", function()
+  proxy_health_check(pcall(Fetch, base() .. "/projects?limit=1", auth()))
+end)
 
-  -- GET /repos/{owner}/{repo}: owner = project shortname, repo = git repo name.
-  -- Two-step: find project by shortname, then list git repos and filter by name.
-  get_repo = function(owner, repo_name)
-    local project = find_project(owner)
-    if not project then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    local ok, status, _, body = fetch_json(project_git_url(project.id))
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local repos = DecodeJson(body) or {}
-    for _, r in ipairs(repos) do
-      if r.name == repo_name then
-        respond_json(200, translate_tuleap_repo(r))
-        return
-      end
-    end
+-- GET /repos/{owner}/{repo}: owner = project shortname, repo = git repo name.
+-- Two-step: find project by shortname, then list git repos and filter by name.
+b:rest("get_repo", function(owner, repo_name)
+  local project = find_project(owner)
+  if not project then
     respond_json(404, { message = "Not Found" })
-  end,
+    return
+  end
+  local ok, status, _, body = fetch_json(project_git_url(project.id))
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local repos = DecodeJson(body) or {}
+  for _, r in ipairs(repos) do
+    if r.name == repo_name then
+      respond_json(200, translate_tuleap_repo(r))
+      return
+    end
+  end
+  respond_json(404, { message = "Not Found" })
+end)
 
-  -- GET /orgs/{org}/repos: org = project shortname; lists git repos in that project.
-  get_org_repos = function(org)
-    local project = find_project(org)
-    if not project then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    proxy_json(function(repos)
-      local result = {}
-      for _, r in ipairs(repos or {}) do
-        result[#result + 1] = translate_tuleap_repo(r)
-      end
-      return result
-    end, fetch_json(project_git_url(project.id)))
-  end,
-
-  -- GET /users/{username}: find Tuleap user by username.
-  get_users_username = function(username)
-    local url = base() .. '/users?query={"username":"' .. username .. '"}&limit=1'
-    local ok, status, _, body = fetch_json(url)
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local users = DecodeJson(body) or {}
-    for _, u in ipairs(users) do
-      if u.username == username then
-        respond_json(200, translate_tuleap_user(u))
-        return
-      end
-    end
+-- GET /orgs/{org}/repos: org = project shortname; lists git repos in that project.
+b:rest("get_org_repos", function(org)
+  local project = find_project(org)
+  if not project then
     respond_json(404, { message = "Not Found" })
-  end,
+    return
+  end
+  proxy_json(function(repos)
+    local result = {}
+    for _, r in ipairs(repos or {}) do
+      result[#result + 1] = translate_tuleap_repo(r)
+    end
+    return result
+  end, fetch_json(project_git_url(project.id)))
+end)
 
-  -- GET /users: list Tuleap users (search by ?q= if given).
-  get_users = function()
-    local q = GetParam("q") or ""
-    proxy_json(function(users)
-      local result = {}
-      for _, u in ipairs(users or {}) do
-        result[#result + 1] = translate_tuleap_user(u)
-      end
-      return result
-    end, fetch_json(users_url(q)))
-  end,
+-- GET /users/{username}: find Tuleap user by username.
+b:rest("get_users_username", function(username)
+  local url = base() .. '/users?query={"username":"' .. username .. '"}&limit=1'
+  local ok, status, _, body = fetch_json(url)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local users = DecodeJson(body) or {}
+  for _, u in ipairs(users) do
+    if u.username == username then
+      respond_json(200, translate_tuleap_user(u))
+      return
+    end
+  end
+  respond_json(404, { message = "Not Found" })
+end)
 
-  -- GET /search/repositories: search Tuleap projects by name.
-  search_repositories = function()
-    local q = GetParam("q") or ""
-    proxy_json(function(projects)
-      local items = {}
-      for _, p in ipairs(projects or {}) do
-        items[#items + 1] = {
+-- GET /users: list Tuleap users (search by ?q= if given).
+b:rest("get_users", function()
+  local q = GetParam("q") or ""
+  proxy_json(function(users)
+    local result = {}
+    for _, u in ipairs(users or {}) do
+      result[#result + 1] = translate_tuleap_user(u)
+    end
+    return result
+  end, fetch_json(users_url(q)))
+end)
+
+-- GET /search/repositories: search Tuleap projects by name.
+b:rest("search_repositories", function()
+  local q = GetParam("q") or ""
+  proxy_json(function(projects)
+    local items = {}
+    for _, p in ipairs(projects or {}) do
+      items[#items + 1] = {
+        id = p.id or 0,
+        name = p.shortname or "",
+        full_name = p.shortname or "",
+        description = p.description,
+        private = p.access ~= "public",
+        owner = {
+          login = p.shortname or "",
           id = p.id or 0,
-          name = p.shortname or "",
-          full_name = p.shortname or "",
-          description = p.description,
-          private = p.access ~= "public",
-          owner = {
-            login = p.shortname or "",
-            id = p.id or 0,
-            type = "Organization",
-          },
-          html_url = config.base_url .. "/projects/" .. (p.shortname or ""),
-        }
-      end
-      return { total_count = #items, incomplete_results = false, items = items }
-    end, fetch_json(projects_url(q)))
-  end,
+          type = "Organization",
+        },
+        html_url = config.base_url .. "/projects/" .. (p.shortname or ""),
+      }
+    end
+    return { total_count = #items, incomplete_results = false, items = items }
+  end, fetch_json(projects_url(q)))
+end)
 
-  -- GET /search/users: search Tuleap users by username.
-  search_users = function()
-    local q = GetParam("q") or ""
-    proxy_json(function(users)
-      local items = {}
-      for _, u in ipairs(users or {}) do
-        items[#items + 1] = translate_tuleap_user(u)
-      end
-      return { total_count = #items, incomplete_results = false, items = items }
-    end, fetch_json(users_url(q)))
-  end,
-}
+-- GET /search/users: search Tuleap users by username.
+b:rest("search_users", function()
+  local q = GetParam("q") or ""
+  proxy_json(function(users)
+    local items = {}
+    for _, u in ipairs(users or {}) do
+      items[#items + 1] = translate_tuleap_user(u)
+    end
+    return { total_count = #items, incomplete_results = false, items = items }
+  end, fetch_json(users_url(q)))
+end)
+
+b:build()

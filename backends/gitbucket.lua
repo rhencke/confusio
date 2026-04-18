@@ -28,1158 +28,1456 @@ local gb_to_gh = {
   warning = { status = "completed", conclusion = "neutral" },
 }
 
-app.backend_impl = {
-  get_root = function()
-    proxy_health_check(pcall(Fetch, base() .. "/rate_limit", auth()))
-  end,
+local b = make_backend_builder()
+b:rest("get_root", function()
+  proxy_health_check(pcall(Fetch, base() .. "/rate_limit", auth()))
+end)
 
-  get_rate_limit = proxy_handler(function(data)
+b:rest(
+  "get_rate_limit",
+  proxy_handler(function(data)
     return { rate = data.rate or data }
   end, function()
     return base() .. "/rate_limit"
-  end),
+  end)
+)
 
-  get_repo = proxy_handler(nil, function(o, r)
+b:rest(
+  "get_repo",
+  proxy_handler(nil, function(o, r)
     return base() .. "/repos/" .. o .. "/" .. r
-  end),
+  end)
+)
 
-  patch_repo = function(owner, repo_name)
-    proxy_json(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name, "PATCH", GetBody())
-    )
-  end,
+b:rest("patch_repo", function(owner, repo_name)
+  proxy_json(nil, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name, "PATCH", GetBody()))
+end)
 
-  delete_repo = function(owner, repo_name)
-    local url = base() .. "/repos/" .. owner .. "/" .. repo_name
-    local dopts = auth() or {}
-    dopts.method = "DELETE"
-    proxy_204(nil, pcall(Fetch, url, dopts))
-  end,
+b:rest("delete_repo", function(owner, repo_name)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name
+  local dopts = auth() or {}
+  dopts.method = "DELETE"
+  proxy_204(nil, pcall(Fetch, url, dopts))
+end)
 
-  get_user_repos = proxy_handler(nil, function()
+b:rest(
+  "get_user_repos",
+  proxy_handler(nil, function()
     return append_page_params(base() .. "/user/repos", PAGES)
-  end),
+  end)
+)
 
-  post_user_repos = function()
-    proxy_json_created(nil, fetch_json(base() .. "/user/repos", "POST", GetBody()))
-  end,
+b:rest("post_user_repos", function()
+  proxy_json_created(nil, fetch_json(base() .. "/user/repos", "POST", GetBody()))
+end)
 
-  get_org_repos = proxy_handler(nil, function(org)
+b:rest(
+  "get_org_repos",
+  proxy_handler(nil, function(org)
     return append_page_params(base() .. "/orgs/" .. org .. "/repos", PAGES)
-  end),
+  end)
+)
 
-  post_org_repos = function(org)
-    proxy_json_created(nil, fetch_json(base() .. "/orgs/" .. org .. "/repos", "POST", GetBody()))
-  end,
+b:rest("post_org_repos", function(org)
+  proxy_json_created(nil, fetch_json(base() .. "/orgs/" .. org .. "/repos", "POST", GetBody()))
+end)
 
-  get_repo_topics = proxy_handler(nil, function(o, r)
+b:rest(
+  "get_repo_topics",
+  proxy_handler(nil, function(o, r)
     return base() .. "/repos/" .. o .. "/" .. r .. "/topics"
-  end),
+  end)
+)
 
-  put_repo_topics = function(owner, repo_name)
-    proxy_json(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/topics", "PUT", GetBody())
-    )
-  end,
+b:rest("put_repo_topics", function(owner, repo_name)
+  proxy_json(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/topics", "PUT", GetBody())
+  )
+end)
 
-  get_repo_languages = proxy_handler(nil, function(o, r)
+b:rest(
+  "get_repo_languages",
+  proxy_handler(nil, function(o, r)
     return base() .. "/repos/" .. o .. "/" .. r .. "/languages"
-  end),
+  end)
+)
 
-  get_repo_contributors = proxy_handler(nil, function(o, r)
+b:rest(
+  "get_repo_contributors",
+  proxy_handler(nil, function(o, r)
     return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/contributors", PAGES)
-  end),
+  end)
+)
 
-  get_repo_tags = proxy_handler(nil, function(o, r)
+b:rest(
+  "get_repo_tags",
+  proxy_handler(nil, function(o, r)
     return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/tags", PAGES)
-  end),
+  end)
+)
 
-  get_repo_teams = proxy_handler(nil, function(o, r)
+b:rest(
+  "get_repo_teams",
+  proxy_handler(nil, function(o, r)
     return base() .. "/repos/" .. o .. "/" .. r .. "/teams"
-  end),
+  end)
+)
 
-  -- Branches ------------------------------------------------------------------
-  get_repo_branches = proxy_handler(nil, function(o, r)
+-- Branches ------------------------------------------------------------------
+b:rest(
+  "get_repo_branches",
+  proxy_handler(nil, function(o, r)
     return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/branches", PAGES)
-  end),
+  end)
+)
 
-  get_repo_branch = proxy_handler(nil, function(o, r, branch)
+b:rest(
+  "get_repo_branch",
+  proxy_handler(nil, function(o, r, branch)
     return base() .. "/repos/" .. o .. "/" .. r .. "/branches/" .. branch
-  end),
+  end)
+)
 
-  -- Commits -------------------------------------------------------------------
-  get_repo_commits = proxy_handler(nil, function(o, r)
+-- Commits -------------------------------------------------------------------
+b:rest(
+  "get_repo_commits",
+  proxy_handler(nil, function(o, r)
     return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/commits", PAGES)
-  end),
+  end)
+)
 
-  get_repo_commit = proxy_handler(nil, function(o, r, ref)
+b:rest(
+  "get_repo_commit",
+  proxy_handler(nil, function(o, r, ref)
     return base() .. "/repos/" .. o .. "/" .. r .. "/commits/" .. ref
-  end),
+  end)
+)
 
-  -- Statuses ------------------------------------------------------------------
-  get_commit_statuses = proxy_handler(nil, function(o, r, ref)
+-- Statuses ------------------------------------------------------------------
+b:rest(
+  "get_commit_statuses",
+  proxy_handler(nil, function(o, r, ref)
     return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/statuses/" .. ref, PAGES)
-  end),
+  end)
+)
 
-  get_commit_combined_status = proxy_handler(nil, function(o, r, ref)
+b:rest(
+  "get_commit_combined_status",
+  proxy_handler(nil, function(o, r, ref)
     return base() .. "/repos/" .. o .. "/" .. r .. "/commits/" .. ref .. "/status"
-  end),
+  end)
+)
 
-  post_commit_status = function(owner, repo_name, sha)
-    proxy_json_created(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. sha,
-        "POST",
-        GetBody()
-      )
+b:rest("post_commit_status", function(owner, repo_name, sha)
+  proxy_json_created(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. sha,
+      "POST",
+      GetBody()
     )
-  end,
+  )
+end)
 
-  -- Checks (via GitBucket commit statuses) ------------------------------------
-  --
-  -- GitBucket exposes a GitHub-compatible commit statuses API at /api/v3/,
-  -- so the translation is identical to Gitea: state is "pending", "success",
-  -- "failure", or "error".
-  --
-  -- GitHub → GitBucket state:
-  --   queued/in_progress      → pending
-  --   completed/success|neutral|skipped → success
-  --   completed/failure       → failure
-  --   completed/(other)       → error
-  --
-  -- GitBucket → GitHub:
-  --   pending  → status=in_progress, conclusion=nil
-  --   success  → status=completed,   conclusion=success
-  --   failure  → status=completed,   conclusion=failure
-  --   error    → status=completed,   conclusion=failure
-  --   warning  → status=completed,   conclusion=neutral
+-- Checks (via GitBucket commit statuses) ------------------------------------
+--
+-- GitBucket exposes a GitHub-compatible commit statuses API at /api/v3/,
+-- so the translation is identical to Gitea: state is "pending", "success",
+-- "failure", or "error".
+--
+-- GitHub → GitBucket state:
+--   queued/in_progress      → pending
+--   completed/success|neutral|skipped → success
+--   completed/failure       → failure
+--   completed/(other)       → error
+--
+-- GitBucket → GitHub:
+--   pending  → status=in_progress, conclusion=nil
+--   success  → status=completed,   conclusion=success
+--   failure  → status=completed,   conclusion=failure
+--   error    → status=completed,   conclusion=failure
+--   warning  → status=completed,   conclusion=neutral
 
-  post_check_runs = function(owner, repo_name)
-    local req = DecodeJson(GetBody() or "{}") or {}
-    local sha = req.head_sha or ""
-    local status = req.status or "queued"
-    local conclusion = req.conclusion
-    local gh_conclusion_to_gb = {
-      success = "success",
-      neutral = "success",
-      skipped = "success",
-      failure = "failure",
+b:rest("post_check_runs", function(owner, repo_name)
+  local req = DecodeJson(GetBody() or "{}") or {}
+  local sha = req.head_sha or ""
+  local status = req.status or "queued"
+  local conclusion = req.conclusion
+  local gh_conclusion_to_gb = {
+    success = "success",
+    neutral = "success",
+    skipped = "success",
+    failure = "failure",
+  }
+  local gb_state = status == "completed" and (gh_conclusion_to_gb[conclusion] or "error")
+    or "pending"
+  local function translate(s)
+    if not s then
+      return {}
+    end
+    local state = s.state or "pending"
+    local mapped = gb_to_gh[state] or { status = "completed", conclusion = "failure" }
+    local gh_status, gh_conclusion = mapped.status, mapped.conclusion
+    return {
+      id = s.id or 0,
+      node_id = "",
+      head_sha = sha,
+      name = s.context or req.name or "",
+      status = gh_status,
+      conclusion = gh_conclusion,
+      started_at = s.created_at or s.updated_at,
+      completed_at = gh_status == "completed" and (s.updated_at or s.created_at) or nil,
+      output = {
+        title = s.description or "",
+        summary = s.description or "",
+        text = "",
+        annotations_count = 0,
+        annotations_url = "",
+      },
+      url = "",
+      html_url = s.target_url or "",
+      details_url = s.target_url or "",
     }
-    local gb_state = status == "completed" and (gh_conclusion_to_gb[conclusion] or "error")
-      or "pending"
-    local function translate(s)
-      if not s then
-        return {}
-      end
-      local state = s.state or "pending"
-      local mapped = gb_to_gh[state] or { status = "completed", conclusion = "failure" }
-      local gh_status, gh_conclusion = mapped.status, mapped.conclusion
-      return {
-        id = s.id or 0,
-        node_id = "",
-        head_sha = sha,
-        name = s.context or req.name or "",
-        status = gh_status,
-        conclusion = gh_conclusion,
-        started_at = s.created_at or s.updated_at,
-        completed_at = gh_status == "completed" and (s.updated_at or s.created_at) or nil,
-        output = {
-          title = s.description or "",
-          summary = s.description or "",
-          text = "",
-          annotations_count = 0,
-          annotations_url = "",
-        },
-        url = "",
-        html_url = s.target_url or "",
-        details_url = s.target_url or "",
-      }
-    end
-    proxy_json_created(
-      translate,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. sha,
-        "POST",
-        EncodeJson({
-          state = gb_state,
-          target_url = req.details_url or "",
-          description = (req.output and req.output.summary) or req.name or "",
-          context = req.name or "",
-        })
-      )
+  end
+  proxy_json_created(
+    translate,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. sha,
+      "POST",
+      EncodeJson({
+        state = gb_state,
+        target_url = req.details_url or "",
+        description = (req.output and req.output.summary) or req.name or "",
+        context = req.name or "",
+      })
     )
-  end,
+  )
+end)
 
-  get_commit_check_runs = function(owner, repo_name, ref)
-    local ok, status, _, body = fetch_json(
-      append_page_params(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. ref,
-        PAGES
-      )
+b:rest("get_commit_check_runs", function(owner, repo_name, ref)
+  local ok, status, _, body = fetch_json(
+    append_page_params(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. ref,
+      PAGES
     )
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local statuses = DecodeJson(body) or {}
-    local runs = {}
-    for i, s in ipairs(statuses) do
-      local state = s.state or "pending"
-      local mapped = gb_to_gh[state] or { status = "completed", conclusion = "failure" }
-      local gh_status, gh_conclusion = mapped.status, mapped.conclusion
-      runs[i] = {
-        id = s.id or i,
-        node_id = "",
-        head_sha = ref,
-        name = s.context or "",
-        status = gh_status,
-        conclusion = gh_conclusion,
-        started_at = s.created_at or s.updated_at,
-        completed_at = gh_status == "completed" and (s.updated_at or s.created_at) or nil,
-        output = {
-          title = s.description or "",
-          summary = s.description or "",
-          text = "",
-          annotations_count = 0,
-          annotations_url = "",
-        },
-        url = "",
-        html_url = s.target_url or "",
-        details_url = s.target_url or "",
-      }
-    end
-    respond_json(200, { total_count = #runs, check_runs = runs })
-  end,
+  )
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local statuses = DecodeJson(body) or {}
+  local runs = {}
+  for i, s in ipairs(statuses) do
+    local state = s.state or "pending"
+    local mapped = gb_to_gh[state] or { status = "completed", conclusion = "failure" }
+    local gh_status, gh_conclusion = mapped.status, mapped.conclusion
+    runs[i] = {
+      id = s.id or i,
+      node_id = "",
+      head_sha = ref,
+      name = s.context or "",
+      status = gh_status,
+      conclusion = gh_conclusion,
+      started_at = s.created_at or s.updated_at,
+      completed_at = gh_status == "completed" and (s.updated_at or s.created_at) or nil,
+      output = {
+        title = s.description or "",
+        summary = s.description or "",
+        text = "",
+        annotations_count = 0,
+        annotations_url = "",
+      },
+      url = "",
+      html_url = s.target_url or "",
+      details_url = s.target_url or "",
+    }
+  end
+  respond_json(200, { total_count = #runs, check_runs = runs })
+end)
 
-  -- Check suites have no GitBucket equivalent; all suite endpoints fall back
-  -- to the route_defaults stubs defined in .init.lua.
+-- Check suites have no GitBucket equivalent; all suite endpoints fall back
+-- to the route_defaults stubs defined in .init.lua.
 
-  -- Licenses ------------------------------------------------------------------
-  get_licenses = proxy_handler(nil, function()
+-- Licenses ------------------------------------------------------------------
+b:rest(
+  "get_licenses",
+  proxy_handler(nil, function()
     return base() .. "/licenses"
-  end),
+  end)
+)
 
-  get_license = proxy_handler(nil, function(license_name)
+b:rest(
+  "get_license",
+  proxy_handler(nil, function(license_name)
     return base() .. "/licenses/" .. license_name
-  end),
+  end)
+)
 
-  get_repo_license = proxy_handler(nil, function(o, r)
+b:rest(
+  "get_repo_license",
+  proxy_handler(nil, function(o, r)
     return base() .. "/repos/" .. o .. "/" .. r .. "/license"
-  end),
+  end)
+)
 
-  -- Contents ------------------------------------------------------------------
-  get_repo_readme = proxy_handler(nil, function(o, r)
+-- Contents ------------------------------------------------------------------
+b:rest(
+  "get_repo_readme",
+  proxy_handler(nil, function(o, r)
     return base() .. "/repos/" .. o .. "/" .. r .. "/readme"
-  end),
+  end)
+)
 
-  get_repo_readme_dir = proxy_handler(nil, function(o, r, dir)
+b:rest(
+  "get_repo_readme_dir",
+  proxy_handler(nil, function(o, r, dir)
     return base() .. "/repos/" .. o .. "/" .. r .. "/readme/" .. dir
-  end),
+  end)
+)
 
-  get_repo_content = proxy_handler(nil, function(o, r, path)
+b:rest(
+  "get_repo_content",
+  proxy_handler(nil, function(o, r, path)
     return base() .. "/repos/" .. o .. "/" .. r .. "/contents/" .. path
-  end),
+  end)
+)
 
-  put_repo_content = function(owner, repo_name, path)
-    proxy_json(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/" .. path,
-        "PUT",
-        GetBody()
-      )
+b:rest("put_repo_content", function(owner, repo_name, path)
+  proxy_json(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/" .. path,
+      "PUT",
+      GetBody()
     )
-  end,
+  )
+end)
 
-  delete_repo_content = function(owner, repo_name, path)
-    proxy_json(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/" .. path,
-        "DELETE",
-        GetBody()
-      )
+b:rest("delete_repo_content", function(owner, repo_name, path)
+  proxy_json(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/" .. path,
+      "DELETE",
+      GetBody()
     )
-  end,
+  )
+end)
 
-  get_repo_tarball = function(owner, repo_name, ref)
-    SetStatus(302, "Found")
-    SetHeader("Location", base() .. "/repos/" .. owner .. "/" .. repo_name .. "/tarball/" .. ref)
-    Write("")
-  end,
+b:rest("get_repo_tarball", function(owner, repo_name, ref)
+  SetStatus(302, "Found")
+  SetHeader("Location", base() .. "/repos/" .. owner .. "/" .. repo_name .. "/tarball/" .. ref)
+  Write("")
+end)
 
-  get_repo_zipball = function(owner, repo_name, ref)
-    SetStatus(302, "Found")
-    SetHeader("Location", base() .. "/repos/" .. owner .. "/" .. repo_name .. "/zipball/" .. ref)
-    Write("")
-  end,
+b:rest("get_repo_zipball", function(owner, repo_name, ref)
+  SetStatus(302, "Found")
+  SetHeader("Location", base() .. "/repos/" .. owner .. "/" .. repo_name .. "/zipball/" .. ref)
+  Write("")
+end)
 
-  -- Compare -------------------------------------------------------------------
-  get_repo_compare = proxy_handler(nil, function(o, r, basehead)
+-- Compare -------------------------------------------------------------------
+b:rest(
+  "get_repo_compare",
+  proxy_handler(nil, function(o, r, basehead)
     return base() .. "/repos/" .. o .. "/" .. r .. "/compare/" .. basehead
-  end),
+  end)
+)
 
-  -- Collaborators -------------------------------------------------------------
-  get_repo_collaborators = proxy_handler(nil, function(o, r)
+-- Collaborators -------------------------------------------------------------
+b:rest(
+  "get_repo_collaborators",
+  proxy_handler(nil, function(o, r)
     return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/collaborators", PAGES)
-  end),
+  end)
+)
 
-  get_repo_collaborator = function(owner, repo_name, username)
-    local ok, status = pcall(
-      Fetch,
+b:rest("get_repo_collaborator", function(owner, repo_name, username)
+  local ok, status = pcall(
+    Fetch,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
+    auth()
+  )
+  if ok and status == 204 then
+    SetStatus(204, "No Content")
+  elseif ok then
+    respond_json(status, { message = "Not a collaborator" })
+  else
+    respond_json(503, {})
+  end
+end)
+
+b:rest("put_repo_collaborator", function(owner, repo_name, username)
+  proxy_204(
+    { 201 },
+    fetch_json(
       base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
-      auth()
+      "PUT",
+      GetBody()
     )
-    if ok and status == 204 then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(status, { message = "Not a collaborator" })
-    else
-      respond_json(503, {})
-    end
-  end,
+  )
+end)
 
-  put_repo_collaborator = function(owner, repo_name, username)
-    proxy_204(
-      { 201 },
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
-        "PUT",
-        GetBody()
-      )
+b:rest("delete_repo_collaborator", function(owner, repo_name, username)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
+      "DELETE"
     )
-  end,
+  )
+end)
 
-  delete_repo_collaborator = function(owner, repo_name, username)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
-        "DELETE"
-      )
-    )
-  end,
-
-  get_repo_collaborator_permission = proxy_handler(nil, function(o, r, username)
+b:rest(
+  "get_repo_collaborator_permission",
+  proxy_handler(nil, function(o, r, username)
     return base() .. "/repos/" .. o .. "/" .. r .. "/collaborators/" .. username .. "/permission"
-  end),
+  end)
+)
 
-  -- Forks ---------------------------------------------------------------------
-  get_repo_forks = proxy_handler(nil, function(o, r)
+-- Forks ---------------------------------------------------------------------
+b:rest(
+  "get_repo_forks",
+  proxy_handler(nil, function(o, r)
     return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/forks", PAGES)
-  end),
+  end)
+)
 
-  post_repo_forks = function(owner, repo_name)
-    proxy_json_created(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/forks", "POST", GetBody())
-    )
-  end,
+b:rest("post_repo_forks", function(owner, repo_name)
+  proxy_json_created(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/forks", "POST", GetBody())
+  )
+end)
 
-  -- Releases ------------------------------------------------------------------
-  get_repo_releases = proxy_handler(nil, function(o, r)
+-- Releases ------------------------------------------------------------------
+b:rest(
+  "get_repo_releases",
+  proxy_handler(nil, function(o, r)
     return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/releases", PAGES)
-  end),
+  end)
+)
 
-  post_repo_releases = function(owner, repo_name)
-    proxy_json_created(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases", "POST", GetBody())
-    )
-  end,
+b:rest("post_repo_releases", function(owner, repo_name)
+  proxy_json_created(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases", "POST", GetBody())
+  )
+end)
 
-  get_repo_release_latest = proxy_handler(nil, function(o, r)
+b:rest(
+  "get_repo_release_latest",
+  proxy_handler(nil, function(o, r)
     return base() .. "/repos/" .. o .. "/" .. r .. "/releases/latest"
-  end),
+  end)
+)
 
-  get_repo_release_by_tag = proxy_handler(nil, function(o, r, tag)
+b:rest(
+  "get_repo_release_by_tag",
+  proxy_handler(nil, function(o, r, tag)
     return base() .. "/repos/" .. o .. "/" .. r .. "/releases/tags/" .. tag
-  end),
+  end)
+)
 
-  get_repo_release = proxy_handler(nil, function(o, r, id)
+b:rest(
+  "get_repo_release",
+  proxy_handler(nil, function(o, r, id)
     return base() .. "/repos/" .. o .. "/" .. r .. "/releases/" .. id
-  end),
+  end)
+)
 
-  patch_repo_release = function(owner, repo_name, release_id)
-    proxy_json(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id,
-        "PATCH",
-        GetBody()
-      )
+b:rest("patch_repo_release", function(owner, repo_name, release_id)
+  proxy_json(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id,
+      "PATCH",
+      GetBody()
     )
-  end,
+  )
+end)
 
-  delete_repo_release = function(owner, repo_name, release_id)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id,
-        "DELETE"
-      )
+b:rest("delete_repo_release", function(owner, repo_name, release_id)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id,
+      "DELETE"
     )
-  end,
+  )
+end)
 
-  get_repo_release_assets = proxy_handler(nil, function(o, r, id)
+b:rest(
+  "get_repo_release_assets",
+  proxy_handler(nil, function(o, r, id)
     return append_page_params(
       base() .. "/repos/" .. o .. "/" .. r .. "/releases/" .. id .. "/assets",
       PAGES
     )
-  end),
+  end)
+)
 
-  post_repo_release_assets = function(owner, repo_name, release_id)
-    local url = base()
-      .. "/repos/"
-      .. owner
-      .. "/"
-      .. repo_name
-      .. "/releases/"
-      .. release_id
-      .. "/assets"
-    local opts = auth() or {}
-    opts.method = "POST"
-    opts.body = GetBody()
-    opts.headers = opts.headers or {}
-    opts.headers["Content-Type"] = GetHeader("Content-Type") or "application/octet-stream"
-    proxy_json_created(nil, pcall(Fetch, url, opts))
-  end,
+b:rest("post_repo_release_assets", function(owner, repo_name, release_id)
+  local url = base()
+    .. "/repos/"
+    .. owner
+    .. "/"
+    .. repo_name
+    .. "/releases/"
+    .. release_id
+    .. "/assets"
+  local opts = auth() or {}
+  opts.method = "POST"
+  opts.body = GetBody()
+  opts.headers = opts.headers or {}
+  opts.headers["Content-Type"] = GetHeader("Content-Type") or "application/octet-stream"
+  proxy_json_created(nil, pcall(Fetch, url, opts))
+end)
 
-  get_repo_release_asset = proxy_handler(nil, function(o, r, asset_id)
+b:rest(
+  "get_repo_release_asset",
+  proxy_handler(nil, function(o, r, asset_id)
     return base() .. "/repos/" .. o .. "/" .. r .. "/releases/assets/" .. asset_id
-  end),
+  end)
+)
 
-  patch_repo_release_asset = function(owner, repo_name, asset_id)
-    proxy_json(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/assets/" .. asset_id,
-        "PATCH",
-        GetBody()
-      )
+b:rest("patch_repo_release_asset", function(owner, repo_name, asset_id)
+  proxy_json(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/assets/" .. asset_id,
+      "PATCH",
+      GetBody()
     )
-  end,
+  )
+end)
 
-  delete_repo_release_asset = function(owner, repo_name, asset_id)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/assets/" .. asset_id,
-        "DELETE"
-      )
+b:rest("delete_repo_release_asset", function(owner, repo_name, asset_id)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/assets/" .. asset_id,
+      "DELETE"
     )
-  end,
+  )
+end)
 
-  -- Deploy keys ---------------------------------------------------------------
-  get_repo_keys = proxy_handler(nil, function(o, r)
+-- Deploy keys ---------------------------------------------------------------
+b:rest(
+  "get_repo_keys",
+  proxy_handler(nil, function(o, r)
     return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/keys", PAGES)
-  end),
+  end)
+)
 
-  post_repo_keys = function(owner, repo_name)
-    proxy_json_created(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys", "POST", GetBody())
-    )
-  end,
+b:rest("post_repo_keys", function(owner, repo_name)
+  proxy_json_created(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys", "POST", GetBody())
+  )
+end)
 
-  get_repo_key = proxy_handler(nil, function(o, r, key_id)
+b:rest(
+  "get_repo_key",
+  proxy_handler(nil, function(o, r, key_id)
     return base() .. "/repos/" .. o .. "/" .. r .. "/keys/" .. key_id
-  end),
+  end)
+)
 
-  delete_repo_key = function(owner, repo_name, key_id)
-    proxy_204(
-      { 200 },
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys/" .. key_id, "DELETE")
-    )
-  end,
+b:rest("delete_repo_key", function(owner, repo_name, key_id)
+  proxy_204(
+    { 200 },
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys/" .. key_id, "DELETE")
+  )
+end)
 
-  -- Webhooks ------------------------------------------------------------------
-  get_repo_hooks = proxy_handler(nil, function(o, r)
+-- Webhooks ------------------------------------------------------------------
+b:rest(
+  "get_repo_hooks",
+  proxy_handler(nil, function(o, r)
     return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/hooks", PAGES)
-  end),
+  end)
+)
 
-  post_repo_hooks = function(owner, repo_name)
-    proxy_json_created(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks", "POST", GetBody())
-    )
-  end,
+b:rest("post_repo_hooks", function(owner, repo_name)
+  proxy_json_created(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks", "POST", GetBody())
+  )
+end)
 
-  get_repo_hook = proxy_handler(nil, function(o, r, hook_id)
+b:rest(
+  "get_repo_hook",
+  proxy_handler(nil, function(o, r, hook_id)
     return base() .. "/repos/" .. o .. "/" .. r .. "/hooks/" .. hook_id
-  end),
+  end)
+)
 
-  patch_repo_hook = function(owner, repo_name, hook_id)
-    proxy_json(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id,
-        "PATCH",
-        GetBody()
-      )
+b:rest("patch_repo_hook", function(owner, repo_name, hook_id)
+  proxy_json(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id,
+      "PATCH",
+      GetBody()
     )
-  end,
+  )
+end)
 
-  delete_repo_hook = function(owner, repo_name, hook_id)
-    proxy_204(
-      { 200 },
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id, "DELETE")
-    )
-  end,
+b:rest("delete_repo_hook", function(owner, repo_name, hook_id)
+  proxy_204(
+    { 200 },
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id, "DELETE")
+  )
+end)
 
-  get_repo_hook_config = proxy_handler(function(h)
+b:rest(
+  "get_repo_hook_config",
+  proxy_handler(function(h)
     return h.config or {}
   end, function(o, r, hook_id)
     return base() .. "/repos/" .. o .. "/" .. r .. "/hooks/" .. hook_id
-  end),
-
-  patch_repo_hook_config = function(owner, repo_name, hook_id)
-    local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id
-    local ok, status, _, body = fetch_json(url)
-    if not ok or status ~= 200 then
-      if ok then
-        respond_json(status, {})
-      else
-        respond_json(503, {})
-      end
-      return
-    end
-    local hook = DecodeJson(body) or {}
-    local new_cfg = DecodeJson(GetBody() or "{}")
-    hook.config = hook.config or {}
-    for k, v in pairs(new_cfg) do
-      hook.config[k] = v
-    end
-    proxy_json(function(h)
-      return h.config or {}
-    end, fetch_json(url, "PATCH", EncodeJson(hook)))
-  end,
-
-  post_repo_hook_ping = function(owner, repo_name, hook_id)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id .. "/pings",
-        "POST"
-      )
-    )
-  end,
-
-  post_repo_hook_test = function(owner, repo_name, hook_id)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id .. "/tests",
-        "POST"
-      )
-    )
-  end,
-
-  -- Commit comments -----------------------------------------------------------
-  get_repo_comments = proxy_handler(nil, function(o, r)
-    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/comments", PAGES)
-  end),
-
-  get_repo_comment = proxy_handler(nil, function(o, r, comment_id)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/comments/" .. comment_id
-  end),
-
-  patch_repo_comment = function(owner, repo_name, comment_id)
-    proxy_json(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments/" .. comment_id,
-        "PATCH",
-        GetBody()
-      )
-    )
-  end,
-
-  delete_repo_comment = function(owner, repo_name, comment_id)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments/" .. comment_id,
-        "DELETE"
-      )
-    )
-  end,
-
-  get_commit_comments = proxy_handler(nil, function(o, r, sha)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/commits/" .. sha .. "/comments",
-      PAGES
-    )
-  end),
-
-  post_commit_comment = function(owner, repo_name, commit_sha)
-    proxy_json_created(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/commits/" .. commit_sha .. "/comments",
-        "POST",
-        GetBody()
-      )
-    )
-  end,
-
-  -- GET /users/{username}/repos + public repos --------------------------------
-  get_users_repos = proxy_handler(nil, function(username)
-    return append_page_params(base() .. "/users/" .. username .. "/repos", PAGES)
-  end),
-
-  get_repositories = proxy_handler(nil, function()
-    return append_page_params(base() .. "/repositories", PAGES)
-  end),
-
-  -- Users (GitHub-compatible passthrough) -------------------------------------
-
-  get_user = proxy_handler(nil, function()
-    return base() .. "/user"
-  end),
-
-  patch_user = function()
-    proxy_json(nil, fetch_json(base() .. "/user", "PATCH", GetBody()))
-  end,
-
-  get_users_username = proxy_handler(nil, function(username)
-    return base() .. "/users/" .. username
-  end),
-
-  get_users = proxy_handler(nil, function()
-    return append_page_params(base() .. "/users", PAGES)
-  end),
-
-  get_user_followers = proxy_handler(nil, function()
-    return append_page_params(base() .. "/user/followers", PAGES)
-  end),
-
-  get_user_following = proxy_handler(nil, function()
-    return append_page_params(base() .. "/user/following", PAGES)
-  end),
-
-  get_user_is_following = function(username)
-    local ok, status = pcall(Fetch, base() .. "/user/following/" .. username, auth())
-    if ok and status == 204 then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(404, { message = "Not Following" })
-    else
-      respond_json(503, {})
-    end
-  end,
-
-  put_user_following = function(username)
-    set_204_or_error("PUT", base() .. "/user/following/" .. username)
-  end,
-
-  delete_user_following = function(username)
-    set_204_or_error("DELETE", base() .. "/user/following/" .. username)
-  end,
-
-  get_users_followers = proxy_handler(nil, function(username)
-    return append_page_params(base() .. "/users/" .. username .. "/followers", PAGES)
-  end),
-
-  get_users_following = proxy_handler(nil, function(username)
-    return append_page_params(base() .. "/users/" .. username .. "/following", PAGES)
-  end),
-
-  get_users_is_following = function(username, target)
-    local ok, status =
-      pcall(Fetch, base() .. "/users/" .. username .. "/following/" .. target, auth())
-    if ok and status == 204 then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(404, { message = "Not Following" })
-    else
-      respond_json(503, {})
-    end
-  end,
-
-  get_user_emails = proxy_handler(nil, function()
-    return base() .. "/user/emails"
-  end),
-
-  post_user_emails = function()
-    proxy_json_created(nil, fetch_json(base() .. "/user/emails", "POST", GetBody()))
-  end,
-
-  delete_user_emails = function()
-    local opts = auth() or {}
-    opts.method = "DELETE"
-    opts.body = GetBody()
-    opts.headers = opts.headers or {}
-    opts.headers["Content-Type"] = "application/json"
-    proxy_204({ 200 }, pcall(Fetch, base() .. "/user/emails", opts))
-  end,
-
-  get_user_keys = proxy_handler(nil, function()
-    return append_page_params(base() .. "/user/keys", PAGES)
-  end),
-
-  post_user_keys = function()
-    proxy_json_created(nil, fetch_json(base() .. "/user/keys", "POST", GetBody()))
-  end,
-
-  get_user_key = proxy_handler(nil, function(key_id)
-    return base() .. "/user/keys/" .. key_id
-  end),
-
-  delete_user_key = function(key_id)
-    local opts = auth() or {}
-    opts.method = "DELETE"
-    proxy_204({ 200 }, pcall(Fetch, base() .. "/user/keys/" .. key_id, opts))
-  end,
-
-  get_users_keys = proxy_handler(nil, function(username)
-    return append_page_params(base() .. "/users/" .. username .. "/keys", PAGES)
-  end),
-
-  -- Teams (GitHub-compatible passthrough) -------------------------------------
-
-  get_org_teams = proxy_handler(nil, function(org)
-    return append_page_params(base() .. "/orgs/" .. org .. "/teams", PAGES)
-  end),
-
-  post_org_teams = function(org)
-    proxy_json_created(nil, fetch_json(base() .. "/orgs/" .. org .. "/teams", "POST", GetBody()))
-  end,
-
-  get_org_team = proxy_handler(nil, function(org, slug)
-    return base() .. "/orgs/" .. org .. "/teams/" .. slug
-  end),
-
-  patch_org_team = function(org, slug)
-    proxy_json(nil, fetch_json(base() .. "/orgs/" .. org .. "/teams/" .. slug, "PATCH", GetBody()))
-  end,
-
-  delete_org_team = function(org, slug)
-    proxy_204({ 200 }, fetch_json(base() .. "/orgs/" .. org .. "/teams/" .. slug, "DELETE"))
-  end,
-
-  get_org_team_invitations = proxy_handler(nil, function(org, slug)
-    return append_page_params(
-      base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/invitations",
-      PAGES
-    )
-  end),
-
-  get_org_team_members = proxy_handler(nil, function(org, slug)
-    return append_page_params(base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/members", PAGES)
-  end),
-
-  get_org_team_membership = proxy_handler(nil, function(org, slug, username)
-    return base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/memberships/" .. username
-  end),
-
-  put_org_team_membership = function(org, slug, username)
-    proxy_json(
-      nil,
-      fetch_json(
-        base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/memberships/" .. username,
-        "PUT",
-        GetBody()
-      )
-    )
-  end,
-
-  delete_org_team_membership = function(org, slug, username)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/memberships/" .. username,
-        "DELETE"
-      )
-    )
-  end,
-
-  get_org_team_repos = proxy_handler(nil, function(org, slug)
-    return append_page_params(base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/repos", PAGES)
-  end),
-
-  get_org_team_repo = proxy_handler(nil, function(org, slug, owner, repo_name)
-    return base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/repos/" .. owner .. "/" .. repo_name
-  end),
-
-  put_org_team_repo = function(org, slug, owner, repo_name)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/repos/" .. owner .. "/" .. repo_name,
-        "PUT",
-        GetBody()
-      )
-    )
-  end,
-
-  delete_org_team_repo = function(org, slug, owner, repo_name)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/repos/" .. owner .. "/" .. repo_name,
-        "DELETE"
-      )
-    )
-  end,
-
-  get_org_team_children = proxy_handler(nil, function(org, slug)
-    return append_page_params(base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/teams", PAGES)
-  end),
-
-  -- Issues (GitHub-compatible passthrough) -------------------------------------
-
-  get_repo_issues = proxy_handler(nil, function(o, r)
-    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/issues", PAGES)
-  end),
-
-  post_repo_issues = proxy_handler_created(nil, function(o, r)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues", "POST", GetBody()
-  end),
-
-  get_repo_issue = proxy_handler(nil, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n
-  end),
-
-  patch_repo_issue = proxy_handler(nil, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n, "PATCH", GetBody()
-  end),
-
-  get_repo_issue_comments = proxy_handler(nil, function(o, r)
-    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments", PAGES)
-  end),
-
-  get_repo_issue_comment = proxy_handler(nil, function(o, r, comment_id)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments/" .. comment_id
-  end),
-
-  patch_repo_issue_comment = proxy_handler(nil, function(o, r, id)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments/" .. id, "PATCH", GetBody()
-  end),
-
-  delete_repo_issue_comment = function(owner, repo_name, comment_id)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/comments/" .. comment_id,
-        "DELETE"
-      )
-    )
-  end,
-
-  get_repo_issue_events = proxy_handler(nil, function(o, r)
-    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/issues/events", PAGES)
-  end),
-
-  get_issue_comments = proxy_handler(nil, function(o, r, n)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/comments",
-      PAGES
-    )
-  end),
-
-  post_issue_comment = proxy_handler_created(nil, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/comments", "POST", GetBody()
-  end),
-
-  get_issue_events = proxy_handler(nil, function(o, r, n)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/events",
-      PAGES
-    )
-  end),
-
-  get_issue_timeline = proxy_handler(nil, function(o, r, n)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/timeline",
-      PAGES
-    )
-  end),
-
-  get_issue_labels = proxy_handler(nil, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/labels"
-  end),
-
-  post_issue_labels = proxy_handler(nil, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/labels", "POST", GetBody()
-  end),
-
-  put_issue_labels = proxy_handler(nil, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/labels", "PUT", GetBody()
-  end),
-
-  delete_issue_labels = function(owner, repo_name, issue_number)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/labels",
-        "DELETE"
-      )
-    )
-  end,
-
-  delete_issue_label = function(owner, repo_name, issue_number, label_name)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base()
-          .. "/repos/"
-          .. owner
-          .. "/"
-          .. repo_name
-          .. "/issues/"
-          .. issue_number
-          .. "/labels/"
-          .. label_name,
-        "DELETE"
-      )
-    )
-  end,
-
-  post_issue_assignees = proxy_handler(nil, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/assignees",
-      "POST",
-      GetBody()
-  end),
-
-  delete_issue_assignees = proxy_handler(nil, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/assignees",
-      "DELETE",
-      GetBody()
-  end),
-
-  get_repo_assignees = proxy_handler(nil, function(o, r)
-    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/assignees", PAGES)
-  end),
-
-  get_repo_labels = proxy_handler(nil, function(o, r)
-    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/labels", PAGES)
-  end),
-
-  post_repo_labels = proxy_handler_created(nil, function(o, r)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/labels", "POST", GetBody()
-  end),
-
-  get_repo_label = proxy_handler(nil, function(o, r, name)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/labels/" .. name
-  end),
-
-  patch_repo_label = proxy_handler(nil, function(o, r, name)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/labels/" .. name, "PATCH", GetBody()
-  end),
-
-  delete_repo_label = function(owner, repo_name, label_name)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/labels/" .. label_name,
-        "DELETE"
-      )
-    )
-  end,
-
-  get_repo_milestones = proxy_handler(nil, function(o, r)
-    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/milestones", PAGES)
-  end),
-
-  get_repo_milestone = proxy_handler(nil, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/milestones/" .. n
-  end),
-
-  get_repo_milestone_labels = proxy_handler(nil, function(o, r, n)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/milestones/" .. n .. "/labels",
-      PAGES
-    )
-  end),
-
-  -- Legacy team-by-id API (/teams/{team_id}) ------------------------------------
-
-  get_user_teams = proxy_handler(nil, function()
-    return append_page_params(base() .. "/user/teams", PAGES)
-  end),
-
-  get_team = proxy_handler(nil, function(team_id)
-    return base() .. "/teams/" .. team_id
-  end),
-
-  patch_team = function(team_id)
-    proxy_json(nil, fetch_json(base() .. "/teams/" .. team_id, "PATCH", GetBody()))
-  end,
-
-  delete_team = function(team_id)
-    proxy_204({ 200 }, fetch_json(base() .. "/teams/" .. team_id, "DELETE"))
-  end,
-
-  get_team_invitations = proxy_handler(nil, function(team_id)
-    return append_page_params(base() .. "/teams/" .. team_id .. "/invitations", PAGES)
-  end),
-
-  get_team_members = proxy_handler(nil, function(team_id)
-    return append_page_params(base() .. "/teams/" .. team_id .. "/members", PAGES)
-  end),
-
-  get_team_member = function(team_id, username)
-    local ok, status =
-      pcall(Fetch, base() .. "/teams/" .. team_id .. "/members/" .. username, auth())
-    if ok and status == 204 then
-      SetStatus(204, "No Content")
-    elseif ok then
-      respond_json(404, { message = "Not Found" })
-    else
-      respond_json(503, {})
-    end
-  end,
-
-  put_team_member = function(team_id, username)
-    set_204_or_error("PUT", base() .. "/teams/" .. team_id .. "/members/" .. username)
-  end,
-
-  delete_team_member = function(team_id, username)
-    set_204_or_error("DELETE", base() .. "/teams/" .. team_id .. "/members/" .. username)
-  end,
-
-  get_team_membership = proxy_handler(nil, function(team_id, username)
-    return base() .. "/teams/" .. team_id .. "/memberships/" .. username
-  end),
-
-  put_team_membership = function(team_id, username)
-    proxy_json(
-      nil,
-      fetch_json(base() .. "/teams/" .. team_id .. "/memberships/" .. username, "PUT", GetBody())
-    )
-  end,
-
-  delete_team_membership = function(team_id, username)
-    proxy_204(
-      { 200 },
-      fetch_json(base() .. "/teams/" .. team_id .. "/memberships/" .. username, "DELETE")
-    )
-  end,
-
-  get_team_repos = proxy_handler(nil, function(team_id)
-    return append_page_params(base() .. "/teams/" .. team_id .. "/repos", PAGES)
-  end),
-
-  get_team_repo = proxy_handler(nil, function(team_id, owner, repo_name)
-    return base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name
-  end),
-
-  put_team_repo = function(team_id, owner, repo_name)
-    proxy_204(
-      { 200 },
-      fetch_json(
-        base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name,
-        "PUT",
-        GetBody()
-      )
-    )
-  end,
-
-  delete_team_repo = function(team_id, owner, repo_name)
-    proxy_204(
-      { 200 },
-      fetch_json(base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name, "DELETE")
-    )
-  end,
-
-  get_team_children = proxy_handler(nil, function(team_id)
-    return append_page_params(base() .. "/teams/" .. team_id .. "/teams", PAGES)
-  end),
-
-  -- Pull Requests (GitHub-compatible passthrough) --------------------------------
-
-  get_repo_pulls = proxy_handler(nil, function(o, r)
-    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/pulls", PAGES)
-  end),
-
-  post_repo_pulls = function(owner, repo_name)
-    proxy_json_created(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls", "POST", GetBody())
-    )
-  end,
-
-  get_repo_pull = proxy_handler(nil, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n
-  end),
-
-  patch_repo_pull = function(owner, repo_name, pull_number)
-    proxy_json(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number,
-        "PATCH",
-        GetBody()
-      )
-    )
-  end,
-
-  get_pull_commits = proxy_handler(nil, function(o, r, n)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/commits",
-      PAGES
-    )
-  end),
-
-  get_pull_files = proxy_handler(nil, function(o, r, n)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/files",
-      PAGES
-    )
-  end),
-
-  get_pull_merge = function(owner, repo_name, pull_number)
-    local ok, status = pcall(
-      Fetch,
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/merge",
-      auth()
-    )
-    if ok and status == 204 then
-      SetStatus(204, "No Content")
-    elseif ok and status == 404 then
-      respond_json(404, { message = "Pull Request is not merged" })
-    elseif ok then
+  end)
+)
+
+b:rest("patch_repo_hook_config", function(owner, repo_name, hook_id)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id
+  local ok, status, _, body = fetch_json(url)
+  if not ok or status ~= 200 then
+    if ok then
       respond_json(status, {})
     else
       respond_json(503, {})
     end
-  end,
+    return
+  end
+  local hook = DecodeJson(body) or {}
+  local new_cfg = DecodeJson(GetBody() or "{}")
+  hook.config = hook.config or {}
+  for k, v in pairs(new_cfg) do
+    hook.config[k] = v
+  end
+  proxy_json(function(h)
+    return h.config or {}
+  end, fetch_json(url, "PATCH", EncodeJson(hook)))
+end)
 
-  put_pull_merge = function(owner, repo_name, pull_number)
-    proxy_204(
-      nil,
-      fetch_json(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/merge",
-        "PUT",
-        GetBody()
-      )
+b:rest("post_repo_hook_ping", function(owner, repo_name, hook_id)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id .. "/pings",
+      "POST"
     )
-  end,
+  )
+end)
 
-  get_pull_requested_reviewers = proxy_handler(nil, function(o, r, n)
+b:rest("post_repo_hook_test", function(owner, repo_name, hook_id)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id .. "/tests",
+      "POST"
+    )
+  )
+end)
+
+-- Commit comments -----------------------------------------------------------
+b:rest(
+  "get_repo_comments",
+  proxy_handler(nil, function(o, r)
+    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/comments", PAGES)
+  end)
+)
+
+b:rest(
+  "get_repo_comment",
+  proxy_handler(nil, function(o, r, comment_id)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/comments/" .. comment_id
+  end)
+)
+
+b:rest("patch_repo_comment", function(owner, repo_name, comment_id)
+  proxy_json(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments/" .. comment_id,
+      "PATCH",
+      GetBody()
+    )
+  )
+end)
+
+b:rest("delete_repo_comment", function(owner, repo_name, comment_id)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments/" .. comment_id,
+      "DELETE"
+    )
+  )
+end)
+
+b:rest(
+  "get_commit_comments",
+  proxy_handler(nil, function(o, r, sha)
+    return append_page_params(
+      base() .. "/repos/" .. o .. "/" .. r .. "/commits/" .. sha .. "/comments",
+      PAGES
+    )
+  end)
+)
+
+b:rest("post_commit_comment", function(owner, repo_name, commit_sha)
+  proxy_json_created(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/commits/" .. commit_sha .. "/comments",
+      "POST",
+      GetBody()
+    )
+  )
+end)
+
+-- GET /users/{username}/repos + public repos --------------------------------
+b:rest(
+  "get_users_repos",
+  proxy_handler(nil, function(username)
+    return append_page_params(base() .. "/users/" .. username .. "/repos", PAGES)
+  end)
+)
+
+b:rest(
+  "get_repositories",
+  proxy_handler(nil, function()
+    return append_page_params(base() .. "/repositories", PAGES)
+  end)
+)
+
+-- Users (GitHub-compatible passthrough) -------------------------------------
+
+b:rest(
+  "get_user",
+  proxy_handler(nil, function()
+    return base() .. "/user"
+  end)
+)
+
+b:rest("patch_user", function()
+  proxy_json(nil, fetch_json(base() .. "/user", "PATCH", GetBody()))
+end)
+
+b:rest(
+  "get_users_username",
+  proxy_handler(nil, function(username)
+    return base() .. "/users/" .. username
+  end)
+)
+
+b:rest(
+  "get_users",
+  proxy_handler(nil, function()
+    return append_page_params(base() .. "/users", PAGES)
+  end)
+)
+
+b:rest(
+  "get_user_followers",
+  proxy_handler(nil, function()
+    return append_page_params(base() .. "/user/followers", PAGES)
+  end)
+)
+
+b:rest(
+  "get_user_following",
+  proxy_handler(nil, function()
+    return append_page_params(base() .. "/user/following", PAGES)
+  end)
+)
+
+b:rest("get_user_is_following", function(username)
+  local ok, status = pcall(Fetch, base() .. "/user/following/" .. username, auth())
+  if ok and status == 204 then
+    SetStatus(204, "No Content")
+  elseif ok then
+    respond_json(404, { message = "Not Following" })
+  else
+    respond_json(503, {})
+  end
+end)
+
+b:rest("put_user_following", function(username)
+  set_204_or_error("PUT", base() .. "/user/following/" .. username)
+end)
+
+b:rest("delete_user_following", function(username)
+  set_204_or_error("DELETE", base() .. "/user/following/" .. username)
+end)
+
+b:rest(
+  "get_users_followers",
+  proxy_handler(nil, function(username)
+    return append_page_params(base() .. "/users/" .. username .. "/followers", PAGES)
+  end)
+)
+
+b:rest(
+  "get_users_following",
+  proxy_handler(nil, function(username)
+    return append_page_params(base() .. "/users/" .. username .. "/following", PAGES)
+  end)
+)
+
+b:rest("get_users_is_following", function(username, target)
+  local ok, status =
+    pcall(Fetch, base() .. "/users/" .. username .. "/following/" .. target, auth())
+  if ok and status == 204 then
+    SetStatus(204, "No Content")
+  elseif ok then
+    respond_json(404, { message = "Not Following" })
+  else
+    respond_json(503, {})
+  end
+end)
+
+b:rest(
+  "get_user_emails",
+  proxy_handler(nil, function()
+    return base() .. "/user/emails"
+  end)
+)
+
+b:rest("post_user_emails", function()
+  proxy_json_created(nil, fetch_json(base() .. "/user/emails", "POST", GetBody()))
+end)
+
+b:rest("delete_user_emails", function()
+  local opts = auth() or {}
+  opts.method = "DELETE"
+  opts.body = GetBody()
+  opts.headers = opts.headers or {}
+  opts.headers["Content-Type"] = "application/json"
+  proxy_204({ 200 }, pcall(Fetch, base() .. "/user/emails", opts))
+end)
+
+b:rest(
+  "get_user_keys",
+  proxy_handler(nil, function()
+    return append_page_params(base() .. "/user/keys", PAGES)
+  end)
+)
+
+b:rest("post_user_keys", function()
+  proxy_json_created(nil, fetch_json(base() .. "/user/keys", "POST", GetBody()))
+end)
+
+b:rest(
+  "get_user_key",
+  proxy_handler(nil, function(key_id)
+    return base() .. "/user/keys/" .. key_id
+  end)
+)
+
+b:rest("delete_user_key", function(key_id)
+  local opts = auth() or {}
+  opts.method = "DELETE"
+  proxy_204({ 200 }, pcall(Fetch, base() .. "/user/keys/" .. key_id, opts))
+end)
+
+b:rest(
+  "get_users_keys",
+  proxy_handler(nil, function(username)
+    return append_page_params(base() .. "/users/" .. username .. "/keys", PAGES)
+  end)
+)
+
+-- Teams (GitHub-compatible passthrough) -------------------------------------
+
+b:rest(
+  "get_org_teams",
+  proxy_handler(nil, function(org)
+    return append_page_params(base() .. "/orgs/" .. org .. "/teams", PAGES)
+  end)
+)
+
+b:rest("post_org_teams", function(org)
+  proxy_json_created(nil, fetch_json(base() .. "/orgs/" .. org .. "/teams", "POST", GetBody()))
+end)
+
+b:rest(
+  "get_org_team",
+  proxy_handler(nil, function(org, slug)
+    return base() .. "/orgs/" .. org .. "/teams/" .. slug
+  end)
+)
+
+b:rest("patch_org_team", function(org, slug)
+  proxy_json(nil, fetch_json(base() .. "/orgs/" .. org .. "/teams/" .. slug, "PATCH", GetBody()))
+end)
+
+b:rest("delete_org_team", function(org, slug)
+  proxy_204({ 200 }, fetch_json(base() .. "/orgs/" .. org .. "/teams/" .. slug, "DELETE"))
+end)
+
+b:rest(
+  "get_org_team_invitations",
+  proxy_handler(nil, function(org, slug)
+    return append_page_params(
+      base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/invitations",
+      PAGES
+    )
+  end)
+)
+
+b:rest(
+  "get_org_team_members",
+  proxy_handler(nil, function(org, slug)
+    return append_page_params(base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/members", PAGES)
+  end)
+)
+
+b:rest(
+  "get_org_team_membership",
+  proxy_handler(nil, function(org, slug, username)
+    return base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/memberships/" .. username
+  end)
+)
+
+b:rest("put_org_team_membership", function(org, slug, username)
+  proxy_json(
+    nil,
+    fetch_json(
+      base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/memberships/" .. username,
+      "PUT",
+      GetBody()
+    )
+  )
+end)
+
+b:rest("delete_org_team_membership", function(org, slug, username)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/memberships/" .. username,
+      "DELETE"
+    )
+  )
+end)
+
+b:rest(
+  "get_org_team_repos",
+  proxy_handler(nil, function(org, slug)
+    return append_page_params(base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/repos", PAGES)
+  end)
+)
+
+b:rest(
+  "get_org_team_repo",
+  proxy_handler(nil, function(org, slug, owner, repo_name)
+    return base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/repos/" .. owner .. "/" .. repo_name
+  end)
+)
+
+b:rest("put_org_team_repo", function(org, slug, owner, repo_name)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/repos/" .. owner .. "/" .. repo_name,
+      "PUT",
+      GetBody()
+    )
+  )
+end)
+
+b:rest("delete_org_team_repo", function(org, slug, owner, repo_name)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/repos/" .. owner .. "/" .. repo_name,
+      "DELETE"
+    )
+  )
+end)
+
+b:rest(
+  "get_org_team_children",
+  proxy_handler(nil, function(org, slug)
+    return append_page_params(base() .. "/orgs/" .. org .. "/teams/" .. slug .. "/teams", PAGES)
+  end)
+)
+
+-- Issues (GitHub-compatible passthrough) -------------------------------------
+
+b:rest(
+  "get_repo_issues",
+  proxy_handler(nil, function(o, r)
+    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/issues", PAGES)
+  end)
+)
+
+b:rest(
+  "post_repo_issues",
+  proxy_handler_created(nil, function(o, r)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/issues", "POST", GetBody()
+  end)
+)
+
+b:rest(
+  "get_repo_issue",
+  proxy_handler(nil, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n
+  end)
+)
+
+b:rest(
+  "patch_repo_issue",
+  proxy_handler(nil, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n, "PATCH", GetBody()
+  end)
+)
+
+b:rest(
+  "get_repo_issue_comments",
+  proxy_handler(nil, function(o, r)
+    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments", PAGES)
+  end)
+)
+
+b:rest(
+  "get_repo_issue_comment",
+  proxy_handler(nil, function(o, r, comment_id)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments/" .. comment_id
+  end)
+)
+
+b:rest(
+  "patch_repo_issue_comment",
+  proxy_handler(nil, function(o, r, id)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments/" .. id, "PATCH", GetBody()
+  end)
+)
+
+b:rest("delete_repo_issue_comment", function(owner, repo_name, comment_id)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/comments/" .. comment_id,
+      "DELETE"
+    )
+  )
+end)
+
+b:rest(
+  "get_repo_issue_events",
+  proxy_handler(nil, function(o, r)
+    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/issues/events", PAGES)
+  end)
+)
+
+b:rest(
+  "get_issue_comments",
+  proxy_handler(nil, function(o, r, n)
+    return append_page_params(
+      base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/comments",
+      PAGES
+    )
+  end)
+)
+
+b:rest(
+  "post_issue_comment",
+  proxy_handler_created(nil, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/comments", "POST", GetBody()
+  end)
+)
+
+b:rest(
+  "get_issue_events",
+  proxy_handler(nil, function(o, r, n)
+    return append_page_params(
+      base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/events",
+      PAGES
+    )
+  end)
+)
+
+b:rest(
+  "get_issue_timeline",
+  proxy_handler(nil, function(o, r, n)
+    return append_page_params(
+      base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/timeline",
+      PAGES
+    )
+  end)
+)
+
+b:rest(
+  "get_issue_labels",
+  proxy_handler(nil, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/labels"
+  end)
+)
+
+b:rest(
+  "post_issue_labels",
+  proxy_handler(nil, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/labels", "POST", GetBody()
+  end)
+)
+
+b:rest(
+  "put_issue_labels",
+  proxy_handler(nil, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/labels", "PUT", GetBody()
+  end)
+)
+
+b:rest("delete_issue_labels", function(owner, repo_name, issue_number)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/labels",
+      "DELETE"
+    )
+  )
+end)
+
+b:rest("delete_issue_label", function(owner, repo_name, issue_number, label_name)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base()
+        .. "/repos/"
+        .. owner
+        .. "/"
+        .. repo_name
+        .. "/issues/"
+        .. issue_number
+        .. "/labels/"
+        .. label_name,
+      "DELETE"
+    )
+  )
+end)
+
+b:rest(
+  "post_issue_assignees",
+  proxy_handler(nil, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/assignees",
+      "POST",
+      GetBody()
+  end)
+)
+
+b:rest(
+  "delete_issue_assignees",
+  proxy_handler(nil, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/assignees",
+      "DELETE",
+      GetBody()
+  end)
+)
+
+b:rest(
+  "get_repo_assignees",
+  proxy_handler(nil, function(o, r)
+    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/assignees", PAGES)
+  end)
+)
+
+b:rest(
+  "get_repo_labels",
+  proxy_handler(nil, function(o, r)
+    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/labels", PAGES)
+  end)
+)
+
+b:rest(
+  "post_repo_labels",
+  proxy_handler_created(nil, function(o, r)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/labels", "POST", GetBody()
+  end)
+)
+
+b:rest(
+  "get_repo_label",
+  proxy_handler(nil, function(o, r, name)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/labels/" .. name
+  end)
+)
+
+b:rest(
+  "patch_repo_label",
+  proxy_handler(nil, function(o, r, name)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/labels/" .. name, "PATCH", GetBody()
+  end)
+)
+
+b:rest("delete_repo_label", function(owner, repo_name, label_name)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/labels/" .. label_name,
+      "DELETE"
+    )
+  )
+end)
+
+b:rest(
+  "get_repo_milestones",
+  proxy_handler(nil, function(o, r)
+    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/milestones", PAGES)
+  end)
+)
+
+b:rest(
+  "get_repo_milestone",
+  proxy_handler(nil, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/milestones/" .. n
+  end)
+)
+
+b:rest(
+  "get_repo_milestone_labels",
+  proxy_handler(nil, function(o, r, n)
+    return append_page_params(
+      base() .. "/repos/" .. o .. "/" .. r .. "/milestones/" .. n .. "/labels",
+      PAGES
+    )
+  end)
+)
+
+-- Legacy team-by-id API (/teams/{team_id}) ------------------------------------
+
+b:rest(
+  "get_user_teams",
+  proxy_handler(nil, function()
+    return append_page_params(base() .. "/user/teams", PAGES)
+  end)
+)
+
+b:rest(
+  "get_team",
+  proxy_handler(nil, function(team_id)
+    return base() .. "/teams/" .. team_id
+  end)
+)
+
+b:rest("patch_team", function(team_id)
+  proxy_json(nil, fetch_json(base() .. "/teams/" .. team_id, "PATCH", GetBody()))
+end)
+
+b:rest("delete_team", function(team_id)
+  proxy_204({ 200 }, fetch_json(base() .. "/teams/" .. team_id, "DELETE"))
+end)
+
+b:rest(
+  "get_team_invitations",
+  proxy_handler(nil, function(team_id)
+    return append_page_params(base() .. "/teams/" .. team_id .. "/invitations", PAGES)
+  end)
+)
+
+b:rest(
+  "get_team_members",
+  proxy_handler(nil, function(team_id)
+    return append_page_params(base() .. "/teams/" .. team_id .. "/members", PAGES)
+  end)
+)
+
+b:rest("get_team_member", function(team_id, username)
+  local ok, status = pcall(Fetch, base() .. "/teams/" .. team_id .. "/members/" .. username, auth())
+  if ok and status == 204 then
+    SetStatus(204, "No Content")
+  elseif ok then
+    respond_json(404, { message = "Not Found" })
+  else
+    respond_json(503, {})
+  end
+end)
+
+b:rest("put_team_member", function(team_id, username)
+  set_204_or_error("PUT", base() .. "/teams/" .. team_id .. "/members/" .. username)
+end)
+
+b:rest("delete_team_member", function(team_id, username)
+  set_204_or_error("DELETE", base() .. "/teams/" .. team_id .. "/members/" .. username)
+end)
+
+b:rest(
+  "get_team_membership",
+  proxy_handler(nil, function(team_id, username)
+    return base() .. "/teams/" .. team_id .. "/memberships/" .. username
+  end)
+)
+
+b:rest("put_team_membership", function(team_id, username)
+  proxy_json(
+    nil,
+    fetch_json(base() .. "/teams/" .. team_id .. "/memberships/" .. username, "PUT", GetBody())
+  )
+end)
+
+b:rest("delete_team_membership", function(team_id, username)
+  proxy_204(
+    { 200 },
+    fetch_json(base() .. "/teams/" .. team_id .. "/memberships/" .. username, "DELETE")
+  )
+end)
+
+b:rest(
+  "get_team_repos",
+  proxy_handler(nil, function(team_id)
+    return append_page_params(base() .. "/teams/" .. team_id .. "/repos", PAGES)
+  end)
+)
+
+b:rest(
+  "get_team_repo",
+  proxy_handler(nil, function(team_id, owner, repo_name)
+    return base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name
+  end)
+)
+
+b:rest("put_team_repo", function(team_id, owner, repo_name)
+  proxy_204(
+    { 200 },
+    fetch_json(
+      base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name,
+      "PUT",
+      GetBody()
+    )
+  )
+end)
+
+b:rest("delete_team_repo", function(team_id, owner, repo_name)
+  proxy_204(
+    { 200 },
+    fetch_json(base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name, "DELETE")
+  )
+end)
+
+b:rest(
+  "get_team_children",
+  proxy_handler(nil, function(team_id)
+    return append_page_params(base() .. "/teams/" .. team_id .. "/teams", PAGES)
+  end)
+)
+
+-- Pull Requests (GitHub-compatible passthrough) --------------------------------
+
+b:rest(
+  "get_repo_pulls",
+  proxy_handler(nil, function(o, r)
+    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/pulls", PAGES)
+  end)
+)
+
+b:rest("post_repo_pulls", function(owner, repo_name)
+  proxy_json_created(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls", "POST", GetBody())
+  )
+end)
+
+b:rest(
+  "get_repo_pull",
+  proxy_handler(nil, function(o, r, n)
+    return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n
+  end)
+)
+
+b:rest("patch_repo_pull", function(owner, repo_name, pull_number)
+  proxy_json(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number,
+      "PATCH",
+      GetBody()
+    )
+  )
+end)
+
+b:rest(
+  "get_pull_commits",
+  proxy_handler(nil, function(o, r, n)
+    return append_page_params(
+      base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/commits",
+      PAGES
+    )
+  end)
+)
+
+b:rest(
+  "get_pull_files",
+  proxy_handler(nil, function(o, r, n)
+    return append_page_params(
+      base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/files",
+      PAGES
+    )
+  end)
+)
+
+b:rest("get_pull_merge", function(owner, repo_name, pull_number)
+  local ok, status = pcall(
+    Fetch,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/merge",
+    auth()
+  )
+  if ok and status == 204 then
+    SetStatus(204, "No Content")
+  elseif ok and status == 404 then
+    respond_json(404, { message = "Pull Request is not merged" })
+  elseif ok then
+    respond_json(status, {})
+  else
+    respond_json(503, {})
+  end
+end)
+
+b:rest("put_pull_merge", function(owner, repo_name, pull_number)
+  proxy_204(
+    nil,
+    fetch_json(
+      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/merge",
+      "PUT",
+      GetBody()
+    )
+  )
+end)
+
+b:rest(
+  "get_pull_requested_reviewers",
+  proxy_handler(nil, function(o, r, n)
     return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/requested_reviewers"
-  end),
+  end)
+)
 
-  get_pull_reviews = proxy_handler(nil, function(o, r, n)
+b:rest(
+  "get_pull_reviews",
+  proxy_handler(nil, function(o, r, n)
     return append_page_params(
       base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/reviews",
       PAGES
     )
-  end),
+  end)
+)
 
-  get_pull_review = proxy_handler(nil, function(o, r, n, review_id)
+b:rest(
+  "get_pull_review",
+  proxy_handler(nil, function(o, r, n, review_id)
     return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/reviews/" .. review_id
-  end),
+  end)
+)
 
-  get_pull_review_comments = proxy_handler(nil, function(o, r, n, review_id)
+b:rest(
+  "get_pull_review_comments",
+  proxy_handler(nil, function(o, r, n, review_id)
     return append_page_params(
       base()
         .. "/repos/"
@@ -1193,137 +1491,191 @@ app.backend_impl = {
         .. "/comments",
       PAGES
     )
-  end),
+  end)
+)
 
-  get_pull_comments = proxy_handler(nil, function(o, r, n)
+b:rest(
+  "get_pull_comments",
+  proxy_handler(nil, function(o, r, n)
     return append_page_params(
       base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/comments",
       PAGES
     )
-  end),
+  end)
+)
 
-  -- Search -------------------------------------------------------------------
-  -- GitBucket's GitHub-compatible API exposes /api/v3/search/{repositories,users}
-  -- which return the GitHub search envelope format directly — no translation needed.
-  search_repositories = proxy_handler(nil, function()
+-- Search -------------------------------------------------------------------
+-- GitBucket's GitHub-compatible API exposes /api/v3/search/{repositories,users}
+-- which return the GitHub search envelope format directly — no translation needed.
+b:rest(
+  "search_repositories",
+  proxy_handler(nil, function()
     local q = GetParam("q") or ""
     return append_page_params(base() .. "/search/repositories?q=" .. q, PAGES)
-  end),
+  end)
+)
 
-  search_users = proxy_handler(nil, function()
+b:rest(
+  "search_users",
+  proxy_handler(nil, function()
     local q = GetParam("q") or ""
     return append_page_params(base() .. "/search/users?q=" .. q, PAGES)
-  end),
+  end)
+)
 
-  -- Git database --------------------------------------------------------------
+-- Git database --------------------------------------------------------------
 
-  get_git_blob = proxy_handler(nil, function(o, r, sha)
+b:rest(
+  "get_git_blob",
+  proxy_handler(nil, function(o, r, sha)
     return base() .. "/repos/" .. o .. "/" .. r .. "/git/blobs/" .. sha
-  end),
+  end)
+)
 
-  get_git_commit = proxy_handler(nil, function(o, r, sha)
+b:rest(
+  "get_git_commit",
+  proxy_handler(nil, function(o, r, sha)
     return base() .. "/repos/" .. o .. "/" .. r .. "/git/commits/" .. sha
-  end),
+  end)
+)
 
-  list_git_matching_refs = proxy_handler(nil, function(o, r, ref)
+b:rest(
+  "list_git_matching_refs",
+  proxy_handler(nil, function(o, r, ref)
     return base() .. "/repos/" .. o .. "/" .. r .. "/git/matching-refs/" .. ref
-  end),
+  end)
+)
 
-  get_git_ref = proxy_handler(nil, function(o, r, ref)
+b:rest(
+  "get_git_ref",
+  proxy_handler(nil, function(o, r, ref)
     return base() .. "/repos/" .. o .. "/" .. r .. "/git/ref/" .. ref
-  end),
+  end)
+)
 
-  create_git_ref = function(owner, repo_name)
-    proxy_json_created(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs", "POST", GetBody())
-    )
-  end,
+b:rest("create_git_ref", function(owner, repo_name)
+  proxy_json_created(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs", "POST", GetBody())
+  )
+end)
 
-  delete_git_ref = function(owner, repo_name, ref)
-    set_204_or_error(
-      "DELETE",
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs/" .. ref
-    )
-  end,
+b:rest("delete_git_ref", function(owner, repo_name, ref)
+  set_204_or_error(
+    "DELETE",
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs/" .. ref
+  )
+end)
 
-  get_git_tag = proxy_handler(nil, function(o, r, sha)
+b:rest(
+  "get_git_tag",
+  proxy_handler(nil, function(o, r, sha)
     return base() .. "/repos/" .. o .. "/" .. r .. "/git/tags/" .. sha
-  end),
+  end)
+)
 
-  create_git_tag = function(owner, repo_name)
-    proxy_json_created(
-      nil,
-      fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/tags", "POST", GetBody())
-    )
-  end,
+b:rest("create_git_tag", function(owner, repo_name)
+  proxy_json_created(
+    nil,
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/tags", "POST", GetBody())
+  )
+end)
 
-  get_git_tree = proxy_handler(nil, function(o, r, sha)
+b:rest(
+  "get_git_tree",
+  proxy_handler(nil, function(o, r, sha)
     return base() .. "/repos/" .. o .. "/" .. r .. "/git/trees/" .. sha
-  end),
+  end)
+)
 
-  -- Gists (GitHub-compatible passthrough) ------------------------------------
-  get_gists = proxy_handler(nil, function()
+-- Gists (GitHub-compatible passthrough) ------------------------------------
+b:rest(
+  "get_gists",
+  proxy_handler(nil, function()
     return base() .. "/gists"
-  end),
-  post_gists = function()
-    proxy_json_created(nil, fetch_json(base() .. "/gists", "POST", GetBody()))
-  end,
-  get_gists_public = proxy_handler(nil, function()
+  end)
+)
+b:rest("post_gists", function()
+  proxy_json_created(nil, fetch_json(base() .. "/gists", "POST", GetBody()))
+end)
+b:rest(
+  "get_gists_public",
+  proxy_handler(nil, function()
     return base() .. "/gists/public"
-  end),
-  get_gists_starred = proxy_handler(nil, function()
+  end)
+)
+b:rest(
+  "get_gists_starred",
+  proxy_handler(nil, function()
     return base() .. "/gists/starred"
-  end),
-  get_gist = proxy_handler(nil, function(id)
+  end)
+)
+b:rest(
+  "get_gist",
+  proxy_handler(nil, function(id)
     return base() .. "/gists/" .. id
-  end),
-  patch_gist = function(id)
-    proxy_json(nil, fetch_json(base() .. "/gists/" .. id, "PATCH", GetBody()))
-  end,
-  delete_gist = function(id)
-    set_204_or_error("DELETE", base() .. "/gists/" .. id)
-  end,
-  get_gist_comments = proxy_handler(nil, function(id)
+  end)
+)
+b:rest("patch_gist", function(id)
+  proxy_json(nil, fetch_json(base() .. "/gists/" .. id, "PATCH", GetBody()))
+end)
+b:rest("delete_gist", function(id)
+  set_204_or_error("DELETE", base() .. "/gists/" .. id)
+end)
+b:rest(
+  "get_gist_comments",
+  proxy_handler(nil, function(id)
     return base() .. "/gists/" .. id .. "/comments"
-  end),
-  post_gist_comment = function(id)
-    proxy_json_created(nil, fetch_json(base() .. "/gists/" .. id .. "/comments", "POST", GetBody()))
-  end,
-  get_gist_comment = proxy_handler(nil, function(id, cid)
+  end)
+)
+b:rest("post_gist_comment", function(id)
+  proxy_json_created(nil, fetch_json(base() .. "/gists/" .. id .. "/comments", "POST", GetBody()))
+end)
+b:rest(
+  "get_gist_comment",
+  proxy_handler(nil, function(id, cid)
     return base() .. "/gists/" .. id .. "/comments/" .. cid
-  end),
-  patch_gist_comment = function(id, cid)
-    proxy_json(
-      nil,
-      fetch_json(base() .. "/gists/" .. id .. "/comments/" .. cid, "PATCH", GetBody())
-    )
-  end,
-  delete_gist_comment = function(id, cid)
-    set_204_or_error("DELETE", base() .. "/gists/" .. id .. "/comments/" .. cid)
-  end,
-  get_gist_commits = proxy_handler(nil, function(id)
+  end)
+)
+b:rest("patch_gist_comment", function(id, cid)
+  proxy_json(nil, fetch_json(base() .. "/gists/" .. id .. "/comments/" .. cid, "PATCH", GetBody()))
+end)
+b:rest("delete_gist_comment", function(id, cid)
+  set_204_or_error("DELETE", base() .. "/gists/" .. id .. "/comments/" .. cid)
+end)
+b:rest(
+  "get_gist_commits",
+  proxy_handler(nil, function(id)
     return base() .. "/gists/" .. id .. "/commits"
-  end),
-  get_gist_forks = proxy_handler(nil, function(id)
+  end)
+)
+b:rest(
+  "get_gist_forks",
+  proxy_handler(nil, function(id)
     return base() .. "/gists/" .. id .. "/forks"
-  end),
-  get_gist_star = function(id)
-    set_204_or_error("GET", base() .. "/gists/" .. id .. "/star")
-  end,
-  put_gist_star = function(id)
-    set_204_or_error("PUT", base() .. "/gists/" .. id .. "/star")
-  end,
-  delete_gist_star = function(id)
-    set_204_or_error("DELETE", base() .. "/gists/" .. id .. "/star")
-  end,
-  get_gist_revision = proxy_handler(nil, function(id, sha)
+  end)
+)
+b:rest("get_gist_star", function(id)
+  set_204_or_error("GET", base() .. "/gists/" .. id .. "/star")
+end)
+b:rest("put_gist_star", function(id)
+  set_204_or_error("PUT", base() .. "/gists/" .. id .. "/star")
+end)
+b:rest("delete_gist_star", function(id)
+  set_204_or_error("DELETE", base() .. "/gists/" .. id .. "/star")
+end)
+b:rest(
+  "get_gist_revision",
+  proxy_handler(nil, function(id, sha)
     return base() .. "/gists/" .. id .. "/" .. sha
-  end),
-  get_user_gists = proxy_handler(nil, function(user)
+  end)
+)
+b:rest(
+  "get_user_gists",
+  proxy_handler(nil, function(user)
     return base() .. "/users/" .. user .. "/gists"
-  end),
-}
+  end)
+)
 
 -- ---------------------------------------------------------------------------
 -- GraphQL resolvers
@@ -1369,7 +1721,7 @@ end
 
 -- Query.repositoryOwner: look up a User or Organization by login.
 -- Tries /users/{login} first; falls back to /orgs/{login}.
-graphql_resolvers["Query.repositoryOwner"] = function(_parent, args, ctx)
+b:graphql("Query.repositoryOwner", function(_parent, args, ctx)
   if not args.login then
     graphql_error(ctx, "repositoryOwner requires a login argument")
     return nil
@@ -1383,10 +1735,10 @@ graphql_resolvers["Query.repositoryOwner"] = function(_parent, args, ctx)
     return graphql_translate_org(odata)
   end
   return nil
-end
+end)
 
 -- Query.viewer: resolve the authenticated user via GET /user.
-graphql_resolvers["Query.viewer"] = function(_parent, _args, ctx)
+b:graphql("Query.viewer", function(_parent, _args, ctx)
   local data = graphql_fetch_or_error(fetch_json, base() .. "/user", ctx, nil)
   if not data then
     return nil
@@ -1394,10 +1746,10 @@ graphql_resolvers["Query.viewer"] = function(_parent, _args, ctx)
   local u = graphql_translate_user(data)
   u.isViewer = true
   return u
-end
+end)
 
 -- Query.user: look up a User by login.
-graphql_resolvers["Query.user"] = function(_parent, args, ctx)
+b:graphql("Query.user", function(_parent, args, ctx)
   if not args.login then
     graphql_error(ctx, "user requires a login argument")
     return nil
@@ -1407,10 +1759,10 @@ graphql_resolvers["Query.user"] = function(_parent, args, ctx)
     return nil
   end
   return graphql_translate_user(data)
-end
+end)
 
 -- Query.organization: look up an Organization by login.
-graphql_resolvers["Query.organization"] = function(_parent, args, ctx)
+b:graphql("Query.organization", function(_parent, args, ctx)
   if not args.login then
     graphql_error(ctx, "organization requires a login argument")
     return nil
@@ -1420,10 +1772,10 @@ graphql_resolvers["Query.organization"] = function(_parent, args, ctx)
     return nil
   end
   return graphql_translate_org(data)
-end
+end)
 
 -- Query.repository: look up a Repository by owner and name.
-graphql_resolvers["Query.repository"] = function(_parent, args, ctx)
+b:graphql("Query.repository", function(_parent, args, ctx)
   if not args.owner or not args.name then
     graphql_error(ctx, "repository requires owner and name arguments")
     return nil
@@ -1433,37 +1785,37 @@ graphql_resolvers["Query.repository"] = function(_parent, args, ctx)
     return nil
   end
   return graphql_translate_repo(data)
-end
+end)
 
 -- node.Repository: fetch a repository by "owner/repo" local ID.
-graphql_resolvers["node.Repository"] = function(local_id, _ctx)
+b:graphql("node.Repository", function(local_id, _ctx)
   local data, _ = graphql_fetch(fetch_json, base() .. "/repos/" .. local_id)
   if not data then
     return nil
   end
   return graphql_translate_repo(data)
-end
+end)
 
 -- node.User: fetch a user by login.
-graphql_resolvers["node.User"] = function(local_id, _ctx)
+b:graphql("node.User", function(local_id, _ctx)
   local data, _ = graphql_fetch(fetch_json, base() .. "/users/" .. local_id)
   if not data then
     return nil
   end
   return graphql_translate_user(data)
-end
+end)
 
 -- node.Organization: fetch an organization by login.
-graphql_resolvers["node.Organization"] = function(local_id, _ctx)
+b:graphql("node.Organization", function(local_id, _ctx)
   local data, _ = graphql_fetch(fetch_json, base() .. "/orgs/" .. local_id)
   if not data then
     return nil
   end
   return graphql_translate_org(data)
-end
+end)
 
 -- node.Issue: fetch an issue by "owner/repo/number" local ID.
-graphql_resolvers["node.Issue"] = function(local_id, _ctx)
+b:graphql("node.Issue", function(local_id, _ctx)
   local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
   if not owner then
     return nil
@@ -1474,10 +1826,10 @@ graphql_resolvers["node.Issue"] = function(local_id, _ctx)
     return nil
   end
   return graphql_translate_issue(data, owner, repo)
-end
+end)
 
 -- node.PullRequest: fetch a pull request by "owner/repo/number" local ID.
-graphql_resolvers["node.PullRequest"] = function(local_id, _ctx)
+b:graphql("node.PullRequest", function(local_id, _ctx)
   local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
   if not owner then
     return nil
@@ -1488,10 +1840,10 @@ graphql_resolvers["node.PullRequest"] = function(local_id, _ctx)
     return nil
   end
   return graphql_translate_pr(data, owner, repo)
-end
+end)
 
 -- node.IssueComment: fetch an issue comment by "owner/repo/comment_id" local ID.
-graphql_resolvers["node.IssueComment"] = function(local_id, _ctx)
+b:graphql("node.IssueComment", function(local_id, _ctx)
   local owner, repo, cid = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
   if not owner then
     return nil
@@ -1504,10 +1856,10 @@ graphql_resolvers["node.IssueComment"] = function(local_id, _ctx)
     return nil
   end
   return graphql_translate_comment(data, owner, repo)
-end
+end)
 
 -- node.Release: fetch a release by "owner/repo/release_id" local ID.
-graphql_resolvers["node.Release"] = function(local_id, _ctx)
+b:graphql("node.Release", function(local_id, _ctx)
   local owner, repo, rid = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
   if not owner then
     return nil
@@ -1518,10 +1870,10 @@ graphql_resolvers["node.Release"] = function(local_id, _ctx)
     return nil
   end
   return graphql_translate_release(data, owner, repo)
-end
+end)
 
 -- node.Label: fetch a label by "owner/repo/label_id" local ID.
-graphql_resolvers["node.Label"] = function(local_id, _ctx)
+b:graphql("node.Label", function(local_id, _ctx)
   local owner, repo, lid = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
   if not owner then
     return nil
@@ -1532,10 +1884,10 @@ graphql_resolvers["node.Label"] = function(local_id, _ctx)
     return nil
   end
   return graphql_translate_label(data, owner, repo)
-end
+end)
 
 -- node.Milestone: fetch a milestone by "owner/repo/number" local ID.
-graphql_resolvers["node.Milestone"] = function(local_id, _ctx)
+b:graphql("node.Milestone", function(local_id, _ctx)
   local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
   if not owner then
     return nil
@@ -1548,10 +1900,10 @@ graphql_resolvers["node.Milestone"] = function(local_id, _ctx)
     return nil
   end
   return graphql_translate_milestone(data, owner, repo)
-end
+end)
 
 -- node.Commit: fetch a commit by "owner/repo/sha" local ID.
-graphql_resolvers["node.Commit"] = function(local_id, _ctx)
+b:graphql("node.Commit", function(local_id, _ctx)
   local owner, repo, sha = local_id:match("^([^/]+)/([^/]+)/(.+)$")
   if not owner then
     return nil
@@ -1562,11 +1914,11 @@ graphql_resolvers["node.Commit"] = function(local_id, _ctx)
     return nil
   end
   return graphql_translate_commit(data, owner, repo)
-end
+end)
 
 -- node.Ref: fetch a branch ref by "owner/repo/refs/heads/..." local ID.
 -- GitBucket branch objects are GitHub-compatible (commit.sha already present).
-graphql_resolvers["node.Ref"] = function(local_id, _ctx)
+b:graphql("node.Ref", function(local_id, _ctx)
   local owner, repo, ref_path = local_id:match("^([^/]+)/([^/]+)/(refs/.+)$")
   if not owner then
     return nil
@@ -1582,11 +1934,11 @@ graphql_resolvers["node.Ref"] = function(local_id, _ctx)
   end
   local repo_stub = { __typename = "Repository", nameWithOwner = owner .. "/" .. repo }
   return graphql_translate_ref(data, repo_stub)
-end
+end)
 
 -- node.Team: fetch a team by "org/slug" local ID.
 -- GitBucket is GitHub-compatible; /orgs/{org}/teams/{slug} returns the team directly.
-graphql_resolvers["node.Team"] = function(local_id, _ctx)
+b:graphql("node.Team", function(local_id, _ctx)
   local org, slug = local_id:match("^([^/]+)/([^/]+)$")
   if not org then
     return nil
@@ -1596,7 +1948,7 @@ graphql_resolvers["node.Team"] = function(local_id, _ctx)
     return nil
   end
   return graphql_translate_team(data, org)
-end
+end)
 
 -- ---------------------------------------------------------------------------
 -- Repository connection sub-resolvers
@@ -1605,7 +1957,7 @@ end
 -- Repository.issues: paginated list of issues.
 -- GitBucket's issue list includes PRs (like GitHub); filter them out by checking
 -- the pull_request field.
-graphql_resolvers["Repository.issues"] = function(parent, args, ctx)
+b:graphql("Repository.issues", function(parent, args, ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
@@ -1629,10 +1981,10 @@ graphql_resolvers["Repository.issues"] = function(parent, args, ctx)
     end
   end
   return graphql_issues_connection(nodes, args, total, ctx)
-end
+end)
 
 -- Repository.pullRequests: paginated list of pull requests.
-graphql_resolvers["Repository.pullRequests"] = function(parent, args, ctx)
+b:graphql("Repository.pullRequests", function(parent, args, ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
@@ -1640,10 +1992,10 @@ graphql_resolvers["Repository.pullRequests"] = function(parent, args, ctx)
   return gb_repo_connection(owner, name, "/pulls", args, ctx, function(p)
     return graphql_translate_pr(p, owner, name)
   end, graphql_prs_connection)
-end
+end)
 
 -- Repository.releases: paginated list of releases.
-graphql_resolvers["Repository.releases"] = function(parent, args, ctx)
+b:graphql("Repository.releases", function(parent, args, ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
@@ -1653,10 +2005,10 @@ graphql_resolvers["Repository.releases"] = function(parent, args, ctx)
   end, function(n, a, t, c)
     return graphql_make_connection("Release", n, a, t, c)
   end)
-end
+end)
 
 -- Repository.labels: paginated list of labels.
-graphql_resolvers["Repository.labels"] = function(parent, args, ctx)
+b:graphql("Repository.labels", function(parent, args, ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
@@ -1664,10 +2016,10 @@ graphql_resolvers["Repository.labels"] = function(parent, args, ctx)
   return gb_repo_connection(owner, name, "/labels", args, ctx, function(l)
     return graphql_translate_label(l, owner, name)
   end, graphql_labels_connection)
-end
+end)
 
 -- Repository.milestones: paginated list of milestones.
-graphql_resolvers["Repository.milestones"] = function(parent, args, ctx)
+b:graphql("Repository.milestones", function(parent, args, ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
@@ -1677,23 +2029,23 @@ graphql_resolvers["Repository.milestones"] = function(parent, args, ctx)
   end, function(n, a, t, c)
     return graphql_make_connection("Milestone", n, a, t, c)
   end)
-end
+end)
 
 -- Repository.refs: paginated list of branches as Ref objects.
 -- GitBucket branch objects already include commit.sha (GitHub-compatible);
 -- no commit.id → commit.sha normalisation needed.
-graphql_resolvers["Repository.refs"] = function(parent, args, ctx)
+b:graphql("Repository.refs", function(parent, args, ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
   end
-  return gb_repo_connection(owner, name, "/branches", args, ctx, function(b)
-    return graphql_translate_ref(b, parent)
+  return gb_repo_connection(owner, name, "/branches", args, ctx, function(br)
+    return graphql_translate_ref(br, parent)
   end, graphql_refs_connection)
-end
+end)
 
 -- Issue.comments: paginated list of comments for a single issue.
-graphql_resolvers["Issue.comments"] = function(parent, args, ctx)
+b:graphql("Issue.comments", function(parent, args, ctx)
   local _, local_id = decode_node_id(parent.id)
   if not local_id then
     return nil
@@ -1726,10 +2078,10 @@ graphql_resolvers["Issue.comments"] = function(parent, args, ctx)
     nodes[#nodes + 1] = graphql_translate_comment(c, owner, repo)
   end
   return graphql_make_connection("IssueComment", nodes, args, total, ctx)
-end
+end)
 
 -- PullRequest.commits: paginated commit list for a pull request.
-graphql_resolvers["PullRequest.commits"] = function(parent, args, ctx)
+b:graphql("PullRequest.commits", function(parent, args, ctx)
   local _, local_id = decode_node_id(parent.id)
   if not local_id then
     return nil
@@ -1763,10 +2115,10 @@ graphql_resolvers["PullRequest.commits"] = function(parent, args, ctx)
     }
   end
   return graphql_make_connection("PullRequestCommit", nodes, args, total, ctx)
-end
+end)
 
 -- PullRequest.reviews: paginated review list for a pull request.
-graphql_resolvers["PullRequest.reviews"] = function(parent, args, ctx)
+b:graphql("PullRequest.reviews", function(parent, args, ctx)
   local _, local_id = decode_node_id(parent.id)
   if not local_id then
     return nil
@@ -1792,10 +2144,10 @@ graphql_resolvers["PullRequest.reviews"] = function(parent, args, ctx)
     nodes[#nodes + 1] = graphql_translate_review(r, owner, repo)
   end
   return graphql_make_connection("PullRequestReview", nodes, args, total, ctx)
-end
+end)
 
 -- Repository.collaborators: paginated list of collaborators as Users.
-graphql_resolvers["Repository.collaborators"] = function(parent, args, ctx)
+b:graphql("Repository.collaborators", function(parent, args, ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
@@ -1805,11 +2157,11 @@ graphql_resolvers["Repository.collaborators"] = function(parent, args, ctx)
   end, function(n, a, t, c)
     return graphql_make_connection("RepositoryCollaborator", n, a, t, c)
   end)
-end
+end)
 
 -- Repository.defaultBranchRef: enrich the inline stub with full branch data.
 -- The parent already carries {__typename="Ref",name="main"} from graphql_translate_repo.
-graphql_resolvers["Repository.defaultBranchRef"] = function(parent, _args, _ctx)
+b:graphql("Repository.defaultBranchRef", function(parent, _args, _ctx)
   local branch = parent.defaultBranchRef and parent.defaultBranchRef.name
   if not branch then
     return nil
@@ -1824,11 +2176,11 @@ graphql_resolvers["Repository.defaultBranchRef"] = function(parent, _args, _ctx)
     return nil
   end
   return graphql_translate_ref(data, parent)
-end
+end)
 
 -- Repository.languages: fetch language byte-count breakdown as a LanguageConnection.
 -- GitBucket returns {"Language": bytes, ...}; we convert to the Relay Connection shape.
-graphql_resolvers["Repository.languages"] = function(parent, _args, _ctx)
+b:graphql("Repository.languages", function(parent, _args, _ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
@@ -1865,7 +2217,7 @@ graphql_resolvers["Repository.languages"] = function(parent, _args, _ctx)
     nodes = nodes,
     edges = edges,
   }
-end
+end)
 
 -- ---------------------------------------------------------------------------
 -- Query.search
@@ -1875,7 +2227,7 @@ end
 -- GitBucket exposes GitHub-compatible /search/{repositories,users} returning
 -- the standard {total_count, items} envelope.
 -- ISSUE search is not supported (GitBucket has no /search/issues endpoint).
-graphql_resolvers["Query.search"] = function(_parent, args, _ctx)
+b:graphql("Query.search", function(_parent, args, _ctx)
   local query = args.query or ""
   local search_type = args.type or "REPOSITORY"
   local per_page = args.first or 30
@@ -1933,4 +2285,6 @@ graphql_resolvers["Query.search"] = function(_parent, args, _ctx)
     discussionCount = 0,
     wikiCount = 0,
   }
-end
+end)
+
+b:build()

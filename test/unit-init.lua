@@ -1589,12 +1589,16 @@ do
   local _saved_base_url = config.base_url
   local _saved_impl = app.backend_impl
 
-  -- Stub dofile so load_family_backend's dofile("/zip/backends/gitea.lua") is a no-op.
+  -- Stub dofile so load_family_backend's dofile("/zip/backends/gitea.lua") is a
+  -- no-op.  Also captures app._family_strip at the time of the call so tests can
+  -- verify the declarative strip declaration.
   -- luacheck: push
   -- luacheck: globals dofile
   local _real_dofile2 = dofile
+  local _strip_during_dofile
   dofile = function(path)
     if path and path:match("^/zip/backends/") then
+      _strip_during_dofile = app._family_strip
       return
     end
     return _real_dofile2(path)
@@ -1604,7 +1608,6 @@ do
   -- Happy path: sets base_url from alias default when config.base_url is empty.
   config.backend = "forgejo"
   config.base_url = ""
-  app.backend_impl = {}
   load_family_backend("gitea")
   eq(
     config.base_url,
@@ -1615,7 +1618,6 @@ do
   -- Explicit base_url is preserved (not overwritten by alias default).
   config.backend = "forgejo"
   config.base_url = "https://custom.example.com"
-  app.backend_impl = {}
   load_family_backend("gitea")
   eq(
     config.base_url,
@@ -1623,26 +1625,38 @@ do
     "load_family_backend: preserves explicit base_url"
   )
 
-  -- Strip patterns remove matching app.backend_impl keys (gogs strips _package and _actions_).
+  -- Strip patterns are declared in app._family_strip before the root backend loads,
+  -- then cleared afterward (gogs strips _package and _actions_).
   config.backend = "gogs"
   config.base_url = "https://try.gogs.io"
-  app.backend_impl = {
-    get_package_info = function() end,
-    list_actions_runs = function() end,
-    get_repo = function() end,
-  }
+  _strip_during_dofile = nil
   load_family_backend("gitea")
   ok(
+    _strip_during_dofile ~= nil,
+    "load_family_backend: app._family_strip is set during dofile for gogs"
+  )
+  ok(app._family_strip == nil, "load_family_backend: app._family_strip is cleared after dofile")
+
+  -- The builder reads app._family_strip in b:build() and excludes matching keys.
+  app.backend_impl = {}
+  app._family_strip = _strip_during_dofile -- luacheck: globals app
+  local bt = make_backend_builder()
+  bt:rest("get_package_info", function() end)
+  bt:rest("list_actions_runs", function() end)
+  bt:rest("get_repo", function() end)
+  bt:build()
+  app._family_strip = nil -- luacheck: globals app
+  ok(
     app.backend_impl["get_package_info"] == nil,
-    "load_family_backend: strips _package keys for gogs"
+    "load_family_backend: builder strips _package keys for gogs"
   )
   ok(
     app.backend_impl["list_actions_runs"] == nil,
-    "load_family_backend: strips _actions_ keys for gogs"
+    "load_family_backend: builder strips _actions_ keys for gogs"
   )
   ok(
     app.backend_impl["get_repo"] ~= nil,
-    "load_family_backend: preserves non-stripped keys for gogs"
+    "load_family_backend: builder preserves non-matching keys for gogs"
   )
 
   dofile = _real_dofile2 -- luacheck: globals dofile
@@ -1669,6 +1683,95 @@ do
   ok(type(test_app.backend_impl) == "table", "make_app: backend_impl is a table")
   ok(test_app.allow_anonymous == true, "make_app: allow_anonymous defaults to true")
   ok(test_app ~= app, "make_app: returns a new independent table each call")
+end
+
+-- ============================================================
+-- make_backend_builder
+-- ============================================================
+
+do
+  local saved_impl = app.backend_impl
+  local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
+  local saved_anon = app.allow_anonymous
+
+  local function restore()
+    app.backend_impl = saved_impl
+    graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
+    app.allow_anonymous = saved_anon
+  end
+
+  -- factory returns a builder table with the expected methods
+  local b = make_backend_builder()
+  ok(type(b) == "table", "make_backend_builder: returns a table")
+  ok(type(b.rest) == "function", "make_backend_builder: has rest method")
+  ok(type(b.graphql) == "function", "make_backend_builder: has graphql method")
+  ok(
+    type(b.set_allow_anonymous) == "function",
+    "make_backend_builder: has set_allow_anonymous method"
+  )
+  ok(type(b.build) == "function", "make_backend_builder: has build method")
+
+  -- registration methods return self for chaining
+  local b2 = make_backend_builder()
+  ok(b2:rest("get_foo", function() end) == b2, "builder:rest: returns self")
+  ok(b2:graphql("Query.foo", function() end) == b2, "builder:graphql: returns self")
+  ok(b2:set_allow_anonymous(true) == b2, "builder:set_allow_anonymous: returns self")
+
+  -- build() populates app.backend_impl and graphql_resolvers
+  app.backend_impl = {}
+  graphql_resolvers = {} -- luacheck: globals graphql_resolvers
+  app.allow_anonymous = true
+
+  local get_fn = function() end
+  local gql_fn = function() end
+  local b3 = make_backend_builder()
+  b3:rest("get_repo", get_fn)
+  b3:graphql("Query.viewer", gql_fn)
+  b3:set_allow_anonymous(false)
+  b3:build()
+
+  eq(app.backend_impl["get_repo"], get_fn, "builder:build: registers REST handler")
+  eq(graphql_resolvers["Query.viewer"], gql_fn, "builder:build: registers GraphQL resolver") -- luacheck: globals graphql_resolvers
+  eq(app.allow_anonymous, false, "builder:build: sets allow_anonymous")
+
+  -- build() without set_allow_anonymous leaves allow_anonymous unchanged
+  app.backend_impl = {}
+  app.allow_anonymous = true
+  local b4 = make_backend_builder()
+  b4:rest("get_root", function() end)
+  b4:build()
+  ok(
+    app.allow_anonymous == true,
+    "builder:build: does not change allow_anonymous when not declared"
+  )
+
+  -- build(strip) excludes REST keys matching any pattern
+  app.backend_impl = {}
+  local b5 = make_backend_builder()
+  b5:rest("get_repo", function() end)
+  b5:rest("get_package_info", function() end)
+  b5:rest("list_actions_runs", function() end)
+  b5:build({ "_package", "_actions_" })
+  ok(app.backend_impl["get_repo"] ~= nil, "builder:build(strip): keeps non-matching key")
+  ok(app.backend_impl["get_package_info"] == nil, "builder:build(strip): strips _package key")
+  ok(app.backend_impl["list_actions_runs"] == nil, "builder:build(strip): strips _actions_ key")
+
+  -- two builders are independent and do not share state
+  app.backend_impl = {}
+  local ba = make_backend_builder()
+  ba:rest("get_foo", function() end)
+  local bb = make_backend_builder()
+  bb:rest("get_bar", function() end)
+  ba:build()
+  ok(app.backend_impl["get_foo"] ~= nil, "make_backend_builder: builders are independent (a built)")
+  ok(
+    app.backend_impl["get_bar"] == nil,
+    "make_backend_builder: builders are independent (b not yet built)"
+  )
+  bb:build()
+  ok(app.backend_impl["get_bar"] ~= nil, "make_backend_builder: builders are independent (b built)")
+
+  restore()
 end
 
 -- ============================================================
