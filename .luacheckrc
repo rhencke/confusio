@@ -86,6 +86,7 @@ globals = {
   "graphql_error",
   "graphql_handler",
   "graphql_register_builtin_resolvers",
+  "make_dispatcher",
   "get_client_mutation_id",
   "estimate_query_cost",
   -- GraphQL translators: internal/graphql_translators.lua

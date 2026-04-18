@@ -54,3 +54,7 @@ dofile("/zip/internal/defaults.lua")
 dofile("/zip/internal/router.lua")
 dofile("/zip/internal/catalog.lua")
 dofile("/zip/internal/dispatch.lua")
+
+app.route_match = route_match
+app.path_known = path_known
+OnHttpRequest = make_dispatcher(app)

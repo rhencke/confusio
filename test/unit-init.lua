@@ -1624,6 +1624,11 @@ ok(type(app.backend.graphql) == "table", "app.backend.graphql: is a table")
 ok(type(app.backend.capabilities) == "table", "app.backend.capabilities: is a table")
 ok(type(app.allow_anonymous) == "boolean", "app.allow_anonymous: is a boolean")
 ok(app.allow_anonymous == true, "app.allow_anonymous: default true (no backend loaded)")
+ok(type(app.route_match) == "function", "app.route_match: bound router lookup installed on app")
+ok(
+  type(app.path_known) == "function",
+  "app.path_known: bound path-existence check installed on app"
+)
 
 -- make_app: constructs independent context from a given config table.
 do
