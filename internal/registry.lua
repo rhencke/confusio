@@ -1,8 +1,16 @@
--- Backend builder: the required API for registering REST handlers and GraphQL resolvers.
+-- Backend builder: the required API for registering REST handlers, GraphQL
+-- resolvers, and provider capability modules.
 --
 -- make_backend_builder() returns a builder.  A backend file calls b:rest(name, fn),
--- b:graphql(key, fn), and b:set_allow_anonymous(v) to declare its handlers and
--- metadata, then calls b:build() to commit them to the app context.
+-- b:graphql(key, fn), b:capability(name, module), and b:set_allow_anonymous(v) to
+-- declare its handlers, resolvers, capabilities, and metadata, then calls b:build()
+-- to commit them to the app context.
+--
+-- Capability modules are the shared domain layer consumed by both REST handlers and
+-- GraphQL resolvers.  Each module is a table of named operations (e.g.
+-- { get = fn, list = fn, update = fn, delete = fn }).  They live in app.capabilities
+-- keyed by domain name (e.g. "repos", "users", "issues").  Strip patterns do NOT
+-- apply to capabilities — they are domain-level, not REST surface-level.
 --
 -- Direct assignment to app.backend_impl or graphql_resolvers is forbidden;
 -- make validate-builders enforces this at CI time.
@@ -14,6 +22,7 @@ function make_backend_builder() -- luacheck: globals make_backend_builder
   local b = {
     _rest = {},
     _graphql = {},
+    _capabilities = {},
     _anonymous = nil,
   }
 
@@ -35,6 +44,17 @@ function make_backend_builder() -- luacheck: globals make_backend_builder
     return self
   end
 
+  -- Register a provider capability module.
+  -- name:   domain name for this capability (e.g. "repos", "users", "issues")
+  -- module: table of named operations consumed by both REST handlers and GraphQL
+  --         resolvers (e.g. { get = fn, list = fn, update = fn, delete = fn })
+  -- Strip patterns do NOT affect capabilities — they are domain-level only.
+  -- Returns self for method chaining.
+  function b:capability(name, module)
+    self._capabilities[name] = module
+    return self
+  end
+
   -- Declare the anonymous-access policy for this backend.
   -- v: true = allow unauthenticated requests; false = require Authorization header
   -- When not called, app.allow_anonymous is left at its current value.
@@ -44,18 +64,19 @@ function make_backend_builder() -- luacheck: globals make_backend_builder
     return self
   end
 
-  -- Commit all registered handlers to the app context.
+  -- Commit all registered handlers, resolvers, and capabilities to the app context.
   --
   -- strip: optional array of Lua patterns; REST keys whose names match any pattern
   --        are silently omitted from the commit.  When omitted, b:build() falls back
   --        to app._family_strip, which load_family_backend sets before loading the
   --        root backend file so alias feature gaps are applied declaratively rather
-  --        than by post-hoc mutation.
+  --        than by post-hoc mutation.  Strip patterns do NOT affect capabilities.
   --
   -- After build() returns:
-  --   app.backend_impl[name] = fn  for each registered REST handler (unless stripped)
-  --   graphql_resolvers[key]  = fn  for each registered GraphQL resolver
-  --   app.allow_anonymous     = v   only when set_allow_anonymous was called
+  --   app.backend_impl[name]   = fn     for each registered REST handler (unless stripped)
+  --   graphql_resolvers[key]   = fn     for each registered GraphQL resolver
+  --   app.capabilities[name]   = module for each registered capability module
+  --   app.allow_anonymous      = v      only when set_allow_anonymous was called
   function b:build(strip)
     -- Explicit strip arg takes precedence; fall back to the family-level strip
     -- declared by load_family_backend before the root backend file was loaded.
@@ -76,6 +97,9 @@ function make_backend_builder() -- luacheck: globals make_backend_builder
     end
     for key, fn in pairs(self._graphql) do
       graphql_resolvers[key] = fn
+    end
+    for name, module in pairs(self._capabilities) do
+      app.capabilities[name] = module
     end
     if self._anonymous ~= nil then
       app.allow_anonymous = self._anonymous

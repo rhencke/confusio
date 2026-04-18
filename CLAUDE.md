@@ -38,6 +38,7 @@ internal/
   http.lua                   — HTTP response primitives: set_preamble, respond_json
   proxy.lua                  — upstream proxy helpers: proxy_json family, translate_list, proxy_search_envelope
   transport.lua              — auth/fetch scaffolding: make_fetch_opts, make_proxy_handler, make_backend_transport, append_page_params
+  capabilities.lua           — capability module helpers: cap_fetch, cap_fetch_paged, cap_err; REST adapters: cap_rest_respond, cap_rest_created, cap_rest_204, cap_rest_paged
   translators.lua            — shared Gitea-family translators: translate_repo, translate_user, translate_migration, owner_repo_id
   families.lua               — provider_families table and load_family_backend
   defaults.lua               — default stub handlers collected in the global `defaults` table
@@ -220,7 +221,7 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
 | Routes and default handler stubs | `endpoint_sections` in `internal/catalog.lua` | route registration, `defaults` table wire-up, compatibility matrix sections, test file discovery, `make dump-endpoints` / `validate-tests` / `validate-csv` / `site` |
 | Provider family membership | `provider_families` in `internal/families.lua` | mock building via `.make-families.mk` (auto-generated), `make validate-providers`, `load_family_backend` behavior |
 | Backend transport scaffold | `make_backend_transport` in `internal/transport.lua` | `fetch_json`, `proxy_json*`, `proxy_204`, `proxy_json_list`, `proxy_health_check`, pagination params — all consumed by backends via the transport object |
-| Application module layout | ten `internal/*.lua` files, dofile'd in fixed order by `.init.lua` | the full global surface for backends; see "Internal module layout" for load order and exported globals |
+| Application module layout | eleven `internal/*.lua` files, dofile'd in fixed order by `.init.lua` | the full global surface for backends; see "Internal module layout" for load order and exported globals |
 
 **Adding an endpoint**: touch `internal/catalog.lua` (`endpoint_sections`) and `internal/defaults.lua`, plus per-backend overrides in `backends/<name>.lua` if native support is needed.
 
@@ -228,7 +229,9 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
 
 **Adding a family-alias backend**: update `provider_families` in `internal/families.lua` (the single declaration), create a one-line `backends/<alias>.lua` calling `load_family_backend`, add to `BACKENDS` — no mock file needed.
 
-**Backend registration**: all backends must use `make_backend_builder()` / `b:rest()` / `b:graphql()` / `b:build()`. Direct assignment to `app.backend_impl` or `graphql_resolvers` is forbidden. `make validate-builders` enforces this and is wired into `make test`.
+**Backend registration**: all backends must use `make_backend_builder()` / `b:rest()` / `b:graphql()` / `b:capability()` / `b:build()`. Direct assignment to `app.backend_impl` or `graphql_resolvers` is forbidden. `make validate-builders` enforces this and is wired into `make test`.
+
+**Building a capability module**: use `cap_fetch` / `cap_fetch_paged` inside capability operations to own the fetch+error-mapping step. Capability operations return `(data, nil)` on success or `(nil, err)` on failure where `err = { status = N, message = string }` (status 0 = network error). REST handlers call `cap_rest_respond` / `cap_rest_paged` / `cap_rest_created` / `cap_rest_204` to write the HTTP response. GraphQL resolvers just check `if not data then return nil end` and pass data to `graphql_translate_*`.
 
 ### Redbean
 
@@ -326,6 +329,76 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
 - **Use Redbean itself as the mock server** — no Python/Node dependency, same binary already in the repo. Build `mock-<backend>.com` by copying `redbean.com` and zipping in a `.init.lua` handler. See `mock-gitea.com` target in `Makefile`.
 - **Mock validation via Hurl**: run the same `.hurl` assertion file against both the mock and the real endpoint. If both pass the same structural assertions, the mock is compatible. See `make validate-mock`.
 
+### Capability modules
+
+A capability module is a local Lua table of named domain operations that owns fetch + error-mapping + translation for one resource type. Both REST handlers and GraphQL resolvers call into it, eliminating duplicated fetch+translate logic.
+
+**Return shapes — three canonical forms:**
+
+| Operation kind | Success | Failure |
+|----------------|---------|---------|
+| Single-item (GET, POST, PATCH) | `(data, nil)` — translated REST table | `(nil, err)` |
+| Paginated list (GET list) | `(items, headers, nil)` — translated array + raw headers | `(nil, nil, err)` |
+| Delete / merge (204 No Content) | `(true, nil)` | `(nil, err)` |
+
+`err = { status = N, message = string }` always. `status = 0` means network error (pcall failure); any other value is the upstream HTTP status.
+
+**When to use each fetch primitive:**
+
+- **`cap_fetch(fetch_json, url [, method, body])`** — for operations that return a JSON body (single-item GET, POST, PATCH). Handles status checking and decodes the body; returns `(raw, err)`.
+- **`cap_fetch_paged(fetch_json, url)`** — for paginated list operations. Returns `(items, headers, err)` where `headers` carries the raw response headers (including `Link` for pagination forwarding).
+- **Direct `fetch_json(url, method)` + manual status check** — for operations that return 204 No Content (DELETE, POST-that-merges). There is no JSON body to decode. Return `(true, nil)` on success or `(nil, cap_err(status, message))` on failure.
+
+**Translation layering:** capability operations apply `translate_gitea_*` internally before returning, so callers always receive GitHub REST shape. REST handlers pass it straight to the response adapters. GraphQL resolvers apply `graphql_translate_*` on top — they do **not** call `translate_gitea_*` again.
+
+```lua
+-- Good: cap returns REST shape; resolver applies graphql layer only.
+local data, _ = issues_cap.get(owner, repo, number)
+if not data then return nil end
+return graphql_translate_issue(data, owner, repo)
+
+-- Wrong: double-translate.
+local data, _ = issues_cap.get(owner, repo, number)
+return graphql_translate_issue(translate_gitea_issue(data), owner, repo)
+```
+
+**REST adapter selection guide:**
+
+| Handler type | Adapter | Typical endpoint |
+|-------------|---------|-----------------|
+| Single-item read or update | `cap_rest_respond(data, err)` | GET or PATCH, 200 |
+| Create (returns the new resource) | `cap_rest_created(data, err)` | POST, 201 |
+| Delete / merge | `cap_rest_204(ok, err)` | DELETE, 204 |
+| Paginated list | `cap_rest_paged(items, hdrs, err, PAGES)` | GET list, 200 + Link |
+
+**GraphQL mutation error mapping for delete/merge operations:**
+
+```lua
+local ok, cerr = cap.delete(owner, repo, id)
+if not ok then
+  if cerr.status == 0 then
+    graphql_error(ctx, cerr.message, nil, "INTERNAL_ERROR")
+  elseif cerr.status == 401 or cerr.status == 403 then
+    graphql_error(ctx, cerr.message, nil, "FORBIDDEN")
+  elseif cerr.status == 404 then
+    graphql_error(ctx, cerr.message, nil, "NOT_FOUND")
+  else
+    graphql_error(ctx, cerr.message, nil, "INTERNAL_ERROR")
+  end
+  return nil
+end
+```
+
+**Naming conventions:**
+
+- Capability table variable: plain domain name when no conflict (`repos`, `users`, `orgs`); `_cap` suffix when the name would shadow an existing variable (`issues_cap`, `pulls_cap`, `labels_cap`).
+- Register with `b:capability("domain_name", table)`. The domain name is the key in `app.capabilities` and is used for debugging / validation only — it does not affect routing.
+- Operations: `get`, `list`, `create`, `update`, `delete`, `merge` for the primary CRUD surface. Use a `list_` prefix to disambiguate sub-resource lists: `list_repo` (all comments in a repo) vs `list_issue` (comments on one issue).
+
+**`gitea_repo_connection` is intentionally NOT backed by a capability module.** It receives pre-fetched items inline from a single upstream page fetch and applies translation per item. Using `cap.get` per item would make O(n) redundant network calls. Keep `translate_gitea_*` direct for items inside connection translators.
+
+**`make validate-capabilities`** checks that every registered capability module is a non-nil table with at least one function-valued operation. Wired into `make test`. Backends with zero capability registrations pass cleanly — zero is valid for backends not yet migrated.
+
 ### Shared proxy helpers
 
 Two global helpers defined in `internal/proxy.lua` are available to all backend files:
@@ -353,7 +426,7 @@ Do **not** use `proxy_search_envelope` when:
 
 ### Internal module layout
 
-The ten `internal/` modules are loaded by `.init.lua` in a fixed order. Each exports only globals — no `require`/`return` pattern; `dofile` runs in global scope.
+The eleven `internal/` modules are loaded by `.init.lua` in a fixed order. Each exports only globals — no `require`/`return` pattern; `dofile` runs in global scope.
 
 **Load order and exports:**
 
@@ -362,6 +435,7 @@ The ten `internal/` modules are loaded by `.init.lua` in a fixed order. Each exp
 | `http.lua` | `set_preamble`, `respond_json` | all modules + backends |
 | `proxy.lua` | `proxy_json`, `proxy_json_paged`, `proxy_json_created`, `proxy_health_check`, `proxy_204`, `proxy_json_list`, `translate_list`, `proxy_search_envelope`, `rewrite_link_header` | backends |
 | `transport.lua` | `append_page_params`, `make_fetch_opts`, `make_proxy_handler`, `make_backend_transport` | backends |
+| `capabilities.lua` | `cap_err`, `cap_fetch`, `cap_fetch_paged`, `cap_rest_respond`, `cap_rest_created`, `cap_rest_204`, `cap_rest_paged` | backends (capability modules) |
 | `translators.lua` | `owner_repo_id`, `translate_repo`, `translate_user`, `translate_migration` | backends |
 | `families.lua` | `provider_families`, `load_family_backend` | backends + Makefile scripts |
 | `registry.lua` | `make_backend_builder` | backends |
@@ -373,10 +447,11 @@ The ten `internal/` modules are loaded by `.init.lua` in a fixed order. Each exp
 
 **Global surface for backend authors** (backends can call any of these):
 - App context (write target): `app.allow_anonymous`, `app.config` — never assign `app.backend_impl` directly
-- Builder (required): `make_backend_builder` — call `b:rest(name, fn)`, `b:graphql(key, fn)`, `b:set_allow_anonymous(v)`, then `b:build()` to commit; see `internal/registry.lua`
+- Builder (required): `make_backend_builder` — call `b:rest(name, fn)`, `b:graphql(key, fn)`, `b:capability(name, module)`, `b:set_allow_anonymous(v)`, then `b:build()` to commit; see `internal/registry.lua`
 - Response: `set_preamble`, `respond_json`
 - Proxy: all of `proxy.lua`'s exports
 - Transport: all of `transport.lua`'s exports
+- Capabilities: all of `capabilities.lua`'s exports — `cap_fetch`, `cap_fetch_paged` for operations; `cap_rest_*` for REST handlers; `cap_err` for error construction
 - Translators: all of `translators.lua`'s exports
 - Family loading: `load_family_backend`
 
