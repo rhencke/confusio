@@ -1681,6 +1681,7 @@ do
   local test_app = make_app(test_cfg)
   ok(test_app.config == test_cfg, "make_app: config is the supplied table")
   ok(type(test_app.backend_impl) == "table", "make_app: backend_impl is a table")
+  ok(type(test_app.capabilities) == "table", "make_app: capabilities is a table")
   ok(test_app.allow_anonymous == true, "make_app: allow_anonymous defaults to true")
   ok(test_app ~= app, "make_app: returns a new independent table each call")
 end
@@ -1691,11 +1692,13 @@ end
 
 do
   local saved_impl = app.backend_impl
+  local saved_capabilities = app.capabilities
   local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
   local saved_anon = app.allow_anonymous
 
   local function restore()
     app.backend_impl = saved_impl
+    app.capabilities = saved_capabilities
     graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
     app.allow_anonymous = saved_anon
   end
@@ -1705,6 +1708,7 @@ do
   ok(type(b) == "table", "make_backend_builder: returns a table")
   ok(type(b.rest) == "function", "make_backend_builder: has rest method")
   ok(type(b.graphql) == "function", "make_backend_builder: has graphql method")
+  ok(type(b.capability) == "function", "make_backend_builder: has capability method")
   ok(
     type(b.set_allow_anonymous) == "function",
     "make_backend_builder: has set_allow_anonymous method"
@@ -1715,27 +1719,33 @@ do
   local b2 = make_backend_builder()
   ok(b2:rest("get_foo", function() end) == b2, "builder:rest: returns self")
   ok(b2:graphql("Query.foo", function() end) == b2, "builder:graphql: returns self")
+  ok(b2:capability("repos", {}) == b2, "builder:capability: returns self")
   ok(b2:set_allow_anonymous(true) == b2, "builder:set_allow_anonymous: returns self")
 
-  -- build() populates app.backend_impl and graphql_resolvers
+  -- build() populates app.backend_impl, graphql_resolvers, and app.capabilities
   app.backend_impl = {}
+  app.capabilities = {}
   graphql_resolvers = {} -- luacheck: globals graphql_resolvers
   app.allow_anonymous = true
 
   local get_fn = function() end
   local gql_fn = function() end
+  local cap_repos = { get = function() end, list = function() end }
   local b3 = make_backend_builder()
   b3:rest("get_repo", get_fn)
   b3:graphql("Query.viewer", gql_fn)
+  b3:capability("repos", cap_repos)
   b3:set_allow_anonymous(false)
   b3:build()
 
   eq(app.backend_impl["get_repo"], get_fn, "builder:build: registers REST handler")
   eq(graphql_resolvers["Query.viewer"], gql_fn, "builder:build: registers GraphQL resolver") -- luacheck: globals graphql_resolvers
+  eq(app.capabilities["repos"], cap_repos, "builder:build: registers capability module")
   eq(app.allow_anonymous, false, "builder:build: sets allow_anonymous")
 
   -- build() without set_allow_anonymous leaves allow_anonymous unchanged
   app.backend_impl = {}
+  app.capabilities = {}
   app.allow_anonymous = true
   local b4 = make_backend_builder()
   b4:rest("get_root", function() end)
@@ -1745,31 +1755,50 @@ do
     "builder:build: does not change allow_anonymous when not declared"
   )
 
-  -- build(strip) excludes REST keys matching any pattern
+  -- build(strip) excludes REST keys matching any pattern but NOT capabilities
   app.backend_impl = {}
+  app.capabilities = {}
+  local cap_issues = { get = function() end }
   local b5 = make_backend_builder()
   b5:rest("get_repo", function() end)
   b5:rest("get_package_info", function() end)
   b5:rest("list_actions_runs", function() end)
+  b5:capability("issues", cap_issues)
   b5:build({ "_package", "_actions_" })
   ok(app.backend_impl["get_repo"] ~= nil, "builder:build(strip): keeps non-matching key")
   ok(app.backend_impl["get_package_info"] == nil, "builder:build(strip): strips _package key")
   ok(app.backend_impl["list_actions_runs"] == nil, "builder:build(strip): strips _actions_ key")
+  eq(app.capabilities["issues"], cap_issues, "builder:build(strip): capabilities are not stripped")
 
   -- two builders are independent and do not share state
   app.backend_impl = {}
+  app.capabilities = {}
   local ba = make_backend_builder()
   ba:rest("get_foo", function() end)
+  ba:capability("repos", { get = function() end })
   local bb = make_backend_builder()
   bb:rest("get_bar", function() end)
+  bb:capability("users", { get = function() end })
   ba:build()
   ok(app.backend_impl["get_foo"] ~= nil, "make_backend_builder: builders are independent (a built)")
   ok(
     app.backend_impl["get_bar"] == nil,
     "make_backend_builder: builders are independent (b not yet built)"
   )
+  ok(
+    app.capabilities["repos"] ~= nil,
+    "make_backend_builder: capability builders independent (a built)"
+  )
+  ok(
+    app.capabilities["users"] == nil,
+    "make_backend_builder: capability builders independent (b not yet built)"
+  )
   bb:build()
   ok(app.backend_impl["get_bar"] ~= nil, "make_backend_builder: builders are independent (b built)")
+  ok(
+    app.capabilities["users"] ~= nil,
+    "make_backend_builder: capability builders independent (b built)"
+  )
 
   restore()
 end
