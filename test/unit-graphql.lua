@@ -50,6 +50,11 @@ dofile("internal/graphql_translators.lua")
 
 dofile = _real_dofile -- luacheck: globals dofile
 
+-- Register the built-in resolvers (Query.node, Query.nodes, Query.rateLimit).
+-- In production this is done by .init.lua; here we call it explicitly so that
+-- tests which access these resolvers via graphql_resolvers["Query.*"] work.
+graphql_register_builtin_resolvers() -- luacheck: globals graphql_register_builtin_resolvers
+
 -- ============================================================
 -- Assertion helpers (globals so sub-files share state)
 -- ============================================================
