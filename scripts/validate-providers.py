@@ -2,7 +2,7 @@
 """Validate provider-family metadata consistency.
 
 Checks that provider_families in .init.lua agrees with:
-  - backend files (each alias calls load_family_backend)
+  - backend files (each alias dofiles the root backend)
   - mock files (no stale test/mock-<alias>.lua for aliases)
   - Makefile BACKENDS list (every alias must be present)
 
@@ -44,16 +44,17 @@ for family in families:
         errors.append(f"ERROR: missing mock for family root: test/mock-{root}.lua")
 
     for alias in aliases:
-        # Alias backend must exist and call load_family_backend.
+        # Alias backend must exist and dofile the root backend.
         backend_path = f"backends/{alias}.lua"
         if not os.path.exists(backend_path):
             errors.append(f"ERROR: missing backend for alias {alias}: {backend_path}")
         else:
             with open(backend_path) as f:
                 content = f.read()
-            if "load_family_backend" not in content:
+            if f'dofile("/zip/backends/{root}.lua")' not in content:
                 errors.append(
-                    f"ERROR: {backend_path} does not call load_family_backend"
+                    f"ERROR: {backend_path} does not dofile the root backend"
+                    f' (expected: dofile("/zip/backends/{root}.lua"))'
                 )
 
         # No stale per-alias mock lua (aliases share the root mock via the Makefile rule).

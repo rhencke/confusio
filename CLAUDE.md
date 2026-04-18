@@ -40,7 +40,7 @@ internal/
   transport.lua              — auth/fetch scaffolding: make_fetch_opts, make_proxy_handler, make_backend_transport, append_page_params
   capabilities.lua           — capability module helpers: cap_fetch, cap_fetch_paged, cap_err; REST adapters: cap_rest_respond, cap_rest_created, cap_rest_204, cap_rest_paged
   translators.lua            — shared Gitea-family translators: translate_repo, translate_user, translate_migration, owner_repo_id
-  families.lua               — provider_families table and load_family_backend
+  families.lua               — provider_families table
   defaults.lua               — default stub handlers collected in the global `defaults` table
   router.lua                 — segment-based radix trie: route_add, route_match, path_known
   catalog.lua                — endpoint_sections table; populates global `endpoints` and registers routes at load time
@@ -162,11 +162,17 @@ will catch any mismatch.
      },
    },
    ```
-2. Create `backends/<alias>.lua` — one line plus a comment:
+2. Create `backends/<alias>.lua` — a short file that sets the default base URL and
+   dofiles the root backend:
    ```lua
    -- MyAlias is API-compatible with Gitea v1.  Family metadata in provider_families.
-   load_family_backend("gitea")
+   if config.base_url == "" then
+     config.base_url = provider_families.gitea.aliases[config.backend].default_url
+   end
+   dofile("/zip/backends/gitea.lua")
    ```
+   The root backend (gitea.lua) reads strip patterns from `provider_families` automatically
+   at build time — no separate strip wiring needed in the alias file.
 3. Add `<alias>` to the `BACKENDS` list in the Makefile.
    No `test/mock-<alias>.lua` file is needed — `.make-families.mk` is auto-generated
    from `provider_families` and builds `mock-<alias>.com` from the root family's mock.
@@ -219,7 +225,7 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
 | Concern | Authoritative source | What is derived from it |
 |---------|---------------------|------------------------|
 | Routes and default handler stubs | `endpoint_sections` in `internal/catalog.lua` | route registration, `defaults` table wire-up, compatibility matrix sections, test file discovery, `make dump-endpoints` / `validate-tests` / `validate-csv` / `site` |
-| Provider family membership | `provider_families` in `internal/families.lua` | mock building via `.make-families.mk` (auto-generated), `make validate-providers`, `load_family_backend` behavior |
+| Provider family membership | `provider_families` in `internal/families.lua` | mock building via `.make-families.mk` (auto-generated), `make validate-providers`, alias backend base URL and strip wiring |
 | Backend transport scaffold | `make_backend_transport` in `internal/transport.lua` | `fetch_json`, `proxy_json*`, `proxy_204`, `proxy_json_list`, `proxy_health_check`, pagination params — all consumed by backends via the transport object |
 | Application module layout | eleven `internal/*.lua` files, dofile'd in fixed order by `.init.lua` | the full global surface for backends; see "Internal module layout" for load order and exported globals |
 
@@ -227,7 +233,7 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
 
 **Adding a standalone backend**: create `backends/<name>.lua`, add `<name>` to `BACKENDS` in the Makefile, create hurl test files, add a `site/compatibility.csv` column.
 
-**Adding a family-alias backend**: update `provider_families` in `internal/families.lua` (the single declaration), create a one-line `backends/<alias>.lua` calling `load_family_backend`, add to `BACKENDS` — no mock file needed.
+**Adding a family-alias backend**: update `provider_families` in `internal/families.lua` (the single declaration), create a `backends/<alias>.lua` that sets `config.base_url` from `provider_families` and dofiles the root backend, add to `BACKENDS` — no mock file needed.
 
 **Backend registration**: all backends must use `make_backend_builder()` / `b:rest()` / `b:graphql()` / `b:capability()` / `b:build()`. Direct assignment to `app.backend_impl` or `graphql_resolvers` is forbidden. `make validate-builders` enforces this and is wired into `make test`.
 
@@ -273,13 +279,10 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
   backends belong to the same API family. It drives backend loading, mock building, and
   the `validate-providers` check. Never encode family membership only in filesystem layout
   or Makefile variables — both are derived from this table.
-- **`load_family_backend(root)`** is the helper alias backends call instead of raw `dofile`.
-  It reads the alias's entry from `provider_families[root].aliases[config.backend]`, sets
-  `config.base_url` from `default_url` when none was supplied, declares the alias's strip
-  patterns in `app._family_strip`, then dofiles the root backend.  The root backend's
-  builder reads `app._family_strip` in `b:build()` and excludes matching REST keys — no
-  post-hoc `app.backend_impl` mutation needed.  `app._family_strip` is cleared to nil
-  after dofile returns so it doesn't affect other code.
+- **Alias backends set `config.base_url` from `provider_families` and dofile the root backend directly.**
+  The root backend reads the alias's strip patterns from `provider_families` in the final
+  `b:build(strip)` call, so feature gaps are applied declaratively rather than by post-hoc
+  `app.backend_impl` mutation.
 - **`strip` patterns are Lua patterns, not exact names.** `"_package"` matches any key
   containing `_package` (e.g. `list_packages`, `get_package`). Keep patterns tight enough
   not to accidentally strip unrelated keys.
@@ -291,7 +294,7 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
 - **`make dump-families`** exports `provider_families` as JSON. Useful for debugging and
   piped into `make validate-providers`.
 - **`make validate-providers`** is wired into `make test`. It checks: root backend and mock
-  exist; each alias backend calls `load_family_backend`; no stale `test/mock-<alias>.lua`
+  exist; each alias backend dofiles the root backend; no stale `test/mock-<alias>.lua`
   files; every alias is in `BACKENDS`.
 
 ### Routing
@@ -321,7 +324,7 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
 - **`app.allow_anonymous` is a boolean field on the app context** defaulting to `true`. `OnHttpRequest()` checks it on every request: if `false` and no `Authorization` header is present, confusio returns `401 { message = "This instance requires authentication." }` immediately, before routing.
 - **Only Gitea probes its backend at startup.** The Gitea backend calls `GET /api/v1/settings/api` and sets `app.allow_anonymous = (settings.require_signin_view ~= true)`. If the probe fails (network error or non-200), the default `true` is preserved and anonymous requests are allowed.
 - **All other backends leave the default `true`.** They neither probe nor set `app.allow_anonymous`, so anonymous access is always permitted regardless of the upstream's actual configuration.
-- **Gitea-family backends (forgejo, gogs, codeberg, notabug) inherit Gitea's probe** because `load_family_backend("gitea")` dofiles `backends/gitea.lua`, which includes the probe block.
+- **Gitea-family backends (forgejo, gogs, codeberg, notabug) inherit Gitea's probe** because their alias backend files dofile `backends/gitea.lua`, which includes the probe block.
 - **Test pattern**: `*-anon.hurl` files verify that unauthenticated requests succeed when the mock advertises anonymous access. The mock's `/api/v1/settings/api` route returns `{"require_signin_view": false}` to simulate an open instance. Closed-instance (401) behavior is covered by unit tests that set `app.allow_anonymous = false` directly.
 
 ### Mock server design
@@ -437,7 +440,7 @@ The eleven `internal/` modules are loaded by `.init.lua` in a fixed order. Each 
 | `transport.lua` | `append_page_params`, `make_fetch_opts`, `make_proxy_handler`, `make_backend_transport` | backends |
 | `capabilities.lua` | `cap_err`, `cap_fetch`, `cap_fetch_paged`, `cap_rest_respond`, `cap_rest_created`, `cap_rest_204`, `cap_rest_paged` | backends (capability modules) |
 | `translators.lua` | `owner_repo_id`, `translate_repo`, `translate_user`, `translate_migration` | backends |
-| `families.lua` | `provider_families`, `load_family_backend` | backends + Makefile scripts |
+| `families.lua` | `provider_families` | backends + Makefile scripts |
 | `registry.lua` | `make_backend_builder` | backends |
 | *(backend loaded here)* | calls `b:build()` to populate `app.backend_impl` and `graphql_resolvers`; Gitea sets `app.allow_anonymous` | dispatch |
 | `defaults.lua` | `defaults` (table of handler functions) | catalog |
@@ -453,7 +456,7 @@ The eleven `internal/` modules are loaded by `.init.lua` in a fixed order. Each 
 - Transport: all of `transport.lua`'s exports
 - Capabilities: all of `capabilities.lua`'s exports — `cap_fetch`, `cap_fetch_paged` for operations; `cap_rest_*` for REST handlers; `cap_err` for error construction
 - Translators: all of `translators.lua`'s exports
-- Family loading: `load_family_backend`
+- Family metadata: `provider_families`
 
 **Internal-only globals** (backends must not depend on these):
 - `defaults` — implementation detail of the catalog; not part of the backend API
@@ -491,9 +494,9 @@ The eleven `internal/` modules are loaded by `.init.lua` in a fixed order. Each 
 - **`dump-claims.lua` stubs `Fetch` to a noop** before loading each backend so that
   load-time network probes (e.g. Gitea's anonymous-access check) fail inside their `pcall`
   wrappers without making real network calls. This is necessary for `redbean.com -i` mode.
-- **Alias backends call `load_family_backend(root)`**, which internally calls
-  `dofile("/zip/backends/<root>.lua")`. The `dump-claims.lua` dofile stub must redirect
-  `/zip/backends/` → `backends/` (not block it) so alias backends load their root correctly.
+- **Alias backends dofile the root backend directly** (`dofile("/zip/backends/<root>.lua")`).
+  The `dump-claims.lua` dofile stub must redirect `/zip/backends/` → `backends/` (not block
+  it) so alias backends load their root correctly.
 
 ### Code coverage (luacov)
 

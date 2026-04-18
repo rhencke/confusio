@@ -1,2 +1,5 @@
 -- Forgejo is API-compatible with Gitea v1.  Family metadata in provider_families.
-load_family_backend("gitea")
+if config.base_url == "" then
+  config.base_url = provider_families.gitea.aliases[config.backend].default_url
+end
+dofile("/zip/backends/gitea.lua")
