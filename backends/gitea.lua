@@ -739,7 +739,7 @@ local function delete_gitea_reaction(url, reaction_id)
   proxy_204({ 200 }, fetch_json(url, "DELETE", '{"content":"' .. content .. '"}'))
 end
 
-backend_impl = {
+app.backend_impl = {
   -- Health check
   get_root = function()
     proxy_health_check(pcall(Fetch, base() .. "/version", auth()))

@@ -115,7 +115,7 @@ local function list_repos_by_prefix(prefix)
   return result, 200
 end
 
-backend_impl = {
+app.backend_impl = {
   get_root = function()
     proxy_health_check(pcall(Fetch, rpc() .. "?req=LIST_REPOSITORIES", auth()))
   end,

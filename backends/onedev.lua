@@ -204,7 +204,7 @@ local function translate_onedev_commit(c)
   }
 end
 
-backend_impl = {
+app.backend_impl = {
   get_root = function()
     proxy_health_check(pcall(Fetch, base() .. "/server-version", auth()))
   end,

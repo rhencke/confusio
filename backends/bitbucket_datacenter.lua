@@ -372,7 +372,7 @@ local bbs_dc_to_gh = {
   STOPPED = { status = "completed", conclusion = "cancelled" },
 }
 
-backend_impl = {
+app.backend_impl = {
   get_root = function()
     proxy_health_check(pcall(Fetch, base() .. "/repos", auth()))
   end,
@@ -1184,7 +1184,7 @@ local function translate_bbs_report(rpt, idx, sha)
   }
 end
 
-local _b = backend_impl
+local _b = app.backend_impl
 
 _b.list_repo_code_scanning_alerts = function(owner, repo_name)
   local sha = resolve_ref_sha(owner, repo_name)

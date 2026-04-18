@@ -190,7 +190,7 @@ local pagure_to_gh = {
   canceled = { status = "completed", conclusion = "cancelled" },
 }
 
-backend_impl = {
+app.backend_impl = {
   get_root = function()
     proxy_health_check(pcall(Fetch, base() .. "/version", auth()))
   end,

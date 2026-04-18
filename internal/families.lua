@@ -28,7 +28,7 @@ provider_families = {
 -- load_family_backend is global: alias backends call it to inherit a family
 -- implementation.  Looks up config.backend in provider_families[root].aliases,
 -- sets config.base_url from the alias's default_url when the user hasn't
--- supplied one, loads the root backend via dofile, then clears any backend_impl
+-- supplied one, loads the root backend via dofile, then clears any app.backend_impl
 -- keys whose names match the alias's strip patterns (features absent from this
 -- variant).
 function load_family_backend(root)
@@ -41,9 +41,9 @@ function load_family_backend(root)
   end
   dofile("/zip/backends/" .. root .. ".lua")
   for _, pattern in ipairs(alias.strip or {}) do
-    for k in pairs(backend_impl) do
+    for k in pairs(app.backend_impl) do
       if k:find(pattern) then
-        backend_impl[k] = nil
+        app.backend_impl[k] = nil
       end
     end
   end

@@ -184,7 +184,7 @@ local function translate_harness_hook_req(body_str)
   })
 end
 
-backend_impl = {
+app.backend_impl = {
   get_root = function()
     proxy_health_check(pcall(Fetch, base(), auth()))
   end,

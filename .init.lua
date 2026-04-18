@@ -30,21 +30,14 @@ dofile("/zip/internal/graphql_translators.lua")
 dofile("/zip/internal/families.lua")
 dofile("/zip/internal/context.lua")
 
--- Build the initial app context.  backend_impl is a global shim that backend
--- and families code still write to directly; it is synced into app after the
--- backend loads so that subsequent tasks can migrate each read site from the
--- bare global to app incrementally.
+-- Build the app context.  Backends write directly to app.backend_impl and
+-- app.allow_anonymous at load time; no post-load sync needed.
 app = make_app(config)
 
--- backend_impl is global: set by backends/<name>.lua at startup.
-backend_impl = {}
 if config.backend ~= "" then
   assert(config.backend:match("^[%a][%w_]*$"), "invalid backend name: " .. config.backend)
   dofile("/zip/backends/" .. config.backend .. ".lua")
 end
-
--- Sync backend startup state into the app context.
-app.backend_impl = backend_impl
 
 dofile("/zip/internal/defaults.lua")
 dofile("/zip/internal/router.lua")

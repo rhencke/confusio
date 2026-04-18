@@ -123,7 +123,7 @@ local function gerrit_repos_from_dict(data)
   return repos
 end
 
-backend_impl = {
+app.backend_impl = {
   get_root = function()
     proxy_health_check(pcall(Fetch, config.base_url .. "/config/server/version", auth()))
   end,

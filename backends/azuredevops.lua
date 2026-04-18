@@ -350,7 +350,7 @@ local function translate_ado_hook(h)
   }
 end
 
-backend_impl = {
+app.backend_impl = {
   get_root = function()
     proxy_health_check(pcall(Fetch, ado_url(config.base_url .. "/_apis/connectionData"), auth()))
   end,
@@ -1472,10 +1472,10 @@ local function translate_ado_analysis(an)
   }
 end
 
--- Patch backend_impl with code scanning handlers.
--- (backend_impl was already assigned above; we extend it here to keep the
+-- Patch app.backend_impl with code scanning handlers.
+-- (app.backend_impl was already assigned above; we extend it here to keep the
 -- check-suite section self-contained and avoid one giant table.)
-local _b = backend_impl
+local _b = app.backend_impl
 
 _b.list_repo_code_scanning_alerts = function(owner, repo_name)
   local alert_type = GetParam("tool_name") or "code"

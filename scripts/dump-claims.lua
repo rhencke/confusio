@@ -60,15 +60,14 @@ end
 
 local backend_parts = {}
 for _, name in ipairs(cli_backends) do
-  backend_impl = {} -- luacheck: globals backend_impl
-  backend_allow_anonymous = true -- luacheck: globals backend_allow_anonymous
   config = { backend = name, base_url = "" } -- luacheck: globals config
+  app.backend_impl = {} -- luacheck: globals app
   Fetch = noop_fetch -- luacheck: globals Fetch
   dofile("/zip/backends/" .. name .. ".lua")
   Fetch = _real_fetch -- luacheck: globals Fetch
 
   local handlers = {}
-  for k in pairs(backend_impl) do -- luacheck: globals backend_impl
+  for k in pairs(app.backend_impl) do -- luacheck: globals app
     handlers[#handlers + 1] = k
   end
   table.sort(handlers)

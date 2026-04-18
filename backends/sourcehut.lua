@@ -237,7 +237,7 @@ local function translate_srht_commit(c)
   }
 end
 
-backend_impl = {
+app.backend_impl = {
   get_root = function()
     proxy_health_check(pcall(Fetch, config.base_url .. "/api/version", auth()))
   end,
