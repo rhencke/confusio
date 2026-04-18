@@ -2678,108 +2678,217 @@ end)
 
 -- SSH Keys ------------------------------------------------------------------
 
+local ssh_keys = {}
+
+ssh_keys.list = function()
+  local url = append_page_params(base() .. "/user/keys", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+ssh_keys.create = function(body)
+  local raw, err = cap_fetch(fetch_json, base() .. "/user/keys", "POST", body)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+ssh_keys.get = function(key_id)
+  local raw, err = cap_fetch(fetch_json, base() .. "/user/keys/" .. key_id)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+ssh_keys.delete = function(key_id)
+  local ok, status = fetch_json(base() .. "/user/keys/" .. key_id, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting SSH key")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting SSH key")
+  end
+  return true, nil
+end
+
+ssh_keys.list_user = function(username)
+  local url = append_page_params(base() .. "/users/" .. username .. "/keys", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
 -- GET /user/keys
-b:rest(
-  "get_user_keys",
-  proxy_handler_paged(nil, function()
-    return append_page_params(base() .. "/user/keys", PAGES)
-  end)
-)
+b:rest("get_user_keys", function()
+  cap_rest_paged(ssh_keys.list())
+end)
 
 -- POST /user/keys
 b:rest("post_user_keys", function()
-  proxy_json_created(nil, fetch_json(base() .. "/user/keys", "POST", GetBody()))
+  cap_rest_created(ssh_keys.create(GetBody()))
 end)
 
 -- GET /user/keys/{key_id}
-b:rest(
-  "get_user_key",
-  proxy_handler(nil, function(id)
-    return base() .. "/user/keys/" .. id
-  end)
-)
+b:rest("get_user_key", function(key_id)
+  cap_rest_respond(ssh_keys.get(key_id))
+end)
 
 -- DELETE /user/keys/{key_id}
 b:rest("delete_user_key", function(key_id)
-  proxy_204({ 200 }, fetch_json(base() .. "/user/keys/" .. key_id, "DELETE"))
+  cap_rest_204(ssh_keys.delete(key_id))
 end)
 
 -- GET /users/{username}/keys
-b:rest(
-  "get_users_keys",
-  proxy_handler_paged(nil, function(u)
-    return append_page_params(base() .. "/users/" .. u .. "/keys", PAGES)
-  end)
-)
+b:rest("get_users_keys", function(username)
+  cap_rest_paged(ssh_keys.list_user(username))
+end)
 
 -- GPG Keys ------------------------------------------------------------------
 
+local gpg_keys = {}
+
+gpg_keys.list = function()
+  local url = append_page_params(base() .. "/user/gpg_keys", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+gpg_keys.create = function(body)
+  local raw, err = cap_fetch(fetch_json, base() .. "/user/gpg_keys", "POST", body)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+gpg_keys.get = function(gpg_key_id)
+  local raw, err = cap_fetch(fetch_json, base() .. "/user/gpg_keys/" .. gpg_key_id)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+gpg_keys.delete = function(gpg_key_id)
+  local ok, status = fetch_json(base() .. "/user/gpg_keys/" .. gpg_key_id, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting GPG key")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting GPG key")
+  end
+  return true, nil
+end
+
+gpg_keys.list_user = function(username)
+  local url = append_page_params(base() .. "/users/" .. username .. "/gpg_keys", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
 -- GET /user/gpg_keys
-b:rest(
-  "get_user_gpg_keys",
-  proxy_handler_paged(nil, function()
-    return append_page_params(base() .. "/user/gpg_keys", PAGES)
-  end)
-)
+b:rest("get_user_gpg_keys", function()
+  cap_rest_paged(gpg_keys.list())
+end)
 
 -- POST /user/gpg_keys
 b:rest("post_user_gpg_keys", function()
-  proxy_json_created(nil, fetch_json(base() .. "/user/gpg_keys", "POST", GetBody()))
+  cap_rest_created(gpg_keys.create(GetBody()))
 end)
 
 -- GET /user/gpg_keys/{gpg_key_id}
-b:rest(
-  "get_user_gpg_key",
-  proxy_handler(nil, function(id)
-    return base() .. "/user/gpg_keys/" .. id
-  end)
-)
+b:rest("get_user_gpg_key", function(gpg_key_id)
+  cap_rest_respond(gpg_keys.get(gpg_key_id))
+end)
 
 -- DELETE /user/gpg_keys/{gpg_key_id}
 b:rest("delete_user_gpg_key", function(gpg_key_id)
-  proxy_204({ 200 }, fetch_json(base() .. "/user/gpg_keys/" .. gpg_key_id, "DELETE"))
+  cap_rest_204(gpg_keys.delete(gpg_key_id))
 end)
 
 -- GET /users/{username}/gpg_keys
-b:rest(
-  "get_users_gpg_keys",
-  proxy_handler_paged(nil, function(u)
-    return append_page_params(base() .. "/users/" .. u .. "/gpg_keys", PAGES)
-  end)
-)
+b:rest("get_users_gpg_keys", function(username)
+  cap_rest_paged(gpg_keys.list_user(username))
+end)
 
 -- Emails --------------------------------------------------------------------
 
+local user_emails = {}
+
+user_emails.list = function()
+  local raw, err = cap_fetch(fetch_json, base() .. "/user/emails")
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+user_emails.add = function(body)
+  local raw, err = cap_fetch(fetch_json, base() .. "/user/emails", "POST", body)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- DELETE with a body requires a full Fetch call; Gitea returns 200 on success.
+user_emails.delete = function(body)
+  local opts = auth() or {}
+  opts.method = "DELETE"
+  opts.body = body
+  opts.headers = opts.headers or {}
+  opts.headers["Content-Type"] = "application/json"
+  local ok, status = pcall(Fetch, base() .. "/user/emails", opts)
+  if not ok then
+    return nil, cap_err(0, "network error deleting user emails")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting user emails")
+  end
+  return true, nil
+end
+
+-- Gitea has no separate public-emails endpoint; filter verified from /user/emails.
+user_emails.list_public = function()
+  local raw, err = cap_fetch(fetch_json, base() .. "/user/emails")
+  if not raw then
+    return nil, err
+  end
+  return filter_verified_emails(raw), nil
+end
+
 -- GET /user/emails
-b:rest(
-  "get_user_emails",
-  proxy_handler(nil, function()
-    return base() .. "/user/emails"
-  end)
-)
+b:rest("get_user_emails", function()
+  cap_rest_respond(user_emails.list())
+end)
 
 -- POST /user/emails
 b:rest("post_user_emails", function()
-  proxy_json_created(nil, fetch_json(base() .. "/user/emails", "POST", GetBody()))
+  cap_rest_created(user_emails.add(GetBody()))
 end)
 
 -- DELETE /user/emails
 b:rest("delete_user_emails", function()
-  local opts = auth() or {}
-  opts.method = "DELETE"
-  opts.body = GetBody()
-  opts.headers = opts.headers or {}
-  opts.headers["Content-Type"] = "application/json"
-  proxy_204({ 200 }, pcall(Fetch, base() .. "/user/emails", opts))
+  cap_rest_204(user_emails.delete(GetBody()))
 end)
 
 -- GET /user/public_emails — Gitea has no separate endpoint; filter verified from /user/emails
-b:rest(
-  "get_user_public_emails",
-  proxy_handler(filter_verified_emails, function()
-    return base() .. "/user/emails"
-  end)
-)
+b:rest("get_user_public_emails", function()
+  cap_rest_respond(user_emails.list_public())
+end)
 
 -- Teams ---------------------------------------------------------------------
 -- Gitea teams use numeric IDs, not slugs.  find_team_id lists all teams for
@@ -5902,5 +6011,8 @@ b:capability("commit_comments", commit_comments)
 b:capability("releases", releases)
 b:capability("deploy_keys", deploy_keys)
 b:capability("webhooks", webhooks)
+b:capability("ssh_keys", ssh_keys)
+b:capability("gpg_keys", gpg_keys)
+b:capability("user_emails", user_emails)
 b:set_allow_anonymous(_allow_anon)
 b:build()
