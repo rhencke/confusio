@@ -1067,25 +1067,25 @@ reset_request({ method = "GET", path = "/repos/alice/myrepo" })
 OnHttpRequest()
 eq(_last_status, 404, "OnHttpRequest: backend endpoint without default → 404")
 
--- backend_allow_anonymous=false, no Authorization → 401
+-- app.allow_anonymous=false, no Authorization → 401
 reset_response()
 reset_request({ method = "GET", path = "/" })
-backend_allow_anonymous = false
+app.allow_anonymous = false
 OnHttpRequest()
-eq(_last_status, 401, "OnHttpRequest: anon forbidden when backend_allow_anonymous=false → 401")
-backend_allow_anonymous = true
+eq(_last_status, 401, "OnHttpRequest: anon forbidden when app.allow_anonymous=false → 401")
+app.allow_anonymous = true
 
--- backend_allow_anonymous=false, with Authorization → proceeds normally
+-- app.allow_anonymous=false, with Authorization → proceeds normally
 reset_response()
 reset_request({ method = "GET", path = "/", headers = { Authorization = "token mytoken" } })
-backend_allow_anonymous = false
+app.allow_anonymous = false
 OnHttpRequest()
 eq(
   _last_status,
   200,
-  "OnHttpRequest: authorized request allowed when backend_allow_anonymous=false → 200"
+  "OnHttpRequest: authorized request allowed when app.allow_anonymous=false → 200"
 )
-backend_allow_anonymous = true
+app.allow_anonymous = true
 
 -- GET /orgs/{org}/code-scanning/alerts — code_scanning_list_empty default → 200
 reset_response()
