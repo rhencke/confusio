@@ -269,10 +269,6 @@ local function translate_gitea_pull(pr)
   }
 end
 
-local function translate_gitea_pulls(prs)
-  return translate_list(translate_gitea_pull, prs)
-end
-
 -- Map a Gitea pull request review to GitHub format.
 -- Gitea type/state: APPROVED, REJECT/REQUEST_CHANGES→CHANGES_REQUESTED, COMMENT, UNKNOWN→COMMENT.
 local function translate_gitea_review(r)
@@ -973,6 +969,85 @@ issues_cap.update = function(owner, repo_name, number, body)
     return nil, err
   end
   return translate_gitea_issue(raw), nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Pull requests capability module
+-- ---------------------------------------------------------------------------
+-- Shared fetch+translate operations for pull request resources.
+-- Operations return (data, nil) on success or (nil, err) on failure.
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+-- The GitHub REST shape is returned by all operations (translate_gitea_pull
+-- applied).  GraphQL resolvers apply graphql_translate_pr on top.
+
+local pulls_cap = {}
+
+-- get: fetch a single pull request by number.
+pulls_cap.get = function(owner, repo_name, number)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. number
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_pull(raw), nil
+end
+
+-- list: paginated list of pull requests for a repository.
+pulls_cap.list = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gitea_pull, items), hdrs, nil
+end
+
+-- create: open a new pull request in a repository.
+-- body: JSON-encoded string with title, body, head, base.
+pulls_cap.create = function(owner, repo_name, body)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls"
+  local raw, err = cap_fetch(fetch_json, url, "POST", body)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_pull(raw), nil
+end
+
+-- update: apply a partial update to an existing pull request.
+-- body: JSON-encoded string of fields to change (title, body, state, base, etc.)
+pulls_cap.update = function(owner, repo_name, number, body)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. number
+  local raw, err = cap_fetch(fetch_json, url, "PATCH", body)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_pull(raw), nil
+end
+
+-- merge: merge an open pull request.
+-- body: JSON-encoded merge options (Do, MergeTitleField, MergeMessageField).
+-- Gitea returns 204 No Content on success — no JSON body.
+-- Returns (true, nil) on success or (nil, err) on failure.
+pulls_cap.merge = function(owner, repo_name, number, body)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. number .. "/merge"
+  local ok, status = fetch_json(url, "POST", body)
+  if not ok then
+    return nil, cap_err(0, "network error merging pull request")
+  end
+  if status == 401 or status == 403 then
+    return nil, cap_err(status, "not authorized to merge pull request")
+  end
+  if status == 404 then
+    return nil, cap_err(status, "pull request not found")
+  end
+  if status == 405 then
+    return nil, cap_err(status, "pull request is not mergeable")
+  end
+  if status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " merging pull request")
+  end
+  return true, nil
 end
 
 -- Health check
@@ -2731,36 +2806,28 @@ end)
 -- Pull Requests ---------------------------------------------------------------
 
 -- GET /repos/{owner}/{repo}/pulls
-b:rest(
-  "get_repo_pulls",
-  proxy_handler_paged(translate_gitea_pulls, function(o, r)
-    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/pulls", PAGES)
-  end)
-)
+b:rest("get_repo_pulls", function(owner, repo_name)
+  local items, hdrs, err = pulls_cap.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
 -- POST /repos/{owner}/{repo}/pulls
-b:rest(
-  "post_repo_pulls",
-  proxy_handler_created(translate_gitea_pull, function(o, r)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/pulls", "POST", GetBody()
-  end)
-)
+b:rest("post_repo_pulls", function(owner, repo_name)
+  local data, err = pulls_cap.create(owner, repo_name, GetBody())
+  cap_rest_created(data, err)
+end)
 
 -- GET /repos/{owner}/{repo}/pulls/{pull_number}
-b:rest(
-  "get_repo_pull",
-  proxy_handler(translate_gitea_pull, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n
-  end)
-)
+b:rest("get_repo_pull", function(owner, repo_name, number)
+  local data, err = pulls_cap.get(owner, repo_name, number)
+  cap_rest_respond(data, err)
+end)
 
 -- PATCH /repos/{owner}/{repo}/pulls/{pull_number}
-b:rest(
-  "patch_repo_pull",
-  proxy_handler(translate_gitea_pull, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n, "PATCH", GetBody()
-  end)
-)
+b:rest("patch_repo_pull", function(owner, repo_name, number)
+  local data, err = pulls_cap.update(owner, repo_name, number, GetBody())
+  cap_rest_respond(data, err)
+end)
 
 -- GET /repos/{owner}/{repo}/pulls/{pull_number}/commits
 b:rest(
@@ -3624,12 +3691,11 @@ b:graphql("node.PullRequest", function(local_id, _ctx)
   if not owner then
     return nil
   end
-  local data, _ =
-    graphql_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number)
+  local data, _ = pulls_cap.get(owner, repo, number)
   if not data then
     return nil
   end
-  return graphql_translate_pr(translate_gitea_pull(data), owner, repo)
+  return graphql_translate_pr(data, owner, repo)
 end)
 
 -- node.IssueComment: fetch an issue comment by "owner/repo/comment_id" local ID.
@@ -4505,19 +4571,19 @@ b:graphql("Mutation.createPullRequest", function(_parent, args, ctx)
   if not owner then
     return graphql_error(ctx, "createPullRequest: malformed repositoryId", nil, "BAD_USER_INPUT")
   end
-  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls"
   local body = EncodeJson({
     title = input.title,
     body = input.body,
     head = input.headRefName,
     base = input.baseRefName,
   })
-  local data = graphql_fetch_or_error(fetch_json, path, ctx, nil, "POST", body)
+  local data, err = pulls_cap.create(owner, repo, body)
   if not data then
+    graphql_error(ctx, err and err.message or "error creating pull request")
     return nil
   end
   return {
-    pullRequest = graphql_translate_pr(translate_gitea_pull(data), owner, repo),
+    pullRequest = graphql_translate_pr(data, owner, repo),
     clientMutationId = cmid,
   }
 end)
@@ -4544,14 +4610,14 @@ b:graphql("Mutation.updatePullRequest", function(_parent, args, ctx)
   if not owner then
     return graphql_error(ctx, "updatePullRequest: malformed pullRequestId", nil, "BAD_USER_INPUT")
   end
-  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number
   local body = EncodeJson({ title = input.title, body = input.body, base = input.baseRefName })
-  local data = graphql_fetch_or_error(fetch_json, path, ctx, nil, "PATCH", body)
+  local data, err = pulls_cap.update(owner, repo, number, body)
   if not data then
+    graphql_error(ctx, err and err.message or "error updating pull request")
     return nil
   end
   return {
-    pullRequest = graphql_translate_pr(translate_gitea_pull(data), owner, repo),
+    pullRequest = graphql_translate_pr(data, owner, repo),
     clientMutationId = cmid,
   }
 end)
@@ -4578,14 +4644,13 @@ b:graphql("Mutation.closePullRequest", function(_parent, args, ctx)
   if not owner then
     return graphql_error(ctx, "closePullRequest: malformed pullRequestId", nil, "BAD_USER_INPUT")
   end
-  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number
-  local data =
-    graphql_fetch_or_error(fetch_json, path, ctx, nil, "PATCH", EncodeJson({ state = "closed" }))
+  local data, err = pulls_cap.update(owner, repo, number, EncodeJson({ state = "closed" }))
   if not data then
+    graphql_error(ctx, err and err.message or "error closing pull request")
     return nil
   end
   return {
-    pullRequest = graphql_translate_pr(translate_gitea_pull(data), owner, repo),
+    pullRequest = graphql_translate_pr(data, owner, repo),
     clientMutationId = cmid,
   }
 end)
@@ -4612,14 +4677,13 @@ b:graphql("Mutation.reopenPullRequest", function(_parent, args, ctx)
   if not owner then
     return graphql_error(ctx, "reopenPullRequest: malformed pullRequestId", nil, "BAD_USER_INPUT")
   end
-  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number
-  local data =
-    graphql_fetch_or_error(fetch_json, path, ctx, nil, "PATCH", EncodeJson({ state = "open" }))
+  local data, err = pulls_cap.update(owner, repo, number, EncodeJson({ state = "open" }))
   if not data then
+    graphql_error(ctx, err and err.message or "error reopening pull request")
     return nil
   end
   return {
-    pullRequest = graphql_translate_pr(translate_gitea_pull(data), owner, repo),
+    pullRequest = graphql_translate_pr(data, owner, repo),
     clientMutationId = cmid,
   }
 end)
@@ -4651,47 +4715,34 @@ b:graphql("Mutation.mergePullRequest", function(_parent, args, ctx)
   -- Map GitHub mergeMethod enum to Gitea's Do field string.
   local method_map = { MERGE = "merge", SQUASH = "squash", REBASE = "rebase" }
   local do_method = method_map[input.mergeMethod or "MERGE"] or "merge"
-  local merge_path = base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number .. "/merge"
   local merge_body = EncodeJson({
     Do = do_method,
     MergeTitleField = input.commitHeadline,
     MergeMessageField = input.commitBody,
   })
   -- POST to Gitea's merge endpoint; it returns 204 No Content on success.
-  local ok, status = fetch_json(merge_path, "POST", merge_body)
+  local ok, merge_err = pulls_cap.merge(owner, repo, number, merge_body)
   if not ok then
-    graphql_error(ctx, "network error merging pull request", nil, "INTERNAL_ERROR")
-    return nil
-  end
-  if status == 401 or status == 403 then
-    graphql_error(ctx, "not authorized to merge pull request", nil, "FORBIDDEN")
-    return nil
-  end
-  if status == 404 then
-    graphql_error(ctx, "pull request not found", nil, "NOT_FOUND")
-    return nil
-  end
-  if status == 405 then
-    graphql_error(ctx, "pull request is not mergeable", nil, "UNPROCESSABLE")
-    return nil
-  end
-  if status ~= 204 then
-    graphql_error(
-      ctx,
-      "upstream error " .. tostring(status) .. " merging pull request",
-      nil,
-      "INTERNAL_ERROR"
-    )
+    if merge_err.status == 0 then
+      graphql_error(ctx, merge_err.message, nil, "INTERNAL_ERROR")
+    elseif merge_err.status == 401 or merge_err.status == 403 then
+      graphql_error(ctx, merge_err.message, nil, "FORBIDDEN")
+    elseif merge_err.status == 404 then
+      graphql_error(ctx, merge_err.message, nil, "NOT_FOUND")
+    elseif merge_err.status == 405 then
+      graphql_error(ctx, merge_err.message, nil, "UNPROCESSABLE")
+    else
+      graphql_error(ctx, merge_err.message, nil, "INTERNAL_ERROR")
+    end
     return nil
   end
   -- Re-fetch the PR to return in the payload (merge returns 204, no body).
-  local pr_path = base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number
-  local pr_data = graphql_fetch_or_error(fetch_json, pr_path, ctx, nil)
+  local pr_data, _ = pulls_cap.get(owner, repo, number)
   if not pr_data then
     return nil
   end
   return {
-    pullRequest = graphql_translate_pr(translate_gitea_pull(pr_data), owner, repo),
+    pullRequest = graphql_translate_pr(pr_data, owner, repo),
     clientMutationId = cmid,
   }
 end)
@@ -5101,5 +5152,6 @@ b:capability("repos", repos)
 b:capability("users", users)
 b:capability("orgs", orgs)
 b:capability("issues", issues_cap)
+b:capability("pulls", pulls_cap)
 b:set_allow_anonymous(_allow_anon)
 b:build()
