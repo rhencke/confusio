@@ -96,102 +96,103 @@ local function check_page()
   return true
 end
 
-app.backend_impl = {
-  get_root = function()
-    proxy_health_check(pcall(Fetch, base() .. "/repos", auth()))
-  end,
+local b = make_backend_builder()
+b:rest("get_root", function()
+  proxy_health_check(pcall(Fetch, base() .. "/repos", auth()))
+end)
 
-  -- GET /repos/{owner}/{repo}: owner must be "codecommit".
-  -- CodeCommit returns 400 (RepositoryDoesNotExistException) for unknown repos;
-  -- map that to 404 for GitHub compatibility.
-  get_repo = function(owner, repo_name)
-    if owner ~= "codecommit" then
+-- GET /repos/{owner}/{repo}: owner must be "codecommit".
+-- CodeCommit returns 400 (RepositoryDoesNotExistException) for unknown repos;
+-- map that to 404 for GitHub compatibility.
+b:rest("get_repo", function(owner, repo_name)
+  if owner ~= "codecommit" then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  local ok, status, _, body = fetch_json(base() .. "/repos/" .. repo_name)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status == 400 then
+    local err = DecodeJson(body) or {}
+    if (err["__type"] or ""):find("DoesNotExist") then
       respond_json(404, { message = "Not Found" })
       return
     end
-    local ok, status, _, body = fetch_json(base() .. "/repos/" .. repo_name)
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status == 400 then
-      local err = DecodeJson(body) or {}
-      if (err["__type"] or ""):find("DoesNotExist") then
-        respond_json(404, { message = "Not Found" })
-        return
-      end
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local data = DecodeJson(body) or {}
-    local r = data.repositoryMetadata
-    if not r then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    respond_json(200, translate_repo(r))
-  end,
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local data = DecodeJson(body) or {}
+  local r = data.repositoryMetadata
+  if not r then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  respond_json(200, translate_repo(r))
+end)
 
-  get_repositories = function()
-    if not check_page() then
-      return
-    end
-    local per_page = tonumber(GetParam("per_page") or "") or nil
-    local repos, _, status = list_repos_page(per_page)
-    if not repos then
-      respond_json(status, {})
-      return
-    end
-    respond_json(200, translate_list(translate_repo, repos))
-  end,
+b:rest("get_repositories", function()
+  if not check_page() then
+    return
+  end
+  local per_page = tonumber(GetParam("per_page") or "") or nil
+  local repos, _, status = list_repos_page(per_page)
+  if not repos then
+    respond_json(status, {})
+    return
+  end
+  respond_json(200, translate_list(translate_repo, repos))
+end)
 
-  -- GET /repos/{owner}/{repo}/branches: owner must be "codecommit".
-  get_repo_branches = function(owner, repo_name)
-    if owner ~= "codecommit" then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    local ok, status, _, body = fetch_json(base() .. "/repos/" .. repo_name .. "/branches")
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local data = DecodeJson(body) or {}
-    local result = {}
-    for _, branch_name in ipairs(data.branches or {}) do
-      result[#result + 1] = {
-        name = branch_name,
-        commit = { sha = "", url = "" },
-        protected = false,
-      }
-    end
-    respond_json(200, result)
-  end,
+-- GET /repos/{owner}/{repo}/branches: owner must be "codecommit".
+b:rest("get_repo_branches", function(owner, repo_name)
+  if owner ~= "codecommit" then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  local ok, status, _, body = fetch_json(base() .. "/repos/" .. repo_name .. "/branches")
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local data = DecodeJson(body) or {}
+  local result = {}
+  for _, branch_name in ipairs(data.branches or {}) do
+    result[#result + 1] = {
+      name = branch_name,
+      commit = { sha = "", url = "" },
+      protected = false,
+    }
+  end
+  respond_json(200, result)
+end)
 
-  search_repositories = function()
-    if not check_page() then
-      return
+b:rest("search_repositories", function()
+  if not check_page() then
+    return
+  end
+  local q = (GetParam("q") or ""):lower()
+  local per_page = tonumber(GetParam("per_page") or "") or nil
+  local repos, incomplete, status = list_repos_page(per_page)
+  if not repos then
+    respond_json(status, {})
+    return
+  end
+  local items = {}
+  for _, r in ipairs(repos) do
+    local name = (r.repositoryName or ""):lower()
+    if q == "" or name:find(q, 1, true) then
+      items[#items + 1] = translate_repo(r)
     end
-    local q = (GetParam("q") or ""):lower()
-    local per_page = tonumber(GetParam("per_page") or "") or nil
-    local repos, incomplete, status = list_repos_page(per_page)
-    if not repos then
-      respond_json(status, {})
-      return
-    end
-    local items = {}
-    for _, r in ipairs(repos) do
-      local name = (r.repositoryName or ""):lower()
-      if q == "" or name:find(q, 1, true) then
-        items[#items + 1] = translate_repo(r)
-      end
-    end
-    respond_json(200, { total_count = #items, incomplete_results = incomplete, items = items })
-  end,
-}
+  end
+  respond_json(200, { total_count = #items, incomplete_results = incomplete, items = items })
+end)
+
+b:build()

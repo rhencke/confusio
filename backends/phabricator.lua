@@ -204,148 +204,149 @@ local function translate_harbormaster_build(b, ref)
   }
 end
 
-app.backend_impl = {
-  get_root = function()
-    proxy_health_check(pcall(Fetch, config.base_url .. "/api/conduit.ping"))
-  end,
+local b = make_backend_builder()
+b:rest("get_root", function()
+  proxy_health_check(pcall(Fetch, config.base_url .. "/api/conduit.ping"))
+end)
 
-  -- Issues --------------------------------------------------------------------
-  -- GET /repos/{owner}/{repo}/issues
-  -- Phabricator: POST /api/maniphest.search with constraints[projects][0]=PHID
+-- Issues --------------------------------------------------------------------
+-- GET /repos/{owner}/{repo}/issues
+-- Phabricator: POST /api/maniphest.search with constraints[projects][0]=PHID
 
-  get_repo_issues = function(owner, repo_name)
-    local phid = resolve_project_phid(owner, repo_name)
-    if not phid then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    local count = tonumber(GetParam("per_page")) or 30
-    local page = tonumber(GetParam("page")) or 1
-    local state = GetParam("state") or "open"
-    local params = {
-      ["constraints[projects][0]"] = phid,
-      ["limit"] = count,
-    }
-    -- Phabricator cursor pagination: compute after cursor for page > 1.
-    -- Each page has 'count' items; after = (page-1)*count as a numeric cursor string.
-    if page > 1 then
-      params["after"] = tostring((page - 1) * count)
-    end
-    if state == "open" then
-      params["constraints[statuses][0]"] = "open"
-    elseif state == "closed" then
-      params["constraints[statuses][0]"] = "resolved"
-      params["constraints[statuses][1]"] = "wontfix"
-      params["constraints[statuses][2]"] = "invalid"
-      params["constraints[statuses][3]"] = "spite"
-    end
-    -- state == "all": no status constraint
-    local ok, status, _, body = conduit("maniphest.search", params)
-    local result, err = conduit_result(ok, status, nil, body)
-    if not result then
-      respond_json(err or 503, {})
-      return
-    end
-    local issues = {}
-    for _, t in ipairs(result.data or {}) do
-      issues[#issues + 1] = translate_task(t)
-    end
-    respond_json(200, issues)
-  end,
+b:rest("get_repo_issues", function(owner, repo_name)
+  local phid = resolve_project_phid(owner, repo_name)
+  if not phid then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  local count = tonumber(GetParam("per_page")) or 30
+  local page = tonumber(GetParam("page")) or 1
+  local state = GetParam("state") or "open"
+  local params = {
+    ["constraints[projects][0]"] = phid,
+    ["limit"] = count,
+  }
+  -- Phabricator cursor pagination: compute after cursor for page > 1.
+  -- Each page has 'count' items; after = (page-1)*count as a numeric cursor string.
+  if page > 1 then
+    params["after"] = tostring((page - 1) * count)
+  end
+  if state == "open" then
+    params["constraints[statuses][0]"] = "open"
+  elseif state == "closed" then
+    params["constraints[statuses][0]"] = "resolved"
+    params["constraints[statuses][1]"] = "wontfix"
+    params["constraints[statuses][2]"] = "invalid"
+    params["constraints[statuses][3]"] = "spite"
+  end
+  -- state == "all": no status constraint
+  local ok, status, _, body = conduit("maniphest.search", params)
+  local result, err = conduit_result(ok, status, nil, body)
+  if not result then
+    respond_json(err or 503, {})
+    return
+  end
+  local issues = {}
+  for _, t in ipairs(result.data or {}) do
+    issues[#issues + 1] = translate_task(t)
+  end
+  respond_json(200, issues)
+end)
 
-  -- GET /repos/{owner}/{repo}/issues/{issue_number}
-  -- Phabricator: POST /api/maniphest.search with constraints[ids][0]=N
+-- GET /repos/{owner}/{repo}/issues/{issue_number}
+-- Phabricator: POST /api/maniphest.search with constraints[ids][0]=N
 
-  get_repo_issue = function(_owner, _repo_name, issue_number)
-    local ok, status, _, body = conduit("maniphest.search", {
-      ["constraints[ids][0]"] = issue_number,
-      ["limit"] = 1,
-    })
-    local result, err = conduit_result(ok, status, nil, body)
-    if not result then
-      respond_json(err or 503, {})
-      return
-    end
-    local t = (result.data or {})[1]
-    if not t then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    respond_json(200, translate_task(t))
-  end,
+b:rest("get_repo_issue", function(_owner, _repo_name, issue_number)
+  local ok, status, _, body = conduit("maniphest.search", {
+    ["constraints[ids][0]"] = issue_number,
+    ["limit"] = 1,
+  })
+  local result, err = conduit_result(ok, status, nil, body)
+  if not result then
+    respond_json(err or 503, {})
+    return
+  end
+  local t = (result.data or {})[1]
+  if not t then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  respond_json(200, translate_task(t))
+end)
 
-  -- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
-  -- Phabricator: POST /api/transaction.search with objectIdentifier=T{N}
-  -- Filter to comment-type transactions only.
+-- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
+-- Phabricator: POST /api/transaction.search with objectIdentifier=T{N}
+-- Filter to comment-type transactions only.
 
-  get_issue_comments = function(_owner, _repo_name, issue_number)
-    local count = tonumber(GetParam("per_page")) or 30
-    local page = tonumber(GetParam("page")) or 1
-    local params = {
-      ["objectIdentifier"] = "T" .. issue_number,
-      ["limit"] = count,
-    }
-    if page > 1 then
-      params["after"] = tostring((page - 1) * count)
-    end
-    local ok, status, _, body = conduit("transaction.search", params)
-    local result, err = conduit_result(ok, status, nil, body)
-    if not result then
-      respond_json(err or 503, {})
-      return
-    end
-    local comments = {}
-    for _, txn in ipairs(result.data or {}) do
-      -- Only include comment transactions (type = "comment").
-      if txn.type == "comment" then
-        local comment = txn.comments and txn.comments[1]
-        local content = comment and (comment.content or {})
-        comments[#comments + 1] = {
-          id = txn.id or 0,
-          node_id = txn.phid or "",
+b:rest("get_issue_comments", function(_owner, _repo_name, issue_number)
+  local count = tonumber(GetParam("per_page")) or 30
+  local page = tonumber(GetParam("page")) or 1
+  local params = {
+    ["objectIdentifier"] = "T" .. issue_number,
+    ["limit"] = count,
+  }
+  if page > 1 then
+    params["after"] = tostring((page - 1) * count)
+  end
+  local ok, status, _, body = conduit("transaction.search", params)
+  local result, err = conduit_result(ok, status, nil, body)
+  if not result then
+    respond_json(err or 503, {})
+    return
+  end
+  local comments = {}
+  for _, txn in ipairs(result.data or {}) do
+    -- Only include comment transactions (type = "comment").
+    if txn.type == "comment" then
+      local comment = txn.comments and txn.comments[1]
+      local content = comment and (comment.content or {})
+      comments[#comments + 1] = {
+        id = txn.id or 0,
+        node_id = txn.phid or "",
+        url = "",
+        body = type(content) == "table" and (content.raw or "") or tostring(content),
+        user = {
+          login = (txn.authorPHID or ""),
+          id = 0,
+          node_id = txn.authorPHID or "",
+          avatar_url = "",
           url = "",
-          body = type(content) == "table" and (content.raw or "") or tostring(content),
-          user = {
-            login = (txn.authorPHID or ""),
-            id = 0,
-            node_id = txn.authorPHID or "",
-            avatar_url = "",
-            url = "",
-            type = "User",
-          },
-          created_at = ts(txn.dateCreated),
-          updated_at = ts(txn.dateModified),
-          html_url = "",
-        }
-      end
+          type = "User",
+        },
+        created_at = ts(txn.dateCreated),
+        updated_at = ts(txn.dateModified),
+        html_url = "",
+      }
     end
-    respond_json(200, comments)
-  end,
+  end
+  respond_json(200, comments)
+end)
 
-  -- Checks (via Harbormaster) -------------------------------------------------
+-- Checks (via Harbormaster) -------------------------------------------------
 
-  -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
-  -- 1. Resolve commit PHID via diffusion.commit.search.
-  -- 2. List Harbormaster builds for that commit's buildable.
-  get_commit_check_runs = function(_owner, _repo_name, ref)
-    local commit_phid = resolve_commit_phid(ref)
-    if not commit_phid then
-      respond_json(200, { total_count = 0, check_runs = {} })
-      return
-    end
-    local ok, status, _, body = conduit("harbormaster.build.search", {
-      ["constraints[buildables][0]"] = commit_phid,
-      ["limit"] = 100,
-    })
-    local result, err = conduit_result(ok, status, nil, body)
-    if not result then
-      respond_json(err or 503, {})
-      return
-    end
-    local runs = {}
-    for _, b in ipairs(result.data or {}) do
-      runs[#runs + 1] = translate_harbormaster_build(b, ref)
-    end
-    respond_json(200, { total_count = #runs, check_runs = runs })
-  end,
-}
+-- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
+-- 1. Resolve commit PHID via diffusion.commit.search.
+-- 2. List Harbormaster builds for that commit's buildable.
+b:rest("get_commit_check_runs", function(_owner, _repo_name, ref)
+  local commit_phid = resolve_commit_phid(ref)
+  if not commit_phid then
+    respond_json(200, { total_count = 0, check_runs = {} })
+    return
+  end
+  local ok, status, _, body = conduit("harbormaster.build.search", {
+    ["constraints[buildables][0]"] = commit_phid,
+    ["limit"] = 100,
+  })
+  local result, err = conduit_result(ok, status, nil, body)
+  if not result then
+    respond_json(err or 503, {})
+    return
+  end
+  local runs = {}
+  for _, br in ipairs(result.data or {}) do
+    runs[#runs + 1] = translate_harbormaster_build(br, ref)
+  end
+  respond_json(200, { total_count = #runs, check_runs = runs })
+end)
+
+b:build()

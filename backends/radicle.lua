@@ -91,204 +91,205 @@ local function translate_radicle_repos(repos)
   return translate_list(translate_radicle_repo, repos)
 end
 
-app.backend_impl = {
-  get_root = function()
-    proxy_health_check(pcall(Fetch, base(), auth()))
-  end,
+local b = make_backend_builder()
+b:rest("get_root", function()
+  proxy_health_check(pcall(Fetch, base(), auth()))
+end)
 
-  -- GET /repos/{owner}/{rid} — owner is ignored; repo = RID
-  get_repo = function(_, rid)
-    proxy_json(translate_radicle_repo, fetch_json(base() .. "/repos/" .. rid))
-  end,
+-- GET /repos/{owner}/{rid} — owner is ignored; repo = RID
+b:rest("get_repo", function(_, rid)
+  proxy_json(translate_radicle_repo, fetch_json(base() .. "/repos/" .. rid))
+end)
 
-  patch_repo = function(_, rid)
-    proxy_json(
-      translate_radicle_repo,
-      fetch_json(base() .. "/repos/" .. rid, "PATCH", translate_radicle_req(GetBody()))
-    )
-  end,
+b:rest("patch_repo", function(_, rid)
+  proxy_json(
+    translate_radicle_repo,
+    fetch_json(base() .. "/repos/" .. rid, "PATCH", translate_radicle_req(GetBody()))
+  )
+end)
 
-  -- Radicle has no delete endpoint
-  delete_repo = function()
-    respond_json(
-      405,
-      "Method Not Allowed",
-      { message = "Radicle does not support repository deletion" }
-    )
-  end,
+-- Radicle has no delete endpoint
+b:rest("delete_repo", function()
+  respond_json(
+    405,
+    "Method Not Allowed",
+    { message = "Radicle does not support repository deletion" }
+  )
+end)
 
-  get_user_repos = function()
-    -- Radicle: list repos seeded/hosted locally
-    proxy_json(
-      translate_radicle_repos,
-      fetch_json(append_page_params(base() .. "/repos?show=local", PAGES))
-    )
-  end,
+b:rest("get_user_repos", function()
+  -- Radicle: list repos seeded/hosted locally
+  proxy_json(
+    translate_radicle_repos,
+    fetch_json(append_page_params(base() .. "/repos?show=local", PAGES))
+  )
+end)
 
-  post_user_repos = function()
-    proxy_json_created(
-      translate_radicle_repo,
-      fetch_json(base() .. "/repos", "POST", translate_radicle_req(GetBody()))
-    )
-  end,
+b:rest("post_user_repos", function()
+  proxy_json_created(
+    translate_radicle_repo,
+    fetch_json(base() .. "/repos", "POST", translate_radicle_req(GetBody()))
+  )
+end)
 
-  get_repo_tags = function(_, rid)
-    -- Radicle returns [{ name, oid }] or [{ ref, oid }]
-    proxy_json(function(tags)
-      tags = tags or {}
-      local result = {}
-      for _, t in ipairs(tags) do
-        result[#result + 1] = {
-          name = t.name or t.ref or "",
-          commit = { sha = t.oid or t.target or "", url = "" },
-        }
-      end
-      return result
-    end, fetch_json(base() .. "/repos/" .. rid .. "/tags"))
-  end,
-
-  -- Branches ------------------------------------------------------------------
-  -- Radicle: GET /api/v1/repos/{rid}/branches → [{ name, head }]
-
-  get_repo_branches = function(_, rid)
-    proxy_json(function(branches)
-      branches = branches or {}
-      local result = {}
-      for _, b in ipairs(branches) do
-        result[#result + 1] = {
-          name = b.name or "",
-          commit = { sha = b.head or "", url = "" },
-          protected = false,
-        }
-      end
-      return result
-    end, fetch_json(base() .. "/repos/" .. rid .. "/branches"))
-  end,
-
-  get_repo_branch = function(_, rid, branch)
-    -- Fetch all branches and find the named one.
-    proxy_json(function(branches)
-      for _, b in ipairs(branches or {}) do
-        if b.name == branch then
-          return { name = b.name, commit = { sha = b.head or "", url = "" }, protected = false }
-        end
-      end
-      return {}
-    end, fetch_json(base() .. "/repos/" .. rid .. "/branches"))
-  end,
-
-  -- Commits -------------------------------------------------------------------
-  -- Radicle: GET /api/v1/repos/{rid}/commits?branch={branch}
-
-  get_repo_commits = function(_, rid)
-    local branch = GetParam("sha") or ""
-    local url = base() .. "/repos/" .. rid .. "/commits"
-    if branch ~= "" then
-      url = url .. "?branch=" .. branch
+b:rest("get_repo_tags", function(_, rid)
+  -- Radicle returns [{ name, oid }] or [{ ref, oid }]
+  proxy_json(function(tags)
+    tags = tags or {}
+    local result = {}
+    for _, t in ipairs(tags) do
+      result[#result + 1] = {
+        name = t.name or t.ref or "",
+        commit = { sha = t.oid or t.target or "", url = "" },
+      }
     end
-    proxy_json(function(commits)
-      commits = commits or {}
-      local result = {}
-      for _, c in ipairs(commits) do
-        local author = c.author or {}
-        result[#result + 1] = {
-          sha = c.id or "",
-          commit = {
-            message = c.message or "",
-            author = { name = author.name or "", email = author.email or "", date = "" },
-            committer = { name = author.name or "", email = author.email or "", date = "" },
-          },
-          author = { login = author.name or "", id = 0, avatar_url = "" },
-          committer = { login = author.name or "", id = 0, avatar_url = "" },
-        }
-      end
-      return result
-    end, fetch_json(url))
-  end,
+    return result
+  end, fetch_json(base() .. "/repos/" .. rid .. "/tags"))
+end)
 
-  get_repo_commit = function(_, rid, ref)
-    proxy_json(function(c)
-      if not c then
-        return {}
+-- Branches ------------------------------------------------------------------
+-- Radicle: GET /api/v1/repos/{rid}/branches → [{ name, head }]
+
+b:rest("get_repo_branches", function(_, rid)
+  proxy_json(function(branches)
+    branches = branches or {}
+    local result = {}
+    for _, br in ipairs(branches) do
+      result[#result + 1] = {
+        name = br.name or "",
+        commit = { sha = br.head or "", url = "" },
+        protected = false,
+      }
+    end
+    return result
+  end, fetch_json(base() .. "/repos/" .. rid .. "/branches"))
+end)
+
+b:rest("get_repo_branch", function(_, rid, branch)
+  -- Fetch all branches and find the named one.
+  proxy_json(function(branches)
+    for _, br in ipairs(branches or {}) do
+      if br.name == branch then
+        return { name = br.name, commit = { sha = br.head or "", url = "" }, protected = false }
       end
+    end
+    return {}
+  end, fetch_json(base() .. "/repos/" .. rid .. "/branches"))
+end)
+
+-- Commits -------------------------------------------------------------------
+-- Radicle: GET /api/v1/repos/{rid}/commits?branch={branch}
+
+b:rest("get_repo_commits", function(_, rid)
+  local branch = GetParam("sha") or ""
+  local url = base() .. "/repos/" .. rid .. "/commits"
+  if branch ~= "" then
+    url = url .. "?branch=" .. branch
+  end
+  proxy_json(function(commits)
+    commits = commits or {}
+    local result = {}
+    for _, c in ipairs(commits) do
       local author = c.author or {}
-      return {
+      result[#result + 1] = {
         sha = c.id or "",
         commit = {
           message = c.message or "",
           author = { name = author.name or "", email = author.email or "", date = "" },
           committer = { name = author.name or "", email = author.email or "", date = "" },
         },
+        author = { login = author.name or "", id = 0, avatar_url = "" },
+        committer = { login = author.name or "", id = 0, avatar_url = "" },
       }
-    end, fetch_json(base() .. "/repos/" .. rid .. "/commits/" .. ref))
-  end,
-
-  -- Issues -----------------------------------------------------------------------
-  -- Radicle has a decentralized issues system (rad issue) but it uses a
-  -- peer-to-peer protocol not compatible with the GitHub Issues REST API shape.
-  -- All issues, labels, milestones, and assignees endpoints fall back to the
-  -- default empty-list / 404 handlers defined in .init.lua.
-
-  -- Contents ------------------------------------------------------------------
-  -- Radicle: GET /api/v1/repos/{rid}/blob/{commit}/{path} — raw bytes
-
-  get_repo_readme = function(_, rid)
-    local ref = GetParam("ref") or "HEAD"
-    local candidates = { "README.md", "README", "readme.md", "README.rst" }
-    for _, fname in ipairs(candidates) do
-      local ok, status, _, body =
-        fetch_json(base() .. "/repos/" .. rid .. "/blob/" .. ref .. "/" .. fname)
-      if ok and status == 200 then
-        respond_json(200, {
-          type = "file",
-          name = fname,
-          path = fname,
-          sha = "",
-          size = #body,
-          encoding = "base64",
-          content = EncodeBase64(body),
-        })
-        return
-      end
     end
-    respond_json(404, { message = "Not Found" })
-  end,
+    return result
+  end, fetch_json(url))
+end)
 
-  get_repo_content = function(_, rid, path)
-    local ref = GetParam("ref") or "HEAD"
+b:rest("get_repo_commit", function(_, rid, ref)
+  proxy_json(function(c)
+    if not c then
+      return {}
+    end
+    local author = c.author or {}
+    return {
+      sha = c.id or "",
+      commit = {
+        message = c.message or "",
+        author = { name = author.name or "", email = author.email or "", date = "" },
+        committer = { name = author.name or "", email = author.email or "", date = "" },
+      },
+    }
+  end, fetch_json(base() .. "/repos/" .. rid .. "/commits/" .. ref))
+end)
+
+-- Issues -----------------------------------------------------------------------
+-- Radicle has a decentralized issues system (rad issue) but it uses a
+-- peer-to-peer protocol not compatible with the GitHub Issues REST API shape.
+-- All issues, labels, milestones, and assignees endpoints fall back to the
+-- default empty-list / 404 handlers defined in .init.lua.
+
+-- Contents ------------------------------------------------------------------
+-- Radicle: GET /api/v1/repos/{rid}/blob/{commit}/{path} — raw bytes
+
+b:rest("get_repo_readme", function(_, rid)
+  local ref = GetParam("ref") or "HEAD"
+  local candidates = { "README.md", "README", "readme.md", "README.rst" }
+  for _, fname in ipairs(candidates) do
     local ok, status, _, body =
-      fetch_json(base() .. "/repos/" .. rid .. "/blob/" .. ref .. "/" .. path)
+      fetch_json(base() .. "/repos/" .. rid .. "/blob/" .. ref .. "/" .. fname)
     if ok and status == 200 then
       respond_json(200, {
         type = "file",
-        name = path:match("[^/]+$") or path,
-        path = path,
+        name = fname,
+        path = fname,
         sha = "",
         size = #body,
         encoding = "base64",
         content = EncodeBase64(body),
       })
-    elseif ok then
-      respond_json(status, { message = "Error" })
-    else
-      respond_json(503, {})
+      return
     end
-  end,
+  end
+  respond_json(404, { message = "Not Found" })
+end)
 
-  -- Users' repos --------------------------------------------------------------
+b:rest("get_repo_content", function(_, rid, path)
+  local ref = GetParam("ref") or "HEAD"
+  local ok, status, _, body =
+    fetch_json(base() .. "/repos/" .. rid .. "/blob/" .. ref .. "/" .. path)
+  if ok and status == 200 then
+    respond_json(200, {
+      type = "file",
+      name = path:match("[^/]+$") or path,
+      path = path,
+      sha = "",
+      size = #body,
+      encoding = "base64",
+      content = EncodeBase64(body),
+    })
+  elseif ok then
+    respond_json(status, { message = "Error" })
+  else
+    respond_json(503, {})
+  end
+end)
 
-  get_users_repos = function(username)
-    -- Radicle: list repos seeded by a specific node/delegate
-    proxy_json(
-      translate_radicle_repos,
-      fetch_json(append_page_params(base() .. "/repos?show=all&delegate=" .. username, PAGES))
-    )
-  end,
+-- Users' repos --------------------------------------------------------------
 
-  get_repositories = function()
-    proxy_json(
-      translate_radicle_repos,
-      fetch_json(append_page_params(base() .. "/repos?show=all", PAGES))
-    )
-  end,
-}
+b:rest("get_users_repos", function(username)
+  -- Radicle: list repos seeded by a specific node/delegate
+  proxy_json(
+    translate_radicle_repos,
+    fetch_json(append_page_params(base() .. "/repos?show=all&delegate=" .. username, PAGES))
+  )
+end)
+
+b:rest("get_repositories", function()
+  proxy_json(
+    translate_radicle_repos,
+    fetch_json(append_page_params(base() .. "/repos?show=all", PAGES))
+  )
+end)
+
+b:build()
