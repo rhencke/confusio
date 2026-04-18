@@ -1705,6 +1705,104 @@ forks.create = function(owner, repo_name, body)
   return translate_repo(raw), nil
 end
 
+-- ---------------------------------------------------------------------------
+-- Commit comments capability module
+-- ---------------------------------------------------------------------------
+-- Shared fetch operations for commit-level code comments (not issue comments;
+-- those live in comments_cap).
+-- Gitea uses /repos/{o}/{r}/comments/{id} for repo-wide comment CRUD and
+-- /repos/{o}/{r}/git/commits/{sha}/notes for per-commit listing/creation.
+-- All operations pass through without translation — Gitea and GitHub shapes
+-- are already compatible.
+-- Single-item operations return (data/true, nil) or (nil, err).
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+
+local commit_comments = {}
+
+-- list_repo: paginated list of all commit comments in a repository.
+commit_comments.list_repo = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+-- get: fetch a single commit comment by ID.
+commit_comments.get = function(owner, repo_name, comment_id)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments/" .. comment_id
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- update: apply a partial update to an existing commit comment.
+-- body: JSON-encoded string with updated body text.
+commit_comments.update = function(owner, repo_name, comment_id, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments/" .. comment_id,
+    "PATCH",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- delete: delete a commit comment.
+-- Gitea returns 200; normalised to (true, nil) for cap_rest_204.
+commit_comments.delete = function(owner, repo_name, comment_id)
+  local ok, status = fetch_json(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments/" .. comment_id,
+    "DELETE"
+  )
+  if not ok then
+    return nil, cap_err(0, "network error deleting commit comment")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting commit comment")
+  end
+  return true, nil
+end
+
+-- list_commit: paginated list of comments for a specific commit SHA.
+-- Gitea maps commit comments to /git/commits/{sha}/notes.
+commit_comments.list_commit = function(owner, repo_name, commit_sha)
+  local url = append_page_params(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/commits/" .. commit_sha .. "/notes",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+-- create: create a new comment on a specific commit.
+-- body: JSON-encoded string with body text.
+-- Gitea maps commit comments to /git/commits/{sha}/notes.
+commit_comments.create = function(owner, repo_name, commit_sha, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/commits/" .. commit_sha .. "/notes",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
 -- Health check
 b:rest("get_root", function()
   proxy_health_check(pcall(Fetch, base() .. "/version", auth()))
@@ -2277,77 +2375,38 @@ end)
 
 -- GET /repos/{owner}/{repo}/comments
 b:rest("get_repo_comments", function(owner, repo_name)
-  proxy_json_paged(
-    nil,
-    PAGES,
-    fetch_json(
-      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments", PAGES)
-    )
-  )
+  local items, hdrs, err = commit_comments.list_repo(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 -- GET /repos/{owner}/{repo}/comments/{comment_id}
 b:rest("get_repo_comment", function(owner, repo_name, comment_id)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments/" .. comment_id)
-  )
+  local data, err = commit_comments.get(owner, repo_name, comment_id)
+  cap_rest_respond(data, err)
 end)
 
 -- PATCH /repos/{owner}/{repo}/comments/{comment_id}
 b:rest("patch_repo_comment", function(owner, repo_name, comment_id)
-  proxy_json(
-    nil,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments/" .. comment_id,
-      "PATCH",
-      GetBody()
-    )
-  )
+  local data, err = commit_comments.update(owner, repo_name, comment_id, GetBody())
+  cap_rest_respond(data, err)
 end)
 
 -- DELETE /repos/{owner}/{repo}/comments/{comment_id}
 b:rest("delete_repo_comment", function(owner, repo_name, comment_id)
-  proxy_204(
-    { 200 },
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments/" .. comment_id,
-      "DELETE"
-    )
-  )
+  local ok, err = commit_comments.delete(owner, repo_name, comment_id)
+  cap_rest_204(ok, err)
 end)
 
 -- GET /repos/{owner}/{repo}/commits/{commit_sha}/comments
 b:rest("get_commit_comments", function(owner, repo_name, commit_sha)
-  proxy_json_paged(
-    nil,
-    PAGES,
-    fetch_json(
-      append_page_params(
-        base()
-          .. "/repos/"
-          .. owner
-          .. "/"
-          .. repo_name
-          .. "/git/commits/"
-          .. commit_sha
-          .. "/notes",
-        PAGES
-      )
-    )
-  )
+  local items, hdrs, err = commit_comments.list_commit(owner, repo_name, commit_sha)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 -- POST /repos/{owner}/{repo}/commits/{commit_sha}/comments
 b:rest("post_commit_comment", function(owner, repo_name, commit_sha)
-  proxy_json_created(
-    nil,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/commits/" .. commit_sha .. "/notes",
-      "POST",
-      GetBody()
-    )
-  )
+  local data, err = commit_comments.create(owner, repo_name, commit_sha, GetBody())
+  cap_rest_created(data, err)
 end)
 
 -- Users ---------------------------------------------------------------------
@@ -5645,5 +5704,6 @@ b:capability("commits", commits_cap)
 b:capability("contents", contents)
 b:capability("collaborators", collaborators)
 b:capability("forks", forks)
+b:capability("commit_comments", commit_comments)
 b:set_allow_anonymous(_allow_anon)
 b:build()
