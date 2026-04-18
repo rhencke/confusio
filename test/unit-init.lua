@@ -1646,6 +1646,26 @@ do
 end
 
 -- ============================================================
+-- app context
+-- ============================================================
+
+ok(type(app) == "table", "app: is a table")
+ok(app.config == config, "app.config: same object as global config")
+ok(type(app.backend_impl) == "table", "app.backend_impl: is a table")
+ok(type(app.allow_anonymous) == "boolean", "app.allow_anonymous: is a boolean")
+ok(app.allow_anonymous == true, "app.allow_anonymous: default true (no backend loaded)")
+
+-- make_app: constructs independent context from a given config table.
+do
+  local test_cfg = { backend = "test", base_url = "https://test.example.com" }
+  local test_app = make_app(test_cfg)
+  ok(test_app.config == test_cfg, "make_app: config is the supplied table")
+  ok(type(test_app.backend_impl) == "table", "make_app: backend_impl is a table")
+  ok(test_app.allow_anonymous == true, "make_app: allow_anonymous defaults to true")
+  ok(test_app ~= app, "make_app: returns a new independent table each call")
+end
+
+-- ============================================================
 -- Summary
 -- ============================================================
 
