@@ -2942,126 +2942,200 @@ end)
 
 -- Deploy keys ---------------------------------------------------------------
 
-b:rest(
-  "get_repo_keys",
-  proxy_handler_paged(nil, function(owner, repo_name)
-    return append_page_params(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/deploy_keys",
-      PAGES
-    )
-  end)
-)
+local deploy_keys_cap = {}
 
-b:rest("post_repo_keys", function(owner, repo_name)
-  local req = DecodeJson(GetBody() or "{}")
-  local body = EncodeJson({
+-- list: paginated list of deploy keys for a repository.
+-- Returns (items, headers, nil) or (nil, nil, err).
+deploy_keys_cap.list = function(owner, repo_name)
+  local url = append_page_params(
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/deploy_keys",
+    PAGES
+  )
+  return cap_fetch_paged(fetch_json, url)
+end
+
+-- create: create a deploy key.  body is raw GitHub-format JSON.
+-- Returns (data, nil) or (nil, err).
+deploy_keys_cap.create = function(owner, repo_name, body)
+  local req = DecodeJson(body or "{}") or {}
+  local gl_body = EncodeJson({
     title = req.title,
     key = req.key,
     can_push = req.read_only == false,
   })
-  proxy_json_created(
-    nil,
-    fetch_json(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/deploy_keys",
-      "POST",
-      body
-    )
+  return cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/deploy_keys",
+    "POST",
+    gl_body
   )
-end)
+end
 
-b:rest(
-  "get_repo_key",
-  proxy_handler(nil, function(owner, repo_name, key_id)
-    return base() .. "/projects/" .. project_id(owner, repo_name) .. "/deploy_keys/" .. key_id
-  end)
-)
+-- get: get a single deploy key by key_id.
+-- Returns (data, nil) or (nil, err).
+deploy_keys_cap.get = function(owner, repo_name, key_id)
+  return cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/deploy_keys/" .. key_id
+  )
+end
 
-b:rest("delete_repo_key", function(owner, repo_name, key_id)
+-- delete: delete a deploy key by key_id.
+-- Returns (true, nil) or (nil, err).
+deploy_keys_cap.delete = function(owner, repo_name, key_id)
   local ok, status = fetch_json(
     base() .. "/projects/" .. project_id(owner, repo_name) .. "/deploy_keys/" .. key_id,
     "DELETE"
   )
-  proxy_204({ 200 }, ok, status)
+  if not ok or (status ~= 200 and status ~= 204) then
+    return nil, cap_err(status or 0, "delete deploy key failed")
+  end
+  return true, nil
+end
+
+b:rest("get_repo_keys", function(owner, repo_name)
+  local items, hdrs, err = deploy_keys_cap.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
+
+b:rest("post_repo_keys", function(owner, repo_name)
+  local data, err = deploy_keys_cap.create(owner, repo_name, GetBody())
+  cap_rest_created(data, err)
+end)
+
+b:rest("get_repo_key", function(owner, repo_name, key_id)
+  local data, err = deploy_keys_cap.get(owner, repo_name, key_id)
+  cap_rest_respond(data, err)
+end)
+
+b:rest("delete_repo_key", function(owner, repo_name, key_id)
+  local ok, err = deploy_keys_cap.delete(owner, repo_name, key_id)
+  cap_rest_204(ok, err)
 end)
 
 -- Webhooks ------------------------------------------------------------------
 
-b:rest(
-  "get_repo_hooks",
-  proxy_handler_paged(nil, function(owner, repo_name)
-    return append_page_params(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/hooks",
-      PAGES
-    )
-  end)
-)
+local webhooks_cap = {}
 
-b:rest("post_repo_hooks", function(owner, repo_name)
-  proxy_json_created(
-    nil,
-    fetch_json(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/hooks",
-      "POST",
-      GetBody()
-    )
+-- list: paginated list of webhooks for a repository.
+-- Returns (items, headers, nil) or (nil, nil, err).
+webhooks_cap.list = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/projects/" .. project_id(owner, repo_name) .. "/hooks", PAGES)
+  return cap_fetch_paged(fetch_json, url)
+end
+
+-- create: create a webhook.  body is raw JSON passthrough.
+-- Returns (data, nil) or (nil, err).
+webhooks_cap.create = function(owner, repo_name, body)
+  return cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/hooks",
+    "POST",
+    body
   )
-end)
+end
 
-b:rest(
-  "get_repo_hook",
-  proxy_handler(nil, function(owner, repo_name, hook_id)
-    return base() .. "/projects/" .. project_id(owner, repo_name) .. "/hooks/" .. hook_id
-  end)
-)
-
--- GitLab uses PUT for hook updates
-b:rest("patch_repo_hook", function(owner, repo_name, hook_id)
-  proxy_json(
-    nil,
-    fetch_json(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/hooks/" .. hook_id,
-      "PUT",
-      GetBody()
-    )
+-- get: get a single webhook by hook_id.
+-- Returns (data, nil) or (nil, err).
+webhooks_cap.get = function(owner, repo_name, hook_id)
+  return cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/hooks/" .. hook_id
   )
-end)
+end
 
-b:rest("delete_repo_hook", function(owner, repo_name, hook_id)
+-- update: update a webhook by hook_id.  GitLab uses PUT for hook updates.
+-- Returns (data, nil) or (nil, err).
+webhooks_cap.update = function(owner, repo_name, hook_id, body)
+  return cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/hooks/" .. hook_id,
+    "PUT",
+    body
+  )
+end
+
+-- delete: delete a webhook by hook_id.
+-- Returns (true, nil) or (nil, err).
+webhooks_cap.delete = function(owner, repo_name, hook_id)
   local ok, status = fetch_json(
     base() .. "/projects/" .. project_id(owner, repo_name) .. "/hooks/" .. hook_id,
     "DELETE"
   )
-  proxy_204({ 200 }, ok, status)
-end)
-
-b:rest(
-  "get_repo_hook_config",
-  proxy_handler(function(h)
-    return { url = h.url }
-  end, function(owner, repo_name, hook_id)
-    return base() .. "/projects/" .. project_id(owner, repo_name) .. "/hooks/" .. hook_id
-  end)
-)
-
-b:rest("patch_repo_hook_config", function(owner, repo_name, hook_id)
-  local new_cfg = DecodeJson(GetBody() or "{}")
-  local url = base() .. "/projects/" .. project_id(owner, repo_name) .. "/hooks/" .. hook_id
-  local ok, status, _, body = fetch_json(url)
-  if not ok or status ~= 200 then
-    if ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
-    return
+  if not ok or (status ~= 200 and status ~= 204) then
+    return nil, cap_err(status or 0, "delete webhook failed")
   end
-  local hook = DecodeJson(body) or {}
+  return true, nil
+end
+
+-- get_config: get the config (url only) for a webhook.
+-- Returns (data, nil) or (nil, err).
+webhooks_cap.get_config = function(owner, repo_name, hook_id)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/hooks/" .. hook_id
+  )
+  if not raw then
+    return nil, err
+  end
+  return { url = raw.url }, nil
+end
+
+-- update_config: merge new_cfg into existing hook config (url field only).
+-- Returns (data, nil) or (nil, err).
+webhooks_cap.update_config = function(owner, repo_name, hook_id, new_cfg)
+  local url = base() .. "/projects/" .. project_id(owner, repo_name) .. "/hooks/" .. hook_id
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
+  end
+  local hook = raw
   if new_cfg.url then
     hook.url = new_cfg.url
   end
-  proxy_json(function(h)
-    return { url = h.url }
-  end, fetch_json(url, "PUT", EncodeJson(hook)))
+  local updated, uerr = cap_fetch(fetch_json, url, "PUT", EncodeJson(hook))
+  if not updated then
+    return nil, uerr
+  end
+  return { url = updated.url }, nil
+end
+
+b:rest("get_repo_hooks", function(owner, repo_name)
+  local items, hdrs, err = webhooks_cap.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
+
+b:rest("post_repo_hooks", function(owner, repo_name)
+  local data, err = webhooks_cap.create(owner, repo_name, GetBody())
+  cap_rest_created(data, err)
+end)
+
+b:rest("get_repo_hook", function(owner, repo_name, hook_id)
+  local data, err = webhooks_cap.get(owner, repo_name, hook_id)
+  cap_rest_respond(data, err)
+end)
+
+-- GitLab uses PUT for hook updates
+b:rest("patch_repo_hook", function(owner, repo_name, hook_id)
+  local data, err = webhooks_cap.update(owner, repo_name, hook_id, GetBody())
+  cap_rest_respond(data, err)
+end)
+
+b:rest("delete_repo_hook", function(owner, repo_name, hook_id)
+  local ok, err = webhooks_cap.delete(owner, repo_name, hook_id)
+  cap_rest_204(ok, err)
+end)
+
+b:rest("get_repo_hook_config", function(owner, repo_name, hook_id)
+  local data, err = webhooks_cap.get_config(owner, repo_name, hook_id)
+  cap_rest_respond(data, err)
+end)
+
+b:rest("patch_repo_hook_config", function(owner, repo_name, hook_id)
+  local new_cfg = DecodeJson(GetBody() or "{}")
+  local data, err = webhooks_cap.update_config(owner, repo_name, hook_id, new_cfg)
+  cap_rest_respond(data, err)
 end)
 
 -- GET /users/{username}/repos -----------------------------------------------
@@ -5448,4 +5522,6 @@ b:capability("collaborators", collaborators_cap)
 b:capability("forks", forks_cap)
 b:capability("pulls", pulls_cap)
 b:capability("releases", releases_cap)
+b:capability("deploy_keys", deploy_keys_cap)
+b:capability("webhooks", webhooks_cap)
 b:build()
