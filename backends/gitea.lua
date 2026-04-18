@@ -476,8 +476,21 @@ local function translate_gitea_package_version(p)
   }
 end
 
--- Resolve the authenticated user's login name for /user/packages endpoints.
-local function resolve_user_login()
+-- ---------------------------------------------------------------------------
+-- Packages capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translate for packages and package versions (org, user, and
+-- public-user scopes).  Gitea's package API uses query-parameter filtering;
+-- there is no direct lookup by name+type, so get/delete/version operations
+-- list candidates and filter client-side.
+-- All operations return (data, nil) on success or (nil, err) on failure.
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+
+local packages_cap = {}
+
+-- resolve_user_login: fetch the authenticated user's login for /user/packages.
+-- Returns the login string or nil if unauthenticated / network failure.
+packages_cap.resolve_user_login = function()
   local ok, status, _, body = fetch_json(base() .. "/user")
   if ok and status == 200 then
     return (DecodeJson(body) or {}).login
@@ -485,25 +498,24 @@ local function resolve_user_login()
   return nil
 end
 
--- List packages for an owner, translating each entry to a GitHub Package object.
-local function pkg_list(owner)
-  local pkg_type = GetParam("package_type") or ""
+-- list: paginated list of packages for an owner.
+-- pkg_type: optional GitHub package_type filter string ("" = all types).
+packages_cap.list = function(owner, pkg_type)
   local url = base() .. "/packages/" .. owner
-  if pkg_type ~= "" then
+  if pkg_type and pkg_type ~= "" then
     url = url .. "?type=" .. pkg_type
   end
   url = append_page_params(url, PAGES)
-  proxy_json_paged(function(entries)
-    local pkgs = {}
-    for i, p in ipairs(entries) do
-      pkgs[i] = translate_gitea_package(p)
-    end
-    return pkgs
-  end, PAGES, fetch_json(url))
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gitea_package, items), hdrs, nil
 end
 
--- Get a single package by listing versions and aggregating.
-local function pkg_get(owner, pkg_type, pkg_name)
+-- get: fetch a single package by owner, type, and name.
+-- Gitea has no direct lookup; this lists candidates and aggregates versions.
+packages_cap.get = function(owner, pkg_type, pkg_name)
   local url = base()
     .. "/packages/"
     .. owner
@@ -512,30 +524,25 @@ local function pkg_get(owner, pkg_type, pkg_name)
     .. "&q="
     .. pkg_name
     .. "&limit=50"
-  local ok, status, _, body = fetch_json(url)
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
   end
   local entries = {}
-  for _, p in ipairs(DecodeJson(body) or {}) do
+  for _, p in ipairs(raw) do
     if p.name == pkg_name then
       entries[#entries + 1] = p
     end
   end
   if #entries == 0 then
-    respond_json(404, { message = "Not Found" })
-    return
+    return nil, cap_err(404, "package not found")
   end
-  respond_json(200, translate_gitea_package(entries[1], #entries))
+  return translate_gitea_package(entries[1], #entries), nil
 end
 
--- Delete all versions of a package.
-local function pkg_delete(owner, pkg_type, pkg_name)
+-- delete: delete all versions of a package.
+-- Returns (true, nil) on success or (nil, err) on failure.
+packages_cap.delete = function(owner, pkg_type, pkg_name)
   local url = base()
     .. "/packages/"
     .. owner
@@ -544,17 +551,12 @@ local function pkg_delete(owner, pkg_type, pkg_name)
     .. "&q="
     .. pkg_name
     .. "&limit=50"
-  local ok, status, _, body = fetch_json(url)
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
   end
   local found = false
-  for _, p in ipairs(DecodeJson(body) or {}) do
+  for _, p in ipairs(raw) do
     if p.name == pkg_name then
       found = true
       fetch_json(
@@ -564,86 +566,92 @@ local function pkg_delete(owner, pkg_type, pkg_name)
     end
   end
   if not found then
-    respond_json(404, { message = "Not Found" })
-    return
+    return nil, cap_err(404, "package not found")
   end
-  set_preamble(204)
+  return true, nil
 end
 
--- List versions of a specific package.
-local function pkg_versions(owner, pkg_type, pkg_name)
+-- list_versions: paginated list of versions for a specific package.
+-- Filters client-side to the named package (Gitea query may return
+-- partial-match results for q=pkg_name).
+packages_cap.list_versions = function(owner, pkg_type, pkg_name)
   local url = base() .. "/packages/" .. owner .. "?type=" .. pkg_type .. "&q=" .. pkg_name
   url = append_page_params(url, PAGES)
-  proxy_json_paged(function(entries)
-    local versions = {}
-    for _, p in ipairs(entries) do
-      if p.name == pkg_name then
-        versions[#versions + 1] = translate_gitea_package_version(p)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  local versions = {}
+  for _, p in ipairs(items) do
+    if p.name == pkg_name then
+      versions[#versions + 1] = translate_gitea_package_version(p)
+    end
+  end
+  return versions, hdrs, nil
+end
+
+-- get_version: fetch a single package version by numeric ID.
+packages_cap.get_version = function(owner, pkg_type, pkg_name, version_id)
+  local url = base()
+    .. "/packages/"
+    .. owner
+    .. "?type="
+    .. pkg_type
+    .. "&q="
+    .. pkg_name
+    .. "&limit=50"
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
+  end
+  local vid = tonumber(version_id)
+  for _, p in ipairs(raw) do
+    if p.id == vid and p.name == pkg_name then
+      return translate_gitea_package_version(p), nil
+    end
+  end
+  return nil, cap_err(404, "package version not found")
+end
+
+-- delete_version: delete a single package version by numeric ID.
+-- Returns (true, nil) on success or (nil, err) on failure.
+packages_cap.delete_version = function(owner, pkg_type, pkg_name, version_id)
+  local url = base()
+    .. "/packages/"
+    .. owner
+    .. "?type="
+    .. pkg_type
+    .. "&q="
+    .. pkg_name
+    .. "&limit=50"
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
+  end
+  local vid = tonumber(version_id)
+  for _, p in ipairs(raw) do
+    if p.id == vid and p.name == pkg_name then
+      local del_url = base()
+        .. "/packages/"
+        .. owner
+        .. "/"
+        .. pkg_type
+        .. "/"
+        .. pkg_name
+        .. "/"
+        .. p.version
+      local ok2, status2 = fetch_json(del_url, "DELETE")
+      if not ok2 then
+        return nil, cap_err(0, "network error deleting package version")
       end
-    end
-    return versions
-  end, PAGES, fetch_json(url))
-end
-
--- Get a single package version by ID.
-local function pkg_get_version(owner, pkg_type, pkg_name, version_id)
-  local url = base()
-    .. "/packages/"
-    .. owner
-    .. "?type="
-    .. pkg_type
-    .. "&q="
-    .. pkg_name
-    .. "&limit=50"
-  local ok, status, _, body = fetch_json(url)
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
-  end
-  local vid = tonumber(version_id)
-  for _, p in ipairs(DecodeJson(body) or {}) do
-    if p.id == vid and p.name == pkg_name then
-      respond_json(200, translate_gitea_package_version(p))
-      return
+      if status2 ~= 204 then
+        return nil,
+          cap_err(status2, "upstream error " .. tostring(status2) .. " deleting package version")
+      end
+      return true, nil
     end
   end
-  respond_json(404, { message = "Not Found" })
-end
-
--- Delete a single package version by ID.
-local function pkg_delete_version(owner, pkg_type, pkg_name, version_id)
-  local url = base()
-    .. "/packages/"
-    .. owner
-    .. "?type="
-    .. pkg_type
-    .. "&q="
-    .. pkg_name
-    .. "&limit=50"
-  local ok, status, _, body = fetch_json(url)
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
-  end
-  local vid = tonumber(version_id)
-  for _, p in ipairs(DecodeJson(body) or {}) do
-    if p.id == vid and p.name == pkg_name then
-      set_204_or_error(
-        "DELETE",
-        base() .. "/packages/" .. owner .. "/" .. pkg_type .. "/" .. pkg_name .. "/" .. p.version
-      )
-      return
-    end
-  end
-  respond_json(404, { message = "Not Found" })
+  return nil, cap_err(404, "package version not found")
 end
 
 -- Translate a Gitea Actions secret to GitHub format.
@@ -4595,83 +4603,83 @@ end)
 -- Packages (org) ---------------------------------------------------------------
 
 b:rest("get_org_packages", function(org)
-  pkg_list(org)
+  cap_rest_paged(packages_cap.list(org, GetParam("package_type") or ""))
 end)
 
 b:rest("get_org_package", function(org, pkg_type, pkg_name)
-  pkg_get(org, pkg_type, pkg_name)
+  cap_rest_respond(packages_cap.get(org, pkg_type, pkg_name))
 end)
 
 b:rest("delete_org_package", function(org, pkg_type, pkg_name)
-  pkg_delete(org, pkg_type, pkg_name)
+  cap_rest_204(packages_cap.delete(org, pkg_type, pkg_name))
 end)
 
 b:rest("get_org_package_versions", function(org, pkg_type, pkg_name)
-  pkg_versions(org, pkg_type, pkg_name)
+  cap_rest_paged(packages_cap.list_versions(org, pkg_type, pkg_name))
 end)
 
 b:rest("get_org_package_version", function(org, pkg_type, pkg_name, version_id)
-  pkg_get_version(org, pkg_type, pkg_name, version_id)
+  cap_rest_respond(packages_cap.get_version(org, pkg_type, pkg_name, version_id))
 end)
 
 b:rest("delete_org_package_version", function(org, pkg_type, pkg_name, version_id)
-  pkg_delete_version(org, pkg_type, pkg_name, version_id)
+  cap_rest_204(packages_cap.delete_version(org, pkg_type, pkg_name, version_id))
 end)
 
 -- Packages (authenticated user) ------------------------------------------------
 
 b:rest("get_user_packages", function()
-  local login = resolve_user_login()
+  local login = packages_cap.resolve_user_login()
   if not login then
     respond_json(401, { message = "Requires authentication" })
     return
   end
-  pkg_list(login)
+  cap_rest_paged(packages_cap.list(login, GetParam("package_type") or ""))
 end)
 
 b:rest("get_user_package", function(pkg_type, pkg_name)
-  local login = resolve_user_login()
+  local login = packages_cap.resolve_user_login()
   if not login then
     respond_json(401, { message = "Requires authentication" })
     return
   end
-  pkg_get(login, pkg_type, pkg_name)
+  cap_rest_respond(packages_cap.get(login, pkg_type, pkg_name))
 end)
 
 b:rest("delete_user_package", function(pkg_type, pkg_name)
-  local login = resolve_user_login()
+  local login = packages_cap.resolve_user_login()
   if not login then
     respond_json(401, { message = "Requires authentication" })
     return
   end
-  pkg_delete(login, pkg_type, pkg_name)
+  cap_rest_204(packages_cap.delete(login, pkg_type, pkg_name))
 end)
 
 b:rest("get_user_package_versions", function(pkg_type, pkg_name)
-  local login = resolve_user_login()
+  local login = packages_cap.resolve_user_login()
   if not login then
     respond_json(401, { message = "Requires authentication" })
     return
   end
-  pkg_versions(login, pkg_type, pkg_name)
+  cap_rest_paged(packages_cap.list_versions(login, pkg_type, pkg_name))
 end)
 
 b:rest("get_user_package_version", function(pkg_type, pkg_name, version_id)
-  local login = resolve_user_login()
+  local login = packages_cap.resolve_user_login()
   if not login then
     respond_json(401, { message = "Requires authentication" })
     return
   end
-  pkg_get_version(login, pkg_type, pkg_name, version_id)
+  cap_rest_respond(packages_cap.get_version(login, pkg_type, pkg_name, version_id))
 end)
 
 b:rest("delete_user_package_version", function(pkg_type, pkg_name, version_id)
-  local login = resolve_user_login()
+  local login = packages_cap.resolve_user_login()
   if not login then
     respond_json(401, { message = "Requires authentication" })
     return
   end
-  pkg_delete_version(login, pkg_type, pkg_name, version_id)
+  cap_rest_204(packages_cap.delete_version(login, pkg_type, pkg_name, version_id))
 end)
 
 -- Pages (https://docs.github.com/en/rest/pages) ---------------------------------
@@ -4707,27 +4715,27 @@ end)
 -- Packages (public user) -------------------------------------------------------
 
 b:rest("get_users_packages", function(username)
-  pkg_list(username)
+  cap_rest_paged(packages_cap.list(username, GetParam("package_type") or ""))
 end)
 
 b:rest("get_users_package", function(username, pkg_type, pkg_name)
-  pkg_get(username, pkg_type, pkg_name)
+  cap_rest_respond(packages_cap.get(username, pkg_type, pkg_name))
 end)
 
 b:rest("delete_users_package", function(username, pkg_type, pkg_name)
-  pkg_delete(username, pkg_type, pkg_name)
+  cap_rest_204(packages_cap.delete(username, pkg_type, pkg_name))
 end)
 
 b:rest("get_users_package_versions", function(username, pkg_type, pkg_name)
-  pkg_versions(username, pkg_type, pkg_name)
+  cap_rest_paged(packages_cap.list_versions(username, pkg_type, pkg_name))
 end)
 
 b:rest("get_users_package_version", function(username, pkg_type, pkg_name, version_id)
-  pkg_get_version(username, pkg_type, pkg_name, version_id)
+  cap_rest_respond(packages_cap.get_version(username, pkg_type, pkg_name, version_id))
 end)
 
 b:rest("delete_users_package_version", function(username, pkg_type, pkg_name, version_id)
-  pkg_delete_version(username, pkg_type, pkg_name, version_id)
+  cap_rest_204(packages_cap.delete_version(username, pkg_type, pkg_name, version_id))
 end)
 
 -- Markdown -------------------------------------------------------------------
@@ -6735,5 +6743,6 @@ b:capability("checks", checks)
 b:capability("git_db", git_db)
 b:capability("teams", teams)
 b:capability("actions", actions_cap)
+b:capability("packages", packages_cap)
 b:set_allow_anonymous(_allow_anon)
 b:build()
