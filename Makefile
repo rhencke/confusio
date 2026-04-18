@@ -100,14 +100,22 @@ mock-$(1).com: $(REDBEAN_BIN) test/mock-$(2).lua
 	rm -rf .tmp-mock-$(1)
 endef
 
+DUMP_ENDPOINTS_SCRIPT       = scripts/dump-endpoints.lua
+DUMP_FAMILIES_SCRIPT        = scripts/dump-families.lua
+DUMP_CLAIMS_SCRIPT          = scripts/dump-claims.lua
+DUMP_CAPS_SCRIPT            = scripts/dump-capabilities.lua
+VALIDATE_CLAIMS_SCRIPT      = scripts/validate-claims.lua
+VALIDATE_CAPS_SCRIPT        = scripts/validate-capabilities.lua
+GEN_GRAPHQL_SCHEMA_SCRIPT   = scripts/gen-graphql-schema.lua
+
 # .make-families.mk is auto-generated from provider_families in .init.lua.
 # It contains $(eval $(call ALIAS_MOCK_RULE,...)) lines for every family alias
 # so that mock-<alias>.com is built from the root family's mock lua.
 # If the file does not exist, Make rebuilds it before re-reading the Makefile.
 -include .make-families.mk
 
-.make-families.mk: $(REDBEAN_BIN) scripts/dump-families.lua $(INIT_SRCS)
-	$(REDBEAN) scripts/dump-families.lua | python3 scripts/gen-family-mk.py > $@
+.make-families.mk: $(REDBEAN_BIN) $(DUMP_FAMILIES_SCRIPT) $(INIT_SRCS)
+	$(REDBEAN) $(DUMP_FAMILIES_SCRIPT) | python3 scripts/gen-family-mk.py > $@
 
 # Backend test configuration.
 # To add a standalone backend: append to BACKENDS (ports auto-assigned from 18080).
@@ -141,11 +149,6 @@ $(foreach b,$(BACKENDS),$(eval $(call BACKEND_RULE,$(b))))
 
 build: confusio.com
 
-DUMP_ENDPOINTS_SCRIPT = scripts/dump-endpoints.lua
-DUMP_FAMILIES_SCRIPT  = scripts/dump-families.lua
-DUMP_CLAIMS_SCRIPT    = scripts/dump-claims.lua
-DUMP_CAPS_SCRIPT      = scripts/dump-capabilities.lua
-
 dump-endpoints: $(REDBEAN_BIN) $(DUMP_ENDPOINTS_SCRIPT) $(INIT_SRCS)
 	$(REDBEAN) $(DUMP_ENDPOINTS_SCRIPT)
 
@@ -164,8 +167,8 @@ validate-providers: $(REDBEAN_BIN) $(DUMP_FAMILIES_SCRIPT) $(INIT_SRCS)
 dump-claims: $(REDBEAN_BIN) $(DUMP_CLAIMS_SCRIPT) $(BACKEND_SRCS)
 	$(REDBEAN) $(DUMP_CLAIMS_SCRIPT) $(BACKENDS)
 
-validate-claims: $(REDBEAN_BIN) $(DUMP_CLAIMS_SCRIPT) scripts/validate-claims.lua $(BACKEND_SRCS)
-	$(REDBEAN) $(DUMP_CLAIMS_SCRIPT) $(BACKENDS) | $(REDBEAN) scripts/validate-claims.lua site/compatibility.csv
+validate-claims: $(REDBEAN_BIN) $(DUMP_CLAIMS_SCRIPT) $(VALIDATE_CLAIMS_SCRIPT) $(BACKEND_SRCS)
+	$(REDBEAN) $(DUMP_CLAIMS_SCRIPT) $(BACKENDS) | $(REDBEAN) $(VALIDATE_CLAIMS_SCRIPT) site/compatibility.csv
 
 validate-builders:
 	@if grep -rn 'app\.backend_impl\s*=' backends/ | grep -v '^Binary'; then \
@@ -181,14 +184,14 @@ validate-builders:
 dump-capabilities: $(REDBEAN_BIN) $(DUMP_CAPS_SCRIPT) $(BACKEND_SRCS)
 	$(REDBEAN) $(DUMP_CAPS_SCRIPT) $(BACKENDS)
 
-validate-capabilities: $(REDBEAN_BIN) $(DUMP_CAPS_SCRIPT) scripts/validate-capabilities.lua $(BACKEND_SRCS)
-	$(REDBEAN) $(DUMP_CAPS_SCRIPT) $(BACKENDS) | $(REDBEAN) scripts/validate-capabilities.lua
+validate-capabilities: $(REDBEAN_BIN) $(DUMP_CAPS_SCRIPT) $(VALIDATE_CAPS_SCRIPT) $(BACKEND_SRCS)
+	$(REDBEAN) $(DUMP_CAPS_SCRIPT) $(BACKENDS) | $(REDBEAN) $(VALIDATE_CAPS_SCRIPT)
 
-generate-schema: $(REDBEAN_BIN) scripts/gen-graphql-schema.lua
-	$(REDBEAN) scripts/gen-graphql-schema.lua
+generate-schema: $(REDBEAN_BIN) $(GEN_GRAPHQL_SCHEMA_SCRIPT)
+	$(REDBEAN) $(GEN_GRAPHQL_SCHEMA_SCRIPT)
 
-validate-schema: $(REDBEAN_BIN) scripts/gen-graphql-schema.lua internal/graphql_schema_data.lua
-	$(REDBEAN) scripts/gen-graphql-schema.lua vendor/github-graphql-schema/schema.docs.graphql /tmp/graphql_schema_data_validate.lua
+validate-schema: $(REDBEAN_BIN) $(GEN_GRAPHQL_SCHEMA_SCRIPT) internal/graphql_schema_data.lua
+	$(REDBEAN) $(GEN_GRAPHQL_SCHEMA_SCRIPT) vendor/github-graphql-schema/schema.docs.graphql /tmp/graphql_schema_data_validate.lua
 	diff -q internal/graphql_schema_data.lua /tmp/graphql_schema_data_validate.lua
 
 site: $(REDBEAN_BIN) $(DUMP_ENDPOINTS_SCRIPT) $(INIT_SRCS)
