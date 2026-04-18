@@ -1918,6 +1918,189 @@ commit_comments_cap.create = function(owner, repo_name, commit_sha, body)
   return raw, nil
 end
 
+-- ---------------------------------------------------------------------------
+-- Collaborators capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translate for project member operations.
+-- GitLab uses /projects/{id}/members/all (list) and /projects/{id}/members/{uid}.
+-- Username→UID resolution is done internally via /users?username=.
+-- Paginated list operations return (items, headers, nil) or (nil, nil, err).
+-- Single-item and 204 operations return (data, nil) or (nil, err).
+
+local collaborators_cap = {}
+
+-- translate_gl_collaborator: map a GitLab project member object to GitHub collaborator shape.
+local function translate_gl_collaborator(m)
+  if not m then
+    return {}
+  end
+  local al = m.access_level or 0
+  return {
+    login = m.username,
+    id = m.id,
+    avatar_url = m.avatar_url or "",
+    type = "User",
+    permissions = {
+      admin = al >= 50,
+      push = al >= 30,
+      pull = al >= 10,
+    },
+  }
+end
+
+-- resolve_uid: look up a GitLab user ID by username.
+-- Returns (uid, nil) or (nil, err).
+local function resolve_uid(username)
+  local ok, status, _, ubody = fetch_json(base() .. "/users?username=" .. username)
+  if not ok or status ~= 200 then
+    return nil, cap_err(status or 0, "user lookup failed")
+  end
+  local ulist = DecodeJson(ubody) or {}
+  local uid = ulist[1] and ulist[1].id
+  if not uid then
+    return nil, cap_err(404, "user not found")
+  end
+  return uid, nil
+end
+
+-- list: paginated list of project members.
+collaborators_cap.list = function(owner, repo_name)
+  local url = append_page_params(
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/members/all",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gl_collaborator, items), hdrs, nil
+end
+
+-- check: return (true, nil) if username is a member, (nil, err) if not.
+collaborators_cap.check = function(owner, repo_name, username)
+  local uid, uerr = resolve_uid(username)
+  if not uid then
+    return nil, uerr
+  end
+  local ok, status = pcall(
+    Fetch,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/members/" .. uid,
+    auth()
+  )
+  if ok and status == 200 then
+    return true, nil
+  end
+  return nil, cap_err(404, "Not a collaborator")
+end
+
+-- put: add or update a member.  body is raw GitHub-format JSON.
+-- Returns (true, nil) on success or (nil, err).
+collaborators_cap.put = function(owner, repo_name, username, body)
+  local uid, uerr = resolve_uid(username)
+  if not uid then
+    return nil, uerr
+  end
+  local req = DecodeJson(body or "{}") or {}
+  local perm = req.permission or "push"
+  local level_map = { pull = 30, push = 30, admin = 50 }
+  local gl_body = EncodeJson({ user_id = uid, access_level = level_map[perm] or 30 })
+  -- Try add first; if conflict (409), update instead.
+  local ok2, status2 = fetch_json(
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/members",
+    "POST",
+    gl_body
+  )
+  if ok2 and (status2 == 201 or status2 == 200) then
+    return true, nil
+  elseif ok2 and status2 == 409 then
+    local ok3, status3 = fetch_json(
+      base() .. "/projects/" .. project_id(owner, repo_name) .. "/members/" .. uid,
+      "PUT",
+      gl_body
+    )
+    if ok3 and (status3 == 200 or status3 == 201) then
+      return true, nil
+    else
+      return nil, cap_err(status3 or 0, "update member failed")
+    end
+  else
+    return nil, cap_err(status2 or 0, "add member failed")
+  end
+end
+
+-- delete: remove a member.  Returns (true, nil) or (nil, err).
+collaborators_cap.delete = function(owner, repo_name, username)
+  local uid, uerr = resolve_uid(username)
+  if not uid then
+    return nil, uerr
+  end
+  local ok2, status2 = fetch_json(
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/members/" .. uid,
+    "DELETE"
+  )
+  if ok2 and (status2 == 204 or status2 == 200) then
+    return true, nil
+  end
+  return nil, cap_err(status2 or 0, "remove member failed")
+end
+
+-- get_permission: return permission level for a user.
+-- Returns (data, nil) or (nil, err).
+collaborators_cap.get_permission = function(owner, repo_name, username)
+  local uid, uerr = resolve_uid(username)
+  if not uid then
+    return nil, uerr
+  end
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/members/" .. uid
+  )
+  if not raw then
+    return nil, err
+  end
+  local al = raw.access_level or 0
+  local perm = al >= 50 and "admin" or (al >= 30 and "write" or "read")
+  return { permission = perm, user = { login = username, id = uid } }, nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Forks capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translate for fork operations.
+-- GitLab uses /projects/{id}/forks (list) and /projects/{id}/fork (create).
+-- Paginated list operations return (items, headers, nil) or (nil, nil, err).
+-- Create operation returns (data, nil) or (nil, err).
+
+local forks_cap = {}
+
+-- list: paginated list of forks for a repository.
+forks_cap.list = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/projects/" .. project_id(owner, repo_name) .. "/forks", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gl_repo, items), hdrs, nil
+end
+
+-- create: fork a repository.  body is raw GitHub-format JSON.
+-- Returns translated repo shape or (nil, err).
+forks_cap.create = function(owner, repo_name, body)
+  local req = DecodeJson(body or "{}") or {}
+  local gl_body = req.organization and EncodeJson({ namespace = req.organization }) or "{}"
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/fork",
+    "POST",
+    gl_body
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_repo(raw), nil
+end
+
 local b = make_backend_builder()
 
 b:rest("get_root", function()
@@ -2141,152 +2324,48 @@ end)
 
 -- Collaborators -------------------------------------------------------------
 
-b:rest(
-  "get_repo_collaborators",
-  proxy_handler_paged(function(members)
-    local result = {}
-    for _, m in ipairs(members or {}) do
-      result[#result + 1] = {
-        login = m.username,
-        id = m.id,
-        avatar_url = m.avatar_url or "",
-        type = "User",
-        permissions = {
-          admin = (m.access_level or 0) >= 50,
-          push = (m.access_level or 0) >= 30,
-          pull = (m.access_level or 0) >= 10,
-        },
-      }
-    end
-    return result
-  end, function(owner, repo_name)
-    return append_page_params(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/members/all",
-      PAGES
-    )
-  end)
-)
+-- GET /repos/{owner}/{repo}/collaborators
+b:rest("get_repo_collaborators", function(owner, repo_name)
+  local items, hdrs, err = collaborators_cap.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
+-- GET /repos/{owner}/{repo}/collaborators/{username}
 b:rest("get_repo_collaborator", function(owner, repo_name, username)
-  -- Resolve username to user ID, then check membership
-  local ok, status, _, ubody = fetch_json(base() .. "/users?username=" .. username)
-  if not ok or status ~= 200 then
-    respond_json(404, {})
-    return
-  end
-  local ulist = DecodeJson(ubody) or {}
-  local uid = ulist[1] and ulist[1].id
-  if not uid then
-    respond_json(404, {})
-    return
-  end
-  local ok2, status2 = pcall(
-    Fetch,
-    base() .. "/projects/" .. project_id(owner, repo_name) .. "/members/" .. uid,
-    auth()
-  )
-  if ok2 and status2 == 200 then
-    SetStatus(204, "No Content")
-  else
-    respond_json(404, { message = "Not a collaborator" })
-  end
+  local ok, err = collaborators_cap.check(owner, repo_name, username)
+  cap_rest_204(ok, err)
 end)
 
+-- PUT /repos/{owner}/{repo}/collaborators/{username}
 b:rest("put_repo_collaborator", function(owner, repo_name, username)
-  local ok, status, _, ubody = fetch_json(base() .. "/users?username=" .. username)
-  if not ok or status ~= 200 then
-    respond_json(404, {})
-    return
-  end
-  local ulist = DecodeJson(ubody) or {}
-  local uid = ulist[1] and ulist[1].id
-  if not uid then
-    respond_json(404, {})
-    return
-  end
-  local req = DecodeJson(GetBody() or "{}")
-  local perm = req.permission or "push"
-  local level_map = { pull = 30, push = 30, admin = 50 }
-  local body = EncodeJson({ user_id = uid, access_level = level_map[perm] or 30 })
-  -- Try add first; if conflict, update
-  local ok2, status2 =
-    fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/members", "POST", body)
-  if ok2 and (status2 == 201 or status2 == 200) then
-    SetStatus(204, "No Content")
-  elseif ok2 and status2 == 409 then
-    -- Already a member — update
-    local ok3, status3 = fetch_json(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/members/" .. uid,
-      "PUT",
-      body
-    )
-    if ok3 and (status3 == 200 or status3 == 201) then
-      SetStatus(204, "No Content")
-    else
-      respond_json(status3 or 503, {})
-    end
-  else
-    respond_json(status2 or 503, {})
-  end
+  local ok, err = collaborators_cap.put(owner, repo_name, username, GetBody())
+  cap_rest_204(ok, err)
 end)
 
+-- DELETE /repos/{owner}/{repo}/collaborators/{username}
 b:rest("delete_repo_collaborator", function(owner, repo_name, username)
-  local ok, status, _, ubody = fetch_json(base() .. "/users?username=" .. username)
-  if not ok or status ~= 200 then
-    respond_json(404, {})
-    return
-  end
-  local ulist = DecodeJson(ubody) or {}
-  local uid = ulist[1] and ulist[1].id
-  if not uid then
-    respond_json(404, {})
-    return
-  end
-  local ok2, status2 = fetch_json(
-    base() .. "/projects/" .. project_id(owner, repo_name) .. "/members/" .. uid,
-    "DELETE"
-  )
-  proxy_204({ 200 }, ok2, status2)
+  local ok, err = collaborators_cap.delete(owner, repo_name, username)
+  cap_rest_204(ok, err)
 end)
 
+-- GET /repos/{owner}/{repo}/collaborators/{username}/permission
 b:rest("get_repo_collaborator_permission", function(owner, repo_name, username)
-  local ok, status, _, ubody = fetch_json(base() .. "/users?username=" .. username)
-  if not ok or status ~= 200 then
-    respond_json(404, {})
-    return
-  end
-  local ulist = DecodeJson(ubody) or {}
-  local uid = ulist[1] and ulist[1].id
-  if not uid then
-    respond_json(404, {})
-    return
-  end
-  proxy_json(function(m)
-    local al = m and m.access_level or 0
-    local perm = al >= 50 and "admin" or (al >= 30 and "write" or "read")
-    return { permission = perm, user = { login = username, id = uid } }
-  end, fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/members/" .. uid))
+  local data, err = collaborators_cap.get_permission(owner, repo_name, username)
+  cap_rest_respond(data, err)
 end)
 
 -- Forks ---------------------------------------------------------------------
 
-b:rest(
-  "get_repo_forks",
-  proxy_handler_paged(translate_gl_projects, function(owner, repo_name)
-    return append_page_params(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/forks",
-      PAGES
-    )
-  end)
-)
+-- GET /repos/{owner}/{repo}/forks
+b:rest("get_repo_forks", function(owner, repo_name)
+  local items, hdrs, err = forks_cap.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
+-- POST /repos/{owner}/{repo}/forks
 b:rest("post_repo_forks", function(owner, repo_name)
-  local req = DecodeJson(GetBody() or "{}")
-  local body = req.organization and EncodeJson({ namespace = req.organization }) or "{}"
-  proxy_json_created(
-    translate_gl_repo,
-    fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/fork", "POST", body)
-  )
+  local data, err = forks_cap.create(owner, repo_name, GetBody())
+  cap_rest_created(data, err)
 end)
 
 -- Releases ------------------------------------------------------------------
@@ -5230,4 +5309,6 @@ b:capability("milestones", milestones_cap)
 b:capability("reactions", reactions_cap)
 b:capability("contents", contents_cap)
 b:capability("commit_comments", commit_comments_cap)
+b:capability("collaborators", collaborators_cap)
+b:capability("forks", forks_cap)
 b:build()
