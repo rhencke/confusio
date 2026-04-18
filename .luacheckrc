@@ -51,6 +51,14 @@ globals = {
   "make_app",
   -- Backend builder: internal/registry.lua; backends use this instead of mutating globals
   "make_backend_builder",
+  -- Capability module helpers: internal/capabilities.lua
+  "cap_err",
+  "cap_fetch",
+  "cap_fetch_paged",
+  "cap_rest_respond",
+  "cap_rest_created",
+  "cap_rest_204",
+  "cap_rest_paged",
   -- Default stub handlers: populated by internal/defaults.lua, read by the catalog in .init.lua
   "defaults",
   -- Router: populated by internal/router.lua, used by the catalog and OnHttpRequest in .init.lua

@@ -38,6 +38,7 @@ internal/
   http.lua                   — HTTP response primitives: set_preamble, respond_json
   proxy.lua                  — upstream proxy helpers: proxy_json family, translate_list, proxy_search_envelope
   transport.lua              — auth/fetch scaffolding: make_fetch_opts, make_proxy_handler, make_backend_transport, append_page_params
+  capabilities.lua           — capability module helpers: cap_fetch, cap_fetch_paged, cap_err; REST adapters: cap_rest_respond, cap_rest_created, cap_rest_204, cap_rest_paged
   translators.lua            — shared Gitea-family translators: translate_repo, translate_user, translate_migration, owner_repo_id
   families.lua               — provider_families table and load_family_backend
   defaults.lua               — default stub handlers collected in the global `defaults` table
@@ -220,7 +221,7 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
 | Routes and default handler stubs | `endpoint_sections` in `internal/catalog.lua` | route registration, `defaults` table wire-up, compatibility matrix sections, test file discovery, `make dump-endpoints` / `validate-tests` / `validate-csv` / `site` |
 | Provider family membership | `provider_families` in `internal/families.lua` | mock building via `.make-families.mk` (auto-generated), `make validate-providers`, `load_family_backend` behavior |
 | Backend transport scaffold | `make_backend_transport` in `internal/transport.lua` | `fetch_json`, `proxy_json*`, `proxy_204`, `proxy_json_list`, `proxy_health_check`, pagination params — all consumed by backends via the transport object |
-| Application module layout | ten `internal/*.lua` files, dofile'd in fixed order by `.init.lua` | the full global surface for backends; see "Internal module layout" for load order and exported globals |
+| Application module layout | eleven `internal/*.lua` files, dofile'd in fixed order by `.init.lua` | the full global surface for backends; see "Internal module layout" for load order and exported globals |
 
 **Adding an endpoint**: touch `internal/catalog.lua` (`endpoint_sections`) and `internal/defaults.lua`, plus per-backend overrides in `backends/<name>.lua` if native support is needed.
 
@@ -228,7 +229,9 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
 
 **Adding a family-alias backend**: update `provider_families` in `internal/families.lua` (the single declaration), create a one-line `backends/<alias>.lua` calling `load_family_backend`, add to `BACKENDS` — no mock file needed.
 
-**Backend registration**: all backends must use `make_backend_builder()` / `b:rest()` / `b:graphql()` / `b:build()`. Direct assignment to `app.backend_impl` or `graphql_resolvers` is forbidden. `make validate-builders` enforces this and is wired into `make test`.
+**Backend registration**: all backends must use `make_backend_builder()` / `b:rest()` / `b:graphql()` / `b:capability()` / `b:build()`. Direct assignment to `app.backend_impl` or `graphql_resolvers` is forbidden. `make validate-builders` enforces this and is wired into `make test`.
+
+**Building a capability module**: use `cap_fetch` / `cap_fetch_paged` inside capability operations to own the fetch+error-mapping step. Capability operations return `(data, nil)` on success or `(nil, err)` on failure where `err = { status = N, message = string }` (status 0 = network error). REST handlers call `cap_rest_respond` / `cap_rest_paged` / `cap_rest_created` / `cap_rest_204` to write the HTTP response. GraphQL resolvers just check `if not data then return nil end` and pass data to `graphql_translate_*`.
 
 ### Redbean
 
@@ -353,7 +356,7 @@ Do **not** use `proxy_search_envelope` when:
 
 ### Internal module layout
 
-The ten `internal/` modules are loaded by `.init.lua` in a fixed order. Each exports only globals — no `require`/`return` pattern; `dofile` runs in global scope.
+The eleven `internal/` modules are loaded by `.init.lua` in a fixed order. Each exports only globals — no `require`/`return` pattern; `dofile` runs in global scope.
 
 **Load order and exports:**
 
@@ -362,6 +365,7 @@ The ten `internal/` modules are loaded by `.init.lua` in a fixed order. Each exp
 | `http.lua` | `set_preamble`, `respond_json` | all modules + backends |
 | `proxy.lua` | `proxy_json`, `proxy_json_paged`, `proxy_json_created`, `proxy_health_check`, `proxy_204`, `proxy_json_list`, `translate_list`, `proxy_search_envelope`, `rewrite_link_header` | backends |
 | `transport.lua` | `append_page_params`, `make_fetch_opts`, `make_proxy_handler`, `make_backend_transport` | backends |
+| `capabilities.lua` | `cap_err`, `cap_fetch`, `cap_fetch_paged`, `cap_rest_respond`, `cap_rest_created`, `cap_rest_204`, `cap_rest_paged` | backends (capability modules) |
 | `translators.lua` | `owner_repo_id`, `translate_repo`, `translate_user`, `translate_migration` | backends |
 | `families.lua` | `provider_families`, `load_family_backend` | backends + Makefile scripts |
 | `registry.lua` | `make_backend_builder` | backends |
@@ -373,10 +377,11 @@ The ten `internal/` modules are loaded by `.init.lua` in a fixed order. Each exp
 
 **Global surface for backend authors** (backends can call any of these):
 - App context (write target): `app.allow_anonymous`, `app.config` — never assign `app.backend_impl` directly
-- Builder (required): `make_backend_builder` — call `b:rest(name, fn)`, `b:graphql(key, fn)`, `b:set_allow_anonymous(v)`, then `b:build()` to commit; see `internal/registry.lua`
+- Builder (required): `make_backend_builder` — call `b:rest(name, fn)`, `b:graphql(key, fn)`, `b:capability(name, module)`, `b:set_allow_anonymous(v)`, then `b:build()` to commit; see `internal/registry.lua`
 - Response: `set_preamble`, `respond_json`
 - Proxy: all of `proxy.lua`'s exports
 - Transport: all of `transport.lua`'s exports
+- Capabilities: all of `capabilities.lua`'s exports — `cap_fetch`, `cap_fetch_paged` for operations; `cap_rest_*` for REST handlers; `cap_err` for error construction
 - Translators: all of `translators.lua`'s exports
 - Family loading: `load_family_backend`
 

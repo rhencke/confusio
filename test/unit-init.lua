@@ -1804,6 +1804,227 @@ do
 end
 
 -- ============================================================
+-- cap_err
+-- ============================================================
+
+do
+  local e = cap_err(404, "not found")
+  ok(type(e) == "table", "cap_err: returns a table")
+  eq(e.status, 404, "cap_err: status field set")
+  eq(e.message, "not found", "cap_err: message field set")
+
+  local e0 = cap_err(0, "network error")
+  eq(e0.status, 0, "cap_err: status 0 for network errors")
+end
+
+-- ============================================================
+-- cap_fetch
+-- ============================================================
+
+do
+  local function make_mock_fetch(ok_val, status_val, headers_val, body_val)
+    return function(_url, _method, _body)
+      return ok_val, status_val, headers_val, body_val
+    end
+  end
+
+  -- success: 200 with valid JSON
+  local fetch_ok = make_mock_fetch(true, 200, {}, '{"name":"hello"}')
+  local data, err = cap_fetch(fetch_ok, "https://example.com/api/repo")
+  ok(data ~= nil, "cap_fetch: success returns non-nil data")
+  ok(err == nil, "cap_fetch: success returns nil err")
+  eq(data.name, "hello", "cap_fetch: decoded JSON field")
+
+  -- network error (ok=false)
+  local fetch_net_err = make_mock_fetch(false, 0, nil, nil)
+  local d2, e2 = cap_fetch(fetch_net_err, "https://example.com/api/repo")
+  ok(d2 == nil, "cap_fetch: network error returns nil data")
+  ok(e2 ~= nil, "cap_fetch: network error returns non-nil err")
+  eq(e2.status, 0, "cap_fetch: network error status is 0")
+
+  -- non-2xx status
+  local fetch_404 = make_mock_fetch(true, 404, {}, '{"message":"Not Found"}')
+  local d3, e3 = cap_fetch(fetch_404, "https://example.com/api/repo")
+  ok(d3 == nil, "cap_fetch: 404 returns nil data")
+  ok(e3 ~= nil, "cap_fetch: 404 returns non-nil err")
+  eq(e3.status, 404, "cap_fetch: 404 err status is 404")
+
+  -- invalid JSON body
+  local fetch_bad_json = make_mock_fetch(true, 200, {}, "not json {{{")
+  local d4, e4 = cap_fetch(fetch_bad_json, "https://example.com/api/repo")
+  ok(d4 == nil, "cap_fetch: bad JSON returns nil data")
+  ok(e4 ~= nil, "cap_fetch: bad JSON returns non-nil err")
+  eq(e4.status, 200, "cap_fetch: bad JSON err status is the HTTP status")
+end
+
+-- ============================================================
+-- cap_fetch_paged
+-- ============================================================
+
+do
+  local function make_mock_fetch(ok_val, status_val, headers_val, body_val)
+    return function(_url, _method, _body)
+      return ok_val, status_val, headers_val, body_val
+    end
+  end
+
+  -- success: returns (data, headers, nil)
+  local fetch_ok =
+    make_mock_fetch(true, 200, { Link = '<https://x.com?page=2>; rel="next"' }, "[1,2,3]")
+  local data, hdrs, err = cap_fetch_paged(fetch_ok, "https://example.com/api/list")
+  ok(data ~= nil, "cap_fetch_paged: success returns non-nil data")
+  ok(hdrs ~= nil, "cap_fetch_paged: success returns non-nil headers")
+  ok(err == nil, "cap_fetch_paged: success returns nil err")
+  ok(hdrs["Link"] ~= nil, "cap_fetch_paged: Link header present")
+
+  -- missing headers → empty table
+  local fetch_no_hdrs = make_mock_fetch(true, 200, nil, "[]")
+  local d2, h2, e2 = cap_fetch_paged(fetch_no_hdrs, "https://example.com/api/list")
+  ok(d2 ~= nil, "cap_fetch_paged: no headers → data still returned")
+  ok(type(h2) == "table", "cap_fetch_paged: no headers → empty table")
+  ok(e2 == nil, "cap_fetch_paged: no headers → nil err")
+
+  -- network error: returns (nil, nil, err)
+  local fetch_net_err = make_mock_fetch(false, 0, nil, nil)
+  local d3, h3, e3 = cap_fetch_paged(fetch_net_err, "https://example.com/api/list")
+  ok(d3 == nil, "cap_fetch_paged: network error returns nil data")
+  ok(h3 == nil, "cap_fetch_paged: network error returns nil headers")
+  ok(e3 ~= nil, "cap_fetch_paged: network error returns non-nil err")
+  eq(e3.status, 0, "cap_fetch_paged: network error err.status is 0")
+
+  -- non-2xx: returns (nil, nil, err)
+  local fetch_403 = make_mock_fetch(true, 403, {}, '{"message":"Forbidden"}')
+  local d4, h4, e4 = cap_fetch_paged(fetch_403, "https://example.com/api/list")
+  ok(d4 == nil, "cap_fetch_paged: 403 returns nil data")
+  ok(h4 == nil, "cap_fetch_paged: 403 returns nil headers")
+  eq(e4.status, 403, "cap_fetch_paged: 403 err.status is 403")
+end
+
+-- ============================================================
+-- cap_rest_respond
+-- ============================================================
+
+do
+  -- success with translate
+  reset_response()
+  cap_rest_respond({ id = 1, x = "a" }, nil, function(d)
+    return { id = d.id }
+  end)
+  eq(_last_status, 200, "cap_rest_respond: success → 200")
+  ok(_last_body:find('"id"') ~= nil, "cap_rest_respond: body contains translated field")
+  ok(_last_body:find('"x"') == nil, "cap_rest_respond: translate removes unwanted field")
+
+  -- success without translate
+  reset_response()
+  cap_rest_respond({ v = 42 }, nil, nil)
+  eq(_last_status, 200, "cap_rest_respond: no translate → 200")
+
+  -- network error → 503
+  reset_response()
+  cap_rest_respond(nil, cap_err(0, "connection refused"), nil)
+  eq(_last_status, 503, "cap_rest_respond: network error → 503")
+
+  -- upstream 404 → 404
+  reset_response()
+  cap_rest_respond(nil, cap_err(404, "not found"), nil)
+  eq(_last_status, 404, "cap_rest_respond: upstream 404 → 404")
+
+  -- upstream 403 → 403
+  reset_response()
+  cap_rest_respond(nil, cap_err(403, "forbidden"), nil)
+  eq(_last_status, 403, "cap_rest_respond: upstream 403 → 403")
+end
+
+-- ============================================================
+-- cap_rest_created
+-- ============================================================
+
+do
+  -- success → 201
+  reset_response()
+  cap_rest_created({ id = 99 }, nil, nil)
+  eq(_last_status, 201, "cap_rest_created: success → 201")
+
+  -- network error → 503
+  reset_response()
+  cap_rest_created(nil, cap_err(0, "timeout"), nil)
+  eq(_last_status, 503, "cap_rest_created: network error → 503")
+
+  -- upstream 422 → 422
+  reset_response()
+  cap_rest_created(nil, cap_err(422, "unprocessable"), nil)
+  eq(_last_status, 422, "cap_rest_created: upstream 422 → 422")
+end
+
+-- ============================================================
+-- cap_rest_204
+-- ============================================================
+
+do
+  -- ok → 204
+  reset_response()
+  cap_rest_204(true, nil)
+  eq(_last_status, 204, "cap_rest_204: ok → 204")
+
+  -- network error → 503
+  reset_response()
+  cap_rest_204(nil, cap_err(0, "connection reset"))
+  eq(_last_status, 503, "cap_rest_204: network error → 503")
+
+  -- upstream 404 → 404
+  reset_response()
+  cap_rest_204(nil, cap_err(404, "repo not found"))
+  eq(_last_status, 404, "cap_rest_204: upstream 404 → 404")
+end
+
+-- ============================================================
+-- cap_rest_paged
+-- ============================================================
+
+do
+  local PAGES = { per_page = "limit", page = "page" }
+
+  -- need a Host header for rewrite_link_header
+  reset_request({ headers = { Host = "proxy.example.com" }, path = "/repos" })
+
+  -- success with Link header → 200 + rewritten Link
+  reset_response()
+  local hdrs_with_link = { Link = '<https://gitea.com/api/v1/repos?limit=30&page=2>; rel="next"' }
+  cap_rest_paged({ { id = 1 } }, hdrs_with_link, nil, PAGES, nil)
+  eq(_last_status, 200, "cap_rest_paged: success → 200")
+  ok(_last_headers["Link"] ~= nil, "cap_rest_paged: Link header rewritten")
+  ok(
+    _last_headers["Link"]:find("proxy.example.com") ~= nil,
+    "cap_rest_paged: Link rewritten to proxy host"
+  )
+
+  -- success without Link header → 200, no Link
+  reset_response()
+  cap_rest_paged({ { id = 1 } }, {}, nil, PAGES, nil)
+  eq(_last_status, 200, "cap_rest_paged: no upstream Link → 200")
+  ok(_last_headers["Link"] == nil, "cap_rest_paged: no Link header when none upstream")
+
+  -- success with translate
+  reset_response()
+  cap_rest_paged({ { raw = true } }, {}, nil, PAGES, function(items)
+    return translate_list(function(i)
+      return { translated = i.raw }
+    end, items)
+  end)
+  eq(_last_status, 200, "cap_rest_paged: translate applied")
+
+  -- network error → 503
+  reset_response()
+  cap_rest_paged(nil, nil, cap_err(0, "network down"), PAGES, nil)
+  eq(_last_status, 503, "cap_rest_paged: network error → 503")
+
+  -- upstream 401 → 401
+  reset_response()
+  cap_rest_paged(nil, nil, cap_err(401, "unauthorized"), PAGES, nil)
+  eq(_last_status, 401, "cap_rest_paged: upstream 401 → 401")
+end
+
+-- ============================================================
 -- Summary
 -- ============================================================
 
