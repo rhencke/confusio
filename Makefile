@@ -35,14 +35,16 @@ LUACHECK_URL = https://github.com/lunarmodules/luacheck/releases/download/v$(LUA
 LUACOV_VERSION := $(shell cat .luacov-version)
 LUACOV_URL = https://github.com/lunarmodules/luacov/archive/refs/tags/v$(LUACOV_VERSION).tar.gz
 
-redbean.com: .redbean-version
-	curl -fsSL $(REDBEAN_URL) -o redbean.com
-	chmod +x redbean.com
+REDBEAN_BIN = redbean.com
+
+$(REDBEAN_BIN): .redbean-version
+	curl -fsSL $(REDBEAN_URL) -o $(REDBEAN_BIN)
+	chmod +x $(REDBEAN_BIN)
 
 # Reusable macro: run a Redbean script.
 # Usage: $(call REDBEAN,scripts/foo.lua [args...])
-# Declares redbean.com as a dependency and invokes ./redbean.com -i.
-REDBEAN = ./redbean.com -i
+# Declares REDBEAN_BIN as a dependency and invokes it with -i.
+REDBEAN = ./$(REDBEAN_BIN) -i
 
 # Shared dependency groups for script targets.
 INIT_SRCS    = .init.lua $(wildcard internal/*.lua)
@@ -74,12 +76,12 @@ luacov: .luacov-version
 	mkdir -p luacov
 	curl -fsSL $(LUACOV_URL) | tar -xz --strip-components=2 -C luacov luacov-$(LUACOV_VERSION)/src
 
-confusio.com: redbean.com .init.lua $(wildcard backends/*.lua) $(wildcard internal/*.lua)
-	cp redbean.com confusio.com
+confusio.com: $(REDBEAN_BIN) .init.lua $(wildcard backends/*.lua) $(wildcard internal/*.lua)
+	cp $(REDBEAN_BIN) confusio.com
 	zip confusio.com .init.lua $(wildcard backends/*.lua) $(wildcard internal/*.lua)
 
-mock-%.com: redbean.com test/mock-%.lua
-	cp redbean.com $@
+mock-%.com: $(REDBEAN_BIN) test/mock-%.lua
+	cp $(REDBEAN_BIN) $@
 	@mkdir -p .tmp-mock-$*
 	cp test/mock-$*.lua .tmp-mock-$*/.init.lua
 	(cd .tmp-mock-$* && zip -u ../$@ .init.lua)
@@ -90,8 +92,8 @@ mock-%.com: redbean.com test/mock-%.lua
 # the mock-%.com pattern rule above.
 # ALIAS_MOCK_RULE(alias, root): builds mock-<alias>.com from test/mock-<root>.lua
 define ALIAS_MOCK_RULE
-mock-$(1).com: redbean.com test/mock-$(2).lua
-	cp redbean.com $$@
+mock-$(1).com: $(REDBEAN_BIN) test/mock-$(2).lua
+	cp $(REDBEAN_BIN) $$@
 	@mkdir -p .tmp-mock-$(1)
 	cp test/mock-$(2).lua .tmp-mock-$(1)/.init.lua
 	(cd .tmp-mock-$(1) && zip -u ../$$@ .init.lua)
@@ -104,8 +106,8 @@ endef
 # If the file does not exist, Make rebuilds it before re-reading the Makefile.
 -include .make-families.mk
 
-.make-families.mk: redbean.com scripts/dump-families.lua $(INIT_SRCS)
-	$(REDBEAN) scripts/dump-families.lua 2>/dev/null | python3 scripts/gen-family-mk.py > $@
+.make-families.mk: $(REDBEAN_BIN) scripts/dump-families.lua $(INIT_SRCS)
+	$(REDBEAN) scripts/dump-families.lua | python3 scripts/gen-family-mk.py > $@
 
 # Backend test configuration.
 # To add a standalone backend: append to BACKENDS (ports auto-assigned from 18080).
@@ -139,67 +141,72 @@ $(foreach b,$(BACKENDS),$(eval $(call BACKEND_RULE,$(b))))
 
 build: confusio.com
 
-dump-endpoints: redbean.com scripts/dump-endpoints.lua $(INIT_SRCS)
-	$(REDBEAN) scripts/dump-endpoints.lua
+DUMP_ENDPOINTS_SCRIPT = scripts/dump-endpoints.lua
+DUMP_FAMILIES_SCRIPT  = scripts/dump-families.lua
+DUMP_CLAIMS_SCRIPT    = scripts/dump-claims.lua
+DUMP_CAPS_SCRIPT      = scripts/dump-capabilities.lua
 
-validate-csv: redbean.com scripts/dump-endpoints.lua $(INIT_SRCS)
-	$(REDBEAN) scripts/dump-endpoints.lua 2>/dev/null | python3 scripts/validate-csv.py site/compatibility.csv
+dump-endpoints: $(REDBEAN_BIN) $(DUMP_ENDPOINTS_SCRIPT) $(INIT_SRCS)
+	$(REDBEAN) $(DUMP_ENDPOINTS_SCRIPT)
 
-validate-tests: redbean.com scripts/dump-endpoints.lua $(INIT_SRCS)
-	$(REDBEAN) scripts/dump-endpoints.lua 2>/dev/null | python3 scripts/validate-tests.py $(BACKENDS)
+validate-csv: $(REDBEAN_BIN) $(DUMP_ENDPOINTS_SCRIPT) $(INIT_SRCS)
+	$(REDBEAN) $(DUMP_ENDPOINTS_SCRIPT) | python3 scripts/validate-csv.py site/compatibility.csv
 
-dump-families: redbean.com scripts/dump-families.lua $(INIT_SRCS)
-	$(REDBEAN) scripts/dump-families.lua
+validate-tests: $(REDBEAN_BIN) $(DUMP_ENDPOINTS_SCRIPT) $(INIT_SRCS)
+	$(REDBEAN) $(DUMP_ENDPOINTS_SCRIPT) | python3 scripts/validate-tests.py $(BACKENDS)
 
-validate-providers: redbean.com scripts/dump-families.lua $(INIT_SRCS)
-	$(REDBEAN) scripts/dump-families.lua 2>/dev/null | python3 scripts/validate-providers.py
+dump-families: $(REDBEAN_BIN) $(DUMP_FAMILIES_SCRIPT) $(INIT_SRCS)
+	$(REDBEAN) $(DUMP_FAMILIES_SCRIPT)
 
-dump-claims: redbean.com scripts/dump-claims.lua $(BACKEND_SRCS)
-	$(REDBEAN) scripts/dump-claims.lua $(BACKENDS)
+validate-providers: $(REDBEAN_BIN) $(DUMP_FAMILIES_SCRIPT) $(INIT_SRCS)
+	$(REDBEAN) $(DUMP_FAMILIES_SCRIPT) | python3 scripts/validate-providers.py
 
-validate-claims: redbean.com scripts/dump-claims.lua scripts/validate-claims.lua $(BACKEND_SRCS)
-	$(REDBEAN) scripts/dump-claims.lua $(BACKENDS) 2>/dev/null | $(REDBEAN) scripts/validate-claims.lua site/compatibility.csv
+dump-claims: $(REDBEAN_BIN) $(DUMP_CLAIMS_SCRIPT) $(BACKEND_SRCS)
+	$(REDBEAN) $(DUMP_CLAIMS_SCRIPT) $(BACKENDS)
+
+validate-claims: $(REDBEAN_BIN) $(DUMP_CLAIMS_SCRIPT) scripts/validate-claims.lua $(BACKEND_SRCS)
+	$(REDBEAN) $(DUMP_CLAIMS_SCRIPT) $(BACKENDS) | $(REDBEAN) scripts/validate-claims.lua site/compatibility.csv
 
 validate-builders:
-	@if grep -rn 'app\.backend_impl\s*=' backends/ 2>/dev/null | grep -v '^Binary'; then \
+	@if grep -rn 'app\.backend_impl\s*=' backends/ | grep -v '^Binary'; then \
 	  echo "ERROR: backend(s) still use direct app.backend_impl assignment; use make_backend_builder():b:build() instead" >&2; \
 	  exit 1; \
 	fi
-	@if grep -rn 'graphql_resolvers\[' backends/ 2>/dev/null | grep -v '^Binary'; then \
+	@if grep -rn 'graphql_resolvers\[' backends/ | grep -v '^Binary'; then \
 	  echo "ERROR: backend(s) still use direct graphql_resolvers assignment; use b:graphql() instead" >&2; \
 	  exit 1; \
 	fi
 	@echo "validate-builders OK"
 
-dump-capabilities: redbean.com scripts/dump-capabilities.lua $(BACKEND_SRCS)
-	$(REDBEAN) scripts/dump-capabilities.lua $(BACKENDS)
+dump-capabilities: $(REDBEAN_BIN) $(DUMP_CAPS_SCRIPT) $(BACKEND_SRCS)
+	$(REDBEAN) $(DUMP_CAPS_SCRIPT) $(BACKENDS)
 
-validate-capabilities: redbean.com scripts/dump-capabilities.lua scripts/validate-capabilities.lua $(BACKEND_SRCS)
-	$(REDBEAN) scripts/dump-capabilities.lua $(BACKENDS) 2>/dev/null | $(REDBEAN) scripts/validate-capabilities.lua
+validate-capabilities: $(REDBEAN_BIN) $(DUMP_CAPS_SCRIPT) scripts/validate-capabilities.lua $(BACKEND_SRCS)
+	$(REDBEAN) $(DUMP_CAPS_SCRIPT) $(BACKENDS) | $(REDBEAN) scripts/validate-capabilities.lua
 
-generate-schema: redbean.com scripts/gen-graphql-schema.lua
+generate-schema: $(REDBEAN_BIN) scripts/gen-graphql-schema.lua
 	$(REDBEAN) scripts/gen-graphql-schema.lua
 
-validate-schema: redbean.com scripts/gen-graphql-schema.lua internal/graphql_schema_data.lua
-	$(REDBEAN) scripts/gen-graphql-schema.lua vendor/github-graphql-schema/schema.docs.graphql /tmp/graphql_schema_data_validate.lua 2>/dev/null
+validate-schema: $(REDBEAN_BIN) scripts/gen-graphql-schema.lua internal/graphql_schema_data.lua
+	$(REDBEAN) scripts/gen-graphql-schema.lua vendor/github-graphql-schema/schema.docs.graphql /tmp/graphql_schema_data_validate.lua
 	diff -q internal/graphql_schema_data.lua /tmp/graphql_schema_data_validate.lua
 
-site: redbean.com scripts/dump-endpoints.lua $(INIT_SRCS)
+site: $(REDBEAN_BIN) $(DUMP_ENDPOINTS_SCRIPT) $(INIT_SRCS)
 	mkdir -p _site
 	cp -r site/. _site/
-	$(REDBEAN) scripts/dump-endpoints.lua 2>/dev/null | \
+	$(REDBEAN) $(DUMP_ENDPOINTS_SCRIPT) | \
 	  python3 scripts/gen-matrix.py - site/compatibility.csv site/index.html _site/index.html
 
 test: test-unit test-integration test-format test-lint validate-csv validate-tests validate-providers validate-claims validate-schema validate-builders validate-capabilities
 
 # Pure-Lua unit tests (no HTTP server needed): .init.lua functions + GraphQL subsystem
-test-unit-functions: redbean.com $(INIT_SRCS) $(wildcard test/unit-*.lua)
+test-unit-functions: $(REDBEAN_BIN) $(INIT_SRCS) $(wildcard test/unit-*.lua)
 	$(REDBEAN) test/unit-init.lua
 	$(REDBEAN) test/unit-graphql.lua
 
 # Convenience alias: run only the GraphQL unit tests
 # unit-graphql.lua is the driver: loads shared state once, then dofiles all sub-files.
-test-unit-graphql: redbean.com $(INIT_SRCS) $(wildcard test/unit-*.lua)
+test-unit-graphql: $(REDBEAN_BIN) $(INIT_SRCS) $(wildcard test/unit-*.lua)
 	$(REDBEAN) test/unit-graphql.lua
 
 # Sequential preamble (boot-path checks), then all backends in parallel
@@ -223,7 +230,7 @@ test-format: stylua
 test-lint: luacheck
 	./luacheck . --exclude-files 'luacov'
 
-test-coverage: redbean.com luacov $(INIT_SRCS) $(wildcard test/unit-*.lua)
+test-coverage: $(REDBEAN_BIN) luacov $(INIT_SRCS) $(wildcard test/unit-*.lua)
 	rm -f luacov.stats.out luacov.report.out
 	COVERAGE=1 $(REDBEAN) test/unit-init.lua
 	$(REDBEAN) scripts/luacov-report.lua
