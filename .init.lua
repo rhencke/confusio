@@ -28,6 +28,7 @@ dofile("/zip/internal/graphql_schema.lua")
 dofile("/zip/internal/graphql_executor.lua")
 dofile("/zip/internal/graphql_translators.lua")
 dofile("/zip/internal/families.lua")
+dofile("/zip/internal/app.lua")
 
 -- backend_impl is global: set by backends/<name>.lua at startup.
 backend_impl = {}
@@ -42,4 +43,9 @@ end
 dofile("/zip/internal/defaults.lua")
 dofile("/zip/internal/router.lua")
 dofile("/zip/internal/catalog.lua")
+
+-- Build the explicit app context from config and backend runtime state.
+-- TODO(#203): dispatch.lua will be migrated to read from app instead of globals.
+app = make_app_context(config) -- luacheck: globals app
+
 dofile("/zip/internal/dispatch.lua")

@@ -1646,6 +1646,51 @@ do
 end
 
 -- ============================================================
+-- make_app_context / app context
+-- ============================================================
+
+ok(type(make_app_context) == "function", "make_app_context: is a function")
+ok(type(app) == "table", "app: exists and is a table after .init.lua loads") -- luacheck: globals app
+ok(type(app.config) == "table", "app.config: is a table")
+eq(app.config.backend, config.backend, "app.config.backend: matches config.backend")
+ok(type(app.backend) == "table", "app.backend: is a table")
+eq(app.backend.name, config.backend, "app.backend.name: matches config.backend")
+eq(app.backend.handlers, backend_impl, "app.backend.handlers: same reference as backend_impl")
+eq(
+  app.backend.resolvers,
+  graphql_resolvers,
+  "app.backend.resolvers: same reference as graphql_resolvers"
+)
+eq(
+  app.backend.allow_anonymous,
+  backend_allow_anonymous,
+  "app.backend.allow_anonymous: matches backend_allow_anonymous"
+)
+eq(
+  app.allow_anonymous,
+  backend_allow_anonymous,
+  "app.allow_anonymous: matches backend_allow_anonymous"
+)
+
+-- make_app_context builds a fresh context from whatever globals it reads.
+do
+  local _saved_backend_impl = backend_impl
+  local _saved_backend_allow_anonymous = backend_allow_anonymous
+  local fake_handlers = { get_repo = function() end }
+  backend_impl = fake_handlers
+  backend_allow_anonymous = false
+  local ctx = make_app_context({ backend = "fakeprovider", base_url = "https://fake.example.com" })
+  eq(ctx.config.backend, "fakeprovider", "make_app_context: config.backend captured")
+  eq(ctx.config.base_url, "https://fake.example.com", "make_app_context: config.base_url captured")
+  eq(ctx.backend.name, "fakeprovider", "make_app_context: backend.name from config")
+  eq(ctx.backend.handlers, fake_handlers, "make_app_context: backend.handlers is backend_impl ref")
+  eq(ctx.backend.allow_anonymous, false, "make_app_context: backend.allow_anonymous captured")
+  eq(ctx.allow_anonymous, false, "make_app_context: allow_anonymous captured from global")
+  backend_impl = _saved_backend_impl
+  backend_allow_anonymous = _saved_backend_allow_anonymous
+end
+
+-- ============================================================
 -- Summary
 -- ============================================================
 

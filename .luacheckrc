@@ -49,6 +49,9 @@ globals = {
   -- Set by backends/*.lua, read by .init.lua
   "backend_impl",
   "backend_allow_anonymous",
+  -- App context: built by internal/app.lua, stored as global by .init.lua
+  "make_app_context",
+  "app",
   -- Default stub handlers: populated by internal/defaults.lua, read by the catalog in .init.lua
   "defaults",
   -- Router: populated by internal/router.lua, used by the catalog and OnHttpRequest in .init.lua
