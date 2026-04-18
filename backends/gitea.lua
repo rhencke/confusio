@@ -2865,50 +2865,19 @@ end)
 -- Gitea teams use numeric IDs, not slugs.  find_team_id lists all teams for
 -- the org and matches by lowercased, slugified name.
 
--- GET /orgs/{org}/teams
-b:rest("get_org_teams", function(org)
-  proxy_json_paged(function(teams)
-    for i, t in ipairs(teams) do
-      teams[i] = translate_gitea_team(t)
-    end
-    return teams
-  end, PAGES, fetch_json(append_page_params(base() .. "/orgs/" .. org .. "/teams", PAGES)))
-end)
+local teams = {}
 
--- POST /orgs/{org}/teams
-b:rest("post_org_teams", function(org)
-  local req = DecodeJson(GetBody() or "{}")
-  local body = {
-    name = req.name,
-    description = req.description,
-    permission = req.permission == "admin" and "owner" or (req.permission or "read"),
-    units = { "repo.code", "repo.issues", "repo.pulls", "repo.releases" },
-    includes_all_repositories = false,
-  }
-  proxy_json_created(
-    translate_gitea_team,
-    fetch_json(base() .. "/orgs/" .. org .. "/teams", "POST", EncodeJson(body))
-  )
-end)
-
--- GET /orgs/{org}/teams/{team_slug}
-b:rest("get_org_team", function(org, slug)
+-- Internal: resolve slug to numeric ID; returns (id, nil) or (nil, cap_err).
+local function team_id_of(org, slug)
   local id = gitea_find_team_id(org, slug)
   if not id then
-    respond_json(404, { message = "Not Found" })
-    return
+    return nil, cap_err(404, "Not Found")
   end
-  proxy_json(translate_gitea_team, fetch_json(base() .. "/teams/" .. id))
-end)
+  return id, nil
+end
 
--- PATCH /orgs/{org}/teams/{team_slug}
-b:rest("patch_org_team", function(org, slug)
-  local id = gitea_find_team_id(org, slug)
-  if not id then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  local req = DecodeJson(GetBody() or "{}")
+-- Internal: build the permission-normalised Gitea team body from a GitHub request.
+local function gitea_team_body(req)
   local body = {}
   if req.name then
     body.name = req.name
@@ -2919,145 +2888,404 @@ b:rest("patch_org_team", function(org, slug)
   if req.permission then
     body.permission = req.permission == "admin" and "owner" or req.permission
   end
-  proxy_json(translate_gitea_team, fetch_json(base() .. "/teams/" .. id, "PATCH", EncodeJson(body)))
+  return body
+end
+
+-- Org-level (slug-based) ----------------------------------------------------
+
+teams.list_org = function(org)
+  local url = append_page_params(base() .. "/orgs/" .. org .. "/teams", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gitea_team, items), hdrs, nil
+end
+
+teams.create = function(org, body)
+  local req = DecodeJson(body or "{}") or {}
+  local gitea_body = {
+    name = req.name,
+    description = req.description,
+    permission = req.permission == "admin" and "owner" or (req.permission or "read"),
+    units = { "repo.code", "repo.issues", "repo.pulls", "repo.releases" },
+    includes_all_repositories = false,
+  }
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/orgs/" .. org .. "/teams", "POST", EncodeJson(gitea_body))
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_team(raw), nil
+end
+
+teams.get_by_slug = function(org, slug)
+  local id, err = team_id_of(org, slug)
+  if not id then
+    return nil, err
+  end
+  local raw, e = cap_fetch(fetch_json, base() .. "/teams/" .. id)
+  if not raw then
+    return nil, e
+  end
+  return translate_gitea_team(raw), nil
+end
+
+teams.update_by_slug = function(org, slug, body)
+  local id, err = team_id_of(org, slug)
+  if not id then
+    return nil, err
+  end
+  local req = DecodeJson(body or "{}") or {}
+  local raw, e =
+    cap_fetch(fetch_json, base() .. "/teams/" .. id, "PATCH", EncodeJson(gitea_team_body(req)))
+  if not raw then
+    return nil, e
+  end
+  return translate_gitea_team(raw), nil
+end
+
+teams.delete_by_slug = function(org, slug)
+  local id, err = team_id_of(org, slug)
+  if not id then
+    return nil, err
+  end
+  local ok, status = fetch_json(base() .. "/teams/" .. id, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting team")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting team")
+  end
+  return true, nil
+end
+
+teams.list_members_by_slug = function(org, slug)
+  local id, err = team_id_of(org, slug)
+  if not id then
+    return nil, nil, err
+  end
+  local url = append_page_params(base() .. "/teams/" .. id .. "/members", PAGES)
+  local items, hdrs, e = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, e
+  end
+  return translate_list(translate_user, items), hdrs, nil
+end
+
+-- Returns ({url,role,state}, nil) on 204 or (nil, err) otherwise.
+teams.get_membership_by_slug = function(org, slug, username)
+  local id, err = team_id_of(org, slug)
+  if not id then
+    return nil, err
+  end
+  local ok, status = fetch_json(base() .. "/teams/" .. id .. "/members/" .. username)
+  if not ok then
+    return nil, cap_err(0, "network error checking membership")
+  end
+  if status == 204 then
+    return { url = "", role = "member", state = "active" }, nil
+  end
+  return nil, cap_err(404, "Not Found")
+end
+
+-- Adds a member; returns ({url,role,state}, nil) on 200/204.
+teams.add_membership_by_slug = function(org, slug, username)
+  local id, err = team_id_of(org, slug)
+  if not id then
+    return nil, err
+  end
+  local ok, status = fetch_json(base() .. "/teams/" .. id .. "/members/" .. username, "PUT")
+  if not ok then
+    return nil, cap_err(0, "network error adding membership")
+  end
+  if status == 200 or status == 204 then
+    return { url = "", role = "member", state = "active" }, nil
+  end
+  return nil, cap_err(status, "upstream error " .. tostring(status) .. " adding membership")
+end
+
+teams.delete_membership_by_slug = function(org, slug, username)
+  local id, err = team_id_of(org, slug)
+  if not id then
+    return nil, err
+  end
+  local ok, status = fetch_json(base() .. "/teams/" .. id .. "/members/" .. username, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting membership")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting membership")
+  end
+  return true, nil
+end
+
+teams.list_repos_by_slug = function(org, slug)
+  local id, err = team_id_of(org, slug)
+  if not id then
+    return nil, nil, err
+  end
+  local url = append_page_params(base() .. "/teams/" .. id .. "/repos", PAGES)
+  local items, hdrs, e = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, e
+  end
+  return translate_list(translate_repo, items), hdrs, nil
+end
+
+teams.get_repo_by_slug = function(org, slug, owner, repo_name)
+  local id, err = team_id_of(org, slug)
+  if not id then
+    return nil, err
+  end
+  return teams.get_repo(id, owner, repo_name)
+end
+
+teams.add_repo_by_slug = function(org, slug, owner, repo_name)
+  local id, err = team_id_of(org, slug)
+  if not id then
+    return nil, err
+  end
+  return teams.add_repo(id, owner, repo_name)
+end
+
+teams.delete_repo_by_slug = function(org, slug, owner, repo_name)
+  local id, err = team_id_of(org, slug)
+  if not id then
+    return nil, err
+  end
+  return teams.delete_repo(id, owner, repo_name)
+end
+
+-- Legacy by-ID operations ---------------------------------------------------
+
+teams.list_user = function()
+  local url = append_page_params(base() .. "/user/teams", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gitea_team, items), hdrs, nil
+end
+
+teams.get = function(team_id)
+  local raw, err = cap_fetch(fetch_json, base() .. "/teams/" .. team_id)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_team(raw), nil
+end
+
+teams.update = function(team_id, body)
+  local req = DecodeJson(body or "{}") or {}
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/teams/" .. team_id, "PATCH", EncodeJson(gitea_team_body(req)))
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_team(raw), nil
+end
+
+teams.delete = function(team_id)
+  local ok, status = fetch_json(base() .. "/teams/" .. team_id, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting team")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting team")
+  end
+  return true, nil
+end
+
+teams.list_members = function(team_id)
+  local url = append_page_params(base() .. "/teams/" .. team_id .. "/members", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_user, items), hdrs, nil
+end
+
+-- Returns (true, nil) if member, (false, nil) if not, (nil, err) on network error.
+teams.is_member = function(team_id, username)
+  local ok, status = fetch_json(base() .. "/teams/" .. team_id .. "/members/" .. username)
+  if not ok then
+    return nil, cap_err(0, "network error checking team membership")
+  end
+  if status == 204 then
+    return true, nil
+  end
+  return false, nil
+end
+
+teams.add_member = function(team_id, username)
+  local ok, status = fetch_json(base() .. "/teams/" .. team_id .. "/members/" .. username, "PUT")
+  if not ok then
+    return nil, cap_err(0, "network error adding team member")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " adding team member")
+  end
+  return true, nil
+end
+
+teams.delete_member = function(team_id, username)
+  local ok, status = fetch_json(base() .. "/teams/" .. team_id .. "/members/" .. username, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting team member")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting team member")
+  end
+  return true, nil
+end
+
+teams.get_membership = function(team_id, username)
+  local ok, status = fetch_json(base() .. "/teams/" .. team_id .. "/members/" .. username)
+  if not ok then
+    return nil, cap_err(0, "network error checking team membership")
+  end
+  if status == 204 then
+    return { url = "", role = "member", state = "active" }, nil
+  end
+  return nil, cap_err(404, "Not Found")
+end
+
+teams.add_membership = function(team_id, username)
+  local ok, status = fetch_json(base() .. "/teams/" .. team_id .. "/members/" .. username, "PUT")
+  if not ok then
+    return nil, cap_err(0, "network error adding team membership")
+  end
+  if status == 200 or status == 204 then
+    return { url = "", role = "member", state = "active" }, nil
+  end
+  return nil, cap_err(status, "upstream error " .. tostring(status) .. " adding team membership")
+end
+
+teams.delete_membership = function(team_id, username)
+  local ok, status = fetch_json(base() .. "/teams/" .. team_id .. "/members/" .. username, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting team membership")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil,
+      cap_err(status, "upstream error " .. tostring(status) .. " deleting team membership")
+  end
+  return true, nil
+end
+
+teams.list_repos = function(team_id)
+  local url = append_page_params(base() .. "/teams/" .. team_id .. "/repos", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_repo, items), hdrs, nil
+end
+
+-- Returns (translated_repo, nil) on 200/204 or (nil, err) otherwise.
+teams.get_repo = function(team_id, owner, repo_name)
+  local ok, status, _, body =
+    fetch_json(base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name)
+  if not ok then
+    return nil, cap_err(0, "network error getting team repo")
+  end
+  if status == 200 then
+    return translate_repo(DecodeJson(body) or {}), nil
+  end
+  if status == 204 then
+    return translate_repo({}), nil
+  end
+  return nil, cap_err(404, "Not Found")
+end
+
+teams.add_repo = function(team_id, owner, repo_name)
+  local ok, status =
+    fetch_json(base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name, "PUT")
+  if not ok then
+    return nil, cap_err(0, "network error adding repo to team")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " adding repo to team")
+  end
+  return true, nil
+end
+
+teams.delete_repo = function(team_id, owner, repo_name)
+  local ok, status =
+    fetch_json(base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error removing repo from team")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " removing repo from team")
+  end
+  return true, nil
+end
+
+-- GET /orgs/{org}/teams
+b:rest("get_org_teams", function(org)
+  cap_rest_paged(teams.list_org(org))
+end)
+
+-- POST /orgs/{org}/teams
+b:rest("post_org_teams", function(org)
+  cap_rest_created(teams.create(org, GetBody()))
+end)
+
+-- GET /orgs/{org}/teams/{team_slug}
+b:rest("get_org_team", function(org, slug)
+  cap_rest_respond(teams.get_by_slug(org, slug))
+end)
+
+-- PATCH /orgs/{org}/teams/{team_slug}
+b:rest("patch_org_team", function(org, slug)
+  cap_rest_respond(teams.update_by_slug(org, slug, GetBody()))
 end)
 
 -- DELETE /orgs/{org}/teams/{team_slug}
 b:rest("delete_org_team", function(org, slug)
-  local id = gitea_find_team_id(org, slug)
-  if not id then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  local opts = auth() or {}
-  opts.method = "DELETE"
-  proxy_204(nil, pcall(Fetch, base() .. "/teams/" .. id, opts))
+  cap_rest_204(teams.delete_by_slug(org, slug))
 end)
 
 -- GET /orgs/{org}/teams/{team_slug}/members
 b:rest("get_org_team_members", function(org, slug)
-  local id = gitea_find_team_id(org, slug)
-  if not id then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  proxy_json_paged(
-    translate_users,
-    PAGES,
-    fetch_json(append_page_params(base() .. "/teams/" .. id .. "/members", PAGES))
-  )
+  cap_rest_paged(teams.list_members_by_slug(org, slug))
 end)
 
 -- GET /orgs/{org}/teams/{team_slug}/memberships/{username}
 b:rest("get_org_team_membership", function(org, slug, username)
-  local id = gitea_find_team_id(org, slug)
-  if not id then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  local ok, status = pcall(Fetch, base() .. "/teams/" .. id .. "/members/" .. username, auth())
-  if ok and status == 204 then
-    respond_json(200, { url = "", role = "member", state = "active" })
-  elseif ok then
-    respond_json(404, { message = "Not Found" })
-  else
-    respond_json(503, {})
-  end
+  cap_rest_respond(teams.get_membership_by_slug(org, slug, username))
 end)
 
 -- PUT /orgs/{org}/teams/{team_slug}/memberships/{username}
 b:rest("put_org_team_membership", function(org, slug, username)
-  local id = gitea_find_team_id(org, slug)
-  if not id then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  local opts = auth() or {}
-  opts.method = "PUT"
-  local ok, status = pcall(Fetch, base() .. "/teams/" .. id .. "/members/" .. username, opts)
-  if ok and (status == 204 or status == 200) then
-    respond_json(200, { url = "", role = "member", state = "active" })
-  elseif ok then
-    respond_json(status, {})
-  else
-    respond_json(503, {})
-  end
+  cap_rest_respond(teams.add_membership_by_slug(org, slug, username))
 end)
 
 -- DELETE /orgs/{org}/teams/{team_slug}/memberships/{username}
 b:rest("delete_org_team_membership", function(org, slug, username)
-  local id = gitea_find_team_id(org, slug)
-  if not id then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  local opts = auth() or {}
-  opts.method = "DELETE"
-  proxy_204(nil, pcall(Fetch, base() .. "/teams/" .. id .. "/members/" .. username, opts))
+  cap_rest_204(teams.delete_membership_by_slug(org, slug, username))
 end)
 
 -- GET /orgs/{org}/teams/{team_slug}/repos
 b:rest("get_org_team_repos", function(org, slug)
-  local id = gitea_find_team_id(org, slug)
-  if not id then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  proxy_json_paged(function(items)
-    for i, r in ipairs(items) do
-      items[i] = translate_repo(r)
-    end
-    return items
-  end, PAGES, fetch_json(append_page_params(base() .. "/teams/" .. id .. "/repos", PAGES)))
+  cap_rest_paged(teams.list_repos_by_slug(org, slug))
 end)
 
 -- GET /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
 b:rest("get_org_team_repo", function(org, slug, owner, repo_name)
-  local id = gitea_find_team_id(org, slug)
-  if not id then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  local ok, status, _, body =
-    fetch_json(base() .. "/teams/" .. id .. "/repos/" .. owner .. "/" .. repo_name)
-  if ok and (status == 204 or status == 200) then
-    local r = (status == 200 and DecodeJson(body)) or {}
-    respond_json(200, translate_repo(r))
-  elseif ok then
-    respond_json(404, { message = "Not Found" })
-  else
-    respond_json(503, {})
-  end
+  cap_rest_respond(teams.get_repo_by_slug(org, slug, owner, repo_name))
 end)
 
 -- PUT /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
 b:rest("put_org_team_repo", function(org, slug, owner, repo_name)
-  local id = gitea_find_team_id(org, slug)
-  if not id then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  local opts = auth() or {}
-  opts.method = "PUT"
-  proxy_204(
-    nil,
-    pcall(Fetch, base() .. "/teams/" .. id .. "/repos/" .. owner .. "/" .. repo_name, opts)
-  )
+  cap_rest_204(teams.add_repo_by_slug(org, slug, owner, repo_name))
 end)
 
 -- DELETE /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
 b:rest("delete_org_team_repo", function(org, slug, owner, repo_name)
-  local id = gitea_find_team_id(org, slug)
-  if not id then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  local opts = auth() or {}
-  opts.method = "DELETE"
-  proxy_204(
-    nil,
-    pcall(Fetch, base() .. "/teams/" .. id .. "/repos/" .. owner .. "/" .. repo_name, opts)
-  )
+  cap_rest_204(teams.delete_repo_by_slug(org, slug, owner, repo_name))
 end)
 
 -- Issues -------------------------------------------------------------------
@@ -3583,147 +3811,84 @@ b:rest(
 
 -- GET /user/teams
 b:rest("get_user_teams", function()
-  proxy_json_paged(function(teams)
-    for i, t in ipairs(teams) do
-      teams[i] = translate_gitea_team(t)
-    end
-    return teams
-  end, PAGES, fetch_json(append_page_params(base() .. "/user/teams", PAGES)))
+  cap_rest_paged(teams.list_user())
 end)
 
 -- GET /teams/{team_id}
 b:rest("get_team", function(team_id)
-  proxy_json(translate_gitea_team, fetch_json(base() .. "/teams/" .. team_id))
+  cap_rest_respond(teams.get(team_id))
 end)
 
 -- PATCH /teams/{team_id}
 b:rest("patch_team", function(team_id)
-  local req = DecodeJson(GetBody() or "{}")
-  local body = {}
-  if req.name then
-    body.name = req.name
-  end
-  if req.description then
-    body.description = req.description
-  end
-  if req.permission then
-    body.permission = req.permission == "admin" and "owner" or req.permission
-  end
-  proxy_json(
-    translate_gitea_team,
-    fetch_json(base() .. "/teams/" .. team_id, "PATCH", EncodeJson(body))
-  )
+  cap_rest_respond(teams.update(team_id, GetBody()))
 end)
 
 -- DELETE /teams/{team_id}
 b:rest("delete_team", function(team_id)
-  set_204_or_error("DELETE", base() .. "/teams/" .. team_id)
+  cap_rest_204(teams.delete(team_id))
 end)
 
 -- GET /teams/{team_id}/members
 b:rest("get_team_members", function(team_id)
-  proxy_json_paged(
-    translate_users,
-    PAGES,
-    fetch_json(append_page_params(base() .. "/teams/" .. team_id .. "/members", PAGES))
-  )
+  cap_rest_paged(teams.list_members(team_id))
 end)
 
 -- GET /teams/{team_id}/members/{username} — deprecated legacy endpoint
 b:rest("get_team_member", function(team_id, username)
-  local ok, status = pcall(Fetch, base() .. "/teams/" .. team_id .. "/members/" .. username, auth())
-  if ok and status == 204 then
+  local is_member, err = teams.is_member(team_id, username)
+  if err then
+    cap_rest_respond(nil, err)
+  elseif is_member then
     SetStatus(204, "No Content")
-  elseif ok then
-    respond_json(404, { message = "Not Found" })
   else
-    respond_json(503, {})
+    respond_json(404, { message = "Not Found" })
   end
 end)
 
 -- PUT /teams/{team_id}/members/{username} — deprecated legacy endpoint
 b:rest("put_team_member", function(team_id, username)
-  local opts = auth() or {}
-  opts.method = "PUT"
-  proxy_204({ 200 }, pcall(Fetch, base() .. "/teams/" .. team_id .. "/members/" .. username, opts))
+  cap_rest_204(teams.add_member(team_id, username))
 end)
 
 -- DELETE /teams/{team_id}/members/{username} — deprecated legacy endpoint
 b:rest("delete_team_member", function(team_id, username)
-  set_204_or_error("DELETE", base() .. "/teams/" .. team_id .. "/members/" .. username)
+  cap_rest_204(teams.delete_member(team_id, username))
 end)
 
 -- GET /teams/{team_id}/memberships/{username}
 b:rest("get_team_membership", function(team_id, username)
-  local ok, status = pcall(Fetch, base() .. "/teams/" .. team_id .. "/members/" .. username, auth())
-  if ok and status == 204 then
-    respond_json(200, { url = "", role = "member", state = "active" })
-  elseif ok then
-    respond_json(404, { message = "Not Found" })
-  else
-    respond_json(503, {})
-  end
+  cap_rest_respond(teams.get_membership(team_id, username))
 end)
 
 -- PUT /teams/{team_id}/memberships/{username}
 b:rest("put_team_membership", function(team_id, username)
-  local opts = auth() or {}
-  opts.method = "PUT"
-  local ok, status = pcall(Fetch, base() .. "/teams/" .. team_id .. "/members/" .. username, opts)
-  if ok and (status == 204 or status == 200) then
-    respond_json(200, { url = "", role = "member", state = "active" })
-  elseif ok then
-    respond_json(status, {})
-  else
-    respond_json(503, {})
-  end
+  cap_rest_respond(teams.add_membership(team_id, username))
 end)
 
 -- DELETE /teams/{team_id}/memberships/{username}
 b:rest("delete_team_membership", function(team_id, username)
-  set_204_or_error("DELETE", base() .. "/teams/" .. team_id .. "/members/" .. username)
+  cap_rest_204(teams.delete_membership(team_id, username))
 end)
 
 -- GET /teams/{team_id}/repos
 b:rest("get_team_repos", function(team_id)
-  proxy_json_paged(function(items)
-    for i, r in ipairs(items) do
-      items[i] = translate_repo(r)
-    end
-    return items
-  end, PAGES, fetch_json(append_page_params(base() .. "/teams/" .. team_id .. "/repos", PAGES)))
+  cap_rest_paged(teams.list_repos(team_id))
 end)
 
 -- GET /teams/{team_id}/repos/{owner}/{repo}
 b:rest("get_team_repo", function(team_id, owner, repo_name)
-  local ok, status, _, body =
-    fetch_json(base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name)
-  if ok and (status == 204 or status == 200) then
-    local r = (status == 200 and DecodeJson(body)) or {}
-    respond_json(200, translate_repo(r))
-  elseif ok then
-    respond_json(404, { message = "Not Found" })
-  else
-    respond_json(503, {})
-  end
+  cap_rest_respond(teams.get_repo(team_id, owner, repo_name))
 end)
 
 -- PUT /teams/{team_id}/repos/{owner}/{repo}
 b:rest("put_team_repo", function(team_id, owner, repo_name)
-  local opts = auth() or {}
-  opts.method = "PUT"
-  proxy_204(
-    nil,
-    pcall(Fetch, base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name, opts)
-  )
+  cap_rest_204(teams.add_repo(team_id, owner, repo_name))
 end)
 
 -- DELETE /teams/{team_id}/repos/{owner}/{repo}
 b:rest("delete_team_repo", function(team_id, owner, repo_name)
-  set_204_or_error(
-    "DELETE",
-    base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name
-  )
+  cap_rest_204(teams.delete_repo(team_id, owner, repo_name))
 end)
 
 -- Pull Requests ---------------------------------------------------------------
@@ -6379,5 +6544,6 @@ b:capability("pr_subs", pr_subs)
 b:capability("activity", activity)
 b:capability("checks", checks)
 b:capability("git_db", git_db)
+b:capability("teams", teams)
 b:set_allow_anonymous(_allow_anon)
 b:build()
