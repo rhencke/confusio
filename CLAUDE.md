@@ -162,11 +162,17 @@ will catch any mismatch.
      },
    },
    ```
-2. Create `backends/<alias>.lua` — one line plus a comment:
+2. Create `backends/<alias>.lua` — a short file that sets the default base URL and
+   dofiles the root backend:
    ```lua
    -- MyAlias is API-compatible with Gitea v1.  Family metadata in provider_families.
-   load_family_backend("gitea")
+   if config.base_url == "" then
+     config.base_url = provider_families.gitea.aliases[config.backend].default_url
+   end
+   dofile("/zip/backends/gitea.lua")
    ```
+   The root backend (gitea.lua) reads strip patterns from `provider_families` automatically
+   at build time — no separate strip wiring needed in the alias file.
 3. Add `<alias>` to the `BACKENDS` list in the Makefile.
    No `test/mock-<alias>.lua` file is needed — `.make-families.mk` is auto-generated
    from `provider_families` and builds `mock-<alias>.com` from the root family's mock.

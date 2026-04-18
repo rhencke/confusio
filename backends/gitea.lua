@@ -7061,4 +7061,5 @@ b:capability("search", search_cap)
 b:capability("markdown", markdown_cap)
 b:capability("meta", meta_cap)
 b:set_allow_anonymous(_allow_anon)
-b:build()
+local _alias_meta = provider_families.gitea.aliases[config.backend]
+b:build(_alias_meta and _alias_meta.strip)
