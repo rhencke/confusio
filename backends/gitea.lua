@@ -319,6 +319,19 @@ local function translate_gitea_review_comments(comments)
   return translate_list(translate_gitea_review_comment, comments)
 end
 
+-- Normalise a Gitea branch object to GitHub shape.
+-- Gitea uses commit.id for the SHA; GitHub uses commit.sha.
+-- Mutates the input table in place (safe — callers own the decoded object).
+local function translate_gitea_branch(br)
+  if not br then
+    return {}
+  end
+  if br.commit then
+    br.commit.sha = br.commit.id
+  end
+  return br
+end
+
 -- Look up a Gitea label ID by name within a repo.
 local function gitea_find_label_id(owner, repo_name, label_name)
   local ok, status, _, body =
@@ -1289,6 +1302,111 @@ comments_cap.delete = function(owner, repo_name, comment_id)
   return true, nil
 end
 
+-- ---------------------------------------------------------------------------
+-- Branches capability module
+-- ---------------------------------------------------------------------------
+-- Shared fetch+translate operations for branch resources.
+-- Gitea branch objects use commit.id for the SHA; translate_gitea_branch
+-- normalises to commit.sha before returning.
+-- Operations return (data, nil) on success or (nil, err) on failure.
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+
+local branches = {}
+
+-- list: paginated list of branches for a repository.
+branches.list = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/branches", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gitea_branch, items), hdrs, nil
+end
+
+-- get: fetch a single branch by name.
+branches.get = function(owner, repo_name, branch)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/branches/" .. branch
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_branch(raw), nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Repo metadata capability module
+-- ---------------------------------------------------------------------------
+-- Shared fetch operations for repository metadata: topics, languages,
+-- contributors, and tags.  These resources pass through with minimal or no
+-- translation because Gitea and GitHub shapes are already compatible.
+-- Single-item operations return (data, nil) or (nil, err).
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+
+local repo_metadata = {}
+
+-- get_topics: fetch the topic list for a repository.
+-- Returns { names = {...} } to match the GitHub REST shape.
+repo_metadata.get_topics = function(owner, repo_name)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/topics")
+  if not raw then
+    return nil, err
+  end
+  return { names = raw.topics or raw.names or {} }, nil
+end
+
+-- put_topics: replace the topic list for a repository.
+-- body: JSON-encoded string with a "names" array (GitHub REST input shape).
+-- Gitea expects { topics: [...] }; the response is translated back to { names: [...] }.
+repo_metadata.put_topics = function(owner, repo_name, body)
+  local req = DecodeJson(body or "{}")
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/topics",
+    "PUT",
+    EncodeJson({ topics = req.names or {} })
+  )
+  if not raw then
+    return nil, err
+  end
+  return { names = raw.topics or raw.names or {} }, nil
+end
+
+-- get_languages: fetch the language breakdown for a repository.
+-- Both Gitea and GitHub return { "Language": bytes } — pass through.
+repo_metadata.get_languages = function(owner, repo_name)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/languages")
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- list_contributors: paginated list of contributors for a repository.
+-- Gitea and GitHub use the same "contributions" key — pass through.
+repo_metadata.list_contributors = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contributors", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+-- list_tags: paginated list of tags for a repository.
+-- Both Gitea and GitHub return [{ name, commit: { sha, url }, ... }] — pass through.
+repo_metadata.list_tags = function(owner, repo_name)
+  local url = append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/tags", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
 -- Health check
 b:rest("get_root", function()
   proxy_health_check(pcall(Fetch, base() .. "/version", auth()))
@@ -1388,86 +1506,46 @@ end)
 
 -- GET /repos/{owner}/{repo}/topics
 b:rest("get_repo_topics", function(owner, repo_name)
-  proxy_json(function(t)
-    return { names = t.topics or t.names or {} }
-  end, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/topics"))
+  local data, err = repo_metadata.get_topics(owner, repo_name)
+  cap_rest_respond(data, err)
 end)
 
 -- PUT /repos/{owner}/{repo}/topics
 b:rest("put_repo_topics", function(owner, repo_name)
-  local req = DecodeJson(GetBody() or "{}")
-  proxy_json(
-    function(t)
-      return { names = t.topics or t.names or {} }
-    end,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/topics",
-      "PUT",
-      EncodeJson({ topics = req.names or {} })
-    )
-  )
+  local data, err = repo_metadata.put_topics(owner, repo_name, GetBody())
+  cap_rest_respond(data, err)
 end)
 
 -- GET /repos/{owner}/{repo}/languages
--- Both Gitea and GitHub return { "Language": bytes } — pass through.
 b:rest("get_repo_languages", function(owner, repo_name)
-  proxy_json(nil, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/languages"))
+  local data, err = repo_metadata.get_languages(owner, repo_name)
+  cap_rest_respond(data, err)
 end)
 
 -- GET /repos/{owner}/{repo}/contributors
--- Gitea uses "contributions"; GitHub uses "contributions" — same key, pass through.
 b:rest("get_repo_contributors", function(owner, repo_name)
-  proxy_json_paged(
-    nil,
-    PAGES,
-    fetch_json(
-      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contributors", PAGES)
-    )
-  )
+  local items, hdrs, err = repo_metadata.list_contributors(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 -- GET /repos/{owner}/{repo}/tags
--- Both Gitea and GitHub return [{ name, commit: { sha, url }, ... }] — pass through.
 b:rest("get_repo_tags", function(owner, repo_name)
-  proxy_json_paged(
-    nil,
-    PAGES,
-    fetch_json(
-      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/tags", PAGES)
-    )
-  )
+  local items, hdrs, err = repo_metadata.list_tags(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 -- Branches ------------------------------------------------------------------
 
--- Gitea branch objects use commit.id instead of GitHub's commit.sha.
 -- GET /repos/{owner}/{repo}/branches
 b:rest("get_repo_branches", function(owner, repo_name)
-  local function tr_branches(branches)
-    for _, br in ipairs(branches or {}) do
-      if br.commit then
-        br.commit.sha = br.commit.id
-      end
-    end
-    return branches or {}
-  end
-  proxy_json_paged(
-    tr_branches,
-    PAGES,
-    fetch_json(
-      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/branches", PAGES)
-    )
-  )
+  local items, hdrs, err = branches.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 -- GET /repos/{owner}/{repo}/branches/{branch}
 b:rest("get_repo_branch", function(owner, repo_name, branch)
-  proxy_json(function(br)
-    if br and br.commit then
-      br.commit.sha = br.commit.id
-    end
-    return br or {}
-  end, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/branches/" .. branch))
+  local data, err = branches.get(owner, repo_name, branch)
+  cap_rest_respond(data, err)
 end)
 
 -- Commits -------------------------------------------------------------------
@@ -4002,7 +4080,7 @@ b:graphql("node.Commit", function(local_id, _ctx)
 end)
 
 -- node.Ref: fetch a branch ref by "owner/repo/refs/heads/..." local ID.
--- Gitea branch objects use commit.id for the SHA; normalise to commit.sha before translating.
+-- Uses branches.get which normalises commit.sha via translate_gitea_branch.
 b:graphql("node.Ref", function(local_id, _ctx)
   local owner, repo, ref_path = local_id:match("^([^/]+)/([^/]+)/(refs/.+)$")
   if not owner then
@@ -4012,13 +4090,9 @@ b:graphql("node.Ref", function(local_id, _ctx)
   if not branch then
     return nil
   end
-  local data, _ =
-    graphql_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo .. "/branches/" .. branch)
+  local data, _ = branches.get(owner, repo, branch)
   if not data then
     return nil
-  end
-  if data.commit then
-    data.commit.sha = data.commit.id
   end
   local repo_stub = { __typename = "Repository", nameWithOwner = owner .. "/" .. repo }
   return graphql_translate_ref(data, repo_stub)
@@ -4142,18 +4216,15 @@ b:graphql("Repository.milestones", function(parent, args, ctx)
 end)
 
 -- Repository.refs: paginated list of branches as Ref objects.
--- Gitea branch objects use commit.id for the SHA; we normalise to commit.sha before
--- passing to graphql_translate_ref (which uses r.commit.sha).
+-- gitea_repo_connection fetches items inline (intentionally not capability-backed
+-- to avoid O(n) per-item fetches).  translate_gitea_branch normalises commit.sha.
 b:graphql("Repository.refs", function(parent, args, ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
   end
   return gitea_repo_connection(owner, name, "/branches", args, ctx, function(br)
-    if br.commit then
-      br.commit.sha = br.commit.id
-    end
-    return graphql_translate_ref(br, parent)
+    return graphql_translate_ref(translate_gitea_branch(br), parent)
   end, graphql_refs_connection)
 end)
 
@@ -5352,5 +5423,7 @@ b:capability("pulls", pulls_cap)
 b:capability("labels", labels_cap)
 b:capability("milestones", milestones_cap)
 b:capability("comments", comments_cap)
+b:capability("branches", branches)
+b:capability("repo_metadata", repo_metadata)
 b:set_allow_anonymous(_allow_anon)
 b:build()
