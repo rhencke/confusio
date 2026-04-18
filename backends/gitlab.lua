@@ -554,66 +554,192 @@ local GL_STATUS_TO_CHECK_RUN = {
   canceled = { status = "completed", conclusion = "cancelled" },
 }
 
+-- ---------------------------------------------------------------------------
+-- Repos capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translate_gl_repo for all repository operations.
+-- REST handlers and GraphQL resolvers both call into this table rather than
+-- duplicating the URL construction, error mapping, and translation logic.
+-- All operations return (data, nil) on success or (nil, err) on failure.
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+
+local repos = {}
+
+-- get: fetch a single repository.
+repos.get = function(owner, repo_name)
+  local raw, err = cap_fetch(fetch_json, base() .. "/projects/" .. project_id(owner, repo_name))
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_repo(raw), nil
+end
+
+-- update: apply a partial update (GitLab uses PUT for project updates).
+-- body: raw GitHub-format request body string (translated internally).
+repos.update = function(owner, repo_name, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name),
+    "PUT",
+    translate_gl_req(body)
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_repo(raw), nil
+end
+
+-- delete: permanently remove a repository.
+-- GitLab returns 202 Accepted for async deletion.
+-- Returns (true, nil) on 202 success or (nil, err) on failure.
+repos.delete = function(owner, repo_name)
+  local url = base() .. "/projects/" .. project_id(owner, repo_name)
+  local dopts = auth() or {}
+  dopts.method = "DELETE"
+  local ok, status = pcall(Fetch, url, dopts)
+  if not ok then
+    return nil, cap_err(0, "network error deleting " .. owner .. "/" .. repo_name)
+  end
+  if status ~= 202 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting repository")
+  end
+  return true, nil
+end
+
+-- list_user: paginated list of repos for the authenticated user.
+repos.list_user = function()
+  local url = append_page_params(base() .. "/projects?owned=true&membership=true", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gl_repo, items), hdrs, nil
+end
+
+-- create_user: create a repository under the authenticated user.
+repos.create_user = function(body)
+  local raw, err = cap_fetch(fetch_json, base() .. "/projects", "POST", translate_gl_req(body))
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_repo(raw), nil
+end
+
+-- list_org: paginated list of repos for a GitLab group.
+repos.list_org = function(org)
+  local url = append_page_params(base() .. "/groups/" .. org .. "/projects", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gl_repo, items), hdrs, nil
+end
+
+-- create_org: create a repository inside a GitLab group (namespace).
+repos.create_org = function(org, body)
+  local gl_req = translate_gl_req(body)
+  local gl = DecodeJson(gl_req)
+  gl.namespace_id = org
+  local raw, err = cap_fetch(fetch_json, base() .. "/projects", "POST", EncodeJson(gl))
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_repo(raw), nil
+end
+
+-- list_by_user: paginated list of public repos for a specific user.
+repos.list_by_user = function(username)
+  local url = append_page_params(base() .. "/users/" .. username .. "/projects", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gl_repo, items), hdrs, nil
+end
+
+-- list_all: paginated list of all public projects.
+repos.list_all = function()
+  local url = append_page_params(base() .. "/projects?visibility=public", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gl_repo, items), hdrs, nil
+end
+
+-- get_topics: fetch project topics, returned as { names = [...] }.
+repos.get_topics = function(owner, repo_name)
+  local raw, err = cap_fetch(fetch_json, base() .. "/projects/" .. project_id(owner, repo_name))
+  if not raw then
+    return nil, err
+  end
+  return { names = raw.topics or {} }, nil
+end
+
+-- put_topics: replace project topics.
+repos.put_topics = function(owner, repo_name, body)
+  local req = DecodeJson(body or "{}")
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name),
+    "PUT",
+    EncodeJson({ topics = req.names or {} })
+  )
+  if not raw then
+    return nil, err
+  end
+  return { names = raw.topics or {} }, nil
+end
+
 local b = make_backend_builder()
 
 b:rest("get_root", function()
   proxy_health_check(pcall(Fetch, base() .. "/version", auth()))
 end)
 
-b:rest(
-  "get_repo",
-  proxy_handler(translate_gl_repo, function(owner, repo_name)
-    return base() .. "/projects/" .. project_id(owner, repo_name)
-  end)
-)
+-- GET /repos/{owner}/{repo}
+b:rest("get_repo", function(owner, repo_name)
+  local data, err = repos.get(owner, repo_name)
+  cap_rest_respond(data, err)
+end)
 
+-- PATCH /repos/{owner}/{repo}
 b:rest("patch_repo", function(owner, repo_name)
-  proxy_json(
-    translate_gl_repo,
-    fetch_json(
-      base() .. "/projects/" .. project_id(owner, repo_name),
-      "PUT",
-      translate_gl_req(GetBody())
-    )
-  )
+  local data, err = repos.update(owner, repo_name, GetBody())
+  cap_rest_respond(data, err)
 end)
 
+-- DELETE /repos/{owner}/{repo}
 b:rest("delete_repo", function(owner, repo_name)
-  local url = base() .. "/projects/" .. project_id(owner, repo_name)
-  local dopts = auth() or {}
-  dopts.method = "DELETE"
-  -- GitLab returns 202 Accepted for async deletion
-  proxy_204({ 202 }, pcall(Fetch, url, dopts))
+  local ok, err = repos.delete(owner, repo_name)
+  cap_rest_204(ok, err)
 end)
 
-b:rest(
-  "get_user_repos",
-  proxy_handler_paged(translate_gl_projects, function()
-    return append_page_params(base() .. "/projects?owned=true&membership=true", PAGES)
-  end)
-)
+-- GET /user/repos
+b:rest("get_user_repos", function()
+  local items, hdrs, err = repos.list_user()
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
+-- POST /user/repos
 b:rest("post_user_repos", function()
-  proxy_json_created(
-    translate_gl_repo,
-    fetch_json(base() .. "/projects", "POST", translate_gl_req(GetBody()))
-  )
+  local data, err = repos.create_user(GetBody())
+  cap_rest_created(data, err)
 end)
 
-b:rest(
-  "get_org_repos",
-  proxy_handler_paged(translate_gl_projects, function(org)
-    return append_page_params(base() .. "/groups/" .. org .. "/projects", PAGES)
-  end)
-)
+-- GET /orgs/{org}/repos
+b:rest("get_org_repos", function(org)
+  local items, hdrs, err = repos.list_org(org)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
+-- POST /orgs/{org}/repos
 b:rest("post_org_repos", function(org)
-  local gl_req = translate_gl_req(GetBody())
-  local gl = DecodeJson(gl_req)
-  gl.namespace_id = org
-  proxy_json_created(translate_gl_repo, fetch_json(base() .. "/projects", "POST", EncodeJson(gl)))
+  local data, err = repos.create_org(org, GetBody())
+  cap_rest_created(data, err)
 end)
 
+-- GET /repos/{owner}/{repo}/topics
 b:rest(
   "get_repo_topics",
   proxy_handler(function(p)
@@ -623,18 +749,10 @@ b:rest(
   end)
 )
 
+-- PUT /repos/{owner}/{repo}/topics
 b:rest("put_repo_topics", function(owner, repo_name)
-  local req = DecodeJson(GetBody() or "{}")
-  proxy_json(
-    function(p)
-      return { names = p.topics or {} }
-    end,
-    fetch_json(
-      base() .. "/projects/" .. project_id(owner, repo_name),
-      "PUT",
-      EncodeJson({ topics = req.names or {} })
-    )
-  )
+  local data, err = repos.put_topics(owner, repo_name, GetBody())
+  cap_rest_respond(data, err)
 end)
 
 b:rest(
@@ -1569,20 +1687,16 @@ b:rest("patch_repo_hook_config", function(owner, repo_name, hook_id)
 end)
 
 -- GET /users/{username}/repos -----------------------------------------------
-b:rest(
-  "get_users_repos",
-  proxy_handler_paged(translate_gl_projects, function(username)
-    return append_page_params(base() .. "/users/" .. username .. "/projects", PAGES)
-  end)
-)
+b:rest("get_users_repos", function(username)
+  local items, hdrs, err = repos.list_by_user(username)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
 -- GET /repositories (all public projects) -----------------------------------
-b:rest(
-  "get_repositories",
-  proxy_handler_paged(translate_gl_projects, function()
-    return append_page_params(base() .. "/projects?visibility=public", PAGES)
-  end)
-)
+b:rest("get_repositories", function()
+  local items, hdrs, err = repos.list_all()
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
 -- Commit comments -----------------------------------------------------------
 -- GitLab uses notes on commits: /projects/{id}/repository/commits/{sha}/comments
@@ -3984,12 +4098,11 @@ b:graphql("Query.repository", function(_parent, args, ctx)
     graphql_error(ctx, "repository requires owner and name arguments")
     return nil
   end
-  local data, _ =
-    graphql_fetch(fetch_json, base() .. "/projects/" .. project_id(args.owner, args.name))
+  local data, _ = repos.get(args.owner, args.name)
   if not data then
     return nil
   end
-  return graphql_translate_repo(translate_gl_repo(data))
+  return graphql_translate_repo(data)
 end)
 
 -- node.Repository: fetch a repository by "owner/repo" local ID.
@@ -3998,11 +4111,11 @@ b:graphql("node.Repository", function(local_id, _ctx)
   if not owner then
     return nil
   end
-  local data, _ = graphql_fetch(fetch_json, base() .. "/projects/" .. project_id(owner, repo))
+  local data, _ = repos.get(owner, repo)
   if not data then
     return nil
   end
-  return graphql_translate_repo(translate_gl_repo(data))
+  return graphql_translate_repo(data)
 end)
 
 -- node.User: fetch a user by login.
@@ -4596,4 +4709,5 @@ b:graphql("Query.search", function(_parent, args, ctx)
   }
 end)
 
+b:capability("repos", repos)
 b:build()
