@@ -413,11 +413,6 @@ local function translate_gitea_status_to_check_run(s)
   }
 end
 
--- Translate a list of Gitea statuses to GitHub check runs.
-local function translate_gitea_statuses_to_check_runs(statuses)
-  return translate_list(translate_gitea_status_to_check_run, statuses)
-end
-
 -- Map a GitHub check run request body to a Gitea commit status body.
 local function gh_check_run_to_gitea_status(req)
   local status = req.status or "queued"
@@ -4108,43 +4103,54 @@ end)
 
 -- Checks (via Gitea commit statuses) ------------------------------------------
 
+local checks = {}
+
+-- Maps a GitHub check-run create request to a Gitea status, returning the created check-run.
+checks.create_run = function(owner, repo_name, body)
+  local req = DecodeJson(body or "{}") or {}
+  local sha = req.head_sha or ""
+  local gitea_body = gh_check_run_to_gitea_status(req)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. sha,
+    "POST",
+    gitea_body
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_status_to_check_run(raw), nil
+end
+
+-- Returns {total_count, check_runs=[...]} from Gitea statuses.
+checks.list_commit = function(owner, repo_name, ref)
+  local url = append_page_params(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. ref,
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  local runs = translate_list(translate_gitea_status_to_check_run, items)
+  return runs, hdrs, nil
+end
+
 -- POST /repos/{owner}/{repo}/check-runs
 -- Maps to Gitea POST /api/v1/repos/{owner}/{repo}/statuses/{sha}.
 b:rest("post_check_runs", function(owner, repo_name)
-  local req = DecodeJson(GetBody() or "{}") or {}
-  local sha = req.head_sha or ""
-  local gitea_body = gh_check_run_to_gitea_status(req)
-  proxy_json_created(
-    translate_gitea_status_to_check_run,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. sha,
-      "POST",
-      gitea_body
-    )
-  )
+  cap_rest_created(checks.create_run(owner, repo_name, GetBody()))
 end)
 
 -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
 -- Maps to Gitea GET /api/v1/repos/{owner}/{repo}/statuses/{ref}.
 b:rest("get_commit_check_runs", function(owner, repo_name, ref)
-  local ok, status, _, body = fetch_json(
-    append_page_params(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. ref,
-      PAGES
-    )
-  )
-  if ok and status == 200 then
-    local statuses = DecodeJson(body) or {}
-    local runs = translate_gitea_statuses_to_check_runs(statuses)
-    respond_json(200, {
-      total_count = #runs,
-      check_runs = runs,
-    })
-  elseif ok then
-    respond_json(status, {})
-  else
-    respond_json(503, {})
+  local runs, _, err = checks.list_commit(owner, repo_name, ref)
+  if err then
+    respond_json(err.status == 0 and 503 or err.status, {})
+    return
   end
+  respond_json(200, { total_count = #runs, check_runs = runs })
 end)
 
 -- Check Suites — no Gitea equivalent; all are stubs --------------------
@@ -4498,80 +4504,158 @@ end)
 
 -- Git database (https://docs.github.com/en/rest/git) -----------------------
 
+local git_db = {}
+
+git_db.get_blob = function(owner, repo_name, file_sha)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/blobs/" .. file_sha
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+git_db.get_commit = function(owner, repo_name, commit_sha)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/commits/" .. commit_sha
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- Gitea GET /git/refs/{ref} returns an array — same as GitHub matching-refs.
+git_db.list_matching_refs = function(owner, repo_name, ref)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs/" .. ref)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- GitHub returns a single ref; Gitea returns an array — take the first element.
+git_db.get_ref = function(owner, repo_name, ref)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs/" .. ref)
+  if not raw then
+    return nil, err
+  end
+  if type(raw) == "table" and raw[1] then
+    return raw[1], nil
+  end
+  return raw, nil
+end
+
+git_db.create_ref = function(owner, repo_name, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+git_db.delete_ref = function(owner, repo_name, ref)
+  local ok, status =
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs/" .. ref, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting git ref")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting git ref")
+  end
+  return true, nil
+end
+
+git_db.get_tag = function(owner, repo_name, tag_sha)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/tags/" .. tag_sha
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+git_db.create_tag = function(owner, repo_name, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/tags",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+git_db.get_tree = function(owner, repo_name, tree_sha)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/trees/" .. tree_sha
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
 -- GET /repos/{owner}/{repo}/git/blobs/{file_sha}
 b:rest("get_git_blob", function(owner, repo_name, file_sha)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/blobs/" .. file_sha)
-  )
+  cap_rest_respond(git_db.get_blob(owner, repo_name, file_sha))
 end)
 
 -- GET /repos/{owner}/{repo}/git/commits/{commit_sha}
 b:rest("get_git_commit", function(owner, repo_name, commit_sha)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/commits/" .. commit_sha)
-  )
+  cap_rest_respond(git_db.get_commit(owner, repo_name, commit_sha))
 end)
 
 -- GET /repos/{owner}/{repo}/git/matching-refs/{ref}
 -- Gitea: GET /repos/{owner}/{repo}/git/refs/{ref} returns an array.
 b:rest("list_git_matching_refs", function(owner, repo_name, ref)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs/" .. ref)
-  )
+  cap_rest_respond(git_db.list_matching_refs(owner, repo_name, ref))
 end)
 
 -- GET /repos/{owner}/{repo}/git/ref/{ref}
 -- GitHub returns a single ref object; Gitea returns an array — take the first element.
 b:rest("get_git_ref", function(owner, repo_name, ref)
-  proxy_json(function(arr)
-    if type(arr) == "table" and arr[1] then
-      return arr[1]
-    end
-    return arr
-  end, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs/" .. ref))
+  cap_rest_respond(git_db.get_ref(owner, repo_name, ref))
 end)
 
 -- POST /repos/{owner}/{repo}/git/refs
 b:rest("create_git_ref", function(owner, repo_name)
-  proxy_json_created(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs", "POST", GetBody())
-  )
+  cap_rest_created(git_db.create_ref(owner, repo_name, GetBody()))
 end)
 
 -- DELETE /repos/{owner}/{repo}/git/refs/{ref}
 b:rest("delete_git_ref", function(owner, repo_name, ref)
-  set_204_or_error(
-    "DELETE",
-    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs/" .. ref
-  )
+  cap_rest_204(git_db.delete_ref(owner, repo_name, ref))
 end)
 
 -- GET /repos/{owner}/{repo}/git/tags/{tag_sha}
 b:rest("get_git_tag", function(owner, repo_name, tag_sha)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/tags/" .. tag_sha)
-  )
+  cap_rest_respond(git_db.get_tag(owner, repo_name, tag_sha))
 end)
 
 -- POST /repos/{owner}/{repo}/git/tags
 b:rest("create_git_tag", function(owner, repo_name)
-  proxy_json_created(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/tags", "POST", GetBody())
-  )
+  cap_rest_created(git_db.create_tag(owner, repo_name, GetBody()))
 end)
 
 -- GET /repos/{owner}/{repo}/git/trees/{tree_sha}
 b:rest("get_git_tree", function(owner, repo_name, tree_sha)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/trees/" .. tree_sha)
-  )
+  cap_rest_respond(git_db.get_tree(owner, repo_name, tree_sha))
 end)
 
 -- Activity (https://docs.github.com/en/rest/activity)
@@ -6293,5 +6377,7 @@ b:capability("reactions", reactions_cap)
 b:capability("issue_events", issue_events_cap)
 b:capability("pr_subs", pr_subs)
 b:capability("activity", activity)
+b:capability("checks", checks)
+b:capability("git_db", git_db)
 b:set_allow_anonymous(_allow_anon)
 b:build()
