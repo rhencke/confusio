@@ -668,21 +668,266 @@ local function translate_gitea_actions_runner(r)
   }
 end
 
--- Proxy a Gitea Actions list (plain JSON array) → GitHub envelope {total_count, key: [...]}.
-local function proxy_actions_list(key, translate_fn, url)
-  local ok, status, _, body = fetch_json(url)
+-- ---------------------------------------------------------------------------
+-- Actions capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translate for actions secrets, variables, and runners.
+-- REST handlers call into this table for all actions-related operations.
+-- All operations return (data, nil) on success or (nil, err) on failure.
+-- List operations return (items, nil) where items is the translated array
+-- (Gitea actions lists are plain JSON arrays without Link pagination headers).
+
+local actions_cap = {}
+
+-- list_repo_secrets: fetch all repo-level secrets as a translated array.
+actions_cap.list_repo_secrets = function(owner, repo_name)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/actions/secrets")
+  if not raw then
+    return nil, err
+  end
+  return translate_list(translate_gitea_actions_secret, raw), nil
+end
+
+-- get_repo_secret: fetch a single repo-level secret.
+actions_cap.get_repo_secret = function(owner, repo_name, secret_name)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/actions/secrets/" .. secret_name
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_actions_secret(raw), nil
+end
+
+-- delete_repo_secret: delete a repo-level secret.
+actions_cap.delete_repo_secret = function(owner, repo_name, secret_name)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/actions/secrets/" .. secret_name
+  local ok, status = fetch_json(url, "DELETE")
   if not ok then
-    respond_json(503, {})
-    return
+    return nil, cap_err(0, "network error deleting repo secret")
   end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
+  if status == 401 or status == 403 then
+    return nil, cap_err(status, "not authorized to delete repo secret")
   end
-  local raw = DecodeJson(body) or {}
-  local items = {}
-  for i, item in ipairs(raw) do
-    items[i] = translate_fn(item)
+  if status == 404 then
+    return nil, cap_err(status, "repo secret not found")
+  end
+  if status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting repo secret")
+  end
+  return true, nil
+end
+
+-- list_org_secrets: fetch all org-level secrets as a translated array.
+actions_cap.list_org_secrets = function(org)
+  local raw, err = cap_fetch(fetch_json, base() .. "/orgs/" .. org .. "/actions/secrets")
+  if not raw then
+    return nil, err
+  end
+  return translate_list(translate_gitea_actions_secret, raw), nil
+end
+
+-- get_org_secret: fetch a single org-level secret.
+actions_cap.get_org_secret = function(org, secret_name)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/orgs/" .. org .. "/actions/secrets/" .. secret_name)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_actions_secret(raw), nil
+end
+
+-- delete_org_secret: delete an org-level secret.
+actions_cap.delete_org_secret = function(org, secret_name)
+  local url = base() .. "/orgs/" .. org .. "/actions/secrets/" .. secret_name
+  local ok, status = fetch_json(url, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting org secret")
+  end
+  if status == 401 or status == 403 then
+    return nil, cap_err(status, "not authorized to delete org secret")
+  end
+  if status == 404 then
+    return nil, cap_err(status, "org secret not found")
+  end
+  if status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting org secret")
+  end
+  return true, nil
+end
+
+-- list_repo_variables: fetch all repo-level variables as a translated array.
+actions_cap.list_repo_variables = function(owner, repo_name)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/actions/variables")
+  if not raw then
+    return nil, err
+  end
+  return translate_list(translate_gitea_actions_variable, raw), nil
+end
+
+-- get_repo_variable: fetch a single repo-level variable.
+actions_cap.get_repo_variable = function(owner, repo_name, var_name)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/actions/variables/" .. var_name
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_actions_variable(raw), nil
+end
+
+-- create_repo_variable: create a repo-level variable.
+actions_cap.create_repo_variable = function(owner, repo_name, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/actions/variables",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_actions_variable(raw), nil
+end
+
+-- update_repo_variable: update a repo-level variable (Gitea uses PUT).
+actions_cap.update_repo_variable = function(owner, repo_name, var_name, body)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/actions/variables/" .. var_name
+  local ok, status = fetch_json(url, "PUT", body)
+  if not ok then
+    return nil, cap_err(0, "network error updating repo variable")
+  end
+  if status == 401 or status == 403 then
+    return nil, cap_err(status, "not authorized to update repo variable")
+  end
+  if status == 404 then
+    return nil, cap_err(status, "repo variable not found")
+  end
+  if status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " updating repo variable")
+  end
+  return true, nil
+end
+
+-- delete_repo_variable: delete a repo-level variable.
+actions_cap.delete_repo_variable = function(owner, repo_name, var_name)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/actions/variables/" .. var_name
+  local ok, status = fetch_json(url, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting repo variable")
+  end
+  if status == 401 or status == 403 then
+    return nil, cap_err(status, "not authorized to delete repo variable")
+  end
+  if status == 404 then
+    return nil, cap_err(status, "repo variable not found")
+  end
+  if status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting repo variable")
+  end
+  return true, nil
+end
+
+-- list_org_variables: fetch all org-level variables as a translated array.
+actions_cap.list_org_variables = function(org)
+  local raw, err = cap_fetch(fetch_json, base() .. "/orgs/" .. org .. "/actions/variables")
+  if not raw then
+    return nil, err
+  end
+  return translate_list(translate_gitea_actions_variable, raw), nil
+end
+
+-- get_org_variable: fetch a single org-level variable.
+actions_cap.get_org_variable = function(org, var_name)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/orgs/" .. org .. "/actions/variables/" .. var_name)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_actions_variable(raw), nil
+end
+
+-- create_org_variable: create an org-level variable.
+actions_cap.create_org_variable = function(org, body)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/orgs/" .. org .. "/actions/variables", "POST", body)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_actions_variable(raw), nil
+end
+
+-- update_org_variable: update an org-level variable (Gitea uses PUT).
+actions_cap.update_org_variable = function(org, var_name, body)
+  local url = base() .. "/orgs/" .. org .. "/actions/variables/" .. var_name
+  local ok, status = fetch_json(url, "PUT", body)
+  if not ok then
+    return nil, cap_err(0, "network error updating org variable")
+  end
+  if status == 401 or status == 403 then
+    return nil, cap_err(status, "not authorized to update org variable")
+  end
+  if status == 404 then
+    return nil, cap_err(status, "org variable not found")
+  end
+  if status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " updating org variable")
+  end
+  return true, nil
+end
+
+-- delete_org_variable: delete an org-level variable.
+actions_cap.delete_org_variable = function(org, var_name)
+  local url = base() .. "/orgs/" .. org .. "/actions/variables/" .. var_name
+  local ok, status = fetch_json(url, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting org variable")
+  end
+  if status == 401 or status == 403 then
+    return nil, cap_err(status, "not authorized to delete org variable")
+  end
+  if status == 404 then
+    return nil, cap_err(status, "org variable not found")
+  end
+  if status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting org variable")
+  end
+  return true, nil
+end
+
+-- list_repo_runners: fetch all repo-level runners as a translated array.
+actions_cap.list_repo_runners = function(owner, repo_name)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/actions/runners")
+  if not raw then
+    return nil, err
+  end
+  return translate_list(translate_gitea_actions_runner, raw), nil
+end
+
+-- list_org_runners: fetch all org-level runners as a translated array.
+actions_cap.list_org_runners = function(org)
+  local raw, err = cap_fetch(fetch_json, base() .. "/orgs/" .. org .. "/actions/runners")
+  if not raw then
+    return nil, err
+  end
+  return translate_list(translate_gitea_actions_runner, raw), nil
+end
+
+-- actions_rest_list: write the GitHub envelope for a list operation.
+-- items is the translated array; key is "secrets", "variables", or "runners".
+local function actions_rest_list(items, err, key)
+  if not items then
+    if err.status == 0 then
+      respond_json(503, {})
+    else
+      respond_json(err.status, {})
+    end
+    return
   end
   set_preamble()
   Write(
@@ -4532,139 +4777,83 @@ end)
 -- create/update (PUT) falls back to the default 501 handler.
 
 b:rest("get_repo_actions_secrets", function(owner, repo)
-  proxy_actions_list(
-    "secrets",
-    translate_gitea_actions_secret,
-    base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/secrets"
-  )
+  local items, err = actions_cap.list_repo_secrets(owner, repo)
+  actions_rest_list(items, err, "secrets")
 end)
 
 b:rest("get_repo_actions_secret", function(owner, repo, secret_name)
-  proxy_json(
-    translate_gitea_actions_secret,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/secrets/" .. secret_name)
-  )
+  cap_rest_respond(actions_cap.get_repo_secret(owner, repo, secret_name))
 end)
 
 b:rest("delete_repo_actions_secret", function(owner, repo, secret_name)
-  set_204_or_error(
-    "DELETE",
-    base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/secrets/" .. secret_name
-  )
+  cap_rest_204(actions_cap.delete_repo_secret(owner, repo, secret_name))
 end)
 
 b:rest("get_org_actions_secrets", function(org)
-  proxy_actions_list(
-    "secrets",
-    translate_gitea_actions_secret,
-    base() .. "/orgs/" .. org .. "/actions/secrets"
-  )
+  local items, err = actions_cap.list_org_secrets(org)
+  actions_rest_list(items, err, "secrets")
 end)
 
 b:rest("get_org_actions_secret", function(org, secret_name)
-  proxy_json(
-    translate_gitea_actions_secret,
-    fetch_json(base() .. "/orgs/" .. org .. "/actions/secrets/" .. secret_name)
-  )
+  cap_rest_respond(actions_cap.get_org_secret(org, secret_name))
 end)
 
 b:rest("delete_org_actions_secret", function(org, secret_name)
-  set_204_or_error("DELETE", base() .. "/orgs/" .. org .. "/actions/secrets/" .. secret_name)
+  cap_rest_204(actions_cap.delete_org_secret(org, secret_name))
 end)
 
 -- Variables: full CRUD. Gitea uses PUT for updates; GitHub uses PATCH.
 b:rest("get_repo_actions_variables", function(owner, repo)
-  proxy_actions_list(
-    "variables",
-    translate_gitea_actions_variable,
-    base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables"
-  )
+  local items, err = actions_cap.list_repo_variables(owner, repo)
+  actions_rest_list(items, err, "variables")
 end)
 
 b:rest("get_repo_actions_variable", function(owner, repo, name)
-  proxy_json(
-    translate_gitea_actions_variable,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables/" .. name)
-  )
+  cap_rest_respond(actions_cap.get_repo_variable(owner, repo, name))
 end)
 
 b:rest("post_repo_actions_variable", function(owner, repo)
-  proxy_json_created(
-    translate_gitea_actions_variable,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables",
-      "POST",
-      GetBody()
-    )
-  )
+  cap_rest_created(actions_cap.create_repo_variable(owner, repo, GetBody()))
 end)
 
 b:rest("patch_repo_actions_variable", function(owner, repo, name)
-  proxy_204(
-    nil,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables/" .. name,
-      "PUT",
-      GetBody()
-    )
-  )
+  cap_rest_204(actions_cap.update_repo_variable(owner, repo, name, GetBody()))
 end)
 
 b:rest("delete_repo_actions_variable", function(owner, repo, name)
-  set_204_or_error(
-    "DELETE",
-    base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables/" .. name
-  )
+  cap_rest_204(actions_cap.delete_repo_variable(owner, repo, name))
 end)
 
 b:rest("get_org_actions_variables", function(org)
-  proxy_actions_list(
-    "variables",
-    translate_gitea_actions_variable,
-    base() .. "/orgs/" .. org .. "/actions/variables"
-  )
+  local items, err = actions_cap.list_org_variables(org)
+  actions_rest_list(items, err, "variables")
 end)
 
 b:rest("get_org_actions_variable", function(org, name)
-  proxy_json(
-    translate_gitea_actions_variable,
-    fetch_json(base() .. "/orgs/" .. org .. "/actions/variables/" .. name)
-  )
+  cap_rest_respond(actions_cap.get_org_variable(org, name))
 end)
 
 b:rest("post_org_actions_variable", function(org)
-  proxy_json_created(
-    translate_gitea_actions_variable,
-    fetch_json(base() .. "/orgs/" .. org .. "/actions/variables", "POST", GetBody())
-  )
+  cap_rest_created(actions_cap.create_org_variable(org, GetBody()))
 end)
 
 b:rest("patch_org_actions_variable", function(org, name)
-  proxy_204(
-    nil,
-    fetch_json(base() .. "/orgs/" .. org .. "/actions/variables/" .. name, "PUT", GetBody())
-  )
+  cap_rest_204(actions_cap.update_org_variable(org, name, GetBody()))
 end)
 
 b:rest("delete_org_actions_variable", function(org, name)
-  set_204_or_error("DELETE", base() .. "/orgs/" .. org .. "/actions/variables/" .. name)
+  cap_rest_204(actions_cap.delete_org_variable(org, name))
 end)
 
 -- Runners: list only (individual runner operations not proxied).
 b:rest("get_repo_actions_runners", function(owner, repo)
-  proxy_actions_list(
-    "runners",
-    translate_gitea_actions_runner,
-    base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/runners"
-  )
+  local items, err = actions_cap.list_repo_runners(owner, repo)
+  actions_rest_list(items, err, "runners")
 end)
 
 b:rest("get_org_actions_runners", function(org)
-  proxy_actions_list(
-    "runners",
-    translate_gitea_actions_runner,
-    base() .. "/orgs/" .. org .. "/actions/runners"
-  )
+  local items, err = actions_cap.list_org_runners(org)
+  actions_rest_list(items, err, "runners")
 end)
 
 -- Git database (https://docs.github.com/en/rest/git) -----------------------
@@ -6545,5 +6734,6 @@ b:capability("activity", activity)
 b:capability("checks", checks)
 b:capability("git_db", git_db)
 b:capability("teams", teams)
+b:capability("actions", actions_cap)
 b:set_allow_anonymous(_allow_anon)
 b:build()
