@@ -247,6 +247,20 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
 
 **Adding a family-alias backend**: update `provider_families` in `internal/families.lua` (the single declaration), create a `backends/<alias>.lua` that sets `config.base_url` from `provider_families` and dofiles the root backend, add to `BACKENDS` — no mock file needed.
 
+**Guardrails — what CI will catch if you get it wrong:**
+
+| What you're adding | What must be true | CI check that enforces it |
+|--------------------|-------------------|--------------------------|
+| New endpoint | Row in `endpoint_sections` in `internal/catalog.lua` | `make validate-tests`, `make validate-csv` |
+| New endpoint with native support | CSV row updated with `y`/`~`/`n` and matching backend handler | `make validate-claims`, `make validate-csv` |
+| New standalone backend | `backends/<name>.lua` calls `make_backend_builder()` and `b:build()` | `make validate-builders` |
+| New standalone backend | Backend file does NOT assign `app.backend_impl` or `graphql_resolvers` directly | `make validate-builders` |
+| New standalone backend | Mock + hurl tests cover at least every catalog group | `make validate-tests` |
+| New family-alias backend | Alias declared in `provider_families` in `internal/families.lua` | `make validate-providers` |
+| New family-alias backend | `backends/<alias>.lua` dofiles the root backend | `make validate-providers` |
+| New family-alias backend | Alias listed in `BACKENDS` in the Makefile | `make validate-providers` |
+| New capability module | Module registered via `b:capability()` with at least one function | `make validate-capabilities` |
+
 **Backend registration**: all backends must use `make_backend_builder()` / `b:rest()` / `b:graphql()` / `b:capability()` / `b:build()`. Direct assignment to `app.backend_impl` or `graphql_resolvers` is forbidden. `make validate-builders` enforces this and is wired into `make test`.
 
 **Building a capability module**: use `cap_fetch` / `cap_fetch_paged` inside capability operations to own the fetch+error-mapping step. Capability operations return `(data, nil)` on success or `(nil, err)` on failure where `err = { status = N, message = string }` (status 0 = network error). REST handlers call `cap_rest_respond` / `cap_rest_paged` / `cap_rest_created` / `cap_rest_204` to write the HTTP response. GraphQL resolvers just check `if not data then return nil end` and pass data to `graphql_translate_*`.
