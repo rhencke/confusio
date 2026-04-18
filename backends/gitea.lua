@@ -1,6 +1,6 @@
 -- Gitea backend handler overrides.
--- Loaded by .init.lua when config.backend == "gitea", and by load_family_backend
--- for API-compatible family members (forgejo, codeberg, gogs, notabug).
+-- Loaded by .init.lua when config.backend == "gitea", and dofile'd directly by
+-- alias backends (forgejo, codeberg, gogs, notabug) that are API-compatible.
 -- Only endpoints that behave differently from the default need to be listed here.
 if config.base_url == "" then
   config.base_url = "https://gitea.com"

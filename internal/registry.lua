@@ -67,10 +67,10 @@ function make_backend_builder() -- luacheck: globals make_backend_builder
   -- Commit all registered handlers, resolvers, and capabilities to the app context.
   --
   -- strip: optional array of Lua patterns; REST keys whose names match any pattern
-  --        are silently omitted from the commit.  When omitted, b:build() falls back
-  --        to app._family_strip, which load_family_backend sets before loading the
-  --        root backend file so alias feature gaps are applied declaratively rather
-  --        than by post-hoc mutation.  Strip patterns do NOT affect capabilities.
+  --        are silently omitted from the commit.  Alias backends pass the strip list
+  --        from provider_families so that feature gaps are applied declaratively
+  --        rather than by post-hoc mutation.  Strip patterns do NOT affect
+  --        capabilities.
   --
   -- After build() returns:
   --   app.backend_impl[name]   = fn     for each registered REST handler (unless stripped)
@@ -78,13 +78,10 @@ function make_backend_builder() -- luacheck: globals make_backend_builder
   --   app.capabilities[name]   = module for each registered capability module
   --   app.allow_anonymous      = v      only when set_allow_anonymous was called
   function b:build(strip)
-    -- Explicit strip arg takes precedence; fall back to the family-level strip
-    -- declared by load_family_backend before the root backend file was loaded.
-    local effective_strip = strip or app._family_strip
     for name, fn in pairs(self._rest) do
       local skip = false
-      if effective_strip then
-        for _, pat in ipairs(effective_strip) do
+      if strip then
+        for _, pat in ipairs(strip) do
           if name:find(pat) then
             skip = true
             break

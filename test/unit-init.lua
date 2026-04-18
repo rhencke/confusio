@@ -1581,87 +1581,34 @@ OnHttpRequest()
 eq(_last_status, 501, "OnHttpRequest: GET /feeds → 501 (activity not implemented)")
 
 -- ============================================================
--- load_family_backend
+-- b:build() strip patterns (alias feature gaps)
 -- ============================================================
 
 do
-  local _saved_backend = config.backend
-  local _saved_base_url = config.base_url
   local _saved_impl = app.backend_impl
 
-  -- Stub dofile so load_family_backend's dofile("/zip/backends/gitea.lua") is a
-  -- no-op.  Also captures app._family_strip at the time of the call so tests can
-  -- verify the declarative strip declaration.
-  -- luacheck: push
-  -- luacheck: globals dofile
-  local _real_dofile2 = dofile
-  local _strip_during_dofile
-  dofile = function(path)
-    if path and path:match("^/zip/backends/") then
-      _strip_during_dofile = app._family_strip
-      return
-    end
-    return _real_dofile2(path)
-  end
-  -- luacheck: pop
-
-  -- Happy path: sets base_url from alias default when config.base_url is empty.
-  config.backend = "forgejo"
-  config.base_url = ""
-  load_family_backend("gitea")
-  eq(
-    config.base_url,
-    "https://codeberg.org",
-    "load_family_backend: sets base_url from alias default"
-  )
-
-  -- Explicit base_url is preserved (not overwritten by alias default).
-  config.backend = "forgejo"
-  config.base_url = "https://custom.example.com"
-  load_family_backend("gitea")
-  eq(
-    config.base_url,
-    "https://custom.example.com",
-    "load_family_backend: preserves explicit base_url"
-  )
-
-  -- Strip patterns are declared in app._family_strip before the root backend loads,
-  -- then cleared afterward (gogs strips _package and _actions_).
-  config.backend = "gogs"
-  config.base_url = "https://try.gogs.io"
-  _strip_during_dofile = nil
-  load_family_backend("gitea")
-  ok(
-    _strip_during_dofile ~= nil,
-    "load_family_backend: app._family_strip is set during dofile for gogs"
-  )
-  ok(app._family_strip == nil, "load_family_backend: app._family_strip is cleared after dofile")
-
-  -- The builder reads app._family_strip in b:build() and excludes matching keys.
+  -- b:build(strip) with explicit strip patterns excludes matching REST keys.
   app.backend_impl = {}
-  app._family_strip = _strip_during_dofile -- luacheck: globals app
   local bt = make_backend_builder()
   bt:rest("get_package_info", function() end)
   bt:rest("list_actions_runs", function() end)
   bt:rest("get_repo", function() end)
-  bt:build()
-  app._family_strip = nil -- luacheck: globals app
+  bt:build({ "_package", "_actions_" })
+  ok(app.backend_impl["get_package_info"] == nil, "b:build(strip): strips _package keys")
+  ok(app.backend_impl["list_actions_runs"] == nil, "b:build(strip): strips _actions_ keys")
+  ok(app.backend_impl["get_repo"] ~= nil, "b:build(strip): preserves non-matching keys")
+
+  -- b:build() without strip registers all REST keys.
+  app.backend_impl = {}
+  local bt2 = make_backend_builder()
+  bt2:rest("get_package_info", function() end)
+  bt2:rest("get_repo", function() end)
+  bt2:build()
   ok(
-    app.backend_impl["get_package_info"] == nil,
-    "load_family_backend: builder strips _package keys for gogs"
-  )
-  ok(
-    app.backend_impl["list_actions_runs"] == nil,
-    "load_family_backend: builder strips _actions_ keys for gogs"
-  )
-  ok(
-    app.backend_impl["get_repo"] ~= nil,
-    "load_family_backend: builder preserves non-matching keys for gogs"
+    app.backend_impl["get_package_info"] ~= nil,
+    "b:build(): without strip, all keys are registered"
   )
 
-  dofile = _real_dofile2 -- luacheck: globals dofile
-  config.backend = _saved_backend
-  config.base_url = _saved_base_url
   app.backend_impl = _saved_impl
 end
 

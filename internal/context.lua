@@ -12,9 +12,6 @@
 --                     Both REST handlers and GraphQL resolvers call into these
 --                     to avoid duplicating fetch + translate + error logic.
 --   allow_anonymous — auth-gate flag; true means unauthenticated requests are allowed
---   _family_strip   — private; set by load_family_backend before loading a root
---                     backend so the root's builder can strip alias feature gaps
---                     declaratively in b:build(); always nil outside that window
 
 function make_app(cfg) -- luacheck: globals make_app
   return {

@@ -27,8 +27,8 @@ function dofile(path) -- luacheck: globals dofile
 end
 
 -- Load .init.lua (no backend — config.backend is "").  This populates all
--- internal globals: set_preamble, proxy_*, translate_*, load_family_backend,
--- defaults, route_add, endpoints, ...
+-- internal globals: set_preamble, proxy_*, translate_*, defaults, route_add,
+-- endpoints, ...
 config = { backend = "", base_url = "" } -- luacheck: globals config
 _real_dofile(".init.lua")
 
