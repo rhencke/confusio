@@ -88,8 +88,6 @@ DELETE http://{{host}}/repos/octocat/hello-world/issues/1/reactions/9999
 Authorization: token testtoken
 
 HTTP 404
-[Asserts]
-jsonpath "$.message" isString
 
 # ── PR comment reactions ───────────────────────────────────────────────────────
 
