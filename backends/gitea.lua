@@ -44,14 +44,6 @@ local function set_204_or_error(method, url)
   proxy_204(nil, pcall(Fetch, url, opts))
 end
 
-local function proxy_users_follow_list(username, rel)
-  proxy_json_paged(
-    translate_users,
-    PAGES,
-    fetch_json(append_page_params(base() .. "/users/" .. username .. "/" .. rel, PAGES))
-  )
-end
-
 -- Proxy a Gitea search response {"data":[...],"ok":true} to the GitHub search
 -- envelope {"total_count":N,"incomplete_results":false,"items":[...]}.
 -- translate_item is applied to each element of data[].
@@ -824,6 +816,114 @@ repos.create_org = function(org, body)
   return translate_repo(raw), nil
 end
 
+-- ---------------------------------------------------------------------------
+-- Users capability module
+-- ---------------------------------------------------------------------------
+-- Shared fetch+translate operations for user resources.
+-- Operations return (data, nil) on success or (nil, err) on failure.
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+
+local users = {}
+
+-- get: fetch a single user by username.
+-- Returns the GitHub REST user shape (translate_user applied).
+users.get = function(username)
+  local raw, err = cap_fetch(fetch_json, base() .. "/users/" .. username)
+  if not raw then
+    return nil, err
+  end
+  return translate_user(raw), nil
+end
+
+-- get_authenticated: fetch the currently authenticated user.
+users.get_authenticated = function()
+  local raw, err = cap_fetch(fetch_json, base() .. "/user")
+  if not raw then
+    return nil, err
+  end
+  return translate_user(raw), nil
+end
+
+-- update_authenticated: patch the currently authenticated user.
+-- body: JSON-encoded string of fields to change.
+-- Gitea uses PATCH /user/settings rather than PATCH /user.
+users.update_authenticated = function(body)
+  local raw, err = cap_fetch(fetch_json, base() .. "/user/settings", "PATCH", body)
+  if not raw then
+    return nil, err
+  end
+  return translate_user(raw), nil
+end
+
+-- list_all: paginated list of all users (Gitea admin endpoint).
+users.list_all = function()
+  local url = append_page_params(base() .. "/admin/users", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_user, items), hdrs, nil
+end
+
+-- list_followers: paginated list of the authenticated user's followers.
+users.list_followers = function()
+  local url = append_page_params(base() .. "/user/followers", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_user, items), hdrs, nil
+end
+
+-- list_following: paginated list of users the authenticated user follows.
+users.list_following = function()
+  local url = append_page_params(base() .. "/user/following", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_user, items), hdrs, nil
+end
+
+-- list_user_followers: paginated list of followers for a specific user.
+users.list_user_followers = function(username)
+  local url = append_page_params(base() .. "/users/" .. username .. "/followers", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_user, items), hdrs, nil
+end
+
+-- list_user_following: paginated list of users that a specific user follows.
+users.list_user_following = function(username)
+  local url = append_page_params(base() .. "/users/" .. username .. "/following", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_user, items), hdrs, nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Orgs capability module
+-- ---------------------------------------------------------------------------
+-- Shared fetch operations for organization resources.
+-- Returns (data, nil) on success or (nil, err) on failure.
+-- Note: there is no REST translate_org; consumers apply graphql_translate_org
+-- themselves.  The raw Gitea org shape is returned as-is.
+
+local orgs = {}
+
+-- get: fetch a single organization by login.
+orgs.get = function(login)
+  local raw, err = cap_fetch(fetch_json, base() .. "/orgs/" .. login)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
 -- Health check
 b:rest("get_root", function()
   proxy_health_check(pcall(Fetch, base() .. "/version", auth()))
@@ -1594,49 +1694,40 @@ end)
 -- Users ---------------------------------------------------------------------
 
 -- GET /user
-b:rest(
-  "get_user",
-  proxy_handler(translate_user, function()
-    return base() .. "/user"
-  end)
-)
+b:rest("get_user", function()
+  local data, err = users.get_authenticated()
+  cap_rest_respond(data, err)
+end)
 
 -- PATCH /user
 b:rest("patch_user", function()
-  proxy_json(translate_user, fetch_json(base() .. "/user/settings", "PATCH", GetBody()))
+  local data, err = users.update_authenticated(GetBody())
+  cap_rest_respond(data, err)
 end)
 
 -- GET /users/{username}
-b:rest(
-  "get_users_username",
-  proxy_handler(translate_user, function(u)
-    return base() .. "/users/" .. u
-  end)
-)
+b:rest("get_users_username", function(username)
+  local data, err = users.get(username)
+  cap_rest_respond(data, err)
+end)
 
 -- GET /users
-b:rest(
-  "get_users",
-  proxy_handler_paged(translate_users, function()
-    return append_page_params(base() .. "/admin/users", PAGES)
-  end)
-)
+b:rest("get_users", function()
+  local items, hdrs, err = users.list_all()
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
 -- GET /user/followers
-b:rest(
-  "get_user_followers",
-  proxy_handler_paged(translate_users, function()
-    return append_page_params(base() .. "/user/followers", PAGES)
-  end)
-)
+b:rest("get_user_followers", function()
+  local items, hdrs, err = users.list_followers()
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
 -- GET /user/following
-b:rest(
-  "get_user_following",
-  proxy_handler_paged(translate_users, function()
-    return append_page_params(base() .. "/user/following", PAGES)
-  end)
-)
+b:rest("get_user_following", function()
+  local items, hdrs, err = users.list_following()
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
 -- GET /user/following/{username} — 204 if following, 404 if not
 b:rest("get_user_is_following", function(username)
@@ -1662,12 +1753,14 @@ end)
 
 -- GET /users/{username}/followers
 b:rest("get_users_followers", function(username)
-  proxy_users_follow_list(username, "followers")
+  local items, hdrs, err = users.list_user_followers(username)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 -- GET /users/{username}/following
 b:rest("get_users_following", function(username)
-  proxy_users_follow_list(username, "following")
+  local items, hdrs, err = users.list_user_following(username)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 -- SSH Keys ------------------------------------------------------------------
@@ -3453,16 +3546,16 @@ end)
 
 -- node.User: fetch a user by login.
 b:graphql("node.User", function(local_id, _ctx)
-  local data, _ = graphql_fetch(fetch_json, base() .. "/users/" .. local_id)
+  local data, _ = users.get(local_id)
   if not data then
     return nil
   end
-  return graphql_translate_user(translate_user(data))
+  return graphql_translate_user(data)
 end)
 
 -- node.Organization: fetch an organization by login.
 b:graphql("node.Organization", function(local_id, _ctx)
-  local data, _ = graphql_fetch(fetch_json, base() .. "/orgs/" .. local_id)
+  local data, _ = orgs.get(local_id)
   if not data then
     return nil
   end
@@ -3520,11 +3613,11 @@ b:graphql("Query.user", function(_parent, args, ctx)
     graphql_error(ctx, "user requires a login argument")
     return nil
   end
-  local data, _ = graphql_fetch(fetch_json, base() .. "/users/" .. args.login)
+  local data, _ = users.get(args.login)
   if not data then
     return nil
   end
-  return graphql_translate_user(translate_user(data))
+  return graphql_translate_user(data)
 end)
 
 -- Query.organization: look up an Organization by login.
@@ -3534,7 +3627,7 @@ b:graphql("Query.organization", function(_parent, args, ctx)
     graphql_error(ctx, "organization requires a login argument")
     return nil
   end
-  local data, _ = graphql_fetch(fetch_json, base() .. "/orgs/" .. args.login)
+  local data, _ = orgs.get(args.login)
   if not data then
     return nil
   end
@@ -4965,5 +5058,7 @@ b:graphql("Mutation.addLabelsToLabelable", function(_parent, args, ctx)
 end)
 
 b:capability("repos", repos)
+b:capability("users", users)
+b:capability("orgs", orgs)
 b:set_allow_anonymous(_allow_anon)
 b:build()
