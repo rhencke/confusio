@@ -1672,6 +1672,95 @@ do
 end
 
 -- ============================================================
+-- make_backend_builder
+-- ============================================================
+
+do
+  local saved_impl = app.backend_impl
+  local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
+  local saved_anon = app.allow_anonymous
+
+  local function restore()
+    app.backend_impl = saved_impl
+    graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
+    app.allow_anonymous = saved_anon
+  end
+
+  -- factory returns a builder table with the expected methods
+  local b = make_backend_builder()
+  ok(type(b) == "table", "make_backend_builder: returns a table")
+  ok(type(b.rest) == "function", "make_backend_builder: has rest method")
+  ok(type(b.graphql) == "function", "make_backend_builder: has graphql method")
+  ok(
+    type(b.set_allow_anonymous) == "function",
+    "make_backend_builder: has set_allow_anonymous method"
+  )
+  ok(type(b.build) == "function", "make_backend_builder: has build method")
+
+  -- registration methods return self for chaining
+  local b2 = make_backend_builder()
+  ok(b2:rest("get_foo", function() end) == b2, "builder:rest: returns self")
+  ok(b2:graphql("Query.foo", function() end) == b2, "builder:graphql: returns self")
+  ok(b2:set_allow_anonymous(true) == b2, "builder:set_allow_anonymous: returns self")
+
+  -- build() populates app.backend_impl and graphql_resolvers
+  app.backend_impl = {}
+  graphql_resolvers = {} -- luacheck: globals graphql_resolvers
+  app.allow_anonymous = true
+
+  local get_fn = function() end
+  local gql_fn = function() end
+  local b3 = make_backend_builder()
+  b3:rest("get_repo", get_fn)
+  b3:graphql("Query.viewer", gql_fn)
+  b3:set_allow_anonymous(false)
+  b3:build()
+
+  eq(app.backend_impl["get_repo"], get_fn, "builder:build: registers REST handler")
+  eq(graphql_resolvers["Query.viewer"], gql_fn, "builder:build: registers GraphQL resolver") -- luacheck: globals graphql_resolvers
+  eq(app.allow_anonymous, false, "builder:build: sets allow_anonymous")
+
+  -- build() without set_allow_anonymous leaves allow_anonymous unchanged
+  app.backend_impl = {}
+  app.allow_anonymous = true
+  local b4 = make_backend_builder()
+  b4:rest("get_root", function() end)
+  b4:build()
+  ok(
+    app.allow_anonymous == true,
+    "builder:build: does not change allow_anonymous when not declared"
+  )
+
+  -- build(strip) excludes REST keys matching any pattern
+  app.backend_impl = {}
+  local b5 = make_backend_builder()
+  b5:rest("get_repo", function() end)
+  b5:rest("get_package_info", function() end)
+  b5:rest("list_actions_runs", function() end)
+  b5:build({ "_package", "_actions_" })
+  ok(app.backend_impl["get_repo"] ~= nil, "builder:build(strip): keeps non-matching key")
+  ok(app.backend_impl["get_package_info"] == nil, "builder:build(strip): strips _package key")
+  ok(app.backend_impl["list_actions_runs"] == nil, "builder:build(strip): strips _actions_ key")
+
+  -- two builders are independent and do not share state
+  app.backend_impl = {}
+  local ba = make_backend_builder()
+  ba:rest("get_foo", function() end)
+  local bb = make_backend_builder()
+  bb:rest("get_bar", function() end)
+  ba:build()
+  ok(app.backend_impl["get_foo"] ~= nil, "make_backend_builder: builders are independent (a built)")
+  ok(
+    app.backend_impl["get_bar"] == nil,
+    "make_backend_builder: builders are independent (b not yet built)"
+  )
+  bb:build()
+  ok(app.backend_impl["get_bar"] ~= nil, "make_backend_builder: builders are independent (b built)")
+
+  restore()
+end
+
+-- ============================================================
 -- Summary
 -- ============================================================
 
