@@ -1803,6 +1803,193 @@ commit_comments.create = function(owner, repo_name, commit_sha, body)
   return raw, nil
 end
 
+-- ---------------------------------------------------------------------------
+-- Releases capability module
+-- ---------------------------------------------------------------------------
+-- Shared fetch operations for releases and release assets.
+-- Gitea and GitHub release shapes are compatible — no translation applied.
+-- Single-item operations return (data/true, nil) or (nil, err).
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+-- delete and delete_asset normalise Gitea's 200 to (true, nil) for cap_rest_204.
+-- upload_asset forwards the incoming Content-Type for multipart uploads;
+-- it cannot use cap_fetch because it requires custom opts construction.
+
+local releases = {}
+
+-- list: paginated list of releases for a repository.
+releases.list = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+-- create: create a new release.
+releases.create = function(owner, repo_name, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- get_latest: fetch the latest published release.
+releases.get_latest = function(owner, repo_name)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/latest")
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- get_by_tag: fetch a release by its tag name.
+releases.get_by_tag = function(owner, repo_name, tag)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/tags/" .. tag
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- get: fetch a release by numeric ID.
+releases.get = function(owner, repo_name, release_id)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- update: apply a partial update to a release.
+-- body: JSON-encoded string of fields to change.
+releases.update = function(owner, repo_name, release_id, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id,
+    "PATCH",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- delete: delete a release.
+-- Gitea returns 200; normalised to (true, nil) for cap_rest_204.
+releases.delete = function(owner, repo_name, release_id)
+  local ok, status = fetch_json(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id,
+    "DELETE"
+  )
+  if not ok then
+    return nil, cap_err(0, "network error deleting release")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting release")
+  end
+  return true, nil
+end
+
+-- list_assets: paginated list of assets attached to a release.
+releases.list_assets = function(owner, repo_name, release_id)
+  local url = append_page_params(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id .. "/assets",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+-- upload_asset: upload a new binary asset to a release via multipart upload.
+-- content_type: the Content-Type of the uploaded file (forwarded from the client).
+-- Uses pcall(Fetch) directly because it requires custom Content-Type forwarding
+-- that cannot go through the standard fetch_json helper.
+releases.upload_asset = function(owner, repo_name, release_id, body, content_type)
+  local url = base()
+    .. "/repos/"
+    .. owner
+    .. "/"
+    .. repo_name
+    .. "/releases/"
+    .. release_id
+    .. "/assets"
+  local opts = auth() or {}
+  opts.method = "POST"
+  opts.body = body
+  opts.headers = opts.headers or {}
+  opts.headers["Content-Type"] = content_type or "application/octet-stream"
+  local ok, status, _, raw_body = pcall(Fetch, url, opts)
+  if not ok then
+    return nil, cap_err(0, "network error uploading release asset")
+  end
+  if status ~= 201 and status ~= 200 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " uploading release asset")
+  end
+  return DecodeJson(raw_body) or {}, nil
+end
+
+-- get_asset: fetch a single release asset by numeric ID.
+releases.get_asset = function(owner, repo_name, asset_id)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/assets/" .. asset_id
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- update_asset: apply a partial update to a release asset.
+-- body: JSON-encoded string with updated name or label.
+releases.update_asset = function(owner, repo_name, asset_id, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/assets/" .. asset_id,
+    "PATCH",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- delete_asset: delete a release asset.
+-- Gitea returns 200; normalised to (true, nil) for cap_rest_204.
+releases.delete_asset = function(owner, repo_name, asset_id)
+  local ok, status = fetch_json(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/assets/" .. asset_id,
+    "DELETE"
+  )
+  if not ok then
+    return nil, cap_err(0, "network error deleting release asset")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting release asset")
+  end
+  return true, nil
+end
+
 -- Health check
 b:rest("get_root", function()
   proxy_health_check(pcall(Fetch, base() .. "/version", auth()))
@@ -2094,133 +2281,64 @@ end)
 
 -- GET /repos/{owner}/{repo}/releases
 b:rest("get_repo_releases", function(owner, repo_name)
-  proxy_json_paged(
-    nil,
-    PAGES,
-    fetch_json(
-      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases", PAGES)
-    )
-  )
+  cap_rest_paged(releases.list(owner, repo_name))
 end)
 
 -- POST /repos/{owner}/{repo}/releases
 b:rest("post_repo_releases", function(owner, repo_name)
-  proxy_json_created(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases", "POST", GetBody())
-  )
+  cap_rest_created(releases.create(owner, repo_name, GetBody()))
 end)
 
 -- GET /repos/{owner}/{repo}/releases/latest
 b:rest("get_repo_release_latest", function(owner, repo_name)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/latest")
-  )
+  cap_rest_respond(releases.get_latest(owner, repo_name))
 end)
 
 -- GET /repos/{owner}/{repo}/releases/tags/{tag}
 b:rest("get_repo_release_by_tag", function(owner, repo_name, tag)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/tags/" .. tag)
-  )
+  cap_rest_respond(releases.get_by_tag(owner, repo_name, tag))
 end)
 
 -- GET /repos/{owner}/{repo}/releases/{release_id}
 b:rest("get_repo_release", function(owner, repo_name, release_id)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id)
-  )
+  cap_rest_respond(releases.get(owner, repo_name, release_id))
 end)
 
 -- PATCH /repos/{owner}/{repo}/releases/{release_id}
 b:rest("patch_repo_release", function(owner, repo_name, release_id)
-  proxy_json(
-    nil,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id,
-      "PATCH",
-      GetBody()
-    )
-  )
+  cap_rest_respond(releases.update(owner, repo_name, release_id, GetBody()))
 end)
 
 -- DELETE /repos/{owner}/{repo}/releases/{release_id}
 b:rest("delete_repo_release", function(owner, repo_name, release_id)
-  proxy_204(
-    { 200 },
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id,
-      "DELETE"
-    )
-  )
+  cap_rest_204(releases.delete(owner, repo_name, release_id))
 end)
 
 -- GET /repos/{owner}/{repo}/releases/{release_id}/assets
 b:rest("get_repo_release_assets", function(owner, repo_name, release_id)
-  proxy_json_paged(
-    nil,
-    PAGES,
-    fetch_json(
-      append_page_params(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id .. "/assets",
-        PAGES
-      )
-    )
-  )
+  cap_rest_paged(releases.list_assets(owner, repo_name, release_id))
 end)
 
 -- POST /repos/{owner}/{repo}/releases/{release_id}/assets — multipart; pass through
 b:rest("post_repo_release_assets", function(owner, repo_name, release_id)
-  -- Gitea uses the same multipart upload path; proxy the entire request.
-  -- The Content-Type header (multipart/form-data) must be forwarded.
-  local url = base()
-    .. "/repos/"
-    .. owner
-    .. "/"
-    .. repo_name
-    .. "/releases/"
-    .. release_id
-    .. "/assets"
-  local opts = auth() or {}
-  opts.method = "POST"
-  opts.body = GetBody()
-  opts.headers = opts.headers or {}
-  opts.headers["Content-Type"] = GetHeader("Content-Type") or "application/octet-stream"
-  proxy_json_created(nil, pcall(Fetch, url, opts))
+  -- Gitea uses the same multipart upload path; Content-Type must be forwarded.
+  local content_type = GetHeader("Content-Type") or "application/octet-stream"
+  cap_rest_created(releases.upload_asset(owner, repo_name, release_id, GetBody(), content_type))
 end)
 
 -- GET /repos/{owner}/{repo}/releases/assets/{asset_id}
 b:rest("get_repo_release_asset", function(owner, repo_name, asset_id)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/assets/" .. asset_id)
-  )
+  cap_rest_respond(releases.get_asset(owner, repo_name, asset_id))
 end)
 
 -- PATCH /repos/{owner}/{repo}/releases/assets/{asset_id}
 b:rest("patch_repo_release_asset", function(owner, repo_name, asset_id)
-  proxy_json(
-    nil,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/assets/" .. asset_id,
-      "PATCH",
-      GetBody()
-    )
-  )
+  cap_rest_respond(releases.update_asset(owner, repo_name, asset_id, GetBody()))
 end)
 
 -- DELETE /repos/{owner}/{repo}/releases/assets/{asset_id}
 b:rest("delete_repo_release_asset", function(owner, repo_name, asset_id)
-  proxy_204(
-    { 200 },
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/assets/" .. asset_id,
-      "DELETE"
-    )
-  )
+  cap_rest_204(releases.delete_asset(owner, repo_name, asset_id))
 end)
 
 -- Deploy keys ---------------------------------------------------------------
@@ -4306,8 +4424,7 @@ b:graphql("node.Release", function(local_id, _ctx)
   if not owner then
     return nil
   end
-  local data, _ =
-    graphql_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo .. "/releases/" .. rid)
+  local data, _ = releases.get(owner, repo, rid)
   if not data then
     return nil
   end
@@ -5705,5 +5822,6 @@ b:capability("contents", contents)
 b:capability("collaborators", collaborators)
 b:capability("forks", forks)
 b:capability("commit_comments", commit_comments)
+b:capability("releases", releases)
 b:set_allow_anonymous(_allow_anon)
 b:build()
