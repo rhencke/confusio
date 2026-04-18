@@ -329,6 +329,76 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
 - **Use Redbean itself as the mock server** — no Python/Node dependency, same binary already in the repo. Build `mock-<backend>.com` by copying `redbean.com` and zipping in a `.init.lua` handler. See `mock-gitea.com` target in `Makefile`.
 - **Mock validation via Hurl**: run the same `.hurl` assertion file against both the mock and the real endpoint. If both pass the same structural assertions, the mock is compatible. See `make validate-mock`.
 
+### Capability modules
+
+A capability module is a local Lua table of named domain operations that owns fetch + error-mapping + translation for one resource type. Both REST handlers and GraphQL resolvers call into it, eliminating duplicated fetch+translate logic.
+
+**Return shapes — three canonical forms:**
+
+| Operation kind | Success | Failure |
+|----------------|---------|---------|
+| Single-item (GET, POST, PATCH) | `(data, nil)` — translated REST table | `(nil, err)` |
+| Paginated list (GET list) | `(items, headers, nil)` — translated array + raw headers | `(nil, nil, err)` |
+| Delete / merge (204 No Content) | `(true, nil)` | `(nil, err)` |
+
+`err = { status = N, message = string }` always. `status = 0` means network error (pcall failure); any other value is the upstream HTTP status.
+
+**When to use each fetch primitive:**
+
+- **`cap_fetch(fetch_json, url [, method, body])`** — for operations that return a JSON body (single-item GET, POST, PATCH). Handles status checking and decodes the body; returns `(raw, err)`.
+- **`cap_fetch_paged(fetch_json, url)`** — for paginated list operations. Returns `(items, headers, err)` where `headers` carries the raw response headers (including `Link` for pagination forwarding).
+- **Direct `fetch_json(url, method)` + manual status check** — for operations that return 204 No Content (DELETE, POST-that-merges). There is no JSON body to decode. Return `(true, nil)` on success or `(nil, cap_err(status, message))` on failure.
+
+**Translation layering:** capability operations apply `translate_gitea_*` internally before returning, so callers always receive GitHub REST shape. REST handlers pass it straight to the response adapters. GraphQL resolvers apply `graphql_translate_*` on top — they do **not** call `translate_gitea_*` again.
+
+```lua
+-- Good: cap returns REST shape; resolver applies graphql layer only.
+local data, _ = issues_cap.get(owner, repo, number)
+if not data then return nil end
+return graphql_translate_issue(data, owner, repo)
+
+-- Wrong: double-translate.
+local data, _ = issues_cap.get(owner, repo, number)
+return graphql_translate_issue(translate_gitea_issue(data), owner, repo)
+```
+
+**REST adapter selection guide:**
+
+| Handler type | Adapter | Typical endpoint |
+|-------------|---------|-----------------|
+| Single-item read or update | `cap_rest_respond(data, err)` | GET or PATCH, 200 |
+| Create (returns the new resource) | `cap_rest_created(data, err)` | POST, 201 |
+| Delete / merge | `cap_rest_204(ok, err)` | DELETE, 204 |
+| Paginated list | `cap_rest_paged(items, hdrs, err, PAGES)` | GET list, 200 + Link |
+
+**GraphQL mutation error mapping for delete/merge operations:**
+
+```lua
+local ok, cerr = cap.delete(owner, repo, id)
+if not ok then
+  if cerr.status == 0 then
+    graphql_error(ctx, cerr.message, nil, "INTERNAL_ERROR")
+  elseif cerr.status == 401 or cerr.status == 403 then
+    graphql_error(ctx, cerr.message, nil, "FORBIDDEN")
+  elseif cerr.status == 404 then
+    graphql_error(ctx, cerr.message, nil, "NOT_FOUND")
+  else
+    graphql_error(ctx, cerr.message, nil, "INTERNAL_ERROR")
+  end
+  return nil
+end
+```
+
+**Naming conventions:**
+
+- Capability table variable: plain domain name when no conflict (`repos`, `users`, `orgs`); `_cap` suffix when the name would shadow an existing variable (`issues_cap`, `pulls_cap`, `labels_cap`).
+- Register with `b:capability("domain_name", table)`. The domain name is the key in `app.capabilities` and is used for debugging / validation only — it does not affect routing.
+- Operations: `get`, `list`, `create`, `update`, `delete`, `merge` for the primary CRUD surface. Use a `list_` prefix to disambiguate sub-resource lists: `list_repo` (all comments in a repo) vs `list_issue` (comments on one issue).
+
+**`gitea_repo_connection` is intentionally NOT backed by a capability module.** It receives pre-fetched items inline from a single upstream page fetch and applies translation per item. Using `cap.get` per item would make O(n) redundant network calls. Keep `translate_gitea_*` direct for items inside connection translators.
+
+**`make validate-capabilities`** checks that every registered capability module is a non-nil table with at least one function-valued operation. Wired into `make test`. Backends with zero capability registrations pass cleanly — zero is valid for backends not yet migrated.
+
 ### Shared proxy helpers
 
 Two global helpers defined in `internal/proxy.lua` are available to all backend files:
