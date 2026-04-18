@@ -1485,6 +1485,94 @@ commits_cap.create_status = function(owner, repo_name, sha, body)
   return raw, nil
 end
 
+-- ---------------------------------------------------------------------------
+-- Contents capability module
+-- ---------------------------------------------------------------------------
+-- Shared fetch operations for repository file contents and diffs.
+-- Gitea and GitHub shapes are compatible for all content endpoints — no
+-- translation is applied; raw upstream objects are returned.
+-- Single-item operations return (data, nil) or (nil, err).
+-- Note: put() always returns 200 via cap_rest_respond even when Gitea
+-- returns 201 for new-file creation; the response body is still correct.
+
+local contents = {}
+
+-- get_readme: fetch the default README for a repository.
+contents.get_readme = function(owner, repo_name)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/readme")
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- get_readme_dir: fetch the README for a specific directory path.
+contents.get_readme_dir = function(owner, repo_name, dir)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/readme/" .. dir)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- get: fetch file or directory contents at a path (optionally at a ref).
+contents.get = function(owner, repo_name, path)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/" .. path)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- put: create or update a file at a path.
+-- body: JSON-encoded string with message, content (base64), and optional sha.
+-- Gitea returns 201 for creates and 200 for updates; this operation always
+-- responds 200 via cap_rest_respond (body is correct in both cases).
+contents.put = function(owner, repo_name, path, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/" .. path,
+    "PUT",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- delete: delete a file at a path.
+-- body: JSON-encoded string with message and sha of the file to delete.
+-- Gitea returns 200 with commit information — pass through.
+contents.delete = function(owner, repo_name, path, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/" .. path,
+    "DELETE",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- compare: fetch the diff between two commits, tags, or branches.
+-- basehead: "{base}...{head}" or "{base}..{head}" — passed through to Gitea.
+contents.compare = function(owner, repo_name, basehead)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/compare/" .. basehead
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
 -- Health check
 b:rest("get_root", function()
   proxy_health_check(pcall(Fetch, base() .. "/version", auth()))
@@ -1664,44 +1752,32 @@ end)
 
 -- GET /repos/{owner}/{repo}/readme
 b:rest("get_repo_readme", function(owner, repo_name)
-  proxy_json(nil, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/readme"))
+  local data, err = contents.get_readme(owner, repo_name)
+  cap_rest_respond(data, err)
 end)
 
 -- GET /repos/{owner}/{repo}/readme/{dir}
 b:rest("get_repo_readme_dir", function(owner, repo_name, dir)
-  proxy_json(nil, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/readme/" .. dir))
+  local data, err = contents.get_readme_dir(owner, repo_name, dir)
+  cap_rest_respond(data, err)
 end)
 
 -- GET /repos/{owner}/{repo}/contents/{path}
 b:rest("get_repo_content", function(owner, repo_name, path)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/" .. path)
-  )
+  local data, err = contents.get(owner, repo_name, path)
+  cap_rest_respond(data, err)
 end)
 
 -- PUT /repos/{owner}/{repo}/contents/{path}
 b:rest("put_repo_content", function(owner, repo_name, path)
-  proxy_json(
-    nil,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/" .. path,
-      "PUT",
-      GetBody()
-    )
-  )
+  local data, err = contents.put(owner, repo_name, path, GetBody())
+  cap_rest_respond(data, err)
 end)
 
 -- DELETE /repos/{owner}/{repo}/contents/{path}
 b:rest("delete_repo_content", function(owner, repo_name, path)
-  proxy_json(
-    nil,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/" .. path,
-      "DELETE",
-      GetBody()
-    )
-  )
+  local data, err = contents.delete(owner, repo_name, path, GetBody())
+  cap_rest_respond(data, err)
 end)
 
 -- GET /repos/{owner}/{repo}/tarball/{ref} — redirect to Gitea's archive URL
@@ -1727,13 +1803,9 @@ end)
 -- Compare -------------------------------------------------------------------
 
 -- GET /repos/{owner}/{repo}/compare/{basehead}
--- Gitea uses /{owner}/{repo}/compare/{base}...{head} (3 dots) in UI, but
--- the API endpoint uses {base}...{head} or {base}..{head} in the basehead param.
 b:rest("get_repo_compare", function(owner, repo_name, basehead)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/compare/" .. basehead)
-  )
+  local data, err = contents.compare(owner, repo_name, basehead)
+  cap_rest_respond(data, err)
 end)
 
 -- Collaborators -------------------------------------------------------------
@@ -5479,5 +5551,6 @@ b:capability("comments", comments_cap)
 b:capability("branches", branches)
 b:capability("repo_metadata", repo_metadata)
 b:capability("commits", commits_cap)
+b:capability("contents", contents)
 b:set_allow_anonymous(_allow_anon)
 b:build()
