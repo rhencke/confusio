@@ -114,39 +114,6 @@ local function translate_gl_user(u)
   }
 end
 
--- Proxy a GitLab search response (plain JSON array) to the GitHub search
--- envelope {"total_count":N,"incomplete_results":false,"items":[...]}.
--- translate_item is applied to each element of the array.
-local function proxy_search_gl(translate_item, url)
-  local ok, status, headers, body = fetch_json(url)
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
-  end
-  local raw = DecodeJson(body) or {}
-  local items = {}
-  for i, item in ipairs(raw) do
-    items[i] = translate_item(item)
-  end
-  local link = headers and (headers["Link"] or headers["link"])
-  local rewritten = rewrite_link_header(link, PAGES)
-  set_preamble()
-  if rewritten then
-    SetHeader("Link", rewritten)
-  end
-  Write(
-    '{"total_count":'
-      .. #items
-      .. ',"incomplete_results":false,"items":'
-      .. (#items > 0 and EncodeJson(items) or "[]")
-      .. "}"
-  )
-end
-
 -- Look up a GitLab user ID by username. Returns nil on failure.
 local function gl_user_id(username)
   local ok, status, _, body = fetch_json(base() .. "/users?username=" .. username)
@@ -4182,104 +4149,190 @@ b:rest("get_pull_comments", function(owner, repo_name, pull_number)
   cap_rest_respond(data, err)
 end)
 
+-- ---------------------------------------------------------------------------
+-- Search capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translate for search operations.
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+
+local search_cap = {}
+
+-- repos: paginated search of projects by query string.
+-- Returns (items, headers, nil) or (nil, nil, err).
+search_cap.repos = function(q)
+  local url = append_page_params(base() .. "/projects?search=" .. q, PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gl_repo, items), hdrs, nil
+end
+
+-- users: paginated search of users by query string.
+-- Returns (items, headers, nil) or (nil, nil, err).
+search_cap.users = function(q)
+  local url = append_page_params(base() .. "/users?search=" .. q, PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gl_user, items), hdrs, nil
+end
+
+-- Helper: write a GitHub search envelope from a paged cap result.
+-- items: translated array; hdrs: raw response headers (for Link forwarding).
+local function write_search_envelope(items, hdrs)
+  local link = hdrs and (hdrs["Link"] or hdrs["link"])
+  local rewritten = rewrite_link_header(link, PAGES)
+  set_preamble()
+  if rewritten then
+    SetHeader("Link", rewritten)
+  end
+  Write(
+    '{"total_count":'
+      .. #items
+      .. ',"incomplete_results":false,"items":'
+      .. (#items > 0 and EncodeJson(items) or "[]")
+      .. "}"
+  )
+end
+
 -- Search -----------------------------------------------------------------------
 
 -- GET /search/repositories — maps to GitLab GET /projects?search=<q>
 b:rest("search_repositories", function()
   local q = GetParam("q") or ""
-  proxy_search_gl(translate_gl_repo, append_page_params(base() .. "/projects?search=" .. q, PAGES))
+  local items, hdrs, err = search_cap.repos(q)
+  if not items then
+    respond_json(err and err.status ~= 0 and err.status or 503, {})
+    return
+  end
+  write_search_envelope(items, hdrs)
 end)
 
 -- GET /search/users — maps to GitLab GET /users?search=<q>
 b:rest("search_users", function()
   local q = GetParam("q") or ""
-  proxy_search_gl(translate_gl_user, append_page_params(base() .. "/users?search=" .. q, PAGES))
+  local items, hdrs, err = search_cap.users(q)
+  if not items then
+    respond_json(err and err.status ~= 0 and err.status or 503, {})
+    return
+  end
+  write_search_envelope(items, hdrs)
 end)
+
+-- ---------------------------------------------------------------------------
+-- Gitignore capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translate for gitignore template operations.
+-- list returns (names_array, nil) or (nil, err).
+-- get returns ({name, source}, nil) or (nil, err).
+
+local gitignore_cap = {}
+
+-- list: fetch all gitignore template names.
+-- GitLab returns [{key,name},...]; GitHub returns ["Name",...].
+-- Returns (names_array, nil) or (nil, err).
+gitignore_cap.list = function()
+  local raw, err = cap_fetch(fetch_json, base() .. "/templates/gitignores")
+  if not raw then
+    return nil, err
+  end
+  local names = {}
+  for i, t in ipairs(raw) do
+    names[i] = t.name
+  end
+  return names, nil
+end
+
+-- get: fetch a single gitignore template by name.
+-- GitLab returns {name, content}; GitHub returns {name, source}.
+-- Returns ({name, source}, nil) or (nil, err).
+gitignore_cap.get = function(name)
+  local raw, err = cap_fetch(fetch_json, base() .. "/templates/gitignores/" .. name)
+  if not raw then
+    return nil, err
+  end
+  return { name = raw.name, source = raw.content }, nil
+end
 
 -- Gitignore -----------------------------------------------------------------
 
 -- GET /gitignore/templates → GitLab GET /api/v4/templates/gitignores
 -- GitLab returns [{key,name}, ...]; GitHub returns ["Name", ...]
 b:rest("get_gitignore_templates", function()
-  proxy_json(function(list)
-    local names = {}
-    for i, t in ipairs(list or {}) do
-      names[i] = t.name
-    end
-    return names
-  end, fetch_json(base() .. "/templates/gitignores"))
+  local data, err = gitignore_cap.list()
+  cap_rest_respond(data, err)
 end)
 
 -- GET /gitignore/templates/{name} → GitLab GET /api/v4/templates/gitignores/{name}
 -- GitLab returns {name, content}; GitHub returns {name, source}
 b:rest("get_gitignore_template", function(name)
-  proxy_json(function(t)
-    if not t then
-      return {}
-    end
-    return { name = t.name, source = t.content }
-  end, fetch_json(base() .. "/templates/gitignores/" .. name))
+  local data, err = gitignore_cap.get(name)
+  cap_rest_respond(data, err)
 end)
 
--- Licenses -----------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+-- Licenses capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translate for license template and repo license operations.
+-- list returns (array, nil) or (nil, err).
+-- get returns (object, nil) or (nil, err).
 
--- GET /licenses → GitLab GET /api/v4/templates/licenses
--- GitLab returns [{key,name,...}]; GitHub returns [{key,name,...}] (license-simple)
-b:rest("get_licenses", function()
-  proxy_json(function(list)
-    local result = {}
-    for i, t in ipairs(list or {}) do
-      result[i] = { key = t.key, name = t.name }
-    end
-    return result
-  end, fetch_json(base() .. "/templates/licenses"))
-end)
+local licenses_cap = {}
 
--- GET /licenses/{license} → GitLab GET /api/v4/templates/licenses/{key}
--- GitLab returns {key,name,content,description,conditions,permissions,limitations,html_url}
--- GitHub returns {key,name,body,description,conditions,permissions,limitations,html_url,...}
-b:rest("get_license", function(license_name)
-  proxy_json(function(t)
-    if not t then
-      return {}
-    end
-    return {
-      key = t.key,
-      name = t.name,
-      html_url = t.html_url,
-      description = t.description,
-      body = t.content,
-      permissions = t.permissions or {},
-      conditions = t.conditions or {},
-      limitations = t.limitations or {},
-    }
-  end, fetch_json(base() .. "/templates/licenses/" .. license_name))
-end)
+-- list: fetch all license template summaries.
+-- GitLab returns [{key,name,...}]; GitHub returns [{key,name}] (license-simple).
+-- Returns (array, nil) or (nil, err).
+licenses_cap.list = function()
+  local raw, err = cap_fetch(fetch_json, base() .. "/templates/licenses")
+  if not raw then
+    return nil, err
+  end
+  local result = {}
+  for i, t in ipairs(raw) do
+    result[i] = { key = t.key, name = t.name }
+  end
+  return result, nil
+end
 
--- GET /repos/{owner}/{repo}/license
--- Combines /repository/files/LICENSE content with project license metadata.
-b:rest("get_repo_license", function(owner, repo_name)
+-- get: fetch a single license template by key.
+-- GitLab returns {key,name,content,...}; maps content → body for GitHub shape.
+-- Returns (object, nil) or (nil, err).
+licenses_cap.get = function(license_name)
+  local raw, err = cap_fetch(fetch_json, base() .. "/templates/licenses/" .. license_name)
+  if not raw then
+    return nil, err
+  end
+  return {
+    key = raw.key,
+    name = raw.name,
+    html_url = raw.html_url,
+    description = raw.description,
+    body = raw.content,
+    permissions = raw.permissions or {},
+    conditions = raw.conditions or {},
+    limitations = raw.limitations or {},
+  },
+    nil
+end
+
+-- get_repo_license: fetch the LICENSE file and project license metadata.
+-- Combines /repository/files/LICENSE with project.license field.
+-- Returns (object, nil) or (nil, err).
+licenses_cap.get_repo_license = function(owner, repo_name)
   local pid = project_id(owner, repo_name)
-  local ok, status, _, body =
-    fetch_json(base() .. "/projects/" .. pid .. "/repository/files/LICENSE?ref=HEAD")
-  if not ok then
-    respond_json(503, {})
-    return
+  local f, ferr =
+    cap_fetch(fetch_json, base() .. "/projects/" .. pid .. "/repository/files/LICENSE?ref=HEAD")
+  if not f then
+    return nil, ferr
   end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
-  end
-  local f = DecodeJson(body) or {}
-  local rok, rstatus, _, rbody = fetch_json(base() .. "/projects/" .. pid)
+  local proj, _ = cap_fetch(fetch_json, base() .. "/projects/" .. pid)
   local license_meta = nil
-  if rok and rstatus == 200 then
-    local lic = (DecodeJson(rbody) or {}).license
-    if lic then
-      license_meta = { key = lic.key, name = lic.name }
-    end
+  if proj and proj.license then
+    license_meta = { key = proj.license.key, name = proj.license.name }
   end
-  respond_json(200, {
+  return {
     name = f.file_name,
     path = f.file_path,
     sha = f.blob_id,
@@ -4288,7 +4341,32 @@ b:rest("get_repo_license", function(owner, repo_name)
     content = f.content,
     encoding = f.encoding,
     license = license_meta,
-  })
+  },
+    nil
+end
+
+-- Licenses -----------------------------------------------------------------
+
+-- GET /licenses → GitLab GET /api/v4/templates/licenses
+-- GitLab returns [{key,name,...}]; GitHub returns [{key,name,...}] (license-simple)
+b:rest("get_licenses", function()
+  local data, err = licenses_cap.list()
+  cap_rest_respond(data, err)
+end)
+
+-- GET /licenses/{license} → GitLab GET /api/v4/templates/licenses/{key}
+-- GitLab returns {key,name,content,description,conditions,permissions,limitations,html_url}
+-- GitHub returns {key,name,body,description,conditions,permissions,limitations,html_url,...}
+b:rest("get_license", function(license_name)
+  local data, err = licenses_cap.get(license_name)
+  cap_rest_respond(data, err)
+end)
+
+-- GET /repos/{owner}/{repo}/license
+-- Combines /repository/files/LICENSE content with project license metadata.
+b:rest("get_repo_license", function(owner, repo_name)
+  local data, err = licenses_cap.get_repo_license(owner, repo_name)
+  cap_rest_respond(data, err)
 end)
 
 -- Checks (via GitLab commit statuses and pipelines) -------------------------
@@ -4539,13 +4617,19 @@ b:rest("delete_org_package_version", function(org, pkg_type, pkg_name, version_i
   respond_json(404, { message = "Not Found" })
 end)
 
--- Markdown -------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+-- Markdown capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + HTML extraction for markdown rendering.
+-- render(text) returns (html_string, status, nil) or (nil, nil, err).
+-- render_raw(text) wraps plain text in JSON for the same GitLab endpoint.
 
--- POST /markdown → POST /api/v4/markdown
--- GitLab returns {"html": "..."} JSON; extract the html field.
-b:rest("render_markdown", function()
-  local incoming = DecodeJson(GetBody() or "{}") or {}
-  local payload = EncodeJson({ text = incoming.text or "", gfm = true })
+local markdown_cap = {}
+
+-- render: POST markdown text; returns (html_string, upstream_status, nil) or (nil, nil, err).
+-- text: GitHub-format text field; gfm is always true for GitLab.
+markdown_cap.render = function(text)
+  local payload = EncodeJson({ text = text or "", gfm = true })
   local opts = auth() or {}
   opts.method = "POST"
   opts.body = payload
@@ -4553,12 +4637,55 @@ b:rest("render_markdown", function()
   opts.headers["Content-Type"] = "application/json"
   local ok, status, _, body = pcall(Fetch, base() .. "/markdown", opts)
   if not ok then
-    respond_json(503, {})
-    return
+    return nil, nil, cap_err(0, "network error rendering markdown")
   end
   local parsed = DecodeJson(body or "{}") or {}
+  return parsed.html or "", status, nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Git database capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translate for git object operations (blobs).
+-- get_blob returns ({content, encoding, url, sha, size, node_id}, nil) or (nil, err).
+
+local git_db_cap = {}
+
+-- get_blob: fetch a git blob by SHA.
+-- GitLab: GET /projects/:id/repository/blobs/:sha
+-- Returns GitHub blob shape or (nil, err).
+git_db_cap.get_blob = function(owner, repo_name, file_sha)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/repository/blobs/" .. file_sha
+  )
+  if not raw then
+    return nil, err
+  end
+  return {
+    content = raw.content,
+    encoding = raw.encoding,
+    url = "",
+    sha = raw.sha,
+    size = raw.size,
+    node_id = "",
+  },
+    nil
+end
+
+-- Markdown -------------------------------------------------------------------
+
+-- POST /markdown → POST /api/v4/markdown
+-- GitLab returns {"html": "..."} JSON; extract the html field.
+b:rest("render_markdown", function()
+  local incoming = DecodeJson(GetBody() or "{}") or {}
+  local html, status, err = markdown_cap.render(incoming.text)
+  if not html then
+    respond_json(err and err.status ~= 0 and err.status or 503, {})
+    return
+  end
   set_preamble(status, "text/html; charset=utf-8")
-  Write(parsed.html or "")
+  Write(html)
 end)
 
 -- Git database (https://docs.github.com/en/rest/git) -----------------------
@@ -4567,41 +4694,21 @@ end)
 -- GitLab: GET /projects/:id/repository/blobs/:sha
 -- Returns {size, encoding, content, sha} — translate to GitHub blob shape.
 b:rest("get_git_blob", function(owner, repo_name, file_sha)
-  proxy_json(
-    function(br)
-      return {
-        content = br.content,
-        encoding = br.encoding,
-        url = "",
-        sha = br.sha,
-        size = br.size,
-        node_id = "",
-      }
-    end,
-    fetch_json(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/repository/blobs/" .. file_sha
-    )
-  )
+  local data, err = git_db_cap.get_blob(owner, repo_name, file_sha)
+  cap_rest_respond(data, err)
 end)
 
 -- POST /markdown/raw → POST /api/v4/markdown
 -- GitLab has no separate raw endpoint; wrap the plain-text body in JSON.
 b:rest("render_markdown_raw", function()
-  local raw = GetBody() or ""
-  local payload = EncodeJson({ text = raw, gfm = true })
-  local opts = auth() or {}
-  opts.method = "POST"
-  opts.body = payload
-  opts.headers = opts.headers or {}
-  opts.headers["Content-Type"] = "application/json"
-  local ok, status, _, body = pcall(Fetch, base() .. "/markdown", opts)
-  if not ok then
-    respond_json(503, {})
+  local raw_text = GetBody() or ""
+  local html, status, err = markdown_cap.render(raw_text)
+  if not html then
+    respond_json(err and err.status ~= 0 and err.status or 503, {})
     return
   end
-  local parsed = DecodeJson(body or "{}") or {}
   set_preamble(status, "text/html; charset=utf-8")
-  Write(parsed.html or "")
+  Write(html)
 end)
 
 -- Dependabot alerts via GitLab Vulnerabilities API (requires Ultimate tier).
@@ -5751,4 +5858,9 @@ b:capability("releases", releases_cap)
 b:capability("deploy_keys", deploy_keys_cap)
 b:capability("webhooks", webhooks_cap)
 b:capability("teams", teams_cap)
+b:capability("search", search_cap)
+b:capability("gitignore", gitignore_cap)
+b:capability("licenses", licenses_cap)
+b:capability("markdown", markdown_cap)
+b:capability("git_db", git_db_cap)
 b:build()
