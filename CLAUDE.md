@@ -45,7 +45,7 @@ internal/
   router.lua                 — segment-based radix trie: route_add, route_match, path_known
   catalog.lua                — endpoint_sections table; populates global `endpoints` and registers routes at load time
   dispatch.lua               — OnHttpRequest: auth gate, route_match, handler dispatch
-backends/                    — per-provider implementations; each sets app.backend_impl = { handler = fn, ... }
+backends/                    — per-provider implementations; each uses make_backend_builder() and b:build() to register handlers
 docs/
   graphql/                   — GraphQL support design docs (README.md + 01–16 numbered documents)
   real-world-testing.md      — plan for weekly live-backend integration tests
@@ -135,9 +135,21 @@ When implementing a new endpoint, check the spec for:
 
 ### Standalone backend (new API family)
 
-1. Create `backends/<name>.lua`. Set `app.backend_impl = { endpoint = function, ... }` with only
-   the endpoints that differ from the defaults. The file is loaded automatically when
-   `config.backend == "<name>"` — no changes to `.init.lua` needed.
+1. Create `backends/<name>.lua`. Use `make_backend_builder()` to register only the handlers that
+   differ from the defaults, then call `b:build()` to commit them. The file is loaded automatically
+   when `config.backend == "<name>"` — no changes to `.init.lua` needed.
+   ```lua
+   local b = make_backend_builder()
+   local _t = make_backend_transport("token", { per_page = "limit", page = "page" })
+   local fetch_json = _t.fetch_json
+
+   b:rest("get_repo", function(owner, repo) ... end)
+   b:graphql("Query.viewer", function(_parent, _args, ctx) ... end)
+   b:capability("repos", { get = function(...) ... end })
+   b:build()
+   ```
+   `make validate-builders` enforces that every backend calls `b:build()` and never assigns
+   directly to `app.backend_impl` or `graphql_resolvers`.
 2. Add mock server as `test/mock-<newbackend>.lua` and build it in the `Makefile` (copy pattern from `mock-gitea.com`).
 3. Add a `test/test-mock-validate.sh`-equivalent for the new backend if its spec differs meaningfully.
 4. Add `<name>` to the `BACKENDS` list in the Makefile. Port numbers are assigned automatically.
@@ -235,6 +247,20 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
 
 **Adding a family-alias backend**: update `provider_families` in `internal/families.lua` (the single declaration), create a `backends/<alias>.lua` that sets `config.base_url` from `provider_families` and dofiles the root backend, add to `BACKENDS` — no mock file needed.
 
+**Guardrails — what CI will catch if you get it wrong:**
+
+| What you're adding | What must be true | CI check that enforces it |
+|--------------------|-------------------|--------------------------|
+| New endpoint | Row in `endpoint_sections` in `internal/catalog.lua` | `make validate-tests`, `make validate-csv` |
+| New endpoint with native support | CSV row updated with `y`/`~`/`n` and matching backend handler | `make validate-claims`, `make validate-csv` |
+| New standalone backend | `backends/<name>.lua` calls `make_backend_builder()` and `b:build()` | `make validate-builders` |
+| New standalone backend | Backend file does NOT assign `app.backend_impl` or `graphql_resolvers` directly | `make validate-builders` |
+| New standalone backend | Mock + hurl tests cover at least every catalog group | `make validate-tests` |
+| New family-alias backend | Alias declared in `provider_families` in `internal/families.lua` | `make validate-providers` |
+| New family-alias backend | `backends/<alias>.lua` dofiles the root backend | `make validate-providers` |
+| New family-alias backend | Alias listed in `BACKENDS` in the Makefile | `make validate-providers` |
+| New capability module | Module registered via `b:capability()` with at least one function | `make validate-capabilities` |
+
 **Backend registration**: all backends must use `make_backend_builder()` / `b:rest()` / `b:graphql()` / `b:capability()` / `b:build()`. Direct assignment to `app.backend_impl` or `graphql_resolvers` is forbidden. `make validate-builders` enforces this and is wired into `make test`.
 
 **Building a capability module**: use `cap_fetch` / `cap_fetch_paged` inside capability operations to own the fetch+error-mapping step. Capability operations return `(data, nil)` on success or `(nil, err)` on failure where `err = { status = N, message = string }` (status 0 = network error). REST handlers call `cap_rest_respond` / `cap_rest_paged` / `cap_rest_created` / `cap_rest_204` to write the HTTP response. GraphQL resolvers just check `if not data then return nil end` and pass data to `graphql_translate_*`.
@@ -303,11 +329,11 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
   k = path depth. Static edges are preferred over param edges at each node, so `/repos/search`
   beats `/repos/{owner}` when both are registered. Captures from `{param}` segments are passed
   as positional arguments to the handler.
-- **Startup-time handler resolution**: `app.backend_impl` is populated once by the backend file;
-  `internal/dispatch.lua` reads it on every request via the `app` context. The backend is fixed
-  for the program's lifetime — no per-request dispatch needed. Backend files set
-  `app.backend_impl = { ... }`; `dofile` runs in global scope so locals from any module
-  are not visible to backend files.
+- **Startup-time handler resolution**: `app.backend_impl` is populated once by the backend file
+  via `make_backend_builder()` / `b:build()`; `internal/dispatch.lua` reads it on every request
+  via the `app` context. The backend is fixed for the program's lifetime — no per-request dispatch
+  needed. `dofile` runs in global scope so locals from any internal module are not visible to
+  backend files.
 - **`/zip/` prefix for dofile**: Redbean's `dofile` resolves paths on the real filesystem by
   default. Files inside the zip must be accessed as `dofile("/zip/backends/gitea.lua")`.
 - **`SetStatus` clears all previously-set response headers.** Any `SetHeader` call made before
