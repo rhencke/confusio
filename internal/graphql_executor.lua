@@ -5,7 +5,9 @@
 --           graphql_schema_* (internal/graphql_schema.lua).
 --
 -- Globals exported:
---   graphql_resolvers              — table; backends populate at load time alongside app.backend_impl
+--   graphql_resolvers              — table; backends populate at load time (aliased as app.backend.graphql)
+--   graphql_register_builtin_resolvers() — registers the three backend-independent built-ins;
+--                                          called from .init.lua after app.backend.graphql is wired
 --   graphql_handler()              — HTTP handler for POST /graphql; registered in catalog
 --   respond_graphql(data, errs)    — null-safe GraphQL response writer
 --   graphql_error(ctx, ...)        — error-recording helper called by resolvers
@@ -17,7 +19,7 @@
 -- Resolver registry
 -- ---------------------------------------------------------------------------
 
--- Backends populate graphql_resolvers at load time alongside app.backend_impl.
+-- Backends populate graphql_resolvers at load time (aliased as app.backend.graphql in .init.lua).
 -- Keys are "TypeName.fieldName" strings (e.g. "Query.repository", "Repository.issues").
 graphql_resolvers = {} -- luacheck: globals graphql_resolvers
 
@@ -614,8 +616,12 @@ end
 -- These resolvers live in the executor, not in backends, because they only
 -- decode the node ID and dispatch to a "node.TypeName" sub-resolver.  The
 -- sub-resolvers are backend-specific and registered by each backend file.
+--
+-- The functions are defined as locals here (so they close over private helpers
+-- like append_error) and registered via graphql_register_builtin_resolvers(),
+-- which .init.lua calls after app.backend.graphql is wired up.
 
-graphql_resolvers["Query.node"] = function(_parent, args, ctx) -- luacheck: globals graphql_resolvers
+local function builtin_node_resolver(_parent, args, ctx)
   local node_id = args.id
   if not node_id then
     append_error(ctx, "node requires an id argument")
@@ -639,7 +645,7 @@ graphql_resolvers["Query.node"] = function(_parent, args, ctx) -- luacheck: glob
   return result
 end
 
-graphql_resolvers["Query.nodes"] = function(_parent, args, ctx)
+local function builtin_nodes_resolver(_parent, args, ctx)
   local ids = args.ids
   if not ids or type(ids) ~= "table" then
     append_error(ctx, "nodes requires an ids argument")
@@ -749,7 +755,7 @@ end
 -- response so that clients polling rateLimit { cost remaining resetAt } work
 -- without errors.  ctx.rate_cost is populated by estimate_query_cost before
 -- execution runs.
-graphql_resolvers["Query.rateLimit"] = function(_parent, _args, ctx)
+local function builtin_rate_limit_resolver(_parent, _args, ctx)
   local limit = 999999
   local reset = os.time() + 3600
   return {
@@ -760,6 +766,20 @@ graphql_resolvers["Query.rateLimit"] = function(_parent, _args, ctx)
     nodeCount = 0,
     resetAt = os.date("!%Y-%m-%dT%H:%M:%SZ", reset),
   }
+end
+
+-- ---------------------------------------------------------------------------
+-- graphql_register_builtin_resolvers
+-- ---------------------------------------------------------------------------
+
+-- Register the three backend-independent built-in resolvers into graphql_resolvers.
+-- Must be called from .init.lua after app.backend.graphql = graphql_resolvers is
+-- set up, so registration goes through the same live table that b:build() writes to.
+-- This keeps module load-time side effects out of the global registry.
+function graphql_register_builtin_resolvers() -- luacheck: globals graphql_register_builtin_resolvers
+  graphql_resolvers["Query.node"] = builtin_node_resolver
+  graphql_resolvers["Query.nodes"] = builtin_nodes_resolver
+  graphql_resolvers["Query.rateLimit"] = builtin_rate_limit_resolver
 end
 
 -- ---------------------------------------------------------------------------
@@ -929,8 +949,8 @@ local function encode_result(result)
 end
 
 -- graphql_handler is registered in the catalog as the fixed handler for
--- POST /graphql.  Backends do NOT override this via app.backend_impl; they only
--- populate graphql_resolvers.
+-- POST /graphql.  Backends do NOT override this via app.backend.rest; they only
+-- populate graphql_resolvers (aliased as app.backend.graphql).
 function graphql_handler() -- luacheck: globals graphql_handler
   -- Step 1: decode request body.
   local raw = GetBody() or ""

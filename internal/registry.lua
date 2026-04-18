@@ -8,11 +8,11 @@
 --
 -- Capability modules are the shared domain layer consumed by both REST handlers and
 -- GraphQL resolvers.  Each module is a table of named operations (e.g.
--- { get = fn, list = fn, update = fn, delete = fn }).  They live in app.capabilities
+-- { get = fn, list = fn, update = fn, delete = fn }).  They live in app.backend.capabilities
 -- keyed by domain name (e.g. "repos", "users", "issues").  Strip patterns do NOT
 -- apply to capabilities — they are domain-level, not REST surface-level.
 --
--- Direct assignment to app.backend_impl or graphql_resolvers is forbidden;
+-- Direct assignment to app.backend.rest or graphql_resolvers is forbidden;
 -- make validate-builders enforces this at CI time.
 --
 -- Globals exported:
@@ -73,10 +73,10 @@ function make_backend_builder() -- luacheck: globals make_backend_builder
   --        capabilities.
   --
   -- After build() returns:
-  --   app.backend_impl[name]   = fn     for each registered REST handler (unless stripped)
-  --   graphql_resolvers[key]   = fn     for each registered GraphQL resolver
-  --   app.capabilities[name]   = module for each registered capability module
-  --   app.allow_anonymous      = v      only when set_allow_anonymous was called
+  --   app.backend.rest[name]         = fn     for each registered REST handler (unless stripped)
+  --   graphql_resolvers[key]         = fn     for each registered GraphQL resolver
+  --   app.backend.capabilities[name] = module for each registered capability module
+  --   app.allow_anonymous            = v      only when set_allow_anonymous was called
   function b:build(strip)
     for name, fn in pairs(self._rest) do
       local skip = false
@@ -89,14 +89,14 @@ function make_backend_builder() -- luacheck: globals make_backend_builder
         end
       end
       if not skip then
-        app.backend_impl[name] = fn
+        app.backend.rest[name] = fn
       end
     end
     for key, fn in pairs(self._graphql) do
       graphql_resolvers[key] = fn
     end
     for name, module in pairs(self._capabilities) do
-      app.capabilities[name] = module
+      app.backend.capabilities[name] = module
     end
     if self._anonymous ~= nil then
       app.allow_anonymous = self._anonymous

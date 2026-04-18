@@ -1,5 +1,5 @@
 -- Export endpoint catalog + per-backend handler sets as JSON.
--- Used by validate-claims.lua to check CSV support claims against app.backend_impl.
+-- Used by validate-claims.lua to check CSV support claims against app.backend.rest.
 --
 -- Usage: ./redbean.com -i scripts/dump-claims.lua <backend1> [backend2 ...]
 --
@@ -61,13 +61,14 @@ end
 local backend_parts = {}
 for _, name in ipairs(cli_backends) do
   config = { backend = name, base_url = "" } -- luacheck: globals config
-  app.backend_impl = {} -- luacheck: globals app
+  app.backend = { rest = {}, graphql = {}, capabilities = {} } -- luacheck: globals app
+  graphql_resolvers = app.backend.graphql -- luacheck: globals graphql_resolvers
   Fetch = noop_fetch -- luacheck: globals Fetch
   dofile("/zip/backends/" .. name .. ".lua")
   Fetch = _real_fetch -- luacheck: globals Fetch
 
   local handlers = {}
-  for k in pairs(app.backend_impl) do -- luacheck: globals app
+  for k in pairs(app.backend.rest) do -- luacheck: globals app
     handlers[#handlers + 1] = k
   end
   table.sort(handlers)

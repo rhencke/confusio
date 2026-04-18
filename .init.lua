@@ -35,6 +35,16 @@ dofile("/zip/internal/registry.lua")
 -- Build the app context.  Backends register handlers via make_backend_builder():b:build().
 app = make_app(config)
 
+-- Wire graphql_resolvers into app.backend.graphql so both paths reference the same
+-- registry.  Backends writing to graphql_resolvers via b:build() and the executor
+-- reading graphql_resolvers both see the same table as app.backend.graphql.
+app.backend.graphql = graphql_resolvers
+
+-- Register the backend-independent built-in resolvers (Query.node, Query.nodes,
+-- Query.rateLimit) through the explicit composition point rather than as side effects
+-- of loading graphql_executor.lua.
+graphql_register_builtin_resolvers()
+
 if config.backend ~= "" then
   assert(config.backend:match("^[%a][%w_]*$"), "invalid backend name: " .. config.backend)
   dofile("/zip/backends/" .. config.backend .. ".lua")
@@ -44,3 +54,7 @@ dofile("/zip/internal/defaults.lua")
 dofile("/zip/internal/router.lua")
 dofile("/zip/internal/catalog.lua")
 dofile("/zip/internal/dispatch.lua")
+
+app.route_match = route_match
+app.path_known = path_known
+OnHttpRequest = make_dispatcher(app)

@@ -1,37 +1,36 @@
-# Target Architecture and Migration Invariants
+# Architecture: App Context and Backend Composition
 
-## Why this document exists
+## Status
 
-Issues #203–#208 will refactor confusio's runtime from the current global/load-order model
-to an explicit composition root with a proper backend registry and shared provider
-capability modules.  Before any file is moved or any global is deleted, this document
-records the target shape so every subsequent change can be judged against the same
-destination.
+This document was written before issues #203–#208 (merged as #211–#218) as a migration
+guide.  Issues #202–#209 are now closed; PR #221 completed the remaining gaps
+(`app.backend` nesting, `make_dispatcher` closure, `graphql_register_builtin_resolvers`
+explicit composition).  The migration is **complete**.  The "pre-migration state" section
+below is preserved for historical context.
 
-## What the current architecture looks like
+## Pre-migration state (historical)
 
-`.init.lua` runs a fixed sequence of `dofile` calls.  Each call mutates the global
-environment:
+Before #203, `.init.lua` ran a fixed sequence of `dofile` calls.  Each call mutated the
+global environment:
 
-- Core modules populate helpers (`respond_json`, `proxy_json`, `make_backend_transport`,
+- Core modules populated helpers (`respond_json`, `proxy_json`, `make_backend_transport`,
   `graphql_resolvers`, …).
-- `backend_impl = {}` and `backend_allow_anonymous = true` are initialized as globals.
-- The backend file (e.g. `backends/gitea.lua`) is `dofile`'d; it reads and mutates
-  `config.base_url`, assigns handler functions into `backend_impl`, assigns resolver
-  functions into `graphql_resolvers`, and may set `backend_allow_anonymous = false` after
-  an HTTP probe.
-- For family-alias backends, `load_family_backend(root)` `dofile`s the root backend file
-  and then iterates over `backend_impl` to delete keys matching the alias's `strip`
+- `backend_impl = {}` and `backend_allow_anonymous = true` were initialized as globals.
+- The backend file (e.g. `backends/gitea.lua`) was `dofile`'d; it read and mutated
+  `config.base_url`, assigned handler functions into `backend_impl`, assigned resolver
+  functions into `graphql_resolvers`, and may have set `backend_allow_anonymous = false`
+  after an HTTP probe.
+- For family-alias backends, `load_family_backend(root)` `dofile`'d the root backend file
+  and then iterated over `backend_impl` to delete keys matching the alias's `strip`
   patterns.
-- `dispatch.lua` defines `OnHttpRequest()` which reads `backend_allow_anonymous`,
+- `dispatch.lua` defined `OnHttpRequest()` which read `backend_allow_anonymous`,
   `backend_impl`, and the router globals on every request.
 
-Ownership is implicit.  The backend file is the only place `backend_impl` is written, but
-there is no enforcement.  Any module loaded in the right order can read or mutate any
-global.  Family alias inheritance works by running the root backend's entire side-effecting
+Ownership was implicit.  Any module loaded in the right order could read or mutate any
+global.  Family alias inheritance worked by running the root backend's entire side-effecting
 load and undoing some of it afterwards.
 
-## Target runtime objects
+## Current runtime objects
 
 ### `app` — composition root
 
@@ -45,12 +44,12 @@ per-application state lives in `app`; no other globals are written after startup
 | `config` | table | `{ backend, base_url }` — frozen after construction |
 | `backend` | table | the backend runtime object (see below) |
 | `allow_anonymous` | boolean | whether unauthenticated requests are accepted |
-| `route_match` | function | bound router lookup |
-| `path_known` | function | bound router path-existence check |
+| `route_match` | function | bound router lookup — set by `.init.lua` after loading `router.lua` |
+| `path_known` | function | bound router path-existence check — set by `.init.lua` after loading `router.lua` |
 
 **Forbidden to mutate:** any field of `app` after `.init.lua` returns.  Request handlers
-read `app`; they never write it.  `OnHttpRequest` receives `app` as a parameter (or via
-an upvalue in the closure returned by a dispatch factory) — it does not reach for a global.
+read `app`; they never write it.  `OnHttpRequest` is the closure returned by
+`make_dispatcher(app)` — it holds `app` as an upvalue and does not reach for a global.
 
 ### `backend` — backend runtime object
 
@@ -111,7 +110,7 @@ other capabilities, and return `nil, error_string` on failure.
 
 ## Startup flow
 
-The target startup sequence is explicit and linear.  No module has silent startup-time
+The startup sequence is explicit and linear.  No module has silent startup-time
 side effects on globals.
 
 ```
@@ -120,82 +119,70 @@ side effects on globals.
       — these export only functions; they do not mutate any app-level state
 3.  Load provider_families (families.lua)
       — read-only metadata table; not app state
-4.  Call backend_builder(config) → backend
-      — pure function: returns backend object, writes no globals
-5.  Assemble app = { config, backend, allow_anonymous, … }
-6.  Load defaults.lua, router.lua, catalog.lua (register routes)
-      — these use app.backend.rest to resolve handler names
-7.  Bind OnHttpRequest as a closure over app
+4.  Construct app = make_app(config)
+      — creates { config, backend={rest={},graphql={},capabilities={}}, allow_anonymous=true }
+5.  Wire graphql_resolvers alias: app.backend.graphql = graphql_resolvers
+6.  Call graphql_register_builtin_resolvers()
+      — registers Query.node, Query.nodes, Query.rateLimit into graphql_resolvers
+7.  Load backend file (e.g. backends/gitea.lua) via make_backend_builder():b:build()
+      — populates app.backend.rest, graphql_resolvers, app.backend.capabilities
+      — Gitea probes the upstream and may set app.allow_anonymous = false
+8.  Load defaults.lua, router.lua, catalog.lua (register routes)
+9.  Load dispatch.lua (exports make_dispatcher)
+10. Bind router lookups and install closure:
+      app.route_match = route_match
+      app.path_known = path_known
+      OnHttpRequest = make_dispatcher(app)
 ```
 
-Steps 1–5 happen once at process start.  Steps 6–7 complete the wiring.  After step 7 the
+Steps 1–9 happen once at process start.  Step 10 completes the wiring.  After step 10 the
 global environment is frozen for the lifetime of the process; `OnHttpRequest` reads only
-the `app` closure and the router globals.
+the `app` upvalue — no ambient globals.
 
 ## Family alias inheritance
 
-Today `load_family_backend` works by running the root backend file and then mutating the
-resulting `backend_impl` to delete unsupported keys.  The target replaces this with a
-composing builder.
+Alias backends (e.g. `codeberg`, `forgejo`, `notabug`) share an implementation with their
+root backend (e.g. `gitea`) through the following pattern:
 
-**Target model:**
+1. `provider_families` in `internal/families.lua` declares the alias and its `strip`
+   patterns and `default_url`.  This is the single authoritative source of alias metadata.
+2. `backends/<alias>.lua` sets `config.base_url` from `provider_families` (when not
+   supplied by the user) and then `dofile`s the root backend file.
+3. The root backend calls `make_backend_builder()`, registers handlers, and calls
+   `b:build(strip)` where `strip` comes from `provider_families[config.backend]`.  Keys
+   matching any strip pattern are omitted from `app.backend.rest` — feature gaps are
+   applied declaratively at build time rather than by post-hoc mutation.
+4. No global is mutated after `b:build()` returns.
 
-1. Each root backend exposes a `build(config, overrides) → backend` builder function.
-2. An alias backend calls `build_family_alias(root_name, config, strip_patterns)`:
-   - Calls `root_builder(config)` to get the root backend table.
-   - Copies it to a new table (shallow clone of `rest`, `graphql`, `capabilities`).
-   - Iterates the alias's `strip` patterns and deletes matching keys from the copy.
-   - Sets `config.base_url` from the alias's `default_url` when none was supplied.
-   - Returns the modified copy.
-3. No global is mutated.  No root backend file is `dofile`'d as a side effect.
+## Migration invariants (completed)
 
-`provider_families` in `internal/families.lua` remains the single authoritative source of
-alias metadata.  Only the loading mechanism changes.
-
-## Migration invariants
-
-These rules apply to every commit in #203–#208.  Any change that violates them is out of
-scope for the refactor and must be handled separately.
+These rules governed every commit in #203–#209.
 
 1. **No externally visible behavior changes.**  Request/response semantics, status codes,
-   header names, and JSON field names must be identical before and after each commit.  The
-   full test suite (`make -j test`) must pass at every commit.
+   header names, and JSON field names were identical before and after each commit.
 
-2. **No flag day.**  The repository must remain buildable and shippable throughout the
-   migration.  The old global path and the new explicit path may coexist during the
-   transition; backends that have not yet migrated continue to use the legacy wiring.
+2. **No flag day.**  The repository remained buildable and shippable throughout the
+   migration.
 
-3. **Migration order: Gitea → GitLab → remaining backends.**  Gitea is first because it
-   is the most complete backend and has the best test coverage.  GitLab is second because
-   it is the second largest.  Family aliases (forgejo, codeberg, gogs, notabug) migrate
-   with their root (Gitea).  Remaining standalone backends migrate together in #208.
+3. **Migration order: Gitea → GitLab → remaining backends** (#205 → #206 → #207–#208).
 
-4. **REST and GraphQL converge on the same capability layer.**  By the end of #208 there
-   must be no logic that is duplicated between a REST handler and a GraphQL resolver for
-   the same provider.  Each piece of provider-domain knowledge lives in one capability
-   function; the REST and GraphQL layers are thin adapters over it.
+4. **REST and GraphQL converge on the same capability layer.**  Each piece of
+   provider-domain knowledge lives in one capability function; REST and GraphQL layers
+   are thin adapters over it.
 
-5. **Legacy global wiring is deleted, not deprecated.**  Once all backends have migrated
-   to the new builder pattern, the globals `backend_impl`, `graphql_resolvers`, and
-   `backend_allow_anonymous` are deleted from `.init.lua` and any module that references
-   them.  There is no long-term compatibility shim.
+5. **Legacy global wiring is deleted, not deprecated.**  `backend_impl`,
+   `backend_allow_anonymous`, and `load_family_backend` are gone.  `graphql_resolvers`
+   is retained as an alias for `app.backend.graphql` (same table) to avoid breaking
+   the executor's existing reads.
 
-## Legacy seams to delete
+## Legacy seams — all eliminated
 
-These four seams are the concrete targets.  Every step in #203–#208 moves the codebase
-closer to eliminating them.  They must all be gone by the end of #208.
-
-| Seam | Where it lives today | Replaced by |
-|------|---------------------|-------------|
-| global `backend_impl` | `.init.lua` + every backend file | `app.backend.rest` |
-| global `graphql_resolvers` | `internal/graphql_executor.lua` + every backend file | `app.backend.graphql` |
-| global `backend_allow_anonymous` | `.init.lua` + gitea/gitea-family backends | `app.allow_anonymous` (set from `backend.allow_anonymous` during composition) |
-| startup by hidden load order | `.init.lua` `dofile` sequence | explicit `backend_builder(config)` call in `.init.lua` step 4 |
-
-The four seams are listed here in dependency order.  Eliminating `backend_impl` and
-`graphql_resolvers` is the core of #203–#207.  `backend_allow_anonymous` and the load-order
-seam are cleaned up as part of the Gitea migration (#205) and the composition root
-introduction (#203) respectively.
+| Seam | Replaced by | Closed by |
+|------|-------------|-----------|
+| global `backend_impl` | `app.backend.rest` | #211–#218 |
+| global `backend_allow_anonymous` | `app.allow_anonymous` | #212 |
+| startup by hidden load order | explicit `make_app` + `make_dispatcher(app)` | #212, #221 |
+| built-in resolver assignment at module load | `graphql_register_builtin_resolvers()` | #221 |
 
 ## Relationship to the GraphQL design
 

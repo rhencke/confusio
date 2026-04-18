@@ -12,7 +12,7 @@
 -- group_name matches the test file suffix (<backend>-<group>.hurl) and the
 -- compatibility matrix sections in site/compatibility.csv.
 --
--- Backends override handlers by setting app.backend_impl.<name>. Parametric
+-- Backends override handlers by setting app.backend.rest.<name>. Parametric
 -- captures from {param} segments are passed positionally to the handler.
 -- ---------------------------------------------------------------------------
 

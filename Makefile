@@ -171,8 +171,8 @@ validate-claims: $(REDBEAN_BIN) $(DUMP_CLAIMS_SCRIPT) $(VALIDATE_CLAIMS_SCRIPT) 
 	$(REDBEAN) $(DUMP_CLAIMS_SCRIPT) $(BACKENDS) | $(REDBEAN) $(VALIDATE_CLAIMS_SCRIPT) site/compatibility.csv
 
 validate-builders:
-	@if grep -rn 'app\.backend_impl\s*=' backends/ | grep -v '^Binary'; then \
-	  echo "ERROR: backend(s) still use direct app.backend_impl assignment; use make_backend_builder():b:build() instead" >&2; \
+	@if grep -rn 'app\.backend\.rest\s*=' backends/ | grep -v '^Binary'; then \
+	  echo "ERROR: backend(s) still use direct app.backend.rest assignment; use make_backend_builder():b:build() instead" >&2; \
 	  exit 1; \
 	fi
 	@if grep -rn 'graphql_resolvers\[' backends/ | grep -v '^Binary'; then \

@@ -46,14 +46,14 @@ local backend_parts = {}
 
 for _, name in ipairs(cli_backends) do
   config = { backend = name, base_url = "" } -- luacheck: globals config
-  app.backend_impl = {} -- luacheck: globals app
-  app.capabilities = {}
+  app.backend = { rest = {}, graphql = {}, capabilities = {} } -- luacheck: globals app
+  graphql_resolvers = app.backend.graphql -- luacheck: globals graphql_resolvers
   Fetch = noop_fetch -- luacheck: globals Fetch
   dofile("/zip/backends/" .. name .. ".lua")
   Fetch = _real_fetch -- luacheck: globals Fetch
 
   local domain_parts = {}
-  for domain, module in pairs(app.capabilities) do
+  for domain, module in pairs(app.backend.capabilities) do
     if type(module) ~= "table" then
       errors[#errors + 1] = name .. ": capability '" .. domain .. "' is not a table"
     else
