@@ -237,71 +237,76 @@ local function translate_srht_commit(c)
   }
 end
 
-app.backend_impl = {
-  get_root = function()
-    proxy_health_check(pcall(Fetch, config.base_url .. "/api/version", auth()))
-  end,
+local b = make_backend_builder()
+b:rest("get_root", function()
+  proxy_health_check(pcall(Fetch, config.base_url .. "/api/version", auth()))
+end)
 
-  get_repo = proxy_handler(translate_srht_repo, function(owner, repo_name)
+b:rest(
+  "get_repo",
+  proxy_handler(translate_srht_repo, function(owner, repo_name)
     return base() .. "/~" .. owner .. "/repos/" .. repo_name
-  end),
+  end)
+)
 
-  patch_repo = function(owner, repo_name)
-    -- Sourcehut uses PUT for updates
-    proxy_json(
-      translate_srht_repo,
-      fetch_json(
-        base() .. "/~" .. owner .. "/repos/" .. repo_name,
-        "PUT",
-        translate_srht_req(GetBody())
-      )
+b:rest("patch_repo", function(owner, repo_name)
+  -- Sourcehut uses PUT for updates
+  proxy_json(
+    translate_srht_repo,
+    fetch_json(
+      base() .. "/~" .. owner .. "/repos/" .. repo_name,
+      "PUT",
+      translate_srht_req(GetBody())
     )
-  end,
+  )
+end)
 
-  delete_repo = function(owner, repo_name)
-    local url = base() .. "/~" .. owner .. "/repos/" .. repo_name
-    local dopts = auth() or {}
-    dopts.method = "DELETE"
-    proxy_204({ 200 }, pcall(Fetch, url, dopts))
-  end,
+b:rest("delete_repo", function(owner, repo_name)
+  local url = base() .. "/~" .. owner .. "/repos/" .. repo_name
+  local dopts = auth() or {}
+  dopts.method = "DELETE"
+  proxy_204({ 200 }, pcall(Fetch, url, dopts))
+end)
 
-  get_user_repos = function()
-    -- Sourcehut: need to know the authenticated user. Use /api/user first.
-    local ok, status, _, ubody = fetch_json(config.base_url .. "/api/user")
-    if not ok or status ~= 200 then
-      respond_json(503, {})
-      return
-    end
-    local user = DecodeJson(ubody)
-    local canonical = user.canonical_name or ("~" .. (user.name or ""))
-    proxy_json(
-      function(data)
-        return translate_list(translate_srht_repo, data.results)
-      end,
-      -- Sourcehut uses cursor-based pagination; only limit is supported for page size
-      fetch_json(append_page_params(base() .. "/" .. canonical .. "/repos", PAGES))
-    )
-  end,
+b:rest("get_user_repos", function()
+  -- Sourcehut: need to know the authenticated user. Use /api/user first.
+  local ok, status, _, ubody = fetch_json(config.base_url .. "/api/user")
+  if not ok or status ~= 200 then
+    respond_json(503, {})
+    return
+  end
+  local user = DecodeJson(ubody)
+  local canonical = user.canonical_name or ("~" .. (user.name or ""))
+  proxy_json(
+    function(data)
+      return translate_list(translate_srht_repo, data.results)
+    end,
+    -- Sourcehut uses cursor-based pagination; only limit is supported for page size
+    fetch_json(append_page_params(base() .. "/" .. canonical .. "/repos", PAGES))
+  )
+end)
 
-  post_user_repos = function()
-    -- Sourcehut: create via POST /api/~{user}/repos — need user context
-    local ok, status, _, ubody = fetch_json(config.base_url .. "/api/user")
-    if not ok or status ~= 200 then
-      respond_json(503, {})
-      return
-    end
-    local user = DecodeJson(ubody)
-    local canonical = user.canonical_name or ("~" .. (user.name or ""))
-    proxy_json_created(
-      translate_srht_repo,
-      fetch_json(base() .. "/" .. canonical .. "/repos", "POST", translate_srht_req(GetBody()))
-    )
-  end,
+b:rest("post_user_repos", function()
+  -- Sourcehut: create via POST /api/~{user}/repos — need user context
+  local ok, status, _, ubody = fetch_json(config.base_url .. "/api/user")
+  if not ok or status ~= 200 then
+    respond_json(503, {})
+    return
+  end
+  local user = DecodeJson(ubody)
+  local canonical = user.canonical_name or ("~" .. (user.name or ""))
+  proxy_json_created(
+    translate_srht_repo,
+    fetch_json(base() .. "/" .. canonical .. "/repos", "POST", translate_srht_req(GetBody()))
+  )
+end)
 
-  -- Branches ------------------------------------------------------------------
-  -- Sourcehut: filter /refs for refs starting with "refs/heads/"
+-- Branches ------------------------------------------------------------------
+-- Sourcehut: filter /refs for refs starting with "refs/heads/"
 
-  get_repo_branches = proxy_handler(function(data)
+b:rest(
+  "get_repo_branches",
+  proxy_handler(function(data)
     local branches = {}
     for _, ref in ipairs(data.results or {}) do
       if ref.name and ref.name:match("^refs/heads/") then
@@ -311,9 +316,12 @@ app.backend_impl = {
     return branches
   end, function(owner, repo_name)
     return base() .. "/~" .. owner .. "/repos/" .. repo_name .. "/refs"
-  end),
+  end)
+)
 
-  get_repo_branch = proxy_handler(function(data, _owner, _repo_name, branch)
+b:rest(
+  "get_repo_branch",
+  proxy_handler(function(data, _owner, _repo_name, branch)
     for _, ref in ipairs(data.results or {}) do
       if ref.name == "refs/heads/" .. branch then
         return translate_srht_branch(ref)
@@ -322,259 +330,251 @@ app.backend_impl = {
     return {}
   end, function(owner, repo_name)
     return base() .. "/~" .. owner .. "/repos/" .. repo_name .. "/refs"
-  end),
+  end)
+)
 
-  -- Tags ----------------------------------------------------------------------
-  -- Sourcehut /refs returns { results: [...] } with name and target fields
-  -- Filter to tags only (refs starting with "refs/tags/")
+-- Tags ----------------------------------------------------------------------
+-- Sourcehut /refs returns { results: [...] } with name and target fields
+-- Filter to tags only (refs starting with "refs/tags/")
 
-  get_repo_tags = function(owner, repo_name)
-    proxy_json(function(data)
-      local tags = {}
-      for _, ref in ipairs(data.results or {}) do
-        local tag_name = ref.name and ref.name:match("^refs/tags/(.+)")
-        if tag_name then
-          tags[#tags + 1] = { name = tag_name, commit = { sha = ref.target or "", url = "" } }
-        end
-      end
-      return tags
-    end, fetch_json(base() .. "/~" .. owner .. "/repos/" .. repo_name .. "/refs"))
-  end,
-
-  -- Commits -------------------------------------------------------------------
-  -- Sourcehut: GET /api/~{owner}/repos/{name}/log or /log/{ref}
-
-  get_repo_commits = function(owner, repo_name)
-    local ref = GetParam("sha") or ""
-    local url = base() .. "/~" .. owner .. "/repos/" .. repo_name .. "/log"
-    if ref ~= "" then
-      url = url .. "/" .. ref
-    end
-    url = append_page_params(url, PAGES)
-    proxy_json(function(data)
-      return translate_list(translate_srht_commit, data.results)
-    end, fetch_json(url))
-  end,
-
-  get_repo_commit = function(owner, repo_name, ref)
-    -- Fetch the log at the specific ref and return first entry.
-    proxy_json(
-      function(data)
-        local c = (data.results or {})[1]
-        return translate_srht_commit(c)
-      end,
-      fetch_json(base() .. "/~" .. owner .. "/repos/" .. repo_name .. "/log/" .. ref .. "?limit=1")
-    )
-  end,
-
-  -- Contents ------------------------------------------------------------------
-  -- Sourcehut: GET /api/~{owner}/repos/{name}/blob/{ref}/{path} — raw bytes.
-
-  get_repo_readme = function(owner, repo_name)
-    local ref = GetParam("ref") or "HEAD"
-    local candidates = { "README.md", "README", "readme.md", "README.rst" }
-    for _, fname in ipairs(candidates) do
-      local url = base()
-        .. "/~"
-        .. owner
-        .. "/repos/"
-        .. repo_name
-        .. "/blob/"
-        .. ref
-        .. "/"
-        .. fname
-      local ok, status, _, body = fetch_json(url)
-      if ok and status == 200 then
-        respond_json(200, {
-          type = "file",
-          name = fname,
-          path = fname,
-          sha = "",
-          size = #body,
-          encoding = "base64",
-          content = EncodeBase64(body),
-        })
-        return
+b:rest("get_repo_tags", function(owner, repo_name)
+  proxy_json(function(data)
+    local tags = {}
+    for _, ref in ipairs(data.results or {}) do
+      local tag_name = ref.name and ref.name:match("^refs/tags/(.+)")
+      if tag_name then
+        tags[#tags + 1] = { name = tag_name, commit = { sha = ref.target or "", url = "" } }
       end
     end
-    respond_json(404, { message = "Not Found" })
-  end,
+    return tags
+  end, fetch_json(base() .. "/~" .. owner .. "/repos/" .. repo_name .. "/refs"))
+end)
 
-  get_repo_content = function(owner, repo_name, path)
-    local ref = GetParam("ref") or "HEAD"
-    local url = base() .. "/~" .. owner .. "/repos/" .. repo_name .. "/blob/" .. ref .. "/" .. path
+-- Commits -------------------------------------------------------------------
+-- Sourcehut: GET /api/~{owner}/repos/{name}/log or /log/{ref}
+
+b:rest("get_repo_commits", function(owner, repo_name)
+  local ref = GetParam("sha") or ""
+  local url = base() .. "/~" .. owner .. "/repos/" .. repo_name .. "/log"
+  if ref ~= "" then
+    url = url .. "/" .. ref
+  end
+  url = append_page_params(url, PAGES)
+  proxy_json(function(data)
+    return translate_list(translate_srht_commit, data.results)
+  end, fetch_json(url))
+end)
+
+b:rest("get_repo_commit", function(owner, repo_name, ref)
+  -- Fetch the log at the specific ref and return first entry.
+  proxy_json(
+    function(data)
+      local c = (data.results or {})[1]
+      return translate_srht_commit(c)
+    end,
+    fetch_json(base() .. "/~" .. owner .. "/repos/" .. repo_name .. "/log/" .. ref .. "?limit=1")
+  )
+end)
+
+-- Contents ------------------------------------------------------------------
+-- Sourcehut: GET /api/~{owner}/repos/{name}/blob/{ref}/{path} — raw bytes.
+
+b:rest("get_repo_readme", function(owner, repo_name)
+  local ref = GetParam("ref") or "HEAD"
+  local candidates = { "README.md", "README", "readme.md", "README.rst" }
+  for _, fname in ipairs(candidates) do
+    local url = base() .. "/~" .. owner .. "/repos/" .. repo_name .. "/blob/" .. ref .. "/" .. fname
     local ok, status, _, body = fetch_json(url)
     if ok and status == 200 then
       respond_json(200, {
         type = "file",
-        name = path:match("[^/]+$") or path,
-        path = path,
+        name = fname,
+        path = fname,
         sha = "",
         size = #body,
         encoding = "base64",
         content = EncodeBase64(body),
       })
-    elseif ok then
-      respond_json(status, { message = "Error" })
-    else
-      respond_json(503, {})
-    end
-  end,
-
-  -- Users' repos --------------------------------------------------------------
-
-  get_users_repos = function(username)
-    proxy_json(function(data)
-      return translate_list(translate_srht_repo, data.results)
-    end, fetch_json(append_page_params(base() .. "/~" .. username .. "/repos", PAGES)))
-  end,
-
-  -- Users ---------------------------------------------------------------------
-
-  -- GET /user
-  get_user = function()
-    proxy_json(function(u)
-      if not u then
-        return {}
-      end
-      local canonical = u.canonical_name or ""
-      local login = canonical:sub(1, 1) == "~" and canonical:sub(2) or canonical
-      return {
-        login = login,
-        id = 0,
-        node_id = "",
-        avatar_url = "",
-        html_url = config.base_url .. "/" .. canonical,
-        type = "User",
-        site_admin = false,
-        name = u.name or canonical,
-        email = u.email or "",
-        blog = u.url or "",
-      }
-    end, fetch_json(base() .. "/user"))
-  end,
-
-  -- Issues --------------------------------------------------------------------
-  -- todo.sr.ht: GET /api/~{owner}/trackers/{repo}/tickets
-
-  get_repo_issues = function(owner, repo_name)
-    local url = todo_base() .. "/~" .. owner .. "/trackers/" .. repo_name .. "/tickets"
-    url = append_page_params(url, PAGES)
-    proxy_json(function(data)
-      return translate_list(translate_srht_ticket, data.results)
-    end, fetch_json(url))
-  end,
-
-  -- GET /repos/{owner}/{repo}/issues/{issue_number}
-  -- Cannot use proxy_json: todo.sr.ht returns a 404 body with tracker-specific
-  -- error text; we emit a clean GitHub-shaped { message = "Not Found" } instead.
-  get_repo_issue = function(owner, repo_name, issue_number)
-    local url = todo_base()
-      .. "/~"
-      .. owner
-      .. "/trackers/"
-      .. repo_name
-      .. "/tickets/"
-      .. issue_number
-    local ok, status, _, body = fetch_json(url)
-    if not ok then
-      respond_json(503, {})
       return
     end
-    if status == 404 then
-      respond_json(404, { message = "Not Found" })
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local ticket = DecodeJson(body)
-    respond_json(200, translate_srht_ticket(ticket))
-  end,
+  end
+  respond_json(404, { message = "Not Found" })
+end)
 
-  -- POST /repos/{owner}/{repo}/issues
-  post_repo_issues = function(owner, repo_name)
-    local req = DecodeJson(GetBody() or "{}")
-    local payload = EncodeJson({ title = req.title or "", description = req.body or "" })
-    proxy_json_created(
-      translate_srht_ticket,
-      fetch_json(
-        todo_base() .. "/~" .. owner .. "/trackers/" .. repo_name .. "/tickets",
-        "POST",
-        payload
-      )
+b:rest("get_repo_content", function(owner, repo_name, path)
+  local ref = GetParam("ref") or "HEAD"
+  local url = base() .. "/~" .. owner .. "/repos/" .. repo_name .. "/blob/" .. ref .. "/" .. path
+  local ok, status, _, body = fetch_json(url)
+  if ok and status == 200 then
+    respond_json(200, {
+      type = "file",
+      name = path:match("[^/]+$") or path,
+      path = path,
+      sha = "",
+      size = #body,
+      encoding = "base64",
+      content = EncodeBase64(body),
+    })
+  elseif ok then
+    respond_json(status, { message = "Error" })
+  else
+    respond_json(503, {})
+  end
+end)
+
+-- Users' repos --------------------------------------------------------------
+
+b:rest("get_users_repos", function(username)
+  proxy_json(function(data)
+    return translate_list(translate_srht_repo, data.results)
+  end, fetch_json(append_page_params(base() .. "/~" .. username .. "/repos", PAGES)))
+end)
+
+-- Users ---------------------------------------------------------------------
+
+-- GET /user
+b:rest("get_user", function()
+  proxy_json(function(u)
+    if not u then
+      return {}
+    end
+    local canonical = u.canonical_name or ""
+    local login = canonical:sub(1, 1) == "~" and canonical:sub(2) or canonical
+    return {
+      login = login,
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      html_url = config.base_url .. "/" .. canonical,
+      type = "User",
+      site_admin = false,
+      name = u.name or canonical,
+      email = u.email or "",
+      blog = u.url or "",
+    }
+  end, fetch_json(base() .. "/user"))
+end)
+
+-- Issues --------------------------------------------------------------------
+-- todo.sr.ht: GET /api/~{owner}/trackers/{repo}/tickets
+
+b:rest("get_repo_issues", function(owner, repo_name)
+  local url = todo_base() .. "/~" .. owner .. "/trackers/" .. repo_name .. "/tickets"
+  url = append_page_params(url, PAGES)
+  proxy_json(function(data)
+    return translate_list(translate_srht_ticket, data.results)
+  end, fetch_json(url))
+end)
+
+-- GET /repos/{owner}/{repo}/issues/{issue_number}
+-- Cannot use proxy_json: todo.sr.ht returns a 404 body with tracker-specific
+-- error text; we emit a clean GitHub-shaped { message = "Not Found" } instead.
+b:rest("get_repo_issue", function(owner, repo_name, issue_number)
+  local url = todo_base()
+    .. "/~"
+    .. owner
+    .. "/trackers/"
+    .. repo_name
+    .. "/tickets/"
+    .. issue_number
+  local ok, status, _, body = fetch_json(url)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status == 404 then
+    respond_json(404, { message = "Not Found" })
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local ticket = DecodeJson(body)
+  respond_json(200, translate_srht_ticket(ticket))
+end)
+
+-- POST /repos/{owner}/{repo}/issues
+b:rest("post_repo_issues", function(owner, repo_name)
+  local req = DecodeJson(GetBody() or "{}")
+  local payload = EncodeJson({ title = req.title or "", description = req.body or "" })
+  proxy_json_created(
+    translate_srht_ticket,
+    fetch_json(
+      todo_base() .. "/~" .. owner .. "/trackers/" .. repo_name .. "/tickets",
+      "POST",
+      payload
     )
-  end,
+  )
+end)
 
-  -- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
-  -- todo.sr.ht: GET /api/~{owner}/trackers/{repo}/tickets/{id}/events
-  -- Filter events to only those with a comment field.
-  get_issue_comments = function(owner, repo_name, issue_number)
-    local url = todo_base()
-      .. "/~"
-      .. owner
-      .. "/trackers/"
-      .. repo_name
-      .. "/tickets/"
-      .. issue_number
-      .. "/events"
-    url = append_page_params(url, PAGES)
-    proxy_json(function(data)
-      local events = data.results or {}
-      local comments = {}
-      for _, e in ipairs(events) do
-        local c = translate_srht_event_comment(e)
-        if c then
-          comments[#comments + 1] = c
-        end
+-- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
+-- todo.sr.ht: GET /api/~{owner}/trackers/{repo}/tickets/{id}/events
+-- Filter events to only those with a comment field.
+b:rest("get_issue_comments", function(owner, repo_name, issue_number)
+  local url = todo_base()
+    .. "/~"
+    .. owner
+    .. "/trackers/"
+    .. repo_name
+    .. "/tickets/"
+    .. issue_number
+    .. "/events"
+  url = append_page_params(url, PAGES)
+  proxy_json(function(data)
+    local events = data.results or {}
+    local comments = {}
+    for _, e in ipairs(events) do
+      local c = translate_srht_event_comment(e)
+      if c then
+        comments[#comments + 1] = c
       end
-      return comments
-    end, fetch_json(url))
-  end,
-
-  -- POST /repos/{owner}/{repo}/issues/{issue_number}/comments
-  post_issue_comment = function(owner, repo_name, issue_number)
-    local req = DecodeJson(GetBody() or "{}")
-    local payload = EncodeJson({ comment = req.body or "" })
-    local url = todo_base()
-      .. "/~"
-      .. owner
-      .. "/trackers/"
-      .. repo_name
-      .. "/tickets/"
-      .. issue_number
-      .. "/events"
-    proxy_json_created(function(e)
-      return translate_srht_event_comment(e) or {}
-    end, fetch_json(url, "POST", payload))
-  end,
-
-  -- Checks (via builds.sr.ht jobs) --------------------------------------------
-
-  -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
-  -- Maps to builds.sr.ht GET /api/jobs filtered by the git repo tag and commit SHA.
-  -- builds.sr.ht jobs are tagged with "git.sr.ht/~owner/repo=sha" when triggered
-  -- from a git push.
-  get_commit_check_runs = function(owner, repo_name, ref)
-    -- Derive the git.sr.ht hostname from the config base URL for the tag filter.
-    local git_host = config.base_url:match("^https?://([^/]+)") or "git.sr.ht"
-    local tag = git_host .. "/~" .. owner .. "/" .. repo_name .. "=" .. ref
-    local url = builds_base() .. "/jobs?filter[tags]=" .. tag
-    local ok, status, _, body = fetch_json(url)
-    if not ok then
-      respond_json(503, {})
-      return
     end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local data = DecodeJson(body) or {}
-    local runs = translate_list(translate_srht_job_to_check_run, data.results)
-    respond_json(200, { total_count = #runs, check_runs = runs })
-  end,
-}
+    return comments
+  end, fetch_json(url))
+end)
+
+-- POST /repos/{owner}/{repo}/issues/{issue_number}/comments
+b:rest("post_issue_comment", function(owner, repo_name, issue_number)
+  local req = DecodeJson(GetBody() or "{}")
+  local payload = EncodeJson({ comment = req.body or "" })
+  local url = todo_base()
+    .. "/~"
+    .. owner
+    .. "/trackers/"
+    .. repo_name
+    .. "/tickets/"
+    .. issue_number
+    .. "/events"
+  proxy_json_created(function(e)
+    return translate_srht_event_comment(e) or {}
+  end, fetch_json(url, "POST", payload))
+end)
+
+-- Checks (via builds.sr.ht jobs) --------------------------------------------
+
+-- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
+-- Maps to builds.sr.ht GET /api/jobs filtered by the git repo tag and commit SHA.
+-- builds.sr.ht jobs are tagged with "git.sr.ht/~owner/repo=sha" when triggered
+-- from a git push.
+b:rest("get_commit_check_runs", function(owner, repo_name, ref)
+  -- Derive the git.sr.ht hostname from the config base URL for the tag filter.
+  local git_host = config.base_url:match("^https?://([^/]+)") or "git.sr.ht"
+  local tag = git_host .. "/~" .. owner .. "/" .. repo_name .. "=" .. ref
+  local url = builds_base() .. "/jobs?filter[tags]=" .. tag
+  local ok, status, _, body = fetch_json(url)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local data = DecodeJson(body) or {}
+  local runs = translate_list(translate_srht_job_to_check_run, data.results)
+  respond_json(200, { total_count = #runs, check_runs = runs })
+end)
 
 -- Code scanning: Sourcehut has no native code scanning API.
 -- All code scanning endpoints fall back to the default handlers in .init.lua:
@@ -607,7 +607,7 @@ local function translate_srht_user_for_graphql(u)
   }
 end
 
-graphql_resolvers["Query.repository"] = function(_parent, args, ctx)
+b:graphql("Query.repository", function(_parent, args, ctx)
   if not args.owner or not args.name then
     graphql_error(ctx, "repository requires owner and name arguments")
     return nil
@@ -617,9 +617,9 @@ graphql_resolvers["Query.repository"] = function(_parent, args, ctx)
     return nil
   end
   return graphql_translate_repo(translate_srht_repo(data))
-end
+end)
 
-graphql_resolvers["node.Repository"] = function(local_id, _ctx)
+b:graphql("node.Repository", function(local_id, _ctx)
   local owner, name = local_id:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
@@ -629,9 +629,9 @@ graphql_resolvers["node.Repository"] = function(local_id, _ctx)
     return nil
   end
   return graphql_translate_repo(translate_srht_repo(data))
-end
+end)
 
-graphql_resolvers["Query.viewer"] = function(_parent, _args, ctx)
+b:graphql("Query.viewer", function(_parent, _args, ctx)
   local data = graphql_fetch_or_error(fetch_json, base() .. "/user", ctx, nil)
   if not data then
     return nil
@@ -639,7 +639,7 @@ graphql_resolvers["Query.viewer"] = function(_parent, _args, ctx)
   local u = graphql_translate_user(translate_srht_user_for_graphql(data))
   u.isViewer = true
   return u
-end
+end)
 
 -- Repository.issues: paginated list of issues via todo.sr.ht trackers.
 -- Sourcehut pagination uses cursor-based results with a `limit` param;
@@ -668,15 +668,15 @@ local function srht_issue_connection(owner, repo_name, args, ctx)
   return graphql_issues_connection(nodes, args, nil, ctx)
 end
 
-graphql_resolvers["Repository.issues"] = function(parent, args, ctx)
+b:graphql("Repository.issues", function(parent, args, ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
   end
   return srht_issue_connection(owner, name, args, ctx)
-end
+end)
 
-graphql_resolvers["node.Issue"] = function(local_id, _ctx)
+b:graphql("node.Issue", function(local_id, _ctx)
   local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
   if not owner then
     return nil
@@ -687,4 +687,6 @@ graphql_resolvers["node.Issue"] = function(local_id, _ctx)
     return nil
   end
   return graphql_translate_issue(translate_srht_ticket(data), owner, repo)
-end
+end)
+
+b:build()
