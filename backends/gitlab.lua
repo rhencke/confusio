@@ -569,6 +569,85 @@ local GL_STATUS_TO_CHECK_RUN = {
   canceled = { status = "completed", conclusion = "cancelled" },
 }
 
+-- Map a GitLab branch object to GitHub branch format.
+-- Normalises commit.id → commit.sha in place and returns the branch.
+local function translate_gl_branch(br)
+  if not br then
+    return {}
+  end
+  if br.commit then
+    br.commit.sha = br.commit.id
+  end
+  return br
+end
+
+-- Map a GitLab commit object to GitHub commit format.
+local function translate_gl_commit(c)
+  if not c then
+    return {}
+  end
+  return {
+    sha = c.id,
+    html_url = c.web_url or "",
+    commit = {
+      message = c.message,
+      author = { name = c.author_name, email = c.author_email, date = c.authored_date },
+      committer = {
+        name = c.committer_name or c.author_name,
+        email = c.committer_email or c.author_email,
+        date = c.committed_date or c.authored_date,
+      },
+    },
+    stats = c.stats,
+  }
+end
+
+-- Map a GitLab commit status object to GitHub status format.
+local function translate_gl_status(s)
+  if not s then
+    return {}
+  end
+  return {
+    id = s.id,
+    state = GL_STATUS_TO_GH[s.status] or s.status,
+    description = s.description,
+    target_url = s.target_url,
+    context = s.name,
+    created_at = s.created_at,
+    updated_at = s.updated_at,
+  }
+end
+
+-- Map a GitLab commit status object to a GitHub check run object.
+-- sha: the commit SHA to embed as head_sha (GitLab status may not include it).
+local function translate_gl_status_to_check_run(s, sha)
+  if not s then
+    return {}
+  end
+  local mapped = GL_STATUS_TO_CHECK_RUN[s.status]
+    or { status = "completed", conclusion = "failure" }
+  return {
+    id = s.id,
+    node_id = "",
+    head_sha = sha or "",
+    name = s.name or "",
+    status = mapped.status,
+    conclusion = mapped.conclusion,
+    started_at = s.created_at,
+    completed_at = mapped.status == "completed" and s.updated_at or nil,
+    output = {
+      title = s.description or "",
+      summary = s.description or "",
+      text = "",
+      annotations_count = 0,
+      annotations_url = "",
+    },
+    url = "",
+    html_url = s.target_url or "",
+    details_url = s.target_url or "",
+  }
+end
+
 -- ---------------------------------------------------------------------------
 -- Repos capability module
 -- ---------------------------------------------------------------------------
@@ -910,6 +989,219 @@ orgs.get = function(login)
   return translate_gl_group_to_org(raw), nil
 end
 
+-- ---------------------------------------------------------------------------
+-- Branches capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translate_gl_branch for all branch operations.
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+-- Single-item operations return (data, nil) or (nil, err).
+
+local branches = {}
+
+-- list: paginated list of branches for a repository.
+branches.list = function(owner, repo_name)
+  local url = append_page_params(
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/repository/branches",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gl_branch, items), hdrs, nil
+end
+
+-- get: fetch a single branch by name.
+branches.get = function(owner, repo_name, branch)
+  local url = base()
+    .. "/projects/"
+    .. project_id(owner, repo_name)
+    .. "/repository/branches/"
+    .. branch
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_branch(raw), nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Commits capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translate_gl_commit for all commit operations.
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+-- Single-item operations return (data, nil) or (nil, err).
+
+local commits = {}
+
+-- list: paginated list of commits for a repository.
+commits.list = function(owner, repo_name)
+  local url = append_page_params(
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/repository/commits",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gl_commit, items), hdrs, nil
+end
+
+-- get: fetch a single commit by ref (SHA, branch, or tag).
+commits.get = function(owner, repo_name, ref)
+  local url = base()
+    .. "/projects/"
+    .. project_id(owner, repo_name)
+    .. "/repository/commits/"
+    .. ref
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_commit(raw), nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Statuses capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translation for commit statuses and check runs.
+-- GitLab has no check-run concept; both map to the GitLab commit statuses API.
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+-- Single-item and aggregate operations return (data, nil) or (nil, err).
+
+local statuses_cap = {}
+
+-- list: paginated list of commit statuses for a ref.
+statuses_cap.list = function(owner, repo_name, ref)
+  local url = append_page_params(
+    base()
+      .. "/projects/"
+      .. project_id(owner, repo_name)
+      .. "/repository/commits/"
+      .. ref
+      .. "/statuses",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gl_status, items), hdrs, nil
+end
+
+-- get_combined: aggregate all commit statuses into a GitHub combined status.
+-- Returns ({ state, statuses, total_count }, nil) or (nil, err).
+statuses_cap.get_combined = function(owner, repo_name, ref)
+  local url = base()
+    .. "/projects/"
+    .. project_id(owner, repo_name)
+    .. "/repository/commits/"
+    .. ref
+    .. "/statuses"
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
+  end
+  local state = "success"
+  local result = {}
+  for _, s in ipairs(raw) do
+    local gh_state = GL_STATUS_TO_GH[s.status] or s.status
+    if gh_state == "failure" or gh_state == "error" then
+      state = gh_state
+    end
+    if gh_state == "pending" and state == "success" then
+      state = "pending"
+    end
+    result[#result + 1] = {
+      id = s.id,
+      state = gh_state,
+      context = s.name,
+      description = s.description,
+      target_url = s.target_url,
+    }
+  end
+  return { state = state, statuses = result, total_count = #result }, nil
+end
+
+-- create: create a commit status from a GitHub-format request body.
+-- Returns the created status in GitHub format or (nil, err).
+statuses_cap.create = function(owner, repo_name, sha, body)
+  local req = DecodeJson(body or "{}")
+  local gh_to_gl =
+    { pending = "pending", success = "success", failure = "failed", error = "failed" }
+  local gl_body = EncodeJson({
+    state = gh_to_gl[req.state] or req.state,
+    name = req.context or "default",
+    description = req.description,
+    target_url = req.target_url,
+  })
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/statuses/" .. sha,
+    "POST",
+    gl_body
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_status(raw), nil
+end
+
+-- list_check_runs: fetch commit statuses shaped as GitHub check runs for a ref.
+-- Returns ({ total_count, check_runs }, nil) or (nil, err).
+statuses_cap.list_check_runs = function(owner, repo_name, ref)
+  local url = base()
+    .. "/projects/"
+    .. project_id(owner, repo_name)
+    .. "/repository/commits/"
+    .. ref
+    .. "/statuses"
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
+  end
+  local runs = {}
+  for i, s in ipairs(raw) do
+    runs[i] = translate_gl_status_to_check_run(s, ref)
+  end
+  return { total_count = #runs, check_runs = runs }, nil
+end
+
+-- create_check_run: create a GitHub check run via GitLab commit status.
+-- body: raw GitHub-format request body string.
+-- Returns the created check run in GitHub format or (nil, err).
+statuses_cap.create_check_run = function(owner, repo_name, body)
+  local req = DecodeJson(body or "{}")
+  local sha = req.head_sha or ""
+  local check_status = req.status or "queued"
+  local conclusion = req.conclusion
+  local gh_conclusion_to_gl = {
+    success = "success",
+    neutral = "success",
+    skipped = "success",
+  }
+  local gl_state = check_status == "completed" and (gh_conclusion_to_gl[conclusion] or "failed")
+    or "running"
+  local gl_body = EncodeJson({
+    state = gl_state,
+    target_url = req.details_url or "",
+    description = (req.output and req.output.summary) or req.name or "",
+    name = req.name or "",
+    context = req.name or "",
+    ref = sha,
+  })
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/statuses/" .. sha,
+    "POST",
+    gl_body
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_status_to_check_run(raw, sha), nil
+end
+
 local b = make_backend_builder()
 
 b:rest("get_root", function()
@@ -1010,191 +1302,50 @@ b:rest(
 
 -- Branches ------------------------------------------------------------------
 
-b:rest(
-  "get_repo_branches",
-  proxy_handler_paged(function(branches)
-    for _, br in ipairs(branches or {}) do
-      if br.commit then
-        br.commit.sha = br.commit.id
-      end
-    end
-    return branches or {}
-  end, function(owner, repo_name)
-    return append_page_params(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/repository/branches",
-      PAGES
-    )
-  end)
-)
+-- GET /repos/{owner}/{repo}/branches
+b:rest("get_repo_branches", function(owner, repo_name)
+  local items, hdrs, err = branches.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
-b:rest(
-  "get_repo_branch",
-  proxy_handler(function(br)
-    if br and br.commit then
-      br.commit.sha = br.commit.id
-    end
-    return br or {}
-  end, function(owner, repo_name, branch)
-    return base()
-      .. "/projects/"
-      .. project_id(owner, repo_name)
-      .. "/repository/branches/"
-      .. branch
-  end)
-)
+-- GET /repos/{owner}/{repo}/branches/{branch}
+b:rest("get_repo_branch", function(owner, repo_name, branch)
+  local data, err = branches.get(owner, repo_name, branch)
+  cap_rest_respond(data, err)
+end)
 
 -- Commits -------------------------------------------------------------------
 
-b:rest(
-  "get_repo_commits",
-  proxy_handler_paged(function(commits)
-    local result = {}
-    for _, c in ipairs(commits or {}) do
-      result[#result + 1] = {
-        sha = c.id,
-        html_url = c.web_url or "",
-        commit = {
-          message = c.message,
-          author = { name = c.author_name, email = c.author_email, date = c.authored_date },
-          committer = {
-            name = c.committer_name or c.author_name,
-            email = c.committer_email or c.author_email,
-            date = c.committed_date or c.authored_date,
-          },
-        },
-      }
-    end
-    return result
-  end, function(owner, repo_name)
-    return append_page_params(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/repository/commits",
-      PAGES
-    )
-  end)
-)
+-- GET /repos/{owner}/{repo}/commits
+b:rest("get_repo_commits", function(owner, repo_name)
+  local items, hdrs, err = commits.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
-b:rest(
-  "get_repo_commit",
-  proxy_handler(function(c)
-    if not c then
-      return {}
-    end
-    return {
-      sha = c.id,
-      html_url = c.web_url or "",
-      commit = {
-        message = c.message,
-        author = { name = c.author_name, email = c.author_email, date = c.authored_date },
-        committer = {
-          name = c.committer_name or c.author_name,
-          email = c.committer_email or c.author_email,
-          date = c.committed_date or c.authored_date,
-        },
-      },
-      stats = c.stats,
-    }
-  end, function(owner, repo_name, ref)
-    return base() .. "/projects/" .. project_id(owner, repo_name) .. "/repository/commits/" .. ref
-  end)
-)
+-- GET /repos/{owner}/{repo}/commits/{ref}
+b:rest("get_repo_commit", function(owner, repo_name, ref)
+  local data, err = commits.get(owner, repo_name, ref)
+  cap_rest_respond(data, err)
+end)
 
 -- Statuses ------------------------------------------------------------------
 
--- GitLab status mapping: running→pending, failed→failure, canceled→error
+-- GET /repos/{owner}/{repo}/commits/{ref}/statuses
 b:rest("get_commit_statuses", function(owner, repo_name, ref)
-  proxy_json_paged(
-    function(statuses)
-      local result = {}
-      for _, s in ipairs(statuses or {}) do
-        result[#result + 1] = {
-          id = s.id,
-          state = GL_STATUS_TO_GH[s.status] or s.status,
-          description = s.description,
-          target_url = s.target_url,
-          context = s.name,
-          created_at = s.created_at,
-          updated_at = s.updated_at,
-        }
-      end
-      return result
-    end,
-    PAGES,
-    fetch_json(
-      append_page_params(
-        base()
-          .. "/projects/"
-          .. project_id(owner, repo_name)
-          .. "/repository/commits/"
-          .. ref
-          .. "/statuses",
-        PAGES
-      )
-    )
-  )
+  local items, hdrs, err = statuses_cap.list(owner, repo_name, ref)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
+-- GET /repos/{owner}/{repo}/commits/{ref}/status
 b:rest("get_commit_combined_status", function(owner, repo_name, ref)
-  -- GitLab has no single-object combined status; return the list as-is
-  -- and wrap in a GitHub-style combined status object.
-  proxy_json(
-    function(statuses)
-      local state = "success"
-      local result = {}
-      for _, s in ipairs(statuses or {}) do
-        local gh_state = GL_STATUS_TO_GH[s.status] or s.status
-        if gh_state == "failure" or gh_state == "error" then
-          state = gh_state
-        end
-        if gh_state == "pending" and state == "success" then
-          state = "pending"
-        end
-        result[#result + 1] = {
-          id = s.id,
-          state = gh_state,
-          context = s.name,
-          description = s.description,
-          target_url = s.target_url,
-        }
-      end
-      return { state = state, statuses = result, total_count = #result }
-    end,
-    fetch_json(
-      base()
-        .. "/projects/"
-        .. project_id(owner, repo_name)
-        .. "/repository/commits/"
-        .. ref
-        .. "/statuses"
-    )
-  )
+  local data, err = statuses_cap.get_combined(owner, repo_name, ref)
+  cap_rest_respond(data, err)
 end)
 
+-- POST /repos/{owner}/{repo}/statuses/{sha}
 b:rest("post_commit_status", function(owner, repo_name, sha)
-  local req = DecodeJson(GetBody() or "{}")
-  local gh_to_gl =
-    { pending = "pending", success = "success", failure = "failed", error = "failed" }
-  local gl_body = EncodeJson({
-    state = gh_to_gl[req.state] or req.state,
-    name = req.context or "default",
-    description = req.description,
-    target_url = req.target_url,
-  })
-  proxy_json_created(
-    function(s)
-      return {
-        id = s.id,
-        state = GL_STATUS_TO_GH[s.status] or s.status,
-        description = s.description,
-        target_url = s.target_url,
-        context = s.name,
-      }
-    end,
-    fetch_json(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/statuses/" .. sha,
-      "POST",
-      gl_body
-    )
-  )
+  local data, err = statuses_cap.create(owner, repo_name, sha, GetBody())
+  cap_rest_created(data, err)
 end)
 
 -- Contents ------------------------------------------------------------------
@@ -2948,9 +3099,9 @@ end)
 -- GET /repos/{owner}/{repo}/pulls/{pull_number}/commits
 b:rest(
   "get_pull_commits",
-  proxy_handler_paged(function(commits)
+  proxy_handler_paged(function(commit_list)
     local result = {}
-    for _, c in ipairs(commits or {}) do
+    for _, c in ipairs(commit_list or {}) do
       result[#result + 1] = {
         sha = c.id,
         html_url = c.web_url or "",
@@ -3283,111 +3434,16 @@ end)
 --   canceled→ status=completed,   conclusion=cancelled
 --   other   → status=completed,   conclusion=failure
 
--- Translate a GitLab commit status object to a GitHub check run object.
--- id is taken from the GitLab status.id field (used as check_run_id).
+-- POST /repos/{owner}/{repo}/check-runs
 b:rest("post_check_runs", function(owner, repo_name)
-  local req = DecodeJson(GetBody() or "{}")
-  local sha = req.head_sha or ""
-  local status = req.status or "queued"
-  local conclusion = req.conclusion
-  local gh_conclusion_to_gl = {
-    success = "success",
-    neutral = "success",
-    skipped = "success",
-  }
-  local gl_state = status == "completed" and (gh_conclusion_to_gl[conclusion] or "failed")
-    or "running"
-  local gl_body = EncodeJson({
-    state = gl_state,
-    target_url = req.details_url or "",
-    description = (req.output and req.output.summary) or req.name or "",
-    name = req.name or "",
-    context = req.name or "",
-    ref = sha,
-  })
-  local function translate(s)
-    if not s then
-      return {}
-    end
-    local mapped = GL_STATUS_TO_CHECK_RUN[s.status]
-      or { status = "completed", conclusion = "failure" }
-    return {
-      id = s.id,
-      node_id = "",
-      head_sha = sha,
-      name = s.name or "",
-      status = mapped.status,
-      conclusion = mapped.conclusion,
-      started_at = s.created_at,
-      completed_at = mapped.status == "completed" and s.updated_at or nil,
-      output = {
-        title = s.description or "",
-        summary = s.description or "",
-        text = "",
-        annotations_count = 0,
-        annotations_url = "",
-      },
-      url = "",
-      html_url = s.target_url or "",
-      details_url = s.target_url or "",
-    }
-  end
-  proxy_json_created(
-    translate,
-    fetch_json(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/statuses/" .. sha,
-      "POST",
-      gl_body
-    )
-  )
+  local data, err = statuses_cap.create_check_run(owner, repo_name, GetBody())
+  cap_rest_created(data, err)
 end)
 
 -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
--- Uses GitLab commit statuses.
 b:rest("get_commit_check_runs", function(owner, repo_name, ref)
-  local ok, status, _, body = fetch_json(
-    base()
-      .. "/projects/"
-      .. project_id(owner, repo_name)
-      .. "/repository/commits/"
-      .. ref
-      .. "/statuses"
-  )
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
-  end
-  local statuses = DecodeJson(body) or {}
-  local runs = {}
-  for i, s in ipairs(statuses) do
-    local mapped = GL_STATUS_TO_CHECK_RUN[s.status]
-      or { status = "completed", conclusion = "failure" }
-    runs[i] = {
-      id = s.id,
-      node_id = "",
-      head_sha = ref,
-      name = s.name or "",
-      status = mapped.status,
-      conclusion = mapped.conclusion,
-      started_at = s.created_at,
-      completed_at = mapped.status == "completed" and s.updated_at or nil,
-      output = {
-        title = s.description or "",
-        summary = s.description or "",
-        text = "",
-        annotations_count = 0,
-        annotations_url = "",
-      },
-      url = "",
-      html_url = s.target_url or "",
-      details_url = s.target_url or "",
-    }
-  end
-  respond_json(200, { total_count = #runs, check_runs = runs })
+  local data, err = statuses_cap.list_check_runs(owner, repo_name, ref)
+  cap_rest_respond(data, err)
 end)
 
 -- Check suites have no GitLab equivalent; all suite endpoints fall back to
@@ -4870,4 +4926,7 @@ end)
 b:capability("repos", repos)
 b:capability("users", users)
 b:capability("orgs", orgs)
+b:capability("branches", branches)
+b:capability("commits", commits)
+b:capability("statuses", statuses_cap)
 b:build()
