@@ -377,10 +377,6 @@ local function translate_gl_mr(mr)
   }
 end
 
-local function translate_gl_mrs(mrs)
-  return translate_list(translate_gl_mr, mrs)
-end
-
 -- Map GitLab MR approvals to GitHub reviews (APPROVED state).
 -- GitLab uses an approvals object; GitHub uses an array of review objects.
 local function translate_gl_approvals_to_reviews(approvals)
@@ -2101,6 +2097,280 @@ forks_cap.create = function(owner, repo_name, body)
   return translate_gl_repo(raw), nil
 end
 
+-- ---------------------------------------------------------------------------
+-- Pulls capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translate for pull request (merge request) operations.
+-- GitLab uses /projects/{id}/merge_requests and related sub-resources.
+
+local pulls_cap = {}
+
+-- list: paginated list of merge requests for a repository.
+-- Returns (items, headers, nil) or (nil, nil, err).
+pulls_cap.list = function(owner, repo_name)
+  local url = append_page_params(
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/merge_requests",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gl_mr, items), hdrs, nil
+end
+
+-- create: open a new merge request.  body is raw GitHub-format JSON.
+-- Returns (data, nil) or (nil, err).
+pulls_cap.create = function(owner, repo_name, body)
+  local req = DecodeJson(body or "{}") or {}
+  local gl = {}
+  if req.title then
+    gl.title = req.title
+  end
+  if req.body then
+    gl.description = req.body
+  end
+  if req.head then
+    gl.source_branch = req.head
+  end
+  if req.base then
+    gl.target_branch = req.base
+  end
+  if req.draft ~= nil then
+    gl.draft = req.draft
+  end
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/merge_requests",
+    "POST",
+    EncodeJson(gl)
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_mr(raw), nil
+end
+
+-- get: fetch a single merge request by iid.
+-- Returns (data, nil) or (nil, err).
+pulls_cap.get = function(owner, repo_name, pull_number)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/merge_requests/" .. pull_number
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_mr(raw), nil
+end
+
+-- update: update a merge request.  body is raw GitHub-format JSON.
+-- Returns (data, nil) or (nil, err).
+pulls_cap.update = function(owner, repo_name, pull_number, body)
+  local req = DecodeJson(body or "{}") or {}
+  local gl = {}
+  if req.title then
+    gl.title = req.title
+  end
+  if req.body then
+    gl.description = req.body
+  end
+  if req.state then
+    gl.state_event = req.state == "closed" and "close" or "reopen"
+  end
+  if req.draft ~= nil then
+    gl.draft = req.draft
+  end
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/merge_requests/" .. pull_number,
+    "PUT",
+    EncodeJson(gl)
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_mr(raw), nil
+end
+
+-- list_commits: paginated list of commits for a merge request.
+-- Returns (items, headers, nil) or (nil, nil, err).
+pulls_cap.list_commits = function(owner, repo_name, pull_number)
+  local url = append_page_params(
+    base()
+      .. "/projects/"
+      .. project_id(owner, repo_name)
+      .. "/merge_requests/"
+      .. pull_number
+      .. "/commits",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  local result = {}
+  for _, c in ipairs(items) do
+    result[#result + 1] = {
+      sha = c.id,
+      html_url = c.web_url or "",
+      commit = {
+        message = c.message,
+        author = { name = c.author_name, email = c.author_email, date = c.authored_date },
+        committer = {
+          name = c.committer_name or c.author_name,
+          email = c.committer_email or c.author_email,
+          date = c.committed_date or c.authored_date,
+        },
+      },
+    }
+  end
+  return result, hdrs, nil
+end
+
+-- list_files: get changed files for a merge request.
+-- Returns (data, nil) or (nil, err).
+pulls_cap.list_files = function(owner, repo_name, pull_number)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base()
+      .. "/projects/"
+      .. project_id(owner, repo_name)
+      .. "/merge_requests/"
+      .. pull_number
+      .. "/changes"
+  )
+  if not raw then
+    return nil, err
+  end
+  local result = {}
+  for _, c in ipairs((raw or {}).changes or {}) do
+    local status = "modified"
+    if c.new_file then
+      status = "added"
+    elseif c.deleted_file then
+      status = "removed"
+    elseif c.renamed_file then
+      status = "renamed"
+    end
+    result[#result + 1] = {
+      sha = "",
+      filename = c.new_path or c.old_path or "",
+      status = status,
+      additions = 0,
+      deletions = 0,
+      changes = 0,
+      patch = c.diff,
+    }
+  end
+  return result, nil
+end
+
+-- check_merged: return (true, nil) if the MR is merged, (nil, err) if not.
+-- Uses err.status == 404 to indicate "not merged".
+pulls_cap.check_merged = function(owner, repo_name, pull_number)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/merge_requests/" .. pull_number
+  )
+  if not raw then
+    return nil, err
+  end
+  if raw.state == "merged" or raw.merged_at ~= nil then
+    return true, nil
+  end
+  return nil, cap_err(404, "Pull Request is not merged")
+end
+
+-- merge: merge a merge request.  body is raw GitHub-format JSON.
+-- Returns (true, nil) or (nil, err).
+pulls_cap.merge = function(owner, repo_name, pull_number, body)
+  local req = DecodeJson(body or "{}") or {}
+  local gl = {}
+  if req.merge_method then
+    gl.merge_method = req.merge_method
+  end
+  local ok, status = fetch_json(
+    base()
+      .. "/projects/"
+      .. project_id(owner, repo_name)
+      .. "/merge_requests/"
+      .. pull_number
+      .. "/merge",
+    "PUT",
+    EncodeJson(gl)
+  )
+  if ok and (status == 200 or status == 201 or status == 204) then
+    return true, nil
+  end
+  return nil, cap_err(status or 0, "merge failed")
+end
+
+-- list_requested_reviewers: get reviewers assigned to a merge request.
+-- Returns (data, nil) or (nil, err).
+pulls_cap.list_requested_reviewers = function(owner, repo_name, pull_number)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base()
+      .. "/projects/"
+      .. project_id(owner, repo_name)
+      .. "/merge_requests/"
+      .. pull_number
+      .. "/reviewers"
+  )
+  if not raw then
+    return nil, err
+  end
+  local reviewer_users = {}
+  for _, u in ipairs(raw) do
+    reviewer_users[#reviewer_users + 1] = translate_gl_user(u)
+  end
+  return { users = reviewer_users, teams = {} }, nil
+end
+
+-- list_reviews: get approvals mapped to GitHub review objects.
+-- Returns (data, nil) or (nil, err).
+pulls_cap.list_reviews = function(owner, repo_name, pull_number)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base()
+      .. "/projects/"
+      .. project_id(owner, repo_name)
+      .. "/merge_requests/"
+      .. pull_number
+      .. "/approvals"
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_approvals_to_reviews(raw), nil
+end
+
+-- get_review: get a single review by 1-based index id.
+-- Returns (data, nil) or (nil, err).
+pulls_cap.get_review = function(owner, repo_name, pull_number, review_id)
+  local reviews, err = pulls_cap.list_reviews(owner, repo_name, pull_number)
+  if not reviews then
+    return nil, err
+  end
+  local rid = tonumber(review_id)
+  if rid and reviews[rid] then
+    return reviews[rid], nil
+  end
+  return nil, cap_err(404, "Not Found")
+end
+
+-- list_review_comments: get inline (position-based) MR notes.
+-- GitLab has no per-review inline comments; returns all inline MR notes.
+-- Returns (data, nil) or (nil, err).
+pulls_cap.list_review_comments = function(owner, repo_name, pull_number)
+  local result, status = fetch_gl_mr_review_comments(owner, repo_name, pull_number)
+  if not result then
+    return nil, cap_err(status or 0, "fetch review comments failed")
+  end
+  return result, nil
+end
+
 local b = make_backend_builder()
 
 b:rest("get_root", function()
@@ -3472,279 +3742,93 @@ b:rest(
 -- Pull Requests (mapped to GitLab Merge Requests) --------------------------
 
 -- GET /repos/{owner}/{repo}/pulls
-b:rest(
-  "get_repo_pulls",
-  proxy_handler_paged(translate_gl_mrs, function(o, r)
-    return append_page_params(
-      base() .. "/projects/" .. project_id(o, r) .. "/merge_requests",
-      PAGES
-    )
-  end)
-)
+b:rest("get_repo_pulls", function(owner, repo_name)
+  local items, hdrs, err = pulls_cap.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
 -- POST /repos/{owner}/{repo}/pulls
 b:rest("post_repo_pulls", function(owner, repo_name)
-  local req = DecodeJson(GetBody() or "{}")
-  local gl = {}
-  if req.title then
-    gl.title = req.title
-  end
-  if req.body then
-    gl.description = req.body
-  end
-  if req.head then
-    gl.source_branch = req.head
-  end
-  if req.base then
-    gl.target_branch = req.base
-  end
-  if req.draft ~= nil then
-    gl.draft = req.draft
-  end
-  proxy_json_created(
-    translate_gl_mr,
-    fetch_json(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/merge_requests",
-      "POST",
-      EncodeJson(gl)
-    )
-  )
+  local data, err = pulls_cap.create(owner, repo_name, GetBody())
+  cap_rest_created(data, err)
 end)
 
 -- GET /repos/{owner}/{repo}/pulls/{pull_number}
-b:rest(
-  "get_repo_pull",
-  proxy_handler(translate_gl_mr, function(o, r, n)
-    return base() .. "/projects/" .. project_id(o, r) .. "/merge_requests/" .. n
-  end)
-)
+b:rest("get_repo_pull", function(owner, repo_name, pull_number)
+  local data, err = pulls_cap.get(owner, repo_name, pull_number)
+  cap_rest_respond(data, err)
+end)
 
 -- PATCH /repos/{owner}/{repo}/pulls/{pull_number}
 b:rest("patch_repo_pull", function(owner, repo_name, pull_number)
-  local req = DecodeJson(GetBody() or "{}")
-  local gl = {}
-  if req.title then
-    gl.title = req.title
-  end
-  if req.body then
-    gl.description = req.body
-  end
-  if req.state then
-    gl.state_event = req.state == "closed" and "close" or "reopen"
-  end
-  if req.draft ~= nil then
-    gl.draft = req.draft
-  end
-  proxy_json(
-    translate_gl_mr,
-    fetch_json(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/merge_requests/" .. pull_number,
-      "PUT",
-      EncodeJson(gl)
-    )
-  )
+  local data, err = pulls_cap.update(owner, repo_name, pull_number, GetBody())
+  cap_rest_respond(data, err)
 end)
 
 -- GET /repos/{owner}/{repo}/pulls/{pull_number}/commits
-b:rest(
-  "get_pull_commits",
-  proxy_handler_paged(function(commit_list)
-    local result = {}
-    for _, c in ipairs(commit_list or {}) do
-      result[#result + 1] = {
-        sha = c.id,
-        html_url = c.web_url or "",
-        commit = {
-          message = c.message,
-          author = { name = c.author_name, email = c.author_email, date = c.authored_date },
-          committer = {
-            name = c.committer_name or c.author_name,
-            email = c.committer_email or c.author_email,
-            date = c.committed_date or c.authored_date,
-          },
-        },
-      }
-    end
-    return result
-  end, function(o, r, n)
-    return append_page_params(
-      base() .. "/projects/" .. project_id(o, r) .. "/merge_requests/" .. n .. "/commits",
-      PAGES
-    )
-  end)
-)
+b:rest("get_pull_commits", function(owner, repo_name, pull_number)
+  local items, hdrs, err = pulls_cap.list_commits(owner, repo_name, pull_number)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
 -- GET /repos/{owner}/{repo}/pulls/{pull_number}/files
 -- GitLab uses /changes which wraps the diff list in a parent object.
-b:rest(
-  "get_pull_files",
-  proxy_handler(function(mr)
-    local result = {}
-    for _, c in ipairs((mr or {}).changes or {}) do
-      local status = "modified"
-      if c.new_file then
-        status = "added"
-      elseif c.deleted_file then
-        status = "removed"
-      elseif c.renamed_file then
-        status = "renamed"
-      end
-      result[#result + 1] = {
-        sha = "",
-        filename = c.new_path or c.old_path or "",
-        status = status,
-        additions = 0,
-        deletions = 0,
-        changes = 0,
-        patch = c.diff,
-      }
-    end
-    return result
-  end, function(o, r, n)
-    return base() .. "/projects/" .. project_id(o, r) .. "/merge_requests/" .. n .. "/changes"
-  end)
-)
+b:rest("get_pull_files", function(owner, repo_name, pull_number)
+  local data, err = pulls_cap.list_files(owner, repo_name, pull_number)
+  cap_rest_respond(data, err)
+end)
 
 -- GET /repos/{owner}/{repo}/pulls/{pull_number}/merge
 -- Returns 204 if the MR is merged, 404 if not.
 b:rest("get_pull_merge", function(owner, repo_name, pull_number)
-  local ok, status, _, body = fetch_json(
-    base() .. "/projects/" .. project_id(owner, repo_name) .. "/merge_requests/" .. pull_number
-  )
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
-  end
-  local mr = DecodeJson(body) or {}
-  if mr.state == "merged" or mr.merged_at ~= nil then
+  local ok, err = pulls_cap.check_merged(owner, repo_name, pull_number)
+  if ok then
     SetStatus(204, "No Content")
+  elseif err and err.status == 404 then
+    respond_json(404, { message = err.message })
   else
-    respond_json(404, { message = "Pull Request is not merged" })
+    cap_rest_204(nil, err)
   end
 end)
 
 -- PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge
 b:rest("put_pull_merge", function(owner, repo_name, pull_number)
-  local req = DecodeJson(GetBody() or "{}")
-  local gl = {}
-  if req.merge_method then
-    gl.merge_method = req.merge_method
-  end
-  local ok, status = fetch_json(
-    base()
-      .. "/projects/"
-      .. project_id(owner, repo_name)
-      .. "/merge_requests/"
-      .. pull_number
-      .. "/merge",
-    "PUT",
-    EncodeJson(gl)
-  )
-  proxy_204({ 200 }, ok, status)
+  local ok, err = pulls_cap.merge(owner, repo_name, pull_number, GetBody())
+  cap_rest_204(ok, err)
 end)
 
 -- GET /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
 -- GitLab: reviewers assigned to the MR.
 b:rest("get_pull_requested_reviewers", function(owner, repo_name, pull_number)
-  local ok, status, _, body = fetch_json(
-    base()
-      .. "/projects/"
-      .. project_id(owner, repo_name)
-      .. "/merge_requests/"
-      .. pull_number
-      .. "/reviewers"
-  )
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
-  end
-  local reviewers = DecodeJson(body) or {}
-  local reviewer_users = {}
-  for _, u in ipairs(reviewers) do
-    reviewer_users[#reviewer_users + 1] = translate_gl_user(u)
-  end
-  respond_json(200, { users = reviewer_users, teams = {} })
+  local data, err = pulls_cap.list_requested_reviewers(owner, repo_name, pull_number)
+  cap_rest_respond(data, err)
 end)
 
 -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews
 -- GitLab: MR approvals mapped to GitHub reviews.
 b:rest("get_pull_reviews", function(owner, repo_name, pull_number)
-  local ok, status, _, body = fetch_json(
-    base()
-      .. "/projects/"
-      .. project_id(owner, repo_name)
-      .. "/merge_requests/"
-      .. pull_number
-      .. "/approvals"
-  )
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
-  end
-  local approvals = DecodeJson(body) or {}
-  respond_json(200, translate_gl_approvals_to_reviews(approvals))
+  local data, err = pulls_cap.list_reviews(owner, repo_name, pull_number)
+  cap_rest_respond(data, err)
 end)
 
 -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
 b:rest("get_pull_review", function(owner, repo_name, pull_number, review_id)
-  local ok, status, _, body = fetch_json(
-    base()
-      .. "/projects/"
-      .. project_id(owner, repo_name)
-      .. "/merge_requests/"
-      .. pull_number
-      .. "/approvals"
-  )
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
-  end
-  local approvals = DecodeJson(body) or {}
-  local reviews = translate_gl_approvals_to_reviews(approvals)
-  local rid = tonumber(review_id)
-  if rid and reviews[rid] then
-    respond_json(200, reviews[rid])
-  else
-    respond_json(404, { message = "Not Found" })
-  end
+  local data, err = pulls_cap.get_review(owner, repo_name, pull_number, review_id)
+  cap_rest_respond(data, err)
 end)
 
 -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments
 -- GitLab has no per-review inline comments; return all inline MR notes.
 b:rest("get_pull_review_comments", function(owner, repo_name, pull_number)
-  local result, status = fetch_gl_mr_review_comments(owner, repo_name, pull_number)
-  if not result then
-    respond_json(status or 503, {})
-    return
-  end
-  respond_json(200, result)
+  local data, err = pulls_cap.list_review_comments(owner, repo_name, pull_number)
+  cap_rest_respond(data, err)
 end)
 
 -- GET /repos/{owner}/{repo}/pulls/{pull_number}/comments
 -- GitLab: inline (position-based) MR notes.
 b:rest("get_pull_comments", function(owner, repo_name, pull_number)
-  local result, status = fetch_gl_mr_review_comments(owner, repo_name, pull_number)
-  if not result then
-    respond_json(status or 503, {})
-    return
-  end
-  respond_json(200, result)
+  local data, err = pulls_cap.list_review_comments(owner, repo_name, pull_number)
+  cap_rest_respond(data, err)
 end)
 
 -- Search -----------------------------------------------------------------------
@@ -5311,4 +5395,5 @@ b:capability("contents", contents_cap)
 b:capability("commit_comments", commit_comments_cap)
 b:capability("collaborators", collaborators_cap)
 b:capability("forks", forks_cap)
+b:capability("pulls", pulls_cap)
 b:build()
