@@ -172,14 +172,8 @@ local function translate_gitea_issue_comment(c)
   }
 end
 
-local function translate_gitea_issue_comments(comments)
-  return translate_list(translate_gitea_issue_comment, comments)
-end
 local function translate_gitea_labels(labels)
   return translate_list(translate_gitea_label, labels)
-end
-local function translate_gitea_milestones(milestones)
-  return translate_list(translate_gitea_milestone, milestones)
 end
 
 -- GitHub reaction content types and their integer codes.
@@ -1046,6 +1040,251 @@ pulls_cap.merge = function(owner, repo_name, number, body)
   end
   if status ~= 204 then
     return nil, cap_err(status, "upstream error " .. tostring(status) .. " merging pull request")
+  end
+  return true, nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Labels capability module
+-- ---------------------------------------------------------------------------
+-- Shared fetch+translate operations for label resources.
+-- Operations return (data, nil) on success or (nil, err) on failure.
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+-- The GitHub REST shape is returned by all operations (translate_gitea_label
+-- applied).  GraphQL resolvers apply graphql_translate_label on top.
+
+local labels_cap = {}
+
+-- get: fetch a single label by numeric ID.
+labels_cap.get = function(owner, repo_name, label_id)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/labels/" .. label_id
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_label(raw), nil
+end
+
+-- list: paginated list of labels for a repository.
+labels_cap.list = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/labels", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gitea_label, items), hdrs, nil
+end
+
+-- create: create a new label in a repository.
+-- body: JSON-encoded string with name, color, description.
+labels_cap.create = function(owner, repo_name, body)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/labels"
+  local raw, err = cap_fetch(fetch_json, url, "POST", body)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_label(raw), nil
+end
+
+-- update: apply a partial update to an existing label.
+-- body: JSON-encoded string of fields to change (name, color, description).
+labels_cap.update = function(owner, repo_name, label_id, body)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/labels/" .. label_id
+  local raw, err = cap_fetch(fetch_json, url, "PATCH", body)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_label(raw), nil
+end
+
+-- delete: remove a label by numeric ID.
+-- Returns (true, nil) on success or (nil, err) on failure.
+labels_cap.delete = function(owner, repo_name, label_id)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/labels/" .. label_id
+  local ok, status = fetch_json(url, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting label")
+  end
+  if status == 401 or status == 403 then
+    return nil, cap_err(status, "not authorized to delete label")
+  end
+  if status == 404 then
+    return nil, cap_err(status, "label not found")
+  end
+  if status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting label")
+  end
+  return true, nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Milestones capability module
+-- ---------------------------------------------------------------------------
+-- Shared fetch+translate operations for milestone resources.
+-- Operations return (data, nil) on success or (nil, err) on failure.
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+-- The GitHub REST shape is returned by all operations (translate_gitea_milestone
+-- applied).  GraphQL resolvers apply graphql_translate_milestone on top.
+
+local milestones_cap = {}
+
+-- get: fetch a single milestone by number.
+milestones_cap.get = function(owner, repo_name, number)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/milestones/" .. number
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_milestone(raw), nil
+end
+
+-- list: paginated list of milestones for a repository.
+milestones_cap.list = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/milestones", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gitea_milestone, items), hdrs, nil
+end
+
+-- create: create a new milestone in a repository.
+-- body: JSON-encoded string with title, description, due_on.
+milestones_cap.create = function(owner, repo_name, body)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/milestones"
+  local raw, err = cap_fetch(fetch_json, url, "POST", body)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_milestone(raw), nil
+end
+
+-- update: apply a partial update to an existing milestone.
+-- body: JSON-encoded string of fields to change (title, description, state, due_on).
+milestones_cap.update = function(owner, repo_name, number, body)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/milestones/" .. number
+  local raw, err = cap_fetch(fetch_json, url, "PATCH", body)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_milestone(raw), nil
+end
+
+-- delete: remove a milestone by number.
+-- Returns (true, nil) on success or (nil, err) on failure.
+milestones_cap.delete = function(owner, repo_name, number)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/milestones/" .. number
+  local ok, status = fetch_json(url, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting milestone")
+  end
+  if status == 401 or status == 403 then
+    return nil, cap_err(status, "not authorized to delete milestone")
+  end
+  if status == 404 then
+    return nil, cap_err(status, "milestone not found")
+  end
+  if status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting milestone")
+  end
+  return true, nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Comments capability module
+-- ---------------------------------------------------------------------------
+-- Shared fetch+translate operations for issue comment resources.
+-- Operations return (data, nil) on success or (nil, err) on failure.
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+-- The GitHub REST shape is returned by all operations
+-- (translate_gitea_issue_comment applied).  GraphQL resolvers apply
+-- graphql_translate_comment on top.
+
+local comments_cap = {}
+
+-- get: fetch a single issue comment by repo-scoped comment ID.
+comments_cap.get = function(owner, repo_name, comment_id)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/comments/" .. comment_id
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_issue_comment(raw), nil
+end
+
+-- list_repo: paginated list of all issue comments in a repository.
+comments_cap.list_repo = function(owner, repo_name)
+  local url = append_page_params(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/comments",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gitea_issue_comment, items), hdrs, nil
+end
+
+-- list_issue: paginated list of comments on a specific issue.
+comments_cap.list_issue = function(owner, repo_name, number)
+  local url = append_page_params(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. number .. "/comments",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gitea_issue_comment, items), hdrs, nil
+end
+
+-- create: post a new comment on an issue.
+-- body: JSON-encoded string with body field.
+comments_cap.create = function(owner, repo_name, number, body)
+  local url = base()
+    .. "/repos/"
+    .. owner
+    .. "/"
+    .. repo_name
+    .. "/issues/"
+    .. number
+    .. "/comments"
+  local raw, err = cap_fetch(fetch_json, url, "POST", body)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_issue_comment(raw), nil
+end
+
+-- update: edit an existing issue comment.
+-- body: JSON-encoded string with body field.
+comments_cap.update = function(owner, repo_name, comment_id, body)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/comments/" .. comment_id
+  local raw, err = cap_fetch(fetch_json, url, "PATCH", body)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_issue_comment(raw), nil
+end
+
+-- delete: remove an issue comment by ID.
+-- Returns (true, nil) on success or (nil, err) on failure.
+comments_cap.delete = function(owner, repo_name, comment_id)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/comments/" .. comment_id
+  local ok, status = fetch_json(url, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting issue comment")
+  end
+  if status == 401 or status == 403 then
+    return nil, cap_err(status, "not authorized to delete issue comment")
+  end
+  if status == 404 then
+    return nil, cap_err(status, "issue comment not found")
+  end
+  if status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting issue comment")
   end
   return true, nil
 end
@@ -2220,38 +2459,27 @@ b:rest("patch_repo_issue", function(owner, repo_name, number)
 end)
 
 -- GET /repos/{owner}/{repo}/issues/comments  (all issue comments in repo)
-b:rest(
-  "get_repo_issue_comments",
-  proxy_handler_paged(translate_gitea_issue_comments, function(o, r)
-    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments", PAGES)
-  end)
-)
+b:rest("get_repo_issue_comments", function(owner, repo_name)
+  local items, hdrs, err = comments_cap.list_repo(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
 -- GET /repos/{owner}/{repo}/issues/comments/{comment_id}
-b:rest(
-  "get_repo_issue_comment",
-  proxy_handler(translate_gitea_issue_comment, function(o, r, id)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments/" .. id
-  end)
-)
+b:rest("get_repo_issue_comment", function(owner, repo_name, comment_id)
+  local data, err = comments_cap.get(owner, repo_name, comment_id)
+  cap_rest_respond(data, err)
+end)
 
 -- PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}
-b:rest(
-  "patch_repo_issue_comment",
-  proxy_handler(translate_gitea_issue_comment, function(o, r, id)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments/" .. id, "PATCH", GetBody()
-  end)
-)
+b:rest("patch_repo_issue_comment", function(owner, repo_name, comment_id)
+  local data, err = comments_cap.update(owner, repo_name, comment_id, GetBody())
+  cap_rest_respond(data, err)
+end)
 
 -- DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}
 b:rest("delete_repo_issue_comment", function(owner, repo_name, comment_id)
-  proxy_204(
-    { 200 },
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/comments/" .. comment_id,
-      "DELETE"
-    )
-  )
+  local ok, err = comments_cap.delete(owner, repo_name, comment_id)
+  cap_rest_204(ok, err)
 end)
 
 -- GET /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions
@@ -2307,23 +2535,16 @@ b:rest(
 )
 
 -- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
-b:rest(
-  "get_issue_comments",
-  proxy_handler_paged(translate_gitea_issue_comments, function(o, r, n)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/comments",
-      PAGES
-    )
-  end)
-)
+b:rest("get_issue_comments", function(owner, repo_name, issue_number)
+  local items, hdrs, err = comments_cap.list_issue(owner, repo_name, issue_number)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
 -- POST /repos/{owner}/{repo}/issues/{issue_number}/comments
-b:rest(
-  "post_issue_comment",
-  proxy_handler_created(translate_gitea_issue_comment, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/comments", "POST", GetBody()
-  end)
-)
+b:rest("post_issue_comment", function(owner, repo_name, issue_number)
+  local data, err = comments_cap.create(owner, repo_name, issue_number, GetBody())
+  cap_rest_created(data, err)
+end)
 
 -- GET /repos/{owner}/{repo}/issues/{issue_number}/events
 b:rest(
@@ -2543,20 +2764,16 @@ b:rest(
 -- Labels (repo-level) -------------------------------------------------------
 
 -- GET /repos/{owner}/{repo}/labels
-b:rest(
-  "get_repo_labels",
-  proxy_handler_paged(translate_gitea_labels, function(o, r)
-    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/labels", PAGES)
-  end)
-)
+b:rest("get_repo_labels", function(owner, repo_name)
+  local items, hdrs, err = labels_cap.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
 -- POST /repos/{owner}/{repo}/labels
-b:rest(
-  "post_repo_labels",
-  proxy_handler_created(translate_gitea_label, function(o, r)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/labels", "POST", GetBody()
-  end)
-)
+b:rest("post_repo_labels", function(owner, repo_name)
+  local data, err = labels_cap.create(owner, repo_name, GetBody())
+  cap_rest_created(data, err)
+end)
 
 -- GET /repos/{owner}/{repo}/labels/{name}
 -- GitHub uses label name in the URL; Gitea uses numeric ID.
@@ -2566,10 +2783,8 @@ b:rest("get_repo_label", function(owner, repo_name, label_name)
     respond_json(404, { message = "Label not found" })
     return
   end
-  proxy_json(
-    translate_gitea_label,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/labels/" .. id)
-  )
+  local data, err = labels_cap.get(owner, repo_name, id)
+  cap_rest_respond(data, err)
 end)
 
 -- PATCH /repos/{owner}/{repo}/labels/{name}
@@ -2579,14 +2794,8 @@ b:rest("patch_repo_label", function(owner, repo_name, label_name)
     respond_json(404, { message = "Label not found" })
     return
   end
-  proxy_json(
-    translate_gitea_label,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/labels/" .. id,
-      "PATCH",
-      GetBody()
-    )
-  )
+  local data, err = labels_cap.update(owner, repo_name, id, GetBody())
+  cap_rest_respond(data, err)
 end)
 
 -- DELETE /repos/{owner}/{repo}/labels/{name}
@@ -2596,55 +2805,40 @@ b:rest("delete_repo_label", function(owner, repo_name, label_name)
     respond_json(404, { message = "Label not found" })
     return
   end
-  proxy_204(
-    { 200 },
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/labels/" .. id, "DELETE")
-  )
+  local ok, err = labels_cap.delete(owner, repo_name, id)
+  cap_rest_204(ok, err)
 end)
 
 -- Milestones ----------------------------------------------------------------
 
 -- GET /repos/{owner}/{repo}/milestones
-b:rest(
-  "get_repo_milestones",
-  proxy_handler_paged(translate_gitea_milestones, function(o, r)
-    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/milestones", PAGES)
-  end)
-)
+b:rest("get_repo_milestones", function(owner, repo_name)
+  local items, hdrs, err = milestones_cap.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
 -- POST /repos/{owner}/{repo}/milestones
-b:rest(
-  "post_repo_milestones",
-  proxy_handler_created(translate_gitea_milestone, function(o, r)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/milestones", "POST", GetBody()
-  end)
-)
+b:rest("post_repo_milestones", function(owner, repo_name)
+  local data, err = milestones_cap.create(owner, repo_name, GetBody())
+  cap_rest_created(data, err)
+end)
 
 -- GET /repos/{owner}/{repo}/milestones/{milestone_number}
-b:rest(
-  "get_repo_milestone",
-  proxy_handler(translate_gitea_milestone, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/milestones/" .. n
-  end)
-)
+b:rest("get_repo_milestone", function(owner, repo_name, milestone_number)
+  local data, err = milestones_cap.get(owner, repo_name, milestone_number)
+  cap_rest_respond(data, err)
+end)
 
 -- PATCH /repos/{owner}/{repo}/milestones/{milestone_number}
-b:rest(
-  "patch_repo_milestone",
-  proxy_handler(translate_gitea_milestone, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/milestones/" .. n, "PATCH", GetBody()
-  end)
-)
+b:rest("patch_repo_milestone", function(owner, repo_name, milestone_number)
+  local data, err = milestones_cap.update(owner, repo_name, milestone_number, GetBody())
+  cap_rest_respond(data, err)
+end)
 
 -- DELETE /repos/{owner}/{repo}/milestones/{milestone_number}
 b:rest("delete_repo_milestone", function(owner, repo_name, milestone_number)
-  proxy_204(
-    { 200 },
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/milestones/" .. milestone_number,
-      "DELETE"
-    )
-  )
+  local ok, err = milestones_cap.delete(owner, repo_name, milestone_number)
+  cap_rest_204(ok, err)
 end)
 
 -- GET /repos/{owner}/{repo}/milestones/{milestone_number}/labels
@@ -3704,14 +3898,11 @@ b:graphql("node.IssueComment", function(local_id, _ctx)
   if not owner then
     return nil
   end
-  local data, _ = graphql_fetch(
-    fetch_json,
-    base() .. "/repos/" .. owner .. "/" .. repo .. "/issues/comments/" .. cid
-  )
+  local data, _ = comments_cap.get(owner, repo, cid)
   if not data then
     return nil
   end
-  return graphql_translate_comment(translate_gitea_issue_comment(data), owner, repo)
+  return graphql_translate_comment(data, owner, repo)
 end)
 
 -- Query.user: look up a User by login.
@@ -3776,12 +3967,11 @@ b:graphql("node.Label", function(local_id, _ctx)
   if not owner then
     return nil
   end
-  local data, _ =
-    graphql_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo .. "/labels/" .. lid)
+  local data, _ = labels_cap.get(owner, repo, lid)
   if not data then
     return nil
   end
-  return graphql_translate_label(translate_gitea_label(data), owner, repo)
+  return graphql_translate_label(data, owner, repo)
 end)
 
 -- node.Milestone: fetch a milestone by "owner/repo/number" local ID.
@@ -3790,10 +3980,7 @@ b:graphql("node.Milestone", function(local_id, _ctx)
   if not owner then
     return nil
   end
-  local data, _ = graphql_fetch(
-    fetch_json,
-    base() .. "/repos/" .. owner .. "/" .. repo .. "/milestones/" .. number
-  )
+  local data, _ = milestones_cap.get(owner, repo, number)
   if not data then
     return nil
   end
@@ -4774,13 +4961,21 @@ b:graphql("Mutation.addComment", function(_parent, args, ctx)
   if not owner then
     return graphql_error(ctx, "addComment requires a valid issue or PR id", nil, "BAD_USER_INPUT")
   end
-  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/issues/" .. number .. "/comments"
   local body = EncodeJson({ body = input.body })
-  local data = graphql_fetch_or_error(fetch_json, path, ctx, nil, "POST", body)
+  local data, cerr = comments_cap.create(owner, repo, number, body)
   if not data then
+    if cerr.status == 0 then
+      graphql_error(ctx, cerr.message, nil, "INTERNAL_ERROR")
+    elseif cerr.status == 401 or cerr.status == 403 then
+      graphql_error(ctx, cerr.message, nil, "FORBIDDEN")
+    elseif cerr.status == 404 then
+      graphql_error(ctx, cerr.message, nil, "NOT_FOUND")
+    else
+      graphql_error(ctx, cerr.message, nil, "INTERNAL_ERROR")
+    end
     return nil
   end
-  local comment = graphql_translate_comment(translate_gitea_issue_comment(data), owner, repo)
+  local comment = graphql_translate_comment(data, owner, repo)
   return {
     commentEdge = {
       __typename = "IssueCommentEdge",
@@ -4811,14 +5006,22 @@ b:graphql("Mutation.updateIssueComment", function(_parent, args, ctx)
   if not owner then
     return graphql_error(ctx, "updateIssueComment: malformed id", nil, "BAD_USER_INPUT")
   end
-  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/issues/comments/" .. cid
   local body = EncodeJson({ body = input.body })
-  local data = graphql_fetch_or_error(fetch_json, path, ctx, nil, "PATCH", body)
+  local data, cerr = comments_cap.update(owner, repo, cid, body)
   if not data then
+    if cerr.status == 0 then
+      graphql_error(ctx, cerr.message, nil, "INTERNAL_ERROR")
+    elseif cerr.status == 401 or cerr.status == 403 then
+      graphql_error(ctx, cerr.message, nil, "FORBIDDEN")
+    elseif cerr.status == 404 then
+      graphql_error(ctx, cerr.message, nil, "NOT_FOUND")
+    else
+      graphql_error(ctx, cerr.message, nil, "INTERNAL_ERROR")
+    end
     return nil
   end
   return {
-    issueComment = graphql_translate_comment(translate_gitea_issue_comment(data), owner, repo),
+    issueComment = graphql_translate_comment(data, owner, repo),
     clientMutationId = cmid,
   }
 end)
@@ -4841,28 +5044,17 @@ b:graphql("Mutation.deleteIssueComment", function(_parent, args, ctx)
   if not owner then
     return graphql_error(ctx, "deleteIssueComment: malformed id", nil, "BAD_USER_INPUT")
   end
-  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/issues/comments/" .. cid
-  -- DELETE returns 204 No Content on success — no JSON body to decode.
-  local ok, status = fetch_json(path, "DELETE")
+  local ok, cerr = comments_cap.delete(owner, repo, cid)
   if not ok then
-    graphql_error(ctx, "network error deleting issue comment", nil, "INTERNAL_ERROR")
-    return nil
-  end
-  if status == 401 or status == 403 then
-    graphql_error(ctx, "not authorized to delete issue comment", nil, "FORBIDDEN")
-    return nil
-  end
-  if status == 404 then
-    graphql_error(ctx, "issue comment not found", nil, "NOT_FOUND")
-    return nil
-  end
-  if status ~= 204 then
-    graphql_error(
-      ctx,
-      "upstream error " .. tostring(status) .. " deleting issue comment",
-      nil,
-      "INTERNAL_ERROR"
-    )
+    if cerr.status == 0 then
+      graphql_error(ctx, cerr.message, nil, "INTERNAL_ERROR")
+    elseif cerr.status == 401 or cerr.status == 403 then
+      graphql_error(ctx, cerr.message, nil, "FORBIDDEN")
+    elseif cerr.status == 404 then
+      graphql_error(ctx, cerr.message, nil, "NOT_FOUND")
+    else
+      graphql_error(ctx, cerr.message, nil, "INTERNAL_ERROR")
+    end
     return nil
   end
   return { clientMutationId = cmid }
@@ -5057,19 +5249,25 @@ b:graphql("Mutation.createLabel", function(_parent, args, ctx)
   if not owner then
     return graphql_error(ctx, "createLabel: malformed repositoryId", nil, "BAD_USER_INPUT")
   end
-  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/labels"
   -- GitHub sends color without '#'; Gitea expects '#' prefix.
   local body = EncodeJson({
     name = input.name,
     color = "#" .. input.color,
     description = input.description,
   })
-  local data = graphql_fetch_or_error(fetch_json, path, ctx, nil, "POST", body)
+  local data, cerr = labels_cap.create(owner, repo, body)
   if not data then
+    if cerr.status == 0 then
+      graphql_error(ctx, cerr.message, nil, "INTERNAL_ERROR")
+    elseif cerr.status == 401 or cerr.status == 403 then
+      graphql_error(ctx, cerr.message, nil, "FORBIDDEN")
+    else
+      graphql_error(ctx, cerr.message, nil, "INTERNAL_ERROR")
+    end
     return nil
   end
   return {
-    label = graphql_translate_label(translate_gitea_label(data), owner, repo),
+    label = graphql_translate_label(data, owner, repo),
     clientMutationId = cmid,
   }
 end)
@@ -5128,19 +5326,17 @@ b:graphql("Mutation.addLabelsToLabelable", function(_parent, args, ctx)
   -- Re-fetch the issue or PR to populate the labelable payload field.
   local item_data
   if t == "PullRequest" then
-    local pr_path = base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number
-    local pr_data = graphql_fetch_or_error(fetch_json, pr_path, ctx, nil)
+    local pr_data, _ = pulls_cap.get(owner, repo, number)
     if not pr_data then
       return nil
     end
-    item_data = graphql_translate_pr(translate_gitea_pull(pr_data), owner, repo)
+    item_data = graphql_translate_pr(pr_data, owner, repo)
   else
-    local issue_path = base() .. "/repos/" .. owner .. "/" .. repo .. "/issues/" .. number
-    local issue_data = graphql_fetch_or_error(fetch_json, issue_path, ctx, nil)
+    local issue_data, _ = issues_cap.get(owner, repo, number)
     if not issue_data then
       return nil
     end
-    item_data = graphql_translate_issue(translate_gitea_issue(issue_data), owner, repo)
+    item_data = graphql_translate_issue(issue_data, owner, repo)
   end
   return {
     labelable = item_data,
@@ -5153,5 +5349,8 @@ b:capability("users", users)
 b:capability("orgs", orgs)
 b:capability("issues", issues_cap)
 b:capability("pulls", pulls_cap)
+b:capability("labels", labels_cap)
+b:capability("milestones", milestones_cap)
+b:capability("comments", comments_cap)
 b:set_allow_anonymous(_allow_anon)
 b:build()
