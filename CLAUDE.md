@@ -44,7 +44,7 @@ internal/
   defaults.lua               — default stub handlers collected in the global `defaults` table
   router.lua                 — segment-based radix trie: route_add, route_match, path_known
   catalog.lua                — endpoint_sections table; populates global `endpoints` and registers routes at load time
-  dispatch.lua               — OnHttpRequest: auth gate, route_match, handler dispatch
+  dispatch.lua               — make_dispatcher(app): factory returning the OnHttpRequest closure; auth gate, route_match, handler dispatch
 backends/                    — per-provider implementations; each uses make_backend_builder() and b:build() to register handlers
 docs/
   graphql/                   — GraphQL support design docs (README.md + 01–16 numbered documents)
@@ -149,7 +149,7 @@ When implementing a new endpoint, check the spec for:
    b:build()
    ```
    `make validate-builders` enforces that every backend calls `b:build()` and never assigns
-   directly to `app.backend_impl` or `graphql_resolvers`.
+   directly to `app.backend.rest` or `graphql_resolvers`.
 2. Add mock server as `test/mock-<newbackend>.lua` and build it in the `Makefile` (copy pattern from `mock-gitea.com`).
 3. Add a `test/test-mock-validate.sh`-equivalent for the new backend if its spec differs meaningfully.
 4. Add `<name>` to the `BACKENDS` list in the Makefile. Port numbers are assigned automatically.
@@ -254,14 +254,14 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
 | New endpoint | Row in `endpoint_sections` in `internal/catalog.lua` | `make validate-tests`, `make validate-csv` |
 | New endpoint with native support | CSV row updated with `y`/`~`/`n` and matching backend handler | `make validate-claims`, `make validate-csv` |
 | New standalone backend | `backends/<name>.lua` calls `make_backend_builder()` and `b:build()` | `make validate-builders` |
-| New standalone backend | Backend file does NOT assign `app.backend_impl` or `graphql_resolvers` directly | `make validate-builders` |
+| New standalone backend | Backend file does NOT assign `app.backend.rest` or `graphql_resolvers` directly | `make validate-builders` |
 | New standalone backend | Mock + hurl tests cover at least every catalog group | `make validate-tests` |
 | New family-alias backend | Alias declared in `provider_families` in `internal/families.lua` | `make validate-providers` |
 | New family-alias backend | `backends/<alias>.lua` dofiles the root backend | `make validate-providers` |
 | New family-alias backend | Alias listed in `BACKENDS` in the Makefile | `make validate-providers` |
 | New capability module | Module registered via `b:capability()` with at least one function | `make validate-capabilities` |
 
-**Backend registration**: all backends must use `make_backend_builder()` / `b:rest()` / `b:graphql()` / `b:capability()` / `b:build()`. Direct assignment to `app.backend_impl` or `graphql_resolvers` is forbidden. `make validate-builders` enforces this and is wired into `make test`.
+**Backend registration**: all backends must use `make_backend_builder()` / `b:rest()` / `b:graphql()` / `b:capability()` / `b:build()`. Direct assignment to `app.backend.rest` or `graphql_resolvers` is forbidden. `make validate-builders` enforces this and is wired into `make test`.
 
 **Building a capability module**: use `cap_fetch` / `cap_fetch_paged` inside capability operations to own the fetch+error-mapping step. Capability operations return `(data, nil)` on success or `(nil, err)` on failure where `err = { status = N, message = string }` (status 0 = network error). REST handlers call `cap_rest_respond` / `cap_rest_paged` / `cap_rest_created` / `cap_rest_204` to write the HTTP response. GraphQL resolvers just check `if not data then return nil end` and pass data to `graphql_translate_*`.
 
@@ -308,7 +308,7 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
 - **Alias backends set `config.base_url` from `provider_families` and dofile the root backend directly.**
   The root backend reads the alias's strip patterns from `provider_families` in the final
   `b:build(strip)` call, so feature gaps are applied declaratively rather than by post-hoc
-  `app.backend_impl` mutation.
+  `app.backend.rest` mutation.
 - **`strip` patterns are Lua patterns, not exact names.** `"_package"` matches any key
   containing `_package` (e.g. `list_packages`, `get_package`). Keep patterns tight enough
   not to accidentally strip unrelated keys.
@@ -329,11 +329,11 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
   k = path depth. Static edges are preferred over param edges at each node, so `/repos/search`
   beats `/repos/{owner}` when both are registered. Captures from `{param}` segments are passed
   as positional arguments to the handler.
-- **Startup-time handler resolution**: `app.backend_impl` is populated once by the backend file
-  via `make_backend_builder()` / `b:build()`; `internal/dispatch.lua` reads it on every request
-  via the `app` context. The backend is fixed for the program's lifetime — no per-request dispatch
-  needed. `dofile` runs in global scope so locals from any internal module are not visible to
-  backend files.
+- **Startup-time handler resolution**: `app.backend.rest` is populated once by the backend file
+  via `make_backend_builder()` / `b:build()`; the `OnHttpRequest` closure returned by
+  `make_dispatcher(app)` reads it on every request via the `app` upvalue. The backend is fixed
+  for the program's lifetime — no per-request dispatch needed. `dofile` runs in global scope so
+  locals from any internal module are not visible to backend files.
 - **`/zip/` prefix for dofile**: Redbean's `dofile` resolves paths on the real filesystem by
   default. Files inside the zip must be accessed as `dofile("/zip/backends/gitea.lua")`.
 - **`SetStatus` clears all previously-set response headers.** Any `SetHeader` call made before
@@ -421,7 +421,7 @@ end
 **Naming conventions:**
 
 - Capability table variable: plain domain name when no conflict (`repos`, `users`, `orgs`); `_cap` suffix when the name would shadow an existing variable (`issues_cap`, `pulls_cap`, `labels_cap`).
-- Register with `b:capability("domain_name", table)`. The domain name is the key in `app.capabilities` and is used for debugging / validation only — it does not affect routing.
+- Register with `b:capability("domain_name", table)`. The domain name is the key in `app.backend.capabilities` and is used for debugging / validation only — it does not affect routing.
 - Operations: `get`, `list`, `create`, `update`, `delete`, `merge` for the primary CRUD surface. Use a `list_` prefix to disambiguate sub-resource lists: `list_repo` (all comments in a repo) vs `list_issue` (comments on one issue).
 
 **`gitea_repo_connection` is intentionally NOT backed by a capability module.** It receives pre-fetched items inline from a single upstream page fetch and applies translation per item. Using `cap.get` per item would make O(n) redundant network calls. Keep `translate_gitea_*` direct for items inside connection translators.
@@ -468,14 +468,22 @@ The eleven `internal/` modules are loaded by `.init.lua` in a fixed order. Each 
 | `translators.lua` | `owner_repo_id`, `translate_repo`, `translate_user`, `translate_migration` | backends |
 | `families.lua` | `provider_families` | backends + Makefile scripts |
 | `registry.lua` | `make_backend_builder` | backends |
-| *(backend loaded here)* | calls `b:build()` to populate `app.backend_impl` and `graphql_resolvers`; Gitea sets `app.allow_anonymous` | dispatch |
+| *(backend loaded here)* | calls `b:build()` to populate `app.backend.rest` and `graphql_resolvers` (aliased to `app.backend.graphql`); Gitea sets `app.allow_anonymous` | dispatch |
 | `defaults.lua` | `defaults` (table of handler functions) | catalog |
 | `router.lua` | `route_add`, `route_match`, `path_known` | catalog, dispatch |
 | `catalog.lua` | `endpoints` (flat array); registers routes via `route_add` | dispatch, scripts |
-| `dispatch.lua` | `OnHttpRequest` | Redbean (entry point) |
+| `dispatch.lua` | `make_dispatcher` | `.init.lua` (called once at startup to install `OnHttpRequest`) |
+
+After `dispatch.lua` is loaded, `.init.lua` completes the composition:
+```lua
+app.route_match = route_match   -- bound router lookup
+app.path_known = path_known     -- bound path-existence check
+OnHttpRequest = make_dispatcher(app)  -- install Redbean entry point
+```
+`graphql_register_builtin_resolvers()` is called before the backend loads to register `Query.node`, `Query.nodes`, and `Query.rateLimit` into `graphql_resolvers`.
 
 **Global surface for backend authors** (backends can call any of these):
-- App context (write target): `app.allow_anonymous`, `app.config` — never assign `app.backend_impl` directly
+- App context (write target): `app.allow_anonymous`, `app.config` — never assign `app.backend.rest`, `app.backend.graphql`, or `app.backend.capabilities` directly
 - Builder (required): `make_backend_builder` — call `b:rest(name, fn)`, `b:graphql(key, fn)`, `b:capability(name, module)`, `b:set_allow_anonymous(v)`, then `b:build()` to commit; see `internal/registry.lua`
 - Response: `set_preamble`, `respond_json`
 - Proxy: all of `proxy.lua`'s exports
@@ -493,7 +501,7 @@ The eleven `internal/` modules are loaded by `.init.lua` in a fixed order. Each 
 
 ### Compatibility CSV and validate-claims
 
-- **`make validate-claims` cross-checks CSV claims against `app.backend_impl`** by running
+- **`make validate-claims` cross-checks CSV claims against `app.backend.rest`** by running
   `scripts/dump-claims.lua` (all backends) and piping the JSON output to
   `scripts/validate-claims.lua`. It is wired into `make test` and must pass before any push.
 - **CONFUSIO_NATIVE exemption**: five handlers (`get_meta`, `get_octocat`, `get_teapot`,
@@ -564,11 +572,11 @@ here so they stay visible without reading all 16 docs:
 
 - **`EncodeJson({data=nil})` silently drops the `data` key** — produces `{"errors":[...]}` instead of `{"data":null,"errors":[...]}`. The `respond_graphql` function works around this by using manual string concatenation: `EncodeJson(nil)` → `"null"`, so `'{"data":' .. data_json .. ...}` is assembled by hand when `data` is nil. Never pass `{data=nil}` to `EncodeJson` in the GraphQL response path.
 - **All GraphQL-facing Lua tables use camelCase keys** (GraphQL field names, e.g. `nameWithOwner`, `totalCount`, `hasNextPage`) — not the REST snake_case field names. The executor plucks fields by doing `parent[field_name]` where `field_name` is the GraphQL name from the query, so the keys must match exactly. This is an exception to the REST translator convention.
-- **`graphql_resolvers` is a global table, not part of `app.backend_impl`**. Backends populate it at load time alongside `app.backend_impl`. The executor reads it on every request. Backends never set `app.backend_impl.graphql_request`; that handler is always `graphql_handler` from `graphql_executor.lua`.
+- **`graphql_resolvers` is a global table aliased to `app.backend.graphql`**. `.init.lua` assigns `app.backend.graphql = graphql_resolvers` after creating the app context, so both names reference the same table. Backends populate it via `b:graphql(key, fn)`; the executor reads it on every request. Backends never assign a `graphql_request` key directly; that handler is always `graphql_handler` from `graphql_executor.lua`.
 - **GraphQL coverage is bounded by REST coverage** — a GraphQL resolver calls the same REST endpoint the REST handler already uses. A backend that doesn't implement a REST endpoint will return `null` for the corresponding GraphQL field, with an error entry if the field is non-null. No backend gains new REST coverage by adding GraphQL.
 - **Node IDs use path-segment encoding**: `encode_node_id("Repository", "owner/repo")` = `EncodeBase64("Repository:owner/repo")`. Path segments (not integer IDs) because REST backends universally support `GET /repos/{owner}/{repo}` but rarely `GET /repositories/{integer_id}`. Stable across restarts; the `node()` resolver constructs the same REST URL any other resolver uses.
 - **Item-level cursors** (`EncodeBase64("page:N:M")`) where N is the 1-based page number and M is the 1-based item index within the page. Each edge carries a unique cursor. `graphql_cursor_to_page` accepts both the old `page:N` format (backward compat) and the new `page:N:M` format, extracting only the page number — so all REST URL construction is unaffected. `startCursor` and `endCursor` in `pageInfo` are the first and last edge cursors respectively; they are distinct for multi-item pages.
-- **`graphql_request = true` must be added to `CONFUSIO_NATIVE`** in `scripts/validate-claims.lua` when the GraphQL catalog entry ships. Without this exemption, any `y` CSV claim for `POST /graphql` will fail `make validate-claims` (the handler is `graphql_handler`, not an `app.backend_impl` key).
+- **`graphql_request = true` must be added to `CONFUSIO_NATIVE`** in `scripts/validate-claims.lua` when the GraphQL catalog entry ships. Without this exemption, any `y` CSV claim for `POST /graphql` will fail `make validate-claims` (the handler is `graphql_handler`, not an `app.backend.rest` key).
 - **`pages.yml` passes args to `gen-matrix.py` in a different order than the Makefile** — the workflow passes `site/compatibility.csv` as the first positional arg (catalog position) while the Makefile pipes catalog via stdin with `-`. This pre-existing discrepancy exists independently of GraphQL; note it before touching either invocation.
 - **`graphql_schema_data.lua` is committed generated output**, not regenerated at build time. The `make generate-schema` target regenerates it from the vendored SDL; `make validate-schema` checks it is up to date. This mirrors how `vendor/github-rest-api-description/` handles the REST OpenAPI spec.
 
