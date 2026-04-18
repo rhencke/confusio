@@ -1407,6 +1407,84 @@ repo_metadata.list_tags = function(owner, repo_name)
   return items, hdrs, nil
 end
 
+-- ---------------------------------------------------------------------------
+-- Commits capability module
+-- ---------------------------------------------------------------------------
+-- Shared fetch operations for commit resources and commit statuses.
+-- Gitea and GitHub shapes are compatible for all commit endpoints — no
+-- translation is applied; raw upstream objects are returned.
+-- Single-item operations return (data, nil) or (nil, err).
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+
+local commits_cap = {}
+
+-- list: paginated list of commits for a repository.
+commits_cap.list = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/commits", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+-- get: fetch a single commit by ref or SHA.
+-- Uses Gitea's /git/commits/{ref} endpoint; shape is compatible with GitHub.
+commits_cap.get = function(owner, repo_name, ref)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/commits/" .. ref
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- list_statuses: paginated list of commit statuses for a ref.
+-- Both Gitea and GitHub return the same status shape — pass through.
+commits_cap.list_statuses = function(owner, repo_name, ref)
+  local url = append_page_params(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. ref,
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+-- get_combined_status: fetch the combined status summary for a ref.
+-- Gitea endpoint: GET /repos/{owner}/{repo}/commits/{ref}/statuses.
+commits_cap.get_combined_status = function(owner, repo_name, ref)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/commits/" .. ref .. "/statuses"
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- create_status: create a commit status for a SHA.
+-- body: JSON-encoded string with state, target_url, description, context.
+-- Returns the newly created status object (201 Created shape).
+commits_cap.create_status = function(owner, repo_name, sha, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. sha,
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
 -- Health check
 b:rest("get_root", function()
   proxy_health_check(pcall(Fetch, base() .. "/version", auth()))
@@ -1552,59 +1630,34 @@ end)
 
 -- GET /repos/{owner}/{repo}/commits
 b:rest("get_repo_commits", function(owner, repo_name)
-  proxy_json_paged(
-    nil,
-    PAGES,
-    fetch_json(
-      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/commits", PAGES)
-    )
-  )
+  local items, hdrs, err = commits_cap.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 -- GET /repos/{owner}/{repo}/commits/{ref}
 b:rest("get_repo_commit", function(owner, repo_name, ref)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/commits/" .. ref)
-  )
+  local data, err = commits_cap.get(owner, repo_name, ref)
+  cap_rest_respond(data, err)
 end)
 
 -- Statuses ------------------------------------------------------------------
 
 -- GET /repos/{owner}/{repo}/commits/{ref}/statuses
 b:rest("get_commit_statuses", function(owner, repo_name, ref)
-  proxy_json_paged(
-    nil,
-    PAGES,
-    fetch_json(
-      append_page_params(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. ref,
-        PAGES
-      )
-    )
-  )
+  local items, hdrs, err = commits_cap.list_statuses(owner, repo_name, ref)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 -- GET /repos/{owner}/{repo}/commits/{ref}/status  (combined)
 b:rest("get_commit_combined_status", function(owner, repo_name, ref)
-  proxy_json(
-    nil,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/commits/" .. ref .. "/statuses"
-    )
-  )
+  local data, err = commits_cap.get_combined_status(owner, repo_name, ref)
+  cap_rest_respond(data, err)
 end)
 
 -- POST /repos/{owner}/{repo}/statuses/{sha}
 b:rest("post_commit_status", function(owner, repo_name, sha)
-  proxy_json_created(
-    nil,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. sha,
-      "POST",
-      GetBody()
-    )
-  )
+  local data, err = commits_cap.create_status(owner, repo_name, sha, GetBody())
+  cap_rest_created(data, err)
 end)
 
 -- Contents ------------------------------------------------------------------
@@ -4066,13 +4119,13 @@ b:graphql("node.Milestone", function(local_id, _ctx)
 end)
 
 -- node.Commit: fetch a commit by "owner/repo/sha" local ID.
+-- Uses commits_cap.get which owns the fetch + error mapping.
 b:graphql("node.Commit", function(local_id, _ctx)
   local owner, repo, sha = local_id:match("^([^/]+)/([^/]+)/(.+)$")
   if not owner then
     return nil
   end
-  local data, _ =
-    graphql_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo .. "/git/commits/" .. sha)
+  local data, _ = commits_cap.get(owner, repo, sha)
   if not data then
     return nil
   end
@@ -5425,5 +5478,6 @@ b:capability("milestones", milestones_cap)
 b:capability("comments", comments_cap)
 b:capability("branches", branches)
 b:capability("repo_metadata", repo_metadata)
+b:capability("commits", commits_cap)
 b:set_allow_anonymous(_allow_anon)
 b:build()
