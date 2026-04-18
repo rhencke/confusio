@@ -2371,6 +2371,245 @@ pulls_cap.list_review_comments = function(owner, repo_name, pull_number)
   return result, nil
 end
 
+-- ---------------------------------------------------------------------------
+-- Releases capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translate for release and release asset (link) operations.
+-- GitLab identifies releases by tag_name; GitHub uses integer IDs.
+-- gl_tag_by_id and gl_find_link are helpers defined above.
+
+local releases_cap = {}
+
+-- list: paginated list of releases for a repository.
+-- Returns (items, headers, nil) or (nil, nil, err).
+releases_cap.list = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  local result = {}
+  for i, r in ipairs(items) do
+    result[i] = translate_gl_release(r, i)
+  end
+  return result, hdrs, nil
+end
+
+-- create: create a new release.  body is raw GitHub-format JSON.
+-- Returns (data, nil) or (nil, err).
+releases_cap.create = function(owner, repo_name, body)
+  local req = DecodeJson(body or "{}") or {}
+  local gl_body = EncodeJson({
+    tag_name = req.tag_name,
+    name = req.name,
+    description = req.body,
+  })
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases",
+    "POST",
+    gl_body
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_release(raw, 1), nil
+end
+
+-- get_latest: get the latest release.
+-- Returns (data, nil) or (nil, err).
+releases_cap.get_latest = function(owner, repo_name)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases/permalink/latest"
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_release(raw, 1), nil
+end
+
+-- get_by_tag: get a release by its tag name.
+-- Returns (data, nil) or (nil, err).
+releases_cap.get_by_tag = function(owner, repo_name, tag)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases/" .. tag
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_release(raw, 1), nil
+end
+
+-- get: get a release by GitHub integer release_id (resolved via gl_tag_by_id).
+-- Returns (data, nil) or (nil, err).
+releases_cap.get = function(owner, repo_name, release_id)
+  local tag = gl_tag_by_id(owner, repo_name, release_id)
+  if not tag then
+    return nil, cap_err(404, "Not Found")
+  end
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases/" .. tag
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_release(raw, tonumber(release_id)), nil
+end
+
+-- update: update a release by GitHub integer release_id.  body is raw GitHub-format JSON.
+-- Returns (data, nil) or (nil, err).
+releases_cap.update = function(owner, repo_name, release_id, body)
+  local tag = gl_tag_by_id(owner, repo_name, release_id)
+  if not tag then
+    return nil, cap_err(404, "Not Found")
+  end
+  local req = DecodeJson(body or "{}") or {}
+  local gl_body = EncodeJson({ name = req.name, description = req.body })
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases/" .. tag,
+    "PUT",
+    gl_body
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_release(raw, tonumber(release_id)), nil
+end
+
+-- delete: delete a release by GitHub integer release_id.
+-- Returns (true, nil) or (nil, err).
+releases_cap.delete = function(owner, repo_name, release_id)
+  local tag = gl_tag_by_id(owner, repo_name, release_id)
+  if not tag then
+    return nil, cap_err(404, "Not Found")
+  end
+  local ok, status = fetch_json(
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases/" .. tag,
+    "DELETE"
+  )
+  if not ok or (status ~= 200 and status ~= 204) then
+    return nil, cap_err(status or 0, "delete release failed")
+  end
+  return true, nil
+end
+
+-- list_assets: paginated list of release assets (links) by GitHub integer release_id.
+-- Returns (items, headers, nil) or (nil, nil, err).
+releases_cap.list_assets = function(owner, repo_name, release_id)
+  local tag = gl_tag_by_id(owner, repo_name, release_id)
+  if not tag then
+    return nil, nil, cap_err(404, "Not Found")
+  end
+  local url = append_page_params(
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases/" .. tag .. "/assets/links",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gl_link, items), hdrs, nil
+end
+
+-- create_asset: create a release asset (link) for a release by GitHub integer release_id.
+-- Returns (data, nil) or (nil, err).
+releases_cap.create_asset = function(owner, repo_name, release_id, body)
+  local tag = gl_tag_by_id(owner, repo_name, release_id)
+  if not tag then
+    return nil, cap_err(404, "Not Found")
+  end
+  local req = DecodeJson(body or "{}") or {}
+  local gl_body = EncodeJson({ name = req.name, url = req.url or "" })
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases/" .. tag .. "/assets/links",
+    "POST",
+    gl_body
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_link(raw), nil
+end
+
+-- get_asset: get a release asset (link) by asset_id.
+-- Returns (data, nil) or (nil, err).
+releases_cap.get_asset = function(owner, repo_name, asset_id)
+  local tag = gl_find_link(owner, repo_name, asset_id)
+  if not tag then
+    return nil, cap_err(404, "Not Found")
+  end
+  local raw, err = cap_fetch(
+    fetch_json,
+    base()
+      .. "/projects/"
+      .. project_id(owner, repo_name)
+      .. "/releases/"
+      .. tag
+      .. "/assets/links/"
+      .. asset_id
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_link(raw), nil
+end
+
+-- update_asset: update a release asset (link) by asset_id.  body is raw GitHub-format JSON.
+-- Returns (data, nil) or (nil, err).
+releases_cap.update_asset = function(owner, repo_name, asset_id, body)
+  local tag = gl_find_link(owner, repo_name, asset_id)
+  if not tag then
+    return nil, cap_err(404, "Not Found")
+  end
+  local req = DecodeJson(body or "{}") or {}
+  local gl_body = EncodeJson({ name = req.name })
+  local raw, err = cap_fetch(
+    fetch_json,
+    base()
+      .. "/projects/"
+      .. project_id(owner, repo_name)
+      .. "/releases/"
+      .. tag
+      .. "/assets/links/"
+      .. asset_id,
+    "PUT",
+    gl_body
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_link(raw), nil
+end
+
+-- delete_asset: delete a release asset (link) by asset_id.
+-- Returns (true, nil) or (nil, err).
+releases_cap.delete_asset = function(owner, repo_name, asset_id)
+  local tag = gl_find_link(owner, repo_name, asset_id)
+  if not tag then
+    return nil, cap_err(404, "Not Found")
+  end
+  local ok, status = fetch_json(
+    base()
+      .. "/projects/"
+      .. project_id(owner, repo_name)
+      .. "/releases/"
+      .. tag
+      .. "/assets/links/"
+      .. asset_id,
+    "DELETE"
+  )
+  if not ok or (status ~= 200 and status ~= 204) then
+    return nil, cap_err(status or 0, "delete release asset failed")
+  end
+  return true, nil
+end
+
 local b = make_backend_builder()
 
 b:rest("get_root", function()
@@ -2641,252 +2880,64 @@ end)
 -- Releases ------------------------------------------------------------------
 -- GitLab releases use tag_name as identifier rather than an integer ID.
 
-b:rest(
-  "get_repo_releases",
-  proxy_handler_paged(function(rels)
-    local result = {}
-    for i, r in ipairs(rels or {}) do
-      result[i] = {
-        id = i,
-        tag_name = r.tag_name,
-        name = r.name,
-        body = r.description,
-        draft = false,
-        prerelease = false,
-        created_at = r.created_at,
-        published_at = r.released_at or r.created_at,
-        assets = {},
-      }
-    end
-    return result
-  end, function(owner, repo_name)
-    return append_page_params(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases",
-      PAGES
-    )
-  end)
-)
-
-b:rest("post_repo_releases", function(owner, repo_name)
-  local req = DecodeJson(GetBody() or "{}")
-  local body = EncodeJson({
-    tag_name = req.tag_name,
-    name = req.name,
-    description = req.body,
-  })
-  proxy_json_created(
-    function(r)
-      return {
-        id = 1,
-        tag_name = r.tag_name,
-        name = r.name,
-        body = r.description,
-        draft = false,
-        prerelease = false,
-        created_at = r.created_at,
-        published_at = r.released_at or r.created_at,
-        assets = {},
-      }
-    end,
-    fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases", "POST", body)
-  )
+b:rest("get_repo_releases", function(owner, repo_name)
+  local items, hdrs, err = releases_cap.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
-b:rest(
-  "get_repo_release_latest",
-  proxy_handler(function(r)
-    return {
-      id = 1,
-      tag_name = r.tag_name,
-      name = r.name,
-      body = r.description,
-      draft = false,
-      prerelease = false,
-      created_at = r.created_at,
-      published_at = r.released_at or r.created_at,
-      assets = {},
-    }
-  end, function(owner, repo_name)
-    return base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases/permalink/latest"
-  end)
-)
+b:rest("post_repo_releases", function(owner, repo_name)
+  local data, err = releases_cap.create(owner, repo_name, GetBody())
+  cap_rest_created(data, err)
+end)
 
-b:rest(
-  "get_repo_release_by_tag",
-  proxy_handler(function(r)
-    return {
-      id = 1,
-      tag_name = r.tag_name,
-      name = r.name,
-      body = r.description,
-      draft = false,
-      prerelease = false,
-      created_at = r.created_at,
-      published_at = r.released_at or r.created_at,
-      assets = {},
-    }
-  end, function(owner, repo_name, tag)
-    return base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases/" .. tag
-  end)
-)
+b:rest("get_repo_release_latest", function(owner, repo_name)
+  local data, err = releases_cap.get_latest(owner, repo_name)
+  cap_rest_respond(data, err)
+end)
+
+b:rest("get_repo_release_by_tag", function(owner, repo_name, tag)
+  local data, err = releases_cap.get_by_tag(owner, repo_name, tag)
+  cap_rest_respond(data, err)
+end)
 
 b:rest("get_repo_release", function(owner, repo_name, release_id)
-  local tag = gl_tag_by_id(owner, repo_name, release_id)
-  if not tag then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  proxy_json(function(r)
-    return translate_gl_release(r, tonumber(release_id))
-  end, fetch_json(base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases/" .. tag))
+  local data, err = releases_cap.get(owner, repo_name, release_id)
+  cap_rest_respond(data, err)
 end)
 
 b:rest("patch_repo_release", function(owner, repo_name, release_id)
-  local tag = gl_tag_by_id(owner, repo_name, release_id)
-  if not tag then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  local req = DecodeJson(GetBody() or "{}")
-  local body = EncodeJson({ name = req.name, description = req.body })
-  proxy_json(
-    function(r)
-      return translate_gl_release(r, tonumber(release_id))
-    end,
-    fetch_json(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases/" .. tag,
-      "PUT",
-      body
-    )
-  )
+  local data, err = releases_cap.update(owner, repo_name, release_id, GetBody())
+  cap_rest_respond(data, err)
 end)
 
 b:rest("delete_repo_release", function(owner, repo_name, release_id)
-  local tag = gl_tag_by_id(owner, repo_name, release_id)
-  if not tag then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  local ok, status = fetch_json(
-    base() .. "/projects/" .. project_id(owner, repo_name) .. "/releases/" .. tag,
-    "DELETE"
-  )
-  proxy_204({ 200 }, ok, status)
+  local ok, err = releases_cap.delete(owner, repo_name, release_id)
+  cap_rest_204(ok, err)
 end)
 
 b:rest("get_repo_release_assets", function(owner, repo_name, release_id)
-  local tag = gl_tag_by_id(owner, repo_name, release_id)
-  if not tag then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  proxy_json_paged(
-    function(links)
-      local result = {}
-      for i, l in ipairs(links or {}) do
-        result[i] = translate_gl_link(l)
-      end
-      return result
-    end,
-    PAGES,
-    fetch_json(
-      append_page_params(
-        base()
-          .. "/projects/"
-          .. project_id(owner, repo_name)
-          .. "/releases/"
-          .. tag
-          .. "/assets/links",
-        PAGES
-      )
-    )
-  )
+  local items, hdrs, err = releases_cap.list_assets(owner, repo_name, release_id)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 b:rest("post_repo_release_assets", function(owner, repo_name, release_id)
-  local tag = gl_tag_by_id(owner, repo_name, release_id)
-  if not tag then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  local req = DecodeJson(GetBody() or "{}")
-  local body = EncodeJson({ name = req.name, url = req.url or "" })
-  proxy_json_created(
-    translate_gl_link,
-    fetch_json(
-      base()
-        .. "/projects/"
-        .. project_id(owner, repo_name)
-        .. "/releases/"
-        .. tag
-        .. "/assets/links",
-      "POST",
-      body
-    )
-  )
+  local data, err = releases_cap.create_asset(owner, repo_name, release_id, GetBody())
+  cap_rest_created(data, err)
 end)
 
 b:rest("get_repo_release_asset", function(owner, repo_name, asset_id)
-  local tag = gl_find_link(owner, repo_name, asset_id)
-  if not tag then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  proxy_json(
-    translate_gl_link,
-    fetch_json(
-      base()
-        .. "/projects/"
-        .. project_id(owner, repo_name)
-        .. "/releases/"
-        .. tag
-        .. "/assets/links/"
-        .. asset_id
-    )
-  )
+  local data, err = releases_cap.get_asset(owner, repo_name, asset_id)
+  cap_rest_respond(data, err)
 end)
 
 b:rest("patch_repo_release_asset", function(owner, repo_name, asset_id)
-  local tag = gl_find_link(owner, repo_name, asset_id)
-  if not tag then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  local req = DecodeJson(GetBody() or "{}")
-  local body = EncodeJson({ name = req.name })
-  proxy_json(
-    translate_gl_link,
-    fetch_json(
-      base()
-        .. "/projects/"
-        .. project_id(owner, repo_name)
-        .. "/releases/"
-        .. tag
-        .. "/assets/links/"
-        .. asset_id,
-      "PUT",
-      body
-    )
-  )
+  local data, err = releases_cap.update_asset(owner, repo_name, asset_id, GetBody())
+  cap_rest_respond(data, err)
 end)
 
 b:rest("delete_repo_release_asset", function(owner, repo_name, asset_id)
-  local tag = gl_find_link(owner, repo_name, asset_id)
-  if not tag then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  local ok, status = fetch_json(
-    base()
-      .. "/projects/"
-      .. project_id(owner, repo_name)
-      .. "/releases/"
-      .. tag
-      .. "/assets/links/"
-      .. asset_id,
-    "DELETE"
-  )
-  proxy_204({ 200 }, ok, status)
+  local ok, err = releases_cap.delete_asset(owner, repo_name, asset_id)
+  cap_rest_204(ok, err)
 end)
 
 -- Deploy keys ---------------------------------------------------------------
@@ -5396,4 +5447,5 @@ b:capability("commit_comments", commit_comments_cap)
 b:capability("collaborators", collaborators_cap)
 b:capability("forks", forks_cap)
 b:capability("pulls", pulls_cap)
+b:capability("releases", releases_cap)
 b:build()
