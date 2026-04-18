@@ -45,7 +45,7 @@ internal/
   router.lua                 — segment-based radix trie: route_add, route_match, path_known
   catalog.lua                — endpoint_sections table; populates global `endpoints` and registers routes at load time
   dispatch.lua               — OnHttpRequest: auth gate, route_match, handler dispatch
-backends/                    — per-provider implementations; each sets app.backend_impl = { handler = fn, ... }
+backends/                    — per-provider implementations; each uses make_backend_builder() and b:build() to register handlers
 docs/
   graphql/                   — GraphQL support design docs (README.md + 01–16 numbered documents)
   real-world-testing.md      — plan for weekly live-backend integration tests
@@ -135,9 +135,21 @@ When implementing a new endpoint, check the spec for:
 
 ### Standalone backend (new API family)
 
-1. Create `backends/<name>.lua`. Set `app.backend_impl = { endpoint = function, ... }` with only
-   the endpoints that differ from the defaults. The file is loaded automatically when
-   `config.backend == "<name>"` — no changes to `.init.lua` needed.
+1. Create `backends/<name>.lua`. Use `make_backend_builder()` to register only the handlers that
+   differ from the defaults, then call `b:build()` to commit them. The file is loaded automatically
+   when `config.backend == "<name>"` — no changes to `.init.lua` needed.
+   ```lua
+   local b = make_backend_builder()
+   local _t = make_backend_transport("token", { per_page = "limit", page = "page" })
+   local fetch_json = _t.fetch_json
+
+   b:rest("get_repo", function(owner, repo) ... end)
+   b:graphql("Query.viewer", function(_parent, _args, ctx) ... end)
+   b:capability("repos", { get = function(...) ... end })
+   b:build()
+   ```
+   `make validate-builders` enforces that every backend calls `b:build()` and never assigns
+   directly to `app.backend_impl` or `graphql_resolvers`.
 2. Add mock server as `test/mock-<newbackend>.lua` and build it in the `Makefile` (copy pattern from `mock-gitea.com`).
 3. Add a `test/test-mock-validate.sh`-equivalent for the new backend if its spec differs meaningfully.
 4. Add `<name>` to the `BACKENDS` list in the Makefile. Port numbers are assigned automatically.
@@ -303,11 +315,11 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
   k = path depth. Static edges are preferred over param edges at each node, so `/repos/search`
   beats `/repos/{owner}` when both are registered. Captures from `{param}` segments are passed
   as positional arguments to the handler.
-- **Startup-time handler resolution**: `app.backend_impl` is populated once by the backend file;
-  `internal/dispatch.lua` reads it on every request via the `app` context. The backend is fixed
-  for the program's lifetime — no per-request dispatch needed. Backend files set
-  `app.backend_impl = { ... }`; `dofile` runs in global scope so locals from any module
-  are not visible to backend files.
+- **Startup-time handler resolution**: `app.backend_impl` is populated once by the backend file
+  via `make_backend_builder()` / `b:build()`; `internal/dispatch.lua` reads it on every request
+  via the `app` context. The backend is fixed for the program's lifetime — no per-request dispatch
+  needed. `dofile` runs in global scope so locals from any internal module are not visible to
+  backend files.
 - **`/zip/` prefix for dofile**: Redbean's `dofile` resolves paths on the real filesystem by
   default. Files inside the zip must be accessed as `dofile("/zip/backends/gitea.lua")`.
 - **`SetStatus` clears all previously-set response headers.** Any `SetHeader` call made before
