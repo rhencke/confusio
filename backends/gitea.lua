@@ -15,9 +15,6 @@ end
 local PAGES = { per_page = "limit", page = "page" }
 local _t = make_backend_transport("token", PAGES)
 local fetch_json = _t.fetch_json
-local proxy_handler = _t.proxy_handler
-local proxy_handler_created = _t.proxy_handler_created
-local proxy_handler_paged = _t.proxy_handler_paged
 
 -- Check if this Gitea instance allows anonymous access.
 -- Stored in _allow_anon; committed to app context via b:set_allow_anonymous() at the end.
@@ -28,27 +25,6 @@ do
     local settings = DecodeJson(body) or {}
     _allow_anon = settings.require_signin_view ~= true
   end
-end
-
-local function translate_repos(repos)
-  return translate_list(translate_repo, repos)
-end
-
-local function translate_users(users)
-  return translate_list(translate_user, users)
-end
-
-local function set_204_or_error(method, url)
-  local opts = auth() or {}
-  opts.method = method
-  proxy_204(nil, pcall(Fetch, url, opts))
-end
-
--- Proxy a Gitea search response {"data":[...],"ok":true} to the GitHub search
--- envelope {"total_count":N,"incomplete_results":false,"items":[...]}.
--- translate_item is applied to each element of data[].
-local function proxy_search(translate_item, url)
-  proxy_search_envelope(translate_item, "data", fetch_json(url))
 end
 
 local function filter_verified_emails(emails)
@@ -209,10 +185,6 @@ local function translate_gitea_reaction(r)
   }
 end
 
-local function translate_gitea_reactions(reactions)
-  return translate_list(translate_gitea_reaction, reactions)
-end
-
 -- Map a Gitea pull request branch reference to GitHub format.
 local function translate_gitea_pr_branch(b)
   if not b then
@@ -287,10 +259,6 @@ local function translate_gitea_review(r)
   }
 end
 
-local function translate_gitea_reviews(reviews)
-  return translate_list(translate_gitea_review, reviews)
-end
-
 -- Map a Gitea inline review comment to GitHub format.
 local function translate_gitea_review_comment(c)
   if not c then
@@ -315,8 +283,17 @@ local function translate_gitea_review_comment(c)
   }
 end
 
-local function translate_gitea_review_comments(comments)
-  return translate_list(translate_gitea_review_comment, comments)
+-- Normalise a Gitea branch object to GitHub shape.
+-- Gitea uses commit.id for the SHA; GitHub uses commit.sha.
+-- Mutates the input table in place (safe — callers own the decoded object).
+local function translate_gitea_branch(br)
+  if not br then
+    return {}
+  end
+  if br.commit then
+    br.commit.sha = br.commit.id
+  end
+  return br
 end
 
 -- Look up a Gitea label ID by name within a repo.
@@ -413,11 +390,6 @@ local function translate_gitea_status_to_check_run(s)
   }
 end
 
--- Translate a list of Gitea statuses to GitHub check runs.
-local function translate_gitea_statuses_to_check_runs(statuses)
-  return translate_list(translate_gitea_status_to_check_run, statuses)
-end
-
 -- Map a GitHub check run request body to a Gitea commit status body.
 local function gh_check_run_to_gitea_status(req)
   local status = req.status or "queued"
@@ -481,8 +453,21 @@ local function translate_gitea_package_version(p)
   }
 end
 
--- Resolve the authenticated user's login name for /user/packages endpoints.
-local function resolve_user_login()
+-- ---------------------------------------------------------------------------
+-- Packages capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translate for packages and package versions (org, user, and
+-- public-user scopes).  Gitea's package API uses query-parameter filtering;
+-- there is no direct lookup by name+type, so get/delete/version operations
+-- list candidates and filter client-side.
+-- All operations return (data, nil) on success or (nil, err) on failure.
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+
+local packages_cap = {}
+
+-- resolve_user_login: fetch the authenticated user's login for /user/packages.
+-- Returns the login string or nil if unauthenticated / network failure.
+packages_cap.resolve_user_login = function()
   local ok, status, _, body = fetch_json(base() .. "/user")
   if ok and status == 200 then
     return (DecodeJson(body) or {}).login
@@ -490,25 +475,24 @@ local function resolve_user_login()
   return nil
 end
 
--- List packages for an owner, translating each entry to a GitHub Package object.
-local function pkg_list(owner)
-  local pkg_type = GetParam("package_type") or ""
+-- list: paginated list of packages for an owner.
+-- pkg_type: optional GitHub package_type filter string ("" = all types).
+packages_cap.list = function(owner, pkg_type)
   local url = base() .. "/packages/" .. owner
-  if pkg_type ~= "" then
+  if pkg_type and pkg_type ~= "" then
     url = url .. "?type=" .. pkg_type
   end
   url = append_page_params(url, PAGES)
-  proxy_json_paged(function(entries)
-    local pkgs = {}
-    for i, p in ipairs(entries) do
-      pkgs[i] = translate_gitea_package(p)
-    end
-    return pkgs
-  end, PAGES, fetch_json(url))
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gitea_package, items), hdrs, nil
 end
 
--- Get a single package by listing versions and aggregating.
-local function pkg_get(owner, pkg_type, pkg_name)
+-- get: fetch a single package by owner, type, and name.
+-- Gitea has no direct lookup; this lists candidates and aggregates versions.
+packages_cap.get = function(owner, pkg_type, pkg_name)
   local url = base()
     .. "/packages/"
     .. owner
@@ -517,30 +501,25 @@ local function pkg_get(owner, pkg_type, pkg_name)
     .. "&q="
     .. pkg_name
     .. "&limit=50"
-  local ok, status, _, body = fetch_json(url)
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
   end
   local entries = {}
-  for _, p in ipairs(DecodeJson(body) or {}) do
+  for _, p in ipairs(raw) do
     if p.name == pkg_name then
       entries[#entries + 1] = p
     end
   end
   if #entries == 0 then
-    respond_json(404, { message = "Not Found" })
-    return
+    return nil, cap_err(404, "package not found")
   end
-  respond_json(200, translate_gitea_package(entries[1], #entries))
+  return translate_gitea_package(entries[1], #entries), nil
 end
 
--- Delete all versions of a package.
-local function pkg_delete(owner, pkg_type, pkg_name)
+-- delete: delete all versions of a package.
+-- Returns (true, nil) on success or (nil, err) on failure.
+packages_cap.delete = function(owner, pkg_type, pkg_name)
   local url = base()
     .. "/packages/"
     .. owner
@@ -549,17 +528,12 @@ local function pkg_delete(owner, pkg_type, pkg_name)
     .. "&q="
     .. pkg_name
     .. "&limit=50"
-  local ok, status, _, body = fetch_json(url)
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
   end
   local found = false
-  for _, p in ipairs(DecodeJson(body) or {}) do
+  for _, p in ipairs(raw) do
     if p.name == pkg_name then
       found = true
       fetch_json(
@@ -569,86 +543,92 @@ local function pkg_delete(owner, pkg_type, pkg_name)
     end
   end
   if not found then
-    respond_json(404, { message = "Not Found" })
-    return
+    return nil, cap_err(404, "package not found")
   end
-  set_preamble(204)
+  return true, nil
 end
 
--- List versions of a specific package.
-local function pkg_versions(owner, pkg_type, pkg_name)
+-- list_versions: paginated list of versions for a specific package.
+-- Filters client-side to the named package (Gitea query may return
+-- partial-match results for q=pkg_name).
+packages_cap.list_versions = function(owner, pkg_type, pkg_name)
   local url = base() .. "/packages/" .. owner .. "?type=" .. pkg_type .. "&q=" .. pkg_name
   url = append_page_params(url, PAGES)
-  proxy_json_paged(function(entries)
-    local versions = {}
-    for _, p in ipairs(entries) do
-      if p.name == pkg_name then
-        versions[#versions + 1] = translate_gitea_package_version(p)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  local versions = {}
+  for _, p in ipairs(items) do
+    if p.name == pkg_name then
+      versions[#versions + 1] = translate_gitea_package_version(p)
+    end
+  end
+  return versions, hdrs, nil
+end
+
+-- get_version: fetch a single package version by numeric ID.
+packages_cap.get_version = function(owner, pkg_type, pkg_name, version_id)
+  local url = base()
+    .. "/packages/"
+    .. owner
+    .. "?type="
+    .. pkg_type
+    .. "&q="
+    .. pkg_name
+    .. "&limit=50"
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
+  end
+  local vid = tonumber(version_id)
+  for _, p in ipairs(raw) do
+    if p.id == vid and p.name == pkg_name then
+      return translate_gitea_package_version(p), nil
+    end
+  end
+  return nil, cap_err(404, "package version not found")
+end
+
+-- delete_version: delete a single package version by numeric ID.
+-- Returns (true, nil) on success or (nil, err) on failure.
+packages_cap.delete_version = function(owner, pkg_type, pkg_name, version_id)
+  local url = base()
+    .. "/packages/"
+    .. owner
+    .. "?type="
+    .. pkg_type
+    .. "&q="
+    .. pkg_name
+    .. "&limit=50"
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
+  end
+  local vid = tonumber(version_id)
+  for _, p in ipairs(raw) do
+    if p.id == vid and p.name == pkg_name then
+      local del_url = base()
+        .. "/packages/"
+        .. owner
+        .. "/"
+        .. pkg_type
+        .. "/"
+        .. pkg_name
+        .. "/"
+        .. p.version
+      local ok2, status2 = fetch_json(del_url, "DELETE")
+      if not ok2 then
+        return nil, cap_err(0, "network error deleting package version")
       end
-    end
-    return versions
-  end, PAGES, fetch_json(url))
-end
-
--- Get a single package version by ID.
-local function pkg_get_version(owner, pkg_type, pkg_name, version_id)
-  local url = base()
-    .. "/packages/"
-    .. owner
-    .. "?type="
-    .. pkg_type
-    .. "&q="
-    .. pkg_name
-    .. "&limit=50"
-  local ok, status, _, body = fetch_json(url)
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
-  end
-  local vid = tonumber(version_id)
-  for _, p in ipairs(DecodeJson(body) or {}) do
-    if p.id == vid and p.name == pkg_name then
-      respond_json(200, translate_gitea_package_version(p))
-      return
+      if status2 ~= 204 then
+        return nil,
+          cap_err(status2, "upstream error " .. tostring(status2) .. " deleting package version")
+      end
+      return true, nil
     end
   end
-  respond_json(404, { message = "Not Found" })
-end
-
--- Delete a single package version by ID.
-local function pkg_delete_version(owner, pkg_type, pkg_name, version_id)
-  local url = base()
-    .. "/packages/"
-    .. owner
-    .. "?type="
-    .. pkg_type
-    .. "&q="
-    .. pkg_name
-    .. "&limit=50"
-  local ok, status, _, body = fetch_json(url)
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
-  end
-  local vid = tonumber(version_id)
-  for _, p in ipairs(DecodeJson(body) or {}) do
-    if p.id == vid and p.name == pkg_name then
-      set_204_or_error(
-        "DELETE",
-        base() .. "/packages/" .. owner .. "/" .. pkg_type .. "/" .. pkg_name .. "/" .. p.version
-      )
-      return
-    end
-  end
-  respond_json(404, { message = "Not Found" })
+  return nil, cap_err(404, "package version not found")
 end
 
 -- Translate a Gitea Actions secret to GitHub format.
@@ -673,21 +653,266 @@ local function translate_gitea_actions_runner(r)
   }
 end
 
--- Proxy a Gitea Actions list (plain JSON array) → GitHub envelope {total_count, key: [...]}.
-local function proxy_actions_list(key, translate_fn, url)
-  local ok, status, _, body = fetch_json(url)
+-- ---------------------------------------------------------------------------
+-- Actions capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translate for actions secrets, variables, and runners.
+-- REST handlers call into this table for all actions-related operations.
+-- All operations return (data, nil) on success or (nil, err) on failure.
+-- List operations return (items, nil) where items is the translated array
+-- (Gitea actions lists are plain JSON arrays without Link pagination headers).
+
+local actions_cap = {}
+
+-- list_repo_secrets: fetch all repo-level secrets as a translated array.
+actions_cap.list_repo_secrets = function(owner, repo_name)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/actions/secrets")
+  if not raw then
+    return nil, err
+  end
+  return translate_list(translate_gitea_actions_secret, raw), nil
+end
+
+-- get_repo_secret: fetch a single repo-level secret.
+actions_cap.get_repo_secret = function(owner, repo_name, secret_name)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/actions/secrets/" .. secret_name
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_actions_secret(raw), nil
+end
+
+-- delete_repo_secret: delete a repo-level secret.
+actions_cap.delete_repo_secret = function(owner, repo_name, secret_name)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/actions/secrets/" .. secret_name
+  local ok, status = fetch_json(url, "DELETE")
   if not ok then
-    respond_json(503, {})
-    return
+    return nil, cap_err(0, "network error deleting repo secret")
   end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
+  if status == 401 or status == 403 then
+    return nil, cap_err(status, "not authorized to delete repo secret")
   end
-  local raw = DecodeJson(body) or {}
-  local items = {}
-  for i, item in ipairs(raw) do
-    items[i] = translate_fn(item)
+  if status == 404 then
+    return nil, cap_err(status, "repo secret not found")
+  end
+  if status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting repo secret")
+  end
+  return true, nil
+end
+
+-- list_org_secrets: fetch all org-level secrets as a translated array.
+actions_cap.list_org_secrets = function(org)
+  local raw, err = cap_fetch(fetch_json, base() .. "/orgs/" .. org .. "/actions/secrets")
+  if not raw then
+    return nil, err
+  end
+  return translate_list(translate_gitea_actions_secret, raw), nil
+end
+
+-- get_org_secret: fetch a single org-level secret.
+actions_cap.get_org_secret = function(org, secret_name)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/orgs/" .. org .. "/actions/secrets/" .. secret_name)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_actions_secret(raw), nil
+end
+
+-- delete_org_secret: delete an org-level secret.
+actions_cap.delete_org_secret = function(org, secret_name)
+  local url = base() .. "/orgs/" .. org .. "/actions/secrets/" .. secret_name
+  local ok, status = fetch_json(url, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting org secret")
+  end
+  if status == 401 or status == 403 then
+    return nil, cap_err(status, "not authorized to delete org secret")
+  end
+  if status == 404 then
+    return nil, cap_err(status, "org secret not found")
+  end
+  if status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting org secret")
+  end
+  return true, nil
+end
+
+-- list_repo_variables: fetch all repo-level variables as a translated array.
+actions_cap.list_repo_variables = function(owner, repo_name)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/actions/variables")
+  if not raw then
+    return nil, err
+  end
+  return translate_list(translate_gitea_actions_variable, raw), nil
+end
+
+-- get_repo_variable: fetch a single repo-level variable.
+actions_cap.get_repo_variable = function(owner, repo_name, var_name)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/actions/variables/" .. var_name
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_actions_variable(raw), nil
+end
+
+-- create_repo_variable: create a repo-level variable.
+actions_cap.create_repo_variable = function(owner, repo_name, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/actions/variables",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_actions_variable(raw), nil
+end
+
+-- update_repo_variable: update a repo-level variable (Gitea uses PUT).
+actions_cap.update_repo_variable = function(owner, repo_name, var_name, body)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/actions/variables/" .. var_name
+  local ok, status = fetch_json(url, "PUT", body)
+  if not ok then
+    return nil, cap_err(0, "network error updating repo variable")
+  end
+  if status == 401 or status == 403 then
+    return nil, cap_err(status, "not authorized to update repo variable")
+  end
+  if status == 404 then
+    return nil, cap_err(status, "repo variable not found")
+  end
+  if status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " updating repo variable")
+  end
+  return true, nil
+end
+
+-- delete_repo_variable: delete a repo-level variable.
+actions_cap.delete_repo_variable = function(owner, repo_name, var_name)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/actions/variables/" .. var_name
+  local ok, status = fetch_json(url, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting repo variable")
+  end
+  if status == 401 or status == 403 then
+    return nil, cap_err(status, "not authorized to delete repo variable")
+  end
+  if status == 404 then
+    return nil, cap_err(status, "repo variable not found")
+  end
+  if status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting repo variable")
+  end
+  return true, nil
+end
+
+-- list_org_variables: fetch all org-level variables as a translated array.
+actions_cap.list_org_variables = function(org)
+  local raw, err = cap_fetch(fetch_json, base() .. "/orgs/" .. org .. "/actions/variables")
+  if not raw then
+    return nil, err
+  end
+  return translate_list(translate_gitea_actions_variable, raw), nil
+end
+
+-- get_org_variable: fetch a single org-level variable.
+actions_cap.get_org_variable = function(org, var_name)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/orgs/" .. org .. "/actions/variables/" .. var_name)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_actions_variable(raw), nil
+end
+
+-- create_org_variable: create an org-level variable.
+actions_cap.create_org_variable = function(org, body)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/orgs/" .. org .. "/actions/variables", "POST", body)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_actions_variable(raw), nil
+end
+
+-- update_org_variable: update an org-level variable (Gitea uses PUT).
+actions_cap.update_org_variable = function(org, var_name, body)
+  local url = base() .. "/orgs/" .. org .. "/actions/variables/" .. var_name
+  local ok, status = fetch_json(url, "PUT", body)
+  if not ok then
+    return nil, cap_err(0, "network error updating org variable")
+  end
+  if status == 401 or status == 403 then
+    return nil, cap_err(status, "not authorized to update org variable")
+  end
+  if status == 404 then
+    return nil, cap_err(status, "org variable not found")
+  end
+  if status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " updating org variable")
+  end
+  return true, nil
+end
+
+-- delete_org_variable: delete an org-level variable.
+actions_cap.delete_org_variable = function(org, var_name)
+  local url = base() .. "/orgs/" .. org .. "/actions/variables/" .. var_name
+  local ok, status = fetch_json(url, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting org variable")
+  end
+  if status == 401 or status == 403 then
+    return nil, cap_err(status, "not authorized to delete org variable")
+  end
+  if status == 404 then
+    return nil, cap_err(status, "org variable not found")
+  end
+  if status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting org variable")
+  end
+  return true, nil
+end
+
+-- list_repo_runners: fetch all repo-level runners as a translated array.
+actions_cap.list_repo_runners = function(owner, repo_name)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/actions/runners")
+  if not raw then
+    return nil, err
+  end
+  return translate_list(translate_gitea_actions_runner, raw), nil
+end
+
+-- list_org_runners: fetch all org-level runners as a translated array.
+actions_cap.list_org_runners = function(org)
+  local raw, err = cap_fetch(fetch_json, base() .. "/orgs/" .. org .. "/actions/runners")
+  if not raw then
+    return nil, err
+  end
+  return translate_list(translate_gitea_actions_runner, raw), nil
+end
+
+-- actions_rest_list: write the GitHub envelope for a list operation.
+-- items is the translated array; key is "secrets", "variables", or "runners".
+local function actions_rest_list(items, err, key)
+  if not items then
+    if err.status == 0 then
+      respond_json(503, {})
+    else
+      respond_json(err.status, {})
+    end
+    return
   end
   set_preamble()
   Write(
@@ -706,17 +931,6 @@ end
 local function reaction_content_from_id(reaction_id)
   local code = tonumber(reaction_id) and (tonumber(reaction_id) % 10) or nil
   return code and REACTION_BY_CODE[code] or nil
-end
-
--- DELETE a Gitea reaction by URL and synthesized reaction_id.
--- Sends {"content":"..."} body; returns 204 on success.
-local function delete_gitea_reaction(url, reaction_id)
-  local content = reaction_content_from_id(reaction_id)
-  if not content then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  proxy_204({ 200 }, fetch_json(url, "DELETE", '{"content":"' .. content .. '"}'))
 end
 
 local b = make_backend_builder()
@@ -801,6 +1015,27 @@ repos.create_org = function(org, body)
     return nil, err
   end
   return translate_repo(raw), nil
+end
+
+-- list_by_user: paginated list of public repos for a specific user.
+repos.list_by_user = function(username)
+  local url = append_page_params(base() .. "/users/" .. username .. "/repos", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_repo, items), hdrs, nil
+end
+
+-- list_all: paginated public repos list using Gitea's repo search endpoint.
+-- Gitea wraps results in {"data": [...], "ok": true}; items are extracted from .data.
+repos.list_all = function()
+  local url = append_page_params(base() .. "/repos/search", PAGES)
+  local raw, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not raw then
+    return nil, nil, err
+  end
+  return translate_list(translate_repo, raw.data or {}), hdrs, nil
 end
 
 -- ---------------------------------------------------------------------------
@@ -892,6 +1127,47 @@ users.list_user_following = function(username)
   return translate_list(translate_user, items), hdrs, nil
 end
 
+-- is_following: check whether the authenticated user follows username.
+-- Returns (true, nil) if following, or (nil, err) otherwise.
+-- err.status == 404 means not following; err.status == 0 means network error.
+users.is_following = function(username)
+  local ok, status = pcall(Fetch, base() .. "/user/following/" .. username, auth())
+  if not ok then
+    return nil, cap_err(0, "network error checking following status")
+  end
+  if status == 204 then
+    return true, nil
+  end
+  return nil, cap_err(status, "not following " .. username)
+end
+
+-- follow: follow the given user.
+-- Returns (true, nil) on success or (nil, err) on failure.
+users.follow = function(username)
+  local ok, status = fetch_json(base() .. "/user/following/" .. username, "PUT")
+  if not ok then
+    return nil, cap_err(0, "network error following " .. username)
+  end
+  if status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " following " .. username)
+  end
+  return true, nil
+end
+
+-- unfollow: unfollow the given user.
+-- Returns (true, nil) on success or (nil, err) on failure.
+users.unfollow = function(username)
+  local ok, status = fetch_json(base() .. "/user/following/" .. username, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error unfollowing " .. username)
+  end
+  if status ~= 204 then
+    return nil,
+      cap_err(status, "upstream error " .. tostring(status) .. " unfollowing " .. username)
+  end
+  return true, nil
+end
+
 -- ---------------------------------------------------------------------------
 -- Orgs capability module
 -- ---------------------------------------------------------------------------
@@ -963,6 +1239,199 @@ issues_cap.update = function(owner, repo_name, number, body)
     return nil, err
   end
   return translate_gitea_issue(raw), nil
+end
+
+-- list_labels: fetch all labels on an issue.
+-- Returns (labels_array, nil) on success or (nil, err) on failure.
+issues_cap.list_labels = function(owner, repo_name, number)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. number .. "/labels"
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_labels(raw), nil
+end
+
+-- add_labels: add labels to an issue (POST).
+-- label_names: array of label name strings; each is resolved to a Gitea numeric ID.
+-- Returns (labels_array, nil) on success or (nil, err) on failure.
+issues_cap.add_labels = function(owner, repo_name, number, label_names)
+  local ids = {}
+  for _, name in ipairs(label_names or {}) do
+    local id = gitea_find_label_id(owner, repo_name, name)
+    if id then
+      ids[#ids + 1] = id
+    end
+  end
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. number .. "/labels"
+  local raw, err = cap_fetch(fetch_json, url, "POST", EncodeJson({ labels = ids }))
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_labels(raw), nil
+end
+
+-- set_labels: replace all labels on an issue (PUT).
+-- label_names: array of label name strings; each is resolved to a Gitea numeric ID.
+-- Returns (labels_array, nil) on success or (nil, err) on failure.
+issues_cap.set_labels = function(owner, repo_name, number, label_names)
+  local ids = {}
+  for _, name in ipairs(label_names or {}) do
+    local id = gitea_find_label_id(owner, repo_name, name)
+    if id then
+      ids[#ids + 1] = id
+    end
+  end
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. number .. "/labels"
+  local raw, err = cap_fetch(fetch_json, url, "PUT", EncodeJson({ labels = ids }))
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_labels(raw), nil
+end
+
+-- remove_labels: remove all labels from an issue (DELETE, no body).
+-- Gitea returns 200 on success; normalised to (true, nil) for cap_rest_204.
+-- Returns (true, nil) on success or (nil, err) on failure.
+issues_cap.remove_labels = function(owner, repo_name, number)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. number .. "/labels"
+  local ok, status = fetch_json(url, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error removing labels from issue")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " removing labels")
+  end
+  return true, nil
+end
+
+-- remove_label: remove a single named label from an issue.
+-- GitHub uses the label name in the URL; Gitea uses the numeric ID — resolved here.
+-- Returns (true, nil) on success or (nil, err) on failure.
+issues_cap.remove_label = function(owner, repo_name, number, label_name)
+  local id = gitea_find_label_id(owner, repo_name, label_name)
+  if not id then
+    return nil, cap_err(404, "Label not found")
+  end
+  local url = base()
+    .. "/repos/"
+    .. owner
+    .. "/"
+    .. repo_name
+    .. "/issues/"
+    .. number
+    .. "/labels/"
+    .. id
+  local ok, status = fetch_json(url, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error removing label from issue")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " removing label")
+  end
+  return true, nil
+end
+
+-- lock: lock an issue (PUT /lock).
+-- body: JSON-encoded lock reason (forwarded verbatim to Gitea).
+-- Requires a full Fetch call because PUT with a body needs Content-Type to be set.
+-- Returns (true, nil) on success or (nil, err) on failure.
+issues_cap.lock = function(owner, repo_name, number, body)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. number .. "/lock"
+  local opts = auth() or {}
+  opts.method = "PUT"
+  opts.body = body
+  opts.headers = opts.headers or {}
+  opts.headers["Content-Type"] = "application/json"
+  local ok, status = pcall(Fetch, url, opts)
+  if not ok then
+    return nil, cap_err(0, "network error locking issue")
+  end
+  if status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " locking issue")
+  end
+  return true, nil
+end
+
+-- unlock: unlock an issue (DELETE /lock).
+-- Returns (true, nil) on success or (nil, err) on failure.
+issues_cap.unlock = function(owner, repo_name, number)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. number .. "/lock"
+  local ok, status = fetch_json(url, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error unlocking issue")
+  end
+  if status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " unlocking issue")
+  end
+  return true, nil
+end
+
+-- add_assignees: add assignees to an issue (POST /assignees).
+-- body: JSON-encoded body with assignees array (forwarded to Gitea).
+-- Returns (updated_issue, nil) on success or (nil, err) on failure.
+issues_cap.add_assignees = function(owner, repo_name, number, body)
+  local url = base()
+    .. "/repos/"
+    .. owner
+    .. "/"
+    .. repo_name
+    .. "/issues/"
+    .. number
+    .. "/assignees"
+  local raw, err = cap_fetch(fetch_json, url, "POST", body)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_issue(raw), nil
+end
+
+-- remove_assignees: remove assignees from an issue (DELETE /assignees with body).
+-- body: JSON-encoded body with assignees array (forwarded to Gitea).
+-- Returns (updated_issue, nil) on success or (nil, err) on failure.
+issues_cap.remove_assignees = function(owner, repo_name, number, body)
+  local url = base()
+    .. "/repos/"
+    .. owner
+    .. "/"
+    .. repo_name
+    .. "/issues/"
+    .. number
+    .. "/assignees"
+  local raw, err = cap_fetch(fetch_json, url, "DELETE", body)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_issue(raw), nil
+end
+
+-- check_assignee: check whether a user is currently assigned to an issue.
+-- Gitea has no direct endpoint; we fetch the issue and scan its assignees list.
+-- Returns (true, nil) if assigned, or (nil, err) if not (err.status == 404).
+issues_cap.check_assignee = function(owner, repo_name, number, assignee)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. number
+  local issue, err = cap_fetch(fetch_json, url)
+  if not issue then
+    return nil, err
+  end
+  for _, u in ipairs(issue.assignees or {}) do
+    if u.login == assignee then
+      return true, nil
+    end
+  end
+  return nil, cap_err(404, "Not an assignee")
+end
+
+-- list_assignees: paginated list of users eligible to be assigned to issues in a repo.
+-- Returns (users_array, headers, nil) or (nil, nil, err).
+issues_cap.list_assignees = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/assignees", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_user, items), hdrs, nil
 end
 
 -- ---------------------------------------------------------------------------
@@ -1192,6 +1661,24 @@ milestones_cap.delete = function(owner, repo_name, number)
   return true, nil
 end
 
+-- list_labels: fetch all labels for a milestone.
+-- Returns (labels_array, nil) on success or (nil, err) on failure.
+milestones_cap.list_labels = function(owner, repo_name, number)
+  local url = base()
+    .. "/repos/"
+    .. owner
+    .. "/"
+    .. repo_name
+    .. "/milestones/"
+    .. number
+    .. "/labels"
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_labels(raw), nil
+end
+
 -- ---------------------------------------------------------------------------
 -- Comments capability module
 -- ---------------------------------------------------------------------------
@@ -1289,59 +1776,832 @@ comments_cap.delete = function(owner, repo_name, comment_id)
   return true, nil
 end
 
--- Health check
-b:rest("get_root", function()
-  proxy_health_check(pcall(Fetch, base() .. "/version", auth()))
-end)
+-- ---------------------------------------------------------------------------
+-- Branches capability module
+-- ---------------------------------------------------------------------------
+-- Shared fetch+translate operations for branch resources.
+-- Gitea branch objects use commit.id for the SHA; translate_gitea_branch
+-- normalises to commit.sha before returning.
+-- Operations return (data, nil) on success or (nil, err) on failure.
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
 
-b:rest(
-  "get_rate_limit",
-  proxy_handler(function(data)
-    return { rate = data.rate or data }
-  end, function()
-    return base() .. "/rate_limit"
-  end)
-)
+local branches = {}
 
--- GET /gitignore/templates
-b:rest("get_gitignore_templates", function()
-  proxy_json(nil, fetch_json(base() .. "/gitignores"))
-end)
+-- list: paginated list of branches for a repository.
+branches.list = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/branches", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gitea_branch, items), hdrs, nil
+end
 
--- GET /gitignore/templates/{name}
-b:rest("get_gitignore_template", function(name)
-  proxy_json(nil, fetch_json(base() .. "/gitignores/" .. name))
-end)
+-- get: fetch a single branch by name.
+branches.get = function(owner, repo_name, branch)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/branches/" .. branch
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_branch(raw), nil
+end
 
--- GET /licenses
-b:rest("get_licenses", function()
-  proxy_json(nil, fetch_json(base() .. "/licenses"))
-end)
+-- ---------------------------------------------------------------------------
+-- Repo metadata capability module
+-- ---------------------------------------------------------------------------
+-- Shared fetch operations for repository metadata: topics, languages,
+-- contributors, and tags.  These resources pass through with minimal or no
+-- translation because Gitea and GitHub shapes are already compatible.
+-- Single-item operations return (data, nil) or (nil, err).
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
 
--- GET /licenses/{license}
-b:rest("get_license", function(license_name)
-  proxy_json(nil, fetch_json(base() .. "/licenses/" .. license_name))
-end)
+local repo_metadata = {}
 
--- GET /repos/{owner}/{repo}/license
--- Gitea has no dedicated endpoint; combine contents/LICENSE with repo license metadata.
-b:rest("get_repo_license", function(owner, repo_name)
+-- get_topics: fetch the topic list for a repository.
+-- Returns { names = {...} } to match the GitHub REST shape.
+repo_metadata.get_topics = function(owner, repo_name)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/topics")
+  if not raw then
+    return nil, err
+  end
+  return { names = raw.topics or raw.names or {} }, nil
+end
+
+-- put_topics: replace the topic list for a repository.
+-- body: JSON-encoded string with a "names" array (GitHub REST input shape).
+-- Gitea expects { topics: [...] }; the response is translated back to { names: [...] }.
+repo_metadata.put_topics = function(owner, repo_name, body)
+  local req = DecodeJson(body or "{}")
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/topics",
+    "PUT",
+    EncodeJson({ topics = req.names or {} })
+  )
+  if not raw then
+    return nil, err
+  end
+  return { names = raw.topics or raw.names or {} }, nil
+end
+
+-- get_languages: fetch the language breakdown for a repository.
+-- Both Gitea and GitHub return { "Language": bytes } — pass through.
+repo_metadata.get_languages = function(owner, repo_name)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/languages")
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- list_contributors: paginated list of contributors for a repository.
+-- Gitea and GitHub use the same "contributions" key — pass through.
+repo_metadata.list_contributors = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contributors", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+-- list_tags: paginated list of tags for a repository.
+-- Both Gitea and GitHub return [{ name, commit: { sha, url }, ... }] — pass through.
+repo_metadata.list_tags = function(owner, repo_name)
+  local url = append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/tags", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Commits capability module
+-- ---------------------------------------------------------------------------
+-- Shared fetch operations for commit resources and commit statuses.
+-- Gitea and GitHub shapes are compatible for all commit endpoints — no
+-- translation is applied; raw upstream objects are returned.
+-- Single-item operations return (data, nil) or (nil, err).
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+
+local commits_cap = {}
+
+-- list: paginated list of commits for a repository.
+commits_cap.list = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/commits", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+-- get: fetch a single commit by ref or SHA.
+-- Uses Gitea's /git/commits/{ref} endpoint; shape is compatible with GitHub.
+commits_cap.get = function(owner, repo_name, ref)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/commits/" .. ref
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- list_statuses: paginated list of commit statuses for a ref.
+-- Both Gitea and GitHub return the same status shape — pass through.
+commits_cap.list_statuses = function(owner, repo_name, ref)
+  local url = append_page_params(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. ref,
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+-- get_combined_status: fetch the combined status summary for a ref.
+-- Gitea endpoint: GET /repos/{owner}/{repo}/commits/{ref}/statuses.
+commits_cap.get_combined_status = function(owner, repo_name, ref)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/commits/" .. ref .. "/statuses"
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- create_status: create a commit status for a SHA.
+-- body: JSON-encoded string with state, target_url, description, context.
+-- Returns the newly created status object (201 Created shape).
+commits_cap.create_status = function(owner, repo_name, sha, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. sha,
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Contents capability module
+-- ---------------------------------------------------------------------------
+-- Shared fetch operations for repository file contents and diffs.
+-- Gitea and GitHub shapes are compatible for all content endpoints — no
+-- translation is applied; raw upstream objects are returned.
+-- Single-item operations return (data, nil) or (nil, err).
+-- Note: put() always returns 200 via cap_rest_respond even when Gitea
+-- returns 201 for new-file creation; the response body is still correct.
+
+local contents = {}
+
+-- get_readme: fetch the default README for a repository.
+contents.get_readme = function(owner, repo_name)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/readme")
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- get_readme_dir: fetch the README for a specific directory path.
+contents.get_readme_dir = function(owner, repo_name, dir)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/readme/" .. dir)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- get: fetch file or directory contents at a path (optionally at a ref).
+contents.get = function(owner, repo_name, path)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/" .. path)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- put: create or update a file at a path.
+-- body: JSON-encoded string with message, content (base64), and optional sha.
+-- Gitea returns 201 for creates and 200 for updates; this operation always
+-- responds 200 via cap_rest_respond (body is correct in both cases).
+contents.put = function(owner, repo_name, path, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/" .. path,
+    "PUT",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- delete: delete a file at a path.
+-- body: JSON-encoded string with message and sha of the file to delete.
+-- Gitea returns 200 with commit information — pass through.
+contents.delete = function(owner, repo_name, path, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/" .. path,
+    "DELETE",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- compare: fetch the diff between two commits, tags, or branches.
+-- basehead: "{base}...{head}" or "{base}..{head}" — passed through to Gitea.
+contents.compare = function(owner, repo_name, basehead)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/compare/" .. basehead
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Collaborators capability module
+-- ---------------------------------------------------------------------------
+-- Shared fetch operations for repository collaborator management.
+-- Gitea collaborator endpoints use 201 (add) and 200 (remove) as success
+-- codes; these are normalised to (true, nil) / (nil, err) here so REST
+-- handlers can use cap_rest_204.
+-- Single-item / mutation operations return (data/true, nil) or (nil, err).
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+
+local collaborators = {}
+
+-- list: paginated list of collaborators for a repository.
+-- Gitea and GitHub user shapes are compatible — pass through.
+collaborators.list = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+-- check: test whether a username is a collaborator on a repository.
+-- Returns (true, nil) if the user is a collaborator (Gitea 204),
+-- or (nil, err) otherwise.
+collaborators.check = function(owner, repo_name, username)
+  local ok, status = pcall(
+    Fetch,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
+    auth()
+  )
+  if not ok then
+    return nil, cap_err(0, "network error checking collaborator")
+  end
+  if status == 204 then
+    return true, nil
+  end
+  return nil, cap_err(status, "not a collaborator")
+end
+
+-- add: add a user as a collaborator on a repository.
+-- body: JSON-encoded string with permission level.
+-- Gitea returns 201 on success; normalised to (true, nil).
+collaborators.add = function(owner, repo_name, username, body)
+  local ok, status = fetch_json(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
+    "PUT",
+    body
+  )
+  if not ok then
+    return nil, cap_err(0, "network error adding collaborator")
+  end
+  if status ~= 201 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " adding collaborator")
+  end
+  return true, nil
+end
+
+-- remove: remove a collaborator from a repository.
+-- Gitea returns 200 on success; normalised to (true, nil).
+collaborators.remove = function(owner, repo_name, username)
+  local ok, status = fetch_json(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
+    "DELETE"
+  )
+  if not ok then
+    return nil, cap_err(0, "network error removing collaborator")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " removing collaborator")
+  end
+  return true, nil
+end
+
+-- get_permission: fetch the permission level of a collaborator.
+-- Both Gitea and GitHub return the same permission shape — pass through.
+collaborators.get_permission = function(owner, repo_name, username)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base()
+      .. "/repos/"
+      .. owner
+      .. "/"
+      .. repo_name
+      .. "/collaborators/"
+      .. username
+      .. "/permission"
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Forks capability module
+-- ---------------------------------------------------------------------------
+-- Shared fetch+translate operations for repository fork resources.
+-- translate_repo is applied to normalise Gitea repo objects to GitHub shape.
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+-- Single-item operations return (data, nil) or (nil, err).
+
+local forks = {}
+
+-- list: paginated list of forks for a repository.
+forks.list = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/forks", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_repo, items), hdrs, nil
+end
+
+-- create: fork a repository into the authenticated user's account (or an org).
+-- body: JSON-encoded string with optional organization name.
+forks.create = function(owner, repo_name, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/forks",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_repo(raw), nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Commit comments capability module
+-- ---------------------------------------------------------------------------
+-- Shared fetch operations for commit-level code comments (not issue comments;
+-- those live in comments_cap).
+-- Gitea uses /repos/{o}/{r}/comments/{id} for repo-wide comment CRUD and
+-- /repos/{o}/{r}/git/commits/{sha}/notes for per-commit listing/creation.
+-- All operations pass through without translation — Gitea and GitHub shapes
+-- are already compatible.
+-- Single-item operations return (data/true, nil) or (nil, err).
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+
+local commit_comments = {}
+
+-- list_repo: paginated list of all commit comments in a repository.
+commit_comments.list_repo = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+-- get: fetch a single commit comment by ID.
+commit_comments.get = function(owner, repo_name, comment_id)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments/" .. comment_id
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- update: apply a partial update to an existing commit comment.
+-- body: JSON-encoded string with updated body text.
+commit_comments.update = function(owner, repo_name, comment_id, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments/" .. comment_id,
+    "PATCH",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- delete: delete a commit comment.
+-- Gitea returns 200; normalised to (true, nil) for cap_rest_204.
+commit_comments.delete = function(owner, repo_name, comment_id)
+  local ok, status = fetch_json(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments/" .. comment_id,
+    "DELETE"
+  )
+  if not ok then
+    return nil, cap_err(0, "network error deleting commit comment")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting commit comment")
+  end
+  return true, nil
+end
+
+-- list_commit: paginated list of comments for a specific commit SHA.
+-- Gitea maps commit comments to /git/commits/{sha}/notes.
+commit_comments.list_commit = function(owner, repo_name, commit_sha)
+  local url = append_page_params(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/commits/" .. commit_sha .. "/notes",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+-- create: create a new comment on a specific commit.
+-- body: JSON-encoded string with body text.
+-- Gitea maps commit comments to /git/commits/{sha}/notes.
+commit_comments.create = function(owner, repo_name, commit_sha, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/commits/" .. commit_sha .. "/notes",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Releases capability module
+-- ---------------------------------------------------------------------------
+-- Shared fetch operations for releases and release assets.
+-- Gitea and GitHub release shapes are compatible — no translation applied.
+-- Single-item operations return (data/true, nil) or (nil, err).
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+-- delete and delete_asset normalise Gitea's 200 to (true, nil) for cap_rest_204.
+-- upload_asset forwards the incoming Content-Type for multipart uploads;
+-- it cannot use cap_fetch because it requires custom opts construction.
+
+local releases = {}
+
+-- list: paginated list of releases for a repository.
+releases.list = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+-- create: create a new release.
+releases.create = function(owner, repo_name, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- get_latest: fetch the latest published release.
+releases.get_latest = function(owner, repo_name)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/latest")
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- get_by_tag: fetch a release by its tag name.
+releases.get_by_tag = function(owner, repo_name, tag)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/tags/" .. tag
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- get: fetch a release by numeric ID.
+releases.get = function(owner, repo_name, release_id)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- update: apply a partial update to a release.
+-- body: JSON-encoded string of fields to change.
+releases.update = function(owner, repo_name, release_id, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id,
+    "PATCH",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- delete: delete a release.
+-- Gitea returns 200; normalised to (true, nil) for cap_rest_204.
+releases.delete = function(owner, repo_name, release_id)
+  local ok, status = fetch_json(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id,
+    "DELETE"
+  )
+  if not ok then
+    return nil, cap_err(0, "network error deleting release")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting release")
+  end
+  return true, nil
+end
+
+-- list_assets: paginated list of assets attached to a release.
+releases.list_assets = function(owner, repo_name, release_id)
+  local url = append_page_params(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id .. "/assets",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+-- upload_asset: upload a new binary asset to a release via multipart upload.
+-- content_type: the Content-Type of the uploaded file (forwarded from the client).
+-- Uses pcall(Fetch) directly because it requires custom Content-Type forwarding
+-- that cannot go through the standard fetch_json helper.
+releases.upload_asset = function(owner, repo_name, release_id, body, content_type)
+  local url = base()
+    .. "/repos/"
+    .. owner
+    .. "/"
+    .. repo_name
+    .. "/releases/"
+    .. release_id
+    .. "/assets"
+  local opts = auth() or {}
+  opts.method = "POST"
+  opts.body = body
+  opts.headers = opts.headers or {}
+  opts.headers["Content-Type"] = content_type or "application/octet-stream"
+  local ok, status, _, raw_body = pcall(Fetch, url, opts)
+  if not ok then
+    return nil, cap_err(0, "network error uploading release asset")
+  end
+  if status ~= 201 and status ~= 200 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " uploading release asset")
+  end
+  return DecodeJson(raw_body) or {}, nil
+end
+
+-- get_asset: fetch a single release asset by numeric ID.
+releases.get_asset = function(owner, repo_name, asset_id)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/assets/" .. asset_id
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- update_asset: apply a partial update to a release asset.
+-- body: JSON-encoded string with updated name or label.
+releases.update_asset = function(owner, repo_name, asset_id, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/assets/" .. asset_id,
+    "PATCH",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- delete_asset: delete a release asset.
+-- Gitea returns 200; normalised to (true, nil) for cap_rest_204.
+releases.delete_asset = function(owner, repo_name, asset_id)
+  local ok, status = fetch_json(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/assets/" .. asset_id,
+    "DELETE"
+  )
+  if not ok then
+    return nil, cap_err(0, "network error deleting release asset")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting release asset")
+  end
+  return true, nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Meta capability module
+-- ---------------------------------------------------------------------------
+-- Health check, rate limit, gitignore templates, licenses, and repo-level
+-- license / pages endpoints.  These either pass Gitea data through unchanged
+-- or synthesise a minimal GitHub-shaped response.
+
+local meta_cap = {}
+
+-- health_check: probe the Gitea version endpoint.
+-- Returns ({}, nil) on success (caller writes 200 {}) or (nil, err) on failure.
+meta_cap.health_check = function()
+  local ok, status = pcall(Fetch, base() .. "/version", auth())
+  if not ok then
+    return nil, cap_err(0, "network error during health check")
+  end
+  if status ~= 200 then
+    return nil, cap_err(status, "upstream health check failed with status " .. tostring(status))
+  end
+  return {}, nil
+end
+
+-- get_rate_limit: fetch Gitea rate-limit data and wrap in GitHub's envelope.
+-- Returns ({rate = ...}, nil) on success or (nil, err) on failure.
+meta_cap.get_rate_limit = function()
+  local raw, err = cap_fetch(fetch_json, base() .. "/rate_limit")
+  if not raw then
+    return nil, err
+  end
+  return { rate = raw.rate or raw }, nil
+end
+
+-- list_gitignore_templates: fetch all available gitignore template names.
+meta_cap.list_gitignore_templates = function()
+  return cap_fetch(fetch_json, base() .. "/gitignores")
+end
+
+-- get_gitignore_template: fetch a single gitignore template by name.
+meta_cap.get_gitignore_template = function(name)
+  return cap_fetch(fetch_json, base() .. "/gitignores/" .. name)
+end
+
+-- list_licenses: fetch all available SPDX license templates.
+meta_cap.list_licenses = function()
+  return cap_fetch(fetch_json, base() .. "/licenses")
+end
+
+-- get_license: fetch a single license template by SPDX key.
+meta_cap.get_license = function(name)
+  return cap_fetch(fetch_json, base() .. "/licenses/" .. name)
+end
+
+-- get_repo_license: synthesise a GitHub-style license response for a repository.
+-- Gitea has no dedicated endpoint; we combine GET /contents/LICENSE with the repo
+-- object (which carries a .license field) using two upstream fetches.
+meta_cap.get_repo_license = function(owner, repo_name)
   local ok, status, _, body =
     fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/LICENSE")
   if not ok then
-    respond_json(503, {})
-    return
+    return nil, cap_err(0, "network error fetching repo license")
   end
   if status ~= 200 then
-    respond_json(status, {})
-    return
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " fetching repo license")
   end
   local content = DecodeJson(body) or {}
   local rok, rstatus, _, rbody = fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name)
   if rok and rstatus == 200 then
     content.license = (DecodeJson(rbody) or {}).license
   end
-  respond_json(200, content)
+  return content, nil
+end
+
+-- get_repo_pages: synthesise a GitHub Pages response by checking for a gh-pages branch.
+-- Returns a minimal Pages object when the branch exists, or (nil, err) otherwise.
+meta_cap.get_repo_pages = function(owner, repo_name)
+  local ok, status =
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/branches/gh-pages")
+  if not ok then
+    return nil, cap_err(0, "network error checking gh-pages branch")
+  end
+  if status ~= 200 then
+    return nil,
+      cap_err(status, "upstream error " .. tostring(status) .. " checking gh-pages branch")
+  end
+  return {
+    url = "",
+    status = "built",
+    cname = nil,
+    custom_404 = false,
+    html_url = config.base_url .. "/" .. owner .. "/" .. repo_name,
+    source = { branch = "gh-pages", path = "/" },
+    public = true,
+    https_enforced = false,
+    build_type = "legacy",
+  },
+    nil
+end
+
+-- Health check
+b:rest("get_root", function()
+  local data, err = meta_cap.health_check()
+  cap_rest_respond(data, err)
+end)
+
+b:rest("get_rate_limit", function()
+  local data, err = meta_cap.get_rate_limit()
+  cap_rest_respond(data, err)
+end)
+
+-- GET /gitignore/templates
+b:rest("get_gitignore_templates", function()
+  local data, err = meta_cap.list_gitignore_templates()
+  cap_rest_respond(data, err)
+end)
+
+-- GET /gitignore/templates/{name}
+b:rest("get_gitignore_template", function(name)
+  local data, err = meta_cap.get_gitignore_template(name)
+  cap_rest_respond(data, err)
+end)
+
+-- GET /licenses
+b:rest("get_licenses", function()
+  local data, err = meta_cap.list_licenses()
+  cap_rest_respond(data, err)
+end)
+
+-- GET /licenses/{license}
+b:rest("get_license", function(license_name)
+  local data, err = meta_cap.get_license(license_name)
+  cap_rest_respond(data, err)
+end)
+
+-- GET /repos/{owner}/{repo}/license
+-- Gitea has no dedicated endpoint; combine contents/LICENSE with repo license metadata.
+b:rest("get_repo_license", function(owner, repo_name)
+  local data, err = meta_cap.get_repo_license(owner, repo_name)
+  cap_rest_respond(data, err)
 end)
 
 -- GET /repos/{owner}/{repo}
@@ -1388,189 +2648,112 @@ end)
 
 -- GET /repos/{owner}/{repo}/topics
 b:rest("get_repo_topics", function(owner, repo_name)
-  proxy_json(function(t)
-    return { names = t.topics or t.names or {} }
-  end, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/topics"))
+  local data, err = repo_metadata.get_topics(owner, repo_name)
+  cap_rest_respond(data, err)
 end)
 
 -- PUT /repos/{owner}/{repo}/topics
 b:rest("put_repo_topics", function(owner, repo_name)
-  local req = DecodeJson(GetBody() or "{}")
-  proxy_json(
-    function(t)
-      return { names = t.topics or t.names or {} }
-    end,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/topics",
-      "PUT",
-      EncodeJson({ topics = req.names or {} })
-    )
-  )
+  local data, err = repo_metadata.put_topics(owner, repo_name, GetBody())
+  cap_rest_respond(data, err)
 end)
 
 -- GET /repos/{owner}/{repo}/languages
--- Both Gitea and GitHub return { "Language": bytes } — pass through.
 b:rest("get_repo_languages", function(owner, repo_name)
-  proxy_json(nil, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/languages"))
+  local data, err = repo_metadata.get_languages(owner, repo_name)
+  cap_rest_respond(data, err)
 end)
 
 -- GET /repos/{owner}/{repo}/contributors
--- Gitea uses "contributions"; GitHub uses "contributions" — same key, pass through.
 b:rest("get_repo_contributors", function(owner, repo_name)
-  proxy_json_paged(
-    nil,
-    PAGES,
-    fetch_json(
-      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contributors", PAGES)
-    )
-  )
+  local items, hdrs, err = repo_metadata.list_contributors(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 -- GET /repos/{owner}/{repo}/tags
--- Both Gitea and GitHub return [{ name, commit: { sha, url }, ... }] — pass through.
 b:rest("get_repo_tags", function(owner, repo_name)
-  proxy_json_paged(
-    nil,
-    PAGES,
-    fetch_json(
-      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/tags", PAGES)
-    )
-  )
+  local items, hdrs, err = repo_metadata.list_tags(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 -- Branches ------------------------------------------------------------------
 
--- Gitea branch objects use commit.id instead of GitHub's commit.sha.
 -- GET /repos/{owner}/{repo}/branches
 b:rest("get_repo_branches", function(owner, repo_name)
-  local function tr_branches(branches)
-    for _, br in ipairs(branches or {}) do
-      if br.commit then
-        br.commit.sha = br.commit.id
-      end
-    end
-    return branches or {}
-  end
-  proxy_json_paged(
-    tr_branches,
-    PAGES,
-    fetch_json(
-      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/branches", PAGES)
-    )
-  )
+  local items, hdrs, err = branches.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 -- GET /repos/{owner}/{repo}/branches/{branch}
 b:rest("get_repo_branch", function(owner, repo_name, branch)
-  proxy_json(function(br)
-    if br and br.commit then
-      br.commit.sha = br.commit.id
-    end
-    return br or {}
-  end, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/branches/" .. branch))
+  local data, err = branches.get(owner, repo_name, branch)
+  cap_rest_respond(data, err)
 end)
 
 -- Commits -------------------------------------------------------------------
 
 -- GET /repos/{owner}/{repo}/commits
 b:rest("get_repo_commits", function(owner, repo_name)
-  proxy_json_paged(
-    nil,
-    PAGES,
-    fetch_json(
-      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/commits", PAGES)
-    )
-  )
+  local items, hdrs, err = commits_cap.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 -- GET /repos/{owner}/{repo}/commits/{ref}
 b:rest("get_repo_commit", function(owner, repo_name, ref)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/commits/" .. ref)
-  )
+  local data, err = commits_cap.get(owner, repo_name, ref)
+  cap_rest_respond(data, err)
 end)
 
 -- Statuses ------------------------------------------------------------------
 
 -- GET /repos/{owner}/{repo}/commits/{ref}/statuses
 b:rest("get_commit_statuses", function(owner, repo_name, ref)
-  proxy_json_paged(
-    nil,
-    PAGES,
-    fetch_json(
-      append_page_params(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. ref,
-        PAGES
-      )
-    )
-  )
+  local items, hdrs, err = commits_cap.list_statuses(owner, repo_name, ref)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 -- GET /repos/{owner}/{repo}/commits/{ref}/status  (combined)
 b:rest("get_commit_combined_status", function(owner, repo_name, ref)
-  proxy_json(
-    nil,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/commits/" .. ref .. "/statuses"
-    )
-  )
+  local data, err = commits_cap.get_combined_status(owner, repo_name, ref)
+  cap_rest_respond(data, err)
 end)
 
 -- POST /repos/{owner}/{repo}/statuses/{sha}
 b:rest("post_commit_status", function(owner, repo_name, sha)
-  proxy_json_created(
-    nil,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. sha,
-      "POST",
-      GetBody()
-    )
-  )
+  local data, err = commits_cap.create_status(owner, repo_name, sha, GetBody())
+  cap_rest_created(data, err)
 end)
 
 -- Contents ------------------------------------------------------------------
 
 -- GET /repos/{owner}/{repo}/readme
 b:rest("get_repo_readme", function(owner, repo_name)
-  proxy_json(nil, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/readme"))
+  local data, err = contents.get_readme(owner, repo_name)
+  cap_rest_respond(data, err)
 end)
 
 -- GET /repos/{owner}/{repo}/readme/{dir}
 b:rest("get_repo_readme_dir", function(owner, repo_name, dir)
-  proxy_json(nil, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/readme/" .. dir))
+  local data, err = contents.get_readme_dir(owner, repo_name, dir)
+  cap_rest_respond(data, err)
 end)
 
 -- GET /repos/{owner}/{repo}/contents/{path}
 b:rest("get_repo_content", function(owner, repo_name, path)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/" .. path)
-  )
+  local data, err = contents.get(owner, repo_name, path)
+  cap_rest_respond(data, err)
 end)
 
 -- PUT /repos/{owner}/{repo}/contents/{path}
 b:rest("put_repo_content", function(owner, repo_name, path)
-  proxy_json(
-    nil,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/" .. path,
-      "PUT",
-      GetBody()
-    )
-  )
+  local data, err = contents.put(owner, repo_name, path, GetBody())
+  cap_rest_respond(data, err)
 end)
 
 -- DELETE /repos/{owner}/{repo}/contents/{path}
 b:rest("delete_repo_content", function(owner, repo_name, path)
-  proxy_json(
-    nil,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/contents/" .. path,
-      "DELETE",
-      GetBody()
-    )
-  )
+  local data, err = contents.delete(owner, repo_name, path, GetBody())
+  cap_rest_respond(data, err)
 end)
 
 -- GET /repos/{owner}/{repo}/tarball/{ref} — redirect to Gitea's archive URL
@@ -1596,464 +2779,384 @@ end)
 -- Compare -------------------------------------------------------------------
 
 -- GET /repos/{owner}/{repo}/compare/{basehead}
--- Gitea uses /{owner}/{repo}/compare/{base}...{head} (3 dots) in UI, but
--- the API endpoint uses {base}...{head} or {base}..{head} in the basehead param.
 b:rest("get_repo_compare", function(owner, repo_name, basehead)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/compare/" .. basehead)
-  )
+  local data, err = contents.compare(owner, repo_name, basehead)
+  cap_rest_respond(data, err)
 end)
 
 -- Collaborators -------------------------------------------------------------
 
 -- GET /repos/{owner}/{repo}/collaborators
 b:rest("get_repo_collaborators", function(owner, repo_name)
-  proxy_json_paged(
-    nil,
-    PAGES,
-    fetch_json(
-      append_page_params(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators",
-        PAGES
-      )
-    )
-  )
+  local items, hdrs, err = collaborators.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 -- GET /repos/{owner}/{repo}/collaborators/{username} — 204 if collaborator, 404 if not
 b:rest("get_repo_collaborator", function(owner, repo_name, username)
-  local ok, status = pcall(
-    Fetch,
-    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
-    auth()
-  )
-  if ok and status == 204 then
+  local ok, err = collaborators.check(owner, repo_name, username)
+  if ok then
     SetStatus(204, "No Content")
-  elseif ok then
-    respond_json(status, { message = "Not a collaborator" })
-  else
+  elseif err.status == 0 then
     respond_json(503, {})
+  else
+    respond_json(err.status, { message = "Not a collaborator" })
   end
 end)
 
 -- PUT /repos/{owner}/{repo}/collaborators/{username}
 b:rest("put_repo_collaborator", function(owner, repo_name, username)
-  proxy_204(
-    { 201 },
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
-      "PUT",
-      GetBody()
-    )
-  )
+  local ok, err = collaborators.add(owner, repo_name, username, GetBody())
+  cap_rest_204(ok, err)
 end)
 
 -- DELETE /repos/{owner}/{repo}/collaborators/{username}
 b:rest("delete_repo_collaborator", function(owner, repo_name, username)
-  proxy_204(
-    { 200 },
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
-      "DELETE"
-    )
-  )
+  local ok, err = collaborators.remove(owner, repo_name, username)
+  cap_rest_204(ok, err)
 end)
 
 -- GET /repos/{owner}/{repo}/collaborators/{username}/permission
 b:rest("get_repo_collaborator_permission", function(owner, repo_name, username)
-  proxy_json(
-    nil,
-    fetch_json(
-      base()
-        .. "/repos/"
-        .. owner
-        .. "/"
-        .. repo_name
-        .. "/collaborators/"
-        .. username
-        .. "/permission"
-    )
-  )
+  local data, err = collaborators.get_permission(owner, repo_name, username)
+  cap_rest_respond(data, err)
 end)
 
 -- Forks ---------------------------------------------------------------------
 
 -- GET /repos/{owner}/{repo}/forks
 b:rest("get_repo_forks", function(owner, repo_name)
-  proxy_json_paged(
-    translate_repos,
-    PAGES,
-    fetch_json(
-      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/forks", PAGES)
-    )
-  )
+  local items, hdrs, err = forks.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 -- POST /repos/{owner}/{repo}/forks
 b:rest("post_repo_forks", function(owner, repo_name)
-  proxy_json_created(
-    translate_repo,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/forks", "POST", GetBody())
-  )
+  local data, err = forks.create(owner, repo_name, GetBody())
+  cap_rest_created(data, err)
 end)
 
 -- Releases ------------------------------------------------------------------
 
 -- GET /repos/{owner}/{repo}/releases
 b:rest("get_repo_releases", function(owner, repo_name)
-  proxy_json_paged(
-    nil,
-    PAGES,
-    fetch_json(
-      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases", PAGES)
-    )
-  )
+  cap_rest_paged(releases.list(owner, repo_name))
 end)
 
 -- POST /repos/{owner}/{repo}/releases
 b:rest("post_repo_releases", function(owner, repo_name)
-  proxy_json_created(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases", "POST", GetBody())
-  )
+  cap_rest_created(releases.create(owner, repo_name, GetBody()))
 end)
 
 -- GET /repos/{owner}/{repo}/releases/latest
 b:rest("get_repo_release_latest", function(owner, repo_name)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/latest")
-  )
+  cap_rest_respond(releases.get_latest(owner, repo_name))
 end)
 
 -- GET /repos/{owner}/{repo}/releases/tags/{tag}
 b:rest("get_repo_release_by_tag", function(owner, repo_name, tag)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/tags/" .. tag)
-  )
+  cap_rest_respond(releases.get_by_tag(owner, repo_name, tag))
 end)
 
 -- GET /repos/{owner}/{repo}/releases/{release_id}
 b:rest("get_repo_release", function(owner, repo_name, release_id)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id)
-  )
+  cap_rest_respond(releases.get(owner, repo_name, release_id))
 end)
 
 -- PATCH /repos/{owner}/{repo}/releases/{release_id}
 b:rest("patch_repo_release", function(owner, repo_name, release_id)
-  proxy_json(
-    nil,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id,
-      "PATCH",
-      GetBody()
-    )
-  )
+  cap_rest_respond(releases.update(owner, repo_name, release_id, GetBody()))
 end)
 
 -- DELETE /repos/{owner}/{repo}/releases/{release_id}
 b:rest("delete_repo_release", function(owner, repo_name, release_id)
-  proxy_204(
-    { 200 },
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id,
-      "DELETE"
-    )
-  )
+  cap_rest_204(releases.delete(owner, repo_name, release_id))
 end)
 
 -- GET /repos/{owner}/{repo}/releases/{release_id}/assets
 b:rest("get_repo_release_assets", function(owner, repo_name, release_id)
-  proxy_json_paged(
-    nil,
-    PAGES,
-    fetch_json(
-      append_page_params(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/" .. release_id .. "/assets",
-        PAGES
-      )
-    )
-  )
+  cap_rest_paged(releases.list_assets(owner, repo_name, release_id))
 end)
 
 -- POST /repos/{owner}/{repo}/releases/{release_id}/assets — multipart; pass through
 b:rest("post_repo_release_assets", function(owner, repo_name, release_id)
-  -- Gitea uses the same multipart upload path; proxy the entire request.
-  -- The Content-Type header (multipart/form-data) must be forwarded.
-  local url = base()
-    .. "/repos/"
-    .. owner
-    .. "/"
-    .. repo_name
-    .. "/releases/"
-    .. release_id
-    .. "/assets"
-  local opts = auth() or {}
-  opts.method = "POST"
-  opts.body = GetBody()
-  opts.headers = opts.headers or {}
-  opts.headers["Content-Type"] = GetHeader("Content-Type") or "application/octet-stream"
-  proxy_json_created(nil, pcall(Fetch, url, opts))
+  -- Gitea uses the same multipart upload path; Content-Type must be forwarded.
+  local content_type = GetHeader("Content-Type") or "application/octet-stream"
+  cap_rest_created(releases.upload_asset(owner, repo_name, release_id, GetBody(), content_type))
 end)
 
 -- GET /repos/{owner}/{repo}/releases/assets/{asset_id}
 b:rest("get_repo_release_asset", function(owner, repo_name, asset_id)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/assets/" .. asset_id)
-  )
+  cap_rest_respond(releases.get_asset(owner, repo_name, asset_id))
 end)
 
 -- PATCH /repos/{owner}/{repo}/releases/assets/{asset_id}
 b:rest("patch_repo_release_asset", function(owner, repo_name, asset_id)
-  proxy_json(
-    nil,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/assets/" .. asset_id,
-      "PATCH",
-      GetBody()
-    )
-  )
+  cap_rest_respond(releases.update_asset(owner, repo_name, asset_id, GetBody()))
 end)
 
 -- DELETE /repos/{owner}/{repo}/releases/assets/{asset_id}
 b:rest("delete_repo_release_asset", function(owner, repo_name, asset_id)
-  proxy_204(
-    { 200 },
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/releases/assets/" .. asset_id,
-      "DELETE"
-    )
-  )
+  cap_rest_204(releases.delete_asset(owner, repo_name, asset_id))
 end)
 
 -- Deploy keys ---------------------------------------------------------------
 
+local deploy_keys = {}
+
+deploy_keys.list = function(owner, repo_name)
+  local url = append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+deploy_keys.create = function(owner, repo_name, body)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys", "POST", body)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+deploy_keys.get = function(owner, repo_name, key_id)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys/" .. key_id)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+deploy_keys.delete = function(owner, repo_name, key_id)
+  local ok, status =
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys/" .. key_id, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting deploy key")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting deploy key")
+  end
+  return true, nil
+end
+
 -- GET /repos/{owner}/{repo}/keys
 b:rest("get_repo_keys", function(owner, repo_name)
-  proxy_json_paged(
-    nil,
-    PAGES,
-    fetch_json(
-      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys", PAGES)
-    )
-  )
+  cap_rest_paged(deploy_keys.list(owner, repo_name))
 end)
 
 -- POST /repos/{owner}/{repo}/keys
 b:rest("post_repo_keys", function(owner, repo_name)
-  proxy_json_created(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys", "POST", GetBody())
-  )
+  cap_rest_created(deploy_keys.create(owner, repo_name, GetBody()))
 end)
 
 -- GET /repos/{owner}/{repo}/keys/{key_id}
 b:rest("get_repo_key", function(owner, repo_name, key_id)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys/" .. key_id)
-  )
+  cap_rest_respond(deploy_keys.get(owner, repo_name, key_id))
 end)
 
 -- DELETE /repos/{owner}/{repo}/keys/{key_id}
 b:rest("delete_repo_key", function(owner, repo_name, key_id)
-  proxy_204(
-    { 200 },
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/keys/" .. key_id, "DELETE")
-  )
+  cap_rest_204(deploy_keys.delete(owner, repo_name, key_id))
 end)
 
 -- Webhooks ------------------------------------------------------------------
 
--- GET /repos/{owner}/{repo}/hooks
-b:rest("get_repo_hooks", function(owner, repo_name)
-  proxy_json_paged(
-    nil,
-    PAGES,
-    fetch_json(
-      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks", PAGES)
-    )
-  )
-end)
+local webhooks = {}
 
--- POST /repos/{owner}/{repo}/hooks
-b:rest("post_repo_hooks", function(owner, repo_name)
-  proxy_json_created(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks", "POST", GetBody())
-  )
-end)
-
--- GET /repos/{owner}/{repo}/hooks/{hook_id}
-b:rest("get_repo_hook", function(owner, repo_name, hook_id)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id)
-  )
-end)
-
--- PATCH /repos/{owner}/{repo}/hooks/{hook_id}
-b:rest("patch_repo_hook", function(owner, repo_name, hook_id)
-  proxy_json(
-    nil,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id,
-      "PATCH",
-      GetBody()
-    )
-  )
-end)
-
--- DELETE /repos/{owner}/{repo}/hooks/{hook_id}
-b:rest("delete_repo_hook", function(owner, repo_name, hook_id)
-  proxy_204(
-    { 200 },
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id, "DELETE")
-  )
-end)
-
--- GET /repos/{owner}/{repo}/hooks/{hook_id}/config
--- Gitea stores config inline in the hook object; extract the config sub-object.
-b:rest("get_repo_hook_config", function(owner, repo_name, hook_id)
-  proxy_json(function(hook)
-    return hook.config or {}
-  end, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id))
-end)
-
--- PATCH /repos/{owner}/{repo}/hooks/{hook_id}/config
--- Gitea has no separate config endpoint; merge into a full PATCH.
-b:rest("patch_repo_hook_config", function(owner, repo_name, hook_id)
-  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id
-  -- Fetch current hook, merge new config, write back.
-  local ok, status, _, body = fetch_json(url)
-  if not ok or status ~= 200 then
-    if ok then
-      respond_json(status, {})
-    else
-      respond_json(503, {})
-    end
-    return
+webhooks.list = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
   end
-  local hook = DecodeJson(body) or {}
-  local new_config = DecodeJson(GetBody() or "{}")
+  return items, hdrs, nil
+end
+
+webhooks.create = function(owner, repo_name, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+webhooks.get = function(owner, repo_name, hook_id)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+webhooks.update = function(owner, repo_name, hook_id, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id,
+    "PATCH",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+webhooks.delete = function(owner, repo_name, hook_id)
+  local ok, status =
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting webhook")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting webhook")
+  end
+  return true, nil
+end
+
+-- Gitea stores config inline in the hook object; extract the config sub-object.
+webhooks.get_config = function(owner, repo_name, hook_id)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id)
+  if not raw then
+    return nil, err
+  end
+  return raw.config or {}, nil
+end
+
+-- Gitea has no separate config endpoint; merge new_config into a full PATCH.
+webhooks.update_config = function(owner, repo_name, hook_id, new_config)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id
+  local hook, err = cap_fetch(fetch_json, url)
+  if not hook then
+    return nil, err
+  end
   hook.config = hook.config or {}
   for k, v in pairs(new_config) do
     hook.config[k] = v
   end
-  proxy_json(function(h)
-    return h.config or {}
-  end, fetch_json(url, "PATCH", EncodeJson(hook)))
+  local updated, err2 = cap_fetch(fetch_json, url, "PATCH", EncodeJson(hook))
+  if not updated then
+    return nil, err2
+  end
+  return updated.config or {}, nil
+end
+
+webhooks.test = function(owner, repo_name, hook_id)
+  local ok, status = fetch_json(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id .. "/tests",
+    "POST"
+  )
+  if not ok then
+    return nil, cap_err(0, "network error testing webhook")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " testing webhook")
+  end
+  return true, nil
+end
+
+-- GET /repos/{owner}/{repo}/hooks
+b:rest("get_repo_hooks", function(owner, repo_name)
+  cap_rest_paged(webhooks.list(owner, repo_name))
+end)
+
+-- POST /repos/{owner}/{repo}/hooks
+b:rest("post_repo_hooks", function(owner, repo_name)
+  cap_rest_created(webhooks.create(owner, repo_name, GetBody()))
+end)
+
+-- GET /repos/{owner}/{repo}/hooks/{hook_id}
+b:rest("get_repo_hook", function(owner, repo_name, hook_id)
+  cap_rest_respond(webhooks.get(owner, repo_name, hook_id))
+end)
+
+-- PATCH /repos/{owner}/{repo}/hooks/{hook_id}
+b:rest("patch_repo_hook", function(owner, repo_name, hook_id)
+  cap_rest_respond(webhooks.update(owner, repo_name, hook_id, GetBody()))
+end)
+
+-- DELETE /repos/{owner}/{repo}/hooks/{hook_id}
+b:rest("delete_repo_hook", function(owner, repo_name, hook_id)
+  cap_rest_204(webhooks.delete(owner, repo_name, hook_id))
+end)
+
+-- GET /repos/{owner}/{repo}/hooks/{hook_id}/config
+b:rest("get_repo_hook_config", function(owner, repo_name, hook_id)
+  cap_rest_respond(webhooks.get_config(owner, repo_name, hook_id))
+end)
+
+-- PATCH /repos/{owner}/{repo}/hooks/{hook_id}/config
+b:rest("patch_repo_hook_config", function(owner, repo_name, hook_id)
+  local new_config = DecodeJson(GetBody() or "{}") or {}
+  cap_rest_respond(webhooks.update_config(owner, repo_name, hook_id, new_config))
 end)
 
 -- POST /repos/{owner}/{repo}/hooks/{hook_id}/tests
 b:rest("post_repo_hook_test", function(owner, repo_name, hook_id)
-  proxy_204(
-    { 200 },
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/hooks/" .. hook_id .. "/tests",
-      "POST"
-    )
-  )
+  cap_rest_204(webhooks.test(owner, repo_name, hook_id))
 end)
 
 -- Users' repos --------------------------------------------------------------
 
 -- GET /users/{username}/repos
 b:rest("get_users_repos", function(username)
-  proxy_json_paged(
-    translate_repos,
-    PAGES,
-    fetch_json(append_page_params(base() .. "/users/" .. username .. "/repos", PAGES))
-  )
+  local items, hdrs, err = repos.list_by_user(username)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 -- GET /repositories (public repos list) — use Gitea's repo search
 b:rest("get_repositories", function()
-  proxy_json_paged(function(data)
-    return translate_repos(data.data or {})
-  end, PAGES, fetch_json(append_page_params(base() .. "/repos/search", PAGES)))
+  local items, hdrs, err = repos.list_all()
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 -- Commit comments -----------------------------------------------------------
 
 -- GET /repos/{owner}/{repo}/comments
 b:rest("get_repo_comments", function(owner, repo_name)
-  proxy_json_paged(
-    nil,
-    PAGES,
-    fetch_json(
-      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments", PAGES)
-    )
-  )
+  local items, hdrs, err = commit_comments.list_repo(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 -- GET /repos/{owner}/{repo}/comments/{comment_id}
 b:rest("get_repo_comment", function(owner, repo_name, comment_id)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments/" .. comment_id)
-  )
+  local data, err = commit_comments.get(owner, repo_name, comment_id)
+  cap_rest_respond(data, err)
 end)
 
 -- PATCH /repos/{owner}/{repo}/comments/{comment_id}
 b:rest("patch_repo_comment", function(owner, repo_name, comment_id)
-  proxy_json(
-    nil,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments/" .. comment_id,
-      "PATCH",
-      GetBody()
-    )
-  )
+  local data, err = commit_comments.update(owner, repo_name, comment_id, GetBody())
+  cap_rest_respond(data, err)
 end)
 
 -- DELETE /repos/{owner}/{repo}/comments/{comment_id}
 b:rest("delete_repo_comment", function(owner, repo_name, comment_id)
-  proxy_204(
-    { 200 },
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/comments/" .. comment_id,
-      "DELETE"
-    )
-  )
+  local ok, err = commit_comments.delete(owner, repo_name, comment_id)
+  cap_rest_204(ok, err)
 end)
 
 -- GET /repos/{owner}/{repo}/commits/{commit_sha}/comments
 b:rest("get_commit_comments", function(owner, repo_name, commit_sha)
-  proxy_json_paged(
-    nil,
-    PAGES,
-    fetch_json(
-      append_page_params(
-        base()
-          .. "/repos/"
-          .. owner
-          .. "/"
-          .. repo_name
-          .. "/git/commits/"
-          .. commit_sha
-          .. "/notes",
-        PAGES
-      )
-    )
-  )
+  local items, hdrs, err = commit_comments.list_commit(owner, repo_name, commit_sha)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 -- POST /repos/{owner}/{repo}/commits/{commit_sha}/comments
 b:rest("post_commit_comment", function(owner, repo_name, commit_sha)
-  proxy_json_created(
-    nil,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/commits/" .. commit_sha .. "/notes",
-      "POST",
-      GetBody()
-    )
-  )
+  local data, err = commit_comments.create(owner, repo_name, commit_sha, GetBody())
+  cap_rest_created(data, err)
 end)
 
 -- Users ---------------------------------------------------------------------
@@ -2096,24 +3199,26 @@ end)
 
 -- GET /user/following/{username} — 204 if following, 404 if not
 b:rest("get_user_is_following", function(username)
-  local ok, status = pcall(Fetch, base() .. "/user/following/" .. username, auth())
-  if ok and status == 204 then
-    SetStatus(204, "No Content")
-  elseif ok then
-    respond_json(404, { message = "Not Following" })
-  else
+  local ok, err = users.is_following(username)
+  if err and err.status == 0 then
     respond_json(503, {})
+  elseif ok then
+    SetStatus(204, "No Content")
+  else
+    respond_json(404, { message = "Not Following" })
   end
 end)
 
 -- PUT /user/following/{username}
 b:rest("put_user_following", function(username)
-  set_204_or_error("PUT", base() .. "/user/following/" .. username)
+  local ok, err = users.follow(username)
+  cap_rest_204(ok, err)
 end)
 
 -- DELETE /user/following/{username}
 b:rest("delete_user_following", function(username)
-  set_204_or_error("DELETE", base() .. "/user/following/" .. username)
+  local ok, err = users.unfollow(username)
+  cap_rest_204(ok, err)
 end)
 
 -- GET /users/{username}/followers
@@ -2130,157 +3235,235 @@ end)
 
 -- SSH Keys ------------------------------------------------------------------
 
+local ssh_keys = {}
+
+ssh_keys.list = function()
+  local url = append_page_params(base() .. "/user/keys", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+ssh_keys.create = function(body)
+  local raw, err = cap_fetch(fetch_json, base() .. "/user/keys", "POST", body)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+ssh_keys.get = function(key_id)
+  local raw, err = cap_fetch(fetch_json, base() .. "/user/keys/" .. key_id)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+ssh_keys.delete = function(key_id)
+  local ok, status = fetch_json(base() .. "/user/keys/" .. key_id, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting SSH key")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting SSH key")
+  end
+  return true, nil
+end
+
+ssh_keys.list_user = function(username)
+  local url = append_page_params(base() .. "/users/" .. username .. "/keys", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
 -- GET /user/keys
-b:rest(
-  "get_user_keys",
-  proxy_handler_paged(nil, function()
-    return append_page_params(base() .. "/user/keys", PAGES)
-  end)
-)
+b:rest("get_user_keys", function()
+  cap_rest_paged(ssh_keys.list())
+end)
 
 -- POST /user/keys
 b:rest("post_user_keys", function()
-  proxy_json_created(nil, fetch_json(base() .. "/user/keys", "POST", GetBody()))
+  cap_rest_created(ssh_keys.create(GetBody()))
 end)
 
 -- GET /user/keys/{key_id}
-b:rest(
-  "get_user_key",
-  proxy_handler(nil, function(id)
-    return base() .. "/user/keys/" .. id
-  end)
-)
+b:rest("get_user_key", function(key_id)
+  cap_rest_respond(ssh_keys.get(key_id))
+end)
 
 -- DELETE /user/keys/{key_id}
 b:rest("delete_user_key", function(key_id)
-  proxy_204({ 200 }, fetch_json(base() .. "/user/keys/" .. key_id, "DELETE"))
+  cap_rest_204(ssh_keys.delete(key_id))
 end)
 
 -- GET /users/{username}/keys
-b:rest(
-  "get_users_keys",
-  proxy_handler_paged(nil, function(u)
-    return append_page_params(base() .. "/users/" .. u .. "/keys", PAGES)
-  end)
-)
+b:rest("get_users_keys", function(username)
+  cap_rest_paged(ssh_keys.list_user(username))
+end)
 
 -- GPG Keys ------------------------------------------------------------------
 
+local gpg_keys = {}
+
+gpg_keys.list = function()
+  local url = append_page_params(base() .. "/user/gpg_keys", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+gpg_keys.create = function(body)
+  local raw, err = cap_fetch(fetch_json, base() .. "/user/gpg_keys", "POST", body)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+gpg_keys.get = function(gpg_key_id)
+  local raw, err = cap_fetch(fetch_json, base() .. "/user/gpg_keys/" .. gpg_key_id)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+gpg_keys.delete = function(gpg_key_id)
+  local ok, status = fetch_json(base() .. "/user/gpg_keys/" .. gpg_key_id, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting GPG key")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting GPG key")
+  end
+  return true, nil
+end
+
+gpg_keys.list_user = function(username)
+  local url = append_page_params(base() .. "/users/" .. username .. "/gpg_keys", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
 -- GET /user/gpg_keys
-b:rest(
-  "get_user_gpg_keys",
-  proxy_handler_paged(nil, function()
-    return append_page_params(base() .. "/user/gpg_keys", PAGES)
-  end)
-)
+b:rest("get_user_gpg_keys", function()
+  cap_rest_paged(gpg_keys.list())
+end)
 
 -- POST /user/gpg_keys
 b:rest("post_user_gpg_keys", function()
-  proxy_json_created(nil, fetch_json(base() .. "/user/gpg_keys", "POST", GetBody()))
+  cap_rest_created(gpg_keys.create(GetBody()))
 end)
 
 -- GET /user/gpg_keys/{gpg_key_id}
-b:rest(
-  "get_user_gpg_key",
-  proxy_handler(nil, function(id)
-    return base() .. "/user/gpg_keys/" .. id
-  end)
-)
+b:rest("get_user_gpg_key", function(gpg_key_id)
+  cap_rest_respond(gpg_keys.get(gpg_key_id))
+end)
 
 -- DELETE /user/gpg_keys/{gpg_key_id}
 b:rest("delete_user_gpg_key", function(gpg_key_id)
-  proxy_204({ 200 }, fetch_json(base() .. "/user/gpg_keys/" .. gpg_key_id, "DELETE"))
+  cap_rest_204(gpg_keys.delete(gpg_key_id))
 end)
 
 -- GET /users/{username}/gpg_keys
-b:rest(
-  "get_users_gpg_keys",
-  proxy_handler_paged(nil, function(u)
-    return append_page_params(base() .. "/users/" .. u .. "/gpg_keys", PAGES)
-  end)
-)
+b:rest("get_users_gpg_keys", function(username)
+  cap_rest_paged(gpg_keys.list_user(username))
+end)
 
 -- Emails --------------------------------------------------------------------
 
+local user_emails = {}
+
+user_emails.list = function()
+  local raw, err = cap_fetch(fetch_json, base() .. "/user/emails")
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+user_emails.add = function(body)
+  local raw, err = cap_fetch(fetch_json, base() .. "/user/emails", "POST", body)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- DELETE with a body requires a full Fetch call; Gitea returns 200 on success.
+user_emails.delete = function(body)
+  local opts = auth() or {}
+  opts.method = "DELETE"
+  opts.body = body
+  opts.headers = opts.headers or {}
+  opts.headers["Content-Type"] = "application/json"
+  local ok, status = pcall(Fetch, base() .. "/user/emails", opts)
+  if not ok then
+    return nil, cap_err(0, "network error deleting user emails")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting user emails")
+  end
+  return true, nil
+end
+
+-- Gitea has no separate public-emails endpoint; filter verified from /user/emails.
+user_emails.list_public = function()
+  local raw, err = cap_fetch(fetch_json, base() .. "/user/emails")
+  if not raw then
+    return nil, err
+  end
+  return filter_verified_emails(raw), nil
+end
+
 -- GET /user/emails
-b:rest(
-  "get_user_emails",
-  proxy_handler(nil, function()
-    return base() .. "/user/emails"
-  end)
-)
+b:rest("get_user_emails", function()
+  cap_rest_respond(user_emails.list())
+end)
 
 -- POST /user/emails
 b:rest("post_user_emails", function()
-  proxy_json_created(nil, fetch_json(base() .. "/user/emails", "POST", GetBody()))
+  cap_rest_created(user_emails.add(GetBody()))
 end)
 
 -- DELETE /user/emails
 b:rest("delete_user_emails", function()
-  local opts = auth() or {}
-  opts.method = "DELETE"
-  opts.body = GetBody()
-  opts.headers = opts.headers or {}
-  opts.headers["Content-Type"] = "application/json"
-  proxy_204({ 200 }, pcall(Fetch, base() .. "/user/emails", opts))
+  cap_rest_204(user_emails.delete(GetBody()))
 end)
 
 -- GET /user/public_emails — Gitea has no separate endpoint; filter verified from /user/emails
-b:rest(
-  "get_user_public_emails",
-  proxy_handler(filter_verified_emails, function()
-    return base() .. "/user/emails"
-  end)
-)
+b:rest("get_user_public_emails", function()
+  cap_rest_respond(user_emails.list_public())
+end)
 
 -- Teams ---------------------------------------------------------------------
 -- Gitea teams use numeric IDs, not slugs.  find_team_id lists all teams for
 -- the org and matches by lowercased, slugified name.
 
--- GET /orgs/{org}/teams
-b:rest("get_org_teams", function(org)
-  proxy_json_paged(function(teams)
-    for i, t in ipairs(teams) do
-      teams[i] = translate_gitea_team(t)
-    end
-    return teams
-  end, PAGES, fetch_json(append_page_params(base() .. "/orgs/" .. org .. "/teams", PAGES)))
-end)
+local teams = {}
 
--- POST /orgs/{org}/teams
-b:rest("post_org_teams", function(org)
-  local req = DecodeJson(GetBody() or "{}")
-  local body = {
-    name = req.name,
-    description = req.description,
-    permission = req.permission == "admin" and "owner" or (req.permission or "read"),
-    units = { "repo.code", "repo.issues", "repo.pulls", "repo.releases" },
-    includes_all_repositories = false,
-  }
-  proxy_json_created(
-    translate_gitea_team,
-    fetch_json(base() .. "/orgs/" .. org .. "/teams", "POST", EncodeJson(body))
-  )
-end)
-
--- GET /orgs/{org}/teams/{team_slug}
-b:rest("get_org_team", function(org, slug)
+-- Internal: resolve slug to numeric ID; returns (id, nil) or (nil, cap_err).
+local function team_id_of(org, slug)
   local id = gitea_find_team_id(org, slug)
   if not id then
-    respond_json(404, { message = "Not Found" })
-    return
+    return nil, cap_err(404, "Not Found")
   end
-  proxy_json(translate_gitea_team, fetch_json(base() .. "/teams/" .. id))
-end)
+  return id, nil
+end
 
--- PATCH /orgs/{org}/teams/{team_slug}
-b:rest("patch_org_team", function(org, slug)
-  local id = gitea_find_team_id(org, slug)
-  if not id then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  local req = DecodeJson(GetBody() or "{}")
+-- Internal: build the permission-normalised Gitea team body from a GitHub request.
+local function gitea_team_body(req)
   local body = {}
   if req.name then
     body.name = req.name
@@ -2291,145 +3474,404 @@ b:rest("patch_org_team", function(org, slug)
   if req.permission then
     body.permission = req.permission == "admin" and "owner" or req.permission
   end
-  proxy_json(translate_gitea_team, fetch_json(base() .. "/teams/" .. id, "PATCH", EncodeJson(body)))
+  return body
+end
+
+-- Org-level (slug-based) ----------------------------------------------------
+
+teams.list_org = function(org)
+  local url = append_page_params(base() .. "/orgs/" .. org .. "/teams", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gitea_team, items), hdrs, nil
+end
+
+teams.create = function(org, body)
+  local req = DecodeJson(body or "{}") or {}
+  local gitea_body = {
+    name = req.name,
+    description = req.description,
+    permission = req.permission == "admin" and "owner" or (req.permission or "read"),
+    units = { "repo.code", "repo.issues", "repo.pulls", "repo.releases" },
+    includes_all_repositories = false,
+  }
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/orgs/" .. org .. "/teams", "POST", EncodeJson(gitea_body))
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_team(raw), nil
+end
+
+teams.get_by_slug = function(org, slug)
+  local id, err = team_id_of(org, slug)
+  if not id then
+    return nil, err
+  end
+  local raw, e = cap_fetch(fetch_json, base() .. "/teams/" .. id)
+  if not raw then
+    return nil, e
+  end
+  return translate_gitea_team(raw), nil
+end
+
+teams.update_by_slug = function(org, slug, body)
+  local id, err = team_id_of(org, slug)
+  if not id then
+    return nil, err
+  end
+  local req = DecodeJson(body or "{}") or {}
+  local raw, e =
+    cap_fetch(fetch_json, base() .. "/teams/" .. id, "PATCH", EncodeJson(gitea_team_body(req)))
+  if not raw then
+    return nil, e
+  end
+  return translate_gitea_team(raw), nil
+end
+
+teams.delete_by_slug = function(org, slug)
+  local id, err = team_id_of(org, slug)
+  if not id then
+    return nil, err
+  end
+  local ok, status = fetch_json(base() .. "/teams/" .. id, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting team")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting team")
+  end
+  return true, nil
+end
+
+teams.list_members_by_slug = function(org, slug)
+  local id, err = team_id_of(org, slug)
+  if not id then
+    return nil, nil, err
+  end
+  local url = append_page_params(base() .. "/teams/" .. id .. "/members", PAGES)
+  local items, hdrs, e = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, e
+  end
+  return translate_list(translate_user, items), hdrs, nil
+end
+
+-- Returns ({url,role,state}, nil) on 204 or (nil, err) otherwise.
+teams.get_membership_by_slug = function(org, slug, username)
+  local id, err = team_id_of(org, slug)
+  if not id then
+    return nil, err
+  end
+  local ok, status = fetch_json(base() .. "/teams/" .. id .. "/members/" .. username)
+  if not ok then
+    return nil, cap_err(0, "network error checking membership")
+  end
+  if status == 204 then
+    return { url = "", role = "member", state = "active" }, nil
+  end
+  return nil, cap_err(404, "Not Found")
+end
+
+-- Adds a member; returns ({url,role,state}, nil) on 200/204.
+teams.add_membership_by_slug = function(org, slug, username)
+  local id, err = team_id_of(org, slug)
+  if not id then
+    return nil, err
+  end
+  local ok, status = fetch_json(base() .. "/teams/" .. id .. "/members/" .. username, "PUT")
+  if not ok then
+    return nil, cap_err(0, "network error adding membership")
+  end
+  if status == 200 or status == 204 then
+    return { url = "", role = "member", state = "active" }, nil
+  end
+  return nil, cap_err(status, "upstream error " .. tostring(status) .. " adding membership")
+end
+
+teams.delete_membership_by_slug = function(org, slug, username)
+  local id, err = team_id_of(org, slug)
+  if not id then
+    return nil, err
+  end
+  local ok, status = fetch_json(base() .. "/teams/" .. id .. "/members/" .. username, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting membership")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting membership")
+  end
+  return true, nil
+end
+
+teams.list_repos_by_slug = function(org, slug)
+  local id, err = team_id_of(org, slug)
+  if not id then
+    return nil, nil, err
+  end
+  local url = append_page_params(base() .. "/teams/" .. id .. "/repos", PAGES)
+  local items, hdrs, e = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, e
+  end
+  return translate_list(translate_repo, items), hdrs, nil
+end
+
+teams.get_repo_by_slug = function(org, slug, owner, repo_name)
+  local id, err = team_id_of(org, slug)
+  if not id then
+    return nil, err
+  end
+  return teams.get_repo(id, owner, repo_name)
+end
+
+teams.add_repo_by_slug = function(org, slug, owner, repo_name)
+  local id, err = team_id_of(org, slug)
+  if not id then
+    return nil, err
+  end
+  return teams.add_repo(id, owner, repo_name)
+end
+
+teams.delete_repo_by_slug = function(org, slug, owner, repo_name)
+  local id, err = team_id_of(org, slug)
+  if not id then
+    return nil, err
+  end
+  return teams.delete_repo(id, owner, repo_name)
+end
+
+-- Legacy by-ID operations ---------------------------------------------------
+
+teams.list_user = function()
+  local url = append_page_params(base() .. "/user/teams", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gitea_team, items), hdrs, nil
+end
+
+teams.get = function(team_id)
+  local raw, err = cap_fetch(fetch_json, base() .. "/teams/" .. team_id)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_team(raw), nil
+end
+
+teams.update = function(team_id, body)
+  local req = DecodeJson(body or "{}") or {}
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/teams/" .. team_id, "PATCH", EncodeJson(gitea_team_body(req)))
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_team(raw), nil
+end
+
+teams.delete = function(team_id)
+  local ok, status = fetch_json(base() .. "/teams/" .. team_id, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting team")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting team")
+  end
+  return true, nil
+end
+
+teams.list_members = function(team_id)
+  local url = append_page_params(base() .. "/teams/" .. team_id .. "/members", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_user, items), hdrs, nil
+end
+
+-- Returns (true, nil) if member, (false, nil) if not, (nil, err) on network error.
+teams.is_member = function(team_id, username)
+  local ok, status = fetch_json(base() .. "/teams/" .. team_id .. "/members/" .. username)
+  if not ok then
+    return nil, cap_err(0, "network error checking team membership")
+  end
+  if status == 204 then
+    return true, nil
+  end
+  return false, nil
+end
+
+teams.add_member = function(team_id, username)
+  local ok, status = fetch_json(base() .. "/teams/" .. team_id .. "/members/" .. username, "PUT")
+  if not ok then
+    return nil, cap_err(0, "network error adding team member")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " adding team member")
+  end
+  return true, nil
+end
+
+teams.delete_member = function(team_id, username)
+  local ok, status = fetch_json(base() .. "/teams/" .. team_id .. "/members/" .. username, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting team member")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting team member")
+  end
+  return true, nil
+end
+
+teams.get_membership = function(team_id, username)
+  local ok, status = fetch_json(base() .. "/teams/" .. team_id .. "/members/" .. username)
+  if not ok then
+    return nil, cap_err(0, "network error checking team membership")
+  end
+  if status == 204 then
+    return { url = "", role = "member", state = "active" }, nil
+  end
+  return nil, cap_err(404, "Not Found")
+end
+
+teams.add_membership = function(team_id, username)
+  local ok, status = fetch_json(base() .. "/teams/" .. team_id .. "/members/" .. username, "PUT")
+  if not ok then
+    return nil, cap_err(0, "network error adding team membership")
+  end
+  if status == 200 or status == 204 then
+    return { url = "", role = "member", state = "active" }, nil
+  end
+  return nil, cap_err(status, "upstream error " .. tostring(status) .. " adding team membership")
+end
+
+teams.delete_membership = function(team_id, username)
+  local ok, status = fetch_json(base() .. "/teams/" .. team_id .. "/members/" .. username, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting team membership")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil,
+      cap_err(status, "upstream error " .. tostring(status) .. " deleting team membership")
+  end
+  return true, nil
+end
+
+teams.list_repos = function(team_id)
+  local url = append_page_params(base() .. "/teams/" .. team_id .. "/repos", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_repo, items), hdrs, nil
+end
+
+-- Returns (translated_repo, nil) on 200/204 or (nil, err) otherwise.
+teams.get_repo = function(team_id, owner, repo_name)
+  local ok, status, _, body =
+    fetch_json(base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name)
+  if not ok then
+    return nil, cap_err(0, "network error getting team repo")
+  end
+  if status == 200 then
+    return translate_repo(DecodeJson(body) or {}), nil
+  end
+  if status == 204 then
+    return translate_repo({}), nil
+  end
+  return nil, cap_err(404, "Not Found")
+end
+
+teams.add_repo = function(team_id, owner, repo_name)
+  local ok, status =
+    fetch_json(base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name, "PUT")
+  if not ok then
+    return nil, cap_err(0, "network error adding repo to team")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " adding repo to team")
+  end
+  return true, nil
+end
+
+teams.delete_repo = function(team_id, owner, repo_name)
+  local ok, status =
+    fetch_json(base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error removing repo from team")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " removing repo from team")
+  end
+  return true, nil
+end
+
+-- GET /orgs/{org}/teams
+b:rest("get_org_teams", function(org)
+  cap_rest_paged(teams.list_org(org))
+end)
+
+-- POST /orgs/{org}/teams
+b:rest("post_org_teams", function(org)
+  cap_rest_created(teams.create(org, GetBody()))
+end)
+
+-- GET /orgs/{org}/teams/{team_slug}
+b:rest("get_org_team", function(org, slug)
+  cap_rest_respond(teams.get_by_slug(org, slug))
+end)
+
+-- PATCH /orgs/{org}/teams/{team_slug}
+b:rest("patch_org_team", function(org, slug)
+  cap_rest_respond(teams.update_by_slug(org, slug, GetBody()))
 end)
 
 -- DELETE /orgs/{org}/teams/{team_slug}
 b:rest("delete_org_team", function(org, slug)
-  local id = gitea_find_team_id(org, slug)
-  if not id then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  local opts = auth() or {}
-  opts.method = "DELETE"
-  proxy_204(nil, pcall(Fetch, base() .. "/teams/" .. id, opts))
+  cap_rest_204(teams.delete_by_slug(org, slug))
 end)
 
 -- GET /orgs/{org}/teams/{team_slug}/members
 b:rest("get_org_team_members", function(org, slug)
-  local id = gitea_find_team_id(org, slug)
-  if not id then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  proxy_json_paged(
-    translate_users,
-    PAGES,
-    fetch_json(append_page_params(base() .. "/teams/" .. id .. "/members", PAGES))
-  )
+  cap_rest_paged(teams.list_members_by_slug(org, slug))
 end)
 
 -- GET /orgs/{org}/teams/{team_slug}/memberships/{username}
 b:rest("get_org_team_membership", function(org, slug, username)
-  local id = gitea_find_team_id(org, slug)
-  if not id then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  local ok, status = pcall(Fetch, base() .. "/teams/" .. id .. "/members/" .. username, auth())
-  if ok and status == 204 then
-    respond_json(200, { url = "", role = "member", state = "active" })
-  elseif ok then
-    respond_json(404, { message = "Not Found" })
-  else
-    respond_json(503, {})
-  end
+  cap_rest_respond(teams.get_membership_by_slug(org, slug, username))
 end)
 
 -- PUT /orgs/{org}/teams/{team_slug}/memberships/{username}
 b:rest("put_org_team_membership", function(org, slug, username)
-  local id = gitea_find_team_id(org, slug)
-  if not id then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  local opts = auth() or {}
-  opts.method = "PUT"
-  local ok, status = pcall(Fetch, base() .. "/teams/" .. id .. "/members/" .. username, opts)
-  if ok and (status == 204 or status == 200) then
-    respond_json(200, { url = "", role = "member", state = "active" })
-  elseif ok then
-    respond_json(status, {})
-  else
-    respond_json(503, {})
-  end
+  cap_rest_respond(teams.add_membership_by_slug(org, slug, username))
 end)
 
 -- DELETE /orgs/{org}/teams/{team_slug}/memberships/{username}
 b:rest("delete_org_team_membership", function(org, slug, username)
-  local id = gitea_find_team_id(org, slug)
-  if not id then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  local opts = auth() or {}
-  opts.method = "DELETE"
-  proxy_204(nil, pcall(Fetch, base() .. "/teams/" .. id .. "/members/" .. username, opts))
+  cap_rest_204(teams.delete_membership_by_slug(org, slug, username))
 end)
 
 -- GET /orgs/{org}/teams/{team_slug}/repos
 b:rest("get_org_team_repos", function(org, slug)
-  local id = gitea_find_team_id(org, slug)
-  if not id then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  proxy_json_paged(function(items)
-    for i, r in ipairs(items) do
-      items[i] = translate_repo(r)
-    end
-    return items
-  end, PAGES, fetch_json(append_page_params(base() .. "/teams/" .. id .. "/repos", PAGES)))
+  cap_rest_paged(teams.list_repos_by_slug(org, slug))
 end)
 
 -- GET /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
 b:rest("get_org_team_repo", function(org, slug, owner, repo_name)
-  local id = gitea_find_team_id(org, slug)
-  if not id then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  local ok, status, _, body =
-    fetch_json(base() .. "/teams/" .. id .. "/repos/" .. owner .. "/" .. repo_name)
-  if ok and (status == 204 or status == 200) then
-    local r = (status == 200 and DecodeJson(body)) or {}
-    respond_json(200, translate_repo(r))
-  elseif ok then
-    respond_json(404, { message = "Not Found" })
-  else
-    respond_json(503, {})
-  end
+  cap_rest_respond(teams.get_repo_by_slug(org, slug, owner, repo_name))
 end)
 
 -- PUT /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
 b:rest("put_org_team_repo", function(org, slug, owner, repo_name)
-  local id = gitea_find_team_id(org, slug)
-  if not id then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  local opts = auth() or {}
-  opts.method = "PUT"
-  proxy_204(
-    nil,
-    pcall(Fetch, base() .. "/teams/" .. id .. "/repos/" .. owner .. "/" .. repo_name, opts)
-  )
+  cap_rest_204(teams.add_repo_by_slug(org, slug, owner, repo_name))
 end)
 
 -- DELETE /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}
 b:rest("delete_org_team_repo", function(org, slug, owner, repo_name)
-  local id = gitea_find_team_id(org, slug)
-  if not id then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  local opts = auth() or {}
-  opts.method = "DELETE"
-  proxy_204(
-    nil,
-    pcall(Fetch, base() .. "/teams/" .. id .. "/repos/" .. owner .. "/" .. repo_name, opts)
-  )
+  cap_rest_204(teams.delete_repo_by_slug(org, slug, owner, repo_name))
 end)
 
 -- Issues -------------------------------------------------------------------
@@ -2482,30 +3924,67 @@ b:rest("delete_repo_issue_comment", function(owner, repo_name, comment_id)
   cap_rest_204(ok, err)
 end)
 
--- GET /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions
-b:rest(
-  "get_repo_issue_comment_reactions",
-  proxy_handler_paged(translate_gitea_reactions, function(o, r, id)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments/" .. id .. "/reactions",
-      PAGES
-    )
-  end)
-)
+-- Reactions ------------------------------------------------------------------
 
--- POST /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions
-b:rest(
-  "post_repo_issue_comment_reaction",
-  proxy_handler_created(translate_gitea_reaction, function(o, r, id)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/comments/" .. id .. "/reactions",
-      "POST",
-      GetBody()
-  end)
-)
+-- Internal: delete a reaction by synthesized ID; returns (true, nil) or (nil, err).
+local function cap_delete_reaction(url, reaction_id)
+  local content = reaction_content_from_id(reaction_id)
+  if not content then
+    return nil, cap_err(404, "Not Found")
+  end
+  local ok, status = fetch_json(url, "DELETE", '{"content":"' .. content .. '"}')
+  if not ok then
+    return nil, cap_err(0, "network error deleting reaction")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting reaction")
+  end
+  return true, nil
+end
 
--- DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{reaction_id}
-b:rest("delete_repo_issue_comment_reaction", function(owner, repo_name, comment_id, reaction_id)
-  delete_gitea_reaction(
+local reactions_cap = {}
+
+reactions_cap.list_comment = function(owner, repo_name, comment_id)
+  local url = append_page_params(
+    base()
+      .. "/repos/"
+      .. owner
+      .. "/"
+      .. repo_name
+      .. "/issues/comments/"
+      .. comment_id
+      .. "/reactions",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gitea_reaction, items), hdrs, nil
+end
+
+reactions_cap.create_comment = function(owner, repo_name, comment_id, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base()
+      .. "/repos/"
+      .. owner
+      .. "/"
+      .. repo_name
+      .. "/issues/comments/"
+      .. comment_id
+      .. "/reactions",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_reaction(raw), nil
+end
+
+reactions_cap.delete_comment = function(owner, repo_name, comment_id, reaction_id)
+  return cap_delete_reaction(
     base()
       .. "/repos/"
       .. owner
@@ -2516,23 +3995,113 @@ b:rest("delete_repo_issue_comment_reaction", function(owner, repo_name, comment_
       .. "/reactions",
     reaction_id
   )
+end
+
+reactions_cap.list_issue = function(owner, repo_name, issue_number)
+  local url = append_page_params(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/reactions",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gitea_reaction, items), hdrs, nil
+end
+
+reactions_cap.create_issue = function(owner, repo_name, issue_number, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/reactions",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_reaction(raw), nil
+end
+
+reactions_cap.delete_issue = function(owner, repo_name, issue_number, reaction_id)
+  return cap_delete_reaction(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/reactions",
+    reaction_id
+  )
+end
+
+-- Issue events and timeline --------------------------------------------------
+
+local issue_events_cap = {}
+
+issue_events_cap.list_repo = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/events", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+issue_events_cap.get = function(owner, repo_name, event_id)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/events/" .. event_id
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+issue_events_cap.list_issue = function(owner, repo_name, issue_number)
+  local url = append_page_params(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/events",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+issue_events_cap.list_timeline = function(owner, repo_name, issue_number)
+  local url = append_page_params(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/timeline",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+-- GET /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions
+b:rest("get_repo_issue_comment_reactions", function(owner, repo_name, comment_id)
+  cap_rest_paged(reactions_cap.list_comment(owner, repo_name, comment_id))
+end)
+
+-- POST /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions
+b:rest("post_repo_issue_comment_reaction", function(owner, repo_name, comment_id)
+  cap_rest_created(reactions_cap.create_comment(owner, repo_name, comment_id, GetBody()))
+end)
+
+-- DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{reaction_id}
+b:rest("delete_repo_issue_comment_reaction", function(owner, repo_name, comment_id, reaction_id)
+  cap_rest_204(reactions_cap.delete_comment(owner, repo_name, comment_id, reaction_id))
 end)
 
 -- GET /repos/{owner}/{repo}/issues/events  (all issue events in repo)
-b:rest(
-  "get_repo_issue_events",
-  proxy_handler_paged(nil, function(o, r)
-    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/issues/events", PAGES)
-  end)
-)
+b:rest("get_repo_issue_events", function(owner, repo_name)
+  cap_rest_paged(issue_events_cap.list_repo(owner, repo_name))
+end)
 
 -- GET /repos/{owner}/{repo}/issues/events/{event_id}
-b:rest(
-  "get_repo_issue_event",
-  proxy_handler(nil, function(o, r, id)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/events/" .. id
-  end)
-)
+b:rest("get_repo_issue_event", function(owner, repo_name, event_id)
+  cap_rest_respond(issue_events_cap.get(owner, repo_name, event_id))
+end)
 
 -- GET /repos/{owner}/{repo}/issues/{issue_number}/comments
 b:rest("get_issue_comments", function(owner, repo_name, issue_number)
@@ -2547,219 +4116,109 @@ b:rest("post_issue_comment", function(owner, repo_name, issue_number)
 end)
 
 -- GET /repos/{owner}/{repo}/issues/{issue_number}/events
-b:rest(
-  "get_issue_events",
-  proxy_handler_paged(nil, function(o, r, n)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/events",
-      PAGES
-    )
-  end)
-)
+b:rest("get_issue_events", function(owner, repo_name, issue_number)
+  cap_rest_paged(issue_events_cap.list_issue(owner, repo_name, issue_number))
+end)
 
 -- GET /repos/{owner}/{repo}/issues/{issue_number}/timeline
-b:rest(
-  "get_issue_timeline",
-  proxy_handler_paged(nil, function(o, r, n)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/timeline",
-      PAGES
-    )
-  end)
-)
+b:rest("get_issue_timeline", function(owner, repo_name, issue_number)
+  cap_rest_paged(issue_events_cap.list_timeline(owner, repo_name, issue_number))
+end)
 
 -- GET /repos/{owner}/{repo}/issues/{issue_number}/reactions
-b:rest(
-  "get_issue_reactions",
-  proxy_handler_paged(translate_gitea_reactions, function(o, r, n)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/reactions",
-      PAGES
-    )
-  end)
-)
+b:rest("get_issue_reactions", function(owner, repo_name, issue_number)
+  cap_rest_paged(reactions_cap.list_issue(owner, repo_name, issue_number))
+end)
 
 -- POST /repos/{owner}/{repo}/issues/{issue_number}/reactions
-b:rest(
-  "post_issue_reaction",
-  proxy_handler_created(translate_gitea_reaction, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/reactions",
-      "POST",
-      GetBody()
-  end)
-)
+b:rest("post_issue_reaction", function(owner, repo_name, issue_number)
+  cap_rest_created(reactions_cap.create_issue(owner, repo_name, issue_number, GetBody()))
+end)
 
 -- DELETE /repos/{owner}/{repo}/issues/{issue_number}/reactions/{reaction_id}
 b:rest("delete_issue_reaction", function(owner, repo_name, issue_number, reaction_id)
-  delete_gitea_reaction(
-    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/reactions",
-    reaction_id
-  )
+  cap_rest_204(reactions_cap.delete_issue(owner, repo_name, issue_number, reaction_id))
 end)
 
 -- GET /repos/{owner}/{repo}/issues/{issue_number}/labels
-b:rest(
-  "get_issue_labels",
-  proxy_handler(translate_gitea_labels, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/labels"
-  end)
-)
+b:rest("get_issue_labels", function(owner, repo_name, issue_number)
+  local data, err = issues_cap.list_labels(owner, repo_name, issue_number)
+  cap_rest_respond(data, err)
+end)
 
 -- POST /repos/{owner}/{repo}/issues/{issue_number}/labels
 -- GitHub body: { labels: ["name1", ...] }; Gitea body: { labels: [id1, ...] }
 -- Look up each name to find its ID.
 b:rest("post_issue_labels", function(owner, repo_name, issue_number)
   local req = DecodeJson(GetBody() or "{}")
-  local ids = {}
-  for _, name in ipairs(req.labels or {}) do
-    local id = gitea_find_label_id(owner, repo_name, name)
-    if id then
-      ids[#ids + 1] = id
-    end
-  end
-  proxy_json(
-    translate_gitea_labels,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/labels",
-      "POST",
-      EncodeJson({ labels = ids })
-    )
-  )
+  local data, err = issues_cap.add_labels(owner, repo_name, issue_number, req.labels)
+  cap_rest_respond(data, err)
 end)
 
 -- PUT /repos/{owner}/{repo}/issues/{issue_number}/labels  (replace all)
 b:rest("put_issue_labels", function(owner, repo_name, issue_number)
   local req = DecodeJson(GetBody() or "{}")
-  local ids = {}
-  for _, name in ipairs(req.labels or {}) do
-    local id = gitea_find_label_id(owner, repo_name, name)
-    if id then
-      ids[#ids + 1] = id
-    end
-  end
-  proxy_json(
-    translate_gitea_labels,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/labels",
-      "PUT",
-      EncodeJson({ labels = ids })
-    )
-  )
+  local data, err = issues_cap.set_labels(owner, repo_name, issue_number, req.labels)
+  cap_rest_respond(data, err)
 end)
 
 -- DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels  (remove all)
 b:rest("delete_issue_labels", function(owner, repo_name, issue_number)
-  proxy_204(
-    { 200 },
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/labels",
-      "DELETE"
-    )
-  )
+  local ok, err = issues_cap.remove_labels(owner, repo_name, issue_number)
+  cap_rest_204(ok, err)
 end)
 
 -- DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}
 -- GitHub uses the label name; Gitea uses the numeric label ID.
 b:rest("delete_issue_label", function(owner, repo_name, issue_number, label_name)
-  local id = gitea_find_label_id(owner, repo_name, label_name)
-  if not id then
-    respond_json(404, { message = "Label not found" })
-    return
-  end
-  proxy_204(
-    { 200 },
-    fetch_json(
-      base()
-        .. "/repos/"
-        .. owner
-        .. "/"
-        .. repo_name
-        .. "/issues/"
-        .. issue_number
-        .. "/labels/"
-        .. id,
-      "DELETE"
-    )
-  )
+  local ok, err = issues_cap.remove_label(owner, repo_name, issue_number, label_name)
+  cap_rest_204(ok, err)
 end)
 
 -- PUT /repos/{owner}/{repo}/issues/{issue_number}/lock
 b:rest("put_issue_lock", function(owner, repo_name, issue_number)
-  local opts = auth() or {}
-  opts.method = "PUT"
-  opts.body = GetBody()
-  opts.headers = opts.headers or {}
-  opts.headers["Content-Type"] = "application/json"
-  proxy_204(
-    nil,
-    pcall(
-      Fetch,
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/lock",
-      opts
-    )
-  )
+  local ok, err = issues_cap.lock(owner, repo_name, issue_number, GetBody())
+  cap_rest_204(ok, err)
 end)
 
 -- DELETE /repos/{owner}/{repo}/issues/{issue_number}/lock
 b:rest("delete_issue_lock", function(owner, repo_name, issue_number)
-  set_204_or_error(
-    "DELETE",
-    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number .. "/lock"
-  )
+  local ok, err = issues_cap.unlock(owner, repo_name, issue_number)
+  cap_rest_204(ok, err)
 end)
 
 -- POST /repos/{owner}/{repo}/issues/{issue_number}/assignees
-b:rest(
-  "post_issue_assignees",
-  proxy_handler(translate_gitea_issue, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/assignees",
-      "POST",
-      GetBody()
-  end)
-)
+b:rest("post_issue_assignees", function(owner, repo_name, issue_number)
+  local data, err = issues_cap.add_assignees(owner, repo_name, issue_number, GetBody())
+  cap_rest_respond(data, err)
+end)
 
 -- DELETE /repos/{owner}/{repo}/issues/{issue_number}/assignees
-b:rest(
-  "delete_issue_assignees",
-  proxy_handler(translate_gitea_issue, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n .. "/assignees",
-      "DELETE",
-      GetBody()
-  end)
-)
+b:rest("delete_issue_assignees", function(owner, repo_name, issue_number)
+  local data, err = issues_cap.remove_assignees(owner, repo_name, issue_number, GetBody())
+  cap_rest_respond(data, err)
+end)
 
 -- GET /repos/{owner}/{repo}/issues/{issue_number}/assignees/{assignee}
 -- Gitea has no direct endpoint; check the issue's assignees list.
 b:rest("get_issue_assignee", function(owner, repo_name, issue_number, assignee)
-  local ok, status, _, body =
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. issue_number)
-  if not ok then
+  local ok, err = issues_cap.check_assignee(owner, repo_name, issue_number, assignee)
+  if err and err.status == 0 then
     respond_json(503, {})
-    return
+  elseif ok then
+    SetStatus(204, "No Content")
+  else
+    respond_json(404, { message = "Not an assignee" })
   end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
-  end
-  local issue = DecodeJson(body) or {}
-  for _, u in ipairs(issue.assignees or {}) do
-    if u.login == assignee then
-      SetStatus(204, "No Content")
-      return
-    end
-  end
-  respond_json(404, { message = "Not an assignee" })
 end)
 
 -- Assignees -----------------------------------------------------------------
 
 -- GET /repos/{owner}/{repo}/assignees  (users eligible for assignment)
-b:rest(
-  "get_repo_assignees",
-  proxy_handler_paged(translate_users, function(o, r)
-    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/assignees", PAGES)
-  end)
-)
+b:rest("get_repo_assignees", function(owner, repo_name)
+  local items, hdrs, err = issues_cap.list_assignees(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
 -- Labels (repo-level) -------------------------------------------------------
 
@@ -2842,159 +4301,94 @@ b:rest("delete_repo_milestone", function(owner, repo_name, milestone_number)
 end)
 
 -- GET /repos/{owner}/{repo}/milestones/{milestone_number}/labels
-b:rest(
-  "get_repo_milestone_labels",
-  proxy_handler(translate_gitea_labels, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/milestones/" .. n .. "/labels"
-  end)
-)
+b:rest("get_repo_milestone_labels", function(owner, repo_name, milestone_number)
+  local data, err = milestones_cap.list_labels(owner, repo_name, milestone_number)
+  cap_rest_respond(data, err)
+end)
 
 -- Legacy team-by-id endpoints (GitHub /teams/{team_id} → Gitea /teams/{id}).
 -- No slug lookup needed — the caller already provides the numeric ID.
 
 -- GET /user/teams
 b:rest("get_user_teams", function()
-  proxy_json_paged(function(teams)
-    for i, t in ipairs(teams) do
-      teams[i] = translate_gitea_team(t)
-    end
-    return teams
-  end, PAGES, fetch_json(append_page_params(base() .. "/user/teams", PAGES)))
+  cap_rest_paged(teams.list_user())
 end)
 
 -- GET /teams/{team_id}
 b:rest("get_team", function(team_id)
-  proxy_json(translate_gitea_team, fetch_json(base() .. "/teams/" .. team_id))
+  cap_rest_respond(teams.get(team_id))
 end)
 
 -- PATCH /teams/{team_id}
 b:rest("patch_team", function(team_id)
-  local req = DecodeJson(GetBody() or "{}")
-  local body = {}
-  if req.name then
-    body.name = req.name
-  end
-  if req.description then
-    body.description = req.description
-  end
-  if req.permission then
-    body.permission = req.permission == "admin" and "owner" or req.permission
-  end
-  proxy_json(
-    translate_gitea_team,
-    fetch_json(base() .. "/teams/" .. team_id, "PATCH", EncodeJson(body))
-  )
+  cap_rest_respond(teams.update(team_id, GetBody()))
 end)
 
 -- DELETE /teams/{team_id}
 b:rest("delete_team", function(team_id)
-  set_204_or_error("DELETE", base() .. "/teams/" .. team_id)
+  cap_rest_204(teams.delete(team_id))
 end)
 
 -- GET /teams/{team_id}/members
 b:rest("get_team_members", function(team_id)
-  proxy_json_paged(
-    translate_users,
-    PAGES,
-    fetch_json(append_page_params(base() .. "/teams/" .. team_id .. "/members", PAGES))
-  )
+  cap_rest_paged(teams.list_members(team_id))
 end)
 
 -- GET /teams/{team_id}/members/{username} — deprecated legacy endpoint
 b:rest("get_team_member", function(team_id, username)
-  local ok, status = pcall(Fetch, base() .. "/teams/" .. team_id .. "/members/" .. username, auth())
-  if ok and status == 204 then
+  local is_member, err = teams.is_member(team_id, username)
+  if err then
+    cap_rest_respond(nil, err)
+  elseif is_member then
     SetStatus(204, "No Content")
-  elseif ok then
-    respond_json(404, { message = "Not Found" })
   else
-    respond_json(503, {})
+    respond_json(404, { message = "Not Found" })
   end
 end)
 
 -- PUT /teams/{team_id}/members/{username} — deprecated legacy endpoint
 b:rest("put_team_member", function(team_id, username)
-  local opts = auth() or {}
-  opts.method = "PUT"
-  proxy_204({ 200 }, pcall(Fetch, base() .. "/teams/" .. team_id .. "/members/" .. username, opts))
+  cap_rest_204(teams.add_member(team_id, username))
 end)
 
 -- DELETE /teams/{team_id}/members/{username} — deprecated legacy endpoint
 b:rest("delete_team_member", function(team_id, username)
-  set_204_or_error("DELETE", base() .. "/teams/" .. team_id .. "/members/" .. username)
+  cap_rest_204(teams.delete_member(team_id, username))
 end)
 
 -- GET /teams/{team_id}/memberships/{username}
 b:rest("get_team_membership", function(team_id, username)
-  local ok, status = pcall(Fetch, base() .. "/teams/" .. team_id .. "/members/" .. username, auth())
-  if ok and status == 204 then
-    respond_json(200, { url = "", role = "member", state = "active" })
-  elseif ok then
-    respond_json(404, { message = "Not Found" })
-  else
-    respond_json(503, {})
-  end
+  cap_rest_respond(teams.get_membership(team_id, username))
 end)
 
 -- PUT /teams/{team_id}/memberships/{username}
 b:rest("put_team_membership", function(team_id, username)
-  local opts = auth() or {}
-  opts.method = "PUT"
-  local ok, status = pcall(Fetch, base() .. "/teams/" .. team_id .. "/members/" .. username, opts)
-  if ok and (status == 204 or status == 200) then
-    respond_json(200, { url = "", role = "member", state = "active" })
-  elseif ok then
-    respond_json(status, {})
-  else
-    respond_json(503, {})
-  end
+  cap_rest_respond(teams.add_membership(team_id, username))
 end)
 
 -- DELETE /teams/{team_id}/memberships/{username}
 b:rest("delete_team_membership", function(team_id, username)
-  set_204_or_error("DELETE", base() .. "/teams/" .. team_id .. "/members/" .. username)
+  cap_rest_204(teams.delete_membership(team_id, username))
 end)
 
 -- GET /teams/{team_id}/repos
 b:rest("get_team_repos", function(team_id)
-  proxy_json_paged(function(items)
-    for i, r in ipairs(items) do
-      items[i] = translate_repo(r)
-    end
-    return items
-  end, PAGES, fetch_json(append_page_params(base() .. "/teams/" .. team_id .. "/repos", PAGES)))
+  cap_rest_paged(teams.list_repos(team_id))
 end)
 
 -- GET /teams/{team_id}/repos/{owner}/{repo}
 b:rest("get_team_repo", function(team_id, owner, repo_name)
-  local ok, status, _, body =
-    fetch_json(base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name)
-  if ok and (status == 204 or status == 200) then
-    local r = (status == 200 and DecodeJson(body)) or {}
-    respond_json(200, translate_repo(r))
-  elseif ok then
-    respond_json(404, { message = "Not Found" })
-  else
-    respond_json(503, {})
-  end
+  cap_rest_respond(teams.get_repo(team_id, owner, repo_name))
 end)
 
 -- PUT /teams/{team_id}/repos/{owner}/{repo}
 b:rest("put_team_repo", function(team_id, owner, repo_name)
-  local opts = auth() or {}
-  opts.method = "PUT"
-  proxy_204(
-    nil,
-    pcall(Fetch, base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name, opts)
-  )
+  cap_rest_204(teams.add_repo(team_id, owner, repo_name))
 end)
 
 -- DELETE /teams/{team_id}/repos/{owner}/{repo}
 b:rest("delete_team_repo", function(team_id, owner, repo_name)
-  set_204_or_error(
-    "DELETE",
-    base() .. "/teams/" .. team_id .. "/repos/" .. owner .. "/" .. repo_name
-  )
+  cap_rest_204(teams.delete_repo(team_id, owner, repo_name))
 end)
 
 -- Pull Requests ---------------------------------------------------------------
@@ -3023,193 +4417,248 @@ b:rest("patch_repo_pull", function(owner, repo_name, number)
   cap_rest_respond(data, err)
 end)
 
--- GET /repos/{owner}/{repo}/pulls/{pull_number}/commits
-b:rest(
-  "get_pull_commits",
-  proxy_handler_paged(nil, function(o, r, n)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/commits",
-      PAGES
-    )
-  end)
-)
+-- PR sub-resources (commits, files, merge, reviewers, reviews) ---------------
 
--- GET /repos/{owner}/{repo}/pulls/{pull_number}/files
-b:rest(
-  "get_pull_files",
-  proxy_handler_paged(nil, function(o, r, n)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/files",
-      PAGES
-    )
-  end)
-)
+local pr_subs = {}
 
--- GET /repos/{owner}/{repo}/pulls/{pull_number}/merge
+pr_subs.list_commits = function(owner, repo_name, pull_number)
+  local url = append_page_params(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/commits",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+pr_subs.list_files = function(owner, repo_name, pull_number)
+  local url = append_page_params(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/files",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
 -- Gitea returns 204 if merged, 404 if not — same semantics as GitHub.
-b:rest("get_pull_merge", function(owner, repo_name, pull_number)
+-- Returns (true, nil) if merged, (false, nil) if not, (nil, err) on error.
+pr_subs.check_merged = function(owner, repo_name, pull_number)
   local ok, status = fetch_json(
     base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/merge"
   )
-  if ok and status == 204 then
-    SetStatus(204, "No Content")
-  elseif ok and status == 404 then
-    respond_json(404, { message = "Pull Request is not merged" })
-  elseif ok then
-    respond_json(status, {})
-  else
-    respond_json(503, {})
+  if not ok then
+    return nil, cap_err(0, "network error checking merge status")
   end
-end)
+  if status == 204 then
+    return true, nil
+  end
+  if status == 404 then
+    return false, nil
+  end
+  return nil, cap_err(status, "upstream error " .. tostring(status))
+end
 
--- PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge
 -- GitHub uses PUT; Gitea uses POST.
-b:rest("put_pull_merge", function(owner, repo_name, pull_number)
-  proxy_204(
-    nil,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/merge",
-      "POST",
-      GetBody()
-    )
+pr_subs.merge = function(owner, repo_name, pull_number, body)
+  local ok, status = fetch_json(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/merge",
+    "POST",
+    body
   )
-end)
+  if not ok then
+    return nil, cap_err(0, "network error merging PR")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " merging PR")
+  end
+  return true, nil
+end
 
--- GET /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
-b:rest(
-  "get_pull_requested_reviewers",
-  proxy_handler(nil, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/requested_reviewers"
-  end)
-)
-
--- POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
-b:rest(
-  "post_pull_requested_reviewers",
-  proxy_handler(nil, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/requested_reviewers",
-      "POST",
-      GetBody()
-  end)
-)
-
--- DELETE /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
-b:rest("delete_pull_requested_reviewers", function(owner, repo_name, pull_number)
-  proxy_204(
-    { 200 },
-    fetch_json(
-      base()
-        .. "/repos/"
-        .. owner
-        .. "/"
-        .. repo_name
-        .. "/pulls/"
-        .. pull_number
-        .. "/requested_reviewers",
-      "DELETE",
-      GetBody()
-    )
-  )
-end)
-
--- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews
-b:rest(
-  "get_pull_reviews",
-  proxy_handler_paged(translate_gitea_reviews, function(o, r, n)
-    return append_page_params(
-      base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/reviews",
-      PAGES
-    )
-  end)
-)
-
--- POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews
-b:rest(
-  "post_pull_review",
-  proxy_handler_created(translate_gitea_review, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/reviews", "POST", GetBody()
-  end)
-)
-
--- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
-b:rest(
-  "get_pull_review",
-  proxy_handler(translate_gitea_review, function(o, r, n, id)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/pulls/" .. n .. "/reviews/" .. id
-  end)
-)
-
--- DELETE /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
-b:rest("delete_pull_review", function(owner, repo_name, pull_number, review_id)
-  proxy_204(
-    { 200 },
-    fetch_json(
-      base()
-        .. "/repos/"
-        .. owner
-        .. "/"
-        .. repo_name
-        .. "/pulls/"
-        .. pull_number
-        .. "/reviews/"
-        .. review_id,
-      "DELETE"
-    )
-  )
-end)
-
--- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments
-b:rest(
-  "get_pull_review_comments",
-  proxy_handler(translate_gitea_review_comments, function(o, r, n, id)
-    return base()
+pr_subs.get_requested_reviewers = function(owner, repo_name, pull_number)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base()
       .. "/repos/"
-      .. o
+      .. owner
       .. "/"
-      .. r
+      .. repo_name
       .. "/pulls/"
-      .. n
-      .. "/reviews/"
-      .. id
-      .. "/comments"
-  end)
-)
-
--- PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/dismissals
--- GitHub uses PUT; Gitea uses POST.
-b:rest("put_pull_review_dismissal", function(owner, repo_name, pull_number, review_id)
-  proxy_json(
-    translate_gitea_review,
-    fetch_json(
-      base()
-        .. "/repos/"
-        .. owner
-        .. "/"
-        .. repo_name
-        .. "/pulls/"
-        .. pull_number
-        .. "/reviews/"
-        .. review_id
-        .. "/dismissals",
-      "POST",
-      GetBody()
-    )
+      .. pull_number
+      .. "/requested_reviewers"
   )
-end)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
 
--- GET /repos/{owner}/{repo}/pulls/{pull_number}/comments
+pr_subs.add_requested_reviewers = function(owner, repo_name, pull_number, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base()
+      .. "/repos/"
+      .. owner
+      .. "/"
+      .. repo_name
+      .. "/pulls/"
+      .. pull_number
+      .. "/requested_reviewers",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+pr_subs.delete_requested_reviewers = function(owner, repo_name, pull_number, body)
+  local ok, status = fetch_json(
+    base()
+      .. "/repos/"
+      .. owner
+      .. "/"
+      .. repo_name
+      .. "/pulls/"
+      .. pull_number
+      .. "/requested_reviewers",
+    "DELETE",
+    body
+  )
+  if not ok then
+    return nil, cap_err(0, "network error deleting requested reviewers")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil,
+      cap_err(status, "upstream error " .. tostring(status) .. " deleting requested reviewers")
+  end
+  return true, nil
+end
+
+pr_subs.list_reviews = function(owner, repo_name, pull_number)
+  local url = append_page_params(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/reviews",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gitea_review, items), hdrs, nil
+end
+
+pr_subs.create_review = function(owner, repo_name, pull_number, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/reviews",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_review(raw), nil
+end
+
+pr_subs.get_review = function(owner, repo_name, pull_number, review_id)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base()
+      .. "/repos/"
+      .. owner
+      .. "/"
+      .. repo_name
+      .. "/pulls/"
+      .. pull_number
+      .. "/reviews/"
+      .. review_id
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_review(raw), nil
+end
+
+pr_subs.delete_review = function(owner, repo_name, pull_number, review_id)
+  local ok, status = fetch_json(
+    base()
+      .. "/repos/"
+      .. owner
+      .. "/"
+      .. repo_name
+      .. "/pulls/"
+      .. pull_number
+      .. "/reviews/"
+      .. review_id,
+    "DELETE"
+  )
+  if not ok then
+    return nil, cap_err(0, "network error deleting review")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting review")
+  end
+  return true, nil
+end
+
+pr_subs.list_review_comments = function(owner, repo_name, pull_number, review_id)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base()
+      .. "/repos/"
+      .. owner
+      .. "/"
+      .. repo_name
+      .. "/pulls/"
+      .. pull_number
+      .. "/reviews/"
+      .. review_id
+      .. "/comments"
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_list(translate_gitea_review_comment, raw), nil
+end
+
+-- GitHub uses PUT; Gitea uses POST for dismissal.
+pr_subs.dismiss_review = function(owner, repo_name, pull_number, review_id, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base()
+      .. "/repos/"
+      .. owner
+      .. "/"
+      .. repo_name
+      .. "/pulls/"
+      .. pull_number
+      .. "/reviews/"
+      .. review_id
+      .. "/dismissals",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_review(raw), nil
+end
+
 -- Aggregates inline review comments across all reviews for the PR.
-b:rest("get_pull_comments", function(owner, repo_name, pull_number)
+pr_subs.list_comments = function(owner, repo_name, pull_number)
   local ok, status, _, body = fetch_json(
     base() .. "/repos/" .. owner .. "/" .. repo_name .. "/pulls/" .. pull_number .. "/reviews"
   )
   if not ok then
-    respond_json(503, {})
-    return
+    return nil, cap_err(0, "network error listing PR review comments")
   end
   if status ~= 200 then
-    respond_json(status, {})
-    return
+    return nil, cap_err(status, "upstream error " .. tostring(status))
   end
   local reviews = DecodeJson(body) or {}
   local all_comments = {}
@@ -3232,48 +4681,141 @@ b:rest("get_pull_comments", function(owner, repo_name, pull_number)
       end
     end
   end
-  respond_json(200, all_comments)
+  return all_comments, nil
+end
+
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/commits
+b:rest("get_pull_commits", function(owner, repo_name, pull_number)
+  cap_rest_paged(pr_subs.list_commits(owner, repo_name, pull_number))
+end)
+
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/files
+b:rest("get_pull_files", function(owner, repo_name, pull_number)
+  cap_rest_paged(pr_subs.list_files(owner, repo_name, pull_number))
+end)
+
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/merge
+-- Gitea returns 204 if merged, 404 if not — same semantics as GitHub.
+b:rest("get_pull_merge", function(owner, repo_name, pull_number)
+  local merged, err = pr_subs.check_merged(owner, repo_name, pull_number)
+  if err then
+    respond_json(err.status == 0 and 503 or err.status, {})
+    return
+  end
+  if merged then
+    SetStatus(204, "No Content")
+  else
+    respond_json(404, { message = "Pull Request is not merged" })
+  end
+end)
+
+-- PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge  (GitHub PUT → Gitea POST)
+b:rest("put_pull_merge", function(owner, repo_name, pull_number)
+  cap_rest_204(pr_subs.merge(owner, repo_name, pull_number, GetBody()))
+end)
+
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
+b:rest("get_pull_requested_reviewers", function(owner, repo_name, pull_number)
+  cap_rest_respond(pr_subs.get_requested_reviewers(owner, repo_name, pull_number))
+end)
+
+-- POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
+b:rest("post_pull_requested_reviewers", function(owner, repo_name, pull_number)
+  cap_rest_respond(pr_subs.add_requested_reviewers(owner, repo_name, pull_number, GetBody()))
+end)
+
+-- DELETE /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
+b:rest("delete_pull_requested_reviewers", function(owner, repo_name, pull_number)
+  cap_rest_204(pr_subs.delete_requested_reviewers(owner, repo_name, pull_number, GetBody()))
+end)
+
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews
+b:rest("get_pull_reviews", function(owner, repo_name, pull_number)
+  cap_rest_paged(pr_subs.list_reviews(owner, repo_name, pull_number))
+end)
+
+-- POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews
+b:rest("post_pull_review", function(owner, repo_name, pull_number)
+  cap_rest_created(pr_subs.create_review(owner, repo_name, pull_number, GetBody()))
+end)
+
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
+b:rest("get_pull_review", function(owner, repo_name, pull_number, review_id)
+  cap_rest_respond(pr_subs.get_review(owner, repo_name, pull_number, review_id))
+end)
+
+-- DELETE /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
+b:rest("delete_pull_review", function(owner, repo_name, pull_number, review_id)
+  cap_rest_204(pr_subs.delete_review(owner, repo_name, pull_number, review_id))
+end)
+
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments
+b:rest("get_pull_review_comments", function(owner, repo_name, pull_number, review_id)
+  cap_rest_respond(pr_subs.list_review_comments(owner, repo_name, pull_number, review_id))
+end)
+
+-- PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/dismissals
+-- GitHub uses PUT; Gitea uses POST.
+b:rest("put_pull_review_dismissal", function(owner, repo_name, pull_number, review_id)
+  cap_rest_respond(pr_subs.dismiss_review(owner, repo_name, pull_number, review_id, GetBody()))
+end)
+
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/comments
+-- Aggregates inline review comments across all reviews for the PR.
+b:rest("get_pull_comments", function(owner, repo_name, pull_number)
+  cap_rest_respond(pr_subs.list_comments(owner, repo_name, pull_number))
 end)
 
 -- Checks (via Gitea commit statuses) ------------------------------------------
 
+local checks = {}
+
+-- Maps a GitHub check-run create request to a Gitea status, returning the created check-run.
+checks.create_run = function(owner, repo_name, body)
+  local req = DecodeJson(body or "{}") or {}
+  local sha = req.head_sha or ""
+  local gitea_body = gh_check_run_to_gitea_status(req)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. sha,
+    "POST",
+    gitea_body
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_status_to_check_run(raw), nil
+end
+
+-- Returns {total_count, check_runs=[...]} from Gitea statuses.
+checks.list_commit = function(owner, repo_name, ref)
+  local url = append_page_params(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. ref,
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  local runs = translate_list(translate_gitea_status_to_check_run, items)
+  return runs, hdrs, nil
+end
+
 -- POST /repos/{owner}/{repo}/check-runs
 -- Maps to Gitea POST /api/v1/repos/{owner}/{repo}/statuses/{sha}.
 b:rest("post_check_runs", function(owner, repo_name)
-  local req = DecodeJson(GetBody() or "{}") or {}
-  local sha = req.head_sha or ""
-  local gitea_body = gh_check_run_to_gitea_status(req)
-  proxy_json_created(
-    translate_gitea_status_to_check_run,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. sha,
-      "POST",
-      gitea_body
-    )
-  )
+  cap_rest_created(checks.create_run(owner, repo_name, GetBody()))
 end)
 
 -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
 -- Maps to Gitea GET /api/v1/repos/{owner}/{repo}/statuses/{ref}.
 b:rest("get_commit_check_runs", function(owner, repo_name, ref)
-  local ok, status, _, body = fetch_json(
-    append_page_params(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/statuses/" .. ref,
-      PAGES
-    )
-  )
-  if ok and status == 200 then
-    local statuses = DecodeJson(body) or {}
-    local runs = translate_gitea_statuses_to_check_runs(statuses)
-    respond_json(200, {
-      total_count = #runs,
-      check_runs = runs,
-    })
-  elseif ok then
-    respond_json(status, {})
-  else
-    respond_json(503, {})
+  local runs, _, err = checks.list_commit(owner, repo_name, ref)
+  if err then
+    respond_json(err.status == 0 and 503 or err.status, {})
+    return
   end
+  respond_json(200, { total_count = #runs, check_runs = runs })
 end)
 
 -- Check Suites — no Gitea equivalent; all are stubs --------------------
@@ -3291,100 +4833,148 @@ b:rest("post_check_suites", function(owner, repo_name)
   })
 end)
 
+-- ---------------------------------------------------------------------------
+-- Search capability module
+-- ---------------------------------------------------------------------------
+-- Wraps Gitea's repo/user search endpoints.  Gitea wraps results in
+-- {"data":[...],"ok":true}; each operation extracts and translates the array.
+-- Operations return (items_array, nil) on success or (nil, err) on failure.
+
+local search_cap = {}
+
+-- repos: search for repositories matching a query string.
+-- Returns (translated_repo_array, nil) or (nil, err).
+search_cap.repos = function(q)
+  local url = append_page_params(base() .. "/repos/search?q=" .. q, PAGES)
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
+  end
+  return translate_list(translate_repo, raw.data or {}), nil
+end
+
+-- users: search for users matching a query string.
+-- Returns (translated_user_array, nil) or (nil, err).
+search_cap.users = function(q)
+  local url = append_page_params(base() .. "/users/search?q=" .. q, PAGES)
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
+  end
+  return translate_list(translate_user, raw.data or {}), nil
+end
+
+-- search_rest_respond: write a GitHub search envelope from a translated items array.
+-- Mirrors the proxy_search_envelope shape: {total_count, incomplete_results, items}.
+-- Uses string concatenation for "items" so that an empty Lua table {} is written
+-- as "[]" (JSON array) rather than "{}" (JSON object) which EncodeJson would produce.
+local function search_rest_respond(items, err)
+  if not items then
+    respond_json(err.status == 0 and 503 or err.status, {})
+    return
+  end
+  set_preamble()
+  Write(
+    '{"total_count":'
+      .. #items
+      .. ',"incomplete_results":false,"items":'
+      .. (#items > 0 and EncodeJson(items) or "[]")
+      .. "}"
+  )
+end
+
 -- Search -----------------------------------------------------------------------
 
 -- GET /search/repositories — maps to Gitea GET /repos/search
 b:rest("search_repositories", function()
-  local q = GetParam("q") or ""
-  proxy_search(translate_repo, append_page_params(base() .. "/repos/search?q=" .. q, PAGES))
+  search_rest_respond(search_cap.repos(GetParam("q") or ""))
 end)
 
 -- GET /search/users — maps to Gitea GET /users/search
 b:rest("search_users", function()
-  local q = GetParam("q") or ""
-  proxy_search(translate_user, append_page_params(base() .. "/users/search?q=" .. q, PAGES))
+  search_rest_respond(search_cap.users(GetParam("q") or ""))
 end)
 
 -- Packages (org) ---------------------------------------------------------------
 
 b:rest("get_org_packages", function(org)
-  pkg_list(org)
+  cap_rest_paged(packages_cap.list(org, GetParam("package_type") or ""))
 end)
 
 b:rest("get_org_package", function(org, pkg_type, pkg_name)
-  pkg_get(org, pkg_type, pkg_name)
+  cap_rest_respond(packages_cap.get(org, pkg_type, pkg_name))
 end)
 
 b:rest("delete_org_package", function(org, pkg_type, pkg_name)
-  pkg_delete(org, pkg_type, pkg_name)
+  cap_rest_204(packages_cap.delete(org, pkg_type, pkg_name))
 end)
 
 b:rest("get_org_package_versions", function(org, pkg_type, pkg_name)
-  pkg_versions(org, pkg_type, pkg_name)
+  cap_rest_paged(packages_cap.list_versions(org, pkg_type, pkg_name))
 end)
 
 b:rest("get_org_package_version", function(org, pkg_type, pkg_name, version_id)
-  pkg_get_version(org, pkg_type, pkg_name, version_id)
+  cap_rest_respond(packages_cap.get_version(org, pkg_type, pkg_name, version_id))
 end)
 
 b:rest("delete_org_package_version", function(org, pkg_type, pkg_name, version_id)
-  pkg_delete_version(org, pkg_type, pkg_name, version_id)
+  cap_rest_204(packages_cap.delete_version(org, pkg_type, pkg_name, version_id))
 end)
 
 -- Packages (authenticated user) ------------------------------------------------
 
 b:rest("get_user_packages", function()
-  local login = resolve_user_login()
+  local login = packages_cap.resolve_user_login()
   if not login then
     respond_json(401, { message = "Requires authentication" })
     return
   end
-  pkg_list(login)
+  cap_rest_paged(packages_cap.list(login, GetParam("package_type") or ""))
 end)
 
 b:rest("get_user_package", function(pkg_type, pkg_name)
-  local login = resolve_user_login()
+  local login = packages_cap.resolve_user_login()
   if not login then
     respond_json(401, { message = "Requires authentication" })
     return
   end
-  pkg_get(login, pkg_type, pkg_name)
+  cap_rest_respond(packages_cap.get(login, pkg_type, pkg_name))
 end)
 
 b:rest("delete_user_package", function(pkg_type, pkg_name)
-  local login = resolve_user_login()
+  local login = packages_cap.resolve_user_login()
   if not login then
     respond_json(401, { message = "Requires authentication" })
     return
   end
-  pkg_delete(login, pkg_type, pkg_name)
+  cap_rest_204(packages_cap.delete(login, pkg_type, pkg_name))
 end)
 
 b:rest("get_user_package_versions", function(pkg_type, pkg_name)
-  local login = resolve_user_login()
+  local login = packages_cap.resolve_user_login()
   if not login then
     respond_json(401, { message = "Requires authentication" })
     return
   end
-  pkg_versions(login, pkg_type, pkg_name)
+  cap_rest_paged(packages_cap.list_versions(login, pkg_type, pkg_name))
 end)
 
 b:rest("get_user_package_version", function(pkg_type, pkg_name, version_id)
-  local login = resolve_user_login()
+  local login = packages_cap.resolve_user_login()
   if not login then
     respond_json(401, { message = "Requires authentication" })
     return
   end
-  pkg_get_version(login, pkg_type, pkg_name, version_id)
+  cap_rest_respond(packages_cap.get_version(login, pkg_type, pkg_name, version_id))
 end)
 
 b:rest("delete_user_package_version", function(pkg_type, pkg_name, version_id)
-  local login = resolve_user_login()
+  local login = packages_cap.resolve_user_login()
   if not login then
     respond_json(401, { message = "Requires authentication" })
     return
   end
-  pkg_delete_version(login, pkg_type, pkg_name, version_id)
+  cap_rest_204(packages_cap.delete_version(login, pkg_type, pkg_name, version_id))
 end)
 
 -- Pages (https://docs.github.com/en/rest/pages) ---------------------------------
@@ -3394,91 +4984,109 @@ end)
 -- pages_not_implemented (501) handler.
 
 b:rest("get_repo_pages", function(owner, repo_name)
-  local ok, status, _, _ =
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/branches/gh-pages")
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
-  end
-  respond_json(200, {
-    url = "",
-    status = "built",
-    cname = nil,
-    custom_404 = false,
-    html_url = config.base_url .. "/" .. owner .. "/" .. repo_name,
-    source = { branch = "gh-pages", path = "/" },
-    public = true,
-    https_enforced = false,
-    build_type = "legacy",
-  })
+  local data, err = meta_cap.get_repo_pages(owner, repo_name)
+  cap_rest_respond(data, err)
 end)
 
 -- Packages (public user) -------------------------------------------------------
 
 b:rest("get_users_packages", function(username)
-  pkg_list(username)
+  cap_rest_paged(packages_cap.list(username, GetParam("package_type") or ""))
 end)
 
 b:rest("get_users_package", function(username, pkg_type, pkg_name)
-  pkg_get(username, pkg_type, pkg_name)
+  cap_rest_respond(packages_cap.get(username, pkg_type, pkg_name))
 end)
 
 b:rest("delete_users_package", function(username, pkg_type, pkg_name)
-  pkg_delete(username, pkg_type, pkg_name)
+  cap_rest_204(packages_cap.delete(username, pkg_type, pkg_name))
 end)
 
 b:rest("get_users_package_versions", function(username, pkg_type, pkg_name)
-  pkg_versions(username, pkg_type, pkg_name)
+  cap_rest_paged(packages_cap.list_versions(username, pkg_type, pkg_name))
 end)
 
 b:rest("get_users_package_version", function(username, pkg_type, pkg_name, version_id)
-  pkg_get_version(username, pkg_type, pkg_name, version_id)
+  cap_rest_respond(packages_cap.get_version(username, pkg_type, pkg_name, version_id))
 end)
 
 b:rest("delete_users_package_version", function(username, pkg_type, pkg_name, version_id)
-  pkg_delete_version(username, pkg_type, pkg_name, version_id)
+  cap_rest_204(packages_cap.delete_version(username, pkg_type, pkg_name, version_id))
 end)
+
+-- ---------------------------------------------------------------------------
+-- Markdown capability module
+-- ---------------------------------------------------------------------------
+-- Wraps Gitea's markdown rendering endpoints.
+-- Both return HTML rather than JSON; the REST handlers write the response directly.
+-- Operations return ({body=string, content_type=string}, nil) on success
+-- or (nil, err) on failure.
+
+local markdown_cap = {}
+
+-- render: render markdown using the JSON API (same body shape as GitHub).
+-- content_type: the Content-Type to send upstream (forwarded from the client).
+-- body: the raw request body (JSON-encoded markdown options).
+markdown_cap.render = function(content_type, body)
+  local opts = auth() or {}
+  opts.method = "POST"
+  opts.body = body
+  opts.headers = opts.headers or {}
+  opts.headers["Content-Type"] = content_type
+  local ok, status, headers, resp_body = pcall(Fetch, base() .. "/markdown", opts)
+  if not ok then
+    return nil, cap_err(0, "network error rendering markdown")
+  end
+  if status < 200 or status >= 300 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " rendering markdown")
+  end
+  local ct = (headers and (headers["Content-Type"] or headers["content-type"])) or "text/html"
+  return { body = resp_body or "", content_type = ct }, nil
+end
+
+-- render_raw: render a raw markdown text body.
+-- body: plain text markdown content.
+markdown_cap.render_raw = function(body)
+  local opts = auth() or {}
+  opts.method = "POST"
+  opts.body = body
+  opts.headers = opts.headers or {}
+  opts.headers["Content-Type"] = "text/plain"
+  local ok, status, headers, resp_body = pcall(Fetch, base() .. "/markdown/raw", opts)
+  if not ok then
+    return nil, cap_err(0, "network error rendering raw markdown")
+  end
+  if status < 200 or status >= 300 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " rendering markdown")
+  end
+  local ct = (headers and (headers["Content-Type"] or headers["content-type"])) or "text/html"
+  return { body = resp_body or "", content_type = ct }, nil
+end
 
 -- Markdown -------------------------------------------------------------------
 
 -- POST /markdown → POST /api/v1/markdown
 -- Gitea accepts the same JSON body as GitHub and returns rendered HTML.
 b:rest("render_markdown", function()
-  local opts = auth() or {}
-  opts.method = "POST"
-  opts.body = GetBody()
-  opts.headers = opts.headers or {}
-  opts.headers["Content-Type"] = GetHeader("Content-Type") or "application/json"
-  local ok, status, headers, body = pcall(Fetch, base() .. "/markdown", opts)
-  if not ok then
-    respond_json(503, {})
+  local data, err = markdown_cap.render(GetHeader("Content-Type") or "application/json", GetBody())
+  if not data then
+    respond_json(err.status == 0 and 503 or err.status, {})
     return
   end
-  local ct = (headers and (headers["Content-Type"] or headers["content-type"])) or "text/html"
-  set_preamble(status, ct)
-  Write(body or "")
+  set_preamble(200, data.content_type)
+  Write(data.body)
 end)
 
 -- POST /markdown/raw → POST /api/v1/markdown/raw
 -- Gitea accepts raw markdown text and returns rendered HTML.
 b:rest("render_markdown_raw", function()
-  local opts = auth() or {}
-  opts.method = "POST"
-  opts.body = GetBody()
-  opts.headers = opts.headers or {}
-  opts.headers["Content-Type"] = "text/plain"
-  local ok, status, headers, body = pcall(Fetch, base() .. "/markdown/raw", opts)
-  if not ok then
-    respond_json(503, {})
+  local data, err = markdown_cap.render_raw(GetBody())
+  if not data then
+    respond_json(err.status == 0 and 503 or err.status, {})
     return
   end
-  local ct = (headers and (headers["Content-Type"] or headers["content-type"])) or "text/html"
-  set_preamble(status, ct)
-  Write(body or "")
+  set_preamble(200, data.content_type)
+  Write(data.body)
 end)
 
 -- Actions ------------------------------------------------------------------
@@ -3490,313 +5098,430 @@ end)
 -- create/update (PUT) falls back to the default 501 handler.
 
 b:rest("get_repo_actions_secrets", function(owner, repo)
-  proxy_actions_list(
-    "secrets",
-    translate_gitea_actions_secret,
-    base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/secrets"
-  )
+  local items, err = actions_cap.list_repo_secrets(owner, repo)
+  actions_rest_list(items, err, "secrets")
 end)
 
 b:rest("get_repo_actions_secret", function(owner, repo, secret_name)
-  proxy_json(
-    translate_gitea_actions_secret,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/secrets/" .. secret_name)
-  )
+  cap_rest_respond(actions_cap.get_repo_secret(owner, repo, secret_name))
 end)
 
 b:rest("delete_repo_actions_secret", function(owner, repo, secret_name)
-  set_204_or_error(
-    "DELETE",
-    base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/secrets/" .. secret_name
-  )
+  cap_rest_204(actions_cap.delete_repo_secret(owner, repo, secret_name))
 end)
 
 b:rest("get_org_actions_secrets", function(org)
-  proxy_actions_list(
-    "secrets",
-    translate_gitea_actions_secret,
-    base() .. "/orgs/" .. org .. "/actions/secrets"
-  )
+  local items, err = actions_cap.list_org_secrets(org)
+  actions_rest_list(items, err, "secrets")
 end)
 
 b:rest("get_org_actions_secret", function(org, secret_name)
-  proxy_json(
-    translate_gitea_actions_secret,
-    fetch_json(base() .. "/orgs/" .. org .. "/actions/secrets/" .. secret_name)
-  )
+  cap_rest_respond(actions_cap.get_org_secret(org, secret_name))
 end)
 
 b:rest("delete_org_actions_secret", function(org, secret_name)
-  set_204_or_error("DELETE", base() .. "/orgs/" .. org .. "/actions/secrets/" .. secret_name)
+  cap_rest_204(actions_cap.delete_org_secret(org, secret_name))
 end)
 
 -- Variables: full CRUD. Gitea uses PUT for updates; GitHub uses PATCH.
 b:rest("get_repo_actions_variables", function(owner, repo)
-  proxy_actions_list(
-    "variables",
-    translate_gitea_actions_variable,
-    base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables"
-  )
+  local items, err = actions_cap.list_repo_variables(owner, repo)
+  actions_rest_list(items, err, "variables")
 end)
 
 b:rest("get_repo_actions_variable", function(owner, repo, name)
-  proxy_json(
-    translate_gitea_actions_variable,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables/" .. name)
-  )
+  cap_rest_respond(actions_cap.get_repo_variable(owner, repo, name))
 end)
 
 b:rest("post_repo_actions_variable", function(owner, repo)
-  proxy_json_created(
-    translate_gitea_actions_variable,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables",
-      "POST",
-      GetBody()
-    )
-  )
+  cap_rest_created(actions_cap.create_repo_variable(owner, repo, GetBody()))
 end)
 
 b:rest("patch_repo_actions_variable", function(owner, repo, name)
-  proxy_204(
-    nil,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables/" .. name,
-      "PUT",
-      GetBody()
-    )
-  )
+  cap_rest_204(actions_cap.update_repo_variable(owner, repo, name, GetBody()))
 end)
 
 b:rest("delete_repo_actions_variable", function(owner, repo, name)
-  set_204_or_error(
-    "DELETE",
-    base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/variables/" .. name
-  )
+  cap_rest_204(actions_cap.delete_repo_variable(owner, repo, name))
 end)
 
 b:rest("get_org_actions_variables", function(org)
-  proxy_actions_list(
-    "variables",
-    translate_gitea_actions_variable,
-    base() .. "/orgs/" .. org .. "/actions/variables"
-  )
+  local items, err = actions_cap.list_org_variables(org)
+  actions_rest_list(items, err, "variables")
 end)
 
 b:rest("get_org_actions_variable", function(org, name)
-  proxy_json(
-    translate_gitea_actions_variable,
-    fetch_json(base() .. "/orgs/" .. org .. "/actions/variables/" .. name)
-  )
+  cap_rest_respond(actions_cap.get_org_variable(org, name))
 end)
 
 b:rest("post_org_actions_variable", function(org)
-  proxy_json_created(
-    translate_gitea_actions_variable,
-    fetch_json(base() .. "/orgs/" .. org .. "/actions/variables", "POST", GetBody())
-  )
+  cap_rest_created(actions_cap.create_org_variable(org, GetBody()))
 end)
 
 b:rest("patch_org_actions_variable", function(org, name)
-  proxy_204(
-    nil,
-    fetch_json(base() .. "/orgs/" .. org .. "/actions/variables/" .. name, "PUT", GetBody())
-  )
+  cap_rest_204(actions_cap.update_org_variable(org, name, GetBody()))
 end)
 
 b:rest("delete_org_actions_variable", function(org, name)
-  set_204_or_error("DELETE", base() .. "/orgs/" .. org .. "/actions/variables/" .. name)
+  cap_rest_204(actions_cap.delete_org_variable(org, name))
 end)
 
 -- Runners: list only (individual runner operations not proxied).
 b:rest("get_repo_actions_runners", function(owner, repo)
-  proxy_actions_list(
-    "runners",
-    translate_gitea_actions_runner,
-    base() .. "/repos/" .. owner .. "/" .. repo .. "/actions/runners"
-  )
+  local items, err = actions_cap.list_repo_runners(owner, repo)
+  actions_rest_list(items, err, "runners")
 end)
 
 b:rest("get_org_actions_runners", function(org)
-  proxy_actions_list(
-    "runners",
-    translate_gitea_actions_runner,
-    base() .. "/orgs/" .. org .. "/actions/runners"
-  )
+  local items, err = actions_cap.list_org_runners(org)
+  actions_rest_list(items, err, "runners")
 end)
 
 -- Git database (https://docs.github.com/en/rest/git) -----------------------
 
+local git_db = {}
+
+git_db.get_blob = function(owner, repo_name, file_sha)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/blobs/" .. file_sha
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+git_db.get_commit = function(owner, repo_name, commit_sha)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/commits/" .. commit_sha
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- Gitea GET /git/refs/{ref} returns an array — same as GitHub matching-refs.
+git_db.list_matching_refs = function(owner, repo_name, ref)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs/" .. ref)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- GitHub returns a single ref; Gitea returns an array — take the first element.
+git_db.get_ref = function(owner, repo_name, ref)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs/" .. ref)
+  if not raw then
+    return nil, err
+  end
+  if type(raw) == "table" and raw[1] then
+    return raw[1], nil
+  end
+  return raw, nil
+end
+
+git_db.create_ref = function(owner, repo_name, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+git_db.delete_ref = function(owner, repo_name, ref)
+  local ok, status =
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs/" .. ref, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting git ref")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting git ref")
+  end
+  return true, nil
+end
+
+git_db.get_tag = function(owner, repo_name, tag_sha)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/tags/" .. tag_sha
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+git_db.create_tag = function(owner, repo_name, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/tags",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+git_db.get_tree = function(owner, repo_name, tree_sha)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/trees/" .. tree_sha
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
 -- GET /repos/{owner}/{repo}/git/blobs/{file_sha}
 b:rest("get_git_blob", function(owner, repo_name, file_sha)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/blobs/" .. file_sha)
-  )
+  cap_rest_respond(git_db.get_blob(owner, repo_name, file_sha))
 end)
 
 -- GET /repos/{owner}/{repo}/git/commits/{commit_sha}
 b:rest("get_git_commit", function(owner, repo_name, commit_sha)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/commits/" .. commit_sha)
-  )
+  cap_rest_respond(git_db.get_commit(owner, repo_name, commit_sha))
 end)
 
 -- GET /repos/{owner}/{repo}/git/matching-refs/{ref}
 -- Gitea: GET /repos/{owner}/{repo}/git/refs/{ref} returns an array.
 b:rest("list_git_matching_refs", function(owner, repo_name, ref)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs/" .. ref)
-  )
+  cap_rest_respond(git_db.list_matching_refs(owner, repo_name, ref))
 end)
 
 -- GET /repos/{owner}/{repo}/git/ref/{ref}
 -- GitHub returns a single ref object; Gitea returns an array — take the first element.
 b:rest("get_git_ref", function(owner, repo_name, ref)
-  proxy_json(function(arr)
-    if type(arr) == "table" and arr[1] then
-      return arr[1]
-    end
-    return arr
-  end, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs/" .. ref))
+  cap_rest_respond(git_db.get_ref(owner, repo_name, ref))
 end)
 
 -- POST /repos/{owner}/{repo}/git/refs
 b:rest("create_git_ref", function(owner, repo_name)
-  proxy_json_created(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs", "POST", GetBody())
-  )
+  cap_rest_created(git_db.create_ref(owner, repo_name, GetBody()))
 end)
 
 -- DELETE /repos/{owner}/{repo}/git/refs/{ref}
 b:rest("delete_git_ref", function(owner, repo_name, ref)
-  set_204_or_error(
-    "DELETE",
-    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/refs/" .. ref
-  )
+  cap_rest_204(git_db.delete_ref(owner, repo_name, ref))
 end)
 
 -- GET /repos/{owner}/{repo}/git/tags/{tag_sha}
 b:rest("get_git_tag", function(owner, repo_name, tag_sha)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/tags/" .. tag_sha)
-  )
+  cap_rest_respond(git_db.get_tag(owner, repo_name, tag_sha))
 end)
 
 -- POST /repos/{owner}/{repo}/git/tags
 b:rest("create_git_tag", function(owner, repo_name)
-  proxy_json_created(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/tags", "POST", GetBody())
-  )
+  cap_rest_created(git_db.create_tag(owner, repo_name, GetBody()))
 end)
 
 -- GET /repos/{owner}/{repo}/git/trees/{tree_sha}
 b:rest("get_git_tree", function(owner, repo_name, tree_sha)
-  proxy_json(
-    nil,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/git/trees/" .. tree_sha)
-  )
+  cap_rest_respond(git_db.get_tree(owner, repo_name, tree_sha))
 end)
 
 -- Activity (https://docs.github.com/en/rest/activity)
 -- Gitea supports starring, watching, and subscription endpoints.
 -- Events feeds and notifications have no Gitea equivalent.
 
-b:rest("get_repo_stargazers", function(owner, repo_name)
-  proxy_json_paged(
-    translate_users,
-    PAGES,
-    fetch_json(
-      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/stargazers", PAGES)
-    )
+local activity = {}
+
+activity.list_stargazers = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/stargazers", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_user, items), hdrs, nil
+end
+
+activity.list_subscribers = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscribers", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_user, items), hdrs, nil
+end
+
+activity.get_subscription = function(owner, repo_name)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscription")
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+activity.set_subscription = function(owner, repo_name, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscription",
+    "PUT",
+    body
   )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+activity.delete_subscription = function(owner, repo_name)
+  local ok, status =
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscription", "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting subscription")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting subscription")
+  end
+  return true, nil
+end
+
+activity.list_starred = function()
+  local url = append_page_params(base() .. "/user/starred", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_repo, items), hdrs, nil
+end
+
+-- Returns (true, nil) if starred, (false, nil) if not, (nil, err) on error.
+activity.check_starred = function(owner, repo_name)
+  local ok, status = fetch_json(base() .. "/user/starred/" .. owner .. "/" .. repo_name)
+  if not ok then
+    return nil, cap_err(0, "network error checking star status")
+  end
+  if status == 204 then
+    return true, nil
+  end
+  if status == 404 then
+    return false, nil
+  end
+  return nil, cap_err(status, "upstream error " .. tostring(status))
+end
+
+activity.star = function(owner, repo_name)
+  local ok, status = fetch_json(base() .. "/user/starred/" .. owner .. "/" .. repo_name, "PUT")
+  if not ok then
+    return nil, cap_err(0, "network error starring repository")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " starring repository")
+  end
+  return true, nil
+end
+
+activity.unstar = function(owner, repo_name)
+  local ok, status = fetch_json(base() .. "/user/starred/" .. owner .. "/" .. repo_name, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error unstarring repository")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " unstarring repository")
+  end
+  return true, nil
+end
+
+activity.list_subscriptions = function()
+  local url = append_page_params(base() .. "/user/subscriptions", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_repo, items), hdrs, nil
+end
+
+activity.list_user_starred = function(username)
+  local url = append_page_params(base() .. "/users/" .. username .. "/starred", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_repo, items), hdrs, nil
+end
+
+activity.list_user_subscriptions = function(username)
+  local url = append_page_params(base() .. "/users/" .. username .. "/subscriptions", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_repo, items), hdrs, nil
+end
+
+b:rest("get_repo_stargazers", function(owner, repo_name)
+  cap_rest_paged(activity.list_stargazers(owner, repo_name))
 end)
 
 b:rest("get_repo_subscribers", function(owner, repo_name)
-  proxy_json_paged(
-    translate_users,
-    PAGES,
-    fetch_json(
-      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscribers", PAGES)
-    )
-  )
+  cap_rest_paged(activity.list_subscribers(owner, repo_name))
 end)
 
 b:rest("get_repo_subscription", function(owner, repo_name)
-  proxy_json(nil, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscription"))
+  cap_rest_respond(activity.get_subscription(owner, repo_name))
 end)
 
 b:rest("put_repo_subscription", function(owner, repo_name)
-  proxy_json(
-    nil,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscription",
-      "PUT",
-      GetBody()
-    )
-  )
+  cap_rest_respond(activity.set_subscription(owner, repo_name, GetBody()))
 end)
 
 b:rest("delete_repo_subscription", function(owner, repo_name)
-  set_204_or_error("DELETE", base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscription")
+  cap_rest_204(activity.delete_subscription(owner, repo_name))
 end)
 
 b:rest("get_user_starred", function()
-  proxy_json_paged(
-    translate_repos,
-    PAGES,
-    fetch_json(append_page_params(base() .. "/user/starred", PAGES))
-  )
+  cap_rest_paged(activity.list_starred())
 end)
 
+-- GET /user/starred/{owner}/{repo} — 204 if starred, 404 if not.
 b:rest("get_user_starred_repo", function(owner, repo_name)
-  local ok, status = fetch_json(base() .. "/user/starred/" .. owner .. "/" .. repo_name)
-  if ok and status == 204 then
+  local starred, err = activity.check_starred(owner, repo_name)
+  if err then
+    respond_json(err.status == 0 and 503 or err.status, {})
+    return
+  end
+  if starred then
     SetStatus(204, "No Content")
-  elseif ok and status == 404 then
-    respond_json(404, { message = "Not Found" })
-  elseif ok then
-    respond_json(status, {})
   else
-    respond_json(503, {})
+    respond_json(404, { message = "Not Found" })
   end
 end)
 
 b:rest("put_user_starred_repo", function(owner, repo_name)
-  set_204_or_error("PUT", base() .. "/user/starred/" .. owner .. "/" .. repo_name)
+  cap_rest_204(activity.star(owner, repo_name))
 end)
 
 b:rest("delete_user_starred_repo", function(owner, repo_name)
-  set_204_or_error("DELETE", base() .. "/user/starred/" .. owner .. "/" .. repo_name)
+  cap_rest_204(activity.unstar(owner, repo_name))
 end)
 
 b:rest("get_user_subscriptions", function()
-  proxy_json_paged(
-    translate_repos,
-    PAGES,
-    fetch_json(append_page_params(base() .. "/user/subscriptions", PAGES))
-  )
+  cap_rest_paged(activity.list_subscriptions())
 end)
 
 b:rest("get_users_starred", function(username)
-  proxy_json_paged(
-    translate_repos,
-    PAGES,
-    fetch_json(append_page_params(base() .. "/users/" .. username .. "/starred", PAGES))
-  )
+  cap_rest_paged(activity.list_user_starred(username))
 end)
 
 b:rest("get_users_subscriptions", function(username)
-  proxy_json_paged(
-    translate_repos,
-    PAGES,
-    fetch_json(append_page_params(base() .. "/users/" .. username .. "/subscriptions", PAGES))
-  )
+  cap_rest_paged(activity.list_user_subscriptions(username))
 end)
 
 -- ---------------------------------------------------------------------------
@@ -3953,8 +5678,7 @@ b:graphql("node.Release", function(local_id, _ctx)
   if not owner then
     return nil
   end
-  local data, _ =
-    graphql_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo .. "/releases/" .. rid)
+  local data, _ = releases.get(owner, repo, rid)
   if not data then
     return nil
   end
@@ -3988,13 +5712,13 @@ b:graphql("node.Milestone", function(local_id, _ctx)
 end)
 
 -- node.Commit: fetch a commit by "owner/repo/sha" local ID.
+-- Uses commits_cap.get which owns the fetch + error mapping.
 b:graphql("node.Commit", function(local_id, _ctx)
   local owner, repo, sha = local_id:match("^([^/]+)/([^/]+)/(.+)$")
   if not owner then
     return nil
   end
-  local data, _ =
-    graphql_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo .. "/git/commits/" .. sha)
+  local data, _ = commits_cap.get(owner, repo, sha)
   if not data then
     return nil
   end
@@ -4002,7 +5726,7 @@ b:graphql("node.Commit", function(local_id, _ctx)
 end)
 
 -- node.Ref: fetch a branch ref by "owner/repo/refs/heads/..." local ID.
--- Gitea branch objects use commit.id for the SHA; normalise to commit.sha before translating.
+-- Uses branches.get which normalises commit.sha via translate_gitea_branch.
 b:graphql("node.Ref", function(local_id, _ctx)
   local owner, repo, ref_path = local_id:match("^([^/]+)/([^/]+)/(refs/.+)$")
   if not owner then
@@ -4012,13 +5736,9 @@ b:graphql("node.Ref", function(local_id, _ctx)
   if not branch then
     return nil
   end
-  local data, _ =
-    graphql_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo .. "/branches/" .. branch)
+  local data, _ = branches.get(owner, repo, branch)
   if not data then
     return nil
-  end
-  if data.commit then
-    data.commit.sha = data.commit.id
   end
   local repo_stub = { __typename = "Repository", nameWithOwner = owner .. "/" .. repo }
   return graphql_translate_ref(data, repo_stub)
@@ -4142,18 +5862,15 @@ b:graphql("Repository.milestones", function(parent, args, ctx)
 end)
 
 -- Repository.refs: paginated list of branches as Ref objects.
--- Gitea branch objects use commit.id for the SHA; we normalise to commit.sha before
--- passing to graphql_translate_ref (which uses r.commit.sha).
+-- gitea_repo_connection fetches items inline (intentionally not capability-backed
+-- to avoid O(n) per-item fetches).  translate_gitea_branch normalises commit.sha.
 b:graphql("Repository.refs", function(parent, args, ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
   end
   return gitea_repo_connection(owner, name, "/branches", args, ctx, function(br)
-    if br.commit then
-      br.commit.sha = br.commit.id
-    end
-    return graphql_translate_ref(br, parent)
+    return graphql_translate_ref(translate_gitea_branch(br), parent)
   end, graphql_refs_connection)
 end)
 
@@ -5074,33 +6791,22 @@ b:graphql("Mutation.addStar", function(_parent, args, ctx)
   if not owner then
     return graphql_error(ctx, "addStar: malformed starrableId", nil, "BAD_USER_INPUT")
   end
-  local star_path = base() .. "/user/starred/" .. owner .. "/" .. repo
-  -- PUT returns 204 No Content on success.
-  local ok, status = fetch_json(star_path, "PUT")
+  local ok, cerr = activity.star(owner, repo)
   if not ok then
-    graphql_error(ctx, "network error starring repository", nil, "INTERNAL_ERROR")
-    return nil
-  end
-  if status == 401 or status == 403 then
-    graphql_error(ctx, "not authorized to star repository", nil, "FORBIDDEN")
-    return nil
-  end
-  if status == 404 then
-    graphql_error(ctx, "repository not found", nil, "NOT_FOUND")
-    return nil
-  end
-  if status ~= 204 then
-    graphql_error(
-      ctx,
-      "upstream error " .. tostring(status) .. " starring repository",
-      nil,
-      "INTERNAL_ERROR"
-    )
+    if cerr.status == 0 then
+      graphql_error(ctx, cerr.message, nil, "INTERNAL_ERROR")
+    elseif cerr.status == 401 or cerr.status == 403 then
+      graphql_error(ctx, "not authorized to star repository", nil, "FORBIDDEN")
+    elseif cerr.status == 404 then
+      graphql_error(ctx, "repository not found", nil, "NOT_FOUND")
+    else
+      graphql_error(ctx, cerr.message, nil, "INTERNAL_ERROR")
+    end
     return nil
   end
   -- Re-fetch the repository to return in the payload (star returns 204, no body).
-  local repo_path = base() .. "/repos/" .. owner .. "/" .. repo
-  local repo_data = graphql_fetch_or_error(fetch_json, repo_path, ctx, nil)
+  local repo_data =
+    graphql_fetch_or_error(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo, ctx, nil)
   if not repo_data then
     return nil
   end
@@ -5124,33 +6830,22 @@ b:graphql("Mutation.removeStar", function(_parent, args, ctx)
   if not owner then
     return graphql_error(ctx, "removeStar: malformed starrableId", nil, "BAD_USER_INPUT")
   end
-  local star_path = base() .. "/user/starred/" .. owner .. "/" .. repo
-  -- DELETE returns 204 No Content on success.
-  local ok, status = fetch_json(star_path, "DELETE")
+  local ok, cerr = activity.unstar(owner, repo)
   if not ok then
-    graphql_error(ctx, "network error unstarring repository", nil, "INTERNAL_ERROR")
-    return nil
-  end
-  if status == 401 or status == 403 then
-    graphql_error(ctx, "not authorized to unstar repository", nil, "FORBIDDEN")
-    return nil
-  end
-  if status == 404 then
-    graphql_error(ctx, "repository not found", nil, "NOT_FOUND")
-    return nil
-  end
-  if status ~= 204 then
-    graphql_error(
-      ctx,
-      "upstream error " .. tostring(status) .. " unstarring repository",
-      nil,
-      "INTERNAL_ERROR"
-    )
+    if cerr.status == 0 then
+      graphql_error(ctx, cerr.message, nil, "INTERNAL_ERROR")
+    elseif cerr.status == 401 or cerr.status == 403 then
+      graphql_error(ctx, "not authorized to unstar repository", nil, "FORBIDDEN")
+    elseif cerr.status == 404 then
+      graphql_error(ctx, "repository not found", nil, "NOT_FOUND")
+    else
+      graphql_error(ctx, cerr.message, nil, "INTERNAL_ERROR")
+    end
     return nil
   end
   -- Re-fetch the repository to return in the payload (unstar returns 204, no body).
-  local repo_path = base() .. "/repos/" .. owner .. "/" .. repo
-  local repo_data = graphql_fetch_or_error(fetch_json, repo_path, ctx, nil)
+  local repo_data =
+    graphql_fetch_or_error(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo, ctx, nil)
   if not repo_data then
     return nil
   end
@@ -5182,44 +6877,32 @@ b:graphql("Mutation.updateSubscription", function(_parent, args, ctx)
   if not owner then
     return graphql_error(ctx, "updateSubscription: malformed subscribableId", nil, "BAD_USER_INPUT")
   end
-  local sub_path = base() .. "/repos/" .. owner .. "/" .. repo .. "/subscription"
-  local ok, status
+  local ok, cerr
   if input.state == "UNSUBSCRIBED" then
-    -- Unsubscribe uses DELETE, which returns 204 No Content.
-    ok, status = fetch_json(sub_path, "DELETE")
+    ok, cerr = activity.delete_subscription(owner, repo)
   else
-    -- SUBSCRIBED and IGNORED both use PUT with a JSON body; returns 200.
+    -- SUBSCRIBED and IGNORED both use PUT with a JSON body.
     local body = EncodeJson({
       subscribed = input.state == "SUBSCRIBED",
       ignored = input.state == "IGNORED",
     })
-    ok, status = fetch_json(sub_path, "PUT", body)
+    ok, cerr = activity.set_subscription(owner, repo, body)
   end
   if not ok then
-    graphql_error(ctx, "network error updating subscription", nil, "INTERNAL_ERROR")
-    return nil
-  end
-  if status == 401 or status == 403 then
-    graphql_error(ctx, "not authorized to update subscription", nil, "FORBIDDEN")
-    return nil
-  end
-  if status == 404 then
-    graphql_error(ctx, "repository not found", nil, "NOT_FOUND")
-    return nil
-  end
-  local expected_status = input.state == "UNSUBSCRIBED" and 204 or 200
-  if status ~= expected_status then
-    graphql_error(
-      ctx,
-      "upstream error " .. tostring(status) .. " updating subscription",
-      nil,
-      "INTERNAL_ERROR"
-    )
+    if cerr.status == 0 then
+      graphql_error(ctx, cerr.message, nil, "INTERNAL_ERROR")
+    elseif cerr.status == 401 or cerr.status == 403 then
+      graphql_error(ctx, "not authorized to update subscription", nil, "FORBIDDEN")
+    elseif cerr.status == 404 then
+      graphql_error(ctx, "repository not found", nil, "NOT_FOUND")
+    else
+      graphql_error(ctx, cerr.message, nil, "INTERNAL_ERROR")
+    end
     return nil
   end
   -- Re-fetch the repository to return in the payload.
-  local repo_path = base() .. "/repos/" .. owner .. "/" .. repo
-  local repo_data = graphql_fetch_or_error(fetch_json, repo_path, ctx, nil)
+  local repo_data =
+    graphql_fetch_or_error(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo, ctx, nil)
   if not repo_data then
     return nil
   end
@@ -5352,5 +7035,30 @@ b:capability("pulls", pulls_cap)
 b:capability("labels", labels_cap)
 b:capability("milestones", milestones_cap)
 b:capability("comments", comments_cap)
+b:capability("branches", branches)
+b:capability("repo_metadata", repo_metadata)
+b:capability("commits", commits_cap)
+b:capability("contents", contents)
+b:capability("collaborators", collaborators)
+b:capability("forks", forks)
+b:capability("commit_comments", commit_comments)
+b:capability("releases", releases)
+b:capability("deploy_keys", deploy_keys)
+b:capability("webhooks", webhooks)
+b:capability("ssh_keys", ssh_keys)
+b:capability("gpg_keys", gpg_keys)
+b:capability("user_emails", user_emails)
+b:capability("reactions", reactions_cap)
+b:capability("issue_events", issue_events_cap)
+b:capability("pr_subs", pr_subs)
+b:capability("activity", activity)
+b:capability("checks", checks)
+b:capability("git_db", git_db)
+b:capability("teams", teams)
+b:capability("actions", actions_cap)
+b:capability("packages", packages_cap)
+b:capability("search", search_cap)
+b:capability("markdown", markdown_cap)
+b:capability("meta", meta_cap)
 b:set_allow_anonymous(_allow_anon)
 b:build()
