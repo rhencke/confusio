@@ -48,7 +48,6 @@ globals = {
   "translate_migration",
   -- Set by backends/*.lua, read by .init.lua
   "backend_impl",
-  "backend_allow_anonymous",
   -- App context: constructed in .init.lua, holds config + backend state
   "app",
   "make_app",

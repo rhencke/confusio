@@ -311,11 +311,11 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
 
 ### Anonymous access
 
-- **`backend_allow_anonymous` is a global boolean** defaulting to `true`. `OnHttpRequest()` checks it on every request: if `false` and no `Authorization` header is present, confusio returns `401 { message = "This instance requires authentication." }` immediately, before routing.
-- **Only Gitea probes its backend at startup.** The Gitea backend calls `GET /api/v1/settings/api` and sets `backend_allow_anonymous = (settings.require_signin_view ~= true)`. If the probe fails (network error or non-200), the default `true` is preserved and anonymous requests are allowed.
-- **All other backends leave the default `true`.** They neither probe nor set `backend_allow_anonymous`, so anonymous access is always permitted regardless of the upstream's actual configuration.
+- **`app.allow_anonymous` is a boolean field on the app context** defaulting to `true`. `OnHttpRequest()` checks it on every request: if `false` and no `Authorization` header is present, confusio returns `401 { message = "This instance requires authentication." }` immediately, before routing.
+- **Only Gitea probes its backend at startup.** The Gitea backend calls `GET /api/v1/settings/api` and sets `app.allow_anonymous = (settings.require_signin_view ~= true)`. If the probe fails (network error or non-200), the default `true` is preserved and anonymous requests are allowed.
+- **All other backends leave the default `true`.** They neither probe nor set `app.allow_anonymous`, so anonymous access is always permitted regardless of the upstream's actual configuration.
 - **Gitea-family backends (forgejo, gogs, codeberg, notabug) inherit Gitea's probe** because `load_family_backend("gitea")` dofiles `backends/gitea.lua`, which includes the probe block.
-- **Test pattern**: `*-anon.hurl` files verify that unauthenticated requests succeed when the mock advertises anonymous access. The mock's `/api/v1/settings/api` route returns `{"require_signin_view": false}` to simulate an open instance. Closed-instance (401) behavior is covered by unit tests that set `backend_allow_anonymous = false` directly.
+- **Test pattern**: `*-anon.hurl` files verify that unauthenticated requests succeed when the mock advertises anonymous access. The mock's `/api/v1/settings/api` route returns `{"require_signin_view": false}` to simulate an open instance. Closed-instance (401) behavior is covered by unit tests that set `app.allow_anonymous = false` directly.
 
 ### Mock server design
 
@@ -360,7 +360,7 @@ The nine `internal/` modules are loaded by `.init.lua` in a fixed order. Each ex
 | `transport.lua` | `append_page_params`, `make_fetch_opts`, `make_proxy_handler`, `make_backend_transport` | backends |
 | `translators.lua` | `owner_repo_id`, `translate_repo`, `translate_user`, `translate_migration` | backends |
 | `families.lua` | `provider_families`, `load_family_backend` | backends + Makefile scripts |
-| *(backend loaded here)* | `backend_impl`, `backend_allow_anonymous` | dispatch |
+| *(backend loaded here)* | `backend_impl`; Gitea writes `app.allow_anonymous` | dispatch |
 | `defaults.lua` | `defaults` (table of handler functions) | catalog |
 | `router.lua` | `route_add`, `route_match`, `path_known` | catalog, dispatch |
 | `catalog.lua` | `endpoints` (flat array); registers routes via `route_add` | dispatch, scripts |
