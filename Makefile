@@ -179,6 +179,17 @@ validate-builders:
 	  echo "ERROR: backend(s) still use direct graphql_resolvers assignment; use b:graphql() instead" >&2; \
 	  exit 1; \
 	fi
+	@bad=""; \
+	for f in backends/*.lua; do \
+	  if ! grep -q ':build(' "$$f" && ! grep -q 'dofile' "$$f"; then \
+	    bad="$$bad $$f"; \
+	  fi; \
+	done; \
+	if [ -n "$$bad" ]; then \
+	  echo "ERROR: backend(s) missing b:build() call (and not an alias that dofiles a root backend):$$bad" >&2; \
+	  echo "Every standalone backend must call make_backend_builder() and b:build()." >&2; \
+	  exit 1; \
+	fi
 	@echo "validate-builders OK"
 
 dump-capabilities: $(REDBEAN_BIN) $(DUMP_CAPS_SCRIPT) $(BACKEND_SRCS)
