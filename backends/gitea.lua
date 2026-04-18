@@ -4578,96 +4578,191 @@ end)
 -- Gitea supports starring, watching, and subscription endpoints.
 -- Events feeds and notifications have no Gitea equivalent.
 
-b:rest("get_repo_stargazers", function(owner, repo_name)
-  proxy_json_paged(
-    translate_users,
-    PAGES,
-    fetch_json(
-      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/stargazers", PAGES)
-    )
+local activity = {}
+
+activity.list_stargazers = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/stargazers", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_user, items), hdrs, nil
+end
+
+activity.list_subscribers = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscribers", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_user, items), hdrs, nil
+end
+
+activity.get_subscription = function(owner, repo_name)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscription")
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+activity.set_subscription = function(owner, repo_name, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscription",
+    "PUT",
+    body
   )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+activity.delete_subscription = function(owner, repo_name)
+  local ok, status =
+    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscription", "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting subscription")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting subscription")
+  end
+  return true, nil
+end
+
+activity.list_starred = function()
+  local url = append_page_params(base() .. "/user/starred", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_repo, items), hdrs, nil
+end
+
+-- Returns (true, nil) if starred, (false, nil) if not, (nil, err) on error.
+activity.check_starred = function(owner, repo_name)
+  local ok, status = fetch_json(base() .. "/user/starred/" .. owner .. "/" .. repo_name)
+  if not ok then
+    return nil, cap_err(0, "network error checking star status")
+  end
+  if status == 204 then
+    return true, nil
+  end
+  if status == 404 then
+    return false, nil
+  end
+  return nil, cap_err(status, "upstream error " .. tostring(status))
+end
+
+activity.star = function(owner, repo_name)
+  local ok, status = fetch_json(base() .. "/user/starred/" .. owner .. "/" .. repo_name, "PUT")
+  if not ok then
+    return nil, cap_err(0, "network error starring repository")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " starring repository")
+  end
+  return true, nil
+end
+
+activity.unstar = function(owner, repo_name)
+  local ok, status = fetch_json(base() .. "/user/starred/" .. owner .. "/" .. repo_name, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error unstarring repository")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " unstarring repository")
+  end
+  return true, nil
+end
+
+activity.list_subscriptions = function()
+  local url = append_page_params(base() .. "/user/subscriptions", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_repo, items), hdrs, nil
+end
+
+activity.list_user_starred = function(username)
+  local url = append_page_params(base() .. "/users/" .. username .. "/starred", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_repo, items), hdrs, nil
+end
+
+activity.list_user_subscriptions = function(username)
+  local url = append_page_params(base() .. "/users/" .. username .. "/subscriptions", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_repo, items), hdrs, nil
+end
+
+b:rest("get_repo_stargazers", function(owner, repo_name)
+  cap_rest_paged(activity.list_stargazers(owner, repo_name))
 end)
 
 b:rest("get_repo_subscribers", function(owner, repo_name)
-  proxy_json_paged(
-    translate_users,
-    PAGES,
-    fetch_json(
-      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscribers", PAGES)
-    )
-  )
+  cap_rest_paged(activity.list_subscribers(owner, repo_name))
 end)
 
 b:rest("get_repo_subscription", function(owner, repo_name)
-  proxy_json(nil, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscription"))
+  cap_rest_respond(activity.get_subscription(owner, repo_name))
 end)
 
 b:rest("put_repo_subscription", function(owner, repo_name)
-  proxy_json(
-    nil,
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscription",
-      "PUT",
-      GetBody()
-    )
-  )
+  cap_rest_respond(activity.set_subscription(owner, repo_name, GetBody()))
 end)
 
 b:rest("delete_repo_subscription", function(owner, repo_name)
-  set_204_or_error("DELETE", base() .. "/repos/" .. owner .. "/" .. repo_name .. "/subscription")
+  cap_rest_204(activity.delete_subscription(owner, repo_name))
 end)
 
 b:rest("get_user_starred", function()
-  proxy_json_paged(
-    translate_repos,
-    PAGES,
-    fetch_json(append_page_params(base() .. "/user/starred", PAGES))
-  )
+  cap_rest_paged(activity.list_starred())
 end)
 
+-- GET /user/starred/{owner}/{repo} — 204 if starred, 404 if not.
 b:rest("get_user_starred_repo", function(owner, repo_name)
-  local ok, status = fetch_json(base() .. "/user/starred/" .. owner .. "/" .. repo_name)
-  if ok and status == 204 then
+  local starred, err = activity.check_starred(owner, repo_name)
+  if err then
+    respond_json(err.status == 0 and 503 or err.status, {})
+    return
+  end
+  if starred then
     SetStatus(204, "No Content")
-  elseif ok and status == 404 then
-    respond_json(404, { message = "Not Found" })
-  elseif ok then
-    respond_json(status, {})
   else
-    respond_json(503, {})
+    respond_json(404, { message = "Not Found" })
   end
 end)
 
 b:rest("put_user_starred_repo", function(owner, repo_name)
-  set_204_or_error("PUT", base() .. "/user/starred/" .. owner .. "/" .. repo_name)
+  cap_rest_204(activity.star(owner, repo_name))
 end)
 
 b:rest("delete_user_starred_repo", function(owner, repo_name)
-  set_204_or_error("DELETE", base() .. "/user/starred/" .. owner .. "/" .. repo_name)
+  cap_rest_204(activity.unstar(owner, repo_name))
 end)
 
 b:rest("get_user_subscriptions", function()
-  proxy_json_paged(
-    translate_repos,
-    PAGES,
-    fetch_json(append_page_params(base() .. "/user/subscriptions", PAGES))
-  )
+  cap_rest_paged(activity.list_subscriptions())
 end)
 
 b:rest("get_users_starred", function(username)
-  proxy_json_paged(
-    translate_repos,
-    PAGES,
-    fetch_json(append_page_params(base() .. "/users/" .. username .. "/starred", PAGES))
-  )
+  cap_rest_paged(activity.list_user_starred(username))
 end)
 
 b:rest("get_users_subscriptions", function(username)
-  proxy_json_paged(
-    translate_repos,
-    PAGES,
-    fetch_json(append_page_params(base() .. "/users/" .. username .. "/subscriptions", PAGES))
-  )
+  cap_rest_paged(activity.list_user_subscriptions(username))
 end)
 
 -- ---------------------------------------------------------------------------
@@ -5937,33 +6032,22 @@ b:graphql("Mutation.addStar", function(_parent, args, ctx)
   if not owner then
     return graphql_error(ctx, "addStar: malformed starrableId", nil, "BAD_USER_INPUT")
   end
-  local star_path = base() .. "/user/starred/" .. owner .. "/" .. repo
-  -- PUT returns 204 No Content on success.
-  local ok, status = fetch_json(star_path, "PUT")
+  local ok, cerr = activity.star(owner, repo)
   if not ok then
-    graphql_error(ctx, "network error starring repository", nil, "INTERNAL_ERROR")
-    return nil
-  end
-  if status == 401 or status == 403 then
-    graphql_error(ctx, "not authorized to star repository", nil, "FORBIDDEN")
-    return nil
-  end
-  if status == 404 then
-    graphql_error(ctx, "repository not found", nil, "NOT_FOUND")
-    return nil
-  end
-  if status ~= 204 then
-    graphql_error(
-      ctx,
-      "upstream error " .. tostring(status) .. " starring repository",
-      nil,
-      "INTERNAL_ERROR"
-    )
+    if cerr.status == 0 then
+      graphql_error(ctx, cerr.message, nil, "INTERNAL_ERROR")
+    elseif cerr.status == 401 or cerr.status == 403 then
+      graphql_error(ctx, "not authorized to star repository", nil, "FORBIDDEN")
+    elseif cerr.status == 404 then
+      graphql_error(ctx, "repository not found", nil, "NOT_FOUND")
+    else
+      graphql_error(ctx, cerr.message, nil, "INTERNAL_ERROR")
+    end
     return nil
   end
   -- Re-fetch the repository to return in the payload (star returns 204, no body).
-  local repo_path = base() .. "/repos/" .. owner .. "/" .. repo
-  local repo_data = graphql_fetch_or_error(fetch_json, repo_path, ctx, nil)
+  local repo_data =
+    graphql_fetch_or_error(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo, ctx, nil)
   if not repo_data then
     return nil
   end
@@ -5987,33 +6071,22 @@ b:graphql("Mutation.removeStar", function(_parent, args, ctx)
   if not owner then
     return graphql_error(ctx, "removeStar: malformed starrableId", nil, "BAD_USER_INPUT")
   end
-  local star_path = base() .. "/user/starred/" .. owner .. "/" .. repo
-  -- DELETE returns 204 No Content on success.
-  local ok, status = fetch_json(star_path, "DELETE")
+  local ok, cerr = activity.unstar(owner, repo)
   if not ok then
-    graphql_error(ctx, "network error unstarring repository", nil, "INTERNAL_ERROR")
-    return nil
-  end
-  if status == 401 or status == 403 then
-    graphql_error(ctx, "not authorized to unstar repository", nil, "FORBIDDEN")
-    return nil
-  end
-  if status == 404 then
-    graphql_error(ctx, "repository not found", nil, "NOT_FOUND")
-    return nil
-  end
-  if status ~= 204 then
-    graphql_error(
-      ctx,
-      "upstream error " .. tostring(status) .. " unstarring repository",
-      nil,
-      "INTERNAL_ERROR"
-    )
+    if cerr.status == 0 then
+      graphql_error(ctx, cerr.message, nil, "INTERNAL_ERROR")
+    elseif cerr.status == 401 or cerr.status == 403 then
+      graphql_error(ctx, "not authorized to unstar repository", nil, "FORBIDDEN")
+    elseif cerr.status == 404 then
+      graphql_error(ctx, "repository not found", nil, "NOT_FOUND")
+    else
+      graphql_error(ctx, cerr.message, nil, "INTERNAL_ERROR")
+    end
     return nil
   end
   -- Re-fetch the repository to return in the payload (unstar returns 204, no body).
-  local repo_path = base() .. "/repos/" .. owner .. "/" .. repo
-  local repo_data = graphql_fetch_or_error(fetch_json, repo_path, ctx, nil)
+  local repo_data =
+    graphql_fetch_or_error(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo, ctx, nil)
   if not repo_data then
     return nil
   end
@@ -6045,44 +6118,32 @@ b:graphql("Mutation.updateSubscription", function(_parent, args, ctx)
   if not owner then
     return graphql_error(ctx, "updateSubscription: malformed subscribableId", nil, "BAD_USER_INPUT")
   end
-  local sub_path = base() .. "/repos/" .. owner .. "/" .. repo .. "/subscription"
-  local ok, status
+  local ok, cerr
   if input.state == "UNSUBSCRIBED" then
-    -- Unsubscribe uses DELETE, which returns 204 No Content.
-    ok, status = fetch_json(sub_path, "DELETE")
+    ok, cerr = activity.delete_subscription(owner, repo)
   else
-    -- SUBSCRIBED and IGNORED both use PUT with a JSON body; returns 200.
+    -- SUBSCRIBED and IGNORED both use PUT with a JSON body.
     local body = EncodeJson({
       subscribed = input.state == "SUBSCRIBED",
       ignored = input.state == "IGNORED",
     })
-    ok, status = fetch_json(sub_path, "PUT", body)
+    ok, cerr = activity.set_subscription(owner, repo, body)
   end
   if not ok then
-    graphql_error(ctx, "network error updating subscription", nil, "INTERNAL_ERROR")
-    return nil
-  end
-  if status == 401 or status == 403 then
-    graphql_error(ctx, "not authorized to update subscription", nil, "FORBIDDEN")
-    return nil
-  end
-  if status == 404 then
-    graphql_error(ctx, "repository not found", nil, "NOT_FOUND")
-    return nil
-  end
-  local expected_status = input.state == "UNSUBSCRIBED" and 204 or 200
-  if status ~= expected_status then
-    graphql_error(
-      ctx,
-      "upstream error " .. tostring(status) .. " updating subscription",
-      nil,
-      "INTERNAL_ERROR"
-    )
+    if cerr.status == 0 then
+      graphql_error(ctx, cerr.message, nil, "INTERNAL_ERROR")
+    elseif cerr.status == 401 or cerr.status == 403 then
+      graphql_error(ctx, "not authorized to update subscription", nil, "FORBIDDEN")
+    elseif cerr.status == 404 then
+      graphql_error(ctx, "repository not found", nil, "NOT_FOUND")
+    else
+      graphql_error(ctx, cerr.message, nil, "INTERNAL_ERROR")
+    end
     return nil
   end
   -- Re-fetch the repository to return in the payload.
-  local repo_path = base() .. "/repos/" .. owner .. "/" .. repo
-  local repo_data = graphql_fetch_or_error(fetch_json, repo_path, ctx, nil)
+  local repo_data =
+    graphql_fetch_or_error(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo, ctx, nil)
   if not repo_data then
     return nil
   end
@@ -6231,5 +6292,6 @@ b:capability("user_emails", user_emails)
 b:capability("reactions", reactions_cap)
 b:capability("issue_events", issue_events_cap)
 b:capability("pr_subs", pr_subs)
+b:capability("activity", activity)
 b:set_allow_anonymous(_allow_anon)
 b:build()
