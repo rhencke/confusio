@@ -35,6 +35,12 @@ dofile("/zip/internal/registry.lua")
 -- Build the app context.  Backends register handlers via make_backend_builder():b:build().
 app = make_app(config)
 
+-- Wire the pre-populated graphql_resolvers table (created by graphql_executor.lua with
+-- the built-in Query.node/nodes/rateLimit entries) into app.backend.graphql so both
+-- paths reference the same registry.  Backends writing to graphql_resolvers via b:build()
+-- and the executor reading graphql_resolvers both see the same table as app.backend.graphql.
+app.backend.graphql = graphql_resolvers
+
 if config.backend ~= "" then
   assert(config.backend:match("^[%a][%w_]*$"), "invalid backend name: " .. config.backend)
   dofile("/zip/backends/" .. config.backend .. ".lua")

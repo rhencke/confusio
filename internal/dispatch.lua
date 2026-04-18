@@ -11,7 +11,7 @@ function OnHttpRequest()
   end
   local ep, caps, default_fn = route_match(GetMethod(), GetPath())
   if ep then
-    local fn = app.backend_impl[ep] or default_fn
+    local fn = app.backend.rest[ep] or default_fn
     if fn then
       fn(table.unpack(caps))
     else

@@ -1585,31 +1585,31 @@ eq(_last_status, 501, "OnHttpRequest: GET /feeds → 501 (activity not implement
 -- ============================================================
 
 do
-  local _saved_impl = app.backend_impl
+  local _saved_rest = app.backend.rest
 
   -- b:build(strip) with explicit strip patterns excludes matching REST keys.
-  app.backend_impl = {}
+  app.backend.rest = {}
   local bt = make_backend_builder()
   bt:rest("get_package_info", function() end)
   bt:rest("list_actions_runs", function() end)
   bt:rest("get_repo", function() end)
   bt:build({ "_package", "_actions_" })
-  ok(app.backend_impl["get_package_info"] == nil, "b:build(strip): strips _package keys")
-  ok(app.backend_impl["list_actions_runs"] == nil, "b:build(strip): strips _actions_ keys")
-  ok(app.backend_impl["get_repo"] ~= nil, "b:build(strip): preserves non-matching keys")
+  ok(app.backend.rest["get_package_info"] == nil, "b:build(strip): strips _package keys")
+  ok(app.backend.rest["list_actions_runs"] == nil, "b:build(strip): strips _actions_ keys")
+  ok(app.backend.rest["get_repo"] ~= nil, "b:build(strip): preserves non-matching keys")
 
   -- b:build() without strip registers all REST keys.
-  app.backend_impl = {}
+  app.backend.rest = {}
   local bt2 = make_backend_builder()
   bt2:rest("get_package_info", function() end)
   bt2:rest("get_repo", function() end)
   bt2:build()
   ok(
-    app.backend_impl["get_package_info"] ~= nil,
+    app.backend.rest["get_package_info"] ~= nil,
     "b:build(): without strip, all keys are registered"
   )
 
-  app.backend_impl = _saved_impl
+  app.backend.rest = _saved_rest
 end
 
 -- ============================================================
@@ -1618,7 +1618,10 @@ end
 
 ok(type(app) == "table", "app: is a table")
 ok(app.config == config, "app.config: same object as global config")
-ok(type(app.backend_impl) == "table", "app.backend_impl: is a table")
+ok(type(app.backend) == "table", "app.backend: is a table")
+ok(type(app.backend.rest) == "table", "app.backend.rest: is a table")
+ok(type(app.backend.graphql) == "table", "app.backend.graphql: is a table")
+ok(type(app.backend.capabilities) == "table", "app.backend.capabilities: is a table")
 ok(type(app.allow_anonymous) == "boolean", "app.allow_anonymous: is a boolean")
 ok(app.allow_anonymous == true, "app.allow_anonymous: default true (no backend loaded)")
 
@@ -1627,8 +1630,10 @@ do
   local test_cfg = { backend = "test", base_url = "https://test.example.com" }
   local test_app = make_app(test_cfg)
   ok(test_app.config == test_cfg, "make_app: config is the supplied table")
-  ok(type(test_app.backend_impl) == "table", "make_app: backend_impl is a table")
-  ok(type(test_app.capabilities) == "table", "make_app: capabilities is a table")
+  ok(type(test_app.backend) == "table", "make_app: backend is a table")
+  ok(type(test_app.backend.rest) == "table", "make_app: backend.rest is a table")
+  ok(type(test_app.backend.graphql) == "table", "make_app: backend.graphql is a table")
+  ok(type(test_app.backend.capabilities) == "table", "make_app: backend.capabilities is a table")
   ok(test_app.allow_anonymous == true, "make_app: allow_anonymous defaults to true")
   ok(test_app ~= app, "make_app: returns a new independent table each call")
 end
@@ -1638,14 +1643,14 @@ end
 -- ============================================================
 
 do
-  local saved_impl = app.backend_impl
-  local saved_capabilities = app.capabilities
+  local saved_rest = app.backend.rest
+  local saved_capabilities = app.backend.capabilities
   local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
   local saved_anon = app.allow_anonymous
 
   local function restore()
-    app.backend_impl = saved_impl
-    app.capabilities = saved_capabilities
+    app.backend.rest = saved_rest
+    app.backend.capabilities = saved_capabilities
     graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
     app.allow_anonymous = saved_anon
   end
@@ -1669,9 +1674,9 @@ do
   ok(b2:capability("repos", {}) == b2, "builder:capability: returns self")
   ok(b2:set_allow_anonymous(true) == b2, "builder:set_allow_anonymous: returns self")
 
-  -- build() populates app.backend_impl, graphql_resolvers, and app.capabilities
-  app.backend_impl = {}
-  app.capabilities = {}
+  -- build() populates app.backend.rest, graphql_resolvers, and app.backend.capabilities
+  app.backend.rest = {}
+  app.backend.capabilities = {}
   graphql_resolvers = {} -- luacheck: globals graphql_resolvers
   app.allow_anonymous = true
 
@@ -1685,14 +1690,14 @@ do
   b3:set_allow_anonymous(false)
   b3:build()
 
-  eq(app.backend_impl["get_repo"], get_fn, "builder:build: registers REST handler")
+  eq(app.backend.rest["get_repo"], get_fn, "builder:build: registers REST handler")
   eq(graphql_resolvers["Query.viewer"], gql_fn, "builder:build: registers GraphQL resolver") -- luacheck: globals graphql_resolvers
-  eq(app.capabilities["repos"], cap_repos, "builder:build: registers capability module")
+  eq(app.backend.capabilities["repos"], cap_repos, "builder:build: registers capability module")
   eq(app.allow_anonymous, false, "builder:build: sets allow_anonymous")
 
   -- build() without set_allow_anonymous leaves allow_anonymous unchanged
-  app.backend_impl = {}
-  app.capabilities = {}
+  app.backend.rest = {}
+  app.backend.capabilities = {}
   app.allow_anonymous = true
   local b4 = make_backend_builder()
   b4:rest("get_root", function() end)
@@ -1703,8 +1708,8 @@ do
   )
 
   -- build(strip) excludes REST keys matching any pattern but NOT capabilities
-  app.backend_impl = {}
-  app.capabilities = {}
+  app.backend.rest = {}
+  app.backend.capabilities = {}
   local cap_issues = { get = function() end }
   local b5 = make_backend_builder()
   b5:rest("get_repo", function() end)
@@ -1712,14 +1717,18 @@ do
   b5:rest("list_actions_runs", function() end)
   b5:capability("issues", cap_issues)
   b5:build({ "_package", "_actions_" })
-  ok(app.backend_impl["get_repo"] ~= nil, "builder:build(strip): keeps non-matching key")
-  ok(app.backend_impl["get_package_info"] == nil, "builder:build(strip): strips _package key")
-  ok(app.backend_impl["list_actions_runs"] == nil, "builder:build(strip): strips _actions_ key")
-  eq(app.capabilities["issues"], cap_issues, "builder:build(strip): capabilities are not stripped")
+  ok(app.backend.rest["get_repo"] ~= nil, "builder:build(strip): keeps non-matching key")
+  ok(app.backend.rest["get_package_info"] == nil, "builder:build(strip): strips _package key")
+  ok(app.backend.rest["list_actions_runs"] == nil, "builder:build(strip): strips _actions_ key")
+  eq(
+    app.backend.capabilities["issues"],
+    cap_issues,
+    "builder:build(strip): capabilities are not stripped"
+  )
 
   -- two builders are independent and do not share state
-  app.backend_impl = {}
-  app.capabilities = {}
+  app.backend.rest = {}
+  app.backend.capabilities = {}
   local ba = make_backend_builder()
   ba:rest("get_foo", function() end)
   ba:capability("repos", { get = function() end })
@@ -1727,23 +1736,23 @@ do
   bb:rest("get_bar", function() end)
   bb:capability("users", { get = function() end })
   ba:build()
-  ok(app.backend_impl["get_foo"] ~= nil, "make_backend_builder: builders are independent (a built)")
+  ok(app.backend.rest["get_foo"] ~= nil, "make_backend_builder: builders are independent (a built)")
   ok(
-    app.backend_impl["get_bar"] == nil,
+    app.backend.rest["get_bar"] == nil,
     "make_backend_builder: builders are independent (b not yet built)"
   )
   ok(
-    app.capabilities["repos"] ~= nil,
+    app.backend.capabilities["repos"] ~= nil,
     "make_backend_builder: capability builders independent (a built)"
   )
   ok(
-    app.capabilities["users"] == nil,
+    app.backend.capabilities["users"] == nil,
     "make_backend_builder: capability builders independent (b not yet built)"
   )
   bb:build()
-  ok(app.backend_impl["get_bar"] ~= nil, "make_backend_builder: builders are independent (b built)")
+  ok(app.backend.rest["get_bar"] ~= nil, "make_backend_builder: builders are independent (b built)")
   ok(
-    app.capabilities["users"] ~= nil,
+    app.backend.capabilities["users"] ~= nil,
     "make_backend_builder: capability builders independent (b built)"
   )
 

@@ -1,12 +1,12 @@
--- Validate that CSV support claims agree with actual backend_impl handler presence.
+-- Validate that CSV support claims agree with actual backend REST handler presence.
 --
 -- Rules checked for each (backend, endpoint) cell in the CSV:
---   y  — backend_impl must contain a handler for this endpoint, UNLESS the handler is
+--   y  — app.backend.rest must contain a handler for this endpoint, UNLESS the handler is
 --          confusio-native (a complete response synthesized by confusio itself, not the
 --          backend API — e.g. GET /meta, GET /zen).  Confusio-native handlers return
 --          real responses for every backend and are exempted from the handler-presence
 --          requirement.
---   n  — backend_impl must NOT contain a handler for this endpoint
+--   n  — app.backend.rest must NOT contain a handler for this endpoint
 --          (backend silently implements something the CSV calls unsupported → error)
 --   ~* — not checked (partial support may or may not have a dedicated handler)
 --
@@ -23,7 +23,7 @@
 
 -- Handlers whose catalog defaults are complete confusio-synthesised responses.
 -- These work for every backend without a per-backend handler, so a y claim is
--- accurate even when backend_impl has no entry for them.
+-- accurate even when app.backend.rest has no entry for them.
 local CONFUSIO_NATIVE = {
   get_meta = true,
   get_octocat = true,
@@ -31,7 +31,7 @@ local CONFUSIO_NATIVE = {
   get_versions = true,
   get_zen = true,
   -- graphql_handler is the fixed handler for POST /graphql across all backends;
-  -- backends populate graphql_resolvers rather than backend_impl.graphql_request.
+  -- backends populate graphql_resolvers rather than app.backend.rest.graphql_request.
   graphql_request = true,
 }
 
@@ -135,7 +135,7 @@ for li = 2, #lines do
               .. provider
               .. " claims 'y' for "
               .. ep
-              .. " but backend_impl has no handler '"
+              .. " but app.backend.rest has no handler '"
               .. handler
               .. "'"
           elseif claim == "n" and has_handler then
@@ -143,7 +143,7 @@ for li = 2, #lines do
               .. provider
               .. " claims 'n' for "
               .. ep
-              .. " but backend_impl defines handler '"
+              .. " but app.backend.rest defines handler '"
               .. handler
               .. "'"
           end
