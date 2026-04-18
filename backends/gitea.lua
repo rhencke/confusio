@@ -742,6 +742,88 @@ end
 
 local b = make_backend_builder()
 
+-- ---------------------------------------------------------------------------
+-- Repository capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translate_repo for all repository operations.
+-- REST handlers and GraphQL resolvers both call into this table rather than
+-- duplicating the URL construction, error mapping, and translation logic.
+-- All operations return (data, nil) on success or (nil, err) on failure.
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+
+local repos = {}
+
+-- get: fetch a single repository.
+repos.get = function(owner, repo_name)
+  local raw, err = cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name)
+  if not raw then
+    return nil, err
+  end
+  return translate_repo(raw), nil
+end
+
+-- update: apply a partial update via PATCH.
+-- body: JSON-encoded string of fields to change.
+repos.update = function(owner, repo_name, body)
+  local raw, err =
+    cap_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo_name, "PATCH", body)
+  if not raw then
+    return nil, err
+  end
+  return translate_repo(raw), nil
+end
+
+-- delete: permanently remove a repository.
+-- Returns (true, nil) on 204 success or (nil, err) on failure.
+repos.delete = function(owner, repo_name)
+  local ok, status = fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting " .. owner .. "/" .. repo_name)
+  end
+  if status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting repository")
+  end
+  return true, nil
+end
+
+-- list_user: paginated list of repos for the authenticated user.
+repos.list_user = function()
+  local url = append_page_params(base() .. "/user/repos", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_repo, items), hdrs, nil
+end
+
+-- create_user: create a repository under the authenticated user.
+repos.create_user = function(body)
+  local raw, err = cap_fetch(fetch_json, base() .. "/user/repos", "POST", body)
+  if not raw then
+    return nil, err
+  end
+  return translate_repo(raw), nil
+end
+
+-- list_org: paginated list of repos for an organization.
+repos.list_org = function(org)
+  local url = append_page_params(base() .. "/orgs/" .. org .. "/repos", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_repo, items), hdrs, nil
+end
+
+-- create_org: create a repository inside an organization.
+repos.create_org = function(org, body)
+  local raw, err = cap_fetch(fetch_json, base() .. "/orgs/" .. org .. "/repos", "POST", body)
+  if not raw then
+    return nil, err
+  end
+  return translate_repo(raw), nil
+end
+
 -- Health check
 b:rest("get_root", function()
   proxy_health_check(pcall(Fetch, base() .. "/version", auth()))
@@ -799,54 +881,44 @@ end)
 
 -- GET /repos/{owner}/{repo}
 b:rest("get_repo", function(owner, repo_name)
-  proxy_json(translate_repo, fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name))
+  local data, err = repos.get(owner, repo_name)
+  cap_rest_respond(data, err)
 end)
 
 -- PATCH /repos/{owner}/{repo}
 b:rest("patch_repo", function(owner, repo_name)
-  proxy_json(
-    translate_repo,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name, "PATCH", GetBody())
-  )
+  local data, err = repos.update(owner, repo_name, GetBody())
+  cap_rest_respond(data, err)
 end)
 
 -- DELETE /repos/{owner}/{repo}
 b:rest("delete_repo", function(owner, repo_name)
-  local url = base() .. "/repos/" .. owner .. "/" .. repo_name
-  local dopts = auth() or {}
-  dopts.method = "DELETE"
-  proxy_204(nil, pcall(Fetch, url, dopts))
+  local ok, err = repos.delete(owner, repo_name)
+  cap_rest_204(ok, err)
 end)
 
 -- GET /user/repos
 b:rest("get_user_repos", function()
-  proxy_json_paged(
-    translate_repos,
-    PAGES,
-    fetch_json(append_page_params(base() .. "/user/repos", PAGES))
-  )
+  local items, hdrs, err = repos.list_user()
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 -- POST /user/repos
 b:rest("post_user_repos", function()
-  proxy_json_created(translate_repo, fetch_json(base() .. "/user/repos", "POST", GetBody()))
+  local data, err = repos.create_user(GetBody())
+  cap_rest_created(data, err)
 end)
 
 -- GET /orgs/{org}/repos
 b:rest("get_org_repos", function(org)
-  proxy_json_paged(
-    translate_repos,
-    PAGES,
-    fetch_json(append_page_params(base() .. "/orgs/" .. org .. "/repos", PAGES))
-  )
+  local items, hdrs, err = repos.list_org(org)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 -- POST /orgs/{org}/repos
 b:rest("post_org_repos", function(org)
-  proxy_json_created(
-    translate_repo,
-    fetch_json(base() .. "/orgs/" .. org .. "/repos", "POST", GetBody())
-  )
+  local data, err = repos.create_org(org, GetBody())
+  cap_rest_created(data, err)
 end)
 
 -- GET /repos/{owner}/{repo}/topics
@@ -1845,11 +1917,11 @@ b:rest("get_org_team_repos", function(org, slug)
     respond_json(404, { message = "Not Found" })
     return
   end
-  proxy_json_paged(function(repos)
-    for i, r in ipairs(repos) do
-      repos[i] = translate_repo(r)
+  proxy_json_paged(function(items)
+    for i, r in ipairs(items) do
+      items[i] = translate_repo(r)
     end
-    return repos
+    return items
   end, PAGES, fetch_json(append_page_params(base() .. "/teams/" .. id .. "/repos", PAGES)))
 end)
 
@@ -2480,11 +2552,11 @@ end)
 
 -- GET /teams/{team_id}/repos
 b:rest("get_team_repos", function(team_id)
-  proxy_json_paged(function(repos)
-    for i, r in ipairs(repos) do
-      repos[i] = translate_repo(r)
+  proxy_json_paged(function(items)
+    for i, r in ipairs(items) do
+      items[i] = translate_repo(r)
     end
-    return repos
+    return items
   end, PAGES, fetch_json(append_page_params(base() .. "/teams/" .. team_id .. "/repos", PAGES)))
 end)
 
@@ -3368,11 +3440,15 @@ end)
 
 -- node.Repository: fetch a repository by "owner/repo" local ID.
 b:graphql("node.Repository", function(local_id, _ctx)
-  local data, _ = graphql_fetch(fetch_json, base() .. "/repos/" .. local_id)
+  local owner, repo_name = local_id:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ = repos.get(owner, repo_name)
   if not data then
     return nil
   end
-  return graphql_translate_repo(translate_repo(data))
+  return graphql_translate_repo(data)
 end)
 
 -- node.User: fetch a user by login.
@@ -3472,11 +3548,11 @@ b:graphql("Query.repository", function(_parent, args, ctx)
     graphql_error(ctx, "repository requires owner and name arguments")
     return nil
   end
-  local data, _ = graphql_fetch(fetch_json, base() .. "/repos/" .. args.owner .. "/" .. args.name)
+  local data, _ = repos.get(args.owner, args.name)
   if not data then
     return nil
   end
-  return graphql_translate_repo(translate_repo(data))
+  return graphql_translate_repo(data)
 end)
 
 -- node.Release: fetch a release by "owner/repo/release_id" local ID.
@@ -3991,26 +4067,29 @@ b:graphql("Mutation.createRepository", function(_parent, args, ctx)
     return graphql_error(ctx, "createRepository requires input.name", nil, "BAD_USER_INPUT")
   end
   local cmid = get_client_mutation_id(args)
-  local path
-  if input.ownerId then
-    local t, lid = decode_node_id(input.ownerId)
-    if t == "Organization" then
-      path = base() .. "/orgs/" .. lid .. "/repos"
-    end
-  end
-  path = path or (base() .. "/user/repos")
   local body = EncodeJson({
     name = input.name,
     description = input.description,
     private = input.visibility == "PRIVATE",
     auto_init = input.initializeWithReadme,
   })
-  local data = graphql_fetch_or_error(fetch_json, path, ctx, nil, "POST", body)
+  local data, err
+  if input.ownerId then
+    local t, lid = decode_node_id(input.ownerId)
+    if t == "Organization" then
+      data, err = repos.create_org(lid, body)
+    else
+      data, err = repos.create_user(body)
+    end
+  else
+    data, err = repos.create_user(body)
+  end
   if not data then
+    graphql_error(ctx, err and err.message or "error creating repository")
     return nil
   end
   return {
-    repository = graphql_translate_repo(translate_repo(data)),
+    repository = graphql_translate_repo(data),
     clientMutationId = cmid,
   }
 end)
@@ -4033,7 +4112,6 @@ b:graphql("Mutation.updateRepository", function(_parent, args, ctx)
   if not owner then
     return graphql_error(ctx, "updateRepository: malformed repositoryId", nil, "BAD_USER_INPUT")
   end
-  local path = base() .. "/repos/" .. owner .. "/" .. repo
   -- Map visibility enum to Gitea's boolean private field; nil if not supplied.
   local is_private = input.visibility and (input.visibility == "PRIVATE") or nil
   local body = EncodeJson({
@@ -4044,12 +4122,13 @@ b:graphql("Mutation.updateRepository", function(_parent, args, ctx)
     has_wiki = input.hasWikiEnabled,
     website = input.homepageUrl,
   })
-  local data = graphql_fetch_or_error(fetch_json, path, ctx, nil, "PATCH", body)
+  local data, err = repos.update(owner, repo, body)
   if not data then
+    graphql_error(ctx, err and err.message or "error updating repository")
     return nil
   end
   return {
-    repository = graphql_translate_repo(translate_repo(data)),
+    repository = graphql_translate_repo(data),
     clientMutationId = cmid,
   }
 end)
@@ -4072,28 +4151,22 @@ b:graphql("Mutation.deleteRepository", function(_parent, args, ctx)
   if not owner then
     return graphql_error(ctx, "deleteRepository: malformed repositoryId", nil, "BAD_USER_INPUT")
   end
-  local path = base() .. "/repos/" .. owner .. "/" .. repo
-  -- DELETE /repos/{owner}/{repo} returns 204 No Content on success — no JSON body to decode.
-  local ok, status = fetch_json(path, "DELETE")
+  local ok, err = repos.delete(owner, repo)
   if not ok then
-    graphql_error(ctx, "network error deleting repository", nil, "INTERNAL_ERROR")
-    return nil
-  end
-  if status == 401 or status == 403 then
-    graphql_error(ctx, "not authorized to delete repository", nil, "FORBIDDEN")
-    return nil
-  end
-  if status == 404 then
-    graphql_error(ctx, "repository not found", nil, "NOT_FOUND")
-    return nil
-  end
-  if status ~= 204 then
-    graphql_error(
-      ctx,
-      "upstream error " .. tostring(status) .. " deleting repository",
-      nil,
-      "INTERNAL_ERROR"
-    )
+    if err.status == 0 then
+      graphql_error(ctx, "network error deleting repository", nil, "INTERNAL_ERROR")
+    elseif err.status == 401 or err.status == 403 then
+      graphql_error(ctx, "not authorized to delete repository", nil, "FORBIDDEN")
+    elseif err.status == 404 then
+      graphql_error(ctx, "repository not found", nil, "NOT_FOUND")
+    else
+      graphql_error(
+        ctx,
+        "upstream error " .. tostring(err.status) .. " deleting repository",
+        nil,
+        "INTERNAL_ERROR"
+      )
+    end
     return nil
   end
   return { clientMutationId = cmid }
@@ -4891,5 +4964,6 @@ b:graphql("Mutation.addLabelsToLabelable", function(_parent, args, ctx)
   }
 end)
 
+b:capability("repos", repos)
 b:set_allow_anonymous(_allow_anon)
 b:build()
