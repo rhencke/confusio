@@ -1743,6 +1743,181 @@ reactions_cap.delete_issue = function(owner, repo_name, issue_number, reaction_i
   return true, nil
 end
 
+-- ---------------------------------------------------------------------------
+-- Contents capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translate for repository file operations (GitLab repository files API).
+-- Single-item operations return (data, nil) on success or (nil, err) on failure.
+-- PUT/DELETE operations proxy the raw upstream response (no GitHub translation).
+
+local contents_cap = {}
+
+-- translate_gl_file: map a GitLab file metadata object to GitHub content shape.
+local function translate_gl_file(f)
+  if not f then
+    return {}
+  end
+  return {
+    name = f.file_name,
+    path = f.file_path,
+    sha = f.blob_id,
+    size = f.size,
+    type = "file",
+    encoding = f.encoding,
+    content = f.content,
+  }
+end
+
+-- get_readme: fetch the root README.md for a repository.
+-- Returns translated file shape or (nil, err).
+contents_cap.get_readme = function(owner, repo_name)
+  local url = base()
+    .. "/projects/"
+    .. project_id(owner, repo_name)
+    .. "/repository/files/README.md?ref=HEAD"
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_file(raw), nil
+end
+
+-- get_readme_dir: fetch a README.md inside a subdirectory.
+-- Returns translated file shape or (nil, err).
+contents_cap.get_readme_dir = function(owner, repo_name, dir)
+  local enc_path = dir:gsub("/", "%%2F") .. "%%2FREADME.md"
+  local url = base()
+    .. "/projects/"
+    .. project_id(owner, repo_name)
+    .. "/repository/files/"
+    .. enc_path
+    .. "?ref=HEAD"
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_file(raw), nil
+end
+
+-- get: fetch a single file by path.
+-- Returns translated file shape or (nil, err).
+contents_cap.get = function(owner, repo_name, path)
+  local enc_path = path:gsub("/", "%%2F")
+  local url = base()
+    .. "/projects/"
+    .. project_id(owner, repo_name)
+    .. "/repository/files/"
+    .. enc_path
+    .. "?ref=HEAD"
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_file(raw), nil
+end
+
+-- put: create or update a file.  body is raw GitHub-format JSON string.
+-- Returns the raw upstream response (no GitHub translation) or (nil, err).
+contents_cap.put = function(owner, repo_name, path, body)
+  local enc_path = path:gsub("/", "%%2F")
+  local req = DecodeJson(body or "{}") or {}
+  -- Check if file exists to decide create vs update.
+  local ok, status = pcall(
+    Fetch,
+    base()
+      .. "/projects/"
+      .. project_id(owner, repo_name)
+      .. "/repository/files/"
+      .. enc_path
+      .. "?ref="
+      .. (req.branch or "HEAD"),
+    auth()
+  )
+  local method = (ok and status == 200) and "PUT" or "POST"
+  local gl_body = EncodeJson({
+    branch = req.branch or "main",
+    content = req.content,
+    commit_message = req.message,
+    encoding = req.encoding or "base64",
+  })
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/repository/files/" .. enc_path,
+    method,
+    gl_body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- delete: delete a file by path.  body is raw GitHub-format JSON string.
+-- Returns the raw upstream response or (nil, err).
+contents_cap.delete = function(owner, repo_name, path, body)
+  local enc_path = path:gsub("/", "%%2F")
+  local req = DecodeJson(body or "{}") or {}
+  local gl_body = EncodeJson({
+    branch = req.branch or "main",
+    commit_message = req.message,
+    sha = req.sha,
+  })
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/projects/" .. project_id(owner, repo_name) .. "/repository/files/" .. enc_path,
+    "DELETE",
+    gl_body
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Commit comments capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translate for commit comment operations.
+-- GitLab uses /projects/{id}/repository/commits/{sha}/comments.
+-- Paginated list operations return (items, headers, nil) or (nil, nil, err).
+-- Create operations return (data, nil) or (nil, err).
+
+local commit_comments_cap = {}
+
+-- list: paginated list of comments for a commit.
+commit_comments_cap.list = function(owner, repo_name, commit_sha)
+  local url = append_page_params(
+    base()
+      .. "/projects/"
+      .. project_id(owner, repo_name)
+      .. "/repository/commits/"
+      .. commit_sha
+      .. "/comments",
+    PAGES
+  )
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+-- create: post a new comment on a commit.  body is raw JSON string.
+-- Returns the raw upstream response or (nil, err).
+commit_comments_cap.create = function(owner, repo_name, commit_sha, body)
+  local url = base()
+    .. "/projects/"
+    .. project_id(owner, repo_name)
+    .. "/repository/commits/"
+    .. commit_sha
+    .. "/comments"
+  local raw, err = cap_fetch(fetch_json, url, "POST", body)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
 local b = make_backend_builder()
 
 b:rest("get_root", function()
@@ -1891,133 +2066,29 @@ end)
 
 -- Contents ------------------------------------------------------------------
 
-b:rest(
-  "get_repo_readme",
-  proxy_handler(function(f)
-    if not f then
-      return {}
-    end
-    return {
-      name = f.file_name,
-      path = f.file_path,
-      sha = f.blob_id,
-      size = f.size,
-      type = "file",
-      encoding = f.encoding,
-      content = f.content,
-    }
-  end, function(owner, repo_name)
-    return base()
-      .. "/projects/"
-      .. project_id(owner, repo_name)
-      .. "/repository/files/README.md?ref=HEAD"
-  end)
-)
+b:rest("get_repo_readme", function(owner, repo_name)
+  local data, err = contents_cap.get_readme(owner, repo_name)
+  cap_rest_respond(data, err)
+end)
 
 b:rest("get_repo_readme_dir", function(owner, repo_name, dir)
-  local enc_path = dir:gsub("/", "%%2F") .. "%%2FREADME.md"
-  proxy_json(
-    function(f)
-      if not f then
-        return {}
-      end
-      return {
-        name = f.file_name,
-        path = f.file_path,
-        sha = f.blob_id,
-        size = f.size,
-        type = "file",
-        encoding = f.encoding,
-        content = f.content,
-      }
-    end,
-    fetch_json(
-      base()
-        .. "/projects/"
-        .. project_id(owner, repo_name)
-        .. "/repository/files/"
-        .. enc_path
-        .. "?ref=HEAD"
-    )
-  )
+  local data, err = contents_cap.get_readme_dir(owner, repo_name, dir)
+  cap_rest_respond(data, err)
 end)
 
 b:rest("get_repo_content", function(owner, repo_name, path)
-  local enc_path = path:gsub("/", "%%2F")
-  proxy_json(
-    function(f)
-      if not f then
-        return {}
-      end
-      return {
-        name = f.file_name,
-        path = f.file_path,
-        sha = f.blob_id,
-        size = f.size,
-        type = "file",
-        encoding = f.encoding,
-        content = f.content,
-      }
-    end,
-    fetch_json(
-      base()
-        .. "/projects/"
-        .. project_id(owner, repo_name)
-        .. "/repository/files/"
-        .. enc_path
-        .. "?ref=HEAD"
-    )
-  )
+  local data, err = contents_cap.get(owner, repo_name, path)
+  cap_rest_respond(data, err)
 end)
 
 b:rest("put_repo_content", function(owner, repo_name, path)
-  local enc_path = path:gsub("/", "%%2F")
-  local req = DecodeJson(GetBody() or "{}")
-  -- Check if file exists to decide create vs update
-  local ok, status = pcall(
-    Fetch,
-    base()
-      .. "/projects/"
-      .. project_id(owner, repo_name)
-      .. "/repository/files/"
-      .. enc_path
-      .. "?ref="
-      .. (req.branch or "HEAD"),
-    auth()
-  )
-  local method = (ok and status == 200) and "PUT" or "POST"
-  local gl_body = EncodeJson({
-    branch = req.branch or "main",
-    content = req.content,
-    commit_message = req.message,
-    encoding = req.encoding or "base64",
-  })
-  proxy_json(
-    nil,
-    fetch_json(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/repository/files/" .. enc_path,
-      method,
-      gl_body
-    )
-  )
+  local data, err = contents_cap.put(owner, repo_name, path, GetBody())
+  cap_rest_respond(data, err)
 end)
 
 b:rest("delete_repo_content", function(owner, repo_name, path)
-  local enc_path = path:gsub("/", "%%2F")
-  local req = DecodeJson(GetBody() or "{}")
-  local gl_body = EncodeJson({
-    branch = req.branch or "main",
-    commit_message = req.message,
-    sha = req.sha,
-  })
-  proxy_json(
-    nil,
-    fetch_json(
-      base() .. "/projects/" .. project_id(owner, repo_name) .. "/repository/files/" .. enc_path,
-      "DELETE",
-      gl_body
-    )
-  )
+  local data, err = contents_cap.delete(owner, repo_name, path, GetBody())
+  cap_rest_respond(data, err)
 end)
 
 b:rest("get_repo_tarball", function(owner, repo_name, ref)
@@ -2607,35 +2678,15 @@ end)
 
 -- Commit comments -----------------------------------------------------------
 -- GitLab uses notes on commits: /projects/{id}/repository/commits/{sha}/comments
-b:rest(
-  "get_commit_comments",
-  proxy_handler_paged(nil, function(owner, repo_name, commit_sha)
-    return append_page_params(
-      base()
-        .. "/projects/"
-        .. project_id(owner, repo_name)
-        .. "/repository/commits/"
-        .. commit_sha
-        .. "/comments",
-      PAGES
-    )
-  end)
-)
+
+b:rest("get_commit_comments", function(owner, repo_name, commit_sha)
+  local items, hdrs, err = commit_comments_cap.list(owner, repo_name, commit_sha)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
 b:rest("post_commit_comment", function(owner, repo_name, commit_sha)
-  proxy_json_created(
-    nil,
-    fetch_json(
-      base()
-        .. "/projects/"
-        .. project_id(owner, repo_name)
-        .. "/repository/commits/"
-        .. commit_sha
-        .. "/comments",
-      "POST",
-      GetBody()
-    )
-  )
+  local data, err = commit_comments_cap.create(owner, repo_name, commit_sha, GetBody())
+  cap_rest_created(data, err)
 end)
 
 -- Users ---------------------------------------------------------------------
@@ -5177,4 +5228,6 @@ b:capability("issues", issues_cap)
 b:capability("labels", labels_cap)
 b:capability("milestones", milestones_cap)
 b:capability("reactions", reactions_cap)
+b:capability("contents", contents_cap)
+b:capability("commit_comments", commit_comments_cap)
 b:build()
