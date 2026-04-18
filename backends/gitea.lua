@@ -1573,6 +1573,138 @@ contents.compare = function(owner, repo_name, basehead)
   return raw, nil
 end
 
+-- ---------------------------------------------------------------------------
+-- Collaborators capability module
+-- ---------------------------------------------------------------------------
+-- Shared fetch operations for repository collaborator management.
+-- Gitea collaborator endpoints use 201 (add) and 200 (remove) as success
+-- codes; these are normalised to (true, nil) / (nil, err) here so REST
+-- handlers can use cap_rest_204.
+-- Single-item / mutation operations return (data/true, nil) or (nil, err).
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+
+local collaborators = {}
+
+-- list: paginated list of collaborators for a repository.
+-- Gitea and GitHub user shapes are compatible — pass through.
+collaborators.list = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+-- check: test whether a username is a collaborator on a repository.
+-- Returns (true, nil) if the user is a collaborator (Gitea 204),
+-- or (nil, err) otherwise.
+collaborators.check = function(owner, repo_name, username)
+  local ok, status = pcall(
+    Fetch,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
+    auth()
+  )
+  if not ok then
+    return nil, cap_err(0, "network error checking collaborator")
+  end
+  if status == 204 then
+    return true, nil
+  end
+  return nil, cap_err(status, "not a collaborator")
+end
+
+-- add: add a user as a collaborator on a repository.
+-- body: JSON-encoded string with permission level.
+-- Gitea returns 201 on success; normalised to (true, nil).
+collaborators.add = function(owner, repo_name, username, body)
+  local ok, status = fetch_json(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
+    "PUT",
+    body
+  )
+  if not ok then
+    return nil, cap_err(0, "network error adding collaborator")
+  end
+  if status ~= 201 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " adding collaborator")
+  end
+  return true, nil
+end
+
+-- remove: remove a collaborator from a repository.
+-- Gitea returns 200 on success; normalised to (true, nil).
+collaborators.remove = function(owner, repo_name, username)
+  local ok, status = fetch_json(
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
+    "DELETE"
+  )
+  if not ok then
+    return nil, cap_err(0, "network error removing collaborator")
+  end
+  if status ~= 200 and status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " removing collaborator")
+  end
+  return true, nil
+end
+
+-- get_permission: fetch the permission level of a collaborator.
+-- Both Gitea and GitHub return the same permission shape — pass through.
+collaborators.get_permission = function(owner, repo_name, username)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base()
+      .. "/repos/"
+      .. owner
+      .. "/"
+      .. repo_name
+      .. "/collaborators/"
+      .. username
+      .. "/permission"
+  )
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Forks capability module
+-- ---------------------------------------------------------------------------
+-- Shared fetch+translate operations for repository fork resources.
+-- translate_repo is applied to normalise Gitea repo objects to GitHub shape.
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+-- Single-item operations return (data, nil) or (nil, err).
+
+local forks = {}
+
+-- list: paginated list of forks for a repository.
+forks.list = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/forks", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_repo, items), hdrs, nil
+end
+
+-- create: fork a repository into the authenticated user's account (or an org).
+-- body: JSON-encoded string with optional organization name.
+forks.create = function(owner, repo_name, body)
+  local raw, err = cap_fetch(
+    fetch_json,
+    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/forks",
+    "POST",
+    body
+  )
+  if not raw then
+    return nil, err
+  end
+  return translate_repo(raw), nil
+end
+
 -- Health check
 b:rest("get_root", function()
   proxy_health_check(pcall(Fetch, base() .. "/version", auth()))
@@ -1812,93 +1944,52 @@ end)
 
 -- GET /repos/{owner}/{repo}/collaborators
 b:rest("get_repo_collaborators", function(owner, repo_name)
-  proxy_json_paged(
-    nil,
-    PAGES,
-    fetch_json(
-      append_page_params(
-        base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators",
-        PAGES
-      )
-    )
-  )
+  local items, hdrs, err = collaborators.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 -- GET /repos/{owner}/{repo}/collaborators/{username} — 204 if collaborator, 404 if not
 b:rest("get_repo_collaborator", function(owner, repo_name, username)
-  local ok, status = pcall(
-    Fetch,
-    base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
-    auth()
-  )
-  if ok and status == 204 then
+  local ok, err = collaborators.check(owner, repo_name, username)
+  if ok then
     SetStatus(204, "No Content")
-  elseif ok then
-    respond_json(status, { message = "Not a collaborator" })
-  else
+  elseif err.status == 0 then
     respond_json(503, {})
+  else
+    respond_json(err.status, { message = "Not a collaborator" })
   end
 end)
 
 -- PUT /repos/{owner}/{repo}/collaborators/{username}
 b:rest("put_repo_collaborator", function(owner, repo_name, username)
-  proxy_204(
-    { 201 },
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
-      "PUT",
-      GetBody()
-    )
-  )
+  local ok, err = collaborators.add(owner, repo_name, username, GetBody())
+  cap_rest_204(ok, err)
 end)
 
 -- DELETE /repos/{owner}/{repo}/collaborators/{username}
 b:rest("delete_repo_collaborator", function(owner, repo_name, username)
-  proxy_204(
-    { 200 },
-    fetch_json(
-      base() .. "/repos/" .. owner .. "/" .. repo_name .. "/collaborators/" .. username,
-      "DELETE"
-    )
-  )
+  local ok, err = collaborators.remove(owner, repo_name, username)
+  cap_rest_204(ok, err)
 end)
 
 -- GET /repos/{owner}/{repo}/collaborators/{username}/permission
 b:rest("get_repo_collaborator_permission", function(owner, repo_name, username)
-  proxy_json(
-    nil,
-    fetch_json(
-      base()
-        .. "/repos/"
-        .. owner
-        .. "/"
-        .. repo_name
-        .. "/collaborators/"
-        .. username
-        .. "/permission"
-    )
-  )
+  local data, err = collaborators.get_permission(owner, repo_name, username)
+  cap_rest_respond(data, err)
 end)
 
 -- Forks ---------------------------------------------------------------------
 
 -- GET /repos/{owner}/{repo}/forks
 b:rest("get_repo_forks", function(owner, repo_name)
-  proxy_json_paged(
-    translate_repos,
-    PAGES,
-    fetch_json(
-      append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/forks", PAGES)
-    )
-  )
+  local items, hdrs, err = forks.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
 end)
 
 -- POST /repos/{owner}/{repo}/forks
 b:rest("post_repo_forks", function(owner, repo_name)
-  proxy_json_created(
-    translate_repo,
-    fetch_json(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/forks", "POST", GetBody())
-  )
+  local data, err = forks.create(owner, repo_name, GetBody())
+  cap_rest_created(data, err)
 end)
 
 -- Releases ------------------------------------------------------------------
@@ -5552,5 +5643,7 @@ b:capability("branches", branches)
 b:capability("repo_metadata", repo_metadata)
 b:capability("commits", commits_cap)
 b:capability("contents", contents)
+b:capability("collaborators", collaborators)
+b:capability("forks", forks)
 b:set_allow_anonymous(_allow_anon)
 b:build()
