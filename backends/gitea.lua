@@ -172,9 +172,6 @@ local function translate_gitea_issue_comment(c)
   }
 end
 
-local function translate_gitea_issues(issues)
-  return translate_list(translate_gitea_issue, issues)
-end
 local function translate_gitea_issue_comments(comments)
   return translate_list(translate_gitea_issue_comment, comments)
 end
@@ -922,6 +919,60 @@ orgs.get = function(login)
     return nil, err
   end
   return raw, nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Issues capability module
+-- ---------------------------------------------------------------------------
+-- Shared fetch+translate operations for issue resources.
+-- Operations return (data, nil) on success or (nil, err) on failure.
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+-- The GitHub REST shape is returned by all operations (translate_gitea_issue
+-- applied).  GraphQL resolvers apply graphql_translate_issue on top.
+
+local issues_cap = {}
+
+-- get: fetch a single issue by number.
+issues_cap.get = function(owner, repo_name, number)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. number
+  local raw, err = cap_fetch(fetch_json, url)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_issue(raw), nil
+end
+
+-- list: paginated list of issues for a repository.
+issues_cap.list = function(owner, repo_name)
+  local url =
+    append_page_params(base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gitea_issue, items), hdrs, nil
+end
+
+-- create: create a new issue in a repository.
+-- body: JSON-encoded string with title, body, labels, assignees, milestone.
+issues_cap.create = function(owner, repo_name, body)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues"
+  local raw, err = cap_fetch(fetch_json, url, "POST", body)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_issue(raw), nil
+end
+
+-- update: apply a partial update to an existing issue.
+-- body: JSON-encoded string of fields to change (title, body, state, etc.)
+issues_cap.update = function(owner, repo_name, number, body)
+  local url = base() .. "/repos/" .. owner .. "/" .. repo_name .. "/issues/" .. number
+  local raw, err = cap_fetch(fetch_json, url, "PATCH", body)
+  if not raw then
+    return nil, err
+  end
+  return translate_gitea_issue(raw), nil
 end
 
 -- Health check
@@ -2070,36 +2121,28 @@ end)
 -- Issues -------------------------------------------------------------------
 
 -- GET /repos/{owner}/{repo}/issues
-b:rest(
-  "get_repo_issues",
-  proxy_handler_paged(translate_gitea_issues, function(o, r)
-    return append_page_params(base() .. "/repos/" .. o .. "/" .. r .. "/issues", PAGES)
-  end)
-)
+b:rest("get_repo_issues", function(owner, repo_name)
+  local items, hdrs, err = issues_cap.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
 -- POST /repos/{owner}/{repo}/issues
-b:rest(
-  "post_repo_issues",
-  proxy_handler_created(translate_gitea_issue, function(o, r)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues", "POST", GetBody()
-  end)
-)
+b:rest("post_repo_issues", function(owner, repo_name)
+  local data, err = issues_cap.create(owner, repo_name, GetBody())
+  cap_rest_created(data, err)
+end)
 
 -- GET /repos/{owner}/{repo}/issues/{issue_number}
-b:rest(
-  "get_repo_issue",
-  proxy_handler(translate_gitea_issue, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n
-  end)
-)
+b:rest("get_repo_issue", function(owner, repo_name, number)
+  local data, err = issues_cap.get(owner, repo_name, number)
+  cap_rest_respond(data, err)
+end)
 
 -- PATCH /repos/{owner}/{repo}/issues/{issue_number}
-b:rest(
-  "patch_repo_issue",
-  proxy_handler(translate_gitea_issue, function(o, r, n)
-    return base() .. "/repos/" .. o .. "/" .. r .. "/issues/" .. n, "PATCH", GetBody()
-  end)
-)
+b:rest("patch_repo_issue", function(owner, repo_name, number)
+  local data, err = issues_cap.update(owner, repo_name, number, GetBody())
+  cap_rest_respond(data, err)
+end)
 
 -- GET /repos/{owner}/{repo}/issues/comments  (all issue comments in repo)
 b:rest(
@@ -3568,12 +3611,11 @@ b:graphql("node.Issue", function(local_id, _ctx)
   if not owner then
     return nil
   end
-  local data, _ =
-    graphql_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. repo .. "/issues/" .. number)
+  local data, _ = issues_cap.get(owner, repo, number)
   if not data then
     return nil
   end
-  return graphql_translate_issue(translate_gitea_issue(data), owner, repo)
+  return graphql_translate_issue(data, owner, repo)
 end)
 
 -- node.PullRequest: fetch a pull request by "owner/repo/number" local ID.
@@ -4321,7 +4363,6 @@ b:graphql("Mutation.createIssue", function(_parent, args, ctx)
       end
     end
   end
-  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/issues"
   local body = EncodeJson({
     title = input.title,
     body = input.body,
@@ -4329,12 +4370,13 @@ b:graphql("Mutation.createIssue", function(_parent, args, ctx)
     assignees = #assignees > 0 and assignees or nil,
     milestone = milestone_id,
   })
-  local data = graphql_fetch_or_error(fetch_json, path, ctx, nil, "POST", body)
+  local data, err = issues_cap.create(owner, repo, body)
   if not data then
+    graphql_error(ctx, err and err.message or "error creating issue")
     return nil
   end
   return {
-    issue = graphql_translate_issue(translate_gitea_issue(data), owner, repo),
+    issue = graphql_translate_issue(data, owner, repo),
     clientMutationId = cmid,
   }
 end)
@@ -4363,14 +4405,14 @@ b:graphql("Mutation.updateIssue", function(_parent, args, ctx)
   elseif input.state == "OPEN" then
     state = "open"
   end
-  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/issues/" .. number
   local body = EncodeJson({ title = input.title, body = input.body, state = state })
-  local data = graphql_fetch_or_error(fetch_json, path, ctx, nil, "PATCH", body)
+  local data, err = issues_cap.update(owner, repo, number, body)
   if not data then
+    graphql_error(ctx, err and err.message or "error updating issue")
     return nil
   end
   return {
-    issue = graphql_translate_issue(translate_gitea_issue(data), owner, repo),
+    issue = graphql_translate_issue(data, owner, repo),
     clientMutationId = cmid,
   }
 end)
@@ -4392,14 +4434,13 @@ b:graphql("Mutation.closeIssue", function(_parent, args, ctx)
   if not owner then
     return graphql_error(ctx, "closeIssue: malformed issueId", nil, "BAD_USER_INPUT")
   end
-  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/issues/" .. number
-  local data =
-    graphql_fetch_or_error(fetch_json, path, ctx, nil, "PATCH", EncodeJson({ state = "closed" }))
+  local data, err = issues_cap.update(owner, repo, number, EncodeJson({ state = "closed" }))
   if not data then
+    graphql_error(ctx, err and err.message or "error closing issue")
     return nil
   end
   return {
-    issue = graphql_translate_issue(translate_gitea_issue(data), owner, repo),
+    issue = graphql_translate_issue(data, owner, repo),
     clientMutationId = cmid,
   }
 end)
@@ -4421,14 +4462,13 @@ b:graphql("Mutation.reopenIssue", function(_parent, args, ctx)
   if not owner then
     return graphql_error(ctx, "reopenIssue: malformed issueId", nil, "BAD_USER_INPUT")
   end
-  local path = base() .. "/repos/" .. owner .. "/" .. repo .. "/issues/" .. number
-  local data =
-    graphql_fetch_or_error(fetch_json, path, ctx, nil, "PATCH", EncodeJson({ state = "open" }))
+  local data, err = issues_cap.update(owner, repo, number, EncodeJson({ state = "open" }))
   if not data then
+    graphql_error(ctx, err and err.message or "error reopening issue")
     return nil
   end
   return {
-    issue = graphql_translate_issue(translate_gitea_issue(data), owner, repo),
+    issue = graphql_translate_issue(data, owner, repo),
     clientMutationId = cmid,
   }
 end)
@@ -5060,5 +5100,6 @@ end)
 b:capability("repos", repos)
 b:capability("users", users)
 b:capability("orgs", orgs)
+b:capability("issues", issues_cap)
 b:set_allow_anonymous(_allow_anon)
 b:build()
