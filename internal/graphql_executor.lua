@@ -5,7 +5,7 @@
 --           graphql_schema_* (internal/graphql_schema.lua).
 --
 -- Globals exported:
---   graphql_resolvers              — table; backends populate at load time alongside backend_impl
+--   graphql_resolvers              — table; backends populate at load time alongside app.backend_impl
 --   graphql_handler()              — HTTP handler for POST /graphql; registered in catalog
 --   respond_graphql(data, errs)    — null-safe GraphQL response writer
 --   graphql_error(ctx, ...)        — error-recording helper called by resolvers
@@ -17,7 +17,7 @@
 -- Resolver registry
 -- ---------------------------------------------------------------------------
 
--- Backends populate graphql_resolvers at load time alongside backend_impl.
+-- Backends populate graphql_resolvers at load time alongside app.backend_impl.
 -- Keys are "TypeName.fieldName" strings (e.g. "Query.repository", "Repository.issues").
 graphql_resolvers = {} -- luacheck: globals graphql_resolvers
 
@@ -929,7 +929,7 @@ local function encode_result(result)
 end
 
 -- graphql_handler is registered in the catalog as the fixed handler for
--- POST /graphql.  Backends do NOT override this via backend_impl; they only
+-- POST /graphql.  Backends do NOT override this via app.backend_impl; they only
 -- populate graphql_resolvers.
 function graphql_handler() -- luacheck: globals graphql_handler
   -- Step 1: decode request body.

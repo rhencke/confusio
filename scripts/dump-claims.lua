@@ -1,5 +1,5 @@
 -- Export endpoint catalog + per-backend handler sets as JSON.
--- Used by validate-claims.lua to check CSV support claims against backend_impl.
+-- Used by validate-claims.lua to check CSV support claims against app.backend_impl.
 --
 -- Usage: ./redbean.com -i scripts/dump-claims.lua <backend1> [backend2 ...]
 --

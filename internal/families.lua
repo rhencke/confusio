@@ -8,7 +8,7 @@
 -- The table key is the root backend name (the canonical family implementation).
 -- Each alias entry declares:
 --   default_url  string — backend default when no base_url is given
---   strip        table  — Lua patterns; backend_impl keys matching any are
+--   strip        table  — Lua patterns; app.backend_impl keys matching any are
 --                         cleared after inheriting from the root implementation,
 --                         because those features are absent from this variant
 provider_families = {
