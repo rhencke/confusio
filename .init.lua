@@ -31,8 +31,7 @@ dofile("/zip/internal/families.lua")
 dofile("/zip/internal/context.lua")
 dofile("/zip/internal/registry.lua")
 
--- Build the app context.  Backends write to app.backend_impl and app.allow_anonymous
--- either directly (old path) or via make_backend_builder():b:build() (new path).
+-- Build the app context.  Backends register handlers via make_backend_builder():b:build().
 app = make_app(config)
 
 if config.backend ~= "" then

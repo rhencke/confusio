@@ -228,6 +228,8 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
 
 **Adding a family-alias backend**: update `provider_families` in `internal/families.lua` (the single declaration), create a one-line `backends/<alias>.lua` calling `load_family_backend`, add to `BACKENDS` — no mock file needed.
 
+**Backend registration**: all backends must use `make_backend_builder()` / `b:rest()` / `b:graphql()` / `b:build()`. Direct assignment to `app.backend_impl` or `graphql_resolvers` is forbidden. `make validate-builders` enforces this and is wired into `make test`.
+
 ### Redbean
 
 - **`-D key=value` is NOT for Lua globals.** It means "directory overlay" — passing `-D backend=gitea` errors with "not a directory: backend=gitea". Use positional SCRIPTARGS instead: `sh ./confusio.com -- gitea`.
@@ -363,15 +365,15 @@ The ten `internal/` modules are loaded by `.init.lua` in a fixed order. Each exp
 | `translators.lua` | `owner_repo_id`, `translate_repo`, `translate_user`, `translate_migration` | backends |
 | `families.lua` | `provider_families`, `load_family_backend` | backends + Makefile scripts |
 | `registry.lua` | `make_backend_builder` | backends |
-| *(backend loaded here)* | writes `app.backend_impl` and `graphql_resolvers` (old path) or calls `b:build()` (new path); Gitea sets `app.allow_anonymous` | dispatch |
+| *(backend loaded here)* | calls `b:build()` to populate `app.backend_impl` and `graphql_resolvers`; Gitea sets `app.allow_anonymous` | dispatch |
 | `defaults.lua` | `defaults` (table of handler functions) | catalog |
 | `router.lua` | `route_add`, `route_match`, `path_known` | catalog, dispatch |
 | `catalog.lua` | `endpoints` (flat array); registers routes via `route_add` | dispatch, scripts |
 | `dispatch.lua` | `OnHttpRequest` | Redbean (entry point) |
 
 **Global surface for backend authors** (backends can call any of these):
-- App context (write target): `app.backend_impl`, `app.allow_anonymous`, `app.config`
-- Builder (preferred new path): `make_backend_builder` — call `b:rest(name, fn)`, `b:graphql(key, fn)`, `b:set_allow_anonymous(v)`, then `b:build()` to commit; see `internal/registry.lua`
+- App context (write target): `app.allow_anonymous`, `app.config` — never assign `app.backend_impl` directly
+- Builder (required): `make_backend_builder` — call `b:rest(name, fn)`, `b:graphql(key, fn)`, `b:set_allow_anonymous(v)`, then `b:build()` to commit; see `internal/registry.lua`
 - Response: `set_preamble`, `respond_json`
 - Proxy: all of `proxy.lua`'s exports
 - Transport: all of `transport.lua`'s exports

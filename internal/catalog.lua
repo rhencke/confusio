@@ -21,8 +21,7 @@ local endpoint_sections = {
     "graphql",
     {
       -- GraphQL API (https://docs.github.com/en/graphql)
-      -- graphql_handler is the fixed handler for all backends; backends populate
-      -- graphql_resolvers rather than overriding app.backend_impl.graphql_request.
+      -- graphql_handler is the fixed handler; backends register resolvers via b:graphql().
       { "POST /graphql", "graphql_request", graphql_handler },
     },
   },

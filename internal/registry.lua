@@ -1,13 +1,11 @@
--- Backend builder: structured alternative to directly mutating global registries.
+-- Backend builder: the required API for registering REST handlers and GraphQL resolvers.
 --
 -- make_backend_builder() returns a builder.  A backend file calls b:rest(name, fn),
 -- b:graphql(key, fn), and b:set_allow_anonymous(v) to declare its handlers and
 -- metadata, then calls b:build() to commit them to the app context.
 --
--- This is the new registration path.  The old path (directly assigning
--- app.backend_impl = {...} and graphql_resolvers["k"] = fn) remains supported
--- during migration and coexists without conflict since only one backend loads
--- per process.
+-- Direct assignment to app.backend_impl or graphql_resolvers is forbidden;
+-- make validate-builders enforces this at CI time.
 --
 -- Globals exported:
 --   make_backend_builder   — builder factory; backends call this at load time
