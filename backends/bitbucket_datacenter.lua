@@ -372,166 +372,147 @@ local bbs_dc_to_gh = {
   STOPPED = { status = "completed", conclusion = "cancelled" },
 }
 
-app.backend_impl = {
-  get_root = function()
-    proxy_health_check(pcall(Fetch, base() .. "/repos", auth()))
-  end,
+local b = make_backend_builder()
+b:rest("get_root", function()
+  proxy_health_check(pcall(Fetch, base() .. "/repos", auth()))
+end)
 
-  get_repo = proxy_handler(translate_bbs_repo, function(owner, repo_name)
+b:rest(
+  "get_repo",
+  proxy_handler(translate_bbs_repo, function(owner, repo_name)
     return repo_path(owner, repo_name)
-  end),
+  end)
+)
 
-  patch_repo = function(owner, repo_name)
-    proxy_json(function(r)
-      return translate_bbs_repo(r, owner)
-    end, fetch_json(repo_path(owner, repo_name), "PUT", translate_bbs_req(GetBody())))
-  end,
+b:rest("patch_repo", function(owner, repo_name)
+  proxy_json(function(r)
+    return translate_bbs_repo(r, owner)
+  end, fetch_json(repo_path(owner, repo_name), "PUT", translate_bbs_req(GetBody())))
+end)
 
-  delete_repo = function(owner, repo_name)
-    local dopts = auth() or {}
-    dopts.method = "DELETE"
-    proxy_204({ 202 }, pcall(Fetch, repo_path(owner, repo_name), dopts))
-  end,
+b:rest("delete_repo", function(owner, repo_name)
+  local dopts = auth() or {}
+  dopts.method = "DELETE"
+  proxy_204({ 202 }, pcall(Fetch, repo_path(owner, repo_name), dopts))
+end)
 
-  -- GET /user/repos — DC: GET /repos (all repos visible to the auth'd user)
-  get_user_repos = proxy_handler(translate_bbs_repos, function()
+-- GET /user/repos — DC: GET /repos (all repos visible to the auth'd user)
+b:rest(
+  "get_user_repos",
+  proxy_handler(translate_bbs_repos, function()
     return bbs_page_url(base() .. "/repos")
-  end),
+  end)
+)
 
-  post_user_repos = function()
-    -- DC requires a project key; no generic "my repos" create endpoint.
-    respond_json(
-      501,
-      "Not Implemented",
-      { message = "POST /user/repos requires a project key; use POST /orgs/{project}/repos" }
-    )
-  end,
+b:rest("post_user_repos", function()
+  -- DC requires a project key; no generic "my repos" create endpoint.
+  respond_json(
+    501,
+    "Not Implemented",
+    { message = "POST /user/repos requires a project key; use POST /orgs/{project}/repos" }
+  )
+end)
 
-  get_org_repos = proxy_handler(translate_bbs_repos, function(project_key)
+b:rest(
+  "get_org_repos",
+  proxy_handler(translate_bbs_repos, function(project_key)
     return bbs_page_url(base() .. "/projects/" .. project_key .. "/repos")
-  end),
+  end)
+)
 
-  post_org_repos = function(project_key)
-    proxy_json_created(
-      function(r)
-        return translate_bbs_repo(r, project_key)
-      end,
-      fetch_json(
-        base() .. "/projects/" .. project_key .. "/repos",
-        "POST",
-        translate_bbs_req(GetBody())
-      )
+b:rest("post_org_repos", function(project_key)
+  proxy_json_created(
+    function(r)
+      return translate_bbs_repo(r, project_key)
+    end,
+    fetch_json(
+      base() .. "/projects/" .. project_key .. "/repos",
+      "POST",
+      translate_bbs_req(GetBody())
     )
-  end,
+  )
+end)
 
-  -- GET /users/{username}/repos — via personal project ~username
-  get_users_repos = proxy_handler(function(data, username)
+-- GET /users/{username}/repos — via personal project ~username
+b:rest(
+  "get_users_repos",
+  proxy_handler(function(data, username)
     return translate_bbs_repos(data, "~" .. username)
   end, function(username)
     return bbs_page_url(base() .. "/projects/~" .. username .. "/repos")
-  end),
+  end)
+)
 
-  -- GET /repositories — all repos visible to the authenticated user
-  get_repositories = proxy_handler(translate_bbs_repos, function()
+-- GET /repositories — all repos visible to the authenticated user
+b:rest(
+  "get_repositories",
+  proxy_handler(translate_bbs_repos, function()
     return bbs_page_url(base() .. "/repos")
-  end),
+  end)
+)
 
-  -- Tags -----------------------------------------------------------------------
-  -- DC: GET /projects/{proj}/repos/{slug}/tags → { values: [{id, displayId, latestCommit}] }
+-- Tags -----------------------------------------------------------------------
+-- DC: GET /projects/{proj}/repos/{slug}/tags → { values: [{id, displayId, latestCommit}] }
 
-  get_repo_tags = proxy_handler(function(data)
+b:rest(
+  "get_repo_tags",
+  proxy_handler(function(data)
     return translate_list(translate_bbs_tag, data.values)
   end, function(owner, repo_name)
     return bbs_page_url(repo_path(owner, repo_name) .. "/tags")
-  end),
+  end)
+)
 
-  -- Branches -------------------------------------------------------------------
+-- Branches -------------------------------------------------------------------
 
-  get_repo_branches = proxy_handler(function(data)
+b:rest(
+  "get_repo_branches",
+  proxy_handler(function(data)
     return translate_list(translate_bbs_branch, data.values)
   end, function(owner, repo_name)
     return bbs_page_url(repo_path(owner, repo_name) .. "/branches")
-  end),
+  end)
+)
 
-  get_repo_branch = proxy_handler(function(data)
-    local b = (data.values or {})[1]
-    return b and translate_bbs_branch(b) or {}
+b:rest(
+  "get_repo_branch",
+  proxy_handler(function(data)
+    local br = (data.values or {})[1]
+    return br and translate_bbs_branch(br) or {}
   end, function(owner, repo_name, branch)
     return repo_path(owner, repo_name) .. "/branches?filterText=" .. branch .. "&limit=1"
-  end),
+  end)
+)
 
-  -- Commits --------------------------------------------------------------------
+-- Commits --------------------------------------------------------------------
 
-  get_repo_commits = function(owner, repo_name)
-    local ref = GetParam("sha") or ""
-    local url = bbs_page_url(repo_path(owner, repo_name) .. "/commits")
-    if ref ~= "" then
-      local sep = url:find("?") and "&" or "?"
-      url = url .. sep .. "until=" .. ref
-    end
-    proxy_json(function(data)
-      return translate_list(translate_bbs_commit, data.values)
-    end, fetch_json(url))
-  end,
+b:rest("get_repo_commits", function(owner, repo_name)
+  local ref = GetParam("sha") or ""
+  local url = bbs_page_url(repo_path(owner, repo_name) .. "/commits")
+  if ref ~= "" then
+    local sep = url:find("?") and "&" or "?"
+    url = url .. sep .. "until=" .. ref
+  end
+  proxy_json(function(data)
+    return translate_list(translate_bbs_commit, data.values)
+  end, fetch_json(url))
+end)
 
-  get_repo_commit = proxy_handler(translate_bbs_commit, function(owner, repo_name, sha)
+b:rest(
+  "get_repo_commit",
+  proxy_handler(translate_bbs_commit, function(owner, repo_name, sha)
     return repo_path(owner, repo_name) .. "/commits/" .. sha
-  end),
+  end)
+)
 
-  -- Contents -------------------------------------------------------------------
-  -- DC: GET /projects/{proj}/repos/{slug}/raw/{path}?at={ref}
+-- Contents -------------------------------------------------------------------
+-- DC: GET /projects/{proj}/repos/{slug}/raw/{path}?at={ref}
 
-  get_repo_readme = function(owner, repo_name)
-    local ref = GetParam("ref") or ""
-    local candidates = { "README.md", "README", "readme.md", "README.rst" }
-    for _, fname in ipairs(candidates) do
-      local url = repo_path(owner, repo_name) .. "/raw/" .. fname
-      if ref ~= "" then
-        url = url .. "?at=" .. ref
-      end
-      local ok, status, _, body = fetch_json(url)
-      if ok and status == 200 then
-        respond_json(200, {
-          type = "file",
-          name = fname,
-          path = fname,
-          sha = "",
-          size = #body,
-          encoding = "base64",
-          content = EncodeBase64(body),
-        })
-        return
-      end
-    end
-    respond_json(404, { message = "Not Found" })
-  end,
-
-  -- GET /repos/{owner}/{repo}/license
-  -- BBS has no license template API; fetch the LICENSE file via raw endpoint.
-  get_repo_license = function(owner, repo_name)
-    local candidates = { "LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING" }
-    for _, fname in ipairs(candidates) do
-      local ok, status, _, body = fetch_json(repo_path(owner, repo_name) .. "/raw/" .. fname)
-      if ok and status == 200 then
-        respond_json(200, {
-          type = "file",
-          name = fname,
-          path = fname,
-          sha = "",
-          size = #body,
-          encoding = "base64",
-          content = EncodeBase64(body),
-          license = nil,
-        })
-        return
-      end
-    end
-    respond_json(404, { message = "License file not found" })
-  end,
-
-  get_repo_content = function(owner, repo_name, path)
-    local ref = GetParam("ref") or ""
-    local url = repo_path(owner, repo_name) .. "/raw/" .. path
+b:rest("get_repo_readme", function(owner, repo_name)
+  local ref = GetParam("ref") or ""
+  local candidates = { "README.md", "README", "readme.md", "README.rst" }
+  for _, fname in ipairs(candidates) do
+    local url = repo_path(owner, repo_name) .. "/raw/" .. fname
     if ref ~= "" then
       url = url .. "?at=" .. ref
     end
@@ -539,518 +520,596 @@ app.backend_impl = {
     if ok and status == 200 then
       respond_json(200, {
         type = "file",
-        name = path:match("[^/]+$") or path,
-        path = path,
+        name = fname,
+        path = fname,
         sha = "",
         size = #body,
         encoding = "base64",
         content = EncodeBase64(body),
       })
-    elseif ok then
-      respond_json(status, { message = "Error" })
-    else
-      respond_json(503, {})
+      return
     end
-  end,
+  end
+  respond_json(404, { message = "Not Found" })
+end)
 
-  -- Forks ----------------------------------------------------------------------
+-- GET /repos/{owner}/{repo}/license
+-- BBS has no license template API; fetch the LICENSE file via raw endpoint.
+b:rest("get_repo_license", function(owner, repo_name)
+  local candidates = { "LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING" }
+  for _, fname in ipairs(candidates) do
+    local ok, status, _, body = fetch_json(repo_path(owner, repo_name) .. "/raw/" .. fname)
+    if ok and status == 200 then
+      respond_json(200, {
+        type = "file",
+        name = fname,
+        path = fname,
+        sha = "",
+        size = #body,
+        encoding = "base64",
+        content = EncodeBase64(body),
+        license = nil,
+      })
+      return
+    end
+  end
+  respond_json(404, { message = "License file not found" })
+end)
 
-  get_repo_forks = proxy_handler(translate_bbs_repos, function(owner, repo_name)
+b:rest("get_repo_content", function(owner, repo_name, path)
+  local ref = GetParam("ref") or ""
+  local url = repo_path(owner, repo_name) .. "/raw/" .. path
+  if ref ~= "" then
+    url = url .. "?at=" .. ref
+  end
+  local ok, status, _, body = fetch_json(url)
+  if ok and status == 200 then
+    respond_json(200, {
+      type = "file",
+      name = path:match("[^/]+$") or path,
+      path = path,
+      sha = "",
+      size = #body,
+      encoding = "base64",
+      content = EncodeBase64(body),
+    })
+  elseif ok then
+    respond_json(status, { message = "Error" })
+  else
+    respond_json(503, {})
+  end
+end)
+
+-- Forks ----------------------------------------------------------------------
+
+b:rest(
+  "get_repo_forks",
+  proxy_handler(translate_bbs_repos, function(owner, repo_name)
     return bbs_page_url(repo_path(owner, repo_name) .. "/forks")
-  end),
+  end)
+)
 
-  post_repo_forks = function(owner, repo_name)
-    local req = DecodeJson(GetBody() or "{}")
-    local bb = {}
-    if req.organization then
-      bb.project = { key = req.organization }
-    end
-    proxy_json_created(function(r)
-      return translate_bbs_repo(r, owner)
-    end, fetch_json(repo_path(owner, repo_name) .. "/forks", "POST", EncodeJson(bb)))
-  end,
+b:rest("post_repo_forks", function(owner, repo_name)
+  local req = DecodeJson(GetBody() or "{}")
+  local bb = {}
+  if req.organization then
+    bb.project = { key = req.organization }
+  end
+  proxy_json_created(function(r)
+    return translate_bbs_repo(r, owner)
+  end, fetch_json(repo_path(owner, repo_name) .. "/forks", "POST", EncodeJson(bb)))
+end)
 
-  -- Deploy keys ----------------------------------------------------------------
-  -- DC: /ssh endpoint (not /deploy-keys)
+-- Deploy keys ----------------------------------------------------------------
+-- DC: /ssh endpoint (not /deploy-keys)
 
-  get_repo_keys = proxy_handler(function(data)
+b:rest(
+  "get_repo_keys",
+  proxy_handler(function(data)
     return translate_list(translate_bbs_key, data.values)
   end, function(owner, repo_name)
     return bbs_page_url(repo_path(owner, repo_name) .. "/ssh")
-  end),
+  end)
+)
 
-  post_repo_keys = function(owner, repo_name)
-    local req = DecodeJson(GetBody() or "{}")
-    local bb = {
-      key = { text = req.key or "", label = req.title or "" },
-      permission = "REPO_READ",
-    }
-    proxy_json_created(
-      translate_bbs_key,
-      fetch_json(repo_path(owner, repo_name) .. "/ssh", "POST", EncodeJson(bb))
-    )
-  end,
+b:rest("post_repo_keys", function(owner, repo_name)
+  local req = DecodeJson(GetBody() or "{}")
+  local bb = {
+    key = { text = req.key or "", label = req.title or "" },
+    permission = "REPO_READ",
+  }
+  proxy_json_created(
+    translate_bbs_key,
+    fetch_json(repo_path(owner, repo_name) .. "/ssh", "POST", EncodeJson(bb))
+  )
+end)
 
-  get_repo_key = proxy_handler(translate_bbs_key, function(owner, repo_name, key_id)
+b:rest(
+  "get_repo_key",
+  proxy_handler(translate_bbs_key, function(owner, repo_name, key_id)
     return repo_path(owner, repo_name) .. "/ssh/" .. key_id
-  end),
+  end)
+)
 
-  delete_repo_key = function(owner, repo_name, key_id)
-    local dopts = auth() or {}
-    dopts.method = "DELETE"
-    proxy_204({ 200 }, pcall(Fetch, repo_path(owner, repo_name) .. "/ssh/" .. key_id, dopts))
-  end,
+b:rest("delete_repo_key", function(owner, repo_name, key_id)
+  local dopts = auth() or {}
+  dopts.method = "DELETE"
+  proxy_204({ 200 }, pcall(Fetch, repo_path(owner, repo_name) .. "/ssh/" .. key_id, dopts))
+end)
 
-  -- Webhooks -------------------------------------------------------------------
+-- Webhooks -------------------------------------------------------------------
 
-  get_repo_hooks = proxy_handler(function(data)
+b:rest(
+  "get_repo_hooks",
+  proxy_handler(function(data)
     return translate_list(translate_bbs_hook, data.values)
   end, function(owner, repo_name)
     return bbs_page_url(repo_path(owner, repo_name) .. "/webhooks")
-  end),
+  end)
+)
 
-  post_repo_hooks = function(owner, repo_name)
-    proxy_json_created(
-      translate_bbs_hook,
-      fetch_json(
-        repo_path(owner, repo_name) .. "/webhooks",
-        "POST",
-        translate_bbs_hook_req(GetBody())
-      )
+b:rest("post_repo_hooks", function(owner, repo_name)
+  proxy_json_created(
+    translate_bbs_hook,
+    fetch_json(
+      repo_path(owner, repo_name) .. "/webhooks",
+      "POST",
+      translate_bbs_hook_req(GetBody())
     )
-  end,
+  )
+end)
 
-  get_repo_hook = proxy_handler(translate_bbs_hook, function(owner, repo_name, hook_id)
+b:rest(
+  "get_repo_hook",
+  proxy_handler(translate_bbs_hook, function(owner, repo_name, hook_id)
     return repo_path(owner, repo_name) .. "/webhooks/" .. hook_id
-  end),
+  end)
+)
 
-  patch_repo_hook = function(owner, repo_name, hook_id)
-    proxy_json(
-      translate_bbs_hook,
-      fetch_json(
-        repo_path(owner, repo_name) .. "/webhooks/" .. hook_id,
-        "PUT",
-        translate_bbs_hook_req(GetBody())
-      )
+b:rest("patch_repo_hook", function(owner, repo_name, hook_id)
+  proxy_json(
+    translate_bbs_hook,
+    fetch_json(
+      repo_path(owner, repo_name) .. "/webhooks/" .. hook_id,
+      "PUT",
+      translate_bbs_hook_req(GetBody())
     )
-  end,
+  )
+end)
 
-  delete_repo_hook = function(owner, repo_name, hook_id)
-    local dopts = auth() or {}
-    dopts.method = "DELETE"
-    proxy_204({ 200 }, pcall(Fetch, repo_path(owner, repo_name) .. "/webhooks/" .. hook_id, dopts))
-  end,
+b:rest("delete_repo_hook", function(owner, repo_name, hook_id)
+  local dopts = auth() or {}
+  dopts.method = "DELETE"
+  proxy_204({ 200 }, pcall(Fetch, repo_path(owner, repo_name) .. "/webhooks/" .. hook_id, dopts))
+end)
 
-  get_repo_hook_config = proxy_handler(function(h)
+b:rest(
+  "get_repo_hook_config",
+  proxy_handler(function(h)
     return (translate_bbs_hook(h)).config or {}
   end, function(owner, repo_name, hook_id)
     return repo_path(owner, repo_name) .. "/webhooks/" .. hook_id
-  end),
+  end)
+)
 
-  -- Users ---------------------------------------------------------------------
+-- Users ---------------------------------------------------------------------
 
-  -- GET /users/{username}
-  get_users_username = proxy_handler(translate_bbs_user, function(username)
+-- GET /users/{username}
+b:rest(
+  "get_users_username",
+  proxy_handler(translate_bbs_user, function(username)
     return base() .. "/users/" .. username
-  end),
+  end)
+)
 
-  -- GET /users
-  get_users = proxy_handler(function(data)
+-- GET /users
+b:rest(
+  "get_users",
+  proxy_handler(function(data)
     return translate_list(translate_bbs_user, (data and data.values))
   end, function()
     return bbs_page_url(base() .. "/users")
-  end),
+  end)
+)
 
-  -- Pull Requests ---------------------------------------------------------------
+-- Pull Requests ---------------------------------------------------------------
 
-  -- GET /repos/{owner}/{repo}/pulls
-  get_repo_pulls = function(owner, repo_name)
-    local state = GetParam("state") or "open"
-    local dc_state = state == "closed" and "MERGED,DECLINED" or state == "all" and "ALL" or "OPEN"
-    local url = bbs_page_url(repo_path(owner, repo_name) .. "/pull-requests?state=" .. dc_state)
-    proxy_json(translate_bbs_pulls, fetch_json(url))
-  end,
+-- GET /repos/{owner}/{repo}/pulls
+b:rest("get_repo_pulls", function(owner, repo_name)
+  local state = GetParam("state") or "open"
+  local dc_state = state == "closed" and "MERGED,DECLINED" or state == "all" and "ALL" or "OPEN"
+  local url = bbs_page_url(repo_path(owner, repo_name) .. "/pull-requests?state=" .. dc_state)
+  proxy_json(translate_bbs_pulls, fetch_json(url))
+end)
 
-  -- POST /repos/{owner}/{repo}/pulls
-  post_repo_pulls = function(owner, repo_name)
-    local req = DecodeJson(GetBody() or "{}")
-    local dc = {}
-    if req.title then
-      dc.title = req.title
-    end
-    if req.body then
-      dc.description = req.body
-    end
-    if req.head then
-      dc.fromRef = { id = "refs/heads/" .. req.head }
-    end
-    if req.base then
-      dc.toRef = { id = "refs/heads/" .. req.base }
-    end
-    proxy_json_created(
-      translate_bbs_pull,
-      fetch_json(repo_path(owner, repo_name) .. "/pull-requests", "POST", EncodeJson(dc))
-    )
-  end,
+-- POST /repos/{owner}/{repo}/pulls
+b:rest("post_repo_pulls", function(owner, repo_name)
+  local req = DecodeJson(GetBody() or "{}")
+  local dc = {}
+  if req.title then
+    dc.title = req.title
+  end
+  if req.body then
+    dc.description = req.body
+  end
+  if req.head then
+    dc.fromRef = { id = "refs/heads/" .. req.head }
+  end
+  if req.base then
+    dc.toRef = { id = "refs/heads/" .. req.base }
+  end
+  proxy_json_created(
+    translate_bbs_pull,
+    fetch_json(repo_path(owner, repo_name) .. "/pull-requests", "POST", EncodeJson(dc))
+  )
+end)
 
-  -- GET /repos/{owner}/{repo}/pulls/{pull_number}
-  get_repo_pull = proxy_handler(translate_bbs_pull, function(owner, repo_name, pull_number)
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}
+b:rest(
+  "get_repo_pull",
+  proxy_handler(translate_bbs_pull, function(owner, repo_name, pull_number)
     return repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number
-  end),
+  end)
+)
 
-  -- PATCH /repos/{owner}/{repo}/pulls/{pull_number}
-  -- DC uses PUT for updates and requires a version field.
-  patch_repo_pull = function(owner, repo_name, pull_number)
-    local pr_url = repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number
-    local ok, status, _, body = fetch_json(pr_url)
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local current = DecodeJson(body) or {}
-    local req = DecodeJson(GetBody() or "{}")
-    local dc = { version = current.version or 0 }
-    if req.title then
-      dc.title = req.title
-    end
-    if req.body then
-      dc.description = req.body
-    end
-    proxy_json(translate_bbs_pull, fetch_json(pr_url, "PUT", EncodeJson(dc)))
-  end,
+-- PATCH /repos/{owner}/{repo}/pulls/{pull_number}
+-- DC uses PUT for updates and requires a version field.
+b:rest("patch_repo_pull", function(owner, repo_name, pull_number)
+  local pr_url = repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number
+  local ok, status, _, body = fetch_json(pr_url)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local current = DecodeJson(body) or {}
+  local req = DecodeJson(GetBody() or "{}")
+  local dc = { version = current.version or 0 }
+  if req.title then
+    dc.title = req.title
+  end
+  if req.body then
+    dc.description = req.body
+  end
+  proxy_json(translate_bbs_pull, fetch_json(pr_url, "PUT", EncodeJson(dc)))
+end)
 
-  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/commits
-  get_pull_commits = proxy_handler(function(data)
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/commits
+b:rest(
+  "get_pull_commits",
+  proxy_handler(function(data)
     return translate_list(translate_bbs_commit, (data and data.values))
   end, function(owner, repo_name, pull_number)
     return bbs_page_url(
       repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number .. "/commits"
     )
-  end),
+  end)
+)
 
-  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/files
-  -- DC uses /changes for per-file info (no line stats).
-  get_pull_files = proxy_handler(function(data)
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/files
+-- DC uses /changes for per-file info (no line stats).
+b:rest(
+  "get_pull_files",
+  proxy_handler(function(data)
     return translate_list(translate_bbs_pr_change, (data and data.values))
   end, function(owner, repo_name, pull_number)
     return bbs_page_url(
       repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number .. "/changes"
     )
-  end),
+  end)
+)
 
-  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/merge
-  -- Cannot use proxy_json: DC always returns 200 with a PR object; the response
-  -- status (204 merged / 404 not merged) is synthesised from the body's state field.
-  get_pull_merge = function(owner, repo_name, pull_number)
-    local ok, status, _, body =
-      fetch_json(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number)
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local pr = DecodeJson(body) or {}
-    if pr.state == "MERGED" then
-      SetStatus(204, "No Content")
-    else
-      respond_json(404, { message = "Pull Request is not merged" })
-    end
-  end,
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/merge
+-- Cannot use proxy_json: DC always returns 200 with a PR object; the response
+-- status (204 merged / 404 not merged) is synthesised from the body's state field.
+b:rest("get_pull_merge", function(owner, repo_name, pull_number)
+  local ok, status, _, body =
+    fetch_json(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local pr = DecodeJson(body) or {}
+  if pr.state == "MERGED" then
+    SetStatus(204, "No Content")
+  else
+    respond_json(404, { message = "Pull Request is not merged" })
+  end
+end)
 
-  -- PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge
-  -- DC: POST /pull-requests/{id}/merge; requires version from current PR.
-  put_pull_merge = function(owner, repo_name, pull_number)
-    local pr_url = repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number
-    local ok, status, _, body = fetch_json(pr_url)
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local current = DecodeJson(body) or {}
-    local req = DecodeJson(GetBody() or "{}")
-    local dc = { version = current.version or 0 }
-    if req.commit_message then
-      dc.message = req.commit_message
-    end
-    proxy_204({ 200 }, fetch_json(pr_url .. "/merge", "POST", EncodeJson(dc)))
-  end,
+-- PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge
+-- DC: POST /pull-requests/{id}/merge; requires version from current PR.
+b:rest("put_pull_merge", function(owner, repo_name, pull_number)
+  local pr_url = repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number
+  local ok, status, _, body = fetch_json(pr_url)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local current = DecodeJson(body) or {}
+  local req = DecodeJson(GetBody() or "{}")
+  local dc = { version = current.version or 0 }
+  if req.commit_message then
+    dc.message = req.commit_message
+  end
+  proxy_204({ 200 }, fetch_json(pr_url .. "/merge", "POST", EncodeJson(dc)))
+end)
 
-  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
-  -- DC: reviewers in PR object who have not yet approved.
-  get_pull_requested_reviewers = function(owner, repo_name, pull_number)
-    local ok, status, _, body =
-      fetch_json(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number)
-    if not ok then
-      respond_json(503, {})
-      return
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
+-- DC: reviewers in PR object who have not yet approved.
+b:rest("get_pull_requested_reviewers", function(owner, repo_name, pull_number)
+  local ok, status, _, body =
+    fetch_json(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local pr = DecodeJson(body) or {}
+  local users = {}
+  for _, r in ipairs(pr.reviewers or {}) do
+    if not r.approved then
+      users[#users + 1] = translate_bbs_user(r.user)
     end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local pr = DecodeJson(body) or {}
-    local users = {}
-    for _, r in ipairs(pr.reviewers or {}) do
-      if not r.approved then
-        users[#users + 1] = translate_bbs_user(r.user)
-      end
-    end
-    respond_json(200, { users = users, teams = {} })
-  end,
+  end
+  respond_json(200, { users = users, teams = {} })
+end)
 
-  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews
-  -- DC: reviewers with approved=true in PR object.
-  get_pull_reviews = function(owner, repo_name, pull_number)
-    local ok, status, _, body =
-      fetch_json(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number)
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local pr = DecodeJson(body) or {}
-    respond_json(200, translate_bbs_reviewers_to_reviews(pr.reviewers))
-  end,
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews
+-- DC: reviewers with approved=true in PR object.
+b:rest("get_pull_reviews", function(owner, repo_name, pull_number)
+  local ok, status, _, body =
+    fetch_json(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local pr = DecodeJson(body) or {}
+  respond_json(200, translate_bbs_reviewers_to_reviews(pr.reviewers))
+end)
 
-  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
-  get_pull_review = function(owner, repo_name, pull_number, review_id)
-    local ok, status, _, body =
-      fetch_json(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number)
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local pr = DecodeJson(body) or {}
-    local reviews = translate_bbs_reviewers_to_reviews(pr.reviewers)
-    local rid = tonumber(review_id)
-    if rid and reviews[rid] then
-      respond_json(200, reviews[rid])
-    else
-      respond_json(404, { message = "Not Found" })
-    end
-  end,
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
+b:rest("get_pull_review", function(owner, repo_name, pull_number, review_id)
+  local ok, status, _, body =
+    fetch_json(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local pr = DecodeJson(body) or {}
+  local reviews = translate_bbs_reviewers_to_reviews(pr.reviewers)
+  local rid = tonumber(review_id)
+  if rid and reviews[rid] then
+    respond_json(200, reviews[rid])
+  else
+    respond_json(404, { message = "Not Found" })
+  end
+end)
 
-  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments
-  -- DC has no per-review comments; return all PR inline comments.
-  get_pull_review_comments = function(owner, repo_name, pull_number)
-    local ok, status, _, body = fetch_json(
-      bbs_page_url(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number .. "/comments")
-    )
-    if not ok then
-      respond_json(503, {})
-      return
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments
+-- DC has no per-review comments; return all PR inline comments.
+b:rest("get_pull_review_comments", function(owner, repo_name, pull_number)
+  local ok, status, _, body = fetch_json(
+    bbs_page_url(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number .. "/comments")
+  )
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local data = DecodeJson(body) or {}
+  local result = {}
+  for _, c in ipairs(data.values or {}) do
+    if c.anchor then
+      result[#result + 1] = translate_bbs_pr_comment(c)
     end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local data = DecodeJson(body) or {}
-    local result = {}
-    for _, c in ipairs(data.values or {}) do
-      if c.anchor then
-        result[#result + 1] = translate_bbs_pr_comment(c)
-      end
-    end
-    respond_json(200, result)
-  end,
+  end
+  respond_json(200, result)
+end)
 
-  -- Issues -----------------------------------------------------------------------
-  -- Bitbucket Datacenter has no native issue tracker; it relies on Jira.
-  -- All issues, labels, milestones, and assignees endpoints fall back to the
-  -- default empty-list handlers defined in .init.lua.
+-- Issues -----------------------------------------------------------------------
+-- Bitbucket Datacenter has no native issue tracker; it relies on Jira.
+-- All issues, labels, milestones, and assignees endpoints fall back to the
+-- default empty-list handlers defined in .init.lua.
 
-  -- Search -----------------------------------------------------------------------
+-- Search -----------------------------------------------------------------------
 
-  -- GET /search/repositories — DC: GET /repos?name=<q>
-  search_repositories = function()
-    local q = GetParam("q") or ""
-    proxy_search_envelope(
-      translate_bbs_repo,
-      "values",
-      fetch_json(bbs_page_url(base() .. "/repos?name=" .. q))
-    )
-  end,
+-- GET /search/repositories — DC: GET /repos?name=<q>
+b:rest("search_repositories", function()
+  local q = GetParam("q") or ""
+  proxy_search_envelope(
+    translate_bbs_repo,
+    "values",
+    fetch_json(bbs_page_url(base() .. "/repos?name=" .. q))
+  )
+end)
 
-  -- GET /search/users — DC: GET /users?filter=<q>
-  search_users = function()
-    local q = GetParam("q") or ""
-    proxy_search_envelope(
-      translate_bbs_user,
-      "values",
-      fetch_json(bbs_page_url(base() .. "/users?filter=" .. q))
-    )
-  end,
+-- GET /search/users — DC: GET /users?filter=<q>
+b:rest("search_users", function()
+  local q = GetParam("q") or ""
+  proxy_search_envelope(
+    translate_bbs_user,
+    "values",
+    fetch_json(bbs_page_url(base() .. "/users?filter=" .. q))
+  )
+end)
 
-  -- GET /repos/{owner}/{repo}/pulls/{pull_number}/comments
-  -- DC inline PR comments (those with an anchor field).
-  get_pull_comments = function(owner, repo_name, pull_number)
-    local ok, status, _, body = fetch_json(
-      bbs_page_url(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number .. "/comments")
-    )
-    if not ok then
-      respond_json(503, {})
-      return
+-- GET /repos/{owner}/{repo}/pulls/{pull_number}/comments
+-- DC inline PR comments (those with an anchor field).
+b:rest("get_pull_comments", function(owner, repo_name, pull_number)
+  local ok, status, _, body = fetch_json(
+    bbs_page_url(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number .. "/comments")
+  )
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local data = DecodeJson(body) or {}
+  local result = {}
+  for _, c in ipairs(data.values or {}) do
+    if c.anchor then
+      result[#result + 1] = translate_bbs_pr_comment(c)
     end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local data = DecodeJson(body) or {}
-    local result = {}
-    for _, c in ipairs(data.values or {}) do
-      if c.anchor then
-        result[#result + 1] = translate_bbs_pr_comment(c)
-      end
-    end
-    respond_json(200, result)
-  end,
+  end
+  respond_json(200, result)
+end)
 
-  -- Checks (via Bitbucket DC build status API) ------------------------------------
-  --
-  -- Bitbucket DC has a dedicated build status REST API at:
-  --   POST /rest/build-status/1.0/commits/{sha}  — create/update a build status
-  --   GET  /rest/build-status/1.0/commits/{sha}  — list build statuses for a commit
-  --
-  -- GitHub Check Runs map onto DC build statuses:
-  --   • POST check-runs → POST /rest/build-status/1.0/commits/{sha}
-  --   • GET check-runs/{id} → minimal stub (no reverse lookup by ID)
-  --   • PATCH check-runs/{id} → minimal stub
-  --   • GET commits/{ref}/check-runs → build statuses list
-  --   • Check Suites have no DC equivalent; all suite endpoints are stubs.
-  --   • Annotations are always empty.
-  --
-  -- Status mapping (GitHub → DC):
-  --   queued/in_progress     → INPROGRESS
-  --   completed/success      → SUCCESSFUL
-  --   completed/failure      → FAILED
-  --   completed/neutral      → SUCCESSFUL
-  --   completed/skipped      → SUCCESSFUL
-  --   completed/cancelled    → STOPPED
-  --   completed/(other)      → FAILED
-  --
-  -- Status mapping (DC → GitHub):
-  --   INPROGRESS  → status=in_progress, conclusion=null
-  --   SUCCESSFUL  → status=completed,   conclusion=success
-  --   FAILED      → status=completed,   conclusion=failure
-  --   STOPPED     → status=completed,   conclusion=cancelled
-  --   other       → status=completed,   conclusion=failure
+-- Checks (via Bitbucket DC build status API) ------------------------------------
+--
+-- Bitbucket DC has a dedicated build status REST API at:
+--   POST /rest/build-status/1.0/commits/{sha}  — create/update a build status
+--   GET  /rest/build-status/1.0/commits/{sha}  — list build statuses for a commit
+--
+-- GitHub Check Runs map onto DC build statuses:
+--   • POST check-runs → POST /rest/build-status/1.0/commits/{sha}
+--   • GET check-runs/{id} → minimal stub (no reverse lookup by ID)
+--   • PATCH check-runs/{id} → minimal stub
+--   • GET commits/{ref}/check-runs → build statuses list
+--   • Check Suites have no DC equivalent; all suite endpoints are stubs.
+--   • Annotations are always empty.
+--
+-- Status mapping (GitHub → DC):
+--   queued/in_progress     → INPROGRESS
+--   completed/success      → SUCCESSFUL
+--   completed/failure      → FAILED
+--   completed/neutral      → SUCCESSFUL
+--   completed/skipped      → SUCCESSFUL
+--   completed/cancelled    → STOPPED
+--   completed/(other)      → FAILED
+--
+-- Status mapping (DC → GitHub):
+--   INPROGRESS  → status=in_progress, conclusion=null
+--   SUCCESSFUL  → status=completed,   conclusion=success
+--   FAILED      → status=completed,   conclusion=failure
+--   STOPPED     → status=completed,   conclusion=cancelled
+--   other       → status=completed,   conclusion=failure
 
-  post_check_runs = function(owner, repo_name) -- luacheck: ignore 212
-    local req = DecodeJson(GetBody() or "{}")
-    local sha = req.head_sha or ""
-    local gh_status = req.status or "queued"
-    local conclusion = req.conclusion
-    local gh_conclusion_to_dc = {
-      success = "SUCCESSFUL",
-      neutral = "SUCCESSFUL",
-      skipped = "SUCCESSFUL",
-      cancelled = "STOPPED",
-    }
-    local dc_state = gh_status == "completed" and (gh_conclusion_to_dc[conclusion] or "FAILED")
-      or "INPROGRESS"
-    local dc_body = EncodeJson({
-      state = dc_state,
-      key = req.name or "",
-      url = req.details_url or "",
-      name = req.name or "",
-      description = (req.output and req.output.summary) or req.name or "",
-    })
-    -- DC POST returns 204 No Content on success (no body); synthesise a GitHub response.
-    local ok, up_status =
-      fetch_json(config.base_url .. "/rest/build-status/1.0/commits/" .. sha, "POST", dc_body)
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if up_status ~= 204 and up_status ~= 200 and up_status ~= 201 then
-      respond_json(up_status, {})
-      return
-    end
-    local mapped = bbs_dc_to_gh[dc_state] or { status = "completed", conclusion = "failure" }
-    respond_json(201, {
-      id = 0,
+b:rest("post_check_runs", function(owner, repo_name) -- luacheck: ignore 212
+  local req = DecodeJson(GetBody() or "{}")
+  local sha = req.head_sha or ""
+  local gh_status = req.status or "queued"
+  local conclusion = req.conclusion
+  local gh_conclusion_to_dc = {
+    success = "SUCCESSFUL",
+    neutral = "SUCCESSFUL",
+    skipped = "SUCCESSFUL",
+    cancelled = "STOPPED",
+  }
+  local dc_state = gh_status == "completed" and (gh_conclusion_to_dc[conclusion] or "FAILED")
+    or "INPROGRESS"
+  local dc_body = EncodeJson({
+    state = dc_state,
+    key = req.name or "",
+    url = req.details_url or "",
+    name = req.name or "",
+    description = (req.output and req.output.summary) or req.name or "",
+  })
+  -- DC POST returns 204 No Content on success (no body); synthesise a GitHub response.
+  local ok, up_status =
+    fetch_json(config.base_url .. "/rest/build-status/1.0/commits/" .. sha, "POST", dc_body)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if up_status ~= 204 and up_status ~= 200 and up_status ~= 201 then
+    respond_json(up_status, {})
+    return
+  end
+  local mapped = bbs_dc_to_gh[dc_state] or { status = "completed", conclusion = "failure" }
+  respond_json(201, {
+    id = 0,
+    node_id = "",
+    head_sha = sha,
+    name = req.name or "",
+    status = mapped.status,
+    conclusion = mapped.conclusion,
+    started_at = nil,
+    completed_at = mapped.status == "completed" and "" or nil,
+    output = {
+      title = (req.output and req.output.title) or req.name or "",
+      summary = (req.output and req.output.summary) or req.name or "",
+      text = "",
+      annotations_count = 0,
+      annotations_url = "",
+    },
+    url = "",
+    html_url = req.details_url or "",
+    details_url = req.details_url or "",
+  })
+end)
+
+-- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
+-- Uses DC build status API.
+b:rest("get_commit_check_runs", function(_owner, _repo_name, ref)
+  local ok, status, _, body =
+    fetch_json(config.base_url .. "/rest/build-status/1.0/commits/" .. ref)
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local data = DecodeJson(body) or {}
+  local runs = {}
+  for i, s in ipairs(data.values or {}) do
+    local mapped = bbs_dc_to_gh[s.state] or { status = "completed", conclusion = "failure" }
+    runs[i] = {
+      id = i,
       node_id = "",
-      head_sha = sha,
-      name = req.name or "",
+      head_sha = ref,
+      name = s.key or s.name or "",
       status = mapped.status,
       conclusion = mapped.conclusion,
       started_at = nil,
       completed_at = mapped.status == "completed" and "" or nil,
       output = {
-        title = (req.output and req.output.title) or req.name or "",
-        summary = (req.output and req.output.summary) or req.name or "",
+        title = s.description or "",
+        summary = s.description or "",
         text = "",
         annotations_count = 0,
         annotations_url = "",
       },
       url = "",
-      html_url = req.details_url or "",
-      details_url = req.details_url or "",
-    })
-  end,
+      html_url = s.url or "",
+      details_url = s.url or "",
+    }
+  end
+  respond_json(200, { total_count = #runs, check_runs = runs })
+end)
 
-  -- GET /repos/{owner}/{repo}/commits/{ref}/check-runs
-  -- Uses DC build status API.
-  get_commit_check_runs = function(_owner, _repo_name, ref)
-    local ok, status, _, body =
-      fetch_json(config.base_url .. "/rest/build-status/1.0/commits/" .. ref)
-    if not ok then
-      respond_json(503, {})
-      return
-    end
-    if status ~= 200 then
-      respond_json(status, {})
-      return
-    end
-    local data = DecodeJson(body) or {}
-    local runs = {}
-    for i, s in ipairs(data.values or {}) do
-      local mapped = bbs_dc_to_gh[s.state] or { status = "completed", conclusion = "failure" }
-      runs[i] = {
-        id = i,
-        node_id = "",
-        head_sha = ref,
-        name = s.key or s.name or "",
-        status = mapped.status,
-        conclusion = mapped.conclusion,
-        started_at = nil,
-        completed_at = mapped.status == "completed" and "" or nil,
-        output = {
-          title = s.description or "",
-          summary = s.description or "",
-          text = "",
-          annotations_count = 0,
-          annotations_url = "",
-        },
-        url = "",
-        html_url = s.url or "",
-        details_url = s.url or "",
-      }
-    end
-    respond_json(200, { total_count = #runs, check_runs = runs })
-  end,
-
-  -- Check suites have no DC equivalent; all suite endpoints fall back to
-  -- the route_defaults stubs defined in .init.lua.
-}
+-- Check suites have no DC equivalent; all suite endpoints fall back to
+-- the route_defaults stubs defined in .init.lua.
 
 -- Code Scanning via Bitbucket DC Code Insights API.
 -- BBS Code Insights (/rest/insights/1.0) stores per-commit analysis reports
@@ -1097,9 +1156,9 @@ local function resolve_ref_sha(owner, repo_name)
     return nil
   end
   local data = DecodeJson(body) or {}
-  for _, b in ipairs(data.values or {}) do
-    if b.isDefault then
-      return b.latestCommit or b.latestChangeset
+  for _, br in ipairs(data.values or {}) do
+    if br.isDefault then
+      return br.latestCommit or br.latestChangeset
     end
   end
   -- Fall back to first branch if no default found.
@@ -1184,9 +1243,7 @@ local function translate_bbs_report(rpt, idx, sha)
   }
 end
 
-local _b = app.backend_impl
-
-_b.list_repo_code_scanning_alerts = function(owner, repo_name)
+b:rest("list_repo_code_scanning_alerts", function(owner, repo_name)
   local sha = resolve_ref_sha(owner, repo_name)
   if not sha then
     respond_json(200, {})
@@ -1208,9 +1265,9 @@ _b.list_repo_code_scanning_alerts = function(owner, repo_name)
     result[i] = translate_bbs_annotation(ann, i)
   end
   respond_json(200, result)
-end
+end)
 
-_b.list_code_scanning_analyses = function(owner, repo_name)
+b:rest("list_code_scanning_analyses", function(owner, repo_name)
   local sha = resolve_ref_sha(owner, repo_name)
   if not sha then
     respond_json(200, {})
@@ -1232,7 +1289,7 @@ _b.list_code_scanning_analyses = function(owner, repo_name)
     result[i] = translate_bbs_report(rpt, i, sha)
   end
   respond_json(200, result)
-end
+end)
 
 -- Git database (refs only; blobs/commits/tag-objects/trees have no DC equivalent) -----
 
@@ -1247,7 +1304,7 @@ local function translate_bbs_ref(r)
   }
 end
 
-_b.list_git_matching_refs = function(owner, repo_name, ref)
+b:rest("list_git_matching_refs", function(owner, repo_name, ref)
   local endpoint, prefix
   if ref:sub(1, 6) == "heads/" then
     endpoint = "/branches"
@@ -1263,9 +1320,9 @@ _b.list_git_matching_refs = function(owner, repo_name, ref)
   proxy_json(function(data)
     return translate_list(translate_bbs_ref, data.values)
   end, fetch_json(url))
-end
+end)
 
-_b.get_git_ref = function(owner, repo_name, ref)
+b:rest("get_git_ref", function(owner, repo_name, ref)
   local endpoint, prefix
   if ref:sub(1, 6) == "heads/" then
     endpoint = "/branches"
@@ -1282,9 +1339,9 @@ _b.get_git_ref = function(owner, repo_name, ref)
     local first = (data.values or {})[1]
     return first and translate_bbs_ref(first) or {}
   end, fetch_json(url))
-end
+end)
 
-_b.create_git_ref = function(owner, repo_name)
+b:rest("create_git_ref", function(owner, repo_name)
   local req = DecodeJson(GetBody() or "{}")
   local full_ref = req.ref or ""
   local sha = req.sha or ""
@@ -1303,9 +1360,9 @@ _b.create_git_ref = function(owner, repo_name)
     translate_bbs_ref,
     fetch_json(repo_path(owner, repo_name) .. endpoint, "POST", bb_body)
   )
-end
+end)
 
-_b.delete_git_ref = function(owner, repo_name, ref)
+b:rest("delete_git_ref", function(owner, repo_name, ref)
   local endpoint, body_or_nil
   if ref:sub(1, 6) == "heads/" then
     endpoint = "/branches"
@@ -1326,7 +1383,7 @@ _b.delete_git_ref = function(owner, repo_name, ref)
     dopts.headers["Content-Type"] = "application/json"
   end
   proxy_204({ 200, 202 }, pcall(Fetch, url, dopts))
-end
+end)
 
 -- GraphQL resolvers -----------------------------------------------------------
 -- BBS scope: Query.repository, Query.user, Repository.pullRequests.
@@ -1374,7 +1431,7 @@ local function bbs_repo_connection(owner, repo_name, suffix, args, ctx, translat
   return make_conn(nodes, args, nil, ctx)
 end
 
-graphql_resolvers["Query.repository"] = function(_parent, args, ctx)
+b:graphql("Query.repository", function(_parent, args, ctx)
   if not args.owner or not args.name then
     graphql_error(ctx, "repository requires owner and name arguments")
     return nil
@@ -1384,9 +1441,9 @@ graphql_resolvers["Query.repository"] = function(_parent, args, ctx)
     return nil
   end
   return graphql_translate_repo(translate_bbs_repo(data))
-end
+end)
 
-graphql_resolvers["node.Repository"] = function(local_id, _ctx)
+b:graphql("node.Repository", function(local_id, _ctx)
   local owner, name = local_id:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
@@ -1396,9 +1453,9 @@ graphql_resolvers["node.Repository"] = function(local_id, _ctx)
     return nil
   end
   return graphql_translate_repo(translate_bbs_repo(data))
-end
+end)
 
-graphql_resolvers["Query.user"] = function(_parent, args, ctx)
+b:graphql("Query.user", function(_parent, args, ctx)
   if not args.login then
     graphql_error(ctx, "user requires a login argument")
     return nil
@@ -1408,17 +1465,17 @@ graphql_resolvers["Query.user"] = function(_parent, args, ctx)
     return nil
   end
   return graphql_translate_user(translate_bbs_user(data))
-end
+end)
 
-graphql_resolvers["node.User"] = function(local_id, _ctx)
+b:graphql("node.User", function(local_id, _ctx)
   local data, _ = graphql_fetch(fetch_json, base() .. "/users/" .. local_id)
   if not data then
     return nil
   end
   return graphql_translate_user(translate_bbs_user(data))
-end
+end)
 
-graphql_resolvers["Repository.pullRequests"] = function(parent, args, ctx)
+b:graphql("Repository.pullRequests", function(parent, args, ctx)
   local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
   if not owner then
     return nil
@@ -1426,9 +1483,9 @@ graphql_resolvers["Repository.pullRequests"] = function(parent, args, ctx)
   return bbs_repo_connection(owner, name, "/pull-requests", args, ctx, function(pr)
     return graphql_translate_pr(translate_bbs_pull(pr), owner, name)
   end, graphql_prs_connection)
-end
+end)
 
-graphql_resolvers["node.PullRequest"] = function(local_id, _ctx)
+b:graphql("node.PullRequest", function(local_id, _ctx)
   local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
   if not owner then
     return nil
@@ -1438,4 +1495,6 @@ graphql_resolvers["node.PullRequest"] = function(local_id, _ctx)
     return nil
   end
   return graphql_translate_pr(translate_bbs_pull(data), owner, repo)
-end
+end)
+
+b:build()
