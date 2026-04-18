@@ -119,10 +119,6 @@ local function translate_gl_user(u)
   }
 end
 
-local function translate_gl_users(users)
-  return translate_list(translate_gl_user, users)
-end
-
 -- Proxy a GitLab search response (plain JSON array) to the GitHub search
 -- envelope {"total_count":N,"incomplete_results":false,"items":[...]}.
 -- translate_item is applied to each element of the array.
@@ -312,6 +308,25 @@ local function translate_gl_milestones(milestones)
 end
 local function translate_gl_members(members)
   return translate_list(translate_gl_member, members)
+end
+
+-- Map a GitLab group to GitHub organization REST shape.
+-- Used by orgs capability module and GraphQL resolvers.
+local function translate_gl_group_to_org(g)
+  if not g then
+    return nil
+  end
+  return {
+    login = g.path or g.full_path or "",
+    name = g.name,
+    description = g.description,
+    avatar_url = g.avatar_url or "",
+    html_url = g.web_url or "",
+    blog = "",
+    email = "",
+    location = "",
+    created_at = g.created_at,
+  }
 end
 
 -- Map a GitLab MR (merge request) object to GitHub PR format.
@@ -689,6 +704,210 @@ repos.put_topics = function(owner, repo_name, body)
     return nil, err
   end
   return { names = raw.topics or {} }, nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Users capability module
+-- ---------------------------------------------------------------------------
+-- Owns fetch + translate_gl_user for all user operations.
+-- REST handlers and GraphQL resolvers call into this table rather than
+-- duplicating URL construction, error mapping, and translation logic.
+-- User operations return (data, nil) on success or (nil, err) on failure.
+-- Email/key/GPG operations return raw upstream data with no translation.
+-- Paged list operations return (items, headers, nil) or (nil, nil, err).
+
+local users = {}
+
+-- get_authenticated: fetch the currently authenticated user.
+users.get_authenticated = function()
+  local raw, err = cap_fetch(fetch_json, base() .. "/user")
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_user(raw), nil
+end
+
+-- update_authenticated: update the authenticated user (GitLab uses PUT /user).
+users.update_authenticated = function(body)
+  local raw, err = cap_fetch(fetch_json, base() .. "/user", "PUT", body)
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_user(raw), nil
+end
+
+-- by_username: fetch a single user by username (GitLab returns an array from
+-- /users?username=X; we take the first element).
+-- Returns the GitHub REST user shape or (nil, err) when no user is found.
+users.by_username = function(username)
+  local raw, err = cap_fetch(fetch_json, base() .. "/users?username=" .. username)
+  if not raw then
+    return nil, err
+  end
+  local u = type(raw) == "table" and raw[1]
+  if not u then
+    return nil, cap_err(404, "user not found: " .. username)
+  end
+  return translate_gl_user(u), nil
+end
+
+-- list_all: paginated list of all users.
+users.list_all = function()
+  local url = append_page_params(base() .. "/users", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return translate_list(translate_gl_user, items), hdrs, nil
+end
+
+-- list_emails: list email addresses for the authenticated user.
+-- Returns raw upstream array (no translation).
+users.list_emails = function()
+  local raw, err = cap_fetch(fetch_json, base() .. "/user/emails")
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- create_email: add an email address for the authenticated user.
+users.create_email = function(body)
+  local raw, err = cap_fetch(fetch_json, base() .. "/user/emails", "POST", body)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- list_keys: paginated list of SSH keys for the authenticated user.
+users.list_keys = function()
+  local url = append_page_params(base() .. "/user/keys", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+-- create_key: add an SSH key for the authenticated user.
+users.create_key = function(body)
+  local raw, err = cap_fetch(fetch_json, base() .. "/user/keys", "POST", body)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- get_key: fetch a single SSH key by ID.
+users.get_key = function(key_id)
+  local raw, err = cap_fetch(fetch_json, base() .. "/user/keys/" .. key_id)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- delete_key: delete an SSH key by ID.
+-- Returns (true, nil) on 204 success or (nil, err) on failure.
+users.delete_key = function(key_id)
+  local ok, status = fetch_json(base() .. "/user/keys/" .. key_id, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting key " .. tostring(key_id))
+  end
+  if status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting key")
+  end
+  return true, nil
+end
+
+-- list_by_username_keys: list SSH keys for a specific user (by username).
+-- Returns raw upstream array (no translation).
+users.list_by_username_keys = function(username)
+  local uid = gl_user_id(username)
+  if not uid then
+    return nil, cap_err(404, "user not found: " .. username)
+  end
+  local raw, err = cap_fetch(fetch_json, base() .. "/users/" .. uid .. "/keys")
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- list_gpg_keys: paginated list of GPG keys for the authenticated user.
+users.list_gpg_keys = function()
+  local url = append_page_params(base() .. "/user/gpg_keys", PAGES)
+  local items, hdrs, err = cap_fetch_paged(fetch_json, url)
+  if not items then
+    return nil, nil, err
+  end
+  return items, hdrs, nil
+end
+
+-- create_gpg_key: add a GPG key for the authenticated user.
+users.create_gpg_key = function(body)
+  local raw, err = cap_fetch(fetch_json, base() .. "/user/gpg_keys", "POST", body)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- get_gpg_key: fetch a single GPG key by ID.
+users.get_gpg_key = function(gpg_key_id)
+  local raw, err = cap_fetch(fetch_json, base() .. "/user/gpg_keys/" .. gpg_key_id)
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- delete_gpg_key: delete a GPG key by ID.
+-- Returns (true, nil) on 204 success or (nil, err) on failure.
+users.delete_gpg_key = function(gpg_key_id)
+  local ok, status = fetch_json(base() .. "/user/gpg_keys/" .. gpg_key_id, "DELETE")
+  if not ok then
+    return nil, cap_err(0, "network error deleting GPG key " .. tostring(gpg_key_id))
+  end
+  if status ~= 204 then
+    return nil, cap_err(status, "upstream error " .. tostring(status) .. " deleting GPG key")
+  end
+  return true, nil
+end
+
+-- list_by_username_gpg_keys: list GPG keys for a specific user (by username).
+-- Returns raw upstream array (no translation).
+users.list_by_username_gpg_keys = function(username)
+  local uid = gl_user_id(username)
+  if not uid then
+    return nil, cap_err(404, "user not found: " .. username)
+  end
+  local raw, err = cap_fetch(fetch_json, base() .. "/users/" .. uid .. "/gpg_keys")
+  if not raw then
+    return nil, err
+  end
+  return raw, nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Orgs capability module
+-- ---------------------------------------------------------------------------
+-- Shared fetch + translate operations for organization (GitLab group) resources.
+-- orgs.get returns the GitHub REST-compatible org shape (translate_gl_group_to_org
+-- applied), ready for graphql_translate_org in GraphQL resolvers.
+-- Operations return (data, nil) on success or (nil, err) on failure.
+
+local orgs = {}
+
+-- get: fetch a single organization (GitLab group) by login/path.
+-- Returns the GitHub REST org shape (translate_gl_group_to_org applied).
+orgs.get = function(login)
+  local raw, err = cap_fetch(fetch_json, base() .. "/groups/" .. login)
+  if not raw then
+    return nil, err
+  end
+  return translate_gl_group_to_org(raw), nil
 end
 
 local b = make_backend_builder()
@@ -1192,8 +1411,8 @@ b:rest("get_repo_collaborator", function(owner, repo_name, username)
     respond_json(404, {})
     return
   end
-  local users = DecodeJson(ubody) or {}
-  local uid = users[1] and users[1].id
+  local ulist = DecodeJson(ubody) or {}
+  local uid = ulist[1] and ulist[1].id
   if not uid then
     respond_json(404, {})
     return
@@ -1216,8 +1435,8 @@ b:rest("put_repo_collaborator", function(owner, repo_name, username)
     respond_json(404, {})
     return
   end
-  local users = DecodeJson(ubody) or {}
-  local uid = users[1] and users[1].id
+  local ulist = DecodeJson(ubody) or {}
+  local uid = ulist[1] and ulist[1].id
   if not uid then
     respond_json(404, {})
     return
@@ -1254,8 +1473,8 @@ b:rest("delete_repo_collaborator", function(owner, repo_name, username)
     respond_json(404, {})
     return
   end
-  local users = DecodeJson(ubody) or {}
-  local uid = users[1] and users[1].id
+  local ulist = DecodeJson(ubody) or {}
+  local uid = ulist[1] and ulist[1].id
   if not uid then
     respond_json(404, {})
     return
@@ -1273,8 +1492,8 @@ b:rest("get_repo_collaborator_permission", function(owner, repo_name, username)
     respond_json(404, {})
     return
   end
-  local users = DecodeJson(ubody) or {}
-  local uid = users[1] and users[1].id
+  local ulist = DecodeJson(ubody) or {}
+  local uid = ulist[1] and ulist[1].id
   if not uid then
     respond_json(404, {})
     return
@@ -1730,130 +1949,105 @@ end)
 -- Users ---------------------------------------------------------------------
 
 -- GET /user
-b:rest(
-  "get_user",
-  proxy_handler(translate_gl_user, function()
-    return base() .. "/user"
-  end)
-)
+b:rest("get_user", function()
+  local data, err = users.get_authenticated()
+  cap_rest_respond(data, err)
+end)
 
 -- PATCH /user
 b:rest("patch_user", function()
-  proxy_json(translate_gl_user, fetch_json(base() .. "/user", "PUT", GetBody()))
+  local data, err = users.update_authenticated(GetBody())
+  cap_rest_respond(data, err)
 end)
 
 -- GET /users/{username}
-b:rest(
-  "get_users_username",
-  proxy_handler(function(list)
-    local u = (list and list[1]) or {}
-    return translate_gl_user(u)
-  end, function(username)
-    return base() .. "/users?username=" .. username
-  end)
-)
+b:rest("get_users_username", function(username)
+  local data, err = users.by_username(username)
+  cap_rest_respond(data, err)
+end)
 
 -- GET /users
-b:rest(
-  "get_users",
-  proxy_handler_paged(translate_gl_users, function()
-    return append_page_params(base() .. "/users", PAGES)
-  end)
-)
+b:rest("get_users", function()
+  local items, hdrs, err = users.list_all()
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
 -- Emails --------------------------------------------------------------------
 
 -- GET /user/emails
-b:rest(
-  "get_user_emails",
-  proxy_handler(nil, function()
-    return base() .. "/user/emails"
-  end)
-)
+b:rest("get_user_emails", function()
+  local data, err = users.list_emails()
+  cap_rest_respond(data, err)
+end)
 
 -- POST /user/emails
 b:rest("post_user_emails", function()
-  proxy_json_created(nil, fetch_json(base() .. "/user/emails", "POST", GetBody()))
+  local data, err = users.create_email(GetBody())
+  cap_rest_created(data, err)
 end)
 
 -- SSH Keys ------------------------------------------------------------------
 
 -- GET /user/keys
-b:rest(
-  "get_user_keys",
-  proxy_handler_paged(nil, function()
-    return append_page_params(base() .. "/user/keys", PAGES)
-  end)
-)
+b:rest("get_user_keys", function()
+  local items, hdrs, err = users.list_keys()
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
 -- POST /user/keys
 b:rest("post_user_keys", function()
-  proxy_json_created(nil, fetch_json(base() .. "/user/keys", "POST", GetBody()))
+  local data, err = users.create_key(GetBody())
+  cap_rest_created(data, err)
 end)
 
 -- GET /user/keys/{key_id}
-b:rest(
-  "get_user_key",
-  proxy_handler(nil, function(key_id)
-    return base() .. "/user/keys/" .. key_id
-  end)
-)
+b:rest("get_user_key", function(key_id)
+  local data, err = users.get_key(key_id)
+  cap_rest_respond(data, err)
+end)
 
 -- DELETE /user/keys/{key_id}
 b:rest("delete_user_key", function(key_id)
-  local opts = auth() or {}
-  opts.method = "DELETE"
-  proxy_204(nil, pcall(Fetch, base() .. "/user/keys/" .. key_id, opts))
+  local ok, err = users.delete_key(key_id)
+  cap_rest_204(ok, err)
 end)
 
 -- GET /users/{username}/keys
 b:rest("get_users_keys", function(username)
-  local uid = gl_user_id(username)
-  if not uid then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  proxy_json(nil, fetch_json(base() .. "/users/" .. uid .. "/keys"))
+  local data, err = users.list_by_username_keys(username)
+  cap_rest_respond(data, err)
 end)
 
 -- GPG Keys ------------------------------------------------------------------
 
 -- GET /user/gpg_keys
-b:rest(
-  "get_user_gpg_keys",
-  proxy_handler_paged(nil, function()
-    return append_page_params(base() .. "/user/gpg_keys", PAGES)
-  end)
-)
+b:rest("get_user_gpg_keys", function()
+  local items, hdrs, err = users.list_gpg_keys()
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
 
 -- POST /user/gpg_keys
 b:rest("post_user_gpg_keys", function()
-  proxy_json_created(nil, fetch_json(base() .. "/user/gpg_keys", "POST", GetBody()))
+  local data, err = users.create_gpg_key(GetBody())
+  cap_rest_created(data, err)
 end)
 
 -- GET /user/gpg_keys/{gpg_key_id}
-b:rest(
-  "get_user_gpg_key",
-  proxy_handler(nil, function(gpg_key_id)
-    return base() .. "/user/gpg_keys/" .. gpg_key_id
-  end)
-)
+b:rest("get_user_gpg_key", function(gpg_key_id)
+  local data, err = users.get_gpg_key(gpg_key_id)
+  cap_rest_respond(data, err)
+end)
 
 -- DELETE /user/gpg_keys/{gpg_key_id}
 b:rest("delete_user_gpg_key", function(gpg_key_id)
-  local opts = auth() or {}
-  opts.method = "DELETE"
-  proxy_204(nil, pcall(Fetch, base() .. "/user/gpg_keys/" .. gpg_key_id, opts))
+  local ok, err = users.delete_gpg_key(gpg_key_id)
+  cap_rest_204(ok, err)
 end)
 
 -- GET /users/{username}/gpg_keys
 b:rest("get_users_gpg_keys", function(username)
-  local uid = gl_user_id(username)
-  if not uid then
-    respond_json(404, { message = "Not Found" })
-    return
-  end
-  proxy_json(nil, fetch_json(base() .. "/users/" .. uid .. "/gpg_keys"))
+  local data, err = users.list_by_username_gpg_keys(username)
+  cap_rest_respond(data, err)
 end)
 
 -- Teams — mapped to GitLab subgroups ----------------------------------------
@@ -2873,11 +3067,11 @@ b:rest("get_pull_requested_reviewers", function(owner, repo_name, pull_number)
     return
   end
   local reviewers = DecodeJson(body) or {}
-  local users = {}
+  local reviewer_users = {}
   for _, u in ipairs(reviewers) do
-    users[#users + 1] = translate_gl_user(u)
+    reviewer_users[#reviewer_users + 1] = translate_gl_user(u)
   end
-  respond_json(200, { users = users, teams = {} })
+  respond_json(200, { users = reviewer_users, teams = {} })
 end)
 
 -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews
@@ -4001,57 +4195,25 @@ end)
 -- GraphQL resolvers — Query root fields and node resolvers
 -- ---------------------------------------------------------------------------
 
--- Helper: translate a GitLab group (from /groups/{id}) to GitHub org REST shape
--- suitable for graphql_translate_org.
-local function translate_gl_group_to_org(g)
-  if not g then
-    return nil
-  end
-  return {
-    login = g.path or g.full_path or "",
-    name = g.name,
-    description = g.description,
-    avatar_url = g.avatar_url or "",
-    html_url = g.web_url or "",
-    blog = "",
-    email = "",
-    location = "",
-    created_at = g.created_at,
-  }
-end
-
--- Helper: fetch a GitLab user by username.
--- GitLab returns an array from /users?username=X; we take the first element.
-local function gl_fetch_user(username)
-  local data, err = graphql_fetch(fetch_json, base() .. "/users?username=" .. username)
-  if not data then
-    return nil, err
-  end
-  local u = data[1]
-  if not u then
-    return nil, "not found: user " .. username
-  end
-  return u, nil
-end
-
 -- Query.repositoryOwner: look up a User or Organization (GitLab group) by login.
 b:graphql("Query.repositoryOwner", function(_parent, args, ctx)
   if not args.login then
     graphql_error(ctx, "repositoryOwner requires a login argument")
     return nil
   end
-  local udata, _ = gl_fetch_user(args.login)
+  local udata, _ = users.by_username(args.login)
   if udata then
-    return graphql_translate_user(translate_gl_user(udata))
+    return graphql_translate_user(udata)
   end
-  local gdata, _ = graphql_fetch(fetch_json, base() .. "/groups/" .. args.login)
+  local gdata, _ = orgs.get(args.login)
   if gdata then
-    return graphql_translate_org(translate_gl_group_to_org(gdata))
+    return graphql_translate_org(gdata)
   end
   return nil
 end)
 
 -- Query.viewer: resolve the authenticated user via GET /user.
+-- Uses graphql_fetch_or_error to surface FORBIDDEN errors when unauthenticated.
 b:graphql("Query.viewer", function(_parent, _args, ctx)
   local data = graphql_fetch_or_error(fetch_json, base() .. "/user", ctx, nil)
   if not data then
@@ -4068,11 +4230,11 @@ b:graphql("Query.user", function(_parent, args, ctx)
     graphql_error(ctx, "user requires a login argument")
     return nil
   end
-  local udata, _ = gl_fetch_user(args.login)
-  if not udata then
+  local data, _ = users.by_username(args.login)
+  if not data then
     return nil
   end
-  return graphql_translate_user(translate_gl_user(udata))
+  return graphql_translate_user(data)
 end)
 
 -- Query.organization: look up a GitLab group by path.
@@ -4081,11 +4243,11 @@ b:graphql("Query.organization", function(_parent, args, ctx)
     graphql_error(ctx, "organization requires a login argument")
     return nil
   end
-  local data, _ = graphql_fetch(fetch_json, base() .. "/groups/" .. args.login)
+  local data, _ = orgs.get(args.login)
   if not data then
     return nil
   end
-  return graphql_translate_org(translate_gl_group_to_org(data))
+  return graphql_translate_org(data)
 end)
 
 -- Query.repository: look up a Repository by owner and name.
@@ -4116,20 +4278,20 @@ end)
 
 -- node.User: fetch a user by login.
 b:graphql("node.User", function(local_id, _ctx)
-  local udata, _ = gl_fetch_user(local_id)
-  if not udata then
+  local data, _ = users.by_username(local_id)
+  if not data then
     return nil
   end
-  return graphql_translate_user(translate_gl_user(udata))
+  return graphql_translate_user(data)
 end)
 
 -- node.Organization: fetch a group by path.
 b:graphql("node.Organization", function(local_id, _ctx)
-  local data, _ = graphql_fetch(fetch_json, base() .. "/groups/" .. local_id)
+  local data, _ = orgs.get(local_id)
   if not data then
     return nil
   end
-  return graphql_translate_org(translate_gl_group_to_org(data))
+  return graphql_translate_org(data)
 end)
 
 -- node.Issue: fetch an issue by "owner/repo/iid" local ID.
@@ -4706,4 +4868,6 @@ b:graphql("Query.search", function(_parent, args, ctx)
 end)
 
 b:capability("repos", repos)
+b:capability("users", users)
+b:capability("orgs", orgs)
 b:build()
