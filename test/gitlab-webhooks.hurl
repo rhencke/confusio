@@ -600,7 +600,7 @@ X-Gitlab-Event: Merge Request Hook
   },
   "object_attributes": {
     "id": 500, "iid": 7, "title": "Add new feature", "description": null,
-    "state": "opened", "action": "approved",
+    "state": "opened", "action": "attention_required",
     "source_branch": "feature-branch", "target_branch": "main",
     "last_commit": {"id": "abc123"},
     "diff_refs": {"base_sha": "def456", "head_sha": "abc123", "start_sha": "def456"},
@@ -618,4 +618,247 @@ X-Gitlab-Event: Merge Request Hook
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
-header "X-Confusio-Raw-Action" == "approved"
+header "X-Confusio-Raw-Action" == "attention_required"
+
+# ── Merge Request Hook: approved → pull_request_review submitted/approved ──────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Merge Request Hook
+{
+  "object_kind": "merge_request",
+  "event_type": "merge_request",
+  "user": {
+    "id": 3, "name": "Carol", "username": "carol",
+    "avatar_url": "", "web_url": "http://localhost/carol"
+  },
+  "project": {
+    "id": 10, "name": "hello-world",
+    "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "visibility_level": 20, "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 500, "iid": 7, "title": "Add new feature", "description": null,
+    "state": "opened", "action": "approved",
+    "source_branch": "feature-branch", "target_branch": "main",
+    "last_commit": {"id": "abc123"},
+    "diff_refs": {"base_sha": "def456", "head_sha": "abc123", "start_sha": "def456"},
+    "draft": false, "merge_status": "can_be_merged",
+    "url": "http://localhost/octocat/hello-world/-/merge_requests/7",
+    "merge_commit_sha": null,
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T12:00:00Z",
+    "closed_at": null, "merged_at": null
+  },
+  "labels": [], "assignees": [], "reviewers": [],
+  "changes": {}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Merge Request Hook: unapproved → pull_request_review dismissed ────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Merge Request Hook
+{
+  "object_kind": "merge_request",
+  "event_type": "merge_request",
+  "user": {
+    "id": 3, "name": "Carol", "username": "carol",
+    "avatar_url": "", "web_url": "http://localhost/carol"
+  },
+  "project": {
+    "id": 10, "name": "hello-world",
+    "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "visibility_level": 20, "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 500, "iid": 7, "title": "Add new feature", "description": null,
+    "state": "opened", "action": "unapproved",
+    "source_branch": "feature-branch", "target_branch": "main",
+    "last_commit": {"id": "abc123"},
+    "diff_refs": {"base_sha": "def456", "head_sha": "abc123", "start_sha": "def456"},
+    "draft": false, "merge_status": "can_be_merged",
+    "url": "http://localhost/octocat/hello-world/-/merge_requests/7",
+    "merge_commit_sha": null,
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T12:05:00Z",
+    "closed_at": null, "merged_at": null
+  },
+  "labels": [], "assignees": [], "reviewers": [],
+  "changes": {}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Note Hook: DiffNote on MR (created) → pull_request_review_comment ─────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Note Hook
+{
+  "object_kind": "note",
+  "user": {
+    "id": 3, "name": "Carol", "username": "carol",
+    "avatar_url": "", "web_url": "http://localhost/carol"
+  },
+  "project": {
+    "id": 10, "name": "hello-world",
+    "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "visibility_level": 20, "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 200,
+    "note": "Nice change here.",
+    "noteable_type": "MergeRequest",
+    "type": "DiffNote",
+    "action": "create",
+    "discussion_id": "87805b7c09016a7058e91bdbe7b29d1f284a39e5",
+    "position": {
+      "base_sha": "def456",
+      "start_sha": "def456",
+      "head_sha": "abc123",
+      "old_path": "README.md",
+      "new_path": "README.md",
+      "position_type": "text",
+      "old_line": null,
+      "new_line": 5
+    },
+    "url": "http://localhost/octocat/hello-world/-/merge_requests/7#note_200",
+    "created_at": "2024-01-15T12:10:00Z",
+    "updated_at": "2024-01-15T12:10:00Z"
+  },
+  "merge_request": {
+    "id": 500, "iid": 7,
+    "title": "Add new feature",
+    "description": null,
+    "state": "opened",
+    "source_branch": "feature-branch",
+    "target_branch": "main",
+    "draft": false,
+    "merge_status": "can_be_merged",
+    "diff_refs": {"base_sha": "def456", "head_sha": "abc123", "start_sha": "def456"},
+    "web_url": "http://localhost/octocat/hello-world/-/merge_requests/7",
+    "author": {
+      "id": 2, "name": "Bob", "username": "bob",
+      "avatar_url": "", "web_url": "http://localhost/bob"
+    }
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Note Hook: DiffNote on MR (deleted) → pull_request_review_comment ─────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Note Hook
+{
+  "object_kind": "note",
+  "user": {
+    "id": 3, "name": "Carol", "username": "carol",
+    "avatar_url": "", "web_url": "http://localhost/carol"
+  },
+  "project": {
+    "id": 10, "name": "hello-world",
+    "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "visibility_level": 20, "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 200, "note": "Nice change here.",
+    "noteable_type": "MergeRequest", "type": "DiffNote",
+    "action": "destroy",
+    "discussion_id": "87805b7c09016a7058e91bdbe7b29d1f284a39e5",
+    "position": {
+      "base_sha": "def456", "start_sha": "def456", "head_sha": "abc123",
+      "old_path": "README.md", "new_path": "README.md",
+      "position_type": "text", "old_line": null, "new_line": 5
+    },
+    "url": "http://localhost/octocat/hello-world/-/merge_requests/7#note_200",
+    "created_at": "2024-01-15T12:10:00Z", "updated_at": "2024-01-15T12:11:00Z"
+  },
+  "merge_request": {
+    "id": 500, "iid": 7, "title": "Add new feature", "description": null,
+    "state": "opened", "source_branch": "feature-branch", "target_branch": "main",
+    "draft": false, "merge_status": "can_be_merged",
+    "diff_refs": {"base_sha": "def456", "head_sha": "abc123", "start_sha": "def456"},
+    "web_url": "http://localhost/octocat/hello-world/-/merge_requests/7",
+    "author": {
+      "id": 2, "name": "Bob", "username": "bob",
+      "avatar_url": "", "web_url": "http://localhost/bob"
+    }
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Note Hook: DiffNote on MR (unknown action) → 200 + X-Confusio-Raw-Action ──
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Note Hook
+{
+  "object_kind": "note",
+  "user": {
+    "id": 3, "name": "Carol", "username": "carol",
+    "avatar_url": "", "web_url": "http://localhost/carol"
+  },
+  "project": {
+    "id": 10, "name": "hello-world",
+    "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "visibility_level": 20, "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 201, "note": "Resolved.",
+    "noteable_type": "MergeRequest", "type": "DiffNote",
+    "action": "resolved",
+    "discussion_id": "87805b7c09016a7058e91bdbe7b29d1f284a39e5",
+    "position": {
+      "base_sha": "def456", "start_sha": "def456", "head_sha": "abc123",
+      "old_path": "README.md", "new_path": "README.md",
+      "position_type": "text", "old_line": null, "new_line": 5
+    },
+    "url": "http://localhost/octocat/hello-world/-/merge_requests/7#note_201",
+    "created_at": "2024-01-15T12:10:00Z", "updated_at": "2024-01-15T12:12:00Z"
+  },
+  "merge_request": {
+    "id": 500, "iid": 7, "title": "Add new feature", "description": null,
+    "state": "opened", "source_branch": "feature-branch", "target_branch": "main",
+    "draft": false, "merge_status": "can_be_merged",
+    "diff_refs": {"base_sha": "def456", "head_sha": "abc123", "start_sha": "def456"},
+    "web_url": "http://localhost/octocat/hello-world/-/merge_requests/7",
+    "author": {
+      "id": 2, "name": "Bob", "username": "bob",
+      "avatar_url": "", "web_url": "http://localhost/bob"
+    }
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+header "X-Confusio-Raw-Action" == "resolved"

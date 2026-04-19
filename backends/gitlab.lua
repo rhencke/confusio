@@ -6237,13 +6237,54 @@ b:webhook("Issues Hook", function(payload)
   })
 end)
 
--- issue_comment: created, edited, deleted.
+-- issue_comment / pull_request_review_comment: created, edited, deleted.
 -- Registered for X-Gitlab-Event: Note Hook (covers notes on issues and MRs).
--- payload.issue is the parent issue in REST API format when noteable_type is Issue.
+-- DiffNotes on MRs (noteable_type == "MergeRequest" and type == "DiffNote") are
+-- routed to pull_request_review_comment; all other notes go to issue_comment.
+-- payload.issue is the parent issue when noteable_type is Issue.
 b:webhook("Note Hook", function(payload)
   local oa = payload.object_attributes or {}
   local raw_action = oa.action or ""
   local action = GL_NOTE_ACTIONS[raw_action] or "unknown"
+
+  if oa.noteable_type == "MergeRequest" and oa.type == "DiffNote" then
+    -- Inline review comment on a merge request diff.
+    local pos = oa.position or {}
+    local comment = {
+      id = oa.id,
+      node_id = "",
+      path = pos.new_path or pos.old_path or "",
+      position = pos.new_line or pos.old_line,
+      original_position = pos.old_line,
+      commit_id = pos.head_sha or "",
+      original_commit_id = pos.base_sha or "",
+      diff_hunk = "",
+      body = oa.note or "",
+      pull_request_review_id = oa.discussion_id,
+      user = translate_gl_user(payload.user),
+      created_at = oa.created_at,
+      updated_at = oa.updated_at,
+      html_url = oa.url or "",
+      pull_request_url = "",
+      url = oa.url or "",
+    }
+    return make_internal_event({
+      event = "pull_request_review_comment",
+      action = action,
+      raw_action = action == "unknown" and raw_action or nil,
+      provider = config.backend,
+      timestamp = oa.updated_at or "",
+      raw = payload,
+      data = {
+        action = action,
+        comment = comment,
+        pull_request = translate_gl_mr(payload.merge_request),
+        repository = translate_gl_webhook_project(payload.project),
+        sender = translate_gl_user(payload.user),
+      },
+    })
+  end
+
   local comment = {
     id = oa.id,
     node_id = "",
@@ -6342,14 +6383,46 @@ b:webhook("Milestone Hook", function(payload)
   })
 end)
 
--- pull_request: opened, closed, reopened, synchronize, edited, labeled,
--- unlabeled, assigned, unassigned, review_requested, review_request_removed.
+-- pull_request / pull_request_review: various actions.
 -- Registered for X-Gitlab-Event: Merge Request Hook.
--- GitLab uses "merge request" terminology; confusio maps all events to the
--- GitHub pull_request event family.
+-- GitLab sends "approved"/"unapproved" as MR Hook actions when a reviewer
+-- approves or revokes their approval; these map to pull_request_review rather
+-- than pull_request.  All other MR actions map to pull_request.
 b:webhook("Merge Request Hook", function(payload)
   local oa = payload.object_attributes or {}
   local changes = payload.changes or {}
+  local gl_action = oa.action or ""
+
+  if gl_action == "approved" or gl_action == "unapproved" then
+    -- GitLab does not send a separate review object; synthesize one from the MR.
+    local state = gl_action == "approved" and "approved" or "dismissed"
+    local event_action = gl_action == "approved" and "submitted" or "dismissed"
+    local review = {
+      id = oa.id,
+      node_id = "",
+      user = translate_gl_user(payload.user),
+      body = "",
+      state = state,
+      submitted_at = oa.updated_at or "",
+      html_url = oa.url or "",
+      pull_request_url = oa.url or "",
+    }
+    return make_internal_event({
+      event = "pull_request_review",
+      action = event_action,
+      provider = config.backend,
+      timestamp = oa.updated_at or "",
+      raw = payload,
+      data = {
+        action = event_action,
+        review = review,
+        pull_request = webhook_mr_from_gl(payload),
+        repository = translate_gl_webhook_project(payload.project),
+        sender = translate_gl_user(payload.user),
+      },
+    })
+  end
+
   local action, raw_action = gl_mr_action(oa, changes)
   local data = {
     action = action,
