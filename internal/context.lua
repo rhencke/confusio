@@ -16,6 +16,10 @@
 --                             table of named operations (e.g. { get, list, ... }).
 --                             Both REST handlers and GraphQL resolvers call into
 --                             these to avoid duplicating fetch + translate + error logic.
+--     backend.webhooks      — inbound webhook event handler registry; keyed by event name
+--                             (e.g. "push", "issues"); set by b:build() via make_backend_builder.
+--                             The receiver pipeline calls backend.webhooks[event](raw_payload)
+--                             to normalise a forge event into confusio's internal event model.
 --   allow_anonymous — auth-gate flag; true means unauthenticated requests are allowed
 
 function make_app(cfg) -- luacheck: globals make_app
@@ -25,6 +29,7 @@ function make_app(cfg) -- luacheck: globals make_app
       rest = {},
       graphql = {},
       capabilities = {},
+      webhooks = {},
     },
     allow_anonymous = true,
   }

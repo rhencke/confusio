@@ -1,16 +1,22 @@
 -- Backend builder: the required API for registering REST handlers, GraphQL
--- resolvers, and provider capability modules.
+-- resolvers, provider capability modules, and inbound webhook event handlers.
 --
 -- make_backend_builder() returns a builder.  A backend file calls b:rest(name, fn),
--- b:graphql(key, fn), b:capability(name, module), and b:set_allow_anonymous(v) to
--- declare its handlers, resolvers, capabilities, and metadata, then calls b:build()
--- to commit them to the app context.
+-- b:graphql(key, fn), b:capability(name, module), b:webhook(event, fn), and
+-- b:set_allow_anonymous(v) to declare its handlers, resolvers, capabilities,
+-- webhook handlers, and metadata, then calls b:build() to commit them to the
+-- app context.
 --
 -- Capability modules are the shared domain layer consumed by both REST handlers and
 -- GraphQL resolvers.  Each module is a table of named operations (e.g.
 -- { get = fn, list = fn, update = fn, delete = fn }).  They live in app.backend.capabilities
 -- keyed by domain name (e.g. "repos", "users", "issues").  Strip patterns do NOT
 -- apply to capabilities — they are domain-level, not REST surface-level.
+--
+-- Webhook event handlers live in app.backend.webhooks keyed by the canonical event
+-- name (e.g. "push", "issues", "pull_request").  The receiver pipeline calls
+-- backend.webhooks[event](raw_payload) to normalise a forge event into confusio's
+-- internal event model.  Strip patterns do NOT apply to webhook handlers.
 --
 -- Direct assignment to app.backend.rest or graphql_resolvers is forbidden;
 -- make validate-builders enforces this at CI time.
@@ -23,6 +29,7 @@ function make_backend_builder() -- luacheck: globals make_backend_builder
     _rest = {},
     _graphql = {},
     _capabilities = {},
+    _webhooks = {},
     _anonymous = nil,
   }
 
@@ -55,6 +62,18 @@ function make_backend_builder() -- luacheck: globals make_backend_builder
     return self
   end
 
+  -- Register an inbound webhook event handler.
+  -- event: canonical event name (e.g. "push", "issues", "pull_request")
+  -- fn:    normaliser function called with (raw_payload) — the decoded JSON body
+  --        from the forge webhook POST.  Returns the confusio internal event model
+  --        on success, or nil + error message on failure.
+  -- Strip patterns do NOT apply to webhook handlers.
+  -- Returns self for method chaining.
+  function b:webhook(event, fn)
+    self._webhooks[event] = fn
+    return self
+  end
+
   -- Declare the anonymous-access policy for this backend.
   -- v: true = allow unauthenticated requests; false = require Authorization header
   -- When not called, app.allow_anonymous is left at its current value.
@@ -64,18 +83,20 @@ function make_backend_builder() -- luacheck: globals make_backend_builder
     return self
   end
 
-  -- Commit all registered handlers, resolvers, and capabilities to the app context.
+  -- Commit all registered handlers, resolvers, capabilities, and webhook handlers
+  -- to the app context.
   --
   -- strip: optional array of Lua patterns; REST keys whose names match any pattern
   --        are silently omitted from the commit.  Alias backends pass the strip list
   --        from provider_families so that feature gaps are applied declaratively
   --        rather than by post-hoc mutation.  Strip patterns do NOT affect
-  --        capabilities.
+  --        capabilities or webhook handlers.
   --
   -- After build() returns:
   --   app.backend.rest[name]         = fn     for each registered REST handler (unless stripped)
   --   graphql_resolvers[key]         = fn     for each registered GraphQL resolver
   --   app.backend.capabilities[name] = module for each registered capability module
+  --   app.backend.webhooks[event]    = fn     for each registered webhook event handler
   --   app.allow_anonymous            = v      only when set_allow_anonymous was called
   function b:build(strip)
     for name, fn in pairs(self._rest) do
@@ -97,6 +118,9 @@ function make_backend_builder() -- luacheck: globals make_backend_builder
     end
     for name, module in pairs(self._capabilities) do
       app.backend.capabilities[name] = module
+    end
+    for event, fn in pairs(self._webhooks) do
+      app.backend.webhooks[event] = fn
     end
     if self._anonymous ~= nil then
       app.allow_anonymous = self._anonymous
