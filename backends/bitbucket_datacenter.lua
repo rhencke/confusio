@@ -1540,7 +1540,6 @@ end)
 
 b:webhook("pr:reviewer:updated", function(payload)
   local added = payload.addedReviewers or {}
-  local removed = payload.removedReviewers or {}
   local action = #added > 0 and "review_requested" or "review_request_removed"
   return bbs_pr_event(payload, action)
 end)
