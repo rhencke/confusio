@@ -833,8 +833,334 @@ published key.
 
 ## GitHub-Emulation Contract
 
-_(Headers, event names, and body schemas anchored to GitHub's OpenAPI webhook
-descriptions are specified in a subsequent section of this document.)_
+When a delivery target is configured for GitHub-emulation shape, confusio translates
+the normalized internal event into a payload that is byte-compatible with what GitHub
+itself would deliver for the equivalent event.  Consumers wired to GitHub webhooks —
+CI runners, bots, kennel — receive confusio deliveries without modification.
+
+### Delivery headers
+
+Confusio sends the following HTTP headers with every GitHub-emulation delivery:
+
+| Header | Value | Notes |
+|--------|-------|-------|
+| `X-GitHub-Event` | GitHub event name (e.g. `push`, `issues`) | Always present |
+| `X-GitHub-Delivery` | UUID v4, unique per delivery attempt | Always present |
+| `X-Hub-Signature-256` | `sha256=<lowercase hex>` | HMAC-SHA256 of body using target's secret; omitted if no secret configured |
+| `X-Hub-Signature` | `sha1=<lowercase hex>` | HMAC-SHA1 of body (legacy compat); omitted if no secret configured |
+| `Content-Type` | `application/json` | Always `application/json` |
+| `User-Agent` | `Confusio-Hookshot/<version>` | Identifies confusio; differs from GitHub's `GitHub-Hookshot/<hash>` |
+
+**Signature computation:** Both HMAC signatures are computed over the raw delivery
+body bytes using the consumer target's configured secret (not the inbound forge
+secret).  Consumers verify using `X-Hub-Signature-256` and may fall back to
+`X-Hub-Signature` for compatibility with older GitHub webhook clients.
+
+**`User-Agent` difference:** Confusio emits `Confusio-Hookshot/<version>` rather than
+GitHub's `GitHub-Hookshot/<hash>`.  Consumers that check `User-Agent` exactly will
+need configuration adjustment; consumers that check only `X-GitHub-Event` and
+`X-Hub-Signature-256` are unaffected.
+
+### Supported event names
+
+Confusio emits the following GitHub event names.  Coverage depends on the originating
+backend — see [Field-Level Mapping Tables](#field-level-mapping-tables) for per-backend
+action availability.
+
+| GitHub event | Trigger | Supported actions |
+|-------------|---------|------------------|
+| `push` | Commits pushed to a branch or tag | _(no action field — push is a single event)_ |
+| `create` | Branch or tag created | _(no action field)_ |
+| `delete` | Branch or tag deleted | _(no action field)_ |
+| `fork` | Repository forked | _(no action field)_ |
+| `issues` | Issue lifecycle | `opened`, `closed`, `reopened`, `edited`, `labeled`, `unlabeled`, `assigned`, `unassigned` |
+| `issue_comment` | Comment on issue or PR | `created`, `edited`, `deleted` |
+| `pull_request` | Pull request lifecycle | `opened`, `closed`, `reopened`, `edited`, `labeled`, `unlabeled`, `assigned`, `unassigned`, `synchronize` |
+| `pull_request_review` | Review submitted on a PR | `submitted`, `dismissed` |
+| `pull_request_review_comment` | Comment on a PR review diff | `created`, `edited`, `deleted` |
+| `release` | Release lifecycle | `published`, `edited`, `deleted`, `prereleased` |
+| `repository` | Repository lifecycle | `created`, `deleted`, `renamed`, `transferred`, `publicized`, `privatized` |
+| `member` | Collaborator added or removed | `added`, `removed`, `edited` |
+| `milestone` | Milestone lifecycle | `created`, `closed`, `opened`, `edited`, `deleted` |
+| `label` | Label lifecycle | `created`, `edited`, `deleted` |
+| `commit_comment` | Comment on a commit | `created` |
+| `status` | Commit status update | _(no action field — status is a single event)_ |
+| `ping` | Sent on webhook registration | _(no action field)_ |
+
+Events not in this table are not currently emitted by confusio in GitHub-emulation
+shape.  Backends that produce event types with no GitHub equivalent are dropped or
+mapped to the closest GitHub event family with a fidelity note in the body.
+
+### Body envelope
+
+All GitHub webhook bodies share a common envelope.  Fields present depend on the
+event type, but the following are included in every body:
+
+```json
+{
+  "action":     "<string or absent>",
+  "sender":     { ... },
+  "repository": { ... },
+  "organization": { ... }
+}
+```
+
+| Field | Present when | Description |
+|-------|-------------|-------------|
+| `action` | Most events | The action within the event family (e.g. `"opened"`) |
+| `sender` | Always | GitHub user object for the actor who triggered the event |
+| `repository` | Always for repo-scoped events | Repository object |
+| `organization` | Org-scoped events | Organization object; omitted for personal repos |
+| `installation` | GitHub App events | GitHub App installation; omitted in confusio emulation |
+
+### Per-event body schemas
+
+#### `push`
+
+```json
+{
+  "ref":        "refs/heads/main",
+  "before":     "<sha>",
+  "after":      "<sha>",
+  "created":    false,
+  "deleted":    false,
+  "forced":     false,
+  "commits":    [
+    {
+      "id":        "<sha>",
+      "message":   "<string>",
+      "timestamp": "<iso8601>",
+      "url":       "<string>",
+      "author":    { "name": "<string>", "email": "<string>", "username": "<string>" },
+      "committer": { "name": "<string>", "email": "<string>", "username": "<string>" },
+      "added":     ["<path>"],
+      "removed":   ["<path>"],
+      "modified":  ["<path>"]
+    }
+  ],
+  "head_commit":   { ... },
+  "pusher":        { "name": "<string>", "email": "<string>" },
+  "compare":       "<url>",
+  "repository":    { ... },
+  "sender":        { ... }
+}
+```
+
+#### `create` / `delete`
+
+```json
+{
+  "ref":          "main",
+  "ref_type":     "branch",
+  "master_branch": "main",
+  "description":  "<string or null>",
+  "pusher_type":  "user",
+  "repository":   { ... },
+  "sender":       { ... }
+}
+```
+
+`ref_type` is `"branch"` or `"tag"`.
+
+#### `issues`
+
+```json
+{
+  "action":     "opened",
+  "issue":      {
+    "id":         12345,
+    "number":     42,
+    "title":      "<string>",
+    "body":       "<string or null>",
+    "state":      "open",
+    "html_url":   "<url>",
+    "user":       { ... },
+    "labels":     [ { "name": "<string>", "color": "<hex>" } ],
+    "assignees":  [ { ... } ],
+    "milestone":  { ... },
+    "created_at": "<iso8601>",
+    "updated_at": "<iso8601>",
+    "closed_at":  "<iso8601 or null>"
+  },
+  "repository": { ... },
+  "sender":     { ... }
+}
+```
+
+#### `issue_comment`
+
+```json
+{
+  "action":     "created",
+  "issue":      { ... },
+  "comment":    {
+    "id":         67890,
+    "body":       "<string>",
+    "html_url":   "<url>",
+    "user":       { ... },
+    "created_at": "<iso8601>",
+    "updated_at": "<iso8601>"
+  },
+  "repository": { ... },
+  "sender":     { ... }
+}
+```
+
+#### `pull_request`
+
+```json
+{
+  "action":       "opened",
+  "number":       7,
+  "pull_request": {
+    "id":                12345,
+    "number":            7,
+    "title":             "<string>",
+    "body":              "<string or null>",
+    "state":             "open",
+    "html_url":          "<url>",
+    "user":              { ... },
+    "head":              { "ref": "feature", "sha": "<sha>", "repo": { ... } },
+    "base":              { "ref": "main",    "sha": "<sha>", "repo": { ... } },
+    "merged":            false,
+    "merged_at":         "<iso8601 or null>",
+    "merge_commit_sha":  "<sha or null>",
+    "labels":            [ { "name": "<string>", "color": "<hex>" } ],
+    "assignees":         [ { ... } ],
+    "requested_reviewers": [ { ... } ],
+    "draft":             false,
+    "created_at":        "<iso8601>",
+    "updated_at":        "<iso8601>",
+    "closed_at":         "<iso8601 or null>"
+  },
+  "repository":   { ... },
+  "sender":       { ... }
+}
+```
+
+When `action` is `"closed"` and `pull_request.merged` is `true`, the PR was merged.
+
+#### `pull_request_review`
+
+```json
+{
+  "action":       "submitted",
+  "review":       {
+    "id":          99,
+    "body":        "<string or null>",
+    "state":       "approved",
+    "html_url":    "<url>",
+    "user":        { ... },
+    "submitted_at": "<iso8601>"
+  },
+  "pull_request": { ... },
+  "repository":   { ... },
+  "sender":       { ... }
+}
+```
+
+`review.state` values: `"approved"`, `"changes_requested"`, `"commented"`, `"dismissed"`.
+
+#### `release`
+
+```json
+{
+  "action":  "published",
+  "release": {
+    "id":              111,
+    "tag_name":        "v1.2.3",
+    "name":            "<string or null>",
+    "body":            "<string or null>",
+    "draft":           false,
+    "prerelease":      false,
+    "html_url":        "<url>",
+    "tarball_url":     "<url or null>",
+    "zipball_url":     "<url or null>",
+    "author":          { ... },
+    "created_at":      "<iso8601>",
+    "published_at":    "<iso8601 or null>"
+  },
+  "repository": { ... },
+  "sender":     { ... }
+}
+```
+
+#### `ping`
+
+```json
+{
+  "zen":          "<GitHub zen quote>",
+  "hook_id":      42,
+  "hook":         {
+    "type":        "Repository",
+    "id":          42,
+    "active":      true,
+    "events":      ["*"],
+    "config":      { "url": "<confusio receiver URL>", "content_type": "json" },
+    "created_at":  "<iso8601>",
+    "updated_at":  "<iso8601>"
+  },
+  "repository":   { ... },
+  "sender":       { ... }
+}
+```
+
+Confusio emits `ping` when a new target registration is confirmed.  The `zen` value
+is drawn from confusio's own zen endpoint.
+
+### Common object schemas
+
+#### User / sender
+
+```json
+{
+  "id":         1,
+  "login":      "<username>",
+  "name":       "<display name or null>",
+  "avatar_url": "<url>",
+  "html_url":   "<url>",
+  "type":       "User"
+}
+```
+
+#### Repository
+
+```json
+{
+  "id":           12345,
+  "name":         "<repo-name>",
+  "full_name":    "<owner>/<repo-name>",
+  "private":      false,
+  "html_url":     "<url>",
+  "description":  "<string or null>",
+  "fork":         false,
+  "default_branch": "main",
+  "owner":        { ... },
+  "created_at":   "<iso8601>",
+  "updated_at":   "<iso8601>",
+  "pushed_at":    "<iso8601>"
+}
+```
+
+### Fidelity notes
+
+Some fields cannot be sourced from all forge backends.  The following known gaps apply
+across the emitted GitHub-shape payloads:
+
+| Field / feature | Gap | Affected backends |
+|----------------|-----|------------------|
+| `commits[].added` / `removed` / `modified` | Most forges do not include per-file diff in push events; arrays may be empty | All except GitHub passthrough |
+| `pull_request.requested_reviewers` | Only forges with native reviewer request events provide this | Varies |
+| `release.tarball_url` / `zipball_url` | Emitted when the forge provides download URLs; `null` otherwise | Varies |
+| `sender.name` | Not all forges expose the display name; may be `null` | Varies |
+| `installation` | Never emitted — confusio is not a GitHub App | All backends |
+| `check_run` / `check_suite` | Not yet emitted in GitHub-emulation shape | All backends |
+| `repository.pushed_at` | Forges without push timestamps emit the ingest arrival time | Varies |
+
+Where a required field cannot be sourced, confusio uses a safe fallback (empty string,
+`null`, or `0` as appropriate for the schema type) and logs the omission at debug level.
+Consumers that strictly require all GitHub fields should verify their backend's
+coverage in the [Field-Level Mapping Tables](#field-level-mapping-tables).
 
 ## Normalized Confusio Event Model
 
