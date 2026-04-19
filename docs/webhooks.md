@@ -16,6 +16,38 @@ Two output shapes are available; targets opt in per registration:
 Both shapes are first-class.  Every event family is available in both.  Configuration
 selects per-target which shape to emit.
 
+### Goals
+
+- **Zero-modification GitHub consumers** — CI runners, bots, and automation already
+  wired to GitHub webhooks work against any forge without code changes.
+- **Stable cross-forge contract** — The confusio normalized shape provides a
+  forge-agnostic event stream that remains stable as backends evolve and add or
+  rename fields.
+- **Universal backend coverage** — All 24 backends supported by confusio's REST/GraphQL
+  layer are also supported as webhook sources.
+- **Signature verification before processing** — Every inbound event is authenticated
+  using the originating forge's native scheme before entering the pipeline.  Unverified
+  requests are rejected before any payload parsing occurs.
+- **Multi-target fan-out** — A single inbound event can be delivered to multiple
+  consumers, each with independent shape selection and event-type filtering.
+- **Durable at-least-once delivery** — Events survive process restarts; failed
+  deliveries are retried with exponential backoff.
+
+### Non-Goals
+
+- **Webhook registration** — Confusio does not create or delete webhooks on forges.
+  Forge administrators register the confusio receiver URL manually in forge settings.
+  There is no API for managing forge-side webhook subscriptions.
+- **Exactly-once delivery** — The outbox guarantees at-least-once.  Consumers must
+  be idempotent with respect to duplicate deliveries.
+- **Synchronous passthrough** — Ingest is decoupled from delivery.  The inbound HTTP
+  response (`200` / `202`) is returned before all targets have been notified.
+- **Full GitHub webhook management API** — Ping events, webhook secret rotation
+  endpoints, and GitHub's `/repos/{owner}/{repo}/hooks` REST surface are out of
+  scope.  Confusio is a receiver, not a webhook management proxy.
+- **Event deduplication across replays** — Replay re-delivers events from the outbox
+  in order.  Deduplication (e.g., idempotency keys) is the consumer's responsibility.
+
 ## Architecture
 
 ```
@@ -79,34 +111,57 @@ the corresponding URL as a webhook target in their forge's settings.
 POST /webhooks/{backend}
 ```
 
-### All supported backends
+### Per-backend inventory
 
-| Backend | Endpoint | Default forge URL |
-|---------|----------|------------------|
-| `azuredevops` | `POST /webhooks/azuredevops` | `https://dev.azure.com` |
-| `bitbucket` | `POST /webhooks/bitbucket` | `https://bitbucket.org` |
-| `bitbucket_datacenter` | `POST /webhooks/bitbucket_datacenter` | _(self-hosted)_ |
-| `codeberg` | `POST /webhooks/codeberg` | `https://codeberg.org` |
-| `codecommit` | `POST /webhooks/codecommit` | `https://aws.amazon.com` |
-| `forgejo` | `POST /webhooks/forgejo` | `https://codeberg.org` |
-| `gerrit` | `POST /webhooks/gerrit` | _(self-hosted)_ |
-| `gitblit` | `POST /webhooks/gitblit` | _(self-hosted)_ |
-| `gitbucket` | `POST /webhooks/gitbucket` | _(self-hosted)_ |
-| `gitea` | `POST /webhooks/gitea` | `https://gitea.com` |
-| `gitlab` | `POST /webhooks/gitlab` | `https://gitlab.com` |
-| `gogs` | `POST /webhooks/gogs` | `https://try.gogs.io` |
-| `harness` | `POST /webhooks/harness` | `https://app.harness.io` |
-| `kallithea` | `POST /webhooks/kallithea` | _(self-hosted)_ |
-| `launchpad` | `POST /webhooks/launchpad` | `https://launchpad.net` |
-| `notabug` | `POST /webhooks/notabug` | `https://notabug.org` |
-| `onedev` | `POST /webhooks/onedev` | _(self-hosted)_ |
-| `pagure` | `POST /webhooks/pagure` | `https://pagure.io` |
-| `phabricator` | `POST /webhooks/phabricator` | _(self-hosted)_ |
-| `radicle` | `POST /webhooks/radicle` | `https://radicle.xyz` |
-| `rhodecode` | `POST /webhooks/rhodecode` | _(self-hosted)_ |
-| `sourceforge` | `POST /webhooks/sourceforge` | `https://sourceforge.net` |
-| `sourcehut` | `POST /webhooks/sourcehut` | `https://sr.ht` |
-| `tuleap` | `POST /webhooks/tuleap` | _(self-hosted)_ |
+Each row lists the ingest endpoint, the forge's canonical hosted URL (or _self-hosted_
+for software with no official cloud instance), the API family that provides the shared
+receiver implementation, and a brief note on the signature scheme used.  The
+[Signature Verification](#signature-verification) section specifies each scheme in full.
+
+| Backend | Endpoint | Default forge URL | API family | Signature scheme |
+|---------|----------|------------------|------------|-----------------|
+| `azuredevops` | `POST /webhooks/azuredevops` | `https://dev.azure.com` | azuredevops | Basic auth (username + shared secret in request body) |
+| `bitbucket` | `POST /webhooks/bitbucket` | `https://bitbucket.org` | bitbucket | `X-Hub-Signature` HMAC-SHA256 |
+| `bitbucket_datacenter` | `POST /webhooks/bitbucket_datacenter` | _(self-hosted)_ | bitbucket_datacenter | `X-Hub-Signature` HMAC-SHA256 |
+| `codeberg` | `POST /webhooks/codeberg` | `https://codeberg.org` | gitea | `X-Gitea-Signature` HMAC-SHA256 |
+| `codecommit` | `POST /webhooks/codecommit` | `https://aws.amazon.com` | codecommit | AWS SNS subscription confirmation + message signature |
+| `forgejo` | `POST /webhooks/forgejo` | `https://forgejo.org` | gitea | `X-Gitea-Signature` HMAC-SHA256 |
+| `gerrit` | `POST /webhooks/gerrit` | _(self-hosted)_ | gerrit | Shared secret in `Authorization` header |
+| `gitblit` | `POST /webhooks/gitblit` | _(self-hosted)_ | gitblit | Shared token in `X-Gitblit-Token` header |
+| `gitbucket` | `POST /webhooks/gitbucket` | _(self-hosted)_ | gitbucket | `X-Hub-Signature` HMAC-SHA1 |
+| `gitea` | `POST /webhooks/gitea` | `https://gitea.com` | gitea | `X-Gitea-Signature` HMAC-SHA256 |
+| `gitlab` | `POST /webhooks/gitlab` | `https://gitlab.com` | gitlab | `X-Gitlab-Token` shared secret |
+| `gogs` | `POST /webhooks/gogs` | `https://try.gogs.io` | gitea | `X-Gogs-Signature` HMAC-SHA256 |
+| `harness` | `POST /webhooks/harness` | `https://app.harness.io` | harness | Shared secret in `X-Harness-Token` header |
+| `kallithea` | `POST /webhooks/kallithea` | _(self-hosted)_ | kallithea | Shared secret in request body |
+| `launchpad` | `POST /webhooks/launchpad` | `https://launchpad.net` | launchpad | OpenPGP-signed payload |
+| `notabug` | `POST /webhooks/notabug` | `https://notabug.org` | gitea | `X-Gitea-Signature` HMAC-SHA256 |
+| `onedev` | `POST /webhooks/onedev` | _(self-hosted)_ | onedev | Shared secret in `Authorization: Bearer` header |
+| `pagure` | `POST /webhooks/pagure` | `https://pagure.io` | pagure | `X-Pagure-Signature` HMAC-SHA512 + `X-Pagure-Signature-256` HMAC-SHA256 |
+| `phabricator` | `POST /webhooks/phabricator` | _(self-hosted)_ | phabricator | `X-Phabricator-Webhook-Signature` HMAC-SHA256 (Conduit key) |
+| `radicle` | `POST /webhooks/radicle` | `https://radicle.xyz` | radicle | Shared secret in `Authorization` header |
+| `rhodecode` | `POST /webhooks/rhodecode` | _(self-hosted)_ | rhodecode | Shared secret in `X-RhodeCode-Signature` header |
+| `sourceforge` | `POST /webhooks/sourceforge` | `https://sourceforge.net` | sourceforge | Shared secret in `X-Sourceforge-Webhook-Secret` header |
+| `sourcehut` | `POST /webhooks/sourcehut` | `https://sr.ht` | sourcehut | `X-Payload-Signature` ed25519 (public key published by sr.ht) |
+| `tuleap` | `POST /webhooks/tuleap` | _(self-hosted)_ | tuleap | `X-Tuleap-Webhook-Secret` shared secret |
+
+### Event-type headers
+
+Each backend uses a different header to communicate which event type is being
+delivered.  Confusio maps these to its canonical internal event family names.
+
+| API family | Event-type header | Example value |
+|------------|------------------|---------------|
+| gitea (gitea, forgejo, codeberg, gogs, notabug) | `X-Gitea-Event` | `issues`, `push`, `pull_request` |
+| gitlab | `X-Gitlab-Event` | `Issues Hook`, `Push Hook`, `Merge Request Hook` |
+| github | `X-GitHub-Event` | `issues`, `push`, `pull_request` |
+| bitbucket | `X-Event-Key` | `repo:push`, `pullrequest:created` |
+| bitbucket_datacenter | `X-Event-Key` | `repo:refs_changed`, `pr:opened` |
+| azuredevops | _(body field)_ | `git.push`, `git.pullrequest.created` |
+| codecommit | _(SNS `Message.detail-type`)_ | `CodeCommit Repository State Change` |
+| pagure | `X-Pagure-Event` | `issue`, `pull-request`, `git` |
+| sourcehut | _(body field `event`)_ | `push`, `patchset:created` |
+| All others | _(backend-specific — see [Signature Verification](#signature-verification))_ | — |
 
 ### Request format
 
