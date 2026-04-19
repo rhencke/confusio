@@ -2202,6 +2202,379 @@ do
 end
 
 -- ============================================================
+-- verify_signature: comprehensive per-backend tests
+--
+-- Covers all 24 backends in KNOWN_BACKENDS.  For each:
+--   (a) trust-the-network (no secret configured) → not 401
+--   (b) valid credential/signature → not 401
+--   (c) bad credential/signature → 401
+--   (d) missing header/token → 401
+-- Pagure gets extra cases for its dual-header scheme.
+-- Kallithea gets extra cases for its body-embedded secret.
+-- codecommit/sourcehut/launchpad get both trust-the-network
+-- and "secret configured → always 401" cases.
+-- ============================================================
+do
+  -- GetCryptoHash stub always returns 32 bytes of 0xaa.
+  -- to_hex() converts that to 64 lowercase 'a' characters.
+  local STUB_HEX = string.rep("aa", 32)
+  local SECRET = "mysecret"
+
+  -- Call the webhook receiver for `backend` with the given extra headers and
+  -- body.  `secrets` controls app.config.webhook_secrets.
+  local function call_sig(backend, extra_headers, body, secrets)
+    local saved_config = app.config
+    app.config = {
+      backend = "testbackend",
+      base_url = "",
+      webhook_secrets = secrets or {},
+    }
+    local h = { ["Content-Type"] = "application/json" }
+    for k, v in pairs(extra_headers or {}) do
+      h[k] = v
+    end
+    reset_request({
+      method = "POST",
+      path = "/webhooks/" .. backend,
+      headers = h,
+      body = body or "{}",
+    })
+    reset_response()
+    app.webhook_receiver()
+    local status = _last_status
+    app.config = saved_config
+    return status
+  end
+
+  -- Convenience wrappers
+  local function no_secret(backend, hdrs, body)
+    return call_sig(backend, hdrs, body, {})
+  end
+  local function with_secret(backend, hdrs, body)
+    return call_sig(backend, hdrs, body, { [backend] = SECRET })
+  end
+
+  -- ── HMAC-SHA256 / no prefix: gitea family (X-Gitea-Signature)
+  for _, be in ipairs({ "gitea", "forgejo", "codeberg", "notabug" }) do
+    ok(no_secret(be, {}) ~= 401, "verify_signature " .. be .. ": no secret → not 401")
+    ok(
+      with_secret(be, { ["X-Gitea-Signature"] = STUB_HEX }) ~= 401,
+      "verify_signature " .. be .. ": valid X-Gitea-Signature → not 401"
+    )
+    eq(
+      with_secret(be, { ["X-Gitea-Signature"] = "deadbeef" }),
+      401,
+      "verify_signature " .. be .. ": bad X-Gitea-Signature → 401"
+    )
+    eq(with_secret(be, {}), 401, "verify_signature " .. be .. ": missing X-Gitea-Signature → 401")
+  end
+
+  -- ── HMAC-SHA256 / no prefix: gogs (X-Gogs-Signature)
+  ok(no_secret("gogs", {}) ~= 401, "verify_signature gogs: no secret → not 401")
+  ok(
+    with_secret("gogs", { ["X-Gogs-Signature"] = STUB_HEX }) ~= 401,
+    "verify_signature gogs: valid X-Gogs-Signature → not 401"
+  )
+  eq(
+    with_secret("gogs", { ["X-Gogs-Signature"] = "deadbeef" }),
+    401,
+    "verify_signature gogs: bad X-Gogs-Signature → 401"
+  )
+  eq(with_secret("gogs", {}), 401, "verify_signature gogs: missing X-Gogs-Signature → 401")
+
+  -- ── Verbatim shared token: gitlab (X-Gitlab-Token)
+  ok(no_secret("gitlab", {}) ~= 401, "verify_signature gitlab: no secret → not 401")
+  ok(
+    with_secret("gitlab", { ["X-Gitlab-Token"] = SECRET }) ~= 401,
+    "verify_signature gitlab: valid X-Gitlab-Token → not 401"
+  )
+  eq(
+    with_secret("gitlab", { ["X-Gitlab-Token"] = "wrongtoken" }),
+    401,
+    "verify_signature gitlab: bad X-Gitlab-Token → 401"
+  )
+  eq(with_secret("gitlab", {}), 401, "verify_signature gitlab: missing X-Gitlab-Token → 401")
+
+  -- ── HMAC-SHA256 / sha256= prefix: bitbucket + bitbucket_datacenter (X-Hub-Signature)
+  for _, be in ipairs({ "bitbucket", "bitbucket_datacenter" }) do
+    ok(no_secret(be, {}) ~= 401, "verify_signature " .. be .. ": no secret → not 401")
+    ok(
+      with_secret(be, { ["X-Hub-Signature"] = "sha256=" .. STUB_HEX }) ~= 401,
+      "verify_signature " .. be .. ": valid X-Hub-Signature sha256= → not 401"
+    )
+    eq(
+      with_secret(be, { ["X-Hub-Signature"] = "sha256=deadbeef" }),
+      401,
+      "verify_signature " .. be .. ": bad X-Hub-Signature → 401"
+    )
+    eq(with_secret(be, {}), 401, "verify_signature " .. be .. ": missing X-Hub-Signature → 401")
+  end
+
+  -- ── HMAC-SHA1 / sha1= prefix: gitbucket (X-Hub-Signature)
+  ok(no_secret("gitbucket", {}) ~= 401, "verify_signature gitbucket: no secret → not 401")
+  ok(
+    with_secret("gitbucket", { ["X-Hub-Signature"] = "sha1=" .. STUB_HEX }) ~= 401,
+    "verify_signature gitbucket: valid X-Hub-Signature sha1= → not 401"
+  )
+  eq(
+    with_secret("gitbucket", { ["X-Hub-Signature"] = "sha1=deadbeef" }),
+    401,
+    "verify_signature gitbucket: bad X-Hub-Signature → 401"
+  )
+  eq(
+    with_secret("gitbucket", {}),
+    401,
+    "verify_signature gitbucket: missing X-Hub-Signature → 401"
+  )
+
+  -- ── HMAC-SHA256 / no prefix: phabricator (X-Phabricator-Webhook-Signature)
+  ok(no_secret("phabricator", {}) ~= 401, "verify_signature phabricator: no secret → not 401")
+  ok(
+    with_secret("phabricator", { ["X-Phabricator-Webhook-Signature"] = STUB_HEX }) ~= 401,
+    "verify_signature phabricator: valid X-Phabricator-Webhook-Signature → not 401"
+  )
+  eq(
+    with_secret("phabricator", { ["X-Phabricator-Webhook-Signature"] = "deadbeef" }),
+    401,
+    "verify_signature phabricator: bad X-Phabricator-Webhook-Signature → 401"
+  )
+  eq(
+    with_secret("phabricator", {}),
+    401,
+    "verify_signature phabricator: missing X-Phabricator-Webhook-Signature → 401"
+  )
+
+  -- ── Pagure: dual-header scheme (X-Pagure-Signature-256 / X-Pagure-Signature)
+  -- Prefers SHA-256; falls back to SHA-512; both must verify when both present.
+  ok(no_secret("pagure", {}) ~= 401, "verify_signature pagure: no secret → not 401")
+  ok(
+    with_secret("pagure", { ["X-Pagure-Signature-256"] = STUB_HEX }) ~= 401,
+    "verify_signature pagure: valid sig256 only → not 401"
+  )
+  ok(
+    with_secret("pagure", { ["X-Pagure-Signature"] = STUB_HEX }) ~= 401,
+    "verify_signature pagure: valid sig512 only → not 401"
+  )
+  ok(with_secret("pagure", {
+    ["X-Pagure-Signature-256"] = STUB_HEX,
+    ["X-Pagure-Signature"] = STUB_HEX,
+  }) ~= 401, "verify_signature pagure: both sig256+sig512 valid → not 401")
+  eq(
+    with_secret("pagure", { ["X-Pagure-Signature-256"] = "bad" }),
+    401,
+    "verify_signature pagure: bad sig256 → 401"
+  )
+  eq(
+    with_secret("pagure", { ["X-Pagure-Signature"] = "bad" }),
+    401,
+    "verify_signature pagure: bad sig512 → 401"
+  )
+  eq(
+    with_secret("pagure", {
+      ["X-Pagure-Signature-256"] = STUB_HEX,
+      ["X-Pagure-Signature"] = "bad",
+    }),
+    401,
+    "verify_signature pagure: sig256 valid but sig512 bad → 401"
+  )
+  eq(with_secret("pagure", {}), 401, "verify_signature pagure: no signature headers → 401")
+
+  -- ── Verbatim shared token: harness (X-Harness-Token)
+  ok(no_secret("harness", {}) ~= 401, "verify_signature harness: no secret → not 401")
+  ok(
+    with_secret("harness", { ["X-Harness-Token"] = SECRET }) ~= 401,
+    "verify_signature harness: valid X-Harness-Token → not 401"
+  )
+  eq(
+    with_secret("harness", { ["X-Harness-Token"] = "bad" }),
+    401,
+    "verify_signature harness: bad X-Harness-Token → 401"
+  )
+  eq(with_secret("harness", {}), 401, "verify_signature harness: missing X-Harness-Token → 401")
+
+  -- ── Bearer token: onedev (Authorization: Bearer <secret>)
+  ok(no_secret("onedev", {}) ~= 401, "verify_signature onedev: no secret → not 401")
+  ok(
+    with_secret("onedev", { ["Authorization"] = "Bearer " .. SECRET }) ~= 401,
+    "verify_signature onedev: valid Bearer token → not 401"
+  )
+  ok(
+    with_secret("onedev", { ["Authorization"] = "bearer " .. SECRET }) ~= 401,
+    "verify_signature onedev: Bearer scheme is case-insensitive → not 401"
+  )
+  eq(
+    with_secret("onedev", { ["Authorization"] = "Bearer badtoken" }),
+    401,
+    "verify_signature onedev: bad Bearer token → 401"
+  )
+  eq(
+    with_secret("onedev", { ["Authorization"] = "Basic " .. SECRET }),
+    401,
+    "verify_signature onedev: non-Bearer scheme → 401"
+  )
+  eq(with_secret("onedev", {}), 401, "verify_signature onedev: missing Authorization → 401")
+
+  -- ── Verbatim Authorization header: radicle (raw token, no prefix)
+  ok(no_secret("radicle", {}) ~= 401, "verify_signature radicle: no secret → not 401")
+  ok(
+    with_secret("radicle", { ["Authorization"] = SECRET }) ~= 401,
+    "verify_signature radicle: valid Authorization → not 401"
+  )
+  eq(
+    with_secret("radicle", { ["Authorization"] = "bad" }),
+    401,
+    "verify_signature radicle: bad Authorization → 401"
+  )
+  eq(with_secret("radicle", {}), 401, "verify_signature radicle: missing Authorization → 401")
+
+  -- ── Verbatim Authorization header: gerrit (same scheme as radicle)
+  ok(no_secret("gerrit", {}) ~= 401, "verify_signature gerrit: no secret → not 401")
+  ok(
+    with_secret("gerrit", { ["Authorization"] = SECRET }) ~= 401,
+    "verify_signature gerrit: valid Authorization → not 401"
+  )
+  eq(
+    with_secret("gerrit", { ["Authorization"] = "bad" }),
+    401,
+    "verify_signature gerrit: bad Authorization → 401"
+  )
+  eq(with_secret("gerrit", {}), 401, "verify_signature gerrit: missing Authorization → 401")
+
+  -- ── Verbatim shared token: gitblit (X-Gitblit-Token)
+  ok(no_secret("gitblit", {}) ~= 401, "verify_signature gitblit: no secret → not 401")
+  ok(
+    with_secret("gitblit", { ["X-Gitblit-Token"] = SECRET }) ~= 401,
+    "verify_signature gitblit: valid X-Gitblit-Token → not 401"
+  )
+  eq(
+    with_secret("gitblit", { ["X-Gitblit-Token"] = "bad" }),
+    401,
+    "verify_signature gitblit: bad X-Gitblit-Token → 401"
+  )
+  eq(with_secret("gitblit", {}), 401, "verify_signature gitblit: missing X-Gitblit-Token → 401")
+
+  -- ── Verbatim shared token: rhodecode (X-RhodeCode-Signature)
+  ok(no_secret("rhodecode", {}) ~= 401, "verify_signature rhodecode: no secret → not 401")
+  ok(
+    with_secret("rhodecode", { ["X-RhodeCode-Signature"] = SECRET }) ~= 401,
+    "verify_signature rhodecode: valid X-RhodeCode-Signature → not 401"
+  )
+  eq(
+    with_secret("rhodecode", { ["X-RhodeCode-Signature"] = "bad" }),
+    401,
+    "verify_signature rhodecode: bad X-RhodeCode-Signature → 401"
+  )
+  eq(
+    with_secret("rhodecode", {}),
+    401,
+    "verify_signature rhodecode: missing X-RhodeCode-Signature → 401"
+  )
+
+  -- ── Verbatim shared token: sourceforge (X-Sourceforge-Webhook-Secret)
+  ok(no_secret("sourceforge", {}) ~= 401, "verify_signature sourceforge: no secret → not 401")
+  ok(
+    with_secret("sourceforge", { ["X-Sourceforge-Webhook-Secret"] = SECRET }) ~= 401,
+    "verify_signature sourceforge: valid X-Sourceforge-Webhook-Secret → not 401"
+  )
+  eq(
+    with_secret("sourceforge", { ["X-Sourceforge-Webhook-Secret"] = "bad" }),
+    401,
+    "verify_signature sourceforge: bad X-Sourceforge-Webhook-Secret → 401"
+  )
+  eq(
+    with_secret("sourceforge", {}),
+    401,
+    "verify_signature sourceforge: missing X-Sourceforge-Webhook-Secret → 401"
+  )
+
+  -- ── Verbatim shared token: tuleap (X-Tuleap-Webhook-Secret)
+  ok(no_secret("tuleap", {}) ~= 401, "verify_signature tuleap: no secret → not 401")
+  ok(
+    with_secret("tuleap", { ["X-Tuleap-Webhook-Secret"] = SECRET }) ~= 401,
+    "verify_signature tuleap: valid X-Tuleap-Webhook-Secret → not 401"
+  )
+  eq(
+    with_secret("tuleap", { ["X-Tuleap-Webhook-Secret"] = "bad" }),
+    401,
+    "verify_signature tuleap: bad X-Tuleap-Webhook-Secret → 401"
+  )
+  eq(
+    with_secret("tuleap", {}),
+    401,
+    "verify_signature tuleap: missing X-Tuleap-Webhook-Secret → 401"
+  )
+
+  -- ── Azure DevOps: Authorization: Basic <creds> (DecodeBase64 is identity stub)
+  -- SECRET = "mysecret"; DecodeBase64("mysecret") = "mysecret" (identity), so
+  -- "Basic mysecret" is the valid credential when secret = "mysecret".
+  ok(no_secret("azuredevops", {}) ~= 401, "verify_signature azuredevops: no secret → not 401")
+  ok(
+    with_secret("azuredevops", { ["Authorization"] = "Basic " .. SECRET }) ~= 401,
+    "verify_signature azuredevops: valid Basic creds → not 401"
+  )
+  ok(
+    with_secret("azuredevops", { ["Authorization"] = "basic " .. SECRET }) ~= 401,
+    "verify_signature azuredevops: Basic scheme is case-insensitive → not 401"
+  )
+  eq(
+    with_secret("azuredevops", { ["Authorization"] = "Basic badcreds" }),
+    401,
+    "verify_signature azuredevops: bad Basic creds → 401"
+  )
+  eq(
+    with_secret("azuredevops", { ["Authorization"] = "Bearer " .. SECRET }),
+    401,
+    "verify_signature azuredevops: non-Basic scheme → 401"
+  )
+  eq(
+    with_secret("azuredevops", {}),
+    401,
+    "verify_signature azuredevops: missing Authorization → 401"
+  )
+
+  -- ── Kallithea: body-embedded secret (exception to verify-before-parse rule)
+  ok(no_secret("kallithea", {}) ~= 401, "verify_signature kallithea: no secret → not 401")
+  ok(
+    with_secret("kallithea", {}, '{"secret":"' .. SECRET .. '"}') ~= 401,
+    "verify_signature kallithea: secret in root JSON field → not 401"
+  )
+  ok(
+    with_secret("kallithea", {}, '{"data":{"secret":"' .. SECRET .. '"}}') ~= 401,
+    "verify_signature kallithea: secret in data.secret JSON field → not 401"
+  )
+  eq(
+    with_secret("kallithea", {}, '{"secret":"bad"}'),
+    401,
+    "verify_signature kallithea: bad body secret → 401"
+  )
+  eq(
+    with_secret("kallithea", {}, '{"event":"push"}'),
+    401,
+    "verify_signature kallithea: no secret field in body → 401"
+  )
+  eq(
+    with_secret("kallithea", {}, "not-valid-json"),
+    401,
+    "verify_signature kallithea: invalid JSON body → 401"
+  )
+
+  -- ── Trust-the-network-only backends: codecommit, sourcehut, launchpad
+  -- These use asymmetric/platform-managed schemes not yet implemented.
+  -- No secret → accepted; any secret configured → always rejected.
+  for _, be in ipairs({ "codecommit", "sourcehut", "launchpad" }) do
+    ok(
+      no_secret(be, {}) ~= 401,
+      "verify_signature " .. be .. ": no secret (trust-the-network) → not 401"
+    )
+    eq(
+      call_sig(be, {}, nil, { [be] = SECRET }),
+      401,
+      "verify_signature " .. be .. ": secret configured (unimplemented scheme) → 401"
+    )
+  end
+end
+
+-- ============================================================
 -- Summary
 -- ============================================================
 
