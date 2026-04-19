@@ -1901,8 +1901,194 @@ verification code with a simple header-name substitution.
 
 ## Field-Level Mapping Tables
 
-_(Per-event-family × per-provider mapping tables are specified in a subsequent section
-of this document.)_
+Field-level mapping tables specify, for each event family, which GitHub-emulation
+output fields can be sourced from each backend and at what fidelity.  The confusio
+normalized shape uses the same source data; differences are noted where the output
+field name or structure changes.
+
+### How to read these tables
+
+**Coverage symbols:**
+
+| Symbol | Meaning |
+|--------|---------|
+| ✓ | Native: field is available directly from the forge webhook payload |
+| ~ | Partial: field is approximated, synthesized, or available only on some versions |
+| ✗ | Not available: field is always empty, `[]`, `null`, or `0` in the output |
+| — | Not applicable: the event type does not exist for this backend |
+
+**Backend grouping:** Backends in the same API family share the same implementation
+and therefore the same coverage.  Where a whole family shares a symbol, the family
+name is used instead of listing individual backends.
+
+| Family | Members |
+|--------|---------|
+| gitea-family | `gitea`, `forgejo`, `codeberg`, `notabug` |
+| gogs | `gogs` (same scheme as gitea-family but separate impl) |
+| bitbucket | `bitbucket` (Bitbucket Cloud) |
+| bitbucket-dc | `bitbucket_datacenter` |
+| gitlab | `gitlab` |
+| github | `github` (passthrough; all fields native) |
+| gitbucket | `gitbucket` |
+
+Backends with independent implementations are listed individually.
+
+---
+
+### `push`
+
+Triggered when one or more commits are pushed to a branch or tag.
+
+#### Top-level fields
+
+| GitHub field | gitea-family | gogs | gitlab | bitbucket | bitbucket-dc | github | gitbucket | azuredevops | sourcehut | pagure | All others |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `ref` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `before` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `after` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `created` | ✓ | ✓ | ✓ | ~ | ~ | ✓ | ✓ | ~ | ✓ | ✓ | ✗ |
+| `deleted` | ✓ | ✓ | ✓ | ~ | ~ | ✓ | ✓ | ~ | ✓ | ✓ | ✗ |
+| `forced` | ✓ | ✓ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| `compare` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ | ✗ | ✓ | ✗ |
+| `commits` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `head_commit` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `pusher` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ | ✓ | ~ |
+
+**Notes:**
+- `created` / `deleted`: Bitbucket and Bitbucket Datacenter do not include these
+  boolean flags directly; confusio derives them from `before` / `after` being all-zero
+  (`0000000...`).
+- `forced`: No forge other than Gitea-family, Gogs, GitLab, and GitBucket exposes a
+  force-push flag in the webhook payload.  The field is always `false` for other
+  backends even when a force push occurred.
+- `compare`: Azure DevOps provides a compare URL in a non-standard field; confusio
+  synthesizes it from the repository URL and SHAs.  Sourcehut does not provide a web
+  compare URL.
+
+#### `commits[]` fields
+
+| GitHub field | gitea-family | gogs | gitlab | bitbucket | bitbucket-dc | github | gitbucket | azuredevops | sourcehut | pagure | All others |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `id` (SHA) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `message` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `timestamp` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `url` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `author.name` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `author.email` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `author.username` | ✓ | ✓ | ~ | ✗ | ✗ | ✓ | ✓ | ~ | ✗ | ✗ | ✗ |
+| `committer.name` | ✓ | ✓ | ~ | ✗ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `committer.email` | ✓ | ✓ | ~ | ✗ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `added` | ✗ | ✗ | ✓ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| `removed` | ✗ | ✗ | ✓ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| `modified` | ✗ | ✗ | ✓ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+
+**Notes:**
+- `author.email`: Bitbucket Cloud does not expose committer/author emails in webhook
+  payloads.  The field is always `""`.
+- `author.username`: GitLab provides a `username` in some versions; confusio uses
+  `user_username` when available.  Most non-GitHub forges do not provide a platform
+  username in the commit object.
+- `committer.*`: Gitea-family includes committer in the commit object.  Most other
+  forges include only the author.
+- `added` / `removed` / `modified`: Only GitHub and GitLab include per-file diff lists
+  in push events.  All other backends emit `[]` for these three fields.
+
+**Confusio-normalized differences:** In the confusio shape, `commits[].author` uses
+the actor schema (`id`, `login`, `display_name`, `source_url`) rather than the git
+identity schema (`name`, `email`, `username`).  Both the git identity and the platform
+user object are included where available; the git identity is in `commits[].git_author`
+and `commits[].git_committer`.
+
+---
+
+### `create` and `delete`
+
+Triggered when a branch or tag is created or deleted.  Both events share the same
+field structure.
+
+| GitHub field | gitea-family | gogs | gitlab | bitbucket | bitbucket-dc | github | gitbucket | azuredevops | sourcehut | pagure | All others |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `ref` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `ref_type` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `master_branch` | ✓ | ✓ | ✓ | ~ | ~ | ✓ | ✓ | ~ | ✗ | ✗ | ✗ |
+| `description` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ | ✗ | ✓ | ✗ |
+| `pusher_type` | ✓ | ✓ | ~ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+
+**Notes:**
+- `ref`: For `delete`, the ref is the name of the deleted branch or tag.
+- `master_branch`: Synthesized from the repository's default branch field when the
+  forge does not include it directly in the create/delete event.
+- `pusher_type`: Hardcoded to `"user"` when not provided by the forge; organizations
+  and bots that push may not be accurately reflected on non-GitHub backends.
+- Azure DevOps and Bitbucket: create/delete events arrive as push events with special
+  before/after SHA patterns.  Confusio derives `ref_type` from the ref format
+  (`refs/tags/` prefix = tag, otherwise branch).
+
+**Backend-specific gaps:**
+- `sourcehut`, `pagure`, `gerrit`, `phabricator`, `launchpad`, `radicle`: Create/delete
+  events may arrive embedded in a push event rather than as discrete event types.
+  Confusio splits them when the push `before` or `after` is all-zero.
+- `codecommit`, `kallithea`, `rhodecode`, `tuleap`, `sourceforge`: Create/delete events
+  may not be delivered at all depending on forge configuration.  If no event is
+  received, the `create` / `delete` event will not be emitted.
+
+---
+
+### `fork`
+
+Triggered when a repository is forked.
+
+| GitHub field | gitea-family | gogs | gitlab | bitbucket | bitbucket-dc | github | gitbucket | azuredevops | All others |
+|---|---|---|---|---|---|---|---|---|---|
+| `forkee.id` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `forkee.name` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `forkee.full_name` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `forkee.private` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `forkee.html_url` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `forkee.owner` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ |
+
+**Notes:**
+- Fork events are common in open-source hosting forges (Gitea, GitLab, GitHub,
+  Bitbucket) but are rarely sent by enterprise or self-hosted systems.
+- Bitbucket Datacenter, Azure DevOps, and most "All others" backends do not emit fork
+  events at all.  The `fork` event will not be delivered by confusio for these backends.
+- When `forkee` fields cannot be sourced, confusio emits `null` for the `forkee`
+  object and logs a warning.
+
+---
+
+### `repository`
+
+Triggered on repository lifecycle events (created, deleted, renamed, etc.).
+
+| GitHub field | gitea-family | gogs | gitlab | bitbucket | bitbucket-dc | github | gitbucket | azuredevops | All others |
+|---|---|---|---|---|---|---|---|---|---|
+| `action` | ✓ | ~ | ✓ | ✓ | ✓ | ✓ | ~ | ✓ | ✗ |
+| `repository` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `changes` (renamed) | ✓ | ✗ | ✓ | ~ | ✓ | ✓ | ✗ | ~ | ✗ |
+| `sender` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+
+**Supported actions by backend:**
+
+| Action | gitea-family | gogs | gitlab | bitbucket | bitbucket-dc | github | gitbucket | azuredevops |
+|--------|---|---|---|---|---|---|---|---|
+| `created` | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ |
+| `deleted` | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ |
+| `renamed` | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ | ~ |
+| `transferred` | ✗ | ✗ | ✓ | ✗ | ✗ | ✓ | ✗ | ✗ |
+| `publicized` | ✗ | ✗ | ✓ | ✗ | ✗ | ✓ | ✗ | ✗ |
+| `privatized` | ✗ | ✗ | ✓ | ✗ | ✗ | ✓ | ✗ | ✗ |
+
+**Notes:**
+- Gogs does not send repository lifecycle webhooks.  The `repository` event is never
+  emitted for `gogs`.
+- GitBucket only emits repository events for create and delete, and only in newer
+  versions.
+- `changes` for `renamed`: Gitea-family includes a `changes` object with the old name.
+  GitLab sends separate `rename` events with before/after fields.  Azure DevOps sends
+  rename notifications via the service hook but without a structured `changes` payload.
+- Backends not listed (sourcehut, pagure, kallithea, etc.) do not emit repository
+  lifecycle events.  Confusio cannot generate `repository` events from these backends.
 
 ## Delivery Semantics
 
