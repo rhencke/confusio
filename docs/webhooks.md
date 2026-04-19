@@ -2785,7 +2785,7 @@ re-send the original translated payload, not a retranslation of a stale forge pa
 
 | Field | Description |
 |-------|-------------|
-| `attempt_id` | UUID v4 unique to this attempt; used as `X-GitHub-Delivery` / `X-Confusio-Delivery` for retries |
+| `attempt_id` | UUID v4 unique to this attempt.  For automatic retries (attempts 1–8), `X-GitHub-Delivery` / `X-Confusio-Delivery` still carries the ingest-time `delivery` UUID — `attempt_id` is a per-attempt audit identifier only.  For explicit replays, a fresh UUID is generated and serves as both the `attempt_id` and the delivery header value, allowing consumers to distinguish replays from original deliveries; see [Replay a delivery](#replay-a-delivery). |
 | `attempted_at` | ISO 8601 UTC timestamp when the HTTP request was sent |
 | `duration_ms` | Round-trip time in milliseconds; `null` on connection failure |
 | `response_status` | HTTP response status code; `null` on connection failure |
@@ -2900,9 +2900,13 @@ window, across all events.
 | Attempts per target per day | 500 | Rolling 24-hour window |
 
 When a target's hourly budget is exhausted, any pending retry for that target is held
-without advancing its `next_attempt` timestamp until the budget refills.  Budget
+without advancing its `next_attempt` timestamp until the budget refills.  If
+`next_attempt` has already passed (the retry was due but could not fire), the field
+retains the original scheduled time; the implementation re-checks the budget on each
+scheduler tick and dispatches as soon as capacity is available.  Budget
 consumption is recorded in a lightweight counter alongside the target state — it does
-not affect the attempt records or `status` fields.
+not affect the attempt records or `status` fields.  A `status` of `retrying` with a
+`next_attempt` in the past indicates budget-hold.
 
 **Budget and the retry schedule:** Budget exhaustion delays a retry but does not consume
 the retry slot.  If attempt #4 is due at 14:00 but the hourly budget refills at 14:15,
@@ -2910,9 +2914,18 @@ the attempt fires at 14:15 and the slot is used normally.  Delays caused by budg
 exhaustion are not reflected in the backoff schedule — the next delay after the attempt
 is calculated from the original schedule, not from the delayed actual time.
 
+**Budget counter persistence:** Budget counters are persisted in
+`targets/{target_id}/budget.json`, updated atomically on every dispatched attempt and on
+each scheduled hourly/daily refill tick.  Counters survive process restarts.  On restart
+confusio reads the persisted counters and continues from the last saved state; no attempt
+slot is lost or double-counted.
+
 **Budget and circuit breaker:** Budget limits are checked before the circuit breaker
 (see below).  A target with an open circuit does not consume budget, because no attempts
-are dispatched.
+are dispatched.  When the circuit closes and paused retries resume, they are subject to
+the current budget balance — if the budget is exhausted at that moment the retries are
+held until it refills.  The budget counter is not reset when a circuit opens or closes;
+the rolling window continues uninterrupted.
 
 ### Circuit breaker
 
@@ -2935,7 +2948,11 @@ target, confusio opens the circuit for that target.
 - If the probe succeeds (2xx): circuit closes, all `pending` deliveries resume their
   retry schedules, consecutive-failure counter resets to 0.
 - If the probe fails: circuit stays open, `circuit_open_until` is advanced by another
-  30 minutes, consecutive-failure counter increments.
+  30 minutes, `consecutive_failures` increments.  After the circuit has opened,
+  `consecutive_failures` continues incrementing on each failed probe but does not
+  change the recovery behaviour — every failed probe simply extends the open window by
+  30 minutes regardless of the counter's magnitude.  The counter is a diagnostic metric;
+  confusio does not impose a secondary "give up" threshold.
 
 **Target state record additions for circuit breaker:**
 
@@ -3231,10 +3248,15 @@ or empty, all matching targets are re-delivered.
 
 | Code | `error` code | When |
 |------|-------------|------|
-| `400 Bad Request` | `"invalid_request"` | Request body is not valid JSON |
-| `400 Bad Request` | `"unknown_target"` | A UUID in `target_ids` is not a registered target |
+| `400 Bad Request` | `"invalid_request"` | Request body is not valid JSON, or a field has the wrong type |
+| `400 Bad Request` | `"unknown_target"` | A UUID in `target_ids` does not match any registered target |
 | `401 Unauthorized` | `"unauthorized"` | Missing or invalid admin credentials |
 | `404 Not Found` | `"delivery_not_found"` | Delivery UUID unknown or pruned |
+
+Note: a target registered _after_ the event was ingested is still a valid `target_ids`
+entry.  It has no prior delivery state record, so confusio creates one and dispatches the
+attempt; this counts against neither the retry budget nor the retry schedule — it is
+treated as a fresh first attempt.
 
 **Interaction with pending retries:**  If a target's delivery is currently `in_flight`
 (a scheduled retry is executing), the replay is accepted and dispatched as a separate
@@ -3312,6 +3334,11 @@ per-target state for this target).
 | Circuit probe succeeds | Circuit closes; all paused `pending` deliveries resume their retry schedules |
 | Circuit probe fails | Circuit stays open; `circuit_open_until` advances by 30 minutes |
 | Replay while circuit is open | Replay bypasses circuit; dispatched immediately; outcome does not affect circuit state |
+| Hourly budget exhausted and circuit closes simultaneously | Retries resume from `pending` after circuit close but are immediately held by budget; they fire as soon as the budget refills in the rolling window |
+| `target_ids` in replay includes a target registered after the event was ingested | The target has no delivery state record for this event; `redeliver` accepts the UUID, creates a new delivery state record for that target, and dispatches the attempt as if the target had been matched at ingest time |
+| Replay with all matching targets in `ignored` state (no `target_ids` specified) | Accepted; `replayed_to` and `attempt_ids` contain all previously-ignored targets; each receives an attempt regardless of the filter that caused the original `ignored` outcome |
+| Replay with explicit `target_ids` where every specified target is `ignored` | Same as above but limited to the specified subset |
+| Budget counter file unreadable or corrupted on startup | Confusio treats counters as zero (fully refilled); the most conservative possible restart gives targets a clean window after a crash |
 | Outbox directory not writable at ingest | Confusio rejects the inbound event with `500 Internal Server Error`; no partial write occurs |
 | `github_payload` or `confusio_payload` too large to store | Payloads larger than 25 MiB are truncated at 25 MiB with a `"_truncated": true` sentinel field added at the top level |
 
