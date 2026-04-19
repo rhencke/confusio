@@ -2090,6 +2090,256 @@ Triggered on repository lifecycle events (created, deleted, renamed, etc.).
 - Backends not listed (sourcehut, pagure, kallithea, etc.) do not emit repository
   lifecycle events.  Confusio cannot generate `repository` events from these backends.
 
+---
+
+### `issues`
+
+Triggered on issue lifecycle events.
+
+#### Issue object fields
+
+| GitHub field | gitea-family | gogs | gitlab | bitbucket | bitbucket-dc | github | gitbucket | azuredevops | pagure | All others |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `id` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `number` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `title` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `body` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `state` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `html_url` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `user` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `labels` | ✓ | ✓ | ✓ | ~ | ~ | ✓ | ✓ | ✗ | ✓ | ✗ |
+| `assignees` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ |
+| `milestone` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ |
+| `created_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `updated_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `closed_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ | ✓ | ✗ |
+
+#### Supported actions by backend
+
+| Action | gitea-family | gogs | gitlab | bitbucket | bitbucket-dc | github | gitbucket | azuredevops | pagure |
+|--------|---|---|---|---|---|---|---|---|---|
+| `opened` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `closed` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `reopened` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `edited` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ |
+| `labeled` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✓ |
+| `unlabeled` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✓ |
+| `assigned` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ |
+| `unassigned` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ |
+
+**Notes:**
+- `labels`: Bitbucket Cloud includes label names but not label colors or IDs.
+  Bitbucket Datacenter has limited label support depending on version.
+- `assignees`: Bitbucket Cloud does not support issue assignees in webhooks.
+- `closed_at`: Azure DevOps includes a resolution date but the format differs;
+  confusio normalizes to ISO 8601.
+- `edited` action: For most backends, the edit event does not include a `changes`
+  object (before/after values).  GitHub and GitLab include `changes`; others do not.
+  Confusio emits `changes: {}` when not available.
+- Backends not listed (sourcehut, gerrit, harness, rhodecode, etc.) do not emit
+  issue lifecycle events.
+
+---
+
+### `issue_comment`
+
+Triggered when a comment is created, edited, or deleted on an issue or pull request.
+
+| GitHub field | gitea-family | gogs | gitlab | bitbucket | bitbucket-dc | github | gitbucket | pagure | All others |
+|---|---|---|---|---|---|---|---|---|---|
+| `comment.id` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `comment.body` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `comment.html_url` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `comment.user` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `comment.created_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `comment.updated_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `issue` (full object) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+
+#### Supported actions
+
+| Action | gitea-family | gogs | gitlab | bitbucket | bitbucket-dc | github | gitbucket | pagure |
+|--------|---|---|---|---|---|---|---|---|
+| `created` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `edited` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `deleted` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ |
+
+**Notes:**
+- GitLab distinguishes note events on issues (`Note Hook`) from notes on PRs
+  (`Merge Request Hook`).  Confusio maps both to `issue_comment` with the appropriate
+  `issue` or `pull_request` context object in the body.
+- `issue` object: Most backends include the parent issue in the comment event.
+  When the forge omits the issue body, confusio back-fetches it via the REST API
+  if configured.
+
+---
+
+### `pull_request`
+
+Triggered on pull request lifecycle events.
+
+#### Pull request object fields
+
+| GitHub field | gitea-family | gogs | gitlab | bitbucket | bitbucket-dc | github | gitbucket | azuredevops | All others |
+|---|---|---|---|---|---|---|---|---|---|
+| `id` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `number` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `title` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `body` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `state` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `html_url` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `user` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `head.ref` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `head.sha` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `head.repo` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `base.ref` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `base.sha` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `base.repo` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `merged` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `merged_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `merge_commit_sha` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ | ✗ |
+| `merged_by` | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✗ | ~ | ✗ |
+| `draft` | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ |
+| `labels` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ |
+| `assignees` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ |
+| `requested_reviewers` | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ |
+| `created_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `updated_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `closed_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+
+#### Supported actions by backend
+
+| Action | gitea-family | gogs | gitlab | bitbucket | bitbucket-dc | github | gitbucket | azuredevops |
+|--------|---|---|---|---|---|---|---|---|
+| `opened` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `closed` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `reopened` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `synchronize` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `edited` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ |
+| `labeled` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ |
+| `unlabeled` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ |
+| `assigned` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ |
+| `unassigned` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ |
+| `review_requested` | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `review_request_removed` | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ |
+
+**Notes:**
+- `merged_by`: Gitea-family includes the user who merged.  GitHub always includes it.
+  Gogs, Bitbucket, GitBucket do not expose the merger separately; confusio emits `null`.
+- `draft`: Gogs, Bitbucket Cloud, GitBucket, and Azure DevOps do not have a draft PR
+  concept; the field is always `false`.
+- `requested_reviewers`: Only forges with native reviewer request events include this.
+  Confusio emits `[]` when not available.
+- `synchronize` action: Triggered when new commits are pushed to the PR branch.  All
+  major forges support this; minor/self-hosted forges may not emit it.
+- GitLab uses the term "merge request" rather than "pull request".  Confusio maps all
+  GitLab `Merge Request Hook` events to the `pull_request` event family.
+- Pagure uses "pull request" but its webhook payload differs significantly; confusio
+  supports basic open/close/merge actions only.
+
+---
+
+### `pull_request_review`
+
+Triggered when a review is submitted or dismissed on a pull request.
+
+| GitHub field | gitea-family | gitlab | bitbucket-dc | github | All others |
+|---|---|---|---|---|---|
+| `review.id` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `review.body` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `review.state` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `review.html_url` | ✓ | ✓ | ~ | ✓ | ✗ |
+| `review.user` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `review.submitted_at` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `pull_request` | ✓ | ✓ | ✓ | ✓ | ✗ |
+
+#### `review.state` mapping
+
+| Forge state | GitHub `review.state` |
+|-------------|----------------------|
+| Gitea `APPROVED` | `"approved"` |
+| Gitea `REQUEST_CHANGES` | `"changes_requested"` |
+| Gitea `COMMENT` | `"commented"` |
+| GitLab `approved` | `"approved"` |
+| GitLab `unapproved` | `"dismissed"` |
+| GitLab `commented` | `"commented"` |
+| Bitbucket DC `APPROVED` | `"approved"` |
+| Bitbucket DC `NEEDS_WORK` | `"changes_requested"` |
+
+#### Supported actions
+
+| Action | gitea-family | gitlab | bitbucket-dc | github |
+|--------|---|---|---|---|
+| `submitted` | ✓ | ✓ | ✓ | ✓ |
+| `dismissed` | ~ | ✓ | ✗ | ✓ |
+
+**Notes:**
+- `pull_request_review` events require the forge to have a native review system.
+  Bitbucket Cloud, Gogs, GitBucket, Azure DevOps, and most self-hosted forges do not
+  emit review events.  The event is never generated for these backends.
+- `dismissed` action: Gitea marks a dismissed review by changing state; confusio
+  synthesizes the `dismissed` action from a state transition to `dismissed`.  GitLab
+  supports explicit dismissal.  Bitbucket Datacenter does not.
+- `review.html_url`: Bitbucket Datacenter does not provide a direct URL to the review;
+  confusio constructs an approximate URL from the PR URL.
+
+---
+
+### `pull_request_review_comment`
+
+Triggered when a comment is added, edited, or deleted on a pull request review diff.
+
+| GitHub field | gitea-family | gitlab | github | All others |
+|---|---|---|---|---|
+| `comment.id` | ✓ | ✓ | ✓ | ✗ |
+| `comment.body` | ✓ | ✓ | ✓ | ✗ |
+| `comment.path` | ✓ | ✓ | ✓ | ✗ |
+| `comment.position` | ~ | ~ | ✓ | ✗ |
+| `comment.diff_hunk` | ✓ | ✓ | ✓ | ✗ |
+| `comment.commit_id` | ✓ | ✓ | ✓ | ✗ |
+| `comment.user` | ✓ | ✓ | ✓ | ✗ |
+| `comment.html_url` | ✓ | ✓ | ✓ | ✗ |
+| `comment.created_at` | ✓ | ✓ | ✓ | ✗ |
+| `comment.updated_at` | ✓ | ✓ | ✓ | ✗ |
+| `pull_request` | ✓ | ✓ | ✓ | ✗ |
+
+#### Supported actions
+
+| Action | gitea-family | gitlab | github |
+|--------|---|---|---|
+| `created` | ✓ | ✓ | ✓ |
+| `edited` | ✓ | ✓ | ✓ |
+| `deleted` | ✓ | ✓ | ✓ |
+
+**Notes:**
+- `comment.position`: GitHub uses a position index within the diff hunk.  Gitea and
+  GitLab use line numbers instead.  Confusio maps the line number to `position` as a
+  best-effort approximation; the value may not match GitHub's exact position encoding.
+- Most forges do not expose diff-level review comments in webhooks.  Backends not
+  listed always emit `✗` for this event.
+
+---
+
+### `commit_comment`
+
+Triggered when a comment is created directly on a commit (not a PR or review).
+
+| GitHub field | gitea-family | gitlab | github | gitbucket | All others |
+|---|---|---|---|---|---|
+| `comment.id` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.body` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.commit_id` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.path` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.position` | ~ | ~ | ✓ | ✓ | ✗ |
+| `comment.line` | ~ | ~ | ✓ | ✓ | ✗ |
+| `comment.user` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.html_url` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.created_at` | ✓ | ✓ | ✓ | ✓ | ✗ |
+
+**Notes:**
+- `position` and `line`: Gitea and GitLab use line-number references; confusio maps
+  these to `position` and `line` with a note that the encoding differs from GitHub's.
+- Backends not listed (Bitbucket, Azure DevOps, etc.) do not emit commit comment events.
+
 ## Delivery Semantics
 
 _(Durable outbox design, retry backoff, replay API, and at-least-once guarantees are
