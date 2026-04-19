@@ -861,6 +861,24 @@ GitHub's `GitHub-Hookshot/<hash>`.  Consumers that check `User-Agent` exactly wi
 need configuration adjustment; consumers that check only `X-GitHub-Event` and
 `X-Hub-Signature-256` are unaffected.
 
+### Concrete delivery example
+
+A complete outbound delivery for an `issues` event looks like:
+
+```http
+POST /hooks/confusio HTTP/1.1
+Host: consumer.example.com
+Content-Type: application/json
+X-GitHub-Event: issues
+X-GitHub-Delivery: 72d3162e-cc78-11e3-81ab-4c9367dc0958
+X-Hub-Signature-256: sha256=d57c68ca6f92289e6987d106c9e3f9b2cc4e0b8c6c6f16e6df27b2c5e8d3a14
+X-Hub-Signature: sha1=4a7b9b4ee6be63e7f8a9c2d5b1f30819c3dd7a3
+User-Agent: Confusio-Hookshot/1.0
+Content-Length: 347
+
+{"action":"opened","issue":{"id":1,"number":42,"title":"Found a bug","body":"Something broke.","state":"open","html_url":"https://gitea.com/alice/myrepo/issues/42","user":{"id":1,"login":"alice","avatar_url":"https://gitea.com/user/avatar/alice","html_url":"https://gitea.com/alice","type":"User"},"labels":[],"assignees":[],"milestone":null,"created_at":"2024-01-15T10:00:00Z","updated_at":"2024-01-15T10:00:00Z","closed_at":null},"repository":{"id":100,"name":"myrepo","full_name":"alice/myrepo","private":false,"html_url":"https://gitea.com/alice/myrepo","description":null,"fork":false,"default_branch":"main","owner":{"id":1,"login":"alice","avatar_url":"https://gitea.com/user/avatar/alice","html_url":"https://gitea.com/alice","type":"User"},"created_at":"2023-01-01T00:00:00Z","updated_at":"2024-01-15T10:00:00Z","pushed_at":"2024-01-15T10:00:00Z"},"sender":{"id":1,"login":"alice","avatar_url":"https://gitea.com/user/avatar/alice","html_url":"https://gitea.com/alice","type":"User"}}
+```
+
 ### Supported event names
 
 Confusio emits the following GitHub event names.  Coverage depends on the originating
@@ -1107,6 +1125,392 @@ When `action` is `"closed"` and `pull_request.merged` is `true`, the PR was merg
 
 Confusio emits `ping` when a new target registration is confirmed.  The `zen` value
 is drawn from confusio's own zen endpoint.
+
+#### `fork`
+
+```json
+{
+  "forkee":     {
+    "id":           99,
+    "name":         "myrepo",
+    "full_name":    "bob/myrepo",
+    "private":      false,
+    "html_url":     "<url>",
+    "description":  "<string or null>",
+    "owner":        { ... }
+  },
+  "repository": { ... },
+  "sender":     { ... }
+}
+```
+
+`forkee` is the newly created fork (owned by the forker); `repository` is the upstream
+source repository.
+
+#### `status`
+
+```json
+{
+  "id":          12345678,
+  "sha":         "<commit sha>",
+  "name":        "alice/myrepo",
+  "state":       "success",
+  "description": "<string or null>",
+  "target_url":  "<url or null>",
+  "context":     "ci/test",
+  "created_at":  "<iso8601>",
+  "updated_at":  "<iso8601>",
+  "commit":      {
+    "sha":     "<sha>",
+    "html_url": "<url>",
+    "author":  { ... },
+    "committer": { ... }
+  },
+  "branches":    [
+    { "name": "main", "commit": { "sha": "<sha>", "url": "<url>" }, "protected": false }
+  ],
+  "repository":  { ... },
+  "sender":      { ... }
+}
+```
+
+`state` values: `"pending"`, `"success"`, `"failure"`, `"error"`.
+
+`context` identifies the status reporter (e.g. `"ci/build"`, `"security/scan"`).
+`target_url` links to the CI run; `description` is a short human-readable summary.
+
+#### `member`
+
+```json
+{
+  "action":   "added",
+  "member":   {
+    "id":       7,
+    "login":    "carol",
+    "html_url": "<url>",
+    "type":     "User"
+  },
+  "changes":    { },
+  "repository": { ... },
+  "sender":     { ... }
+}
+```
+
+`changes` is populated for `"edited"` actions with before/after values of changed
+fields (e.g. `{ "permission": { "from": "pull" } }`).  It is empty for `"added"` and
+`"removed"`.
+
+#### `commit_comment`
+
+```json
+{
+  "action":   "created",
+  "comment":  {
+    "id":         9999,
+    "body":       "<string>",
+    "html_url":   "<url>",
+    "path":       "<file path or null>",
+    "position":   "<integer or null>",
+    "line":       "<integer or null>",
+    "commit_id":  "<sha>",
+    "user":       { ... },
+    "created_at": "<iso8601>",
+    "updated_at": "<iso8601>"
+  },
+  "repository": { ... },
+  "sender":     { ... }
+}
+```
+
+`path`, `position`, and `line` are present when the comment is anchored to a specific
+file and line; they are `null` for top-level commit comments.
+
+#### `pull_request_review_comment`
+
+```json
+{
+  "action":       "created",
+  "comment":      {
+    "id":                111,
+    "body":              "<string>",
+    "html_url":          "<url>",
+    "path":              "<file path>",
+    "position":          3,
+    "original_position": 3,
+    "diff_hunk":         "@@ -1,4 +1,6 @@\n ...",
+    "commit_id":         "<sha>",
+    "original_commit_id": "<sha>",
+    "pull_request_review_id": 99,
+    "user":              { ... },
+    "created_at":        "<iso8601>",
+    "updated_at":        "<iso8601>"
+  },
+  "pull_request": { ... },
+  "repository":   { ... },
+  "sender":       { ... }
+}
+```
+
+#### `milestone`
+
+```json
+{
+  "action":    "created",
+  "milestone": {
+    "id":           55,
+    "number":       3,
+    "title":        "v2.0",
+    "description":  "<string or null>",
+    "state":        "open",
+    "html_url":     "<url>",
+    "open_issues":  0,
+    "closed_issues": 0,
+    "due_on":       "<iso8601 or null>",
+    "created_at":   "<iso8601>",
+    "updated_at":   "<iso8601>",
+    "closed_at":    "<iso8601 or null>",
+    "creator":      { ... }
+  },
+  "repository": { ... },
+  "sender":     { ... }
+}
+```
+
+#### `label`
+
+```json
+{
+  "action": "created",
+  "label":  {
+    "id":          22,
+    "name":        "bug",
+    "color":       "d73a4a",
+    "description": "<string or null>",
+    "default":     true,
+    "url":         "<url>"
+  },
+  "changes":    { },
+  "repository": { ... },
+  "sender":     { ... }
+}
+```
+
+`changes` is populated for `"edited"` action with before-values of changed fields
+(e.g. `{ "name": { "from": "defect" }, "color": { "from": "ee0701" } }`).
+
+#### `repository`
+
+```json
+{
+  "action":     "created",
+  "repository": { ... },
+  "sender":     { ... }
+}
+```
+
+The `repository` object carries the full repository schema for all actions.  For
+`"renamed"`, `changes` is also present:
+
+```json
+{
+  "action":     "renamed",
+  "changes":    { "repository": { "name": { "from": "old-name" } } },
+  "repository": { ... },
+  "sender":     { ... }
+}
+```
+
+### Edge cases
+
+#### Tag push
+
+When commits are pushed to a tag reference rather than a branch:
+
+```json
+{
+  "ref":       "refs/tags/v1.2.3",
+  "before":    "0000000000000000000000000000000000000000",
+  "after":     "<sha>",
+  "created":   true,
+  "deleted":   false,
+  "forced":    false,
+  "commits":   [],
+  "head_commit": { ... },
+  "repository": { ... },
+  "sender":    { ... }
+}
+```
+
+`before` is all zeros when a tag is created for the first time.  `commits` is empty
+for tag pushes — GitHub does not populate the commit list for tag events; use the
+`create` event for tag creation notifications if you need metadata.
+
+#### Force push
+
+A force push sets `forced: true` and the `before` SHA is not an ancestor of `after`:
+
+```json
+{
+  "ref":     "refs/heads/main",
+  "before":  "<sha-of-overwritten-tip>",
+  "after":   "<sha-of-new-tip>",
+  "created": false,
+  "deleted": false,
+  "forced":  true,
+  "commits": [ ... ],
+  "repository": { ... },
+  "sender":  { ... }
+}
+```
+
+Consumers should check `forced` before computing diff ranges between `before` and
+`after`.
+
+#### Branch deletion via push
+
+A branch delete arrives as a `push` event with `deleted: true` and `after` all zeros,
+**and** as a separate `delete` event.  Consumers should handle both forms:
+
+```json
+{
+  "ref":     "refs/heads/stale-branch",
+  "before":  "<last-commit-sha>",
+  "after":   "0000000000000000000000000000000000000000",
+  "created": false,
+  "deleted": true,
+  "forced":  false,
+  "commits": [],
+  "head_commit": null,
+  "repository": { ... },
+  "sender":  { ... }
+}
+```
+
+#### Merged pull request
+
+A merged PR arrives as `pull_request` with `action: "closed"` and `merged: true`.
+The merge commit SHA and merge timestamp are populated:
+
+```json
+{
+  "action": "closed",
+  "number": 7,
+  "pull_request": {
+    "state":            "closed",
+    "merged":           true,
+    "merged_at":        "2024-01-15T11:00:00Z",
+    "merge_commit_sha": "abc123def456...",
+    "merged_by":        { ... },
+    "base": { "ref": "main", "sha": "<sha>", "repo": { ... } },
+    "head": { "ref": "feature", "sha": "<sha>", "repo": { ... } }
+  },
+  "repository": { ... },
+  "sender":     { ... }
+}
+```
+
+Closed-without-merge: same shape but `merged: false`, `merged_at: null`,
+`merge_commit_sha: null`, `merged_by: null`.
+
+#### Labeled / unlabeled issue or PR
+
+When `action` is `"labeled"` or `"unlabeled"`, a top-level `label` field identifies
+the specific label that was added or removed:
+
+```json
+{
+  "action": "labeled",
+  "label":  { "id": 22, "name": "bug", "color": "d73a4a" },
+  "issue":  { ... },
+  "repository": { ... },
+  "sender": { ... }
+}
+```
+
+The same pattern applies to `pull_request` events with `action: "labeled"`.
+
+#### Null / empty optional fields
+
+Several commonly checked fields are legitimately absent or null:
+
+| Field | When null/empty | Consumer implication |
+|-------|----------------|---------------------|
+| `issue.body` | Issue created with no description | Treat as empty string |
+| `pull_request.body` | PR created with no description | Treat as empty string |
+| `milestone` on issue/PR | Not assigned to a milestone | Check before accessing sub-fields |
+| `commits[]` on push | Tag push or branch deletion | Do not assume non-empty |
+| `head_commit` on push | Branch deletion | May be `null` |
+| `review.body` on `pull_request_review` | Approve/request-changes with no comment | May be `null` or `""` |
+| `comment.path` on `commit_comment` | Top-level commit comment | May be `null` |
+
+### Required vs optional fields
+
+The tables below use **R** (always present, non-null) and **O** (optional or nullable).
+
+#### User / sender fields
+
+| Field | R/O | Notes |
+|-------|-----|-------|
+| `id` | R | Integer |
+| `login` | R | String |
+| `html_url` | R | String |
+| `type` | R | `"User"` or `"Organization"` |
+| `avatar_url` | R | May point to a default avatar |
+| `name` | O | Display name; not all forges expose this |
+
+#### Repository fields
+
+| Field | R/O | Notes |
+|-------|-----|-------|
+| `id` | R | Integer |
+| `name` | R | Short name |
+| `full_name` | R | `"owner/name"` |
+| `private` | R | Boolean |
+| `html_url` | R | String |
+| `fork` | R | Boolean |
+| `default_branch` | R | String |
+| `owner` | R | User / org object |
+| `description` | O | Null if no description set |
+| `pushed_at` | O | Null on repos with no pushes; fallback = ingest time |
+
+#### Issue fields
+
+| Field | R/O | Notes |
+|-------|-----|-------|
+| `id` | R | Integer |
+| `number` | R | Integer |
+| `title` | R | String |
+| `state` | R | `"open"` or `"closed"` |
+| `html_url` | R | String |
+| `user` | R | Author |
+| `labels` | R | Array (may be empty) |
+| `assignees` | R | Array (may be empty) |
+| `body` | O | Null if no description |
+| `milestone` | O | Null if not assigned |
+| `closed_at` | O | Null when open |
+
+#### Pull request fields
+
+| Field | R/O | Notes |
+|-------|-----|-------|
+| `id` | R | Integer |
+| `number` | R | Integer |
+| `title` | R | String |
+| `state` | R | `"open"` or `"closed"` |
+| `html_url` | R | String |
+| `user` | R | Author |
+| `head` | R | Object with `ref`, `sha`, `repo` |
+| `base` | R | Object with `ref`, `sha`, `repo` |
+| `merged` | R | Boolean |
+| `draft` | R | Boolean |
+| `labels` | R | Array (may be empty) |
+| `assignees` | R | Array (may be empty) |
+| `body` | O | Null if no description |
+| `merged_at` | O | Null until merged |
+| `merge_commit_sha` | O | Null until merged |
+| `merged_by` | O | Null until merged |
+| `requested_reviewers` | O | May be absent if forge doesn't support it |
+| `closed_at` | O | Null when open |
 
 ### Common object schemas
 
