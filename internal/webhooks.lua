@@ -23,7 +23,7 @@
 
 -- KNOWN_BACKENDS maps path segment to true for all recognised inbound sources.
 -- Requests with an unrecognised segment return 404.
--- Includes the 25 forge backends plus "confusio" for cross-instance forwarding.
+-- Includes the 24 forge backends plus "confusio" for cross-instance forwarding.
 local KNOWN_BACKENDS = {
   azuredevops = true,
   bitbucket = true,
@@ -32,7 +32,6 @@ local KNOWN_BACKENDS = {
   codecommit = true,
   confusio = true,
   forgejo = true,
-  github = true,
   gerrit = true,
   gitblit = true,
   gitbucket = true,
@@ -136,17 +135,6 @@ local function verify_signature(backend, secret, body, now)
       return false
     end
     return ct_equal(secret, tok)
-
-  -- GitHub: X-Hub-Signature-256, HMAC-SHA256, prefix "sha256="
-  elseif backend == "github" then
-    if not secret or secret == "" then
-      return true
-    end
-    local sig = GetHeader("X-Hub-Signature-256")
-    if not sig then
-      return false
-    end
-    return ct_equal("sha256=" .. hmac_hex("sha256", secret, body), sig)
 
   -- Bitbucket Cloud + Bitbucket Datacenter: X-Hub-Signature, HMAC-SHA256, prefix "sha256="
   elseif backend == "bitbucket" or backend == "bitbucket_datacenter" then
@@ -390,8 +378,8 @@ local function event_header(backend)
   elseif backend == "gitlab" then
     return GetHeader("X-Gitlab-Event")
 
-  -- GitHub + GitBucket (GitHub API-compatible): X-GitHub-Event
-  elseif backend == "github" or backend == "gitbucket" then
+  -- GitBucket (GitHub API-compatible): X-GitHub-Event
+  elseif backend == "gitbucket" then
     return GetHeader("X-GitHub-Event")
 
   -- Bitbucket Cloud + Bitbucket Datacenter: X-Event-Key
