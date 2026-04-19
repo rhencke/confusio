@@ -202,9 +202,522 @@ All other backends have independent receiver implementations.
 
 ## Signature Verification
 
-_(Details for each backend — HMAC schemes, token headers, IP allowlists, Conduit
-signatures — are specified in a dedicated section.  See [signature-verification.md](webhooks/signature-verification.md) or the next
-committed section of this document.)_
+Every inbound webhook request is authenticated before any payload parsing or event
+processing occurs.  A request that fails verification is rejected with `401
+Unauthorized` and no further processing takes place.
+
+### Verification principles
+
+- **Constant-time comparison** — All secret comparisons use constant-time equality to
+  prevent timing oracle attacks.  HMAC digest comparisons must not short-circuit.
+- **Raw body integrity** — HMAC schemes sign the raw request body bytes exactly as
+  received, before any JSON decoding.  Confusio must buffer the full body before
+  verification.
+- **Missing header = rejection** — If the expected signature or token header is absent
+  and no fallback is configured, the request is rejected as if the signature were wrong.
+- **Shared secret storage** — Secrets are stored in confusio's configuration and are
+  never echoed back in responses or logs.
+
+### Scheme types
+
+Four distinct schemes appear across the 24 backends:
+
+| Scheme | Description | Backends |
+|--------|-------------|----------|
+| **HMAC-SHA256** | Signature = `HMAC-SHA256(secret, body)`, hex-encoded | gitea family, bitbucket family, phabricator, pagure (secondary), gogs |
+| **HMAC-SHA512** | Signature = `HMAC-SHA512(secret, body)`, hex-encoded | pagure (primary) |
+| **Shared token** | Secret echoed verbatim in a header; constant-time string compare | gitlab, gitblit, harness, onedev, radicle, rhodecode, sourceforge, tuleap, gerrit, kallithea |
+| **Asymmetric / other** | ed25519, OpenPGP, or platform-managed signing | sourcehut, launchpad, codecommit, azuredevops |
+
+---
+
+### Gitea family (gitea, forgejo, codeberg, gogs, notabug)
+
+All five backends use HMAC-SHA256 over the raw request body.  The header name varies
+slightly by forge but the algorithm is identical.
+
+| Backend | Signature header | Algorithm |
+|---------|-----------------|-----------|
+| `gitea` | `X-Gitea-Signature` | HMAC-SHA256, lowercase hex |
+| `forgejo` | `X-Gitea-Signature` | HMAC-SHA256, lowercase hex |
+| `codeberg` | `X-Gitea-Signature` | HMAC-SHA256, lowercase hex |
+| `notabug` | `X-Gitea-Signature` | HMAC-SHA256, lowercase hex |
+| `gogs` | `X-Gogs-Signature` | HMAC-SHA256, lowercase hex |
+
+Gitea and its family also send `X-Hub-Signature` (`sha1=<hex>`) for GitHub-client
+compatibility.  Confusio verifies `X-Gitea-Signature` (or `X-Gogs-Signature` for
+gogs) and ignores `X-Hub-Signature`.
+
+**Verification algorithm:**
+
+```
+secret       = configured shared secret (UTF-8 bytes)
+body         = raw request body bytes
+expected_hex = HMAC-SHA256(secret, body) in lowercase hex
+received_hex = value of X-Gitea-Signature header (or X-Gogs-Signature)
+
+accept if constant_time_equal(expected_hex, received_hex)
+```
+
+**Configuration:** The shared secret is set in the forge's webhook settings under
+"Secret".  An empty secret disables HMAC verification — confusio should reject
+requests with no signature when a secret is configured and accept all when no
+secret is configured (trust-the-network mode, not recommended).
+
+---
+
+### GitLab
+
+GitLab does **not** use HMAC.  It sends the configured secret as a plain string in
+the `X-Gitlab-Token` header.
+
+```
+secret        = configured shared token (UTF-8 string)
+received_token = value of X-Gitlab-Token header
+
+accept if constant_time_equal(secret, received_token)
+```
+
+No body hashing is involved.  The token is just echoed verbatim.  This means the
+token value itself must be kept secret — anyone who captures a request can replay it.
+Confusio should warn operators that GitLab's scheme provides authentication but not
+replay protection.
+
+**Configuration:** Set in GitLab webhook settings as "Secret token".
+
+---
+
+### GitHub
+
+GitHub sends two signature headers: the primary SHA-256 variant and a legacy SHA-1
+variant.  Confusio verifies the SHA-256 variant.
+
+```
+Header:    X-Hub-Signature-256
+Format:    sha256=<lowercase hex>
+Algorithm: HMAC-SHA256(secret, raw_body)
+```
+
+```
+expected = "sha256=" ++ HMAC-SHA256(secret, body) as lowercase hex
+received = value of X-Hub-Signature-256
+
+accept if constant_time_equal(expected, received)
+```
+
+The legacy `X-Hub-Signature` (SHA-1) header is also present; confusio ignores it.
+
+**Configuration:** Set in GitHub webhook settings as "Secret".
+
+---
+
+### Bitbucket Cloud (bitbucket)
+
+Bitbucket Cloud sends `X-Hub-Signature` in the same format as GitHub's legacy header
+but using SHA-256.
+
+```
+Header:    X-Hub-Signature
+Format:    sha256=<lowercase hex>
+Algorithm: HMAC-SHA256(secret, raw_body)
+```
+
+```
+expected = "sha256=" ++ HMAC-SHA256(secret, body) as lowercase hex
+received = value of X-Hub-Signature
+
+accept if constant_time_equal(expected, received)
+```
+
+**Configuration:** Set in Bitbucket Cloud webhook settings as "Secret".
+
+---
+
+### Bitbucket Datacenter (bitbucket_datacenter)
+
+Bitbucket Datacenter (formerly Bitbucket Server) also uses `X-Hub-Signature` with
+HMAC-SHA256.
+
+```
+Header:    X-Hub-Signature
+Format:    sha256=<lowercase hex>
+Algorithm: HMAC-SHA256(secret, raw_body)
+```
+
+Identical verification algorithm to Bitbucket Cloud.
+
+**Configuration:** Set in webhook settings as "Secret".
+
+---
+
+### Pagure
+
+Pagure sends two signature headers providing SHA-512 (primary) and SHA-256 (secondary)
+coverage.  Confusio verifies the SHA-256 header; the SHA-512 header is verified as an
+additional check when present.
+
+| Header | Algorithm | Format |
+|--------|-----------|--------|
+| `X-Pagure-Signature-256` | HMAC-SHA256 | lowercase hex |
+| `X-Pagure-Signature` | HMAC-SHA512 | lowercase hex |
+
+**Primary verification (required):**
+
+```
+expected_256 = HMAC-SHA256(secret, body) as lowercase hex
+received_256 = value of X-Pagure-Signature-256
+
+accept if constant_time_equal(expected_256, received_256)
+```
+
+**Secondary verification (when X-Pagure-Signature is present):**
+
+```
+expected_512 = HMAC-SHA512(secret, body) as lowercase hex
+received_512 = value of X-Pagure-Signature
+
+reject if NOT constant_time_equal(expected_512, received_512)
+```
+
+Older Pagure instances may only send `X-Pagure-Signature`.  If `X-Pagure-Signature-256`
+is absent, confusio falls back to verifying `X-Pagure-Signature` as the primary.
+
+**Configuration:** Set in Pagure webhook settings under "Pagure hook" → "Payload secret".
+
+---
+
+### Phabricator
+
+Phabricator sends `X-Phabricator-Webhook-Signature` with an HMAC-SHA256 digest.
+The key is the "HMAC Key" configured in the Herald webhook rule (not the application
+Conduit API key).
+
+```
+Header:    X-Phabricator-Webhook-Signature
+Format:    lowercase hex (no prefix)
+Algorithm: HMAC-SHA256(hmac_key, raw_body)
+```
+
+```
+expected = HMAC-SHA256(hmac_key, body) as lowercase hex
+received = value of X-Phabricator-Webhook-Signature
+
+accept if constant_time_equal(expected, received)
+```
+
+**Configuration:** The HMAC key is displayed in Phabricator's Herald webhook configuration
+after creation.  It is distinct from Conduit API keys.
+
+---
+
+### GitBucket
+
+GitBucket is GitHub API-compatible and uses the same signature scheme.
+
+```
+Header:    X-Hub-Signature
+Format:    sha1=<lowercase hex>   (GitBucket uses SHA-1, not SHA-256)
+Algorithm: HMAC-SHA1(secret, raw_body)
+```
+
+```
+expected = "sha1=" ++ HMAC-SHA1(secret, body) as lowercase hex
+received = value of X-Hub-Signature
+
+accept if constant_time_equal(expected, received)
+```
+
+Note: GitBucket uses the legacy SHA-1 variant.  There is no SHA-256 variant.
+
+**Configuration:** Set in GitBucket webhook settings as "Secret".
+
+---
+
+### GitLab (already covered above)
+
+See [GitLab](#gitlab).
+
+---
+
+### Harness
+
+Harness sends the shared token verbatim in `X-Harness-Token`.
+
+```
+secret         = configured shared token
+received_token = value of X-Harness-Token
+
+accept if constant_time_equal(secret, received_token)
+```
+
+**Configuration:** Set when creating the webhook in Harness under "Authentication" →
+"Token".
+
+---
+
+### OneDev (onedev)
+
+OneDev sends the shared secret in a Bearer authorization header.
+
+```
+Header:    Authorization
+Format:    Bearer <secret>
+```
+
+```
+secret   = configured shared secret
+received = value of Authorization header, with "Bearer " prefix stripped
+
+accept if constant_time_equal(secret, received)
+```
+
+**Configuration:** Set in OneDev webhook settings as "Secret".
+
+---
+
+### Radicle
+
+Radicle uses an `Authorization` header with the shared secret directly (no Bearer
+prefix in current Radicle versions; confirm against the configured Radicle node's
+webhook documentation).
+
+```
+secret   = configured shared secret
+received = value of Authorization header
+
+accept if constant_time_equal(secret, received)
+```
+
+**Note:** Radicle's webhook support is experimental as of this writing.  The exact
+header format may change; verify against the Radicle node version in use.
+
+---
+
+### RhodeCode
+
+RhodeCode sends the shared secret in `X-RhodeCode-Signature`.
+
+```
+secret   = configured shared secret
+received = value of X-RhodeCode-Signature
+
+accept if constant_time_equal(secret, received)
+```
+
+**Configuration:** Set in RhodeCode webhook settings as "Authentication token".
+
+---
+
+### SourceForge
+
+SourceForge sends the shared secret in `X-Sourceforge-Webhook-Secret`.
+
+```
+secret   = configured shared secret
+received = value of X-Sourceforge-Webhook-Secret
+
+accept if constant_time_equal(secret, received)
+```
+
+**Configuration:** Set when registering the webhook in SourceForge project settings.
+
+---
+
+### Tuleap
+
+Tuleap sends the shared secret in `X-Tuleap-Webhook-Secret`.
+
+```
+secret   = configured shared secret
+received = value of X-Tuleap-Webhook-Secret
+
+accept if constant_time_equal(secret, received)
+```
+
+**Configuration:** Set in Tuleap webhook settings as "Secret".
+
+---
+
+### Gerrit
+
+Gerrit's webhook plugin does not have a standardized signature scheme.  Authentication
+is typically configured as HTTP Basic auth credentials embedded in the webhook URL, or
+as a shared token in the `Authorization` header depending on the plugin version.
+
+Confusio supports the `Authorization` header form:
+
+```
+secret   = configured shared token
+received = value of Authorization header
+
+accept if constant_time_equal(secret, received)
+```
+
+For URL-embedded credentials, confusio extracts and verifies the Base64-decoded
+`user:password` pair against the configured secret.
+
+**Note:** Gerrit webhook signature support varies by plugin version.  Operators should
+pin the plugin version and verify which auth form is in use.
+
+---
+
+### Gitblit
+
+Gitblit sends the shared token in `X-Gitblit-Token`.
+
+```
+secret   = configured shared token
+received = value of X-Gitblit-Token
+
+accept if constant_time_equal(secret, received)
+```
+
+**Configuration:** Set in Gitblit's `gitblit.properties` as `groovy.postReceiveScripts`
+with the token value in the webhook receiver configuration.
+
+---
+
+### Kallithea
+
+Kallithea embeds the shared secret in the JSON request body rather than a header.
+The field is `pusher_info.secret` (subject to Kallithea version; verify against the
+deployed instance).
+
+```
+secret   = configured shared secret
+body     = decoded JSON payload
+received = body["pusher_info"]["secret"]  (string)
+
+accept if constant_time_equal(secret, received)
+```
+
+**Note:** Body-embedded secrets mean the body must be decoded before verification,
+which breaks the "verify before parse" principle.  Confusio must treat Kallithea as
+a special case: parse just enough to extract the secret field, verify, then proceed.
+
+---
+
+### Azure DevOps (azuredevops)
+
+Azure DevOps service hooks use HTTP Basic authentication.  The username and password
+are configured in the service hook settings; confusio verifies the `Authorization`
+header.
+
+```
+Header:    Authorization
+Format:    Basic <base64(username:password)>
+```
+
+```
+configured_user     = configured username (may be empty string)
+configured_password = configured shared secret / password
+received_header     = value of Authorization header
+
+decoded = base64_decode(received_header after stripping "Basic ")
+[received_user, received_password] = split(decoded, ":", limit=2)
+
+accept if constant_time_equal(configured_user, received_user)
+       AND constant_time_equal(configured_password, received_password)
+```
+
+**Configuration:** Set in Azure DevOps service hook settings under "Basic authentication"
+→ "Username" and "Password".
+
+---
+
+### AWS CodeCommit (codecommit)
+
+CodeCommit delivers events through Amazon SNS.  Confusio receives SNS HTTP/HTTPS
+notifications and must validate SNS message signatures before processing.
+
+**Validation steps:**
+
+1. **Confirm subscription**: On first delivery, SNS sends a `SubscriptionConfirmation`
+   message.  Confusio must fetch the `SubscribeURL` (HTTPS only) to confirm the
+   subscription.  The URL is validated against the `sns.amazonaws.com` domain before
+   fetching.
+
+2. **Verify message signature**: For `Notification` messages, confusio constructs the
+   canonical signing string from SNS fields (`Message`, `MessageId`, `Subject`,
+   `Timestamp`, `TopicArn`, `Type`) and verifies the `Signature` field using the
+   X.509 certificate at `SigningCertURL`.
+
+3. **Certificate URL validation**: `SigningCertURL` must be a well-formed HTTPS URL on
+   an `amazonaws.com` subdomain.  Confusio must not fetch certificates from arbitrary
+   URLs.
+
+4. **Certificate caching**: SNS certificates rotate infrequently.  Confusio caches
+   fetched certificates keyed by URL to avoid repeated fetches.
+
+**No shared secret is required** for CodeCommit/SNS — authenticity is established by
+the AWS-issued certificate chain.  Operators must ensure the SNS topic's access policy
+only allows CodeCommit to publish.
+
+**Configuration:** Register the confusio receiver URL as an SNS HTTPS endpoint
+subscription on the CodeCommit-linked SNS topic.
+
+---
+
+### Sourcehut
+
+Sourcehut uses ed25519 asymmetric signatures.  The signing key is sr.ht's private key;
+the public key is published at a well-known URL.
+
+```
+Header:    X-Payload-Signature
+Format:    base64-encoded ed25519 signature (standard encoding)
+```
+
+**Verification steps:**
+
+1. **Fetch public key**: `GET https://meta.sr.ht/.well-known/webhook-key` returns the
+   raw ed25519 public key in base64 format (32 bytes decoded).  Cache this key; it
+   changes only during key rotation.
+
+2. **Verify signature**:
+
+```
+public_key = base64_decode(key from well-known URL)
+message    = raw request body bytes
+signature  = base64_decode(value of X-Payload-Signature)
+
+accept if ed25519_verify(public_key, message, signature) == true
+```
+
+**No shared secret is configured** — authentication is established by sr.ht's published
+key.  Confusio should re-fetch the well-known key on verification failure to handle
+key rotation, then retry once before rejecting.
+
+---
+
+### Launchpad
+
+Launchpad signs webhook payloads with an OpenPGP key.  The signature is sent in the
+`X-Launchpad-Signature` header (if present) or the body may be a cleartext-signed
+PGP message.
+
+**Verification steps:**
+
+1. **Fetch Launchpad's signing key**: Launchpad publishes its webhook signing key on
+   its keyserver.  The fingerprint is documented in Launchpad's developer documentation.
+
+2. **Verify OpenPGP signature**:
+
+```
+signing_key = Launchpad's published OpenPGP public key (fetched from keyserver)
+body        = raw request body bytes
+signature   = value of X-Launchpad-Signature (detached PGP signature, armored)
+
+accept if openpgp_verify(signing_key, body, signature) == true
+```
+
+**Note:** OpenPGP verification requires a PGP library.  This is the most complex
+verification scheme across all 24 backends.  The implementation should use a
+well-audited PGP library and must validate the key fingerprint against the expected
+Launchpad fingerprint before trusting the key.
+
+**No shared secret is configured** — authentication is established by Launchpad's
+published key.
 
 ## GitHub-Emulation Contract
 
