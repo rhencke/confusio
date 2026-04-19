@@ -7228,6 +7228,43 @@ b:webhook("pull_request", function(payload)
   })
 end)
 
+local MERGE_GROUP_ACTIONS = {
+  checks_requested = "checks_requested",
+  destroyed = "destroyed",
+}
+
+b:webhook("merge_group", function(payload)
+  local raw_action = payload.action or ""
+  local action = MERGE_GROUP_ACTIONS[raw_action]
+  local mg = payload.merge_group or {}
+  local data = {
+    action = action or "unknown",
+    merge_group = {
+      head_sha = mg.head_sha or "",
+      head_ref = mg.head_ref or "",
+      base_sha = mg.base_sha or "",
+      base_ref = mg.base_ref or "",
+      head_commit = mg.head_commit or {},
+    },
+    repository = translate_repo(payload.repository or {}),
+    sender = translate_user(payload.sender or {}),
+  }
+  -- The `destroyed` action carries a reason indicating why the group was removed
+  -- from the queue: "merged", "invalidated", or "dequeued".
+  if raw_action == "destroyed" then
+    data.reason = payload.reason
+  end
+  return make_internal_event({
+    event = "merge_group",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitea",
+    raw = payload,
+    data = data,
+    timestamp = "",
+  })
+end)
+
 b:capability("repos", repos)
 b:capability("users", users)
 b:capability("orgs", orgs)

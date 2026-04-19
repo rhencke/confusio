@@ -2366,6 +2366,47 @@ Triggered when a comment is added, edited, or deleted on a pull request review d
 
 ---
 
+### `merge_group`
+
+Triggered on merge queue activity.  GitHub groups pull requests in a merge queue into
+merge groups to be tested and merged together.  This event fires when a group is created
+(checks must pass before merging) or destroyed (merged, removed from queue, or invalidated
+by an earlier entry being dequeued).
+
+No equivalent native event exists in Gitea, Forgejo, GitLab, or other self-hosted backends.
+Confusio emits `merge_group` only when the originating backend sends it; for the
+gitea-family this requires a Forgejo version with merge-queue support or a future Gitea
+release that introduces the feature.
+
+#### Merge group object fields
+
+| GitHub field | gitea-family | All others |
+|---|---|---|
+| `merge_group.head_sha` | ✓ | ✗ |
+| `merge_group.head_ref` | ✓ | ✗ |
+| `merge_group.base_sha` | ✓ | ✗ |
+| `merge_group.base_ref` | ✓ | ✗ |
+| `merge_group.head_commit` | ✓ | ✗ |
+
+#### Supported actions by backend
+
+| Action | gitea-family | All others |
+|--------|---|---|
+| `checks_requested` | ✓ | ✗ |
+| `destroyed` | ✓ | ✗ |
+
+**Notes:**
+- `checks_requested`: Fired when a merge group is formed and checks must pass before the
+  group can be merged into the base branch.
+- `destroyed`: Fired when a merge group is removed from the queue.  The top-level `reason`
+  field indicates why: `"merged"` (successfully merged), `"dequeued"` (pull request manually
+  removed from the queue), or `"invalidated"` (an earlier queue entry was dequeued, making
+  this group stale).  The `reason` field is only present for the `destroyed` action.
+- Backends not listed do not emit merge group events; confusio never generates `merge_group`
+  for those backends regardless of queue configuration.
+
+---
+
 ### `commit_comment`
 
 Triggered when a comment is created directly on a commit (not a PR or review).

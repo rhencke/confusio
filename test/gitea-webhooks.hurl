@@ -487,3 +487,142 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 header "X-Confusio-Raw-Action" == "auto_merged"
+
+# ── merge_group: checks_requested → 200 ───────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: merge_group
+{
+  "action": "checks_requested",
+  "merge_group": {
+    "head_sha": "abc123def456abc123def456abc123def456abc1",
+    "head_ref": "refs/heads/gh-readonly-queue/main/pr-7-abc123",
+    "base_sha": "def456abc123def456abc123def456abc123def4",
+    "base_ref": "refs/heads/main",
+    "head_commit": {
+      "id": "abc123def456abc123def456abc123def456abc1",
+      "tree_id": "1234567890abcdef1234567890abcdef12345678",
+      "message": "Add new feature (#7)",
+      "timestamp": "2024-01-15T10:00:00Z",
+      "author": {"name": "Bob", "email": "bob@example.com"},
+      "committer": {"name": "GitHub", "email": "noreply@github.com"}
+    }
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── merge_group: destroyed (reason: merged) → 200 ─────────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: merge_group
+{
+  "action": "destroyed",
+  "reason": "merged",
+  "merge_group": {
+    "head_sha": "abc123def456abc123def456abc123def456abc1",
+    "head_ref": "refs/heads/gh-readonly-queue/main/pr-7-abc123",
+    "base_sha": "def456abc123def456abc123def456abc123def4",
+    "base_ref": "refs/heads/main",
+    "head_commit": {
+      "id": "abc123def456abc123def456abc123def456abc1",
+      "tree_id": "1234567890abcdef1234567890abcdef12345678",
+      "message": "Add new feature (#7)",
+      "timestamp": "2024-01-15T10:00:00Z",
+      "author": {"name": "Bob", "email": "bob@example.com"},
+      "committer": {"name": "GitHub", "email": "noreply@github.com"}
+    }
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── merge_group: destroyed (reason: dequeued) → 200 ──────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: merge_group
+{
+  "action": "destroyed",
+  "reason": "dequeued",
+  "merge_group": {
+    "head_sha": "abc123def456abc123def456abc123def456abc1",
+    "head_ref": "refs/heads/gh-readonly-queue/main/pr-7-abc123",
+    "base_sha": "def456abc123def456abc123def456abc123def4",
+    "base_ref": "refs/heads/main",
+    "head_commit": {
+      "id": "abc123def456abc123def456abc123def456abc1",
+      "tree_id": "1234567890abcdef1234567890abcdef12345678",
+      "message": "Add new feature (#7)",
+      "timestamp": "2024-01-15T10:00:00Z",
+      "author": {"name": "Bob", "email": "bob@example.com"},
+      "committer": {"name": "GitHub", "email": "noreply@github.com"}
+    }
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── merge_group: unknown action → 200 + X-Confusio-Raw-Action sidecar ─────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: merge_group
+{
+  "action": "queued",
+  "merge_group": {
+    "head_sha": "abc123def456abc123def456abc123def456abc1",
+    "head_ref": "refs/heads/gh-readonly-queue/main/pr-7-abc123",
+    "base_sha": "def456abc123def456abc123def456abc123def4",
+    "base_ref": "refs/heads/main",
+    "head_commit": {
+      "id": "abc123def456abc123def456abc123def456abc1",
+      "tree_id": "1234567890abcdef1234567890abcdef12345678",
+      "message": "Add new feature (#7)",
+      "timestamp": "2024-01-15T10:00:00Z",
+      "author": {"name": "Bob", "email": "bob@example.com"},
+      "committer": {"name": "GitHub", "email": "noreply@github.com"}
+    }
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+header "X-Confusio-Raw-Action" == "queued"
