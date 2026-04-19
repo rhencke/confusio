@@ -2324,6 +2324,23 @@ local GB_MILESTONE_ACTIONS = {
   edited = "edited",
   opened = "opened",
 }
+local GB_PULL_REQUEST_ACTIONS = {
+  assigned = "assigned",
+  closed = "closed",
+  converted_to_draft = "converted_to_draft",
+  edited = "edited",
+  labeled = "labeled",
+  locked = "locked",
+  opened = "opened",
+  ready_for_review = "ready_for_review",
+  reopened = "reopened",
+  review_request_removed = "review_request_removed",
+  review_requested = "review_requested",
+  synchronize = "synchronize",
+  unassigned = "unassigned",
+  unlabeled = "unlabeled",
+  unlocked = "unlocked",
+}
 
 b:webhook("issues", function(payload)
   local raw_action = payload.action or ""
@@ -2407,6 +2424,33 @@ b:webhook("milestone", function(payload)
       sender = payload.sender or {},
     },
     timestamp = (payload.milestone or {}).updated_at or "",
+  })
+end)
+
+b:webhook("pull_request", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_PULL_REQUEST_ACTIONS[raw_action]
+  local data = {
+    action = action or "unknown",
+    number = payload.number,
+    pull_request = payload.pull_request or {},
+    repository = payload.repository or {},
+    sender = payload.sender or {},
+  }
+  if action == "labeled" or action == "unlabeled" then
+    data.label = payload.label
+  end
+  if action == "review_requested" or action == "review_request_removed" then
+    data.requested_reviewer = payload.requested_reviewer
+  end
+  return make_internal_event({
+    event = "pull_request",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = data,
+    timestamp = (payload.pull_request or {}).updated_at or "",
   })
 end)
 
