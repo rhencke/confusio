@@ -54,6 +54,7 @@ dofile("/zip/internal/defaults.lua")
 dofile("/zip/internal/router.lua")
 dofile("/zip/internal/catalog.lua")
 dofile("/zip/internal/dispatch.lua")
+dofile("/zip/internal/signing.lua")
 dofile("/zip/internal/webhooks.lua")
 
 app.route_match = route_match

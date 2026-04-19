@@ -2575,6 +2575,67 @@ do
 end
 
 -- ============================================================
+-- sign_github / sign_confusio
+-- ============================================================
+
+do
+  -- GetCryptoHash stub returns 32 bytes of 0xaa → hex is 64 'a' chars.
+  local STUB_HEX = string.rep("aa", 32)
+  local SECRET = "mysecret"
+  local BODY = '{"action":"opened"}'
+
+  -- ── sign_github ──────────────────────────────────────────
+
+  ok(type(sign_github) == "function", "sign_github: exported as global function")
+
+  -- No secret → both return values are nil.
+  local s256, s1 = sign_github(nil, BODY)
+  ok(s256 == nil, "sign_github(nil): sha256 value is nil")
+  ok(s1 == nil, "sign_github(nil): sha1 value is nil")
+
+  s256, s1 = sign_github("", BODY)
+  ok(s256 == nil, "sign_github(''): sha256 value is nil")
+  ok(s1 == nil, "sign_github(''): sha1 value is nil")
+
+  -- With secret → returns "sha256=<hex>" and "sha1=<hex>".
+  s256, s1 = sign_github(SECRET, BODY)
+  eq(s256, "sha256=" .. STUB_HEX, "sign_github: sha256 value has correct prefix and hex")
+  eq(s1, "sha1=" .. STUB_HEX, "sign_github: sha1 value has correct prefix and hex")
+
+  -- Return values are strings (header-value ready).
+  ok(type(s256) == "string", "sign_github: sha256 return is a string")
+  ok(type(s1) == "string", "sign_github: sha1 return is a string")
+
+  -- ── sign_confusio ─────────────────────────────────────────
+
+  ok(type(sign_confusio) == "function", "sign_confusio: exported as global function")
+
+  -- No secret → returns nil.
+  ok(sign_confusio(nil, BODY, 1700000000) == nil, "sign_confusio(nil): returns nil")
+  ok(sign_confusio("", BODY, 1700000000) == nil, "sign_confusio(''): returns nil")
+
+  -- With secret → returns "sha256=<hex>, v=1, ts=<ts>".
+  local TS = 1700000000
+  local csig = sign_confusio(SECRET, BODY, TS)
+  ok(type(csig) == "string", "sign_confusio: return is a string")
+  eq(csig, "sha256=" .. STUB_HEX .. ", v=1, ts=1700000000", "sign_confusio: header value format")
+
+  -- Timestamp appears verbatim in the returned header value.
+  local ts_val = csig:match(", ts=(%d+)$")
+  eq(tonumber(ts_val), TS, "sign_confusio: ts field matches supplied timestamp")
+
+  -- Different timestamps produce different basestrings (stub ignores input, but
+  -- verify the ts field in the header value changes as expected).
+  local r1 = sign_confusio(SECRET, BODY, 1000)
+  local r2 = sign_confusio(SECRET, BODY, 9999)
+  ok(r1:match(", ts=1000$") ~= nil, "sign_confusio: ts=1000 appears in header")
+  ok(r2:match(", ts=9999$") ~= nil, "sign_confusio: ts=9999 appears in header")
+
+  -- v=1 is present in the header value.
+  ok(csig:find(", v=1,", 1, true) ~= nil, "sign_confusio: v=1 field present in header value")
+end
+
+-- ============================================================
 -- Summary
 -- ============================================================
 
