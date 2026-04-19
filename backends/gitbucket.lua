@@ -2342,6 +2342,15 @@ local GB_PULL_REQUEST_ACTIONS = {
   unlocked = "unlocked",
 }
 
+-- GitBucket emits GitHub-compatible pull_request_review payloads.
+-- Review states arrive lowercase (GitHub format: "approved", "changes_requested",
+-- "commented", "dismissed") — no normalisation needed.
+local GB_PULL_REQUEST_REVIEW_ACTIONS = {
+  dismissed = "dismissed",
+  edited = "edited",
+  submitted = "submitted",
+}
+
 b:webhook("issues", function(payload)
   local raw_action = payload.action or ""
   local action = GB_ISSUES_ACTIONS[raw_action]
@@ -2451,6 +2460,29 @@ b:webhook("pull_request", function(payload)
     raw = payload,
     data = data,
     timestamp = (payload.pull_request or {}).updated_at or "",
+  })
+end)
+
+-- GitBucket emits GitHub-compatible pull_request_review payloads.
+-- Review state is already lowercase (e.g. "approved", "changes_requested",
+-- "commented", "dismissed") — no normalisation required.
+b:webhook("pull_request_review", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_PULL_REQUEST_REVIEW_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "pull_request_review",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      review = payload.review or {},
+      pull_request = payload.pull_request or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.review or {}).submitted_at or "",
   })
 end)
 

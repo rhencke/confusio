@@ -652,3 +652,180 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 header "X-Confusio-Raw-Action" == "auto_merged"
+
+# ── pull_request_review: submitted (approved) → 200 ──────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: pull_request_review
+{
+  "action": "submitted",
+  "review": {
+    "id": 10, "node_id": "", "user": {"login": "carol", "id": 3, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"},
+    "body": "LGTM!", "state": "approved",
+    "html_url": "http://localhost/octocat/hello-world/pull/7#pullrequestreview-10",
+    "submitted_at": "2024-01-15T12:00:00Z"
+  },
+  "pull_request": {
+    "id": 500, "node_id": "", "number": 7,
+    "title": "Add new feature", "body": null,
+    "state": "open", "draft": false,
+    "html_url": "http://localhost/octocat/hello-world/pull/7",
+    "url": "http://localhost/api/v3/repos/octocat/hello-world/pulls/7",
+    "user": {"login": "bob", "id": 2, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"},
+    "head": {"ref": "feature-branch", "sha": "abc123", "repo": null},
+    "base": {"ref": "main", "sha": "def456", "repo": null},
+    "labels": [], "assignees": [], "requested_reviewers": [],
+    "merged": false, "merged_at": null, "merge_commit_sha": null, "merged_by": null,
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T10:00:00Z",
+    "closed_at": null
+  },
+  "repository": {
+    "id": 1, "node_id": "", "name": "hello-world",
+    "full_name": "octocat/hello-world", "private": false,
+    "owner": {"login": "octocat", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"},
+    "html_url": "http://localhost/octocat/hello-world",
+    "description": "", "fork": false, "url": "",
+    "clone_url": "", "homepage": "", "default_branch": "main",
+    "visibility": "public"
+  },
+  "sender": {"login": "carol", "id": 3, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── pull_request_review: submitted (changes_requested) → 200 ─────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: pull_request_review
+{
+  "action": "submitted",
+  "review": {
+    "id": 11, "node_id": "", "user": {"login": "carol", "id": 3, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"},
+    "body": "Please address these issues.", "state": "changes_requested",
+    "html_url": "http://localhost/octocat/hello-world/pull/7#pullrequestreview-11",
+    "submitted_at": "2024-01-15T12:01:00Z"
+  },
+  "pull_request": {
+    "id": 500, "node_id": "", "number": 7,
+    "title": "Add new feature", "body": null,
+    "state": "open", "draft": false,
+    "html_url": "http://localhost/octocat/hello-world/pull/7",
+    "url": "http://localhost/api/v3/repos/octocat/hello-world/pulls/7",
+    "user": {"login": "bob", "id": 2, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"},
+    "head": {"ref": "feature-branch", "sha": "abc123", "repo": null},
+    "base": {"ref": "main", "sha": "def456", "repo": null},
+    "labels": [], "assignees": [], "requested_reviewers": [],
+    "merged": false, "merged_at": null, "merge_commit_sha": null, "merged_by": null,
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T10:00:00Z",
+    "closed_at": null
+  },
+  "repository": {
+    "id": 1, "node_id": "", "name": "hello-world",
+    "full_name": "octocat/hello-world", "private": false,
+    "owner": {"login": "octocat", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"},
+    "html_url": "http://localhost/octocat/hello-world",
+    "description": "", "fork": false, "url": "",
+    "clone_url": "", "homepage": "", "default_branch": "main",
+    "visibility": "public"
+  },
+  "sender": {"login": "carol", "id": 3, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── pull_request_review: dismissed → 200 ─────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: pull_request_review
+{
+  "action": "dismissed",
+  "review": {
+    "id": 10, "node_id": "", "user": {"login": "carol", "id": 3, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"},
+    "body": "", "state": "dismissed",
+    "html_url": "http://localhost/octocat/hello-world/pull/7#pullrequestreview-10",
+    "submitted_at": "2024-01-15T12:05:00Z"
+  },
+  "pull_request": {
+    "id": 500, "node_id": "", "number": 7,
+    "title": "Add new feature", "body": null,
+    "state": "open", "draft": false,
+    "html_url": "http://localhost/octocat/hello-world/pull/7",
+    "url": "http://localhost/api/v3/repos/octocat/hello-world/pulls/7",
+    "user": {"login": "bob", "id": 2, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"},
+    "head": {"ref": "feature-branch", "sha": "abc123", "repo": null},
+    "base": {"ref": "main", "sha": "def456", "repo": null},
+    "labels": [], "assignees": [], "requested_reviewers": [],
+    "merged": false, "merged_at": null, "merge_commit_sha": null, "merged_by": null,
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T10:00:00Z",
+    "closed_at": null
+  },
+  "repository": {
+    "id": 1, "node_id": "", "name": "hello-world",
+    "full_name": "octocat/hello-world", "private": false,
+    "owner": {"login": "octocat", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"},
+    "html_url": "http://localhost/octocat/hello-world",
+    "description": "", "fork": false, "url": "",
+    "clone_url": "", "homepage": "", "default_branch": "main",
+    "visibility": "public"
+  },
+  "sender": {"login": "octocat", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── pull_request_review: unknown action → 200 + X-Confusio-Raw-Action ────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: pull_request_review
+{
+  "action": "rerequested",
+  "review": {
+    "id": 12, "node_id": "", "user": {"login": "carol", "id": 3, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"},
+    "body": "", "state": "commented",
+    "html_url": "http://localhost/octocat/hello-world/pull/7#pullrequestreview-12",
+    "submitted_at": "2024-01-15T12:06:00Z"
+  },
+  "pull_request": {
+    "id": 500, "node_id": "", "number": 7,
+    "title": "Add new feature", "body": null,
+    "state": "open", "draft": false,
+    "html_url": "http://localhost/octocat/hello-world/pull/7",
+    "url": "http://localhost/api/v3/repos/octocat/hello-world/pulls/7",
+    "user": {"login": "bob", "id": 2, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"},
+    "head": {"ref": "feature-branch", "sha": "abc123", "repo": null},
+    "base": {"ref": "main", "sha": "def456", "repo": null},
+    "labels": [], "assignees": [], "requested_reviewers": [],
+    "merged": false, "merged_at": null, "merge_commit_sha": null, "merged_by": null,
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T10:00:00Z",
+    "closed_at": null
+  },
+  "repository": {
+    "id": 1, "node_id": "", "name": "hello-world",
+    "full_name": "octocat/hello-world", "private": false,
+    "owner": {"login": "octocat", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"},
+    "html_url": "http://localhost/octocat/hello-world",
+    "description": "", "fork": false, "url": "",
+    "clone_url": "", "homepage": "", "default_branch": "main",
+    "visibility": "public"
+  },
+  "sender": {"login": "carol", "id": 3, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+header "X-Confusio-Raw-Action" == "rerequested"
