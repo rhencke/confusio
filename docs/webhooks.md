@@ -1917,6 +1917,27 @@ field name or structure changes.
 | ✗ | Not available: field is always empty, `[]`, `null`, or `0` in the output |
 | — | Not applicable: the event type does not exist for this backend |
 
+**Stub values for `✗` fields:**
+
+When a field cannot be sourced from the originating forge, confusio emits the following
+stub in GitHub-emulation output to satisfy the schema contract:
+
+| GitHub field type | Stub value |
+|------------------|------------|
+| Nullable string | `null` |
+| Non-nullable string | `""` |
+| Integer | `0` |
+| Boolean | `false` |
+| Array | `[]` |
+| Object | `null` |
+
+In confusio-normalized output, unavailable fields are **omitted** from the `data` object
+rather than stubbed.  This keeps normalized payloads compact and allows consumers to
+distinguish "not available" from "explicitly empty."
+
+Fields marked `~` carry an inline note or a **Notes** annotation explaining the
+approximation strategy and the fallback stub when the approximation is not possible.
+
 **Backend grouping:** Backends in the same API family share the same implementation
 and therefore the same coverage.  Where a whole family shares a symbol, the family
 name is used instead of listing individual backends.
@@ -2179,48 +2200,48 @@ Triggered on pull request lifecycle events.
 
 #### Pull request object fields
 
-| GitHub field | gitea-family | gogs | gitlab | bitbucket | bitbucket-dc | github | gitbucket | azuredevops | All others |
-|---|---|---|---|---|---|---|---|---|---|
-| `id` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
-| `number` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
-| `title` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
-| `body` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
-| `state` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
-| `html_url` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
-| `user` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
-| `head.ref` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
-| `head.sha` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
-| `head.repo` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
-| `base.ref` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
-| `base.sha` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
-| `base.repo` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
-| `merged` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
-| `merged_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
-| `merge_commit_sha` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ | ✗ |
-| `merged_by` | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✗ | ~ | ✗ |
-| `draft` | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ |
-| `labels` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ |
-| `assignees` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ |
-| `requested_reviewers` | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ |
-| `created_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
-| `updated_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
-| `closed_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| GitHub field | gitea-family | gogs | gitlab | bitbucket | bitbucket-dc | github | gitbucket | azuredevops | pagure | All others |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `id` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `number` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `title` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `body` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ | ~ |
+| `state` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `html_url` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `user` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `head.ref` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `head.sha` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `head.repo` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ | ~ |
+| `base.ref` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `base.sha` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ~ |
+| `base.repo` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `merged` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `merged_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ~ |
+| `merge_commit_sha` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ | ~ | ✗ |
+| `merged_by` | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✗ | ~ | ✗ | ✗ |
+| `draft` | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| `labels` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ |
+| `assignees` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ |
+| `requested_reviewers` | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| `created_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `updated_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `closed_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ~ |
 
 #### Supported actions by backend
 
-| Action | gitea-family | gogs | gitlab | bitbucket | bitbucket-dc | github | gitbucket | azuredevops |
-|--------|---|---|---|---|---|---|---|---|
-| `opened` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `closed` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `reopened` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `synchronize` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `edited` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ |
-| `labeled` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ |
-| `unlabeled` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ |
-| `assigned` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ |
-| `unassigned` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ |
-| `review_requested` | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ |
-| `review_request_removed` | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| Action | gitea-family | gogs | gitlab | bitbucket | bitbucket-dc | github | gitbucket | azuredevops | pagure |
+|--------|---|---|---|---|---|---|---|---|---|
+| `opened` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `closed` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `reopened` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `synchronize` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ~ |
+| `edited` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ~ |
+| `labeled` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ |
+| `unlabeled` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ |
+| `assigned` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ |
+| `unassigned` | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ |
+| `review_requested` | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ |
+| `review_request_removed` | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ |
 
 **Notes:**
 - `merged_by`: Gitea-family includes the user who merged.  GitHub always includes it.
@@ -2233,8 +2254,12 @@ Triggered on pull request lifecycle events.
   major forges support this; minor/self-hosted forges may not emit it.
 - GitLab uses the term "merge request" rather than "pull request".  Confusio maps all
   GitLab `Merge Request Hook` events to the `pull_request` event family.
-- Pagure uses "pull request" but its webhook payload differs significantly; confusio
-  supports basic open/close/merge actions only.
+- **Pagure**: Uses "pull request" terminology.  `body` is synthesized from the initial
+  comment on the PR.  `base.sha`, `merged_at`, and `closed_at` are not included in
+  Pagure's webhook payloads; confusio emits `null`.  `merge_commit_sha` is available only
+  after merge via the `commit_stop` field.  `synchronize` maps to Pagure's `updated`
+  event.  `edited` maps to `comment added` on the PR description; not all edit
+  scenarios produce a confusio `edited` event.
 
 ---
 
@@ -2294,8 +2319,11 @@ Triggered when a comment is added, edited, or deleted on a pull request review d
 | `comment.body` | ✓ | ✓ | ✓ | ✗ |
 | `comment.path` | ✓ | ✓ | ✓ | ✗ |
 | `comment.position` | ~ | ~ | ✓ | ✗ |
+| `comment.original_position` | ~ | ~ | ✓ | ✗ |
 | `comment.diff_hunk` | ✓ | ✓ | ✓ | ✗ |
 | `comment.commit_id` | ✓ | ✓ | ✓ | ✗ |
+| `comment.original_commit_id` | ~ | ~ | ✓ | ✗ |
+| `comment.pull_request_review_id` | ✓ | ✓ | ✓ | ✗ |
 | `comment.user` | ✓ | ✓ | ✓ | ✗ |
 | `comment.html_url` | ✓ | ✓ | ✓ | ✗ |
 | `comment.created_at` | ✓ | ✓ | ✓ | ✗ |
@@ -2314,6 +2342,15 @@ Triggered when a comment is added, edited, or deleted on a pull request review d
 - `comment.position`: GitHub uses a position index within the diff hunk.  Gitea and
   GitLab use line numbers instead.  Confusio maps the line number to `position` as a
   best-effort approximation; the value may not match GitHub's exact position encoding.
+  Stub: `null` when approximation is not possible.
+- `comment.original_position`: The position in the original diff before any force-pushes.
+  Gitea and GitLab provide line-number equivalents; confusio applies the same approximation
+  as `position`.  Stub: same as `position` when unavailable.
+- `comment.original_commit_id`: The commit SHA at which the comment was originally placed,
+  before any subsequent force-push moved the head.  Gitea and GitLab provide this in some
+  versions; confusio falls back to `commit_id` when absent.
+- `comment.pull_request_review_id`: The enclosing review's ID.  Both Gitea and GitLab
+  include this in their review comment payloads.
 - Most forges do not expose diff-level review comments in webhooks.  Backends not
   listed always emit `✗` for this event.
 
@@ -2323,21 +2360,25 @@ Triggered when a comment is added, edited, or deleted on a pull request review d
 
 Triggered when a comment is created directly on a commit (not a PR or review).
 
-| GitHub field | gitea-family | gitlab | github | gitbucket | All others |
-|---|---|---|---|---|---|
-| `comment.id` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `comment.body` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `comment.commit_id` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `comment.path` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `comment.position` | ~ | ~ | ✓ | ✓ | ✗ |
-| `comment.line` | ~ | ~ | ✓ | ✓ | ✗ |
-| `comment.user` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `comment.html_url` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `comment.created_at` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| GitHub field | gitea-family | gogs | gitlab | github | gitbucket | All others |
+|---|---|---|---|---|---|---|
+| `comment.id` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.body` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.commit_id` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.path` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.position` | ~ | ~ | ~ | ✓ | ✓ | ✗ |
+| `comment.line` | ~ | ~ | ~ | ✓ | ✓ | ✗ |
+| `comment.user` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.html_url` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.created_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.updated_at` | ✓ | ~ | ✓ | ✓ | ✓ | ✗ |
 
 **Notes:**
-- `position` and `line`: Gitea and GitLab use line-number references; confusio maps
+- `position` and `line`: Gitea, Gogs, and GitLab use line-number references; confusio maps
   these to `position` and `line` with a note that the encoding differs from GitHub's.
+  Stub: `null` when not available.
+- `comment.updated_at`: Gogs webhook payloads do not always include an update timestamp;
+  confusio falls back to `created_at` when `updated_at` is absent.
 - Backends not listed (Bitbucket, Azure DevOps, etc.) do not emit commit comment events.
 
 ---
@@ -2374,13 +2415,18 @@ Triggered on release lifecycle events.
 
 **Notes:**
 - `release.draft`: GitLab has no concept of draft releases; the field is emitted as `false`.
-- `release.prerelease`: GitLab does not have a prerelease flag. Confusio infers `prereleased`
-  from a `released_at` field or the presence of a pre-release suffix on the tag name (e.g.
-  `-alpha`, `-rc`).  When the inference is uncertain the field is set to `false`.
+- `release.prerelease`: GitLab has no native prerelease concept.  Confusio infers `prerelease`
+  from the presence of a recognized suffix in the tag name (e.g. `-alpha`, `-beta`, `-rc`,
+  `-pre`).  When no such suffix is present, `prerelease` is set to `false`.
 - `prereleased` action: For gitea-family backends this action fires when a release with
   `prerelease: true` is created.  For GitLab it is emitted only when the tag suffix heuristic
   fires.  GitBucket does not distinguish prerelease releases.
-- `edited` action: Does not include a `changes` object for gitea-family backends.
+- `edited` action: Does not include a `changes` object for gitea-family backends;
+  confusio emits `changes: {}` as a stub.
+- **Gogs**: Gogs has limited and version-dependent release webhook support.  Early Gogs
+  versions do not fire release events at all; later versions fire `published` and `deleted`
+  only.  Gogs is grouped under "All others" (`✗`) in the table above; operators should
+  verify their Gogs version supports release webhooks before relying on this event.
 - Backends not listed (Bitbucket, Azure DevOps, etc.) do not emit release lifecycle events.
 
 ---
@@ -2421,10 +2467,12 @@ commit SHA.
   is the repository full path.  `branches` is back-fetched via the REST API when the pipeline
   provides a `ref`; omitted on failure.
 - **gitea-family**: Gitea does not emit a dedicated commit status webhook.  Confusio synthesizes
-  `status` events from Gitea's workflow/actions events when available.  `id` is the workflow run
-  ID.  `branches` is not available and is emitted as `[]`.
+  `status` events from Gitea's workflow/actions events when available — the `~` symbol reflects
+  that synthesis requires Gitea Actions to be enabled and does not fire for external CI that
+  only sets commit statuses via the API.  `id` is the workflow run ID.  `branches` is not
+  available and is emitted as `[]` (stub).
 - Backends not listed (Bitbucket, Bitbucket DC, Azure DevOps, Pagure, etc.) do not produce
-  events mappable to GitHub `status`.
+  events mappable to GitHub `status`.  All fields are `✗` (stub: type-appropriate null/empty).
 
 ---
 
@@ -2499,6 +2547,9 @@ Triggered on milestone lifecycle events.
   payloads; confusio emits `0` as a stub.
 - `milestone.creator`: GitLab does not include creator information in milestone events;
   confusio emits `null`.
+- `opened` action: In GitHub's milestone contract, `opened` is the *re-open* action (a
+  previously-closed milestone is reopened).  It is distinct from `created` (a new milestone
+  is created).  Backends that emit a single generic "reopened" event are mapped to `opened`.
 - `deleted` action: GitLab does not emit a delete event for milestones.
 - Backends not listed do not emit milestone lifecycle events.
 
@@ -2531,8 +2582,10 @@ Triggered when a repository label is created, edited, or deleted.
   older labels.
 - `label.default`: Gitea-family labels have no `default` concept; confusio emits `false`.
   GitLab does not have a `default` flag; confusio emits `false`.
-- `changes`: GitLab does not include a `changes` object in label events; confusio emits
-  `changes: {}` for `edited` actions.
+- `changes`: Gitea-family **does** include a `changes` object for `edited` label events
+  (unlike the `issues` event family where most backends omit `changes`).  GitLab does not
+  include `changes` in label events; confusio emits `changes: {}` as a stub.  GitBucket
+  includes `changes` on `edited`.
 - `deleted` action: GitLab does not emit a label delete event.  Backends not listed do not
   emit label lifecycle events.
 
