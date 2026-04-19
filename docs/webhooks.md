@@ -224,17 +224,105 @@ Four distinct schemes appear across the 24 backends:
 
 | Scheme | Description | Backends |
 |--------|-------------|----------|
-| **HMAC-SHA256** | Signature = `HMAC-SHA256(secret, body)`, hex-encoded | gitea family, bitbucket family, phabricator, pagure (secondary), gogs |
-| **HMAC-SHA512** | Signature = `HMAC-SHA512(secret, body)`, hex-encoded | pagure (primary) |
-| **Shared token** | Secret echoed verbatim in a header; constant-time string compare | gitlab, gitblit, harness, onedev, radicle, rhodecode, sourceforge, tuleap, gerrit, kallithea |
-| **Asymmetric / other** | ed25519, OpenPGP, or platform-managed signing | sourcehut, launchpad, codecommit, azuredevops |
+| **HMAC-SHA256** | Signature = `HMAC-SHA256(secret, body)`, hex-encoded | gitea, forgejo, codeberg, notabug, gogs, bitbucket, bitbucket_datacenter, phabricator, pagure (SHA-256 header) |
+| **HMAC-SHA512** | Signature = `HMAC-SHA512(secret, body)`, hex-encoded | pagure (SHA-512 header, older instances) |
+| **HMAC-SHA1** | Signature = `HMAC-SHA1(secret, body)`, hex-encoded | gitbucket (GitHub legacy compat) |
+| **Shared token** | Secret echoed verbatim in a header; constant-time string compare | gitlab, gitblit, harness, onedev, rhodecode, sourceforge, tuleap, kallithea |
+| **Bearer / Basic** | Secret in Authorization header (Bearer or Basic form) | onedev (Bearer), azuredevops (Basic), gerrit (Basic or Bearer), radicle (raw) |
+| **Asymmetric / platform** | ed25519, OpenPGP, or platform-managed certificate signing | sourcehut, launchpad, codecommit |
+
+### Quick reference
+
+| Backend | Header | Scheme | Format |
+|---------|--------|--------|--------|
+| `azuredevops` | `Authorization` | Basic auth | `Basic <base64(user:password)>` |
+| `bitbucket` | `X-Hub-Signature` | HMAC-SHA256 | `sha256=<hex>` |
+| `bitbucket_datacenter` | `X-Hub-Signature` | HMAC-SHA256 | `sha256=<hex>` |
+| `codeberg` | `X-Gitea-Signature` | HMAC-SHA256 | `<hex>` |
+| `codecommit` | _(SNS body fields)_ | AWS SNS X.509 | `Signature` in body |
+| `forgejo` | `X-Gitea-Signature` | HMAC-SHA256 | `<hex>` |
+| `gerrit` | `Authorization` | Basic or Bearer | see notes |
+| `gitblit` | `X-Gitblit-Token` | Shared token | verbatim |
+| `gitbucket` | `X-Hub-Signature` | HMAC-SHA1 | `sha1=<hex>` |
+| `gitea` | `X-Gitea-Signature` | HMAC-SHA256 | `<hex>` |
+| `gitlab` | `X-Gitlab-Token` | Shared token | verbatim |
+| `gogs` | `X-Gogs-Signature` | HMAC-SHA256 | `<hex>` |
+| `harness` | `X-Harness-Token` | Shared token | verbatim |
+| `kallithea` | _(body field)_ | Body-embedded token | see notes |
+| `launchpad` | `X-Launchpad-Signature` | OpenPGP detached | armored |
+| `notabug` | `X-Gitea-Signature` | HMAC-SHA256 | `<hex>` |
+| `onedev` | `Authorization` | Bearer token | `Bearer <secret>` |
+| `pagure` | `X-Pagure-Signature-256` / `X-Pagure-Signature` | HMAC-SHA256 / HMAC-SHA512 | `<hex>` |
+| `phabricator` | `X-Phabricator-Webhook-Signature` | HMAC-SHA256 | `<hex>` |
+| `radicle` | `Authorization` | Shared token | verbatim |
+| `rhodecode` | `X-RhodeCode-Signature` | Shared token | verbatim |
+| `sourceforge` | `X-Sourceforge-Webhook-Secret` | Shared token | verbatim |
+| `sourcehut` | `X-Payload-Signature` | ed25519 | base64 |
+| `tuleap` | `X-Tuleap-Webhook-Secret` | Shared token | verbatim |
+
+### Test vectors
+
+Implementers should validate their HMAC routines against these known-good vectors
+before connecting to a live forge.  All values are derived from RFC 4231 (SHA-2
+family) and RFC 2202 (SHA-1).
+
+**HMAC-SHA256** (used by gitea family, bitbucket family, phabricator, pagure):
+
+```
+Key (ASCII):  Jefe
+Data (ASCII): what do ya want for nothing?
+Expected:     5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964a374a3
+```
+
+Verification command:
+```sh
+printf 'what do ya want for nothing?' | openssl dgst -sha256 -hmac 'Jefe'
+# → SHA2-256(stdin)= 5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964a374a3
+```
+
+**HMAC-SHA512** (used by pagure primary header on older instances):
+
+```
+Key (ASCII):  Jefe
+Data (ASCII): what do ya want for nothing?
+Expected:     164b7a7bfcf819e2e395fbe73b56e0a387bd64222e831fd610270cd7ea2505549758bf75c05a994a6d034f65f8f0e6fdcaeab1a34d4a6b4b636e070a38bce737
+```
+
+Verification command:
+```sh
+printf 'what do ya want for nothing?' | openssl dgst -sha512 -hmac 'Jefe'
+# → SHA2-512(stdin)= 164b7a7bfcf819e2e395fbe73b56e0a387bd64222e831fd610270cd7ea2505549758bf75c05a994a6d034f65f8f0e6fdcaeab1a34d4a6b4b636e070a38bce737
+```
+
+**HMAC-SHA1** (used by gitbucket):
+
+```
+Key (ASCII):  Jefe
+Data (ASCII): what do ya want for nothing?
+Expected:     effcdf6ae5eb2fa2d27416d5f184df9c259a7c79
+```
+
+Verification command:
+```sh
+printf 'what do ya want for nothing?' | openssl dgst -sha1 -hmac 'Jefe'
+# → SHA1(stdin)= effcdf6ae5eb2fa2d27416d5f184df9c259a7c79
+```
+
+**Header prefix formats** — the following backends prepend a scheme prefix to their
+hex digest.  Implementers must include the prefix in the comparison string:
+
+| Backend | Full header value example |
+|---------|--------------------------|
+| `bitbucket`, `bitbucket_datacenter` | `sha256=5bdcc146...` |
+| `gitbucket` | `sha1=effcdf6a...` |
+| All gitea family, `gogs`, `phabricator`, `pagure` | `5bdcc146...` (no prefix) |
 
 ---
 
-### Gitea family (gitea, forgejo, codeberg, gogs, notabug)
+### Gitea family (gitea, forgejo, codeberg, notabug) and gogs
 
-All five backends use HMAC-SHA256 over the raw request body.  The header name varies
-slightly by forge but the algorithm is identical.
+All five backends use HMAC-SHA256 over the raw request body.  The header name differs
+between the Gitea-derived backends and Gogs, but the algorithm is identical.
 
 | Backend | Signature header | Algorithm |
 |---------|-----------------|-----------|
@@ -244,9 +332,9 @@ slightly by forge but the algorithm is identical.
 | `notabug` | `X-Gitea-Signature` | HMAC-SHA256, lowercase hex |
 | `gogs` | `X-Gogs-Signature` | HMAC-SHA256, lowercase hex |
 
-Gitea and its family also send `X-Hub-Signature` (`sha1=<hex>`) for GitHub-client
-compatibility.  Confusio verifies `X-Gitea-Signature` (or `X-Gogs-Signature` for
-gogs) and ignores `X-Hub-Signature`.
+Gitea-derived backends also send `X-Hub-Signature` (`sha1=<hex>`) for GitHub-client
+compatibility; gogs sends `X-Hub-Signature` as well.  Confusio verifies only
+`X-Gitea-Signature` (or `X-Gogs-Signature` for gogs) and ignores `X-Hub-Signature`.
 
 **Verification algorithm:**
 
@@ -352,35 +440,41 @@ Identical verification algorithm to Bitbucket Cloud.
 
 ### Pagure
 
-Pagure sends two signature headers providing SHA-512 (primary) and SHA-256 (secondary)
-coverage.  Confusio verifies the SHA-256 header; the SHA-512 header is verified as an
-additional check when present.
+Pagure sends two signature headers.  `X-Pagure-Signature` uses HMAC-SHA512 and is the
+original scheme; `X-Pagure-Signature-256` uses HMAC-SHA256 and was added in later
+versions.  Both are lowercase hex with no prefix.
 
-| Header | Algorithm | Format |
-|--------|-----------|--------|
-| `X-Pagure-Signature-256` | HMAC-SHA256 | lowercase hex |
-| `X-Pagure-Signature` | HMAC-SHA512 | lowercase hex |
+| Header | Algorithm | Format | Availability |
+|--------|-----------|--------|--------------|
+| `X-Pagure-Signature` | HMAC-SHA512 | lowercase hex | all versions |
+| `X-Pagure-Signature-256` | HMAC-SHA256 | lowercase hex | Pagure ≥ 5.13 |
 
-**Primary verification (required):**
+**Verification algorithm:**
 
-```
-expected_256 = HMAC-SHA256(secret, body) as lowercase hex
-received_256 = value of X-Pagure-Signature-256
-
-accept if constant_time_equal(expected_256, received_256)
-```
-
-**Secondary verification (when X-Pagure-Signature is present):**
+Confusio prefers `X-Pagure-Signature-256` when present (HMAC-SHA256 is preferred over
+SHA-512 for consistency with other backends).  When only the SHA-512 header is present
+(older instances), confusio falls back to verifying `X-Pagure-Signature`.
 
 ```
-expected_512 = HMAC-SHA512(secret, body) as lowercase hex
-received_512 = value of X-Pagure-Signature
+if X-Pagure-Signature-256 is present:
+  expected = HMAC-SHA256(secret, body) as lowercase hex
+  received = value of X-Pagure-Signature-256
+  accept if constant_time_equal(expected, received)
 
-reject if NOT constant_time_equal(expected_512, received_512)
+  -- also verify SHA-512 if both headers are present:
+  if X-Pagure-Signature is also present:
+    expected_512 = HMAC-SHA512(secret, body) as lowercase hex
+    received_512 = value of X-Pagure-Signature
+    reject if NOT constant_time_equal(expected_512, received_512)
+
+else if X-Pagure-Signature is present:
+  expected = HMAC-SHA512(secret, body) as lowercase hex
+  received = value of X-Pagure-Signature
+  accept if constant_time_equal(expected, received)
+
+else:
+  reject (401)
 ```
-
-Older Pagure instances may only send `X-Pagure-Signature`.  If `X-Pagure-Signature-256`
-is absent, confusio falls back to verifying `X-Pagure-Signature` as the primary.
 
 **Configuration:** Set in Pagure webhook settings under "Pagure hook" → "Payload secret".
 
@@ -433,12 +527,6 @@ Note: GitBucket uses the legacy SHA-1 variant.  There is no SHA-256 variant.
 
 ---
 
-### GitLab (already covered above)
-
-See [GitLab](#gitlab).
-
----
-
 ### Harness
 
 Harness sends the shared token verbatim in `X-Harness-Token`.
@@ -477,31 +565,42 @@ accept if constant_time_equal(secret, received)
 
 ### Radicle
 
-Radicle uses an `Authorization` header with the shared secret directly (no Bearer
-prefix in current Radicle versions; confirm against the configured Radicle node's
-webhook documentation).
+Radicle sends the shared secret in the `Authorization` header.  Current Radicle node
+versions do not use a `Bearer` or `Basic` prefix — the secret value is sent as-is.
 
 ```
 secret   = configured shared secret
-received = value of Authorization header
+received = value of Authorization header (verbatim, no prefix stripping)
 
 accept if constant_time_equal(secret, received)
 ```
 
-**Note:** Radicle's webhook support is experimental as of this writing.  The exact
-header format may change; verify against the Radicle node version in use.
+**Note:** Radicle's webhook support is experimental as of Radicle 1.x.  If the header
+format changes in a future Radicle release, the confusio receiver will need updating.
+Verify against the Radicle node version in use.
 
 ---
 
 ### RhodeCode
 
-RhodeCode sends the shared secret in `X-RhodeCode-Signature`.
+RhodeCode sends the shared secret in `X-RhodeCode-Signature` as a plain token (no
+HMAC).  Early RhodeCode Enterprise versions may use HMAC-SHA1 in this header instead;
+verify against the deployed version.
 
 ```
 secret   = configured shared secret
 received = value of X-RhodeCode-Signature
 
 accept if constant_time_equal(secret, received)
+```
+
+**If the deployed version uses HMAC-SHA1** (check RhodeCode release notes):
+
+```
+expected = "sha1=" ++ HMAC-SHA1(secret, body) as lowercase hex
+received = value of X-RhodeCode-Signature
+
+accept if constant_time_equal(expected, received)
 ```
 
 **Configuration:** Set in RhodeCode webhook settings as "Authentication token".
@@ -579,21 +678,34 @@ with the token value in the webhook receiver configuration.
 
 ### Kallithea
 
-Kallithea embeds the shared secret in the JSON request body rather than a header.
-The field is `pusher_info.secret` (subject to Kallithea version; verify against the
-deployed instance).
+Kallithea does not use signature headers.  Authentication depends on the Kallithea
+version and the webhook plugin in use.
+
+**Option A — Body-embedded token** (Kallithea's built-in webhook receiver):
+Kallithea may embed an authentication token in the JSON body.  The exact field path
+varies by Kallithea version.  Confusio extracts the token from the body, compares it
+against the configured secret, then proceeds.  This requires decoding the body before
+verification — an exception to the "verify before parse" principle.  Confusio buffers
+the raw body, parses it only to extract the token, verifies, then re-uses the buffered
+bytes for event processing.
 
 ```
 secret   = configured shared secret
 body     = decoded JSON payload
-received = body["pusher_info"]["secret"]  (string)
+received = body token value (field path TBD per Kallithea version)
 
 accept if constant_time_equal(secret, received)
 ```
 
-**Note:** Body-embedded secrets mean the body must be decoded before verification,
-which breaks the "verify before parse" principle.  Confusio must treat Kallithea as
-a special case: parse just enough to extract the secret field, verify, then proceed.
+**Option B — No authentication** (Kallithea's default):
+Kallithea's default webhook plugin sends no authentication.  If confusio is configured
+with no secret for this endpoint, all inbound requests are accepted.  Operators should
+restrict access to the `/webhooks/kallithea` endpoint via network policy.
+
+**Note:** Kallithea's webhook authentication support is poorly documented and varies
+significantly by version.  Operators should verify the exact scheme against their
+deployed Kallithea version before relying on authentication.  If no reliable
+authentication is available, network-level access controls are strongly recommended.
 
 ---
 
