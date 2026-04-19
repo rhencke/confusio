@@ -21,14 +21,16 @@
 -- Globals exported:
 --   make_webhook_receiver   — builder factory; called once at startup
 
--- KNOWN_BACKENDS maps path segment to true for all 24 supported backends.
+-- KNOWN_BACKENDS maps path segment to true for all recognised inbound sources.
 -- Requests with an unrecognised segment return 404.
+-- Includes the 24 forge backends plus "confusio" for cross-instance forwarding.
 local KNOWN_BACKENDS = {
   azuredevops = true,
   bitbucket = true,
   bitbucket_datacenter = true,
   codeberg = true,
   codecommit = true,
+  confusio = true,
   forgejo = true,
   gerrit = true,
   gitblit = true,
@@ -49,6 +51,11 @@ local KNOWN_BACKENDS = {
   sourcehut = true,
   tuleap = true,
 }
+
+-- REPLAY_WINDOW_SECS is the maximum age (and future skew) allowed for a
+-- confusio-normalized inbound delivery timestamp.  Requests with a timestamp
+-- outside this window are rejected to prevent replay attacks.
+local REPLAY_WINDOW_SECS = 300
 
 -- to_hex(bytes) converts raw binary bytes to a lowercase hex string.
 local function to_hex(bytes)
@@ -83,11 +90,13 @@ local function hmac_hex(alg, secret, body)
   return to_hex(GetCryptoHash(alg, body, secret)) -- luacheck: globals GetCryptoHash
 end
 
--- verify_signature(backend, secret, body) authenticates the inbound request
+-- verify_signature(backend, secret, body[, now]) authenticates the inbound request
 -- using the backend-native scheme.  Returns true on success, false on failure.
 -- When secret is nil or "" (trust-the-network mode) all requests are accepted.
 -- Rejection occurs before any JSON parsing; unverified payloads are not decoded.
-local function verify_signature(backend, secret, body)
+-- now: current Unix epoch seconds; defaults to os.time().  Exposed for testing.
+local function verify_signature(backend, secret, body, now)
+  now = now or os.time()
   -- Gitea family: X-Gitea-Signature, HMAC-SHA256, no prefix
   -- notabug uses the same Gitea-derived scheme.
   if
@@ -323,6 +332,33 @@ local function verify_signature(backend, secret, body)
     end
     return ct_equal(secret, tostring(tok))
 
+  -- Confusio-normalized: X-Confusio-Signature-256, HMAC-SHA256 with timestamp.
+  -- Header format: "sha256=<hex>, v=1, ts=<unix>"
+  -- HMAC basestring: "v1:<ts>:<body>"
+  -- Replay window: REPLAY_WINDOW_SECS (5 minutes).  Timestamps outside the window
+  -- are rejected even if the HMAC is correct, preventing capture-and-replay.
+  elseif backend == "confusio" then
+    if not secret or secret == "" then
+      return true
+    end
+    local sig_hdr = GetHeader("X-Confusio-Signature-256")
+    if not sig_hdr then
+      return false
+    end
+    local hex, ts_str = sig_hdr:match("^sha256=([0-9a-f]+), v=1, ts=(%d+)$")
+    if not hex or not ts_str then
+      return false
+    end
+    local ts = tonumber(ts_str)
+    if not ts then
+      return false
+    end
+    if math.abs(now - ts) > REPLAY_WINDOW_SECS then
+      return false
+    end
+    local basestring = "v1:" .. ts_str .. ":" .. body
+    return ct_equal(hmac_hex("sha256", secret, basestring), hex)
+
   -- CodeCommit (SNS X.509), Sourcehut (ed25519), Launchpad (OpenPGP):
   -- Complex asymmetric and platform-managed schemes not yet implemented.
   -- Trust-the-network when no secret configured; reject otherwise so operators
@@ -364,6 +400,10 @@ local function event_header(backend)
   -- Pagure: X-Pagure-Event
   elseif backend == "pagure" then
     return GetHeader("X-Pagure-Event")
+
+  -- Confusio-normalized: X-Confusio-Event
+  elseif backend == "confusio" then
+    return GetHeader("X-Confusio-Event")
 
   -- Remaining backends embed the event type in the body.
   -- The registered normaliser is responsible for extracting it.

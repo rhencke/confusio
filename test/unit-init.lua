@@ -2572,6 +2572,65 @@ do
       "verify_signature " .. be .. ": secret configured (unimplemented scheme) → 401"
     )
   end
+
+  -- ── Confusio-normalized: X-Confusio-Signature-256, HMAC-SHA256 + timestamp
+  -- Header format: "sha256=<hex>, v=1, ts=<unix>"
+  -- HMAC basestring: "v1:<ts>:<body>"  Replay window: 300 seconds.
+  ok(no_secret("confusio", {}) ~= 401, "verify_signature confusio: no secret → not 401")
+
+  -- Valid: current timestamp, correct stub HMAC hex.
+  -- Using os.time() so the timestamp is within the replay window when the test runs.
+  local confusio_now = os.time()
+  local confusio_valid_hdr = "sha256=" .. STUB_HEX .. ", v=1, ts=" .. tostring(confusio_now)
+  ok(
+    with_secret("confusio", { ["X-Confusio-Signature-256"] = confusio_valid_hdr }) ~= 401,
+    "verify_signature confusio: valid X-Confusio-Signature-256 (current ts) → not 401"
+  )
+
+  -- Stale past timestamp (January 2001): outside replay window.
+  local confusio_stale_past = "sha256=" .. STUB_HEX .. ", v=1, ts=980000000"
+  eq(
+    with_secret("confusio", { ["X-Confusio-Signature-256"] = confusio_stale_past }),
+    401,
+    "verify_signature confusio: stale past timestamp → 401 (replay rejected)"
+  )
+
+  -- Stale future timestamp (year 5138): outside replay window.
+  local confusio_stale_future = "sha256=" .. STUB_HEX .. ", v=1, ts=99999999999"
+  eq(
+    with_secret("confusio", { ["X-Confusio-Signature-256"] = confusio_stale_future }),
+    401,
+    "verify_signature confusio: stale future timestamp → 401 (replay rejected)"
+  )
+
+  -- Bad HMAC (current timestamp but wrong hex): rejected even with fresh ts.
+  local confusio_bad_hmac = "sha256=deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+    .. ", v=1, ts="
+    .. tostring(confusio_now)
+  eq(
+    with_secret("confusio", { ["X-Confusio-Signature-256"] = confusio_bad_hmac }),
+    401,
+    "verify_signature confusio: bad HMAC hex → 401"
+  )
+
+  -- Missing header.
+  eq(with_secret("confusio", {}), 401, "verify_signature confusio: missing header → 401")
+
+  -- Malformed header: missing v=1.
+  local confusio_no_v = "sha256=" .. STUB_HEX .. ", ts=" .. tostring(confusio_now)
+  eq(
+    with_secret("confusio", { ["X-Confusio-Signature-256"] = confusio_no_v }),
+    401,
+    "verify_signature confusio: header missing v=1 → 401"
+  )
+
+  -- Malformed header: missing ts.
+  local confusio_no_ts = "sha256=" .. STUB_HEX .. ", v=1"
+  eq(
+    with_secret("confusio", { ["X-Confusio-Signature-256"] = confusio_no_ts }),
+    401,
+    "verify_signature confusio: header missing ts → 401"
+  )
 end
 
 -- ============================================================
