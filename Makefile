@@ -123,7 +123,7 @@ GEN_GRAPHQL_SCHEMA_SCRIPT   = scripts/gen-graphql-schema.lua
 # (symlinks ok — used by wildcard discovery).
 # To add a family-alias backend: add to BACKENDS; no test/mock-<name>.lua needed —
 # .make-families.mk auto-generates mock-<alias>.com from the root family's mock.
-BACKENDS = azuredevops bitbucket bitbucket_datacenter codeberg codecommit forgejo gerrit gitblit gitbucket gitea gitlab gogs \
+BACKENDS = azuredevops bitbucket bitbucket_datacenter codeberg codecommit forgejo gerrit gitblit gitbucket gitea github gitlab gogs \
            harness kallithea launchpad notabug onedev pagure phabricator radicle \
            rhodecode sourceforge sourcehut tuleap
 MOCKS    = $(addprefix mock-,$(addsuffix .com,$(BACKENDS)))

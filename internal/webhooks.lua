@@ -23,7 +23,7 @@
 
 -- KNOWN_BACKENDS maps path segment to true for all recognised inbound sources.
 -- Requests with an unrecognised segment return 404.
--- Includes the 24 forge backends plus "confusio" for cross-instance forwarding.
+-- Includes the 25 forge backends plus "confusio" for cross-instance forwarding.
 local KNOWN_BACKENDS = {
   azuredevops = true,
   bitbucket = true,
@@ -32,6 +32,7 @@ local KNOWN_BACKENDS = {
   codecommit = true,
   confusio = true,
   forgejo = true,
+  github = true,
   gerrit = true,
   gitblit = true,
   gitbucket = true,
