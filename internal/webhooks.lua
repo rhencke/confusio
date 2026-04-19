@@ -458,9 +458,13 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
 
     -- Determine canonical event name.
     -- For header-based backends: read the event-type header.
-    -- For body-based backends:   the normaliser extracts it; pass nil here and
-    --                            let the normaliser-registered handler decide.
+    -- For body-based backends:   the event type is embedded in the payload.
+    --   Azure DevOps uses payload.eventType (e.g. "workitem.created").
+    --   Other body-based backends follow the same pattern.
     local ev = event_header(backend)
+    if ev == nil and type(payload) == "table" and payload.eventType then
+      ev = payload.eventType
+    end
 
     -- No event-type header and no registered body-event handler → 422.
     if ev == nil and not next(a.backend.webhooks) then
