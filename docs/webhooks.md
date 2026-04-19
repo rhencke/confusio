@@ -2340,6 +2340,291 @@ Triggered when a comment is created directly on a commit (not a PR or review).
   these to `position` and `line` with a note that the encoding differs from GitHub's.
 - Backends not listed (Bitbucket, Azure DevOps, etc.) do not emit commit comment events.
 
+---
+
+### `release`
+
+Triggered on release lifecycle events.
+
+#### Release object fields
+
+| GitHub field | gitea-family | gitlab | github | gitbucket | All others |
+|---|---|---|---|---|---|
+| `release.id` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `release.tag_name` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `release.name` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `release.body` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `release.draft` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `release.prerelease` | ✓ | ~ | ✓ | ✓ | ✗ |
+| `release.html_url` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `release.tarball_url` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `release.zipball_url` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `release.author` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `release.created_at` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `release.published_at` | ✓ | ✓ | ✓ | ✓ | ✗ |
+
+#### Supported actions
+
+| Action | gitea-family | gitlab | github | gitbucket |
+|--------|---|---|---|---|
+| `published` | ✓ | ✓ | ✓ | ✓ |
+| `edited` | ✓ | ✓ | ✓ | ✗ |
+| `deleted` | ✓ | ✓ | ✓ | ✓ |
+| `prereleased` | ✓ | ~ | ✓ | ✗ |
+
+**Notes:**
+- `release.draft`: GitLab has no concept of draft releases; the field is emitted as `false`.
+- `release.prerelease`: GitLab does not have a prerelease flag. Confusio infers `prereleased`
+  from a `released_at` field or the presence of a pre-release suffix on the tag name (e.g.
+  `-alpha`, `-rc`).  When the inference is uncertain the field is set to `false`.
+- `prereleased` action: For gitea-family backends this action fires when a release with
+  `prerelease: true` is created.  For GitLab it is emitted only when the tag suffix heuristic
+  fires.  GitBucket does not distinguish prerelease releases.
+- `edited` action: Does not include a `changes` object for gitea-family backends.
+- Backends not listed (Bitbucket, Azure DevOps, etc.) do not emit release lifecycle events.
+
+---
+
+### `status`
+
+Triggered when a commit status is created or updated.  This event is in the CI/CD category:
+it carries the result of an external CI, security scan, or deployment check against a specific
+commit SHA.
+
+| GitHub field | github | gitbucket | gitlab | gitea-family | All others |
+|---|---|---|---|---|---|
+| `id` | ✓ | ✓ | ~ | ~ | ✗ |
+| `sha` | ✓ | ✓ | ✓ | ~ | ✗ |
+| `name` | ✓ | ✓ | ~ | ~ | ✗ |
+| `state` | ✓ | ✓ | ✓ | ~ | ✗ |
+| `description` | ✓ | ✓ | ~ | ~ | ✗ |
+| `target_url` | ✓ | ✓ | ✓ | ~ | ✗ |
+| `context` | ✓ | ✓ | ~ | ~ | ✗ |
+| `created_at` | ✓ | ✓ | ✓ | ~ | ✗ |
+| `updated_at` | ✓ | ✓ | ✓ | ~ | ✗ |
+| `commit` | ✓ | ✓ | ~ | ~ | ✗ |
+| `branches` | ✓ | ✓ | ~ | ✗ | ✗ |
+
+**`state` mapping:**
+
+| Forge state | GitHub `state` |
+|-------------|---------------|
+| `success` / `passed` | `success` |
+| `failure` / `failed` | `failure` |
+| `error` / `cancelled` | `error` |
+| `pending` / `running` | `pending` |
+
+**Notes:**
+- **GitHub / GitBucket**: Native `status` webhook events.  All fields present verbatim.
+- **GitLab**: Pipeline events are mapped to `status`.  `id` is the pipeline ID.  `context` is
+  synthesized as `"ci/<pipeline-name>"` or `"ci/<stage>/<job>"` for job-level events.  `name`
+  is the repository full path.  `branches` is back-fetched via the REST API when the pipeline
+  provides a `ref`; omitted on failure.
+- **gitea-family**: Gitea does not emit a dedicated commit status webhook.  Confusio synthesizes
+  `status` events from Gitea's workflow/actions events when available.  `id` is the workflow run
+  ID.  `branches` is not available and is emitted as `[]`.
+- Backends not listed (Bitbucket, Bitbucket DC, Azure DevOps, Pagure, etc.) do not produce
+  events mappable to GitHub `status`.
+
+---
+
+### `member`
+
+Triggered when a collaborator is added, removed, or has their permission changed on a repository.
+This event is in the org/access-control category.
+
+| GitHub field | github | gitbucket | gitea-family | gitlab | All others |
+|---|---|---|---|---|---|
+| `member.id` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `member.login` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `member.html_url` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `member.type` | ✓ | ✓ | ~ | ~ | ✗ |
+| `changes` | ✓ | ✓ | ✗ | ✗ | ✗ |
+
+#### Supported actions
+
+| Action | github | gitbucket | gitea-family | gitlab |
+|--------|---|---|---|---|
+| `added` | ✓ | ✓ | ✓ | ✓ |
+| `removed` | ✓ | ✓ | ✓ | ✓ |
+| `edited` | ✓ | ✗ | ✗ | ✗ |
+
+**Notes:**
+- `member.type`: gitea-family always emits `"User"` (teams are not surfaced here).  GitLab
+  emits the member's role (`"Reporter"`, `"Developer"`, etc.) in the `type` field; confusio
+  normalizes to `"User"`.
+- `changes`: Only populated for the `edited` action on GitHub and GitBucket.  gitea-family and
+  GitLab do not include permission change details; confusio emits `changes: {}`.
+- GitLab org-level member events (project-group membership) are mapped to `member` with a
+  synthetic `repository` constructed from the project path.
+- Backends not listed do not emit collaborator lifecycle events.
+
+---
+
+### `milestone`
+
+Triggered on milestone lifecycle events.
+
+| GitHub field | gitea-family | gitlab | github | gitbucket | All others |
+|---|---|---|---|---|---|
+| `milestone.id` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `milestone.number` | ✓ | ~ | ✓ | ✓ | ✗ |
+| `milestone.title` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `milestone.description` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `milestone.state` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `milestone.html_url` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `milestone.open_issues` | ✓ | ~ | ✓ | ✓ | ✗ |
+| `milestone.closed_issues` | ✓ | ~ | ✓ | ✓ | ✗ |
+| `milestone.due_on` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `milestone.creator` | ✓ | ~ | ✓ | ✓ | ✗ |
+| `milestone.created_at` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `milestone.updated_at` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `milestone.closed_at` | ✓ | ✓ | ✓ | ✓ | ✗ |
+
+#### Supported actions
+
+| Action | gitea-family | gitlab | github | gitbucket |
+|--------|---|---|---|---|
+| `created` | ✓ | ✓ | ✓ | ✓ |
+| `closed` | ✓ | ✓ | ✓ | ✓ |
+| `opened` | ✓ | ✓ | ✓ | ✓ |
+| `edited` | ✓ | ✓ | ✓ | ✓ |
+| `deleted` | ✓ | ✗ | ✓ | ✓ |
+
+**Notes:**
+- `milestone.number`: GitLab milestones have an `iid` (per-project) and a global `id`.
+  Confusio maps `iid` to `number`.  When the milestone is group-scoped there is no `iid`;
+  confusio synthesizes `number` from the global `id`.
+- `milestone.open_issues` / `closed_issues`: GitLab omits issue counts from milestone webhook
+  payloads; confusio emits `0` as a stub.
+- `milestone.creator`: GitLab does not include creator information in milestone events;
+  confusio emits `null`.
+- `deleted` action: GitLab does not emit a delete event for milestones.
+- Backends not listed do not emit milestone lifecycle events.
+
+---
+
+### `label`
+
+Triggered when a repository label is created, edited, or deleted.
+
+| GitHub field | gitea-family | gitlab | github | gitbucket | All others |
+|---|---|---|---|---|---|
+| `label.id` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `label.name` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `label.color` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `label.description` | ✓ | ~ | ✓ | ✓ | ✗ |
+| `label.default` | ~ | ✗ | ✓ | ✓ | ✗ |
+| `label.url` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `changes` | ✓ | ✗ | ✓ | ✓ | ✗ |
+
+#### Supported actions
+
+| Action | gitea-family | gitlab | github | gitbucket |
+|--------|---|---|---|---|
+| `created` | ✓ | ✓ | ✓ | ✓ |
+| `edited` | ✓ | ✓ | ✓ | ✓ |
+| `deleted` | ✓ | ✗ | ✓ | ✓ |
+
+**Notes:**
+- `label.description`: GitLab includes a label description field but it may be `null` for
+  older labels.
+- `label.default`: Gitea-family labels have no `default` concept; confusio emits `false`.
+  GitLab does not have a `default` flag; confusio emits `false`.
+- `changes`: GitLab does not include a `changes` object in label events; confusio emits
+  `changes: {}` for `edited` actions.
+- `deleted` action: GitLab does not emit a label delete event.  Backends not listed do not
+  emit label lifecycle events.
+
+---
+
+### `ping`
+
+The `ping` event is synthetic.  It is emitted by confusio itself — not translated from an
+inbound forge event — when a new webhook target registration is confirmed.
+
+No per-backend field coverage table applies: all `ping` fields are generated by confusio
+regardless of the originating backend.
+
+| Field | Source | Notes |
+|-------|--------|-------|
+| `zen` | Confusio | Drawn from confusio's own zen endpoint (`GET /zen`). |
+| `hook_id` | Confusio | The confusio-assigned registration ID for the new target. |
+| `hook.type` | Confusio | Always `"Repository"`. |
+| `hook.id` | Confusio | Same as `hook_id`. |
+| `hook.active` | Confusio | Always `true` at registration time. |
+| `hook.events` | Confusio | The event filter list from the registration request, or `["*"]`. |
+| `hook.config.url` | Confusio | The target's delivery URL. |
+| `hook.config.content_type` | Confusio | Always `"json"`. |
+| `hook.created_at` | Confusio | ISO 8601 timestamp of the registration. |
+| `hook.updated_at` | Confusio | Same as `created_at` at registration time. |
+| `repository` | Confusio | Constructed from confusio's view of the repository. |
+| `sender` | Confusio | The confusio service user; `login` is `"confusio[bot]"`. |
+
+**Notes:**
+- Some forges also emit their own ping-equivalent on webhook creation (Gitea, GitHub,
+  GitBucket).  Those inbound pings are consumed by confusio during webhook registration
+  confirmation but are not forwarded to targets — confusio emits exactly one synthetic
+  `ping` per registration regardless.
+
+---
+
+### CI/CD events beyond `status`
+
+The events below are GitHub-native CI/CD events.  In GitHub-emulation shape, confusio can
+only emit them when the originating backend is GitHub itself.  For all other backends, these
+event families are **not available** in the emulation output; pipeline activity is instead
+surfaced via the `status` event (see above).
+
+| GitHub event | Emitted from GitHub backend | Emitted from other backends |
+|---|---|---|
+| `check_run` | ✓ pass-through | ✗ |
+| `check_suite` | ✓ pass-through | ✗ |
+| `workflow_run` | ✓ pass-through | ✗ |
+| `workflow_job` | ✓ pass-through | ✗ |
+| `deployment` | ✓ pass-through | ✗ |
+| `deployment_status` | ✓ pass-through | ✗ |
+
+For cross-forge CI/CD signal in confusio-normalized shape the `status` event provides a
+consistent envelope regardless of backend.  Future work may add a `pipeline_run` event
+family in the normalized model that exposes richer pipeline metadata (stages, jobs, artifacts)
+beyond what `status` can express.
+
+---
+
+### Security events
+
+No security event families are currently in scope for the GitHub-emulation output.
+GitHub's `security_advisory`, `secret_scanning_alert`, `dependabot_alert`, and
+`code_scanning_alert` events are GitHub-specific and have no cross-forge equivalents in
+any backend confusio supports.
+
+When the originating backend is GitHub itself, these events are passed through verbatim as
+GitHub-emulation webhooks (no field translation needed).  For all other backends they are
+silently dropped — there is no mapping target.
+
+Future work may introduce confusio-normalized `security_finding` or `advisory` event
+families for backends that expose vulnerability or secret-scanning data through their own
+APIs (e.g. GitLab's security findings, Gitea's audit log).
+
+---
+
+### Org events
+
+The only org-category event currently in the GitHub-emulation output is `member` (see above).
+The following GitHub event families have no cross-forge mapping today:
+
+| GitHub event | Status | Reason |
+|---|---|---|
+| `organization` | ✗ | Org lifecycle events (creation, deletion, rename) are not emitted by any non-GitHub forge as webhooks. |
+| `membership` | ✗ | Team membership changes are not exposed as webhook events by Gitea, GitLab, or other backends. |
+| `team` | ✗ | Team CRUD events are GitHub-specific. |
+| `team_add` | ✗ | Repository-to-team addition events are GitHub-specific. |
+| `org_block` | ✗ | No cross-forge equivalent. |
+
+When the originating backend is GitHub, these events pass through verbatim.  For all other
+backends they are silently dropped.
+
 ## Delivery Semantics
 
 _(Durable outbox design, retry backoff, replay API, and at-least-once guarantees are
