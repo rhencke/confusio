@@ -1,6 +1,6 @@
 # GitLab webhook normalizer tests.
 #
-# Exercises the four event families registered in backends/gitlab.lua.
+# Exercises the five event families registered in backends/gitlab.lua.
 # Trust-the-network mode (no CONFUSIO_WEBHOOK_SECRETS): signature headers omitted.
 # All paths return 200 when a registered handler succeeds.
 
@@ -338,3 +338,284 @@ X-Gitlab-Event: Milestone Hook
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
+
+# ── Merge Request Hook: opened → 200 ──────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Merge Request Hook
+{
+  "object_kind": "merge_request",
+  "event_type": "merge_request",
+  "user": {
+    "id": 2,
+    "name": "Bob",
+    "username": "bob",
+    "avatar_url": "",
+    "web_url": "http://localhost/bob"
+  },
+  "project": {
+    "id": 10,
+    "name": "hello-world",
+    "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "visibility_level": 20,
+    "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 500,
+    "iid": 7,
+    "title": "Add new feature",
+    "description": "This MR adds a new feature.",
+    "state": "opened",
+    "action": "open",
+    "source_branch": "feature-branch",
+    "target_branch": "main",
+    "last_commit": {"id": "abc123"},
+    "diff_refs": {"base_sha": "def456", "head_sha": "abc123", "start_sha": "def456"},
+    "draft": false,
+    "merge_status": "can_be_merged",
+    "url": "http://localhost/octocat/hello-world/-/merge_requests/7",
+    "merge_commit_sha": null,
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T10:00:00Z",
+    "closed_at": null,
+    "merged_at": null
+  },
+  "labels": [],
+  "assignees": [],
+  "reviewers": [],
+  "changes": {}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Merge Request Hook: update with new commit → synchronize ──────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Merge Request Hook
+{
+  "object_kind": "merge_request",
+  "event_type": "merge_request",
+  "user": {
+    "id": 2, "name": "Bob", "username": "bob",
+    "avatar_url": "", "web_url": "http://localhost/bob"
+  },
+  "project": {
+    "id": 10, "name": "hello-world",
+    "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "visibility_level": 20, "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 500, "iid": 7, "title": "Add new feature",
+    "description": "This MR adds a new feature.",
+    "state": "opened", "action": "update",
+    "source_branch": "feature-branch", "target_branch": "main",
+    "last_commit": {"id": "ghi789"},
+    "diff_refs": {"base_sha": "def456", "head_sha": "ghi789", "start_sha": "def456"},
+    "draft": false, "merge_status": "can_be_merged",
+    "url": "http://localhost/octocat/hello-world/-/merge_requests/7",
+    "merge_commit_sha": null,
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T10:05:00Z",
+    "closed_at": null, "merged_at": null
+  },
+  "labels": [], "assignees": [], "reviewers": [],
+  "changes": {
+    "last_commit": {
+      "previous": {"id": "abc123"},
+      "current": {"id": "ghi789"}
+    }
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Merge Request Hook: merge → closed ────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Merge Request Hook
+{
+  "object_kind": "merge_request",
+  "event_type": "merge_request",
+  "user": {
+    "id": 1, "name": "The Octocat", "username": "octocat",
+    "avatar_url": "", "web_url": "http://localhost/octocat"
+  },
+  "project": {
+    "id": 10, "name": "hello-world",
+    "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "visibility_level": 20, "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 500, "iid": 7, "title": "Add new feature",
+    "description": "This MR adds a new feature.",
+    "state": "merged", "action": "merge",
+    "source_branch": "feature-branch", "target_branch": "main",
+    "last_commit": {"id": "ghi789"},
+    "diff_refs": {"base_sha": "def456", "head_sha": "ghi789", "start_sha": "def456"},
+    "draft": false, "merge_status": "can_be_merged",
+    "url": "http://localhost/octocat/hello-world/-/merge_requests/7",
+    "merge_commit_sha": "jkl012",
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-16T09:00:00Z",
+    "closed_at": "2024-01-16T09:00:00Z",
+    "merged_at": "2024-01-16T09:00:00Z"
+  },
+  "labels": [], "assignees": [], "reviewers": [],
+  "changes": {}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Merge Request Hook: update with label change → labeled ────────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Merge Request Hook
+{
+  "object_kind": "merge_request",
+  "event_type": "merge_request",
+  "user": {
+    "id": 1, "name": "The Octocat", "username": "octocat",
+    "avatar_url": "", "web_url": "http://localhost/octocat"
+  },
+  "project": {
+    "id": 10, "name": "hello-world",
+    "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "visibility_level": 20, "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 500, "iid": 7, "title": "Add new feature", "description": null,
+    "state": "opened", "action": "update",
+    "source_branch": "feature-branch", "target_branch": "main",
+    "last_commit": {"id": "abc123"},
+    "diff_refs": {"base_sha": "def456", "head_sha": "abc123", "start_sha": "def456"},
+    "draft": false, "merge_status": "can_be_merged",
+    "url": "http://localhost/octocat/hello-world/-/merge_requests/7",
+    "merge_commit_sha": null,
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T10:02:00Z",
+    "closed_at": null, "merged_at": null
+  },
+  "labels": [{"id": 5, "title": "bug", "color": "#d73a4a", "description": ""}],
+  "assignees": [], "reviewers": [],
+  "changes": {
+    "labels": {
+      "previous": [],
+      "current": [{"id": 5, "title": "bug", "color": "#d73a4a", "description": ""}]
+    }
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Merge Request Hook: update with reviewer → review_requested ───────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Merge Request Hook
+{
+  "object_kind": "merge_request",
+  "event_type": "merge_request",
+  "user": {
+    "id": 1, "name": "The Octocat", "username": "octocat",
+    "avatar_url": "", "web_url": "http://localhost/octocat"
+  },
+  "project": {
+    "id": 10, "name": "hello-world",
+    "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "visibility_level": 20, "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 500, "iid": 7, "title": "Add new feature", "description": null,
+    "state": "opened", "action": "update",
+    "source_branch": "feature-branch", "target_branch": "main",
+    "last_commit": {"id": "abc123"},
+    "diff_refs": {"base_sha": "def456", "head_sha": "abc123", "start_sha": "def456"},
+    "draft": false, "merge_status": "can_be_merged",
+    "url": "http://localhost/octocat/hello-world/-/merge_requests/7",
+    "merge_commit_sha": null,
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T10:03:00Z",
+    "closed_at": null, "merged_at": null
+  },
+  "labels": [], "assignees": [],
+  "reviewers": [{"id": 3, "name": "Carol", "username": "carol", "avatar_url": "", "web_url": "http://localhost/carol"}],
+  "changes": {
+    "reviewers": {
+      "previous": [],
+      "current": [{"id": 3, "name": "Carol", "username": "carol", "avatar_url": "", "web_url": "http://localhost/carol"}]
+    }
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Merge Request Hook: unknown action → 200 + X-Confusio-Raw-Action ─────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Merge Request Hook
+{
+  "object_kind": "merge_request",
+  "event_type": "merge_request",
+  "user": {
+    "id": 1, "name": "The Octocat", "username": "octocat",
+    "avatar_url": "", "web_url": "http://localhost/octocat"
+  },
+  "project": {
+    "id": 10, "name": "hello-world",
+    "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "visibility_level": 20, "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 500, "iid": 7, "title": "Add new feature", "description": null,
+    "state": "opened", "action": "approved",
+    "source_branch": "feature-branch", "target_branch": "main",
+    "last_commit": {"id": "abc123"},
+    "diff_refs": {"base_sha": "def456", "head_sha": "abc123", "start_sha": "def456"},
+    "draft": false, "merge_status": "can_be_merged",
+    "url": "http://localhost/octocat/hello-world/-/merge_requests/7",
+    "merge_commit_sha": null,
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T10:04:00Z",
+    "closed_at": null, "merged_at": null
+  },
+  "labels": [], "assignees": [], "reviewers": [],
+  "changes": {}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+header "X-Confusio-Raw-Action" == "approved"

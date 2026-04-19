@@ -1013,14 +1013,64 @@ end)
 --   msg.comment — present only for comment events
 --
 -- Relevant X-Pagure-Event values:
---   issue.new            → issues / opened
---   issue.edit           → issues / edited
---   issue.status.change  → issues / closed | reopened  (derived from issue.status)
---   issue.comment.added  → issue_comment / created
+--   issue.new              → issues / opened
+--   issue.edit             → issues / edited
+--   issue.status.change    → issues / closed | reopened  (derived from issue.status)
+--   issue.comment.added    → issue_comment / created
+--   pull-request.new       → pull_request / opened
+--   pull-request.updated   → pull_request / synchronize
+--   pull-request.closed    → pull_request / closed  (status: Merged or Closed)
 
 -- Helper: build a GitHub-shaped user from a Pagure agent string (bare username).
 local function pagure_agent_user(agent)
   return translate_pagure_user({ name = agent or "" })
+end
+
+-- Translate a Pagure pull request to GitHub format.
+local function translate_pagure_pull(pr)
+  if not pr then
+    return {}
+  end
+  local status = pr.status or "Open"
+  local is_merged = status == "Merged"
+  local gh_state = status == "Open" and "open" or "closed"
+  local repo_from = pr.repo_from or {}
+  return {
+    id = pr.id or 0,
+    node_id = "",
+    number = pr.id or 0,
+    state = gh_state,
+    locked = false,
+    title = pr.title or "",
+    body = pr.initial_comment or "",
+    user = translate_pagure_user(pr.user),
+    head = {
+      label = (repo_from.fullname or "") .. ":" .. (pr.branch_from or ""),
+      ref = pr.branch_from or "",
+      sha = pr.commit_stop or "",
+    },
+    base = {
+      label = "" .. ":" .. (pr.branch or ""),
+      ref = pr.branch or "",
+      sha = "",
+    },
+    draft = false,
+    created_at = tostring(pr.date_created or ""),
+    updated_at = tostring(pr.last_updated or ""),
+    closed_at = (not is_merged and gh_state == "closed") and tostring(pr.last_updated or "") or nil,
+    merged_at = is_merged and tostring(pr.last_updated or "") or nil,
+    merge_commit_sha = nil,
+    merged_by = nil,
+    html_url = config.base_url .. "/" .. (pr.full_url or ""),
+    url = "",
+    mergeable = status == "Open" or nil,
+    comments = 0,
+    review_comments = 0,
+    commits = 0,
+    additions = 0,
+    deletions = 0,
+    changed_files = 0,
+  }
 end
 
 b:webhook("issue.new", function(payload)
@@ -1091,6 +1141,63 @@ b:webhook("issue.comment.added", function(payload)
       sender = pagure_agent_user(msg.agent),
     },
     timestamp = tostring((msg.comment or {}).date_created or ""),
+  })
+end)
+
+b:webhook("pull-request.new", function(payload)
+  local msg = payload.msg or {}
+  local pr = msg.pullrequest or {}
+  return make_internal_event({
+    event = "pull_request",
+    action = "opened",
+    provider = "pagure",
+    raw = payload,
+    data = {
+      action = "opened",
+      number = pr.id,
+      pull_request = translate_pagure_pull(pr),
+      repository = translate_pagure_repo(msg.project),
+      sender = pagure_agent_user(msg.agent),
+    },
+    timestamp = tostring(pr.date_created or ""),
+  })
+end)
+
+b:webhook("pull-request.updated", function(payload)
+  local msg = payload.msg or {}
+  local pr = msg.pullrequest or {}
+  return make_internal_event({
+    event = "pull_request",
+    action = "synchronize",
+    provider = "pagure",
+    raw = payload,
+    data = {
+      action = "synchronize",
+      number = pr.id,
+      pull_request = translate_pagure_pull(pr),
+      repository = translate_pagure_repo(msg.project),
+      sender = pagure_agent_user(msg.agent),
+    },
+    timestamp = tostring(pr.last_updated or ""),
+  })
+end)
+
+b:webhook("pull-request.closed", function(payload)
+  local msg = payload.msg or {}
+  local pr = msg.pullrequest or {}
+  return make_internal_event({
+    event = "pull_request",
+    action = "closed",
+    provider = "pagure",
+    raw = payload,
+    data = {
+      action = "closed",
+      number = pr.id,
+      pull_request = translate_pagure_pull(pr),
+      repository = translate_pagure_repo(msg.project),
+      sender = pagure_agent_user(msg.agent),
+    },
+    timestamp = tostring(pr.last_updated or ""),
   })
 end)
 

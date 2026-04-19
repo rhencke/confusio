@@ -167,3 +167,94 @@ Content-Type: application/json
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
+
+# ── git.pullrequest.created → pull_request / opened ──────────────────────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+{
+  "subscriptionId": "sub-1",
+  "notificationId": 6,
+  "id": "evt-6",
+  "eventType": "git.pullrequest.created",
+  "resource": {
+    "pullRequestId": 42,
+    "title": "Add feature X",
+    "description": "This PR adds feature X.",
+    "status": "active",
+    "isDraft": false,
+    "sourceRefName": "refs/heads/feature-x",
+    "targetRefName": "refs/heads/main",
+    "createdBy": {"displayName": "Alice", "uniqueName": "alice"},
+    "creationDate": "2024-01-15T12:00:00Z",
+    "lastMergeSourceCommit": {"commitId": "abc123"},
+    "lastMergeTargetCommit": {"commitId": "def456"},
+    "repository": {}
+  },
+  "createdDate": "2024-01-15T12:00:00Z"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── git.pullrequest.updated (completed) → pull_request / closed ───────────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+{
+  "subscriptionId": "sub-1",
+  "notificationId": 7,
+  "id": "evt-7",
+  "eventType": "git.pullrequest.updated",
+  "resource": {
+    "pullRequestId": 42,
+    "title": "Add feature X",
+    "description": "This PR adds feature X.",
+    "status": "completed",
+    "isDraft": false,
+    "sourceRefName": "refs/heads/feature-x",
+    "targetRefName": "refs/heads/main",
+    "createdBy": {"displayName": "Alice", "uniqueName": "alice"},
+    "creationDate": "2024-01-15T12:00:00Z",
+    "closedDate": "2024-01-15T13:00:00Z",
+    "lastMergeSourceCommit": {"commitId": "abc123"},
+    "lastMergeTargetCommit": {"commitId": "def456"},
+    "repository": {}
+  },
+  "createdDate": "2024-01-15T13:00:00Z"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── git.pullrequest.updated (push/synchronize) → pull_request / synchronize ───
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+{
+  "subscriptionId": "sub-1",
+  "notificationId": 8,
+  "id": "evt-8",
+  "eventType": "git.pullrequest.updated",
+  "resource": {
+    "pullRequestId": 42,
+    "title": "Add feature X",
+    "description": "This PR adds feature X.",
+    "status": "active",
+    "isDraft": false,
+    "sourceRefName": "refs/heads/feature-x",
+    "targetRefName": "refs/heads/main",
+    "createdBy": {"displayName": "Alice", "uniqueName": "alice"},
+    "creationDate": "2024-01-15T12:00:00Z",
+    "lastMergeSourceCommit": {"commitId": "bbb999"},
+    "lastMergeTargetCommit": {"commitId": "def456"},
+    "repository": {}
+  },
+  "createdDate": "2024-01-15T12:30:00Z"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"

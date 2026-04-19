@@ -6050,6 +6050,113 @@ local function translate_gl_webhook_project(p)
   }
 end
 
+-- Build a normalized pull_request table from a Merge Request Hook payload.
+-- object_attributes carries the MR data; labels, assignees, and reviewers are
+-- top-level arrays in the payload (current state, not diffs).
+local function webhook_mr_from_gl(payload)
+  local oa = payload.object_attributes or {}
+  local labels_arr, assignees_arr, reviewers_arr = {}, {}, {}
+  for _, l in ipairs(payload.labels or {}) do
+    labels_arr[#labels_arr + 1] = translate_gl_label(l)
+  end
+  for _, u in ipairs(payload.assignees or {}) do
+    assignees_arr[#assignees_arr + 1] = translate_gl_user(u)
+  end
+  for _, u in ipairs(payload.reviewers or {}) do
+    reviewers_arr[#reviewers_arr + 1] = translate_gl_user(u)
+  end
+  local diff_refs = oa.diff_refs or {}
+  local state = oa.state or "opened"
+  if state == "opened" then
+    state = "open"
+  elseif state == "merged" then
+    state = "closed"
+  end
+  return {
+    id = oa.id,
+    node_id = "",
+    number = oa.iid,
+    state = state,
+    locked = false,
+    title = oa.title,
+    body = oa.description,
+    user = translate_gl_user(payload.user),
+    head = {
+      label = oa.source_branch or "",
+      ref = oa.source_branch or "",
+      sha = diff_refs.head_sha or (oa.last_commit and oa.last_commit.id) or "",
+      repo = nil, -- source project not included for simplicity (same as REST translator)
+    },
+    base = {
+      label = oa.target_branch or "",
+      ref = oa.target_branch or "",
+      sha = diff_refs.base_sha or "",
+      repo = nil,
+    },
+    draft = oa.draft or oa.work_in_progress or false,
+    created_at = oa.created_at,
+    updated_at = oa.updated_at,
+    closed_at = oa.closed_at,
+    merged_at = oa.merged_at,
+    merge_commit_sha = oa.merge_commit_sha,
+    merged_by = oa.merged_by and translate_gl_user(oa.merged_by) or nil,
+    diff_url = oa.url and (oa.url .. ".diff") or "",
+    patch_url = oa.url and (oa.url .. ".patch") or "",
+    html_url = oa.url or "",
+    url = oa.url or "",
+    mergeable = oa.merge_status == "can_be_merged",
+    labels = labels_arr,
+    assignees = assignees_arr,
+    requested_reviewers = reviewers_arr,
+  }
+end
+
+-- Determine the GitHub pull_request action from a Merge Request Hook payload.
+-- GitLab's "update" covers many sub-events; disambiguate using the changes field.
+local function gl_mr_action(oa, changes)
+  local raw = oa.action or ""
+  if raw == "open" then
+    return "opened", nil
+  elseif raw == "close" then
+    return "closed", nil
+  elseif raw == "merge" then
+    return "closed", nil -- merged is a form of closed
+  elseif raw == "reopen" then
+    return "reopened", nil
+  elseif raw ~= "update" then
+    return "unknown", raw
+  end
+  -- Disambiguate GitLab's "update" action using the changes field (GitLab 10.2+).
+  if changes.last_commit then
+    return "synchronize", nil
+  end
+  local lc = changes.labels or {}
+  local nprev_l = #(lc.previous or {})
+  local ncurr_l = #(lc.current or {})
+  if ncurr_l > nprev_l then
+    return "labeled", nil
+  elseif ncurr_l < nprev_l then
+    return "unlabeled", nil
+  end
+  local ac = changes.assignees or {}
+  local nprev_a = #(ac.previous or {})
+  local ncurr_a = #(ac.current or {})
+  if ncurr_a > nprev_a then
+    return "assigned", nil
+  elseif ncurr_a < nprev_a then
+    return "unassigned", nil
+  end
+  local rc = changes.reviewers or {}
+  local nprev_r = #(rc.previous or {})
+  local ncurr_r = #(rc.current or {})
+  if ncurr_r > nprev_r then
+    return "review_requested", nil
+  elseif ncurr_r < nprev_r then
+    return "review_request_removed", nil
+  end
+  return "edited", nil
+end
+
 -- Build a normalized issue table from an Issues Hook payload.
 -- object_attributes has the issue data; labels and assignees are top-level.
 local function webhook_issue_from_gl(payload)
@@ -6232,6 +6339,33 @@ b:webhook("Milestone Hook", function(payload)
       repository = translate_gl_webhook_project(payload.project),
       sender = translate_gl_user(payload.user),
     },
+  })
+end)
+
+-- pull_request: opened, closed, reopened, synchronize, edited, labeled,
+-- unlabeled, assigned, unassigned, review_requested, review_request_removed.
+-- Registered for X-Gitlab-Event: Merge Request Hook.
+-- GitLab uses "merge request" terminology; confusio maps all events to the
+-- GitHub pull_request event family.
+b:webhook("Merge Request Hook", function(payload)
+  local oa = payload.object_attributes or {}
+  local changes = payload.changes or {}
+  local action, raw_action = gl_mr_action(oa, changes)
+  local data = {
+    action = action,
+    number = oa.iid,
+    pull_request = webhook_mr_from_gl(payload),
+    repository = translate_gl_webhook_project(payload.project),
+    sender = translate_gl_user(payload.user),
+  }
+  return make_internal_event({
+    event = "pull_request",
+    action = action,
+    raw_action = raw_action,
+    provider = config.backend,
+    timestamp = oa.updated_at or "",
+    raw = payload,
+    data = data,
   })
 end)
 

@@ -1933,10 +1933,12 @@ end)
 -- Webhook handlers: Azure DevOps embeds the event type in payload.eventType.
 -- The dispatcher extracts it from the body (no header-based dispatch).
 --
--- Relevant event types for the issues family:
---   workitem.created   → issues / opened
---   workitem.updated   → issues / edited | closed | reopened  (derived from state diff)
---   workitem.commented → issue_comment / created
+-- Relevant event types:
+--   workitem.created          → issues / opened
+--   workitem.updated          → issues / edited | closed | reopened  (derived from state diff)
+--   workitem.commented        → issue_comment / created
+--   git.pullrequest.created   → pull_request / opened
+--   git.pullrequest.updated   → pull_request / closed | synchronize  (derived from status)
 --
 -- Payload shapes:
 --   workitem.created/workitem.updated:
@@ -1975,6 +1977,50 @@ local function ado_workitem_updated_action(resource)
     end
   end
   return "edited"
+end
+
+-- Translate an ADO pull request resource to GitHub format.
+local function translate_ado_pull(pr)
+  if not pr then
+    return {}
+  end
+  local status = pr.status or "active"
+  local is_merged = status == "completed"
+  local gh_state = status == "active" and "open" or "closed"
+  local src_ref = pr.sourceRefName and pr.sourceRefName:match("refs/heads/(.+)")
+    or (pr.sourceRefName or "")
+  local tgt_ref = pr.targetRefName and pr.targetRefName:match("refs/heads/(.+)")
+    or (pr.targetRefName or "")
+  local src_sha = (pr.lastMergeSourceCommit or {}).commitId or ""
+  local tgt_sha = (pr.lastMergeTargetCommit or {}).commitId or ""
+  return {
+    id = pr.pullRequestId or 0,
+    node_id = "",
+    number = pr.pullRequestId or 0,
+    state = gh_state,
+    locked = false,
+    title = pr.title or "",
+    body = pr.description or "",
+    user = ado_user(pr.createdBy),
+    head = { label = src_ref, ref = src_ref, sha = src_sha },
+    base = { label = tgt_ref, ref = tgt_ref, sha = tgt_sha },
+    draft = pr.isDraft or false,
+    created_at = pr.creationDate or "",
+    updated_at = pr.closedDate or pr.creationDate or "",
+    closed_at = (not is_merged and gh_state == "closed") and pr.closedDate or nil,
+    merged_at = is_merged and pr.closedDate or nil,
+    merge_commit_sha = nil,
+    merged_by = nil,
+    html_url = "",
+    url = "",
+    mergeable = status == "active" or nil,
+    comments = 0,
+    review_comments = 0,
+    commits = 0,
+    additions = 0,
+    deletions = 0,
+    changed_files = 0,
+  }
 end
 
 b:webhook("workitem.created", function(payload)
@@ -2036,6 +2082,49 @@ b:webhook("workitem.commented", function(payload)
       sender = ado_user(revised_by),
     },
     timestamp = resource.revisedDate or "",
+  })
+end)
+
+b:webhook("git.pullrequest.created", function(payload)
+  local resource = payload.resource or {}
+  return make_internal_event({
+    event = "pull_request",
+    action = "opened",
+    provider = "azuredevops",
+    raw = payload,
+    data = {
+      action = "opened",
+      number = resource.pullRequestId,
+      pull_request = translate_ado_pull(resource),
+      repository = translate_ado_repo(resource.repository),
+      sender = ado_user(resource.createdBy),
+    },
+    timestamp = payload.createdDate or "",
+  })
+end)
+
+b:webhook("git.pullrequest.updated", function(payload)
+  local resource = payload.resource or {}
+  local status = resource.status or "active"
+  local action
+  if status == "completed" or status == "abandoned" then
+    action = "closed"
+  else
+    action = "synchronize"
+  end
+  return make_internal_event({
+    event = "pull_request",
+    action = action,
+    provider = "azuredevops",
+    raw = payload,
+    data = {
+      action = action,
+      number = resource.pullRequestId,
+      pull_request = translate_ado_pull(resource),
+      repository = translate_ado_repo(resource.repository),
+      sender = ado_user(resource.createdBy),
+    },
+    timestamp = payload.createdDate or "",
   })
 end)
 
