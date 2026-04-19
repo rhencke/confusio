@@ -1499,7 +1499,62 @@ end)
 
 -- Webhook handlers: Bitbucket Data Center has no native issue tracker
 -- (it defers to Jira for issue management), so no issue:created /
--- issue:updated / issue:comment_created events exist.  No b:webhook
--- registrations are needed here.
+-- issue:updated / issue:comment_created events exist.
+--
+-- pull_request events are registered below using BBS-specific event keys.
+-- BBS PR webhook payloads use pullRequest (capital R) for the PR object,
+-- actor for the sender, and toRef.repository for the target repository.
+local function bbs_pr_event(payload, action)
+  local raw_pr = payload.pullRequest or {}
+  local repo = (raw_pr.toRef or {}).repository
+  return make_internal_event({
+    event = "pull_request",
+    action = action,
+    provider = "bitbucket_datacenter",
+    raw = payload,
+    data = {
+      action = action,
+      number = raw_pr.id,
+      pull_request = translate_bbs_pull(raw_pr),
+      repository = translate_bbs_repo(repo),
+      sender = translate_bbs_user(payload.actor or {}),
+    },
+    timestamp = bbs_ts(raw_pr.updatedDate) or "",
+  })
+end
+
+b:webhook("pr:opened", function(payload)
+  return bbs_pr_event(payload, "opened")
+end)
+
+b:webhook("pr:modified", function(payload)
+  -- pr:modified fires on title/description changes and when a DECLINED PR is
+  -- reopened.  Without prior-state tracking, reopen is indistinguishable from
+  -- edit; both map to "edited".
+  return bbs_pr_event(payload, "edited")
+end)
+
+b:webhook("pr:from_ref_updated", function(payload)
+  return bbs_pr_event(payload, "synchronize")
+end)
+
+b:webhook("pr:reviewer:updated", function(payload)
+  local added = payload.addedReviewers or {}
+  local removed = payload.removedReviewers or {}
+  local action = #added > 0 and "review_requested" or "review_request_removed"
+  return bbs_pr_event(payload, action)
+end)
+
+b:webhook("pr:merged", function(payload)
+  return bbs_pr_event(payload, "closed")
+end)
+
+b:webhook("pr:declined", function(payload)
+  return bbs_pr_event(payload, "closed")
+end)
+
+b:webhook("pr:deleted", function(payload)
+  return bbs_pr_event(payload, "closed")
+end)
 
 b:build()

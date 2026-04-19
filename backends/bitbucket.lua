@@ -2518,4 +2518,45 @@ b:webhook("issue:comment_created", function(payload)
   })
 end)
 
+-- pull_request: opened, synchronize, closed.
+-- Registered for X-Event-Key: pullrequest:created, :updated, :fulfilled, :rejected.
+-- Bitbucket Cloud does not expose separate events for edited or reopen; all
+-- non-lifecycle changes (new commits, title edits, and PR reopens from DECLINED)
+-- arrive as pullrequest:updated, which confusio maps to synchronize.
+local function bb_pr_event(payload, action)
+  local raw_pr = payload.pullrequest or {}
+  return make_internal_event({
+    event = "pull_request",
+    action = action,
+    provider = "bitbucket",
+    raw = payload,
+    data = {
+      action = action,
+      number = raw_pr.id,
+      pull_request = translate_bb_pull(raw_pr),
+      repository = translate_bb_repo(payload.repository or {}),
+      sender = translate_bb_user(payload.actor or {}),
+    },
+    timestamp = raw_pr.updated_on or "",
+  })
+end
+
+b:webhook("pullrequest:created", function(payload)
+  return bb_pr_event(payload, "opened")
+end)
+
+b:webhook("pullrequest:updated", function(payload)
+  return bb_pr_event(payload, "synchronize")
+end)
+
+b:webhook("pullrequest:fulfilled", function(payload)
+  -- fulfilled = merged
+  return bb_pr_event(payload, "closed")
+end)
+
+b:webhook("pullrequest:rejected", function(payload)
+  -- rejected = declined
+  return bb_pr_event(payload, "closed")
+end)
+
 b:build()
