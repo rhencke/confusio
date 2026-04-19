@@ -230,6 +230,9 @@ function OnHttpRequest()
     )
 
   -- Webhooks ---------------------------------------------------------------
+  elseif path == rb .. "/hooks/1/pings" then
+    SetStatus(200, "OK")
+    json("{}")
   elseif path == rb .. "/hooks/1" then
     SetStatus(200, "OK")
     json(

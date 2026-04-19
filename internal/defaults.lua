@@ -175,6 +175,40 @@ local function reactions_not_implemented()
   respond_json(501, { message = "Reactions are not supported by this backend." })
 end
 
+-- Default handler for POST /webhooks/{backend} (webhook receive pipeline).
+--
+-- The real receiver is installed as app.webhook_receiver by .init.lua and
+-- intercepted by dispatch.lua before routing.  This stub is registered in
+-- the catalog for documentation purposes only (validate-csv/validate-tests);
+-- it should never be reached in normal operation.
+local function webhook_receive_stub()
+  respond_json(501, { message = "Webhook receiver not installed." })
+end
+
+-- Default handlers for repo webhook (hooks) endpoints.
+--
+-- GET list → empty array (no hooks configured by default).
+-- POST create → 501 (backends must override to support webhook management).
+-- Per-hook operations (GET, PATCH, DELETE, config) → 404 (no hook at that id).
+-- Ping / Test → 204 (acknowledged; backends override to trigger real delivery).
+-- Delivery list → empty array; per-delivery and redeliver → 501 (no storage).
+local function hooks_empty_list()
+  set_preamble()
+  Write("[]")
+end
+
+local function hooks_not_implemented()
+  respond_json(501, { message = "Webhook management is not supported by this backend." })
+end
+
+local function hook_not_found()
+  respond_json(404, { message = "Not Found" })
+end
+
+local function hook_ping()
+  set_preamble(204)
+end
+
 -- Default handlers for GET /zen, GET /octocat, GET /versions, GET /meta.
 -- These endpoints are fully self-contained and do not call any backend.
 local ZEN_QUOTES = {
@@ -264,6 +298,11 @@ defaults = { -- luacheck: globals defaults
   activity_not_implemented = activity_not_implemented,
   activity_list_empty = activity_list_empty,
   reactions_not_implemented = reactions_not_implemented,
+  webhook_receive_stub = webhook_receive_stub,
+  hooks_empty_list = hooks_empty_list,
+  hooks_not_implemented = hooks_not_implemented,
+  hook_not_found = hook_not_found,
+  hook_ping = hook_ping,
   zen_response = zen_response,
   octocat_response = octocat_response,
   versions_response = versions_response,

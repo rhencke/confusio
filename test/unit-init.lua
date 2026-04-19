@@ -34,6 +34,7 @@ reset_request()
 -- Override Redbean HTTP context built-ins before loading .init.lua.
 -- luacheck: push
 -- luacheck: globals SetStatus SetHeader Write GetHeader GetPath GetParam GetMethod GetBody Route
+-- luacheck: globals GetCryptoHash DecodeBase64
 SetStatus = function(code, _reason)
   _last_status = code
 end
@@ -58,6 +59,17 @@ end
 Route = function() end
 GetBody = function()
   return _req_body
+end
+-- Stub GetCryptoHash: returns a fixed 32-byte string so unit tests can exercise
+-- the signature verification logic without requiring real crypto.  Integration
+-- tests that need real HMAC run against the live binary where GetCryptoHash is
+-- implemented by Redbean's C layer.
+GetCryptoHash = function(_alg, _msg, _key)
+  return string.rep("\xaa", 32)
+end
+-- Stub DecodeBase64: identity decode for Basic auth verification tests.
+DecodeBase64 = function(s)
+  return s
 end
 -- luacheck: pop
 
@@ -1622,6 +1634,7 @@ ok(type(app.backend) == "table", "app.backend: is a table")
 ok(type(app.backend.rest) == "table", "app.backend.rest: is a table")
 ok(type(app.backend.graphql) == "table", "app.backend.graphql: is a table")
 ok(type(app.backend.capabilities) == "table", "app.backend.capabilities: is a table")
+ok(type(app.backend.webhooks) == "table", "app.backend.webhooks: is a table")
 ok(type(app.allow_anonymous) == "boolean", "app.allow_anonymous: is a boolean")
 ok(app.allow_anonymous == true, "app.allow_anonymous: default true (no backend loaded)")
 ok(type(app.route_match) == "function", "app.route_match: bound router lookup installed on app")
@@ -1639,6 +1652,7 @@ do
   ok(type(test_app.backend.rest) == "table", "make_app: backend.rest is a table")
   ok(type(test_app.backend.graphql) == "table", "make_app: backend.graphql is a table")
   ok(type(test_app.backend.capabilities) == "table", "make_app: backend.capabilities is a table")
+  ok(type(test_app.backend.webhooks) == "table", "make_app: backend.webhooks is a table")
   ok(test_app.allow_anonymous == true, "make_app: allow_anonymous defaults to true")
   ok(test_app ~= app, "make_app: returns a new independent table each call")
 end
@@ -1650,12 +1664,14 @@ end
 do
   local saved_rest = app.backend.rest
   local saved_capabilities = app.backend.capabilities
+  local saved_webhooks = app.backend.webhooks
   local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
   local saved_anon = app.allow_anonymous
 
   local function restore()
     app.backend.rest = saved_rest
     app.backend.capabilities = saved_capabilities
+    app.backend.webhooks = saved_webhooks
     graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
     app.allow_anonymous = saved_anon
   end
@@ -1666,6 +1682,7 @@ do
   ok(type(b.rest) == "function", "make_backend_builder: has rest method")
   ok(type(b.graphql) == "function", "make_backend_builder: has graphql method")
   ok(type(b.capability) == "function", "make_backend_builder: has capability method")
+  ok(type(b.webhook) == "function", "make_backend_builder: has webhook method")
   ok(
     type(b.set_allow_anonymous) == "function",
     "make_backend_builder: has set_allow_anonymous method"
@@ -1677,27 +1694,33 @@ do
   ok(b2:rest("get_foo", function() end) == b2, "builder:rest: returns self")
   ok(b2:graphql("Query.foo", function() end) == b2, "builder:graphql: returns self")
   ok(b2:capability("repos", {}) == b2, "builder:capability: returns self")
+  ok(b2:webhook("push", function() end) == b2, "builder:webhook: returns self")
   ok(b2:set_allow_anonymous(true) == b2, "builder:set_allow_anonymous: returns self")
 
-  -- build() populates app.backend.rest, graphql_resolvers, and app.backend.capabilities
+  -- build() populates app.backend.rest, graphql_resolvers, app.backend.capabilities,
+  -- and app.backend.webhooks
   app.backend.rest = {}
   app.backend.capabilities = {}
+  app.backend.webhooks = {}
   graphql_resolvers = {} -- luacheck: globals graphql_resolvers
   app.allow_anonymous = true
 
   local get_fn = function() end
   local gql_fn = function() end
   local cap_repos = { get = function() end, list = function() end }
+  local push_fn = function() end
   local b3 = make_backend_builder()
   b3:rest("get_repo", get_fn)
   b3:graphql("Query.viewer", gql_fn)
   b3:capability("repos", cap_repos)
+  b3:webhook("push", push_fn)
   b3:set_allow_anonymous(false)
   b3:build()
 
   eq(app.backend.rest["get_repo"], get_fn, "builder:build: registers REST handler")
   eq(graphql_resolvers["Query.viewer"], gql_fn, "builder:build: registers GraphQL resolver") -- luacheck: globals graphql_resolvers
   eq(app.backend.capabilities["repos"], cap_repos, "builder:build: registers capability module")
+  eq(app.backend.webhooks["push"], push_fn, "builder:build: registers webhook event handler")
   eq(app.allow_anonymous, false, "builder:build: sets allow_anonymous")
 
   -- build() without set_allow_anonymous leaves allow_anonymous unchanged
@@ -1712,15 +1735,18 @@ do
     "builder:build: does not change allow_anonymous when not declared"
   )
 
-  -- build(strip) excludes REST keys matching any pattern but NOT capabilities
+  -- build(strip) excludes REST keys matching any pattern but NOT capabilities or webhooks
   app.backend.rest = {}
   app.backend.capabilities = {}
+  app.backend.webhooks = {}
   local cap_issues = { get = function() end }
+  local push_fn2 = function() end
   local b5 = make_backend_builder()
   b5:rest("get_repo", function() end)
   b5:rest("get_package_info", function() end)
   b5:rest("list_actions_runs", function() end)
   b5:capability("issues", cap_issues)
+  b5:webhook("push", push_fn2)
   b5:build({ "_package", "_actions_" })
   ok(app.backend.rest["get_repo"] ~= nil, "builder:build(strip): keeps non-matching key")
   ok(app.backend.rest["get_package_info"] == nil, "builder:build(strip): strips _package key")
@@ -1729,6 +1755,11 @@ do
     app.backend.capabilities["issues"],
     cap_issues,
     "builder:build(strip): capabilities are not stripped"
+  )
+  eq(
+    app.backend.webhooks["push"],
+    push_fn2,
+    "builder:build(strip): webhook handlers are not stripped"
   )
 
   -- two builders are independent and do not share state
@@ -1983,6 +2014,191 @@ do
   reset_response()
   cap_rest_paged(nil, nil, cap_err(401, "unauthorized"), PAGES, nil)
   eq(_last_status, 401, "cap_rest_paged: upstream 401 → 401")
+end
+
+-- ============================================================
+-- make_webhook_receiver
+-- ============================================================
+
+ok(type(make_webhook_receiver) == "function", "make_webhook_receiver: exported as global function")
+ok(type(app.webhook_receiver) == "function", "app.webhook_receiver: installed on app by .init.lua")
+
+do
+  -- Helper: call app.webhook_receiver() with stubbed HTTP context and return status.
+  local function call_webhook(opts)
+    reset_request(opts)
+    reset_response()
+    app.webhook_receiver()
+    return _last_status
+  end
+
+  -- 404 for unknown backend
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/notabackend",
+      headers = { ["Content-Type"] = "application/json" },
+      body = "{}",
+    }),
+    404,
+    "webhook_receiver: unknown backend → 404"
+  )
+
+  -- 404 for trailing path segment
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/gitea/extra",
+      headers = { ["Content-Type"] = "application/json" },
+      body = "{}",
+    }),
+    404,
+    "webhook_receiver: extra path segment → 404"
+  )
+
+  -- 405 for non-POST method
+  eq(
+    call_webhook({
+      method = "GET",
+      path = "/webhooks/gitea",
+      headers = { ["Content-Type"] = "application/json" },
+      body = "{}",
+    }),
+    405,
+    "webhook_receiver: non-POST → 405"
+  )
+
+  -- 400 for wrong Content-Type
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/gitea",
+      headers = { ["Content-Type"] = "application/x-www-form-urlencoded" },
+      body = "",
+    }),
+    400,
+    "webhook_receiver: non-JSON Content-Type → 400"
+  )
+
+  -- 400 for missing Content-Type
+  eq(
+    call_webhook({ method = "POST", path = "/webhooks/gitea", headers = {}, body = "{}" }),
+    400,
+    "webhook_receiver: missing Content-Type → 400"
+  )
+
+  -- With no secret configured (trust-the-network) and no handlers, 422
+  -- because no event-type header is set for gitea.
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/gitea",
+      headers = { ["Content-Type"] = "application/json" },
+      body = "{}",
+    }),
+    422,
+    "webhook_receiver: no X-Gitea-Event header → 422 missing event"
+  )
+
+  -- 422 when event-type header present but no handler registered
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/gitea",
+      headers = {
+        ["Content-Type"] = "application/json",
+        ["X-Gitea-Event"] = "push",
+      },
+      body = "{}",
+    }),
+    422,
+    "webhook_receiver: known event header but no handler → 422"
+  )
+
+  -- 200 when handler is registered and succeeds
+  local saved_webhooks = app.backend.webhooks
+  app.backend.webhooks = {
+    push = function(_payload)
+      return { event = "push" }, nil
+    end,
+  }
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/gitea",
+      headers = {
+        ["Content-Type"] = "application/json",
+        ["X-Gitea-Event"] = "push",
+      },
+      body = '{"ref":"refs/heads/main"}',
+    }),
+    200,
+    "webhook_receiver: registered handler succeeds → 200"
+  )
+
+  -- 422 when handler returns nil (normalisation failed)
+  app.backend.webhooks = {
+    push = function(_payload)
+      return nil, "bad payload"
+    end,
+  }
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/gitea",
+      headers = {
+        ["Content-Type"] = "application/json",
+        ["X-Gitea-Event"] = "push",
+      },
+      body = '{"ref":"refs/heads/main"}',
+    }),
+    422,
+    "webhook_receiver: handler returns nil → 422"
+  )
+
+  -- 401 when secret is configured and X-Gitea-Signature is absent.
+  -- (GetCryptoHash stub returns aaa…; absent header → verify_signature returns false.)
+  app.backend.webhooks = {}
+  local saved_config = app.config
+  app.config = { backend = "gitea", base_url = "", webhook_secrets = { gitea = "mysecret" } }
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/gitea",
+      headers = { ["Content-Type"] = "application/json" },
+      body = "{}",
+    }),
+    401,
+    "webhook_receiver: secret set but no signature header → 401"
+  )
+  app.config = saved_config
+
+  app.backend.webhooks = saved_webhooks
+
+  -- make_dispatcher routes /webhooks/* to the receiver, bypassing auth.
+  -- Simulate allow_anonymous=false with no Authorization header: a REST path
+  -- gets 401, but a webhook path is handled by webhook_receiver (not blocked).
+  local saved_anon = app.allow_anonymous
+  app.allow_anonymous = false
+  -- REST path with no auth → 401
+  reset_request({ method = "GET", path = "/repos/alice/myrepo", headers = {}, body = nil })
+  reset_response()
+  OnHttpRequest()
+  eq(_last_status, 401, "dispatcher: REST path with no auth and allow_anonymous=false → 401")
+
+  -- Webhook path with no auth header → reaches webhook_receiver (not blocked by auth gate).
+  -- It gets 422 because no event-type header is set, which proves auth was bypassed.
+  reset_request({
+    method = "POST",
+    path = "/webhooks/gitea",
+    headers = { ["Content-Type"] = "application/json" },
+    body = "{}",
+  })
+  reset_response()
+  OnHttpRequest()
+  eq(_last_status, 422, "dispatcher: /webhooks/* bypasses auth gate (allow_anonymous=false)")
+
+  app.allow_anonymous = saved_anon
 end
 
 -- ============================================================

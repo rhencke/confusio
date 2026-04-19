@@ -8,3 +8,25 @@ Content-Type: application/json
 {"branch": "main"}
 
 HTTP 404
+
+# Webhook delivery and ping endpoints — no backend has native handlers for these yet,
+# so the default stubs apply universally.
+
+# GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries → [] (default stub)
+GET http://{{host}}/repos/octocat/hello-world/hooks/1/deliveries
+
+HTTP 200
+[Asserts]
+body == "[]"
+
+# GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries/{delivery_id} → 404 (default stub)
+GET http://{{host}}/repos/octocat/hello-world/hooks/1/deliveries/1
+
+HTTP 404
+
+# POST /repos/{owner}/{repo}/hooks/{hook_id}/pings → 204 (default stub)
+POST http://{{host}}/repos/octocat/hello-world/hooks/1/pings
+Content-Type: application/json
+{}
+
+HTTP 204
