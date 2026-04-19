@@ -2680,8 +2680,471 @@ backends they are silently dropped.
 
 ## Delivery Semantics
 
-_(Durable outbox design, retry backoff, replay API, and at-least-once guarantees are
-specified in a subsequent section of this document.)_
+Every accepted inbound event is written to a durable outbox before any delivery
+attempt begins.  The outbox guarantees at-least-once delivery: if confusio crashes or
+is restarted between ingest and delivery, surviving events are retried on restart.
+
+### Guarantee: at-least-once
+
+Confusio guarantees that each event will be delivered **at least once** to each
+matching target.  It does **not** guarantee exactly-once delivery.  Consumers must
+be idempotent with respect to duplicate deliveries.
+
+Duplicate deliveries arise in two scenarios:
+
+1. **Crash after send, before acknowledgement** — Confusio sent the HTTP request but
+   did not record the 2xx response before the process died.  On restart the delivery
+   is retried from `pending`.
+2. **Explicit replay** — An operator or consumer calls the replay API to re-send a
+   previously delivered event.  Each replay creates a new delivery attempt with a new
+   `X-GitHub-Delivery` / `X-Confusio-Delivery` UUID.
+
+The `X-GitHub-Delivery` and `X-Confusio-Delivery` headers carry the **ingest-time**
+delivery ID generated when the event first arrived.  This ID is stable across retries
+for the same delivery attempt.  Each _replay_ generates a fresh UUID so consumers can
+distinguish original deliveries from explicit re-sends by comparing IDs.
+
+### Durable outbox
+
+The outbox is a filesystem directory tree persisted to disk before any HTTP delivery
+attempt.  On startup confusio scans the outbox for pending and in-flight deliveries and
+enqueues them for retry.
+
+**Directory layout:**
+
+```
+{outbox_dir}/
+  events/
+    {delivery_id}.json          ← event record (immutable after write)
+  targets/
+    {target_id}/
+      {delivery_id}.json        ← per-target delivery state record
+```
+
+Both `{delivery_id}` and `{target_id}` are UUID v4 strings.
+
+**Event record** (`events/{delivery_id}.json`):
+
+```json
+{
+  "delivery":   "<uuid>",
+  "ingested_at": "<iso8601>",
+  "provider":   "<backend>",
+  "event":      "<event-family>",
+  "action":     "<action or null>",
+  "github_payload":   { ... },
+  "confusio_payload": { ... }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `delivery` | Ingest-time UUID v4; matches `X-GitHub-Delivery` / `X-Confusio-Delivery` for the first attempt |
+| `ingested_at` | ISO 8601 UTC timestamp when confusio accepted the inbound request |
+| `provider` | Originating backend (e.g. `"gitea"`) |
+| `event` | Canonical event family name (e.g. `"issues"`) |
+| `action` | Action within the family, or `null` for action-less events |
+| `github_payload` | Pre-translated GitHub-emulation payload object |
+| `confusio_payload` | Pre-translated confusio-normalized payload object |
+
+Both payload variants are serialized at ingest time so that retries and replays
+re-send the original translated payload, not a retranslation of a stale forge payload.
+
+**Per-target delivery state record** (`targets/{target_id}/{delivery_id}.json`):
+
+```json
+{
+  "delivery":     "<uuid>",
+  "target_id":    "<uuid>",
+  "status":       "pending",
+  "attempts":     [],
+  "next_attempt": "<iso8601 or null>"
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `delivery` | Ingest-time delivery UUID |
+| `target_id` | Target UUID |
+| `status` | Current state — see [Delivery lifecycle](#delivery-lifecycle) |
+| `attempts` | Array of attempt records (see below) |
+| `next_attempt` | ISO 8601 UTC timestamp of the scheduled next attempt; `null` when not retrying |
+
+**Attempt record** (one entry per HTTP delivery attempt):
+
+```json
+{
+  "attempt_id":     "<uuid>",
+  "attempted_at":   "<iso8601>",
+  "duration_ms":    142,
+  "response_status": 200,
+  "response_body":  "<first 1024 bytes of response body>",
+  "outcome":        "delivered"
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `attempt_id` | UUID v4 unique to this attempt; used as `X-GitHub-Delivery` / `X-Confusio-Delivery` for retries |
+| `attempted_at` | ISO 8601 UTC timestamp when the HTTP request was sent |
+| `duration_ms` | Round-trip time in milliseconds; `null` on connection failure |
+| `response_status` | HTTP response status code; `null` on connection failure |
+| `response_body` | First 1 024 bytes of the response body (for debugging); `null` on connection failure |
+| `outcome` | `"delivered"`, `"retrying"`, `"failed"`, or `"timeout"` |
+
+### Delivery lifecycle
+
+Each per-target delivery state record transitions through the following states:
+
+```
+pending ──▶ in_flight ──▶ delivered   (2xx response)
+                      ──▶ retrying    (non-2xx or timeout; attempts remain)
+                      ──▶ failed      (max retries exhausted or event expired)
+ignored                               (event filtered out for this target)
+```
+
+| State | Description |
+|-------|-------------|
+| `pending` | Queued; no attempt has been made yet |
+| `in_flight` | HTTP request is in progress |
+| `delivered` | Terminal success — target returned a 2xx response |
+| `retrying` | Delivery failed; a retry is scheduled |
+| `failed` | Terminal failure — max retries exhausted or event older than retention window |
+| `ignored` | Terminal — event type did not match this target's filter; no delivery attempted |
+
+**Terminal states** — `delivered`, `failed`, and `ignored` are final.  A delivery state
+in a terminal state is not retried automatically.  The replay API can initiate a new
+attempt regardless of the current state.
+
+**In-flight on restart** — If confusio restarts while a delivery is `in_flight`, the
+state reverts to `pending` on startup.  The previous in-flight attempt may or may not
+have reached the target; this is the source of the at-least-once (not exactly-once)
+guarantee.
+
+### Success condition
+
+A delivery attempt is considered **successful** if the target returns any HTTP 2xx
+status code (`200`–`299`) within the response timeout.  The response body is captured
+for inspection but its content is not validated.
+
+### Failure conditions and retry triggers
+
+A delivery attempt is marked as **failed** (and a retry scheduled) when any of the
+following occur:
+
+| Condition | Notes |
+|-----------|-------|
+| Connection refused or DNS failure | Network-level error; `duration_ms` is `null` |
+| TLS handshake failure | Treated as a connection error |
+| Response timeout exceeded | Default: 10 seconds per attempt |
+| HTTP 3xx redirect | Confusio does not follow redirects; 3xx is treated as non-2xx |
+| HTTP 4xx or 5xx response | Any non-2xx response triggers a retry |
+
+**Redirect note:** Confusio intentionally does not follow HTTP redirects.  Redirect
+loops and open-redirect attacks on delivery targets are prevented at the cost of
+requiring operators to configure the final canonical URL.
+
+### Retry schedule
+
+Failed delivery attempts are retried with exponential backoff.  Jitter (±10 % of the
+base delay) is added to spread load across targets that share a failure window.
+
+| Attempt # | Base delay after failure | With ±10 % jitter |
+|-----------|--------------------------|-------------------|
+| 1 (initial) | — | — |
+| 2 | 30 s | 27 s – 33 s |
+| 3 | 1 min | 54 s – 66 s |
+| 4 | 5 min | 4.5 min – 5.5 min |
+| 5 | 30 min | 27 min – 33 min |
+| 6 | 2 h | 1 h 48 min – 2 h 12 min |
+| 7 | 8 h | 7 h 12 min – 8 h 48 min |
+| 8 (final) | 24 h | 21 h 36 min – 26 h 24 min |
+
+After the 8th attempt fails, the delivery state transitions to `failed`.  The event
+record is retained in the outbox until the [retention window](#retention-and-pruning)
+expires, and can be replayed manually.
+
+**Maximum total elapsed time** from ingest to final failure: approximately 36 h at
+the upper end of jitter.
+
+**Retry budget override** — future work may allow per-target configuration of the
+maximum retry count and schedule.  Until then, the schedule above applies to all targets.
+
+### Retention and pruning
+
+Outbox records are retained for **72 hours** from `ingested_at`, regardless of delivery
+state.  After 72 hours:
+
+- Event records are eligible for pruning.
+- Per-target delivery state records are pruned together with their event.
+- Events that have not reached a terminal state by the 72-hour mark transition to
+  `failed` and are pruned on the next cleanup pass.
+
+Pruning runs on a background timer during normal operation and on startup.  Pruned
+records are not recoverable — the replay API returns `404` for pruned delivery IDs.
+
+**Retention window rationale:** 72 hours matches GitHub's own webhook delivery
+retention, making it familiar to operators migrating consumers from GitHub.
+
+### Response timeout
+
+Each delivery attempt waits at most **10 seconds** for the target to respond.  If no
+response is received within 10 seconds the attempt is recorded as a `"timeout"` outcome
+and a retry is scheduled.
+
+The 10-second limit applies to the full round trip (connection + TLS + headers +
+body).  It is not separately configurable in the current design.
+
+---
+
+## Replay API
+
+The replay API allows operators and consumers to inspect the delivery history of any
+event in the retention window and to trigger additional delivery attempts.
+
+All replay endpoints require **admin credentials** — the same authentication used for
+the target registration surface.  Unauthenticated requests receive `401 Unauthorized`.
+
+### Base path
+
+```
+/webhooks/deliveries
+```
+
+### List recent deliveries
+
+```
+GET /webhooks/deliveries
+```
+
+Returns deliveries in reverse chronological order (newest first) across all targets.
+Supports cursor-based pagination using the `cursor` and `per_page` query parameters.
+
+**Query parameters:**
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `per_page` | `30` | Items per page; max `100` |
+| `cursor` | _(start)_ | Opaque pagination cursor from a previous response's `next_cursor` |
+| `event` | _(all)_ | Filter by event family name (e.g. `issues`) |
+| `provider` | _(all)_ | Filter by originating backend (e.g. `gitea`) |
+| `status` | _(all)_ | Filter by delivery state: `pending`, `in_flight`, `delivered`, `retrying`, `failed`, `ignored` |
+
+**Response** (`200 OK`):
+
+```json
+{
+  "deliveries": [
+    {
+      "delivery":     "<uuid>",
+      "ingested_at":  "<iso8601>",
+      "provider":     "<backend>",
+      "event":        "<event-family>",
+      "action":       "<action or null>",
+      "target_count": 3,
+      "delivered":    2,
+      "failed":       0,
+      "pending":      1
+    }
+  ],
+  "next_cursor": "<opaque string or null>"
+}
+```
+
+`next_cursor` is `null` when there are no further pages.
+
+### Get a delivery
+
+```
+GET /webhooks/deliveries/{delivery_id}
+```
+
+Returns the full event record plus per-target delivery state for every registered target.
+
+**Path parameters:**
+
+| Parameter | Description |
+|-----------|-------------|
+| `delivery_id` | UUID v4; ingest-time delivery ID |
+
+**Response** (`200 OK`):
+
+```json
+{
+  "delivery":         "<uuid>",
+  "ingested_at":      "<iso8601>",
+  "provider":         "<backend>",
+  "event":            "<event-family>",
+  "action":           "<action or null>",
+  "github_payload":   { ... },
+  "confusio_payload": { ... },
+  "targets": [
+    {
+      "target_id":    "<uuid>",
+      "status":       "delivered",
+      "next_attempt": null,
+      "attempts": [
+        {
+          "attempt_id":      "<uuid>",
+          "attempted_at":    "<iso8601>",
+          "duration_ms":     142,
+          "response_status": 200,
+          "response_body":   "",
+          "outcome":         "delivered"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Error responses:**
+
+| Code | Meaning |
+|------|---------|
+| `404 Not Found` | Delivery ID unknown or pruned |
+| `401 Unauthorized` | Missing or invalid admin credentials |
+
+### List attempts for a target
+
+```
+GET /webhooks/deliveries/{delivery_id}/targets/{target_id}/attempts
+```
+
+Returns the attempt history for a single target.  Useful for inspecting retry progression
+without the full delivery record.
+
+**Response** (`200 OK`):
+
+```json
+{
+  "delivery":  "<uuid>",
+  "target_id": "<uuid>",
+  "status":    "retrying",
+  "attempts": [
+    {
+      "attempt_id":      "<uuid>",
+      "attempted_at":    "<iso8601>",
+      "duration_ms":     null,
+      "response_status": null,
+      "response_body":   null,
+      "outcome":         "timeout"
+    },
+    {
+      "attempt_id":      "<uuid>",
+      "attempted_at":    "<iso8601>",
+      "duration_ms":     5021,
+      "response_status": 503,
+      "response_body":   "Service Unavailable",
+      "outcome":         "retrying"
+    }
+  ]
+}
+```
+
+### Replay a delivery
+
+```
+POST /webhooks/deliveries/{delivery_id}/redeliver
+```
+
+Triggers an immediate additional delivery attempt for all matching targets.  The
+current `status` of each target does not matter — the replay schedules a new attempt
+regardless of whether the delivery previously succeeded, failed, or was ignored.
+
+Each replay attempt receives a **fresh UUID** as its `attempt_id`.  This ID is used as
+the `X-GitHub-Delivery` / `X-Confusio-Delivery` header value for that attempt, allowing
+consumers to distinguish replays from original deliveries.  The ingest-time delivery UUID
+embedded in the event body (`id` field in the confusio-normalized shape) does **not**
+change — it always identifies the original ingest event.
+
+**Request body (optional):**
+
+```json
+{
+  "target_ids": ["<uuid>", "<uuid>"]
+}
+```
+
+If `target_ids` is provided, only the specified targets receive the replay.  If absent
+or empty, all matching targets are re-delivered.
+
+**Response** (`202 Accepted`):
+
+```json
+{
+  "delivery":      "<uuid>",
+  "replayed_to":   ["<uuid>", "<uuid>"],
+  "attempt_ids":   ["<uuid>", "<uuid>"]
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `delivery` | The original ingest-time delivery UUID |
+| `replayed_to` | Target UUIDs that received the replay |
+| `attempt_ids` | Attempt UUIDs generated for this replay, one per target in `replayed_to` order |
+
+**Error responses:**
+
+| Code | Meaning |
+|------|---------|
+| `404 Not Found` | Delivery ID unknown or pruned |
+| `400 Bad Request` | `target_ids` contains an unknown or unregistered target UUID |
+| `401 Unauthorized` | Missing or invalid admin credentials |
+
+**Replay of ignored events:** If a target previously received `ignored` for an event
+(because the event type was outside its filter at ingest time), a replay will attempt
+delivery regardless of the current filter configuration.  Operators can use this to
+recover events that were misconfigured at subscription time.
+
+**Replay of expired events:** If the event record has been pruned from the outbox
+(> 72 hours), the delivery UUID returns `404` and replay is not possible.  The original
+forge payload is not retained after pruning.
+
+### Delivery list for a target
+
+```
+GET /webhooks/targets/{target_id}/deliveries
+```
+
+Returns deliveries in reverse chronological order for a single target.  Supports the
+same query parameters as `GET /webhooks/deliveries` (except `status` refers to the
+per-target state for this target).
+
+**Response** (`200 OK`):
+
+```json
+{
+  "deliveries": [
+    {
+      "delivery":        "<uuid>",
+      "ingested_at":     "<iso8601>",
+      "provider":        "<backend>",
+      "event":           "<event-family>",
+      "action":          "<action or null>",
+      "status":          "delivered",
+      "attempt_count":   1,
+      "last_attempt_at": "<iso8601>"
+    }
+  ],
+  "next_cursor": "<opaque string or null>"
+}
+```
+
+---
+
+### Edge cases
+
+| Scenario | Behaviour |
+|----------|-----------|
+| Target URL unreachable at every attempt | Final attempt exhausted → `failed`; replay available while within retention window |
+| Target registered after an event was ingested | The late-registered target does not receive events ingested before registration |
+| Event pruned during a retry window | In-flight attempt may still proceed; on next scheduled retry the event is found pruned and the state transitions to `failed` |
+| Replay requested for a `delivered` event | Accepted; a new attempt is made regardless of prior success |
+| Two replays issued concurrently for the same target | Both are accepted; each generates a distinct `attempt_id`; the target receives two requests |
+| Outbox directory not writable at ingest | Confusio rejects the inbound event with `500 Internal Server Error`; no partial write occurs |
+| `github_payload` or `confusio_payload` too large to store | Payloads larger than 25 MiB are truncated at 25 MiB with a `"_truncated": true` sentinel field added at the top level |
 
 ## Multi-Target Dispatch and Configuration
 
