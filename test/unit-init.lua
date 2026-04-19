@@ -91,8 +91,35 @@ end
 -- The dofile stub above silently drops the backend file load.
 arg = { "testbackend" } -- luacheck: globals arg
 
+-- Stub os.getenv to return a valid JSON string for CONFUSIO_WEBHOOK_SECRETS so
+-- that the env-var loading block in .init.lua (lines 28-30) is exercised by
+-- luacov.  Restore immediately after load and clear config.webhook_secrets so
+-- subsequent tests that rely on no secret being configured are unaffected.
+local _real_getenv = os.getenv
+os.getenv = function(k) -- luacheck: globals os
+  if k == "CONFUSIO_WEBHOOK_SECRETS" then
+    return '{"gitea":"ws_coverage_test"}'
+  end
+  return _real_getenv(k)
+end
+
 -- Load the module under test.
 _real_dofile(".init.lua")
+
+-- Verify the env-var block populated config.webhook_secrets.
+assert(
+  config.webhook_secrets ~= nil, -- luacheck: globals config
+  "CONFUSIO_WEBHOOK_SECRETS: config.webhook_secrets should be non-nil after load"
+)
+assert(
+  config.webhook_secrets.gitea == "ws_coverage_test",
+  "CONFUSIO_WEBHOOK_SECRETS: gitea secret mismatch: " .. tostring(config.webhook_secrets.gitea)
+)
+
+-- Restore os.getenv and clear the coverage-only secret so later tests see a
+-- clean config.  (config and app.config reference the same table.)
+os.getenv = _real_getenv -- luacheck: globals os
+config.webhook_secrets = nil
 
 -- Restore dofile so later tests that call it work normally.
 dofile = _real_dofile -- luacheck: globals dofile
