@@ -88,3 +88,6 @@ $HURL --retry 10 --retry-interval 200 --connect-timeout 1 --max-time 5 \
   test/webhooks-sig.hurl
 kill $WH_PID 2>/dev/null || true; sleep 0.3
 unset CONFUSIO_WEBHOOK_SECRETS
+
+# Phase 5: Gitea webhook event normalisers (issues, issue_comment, label, milestone)
+run_mock_phase test/gitea-webhooks.hurl $MOCK_ARGS

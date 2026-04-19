@@ -7027,6 +7027,143 @@ b:graphql("Mutation.addLabelsToLabelable", function(_parent, args, ctx)
   }
 end)
 
+-- ─── Inbound webhook event handlers ─────────────────────────────────────────
+--
+-- Normalise Gitea webhook payloads to confusio's internal event model.
+-- Gitea mirrors its REST API field names in webhook payloads.  Timestamps on
+-- issue/PR/comment objects use the bare form ("created", "updated", "closed");
+-- milestone objects use the _at form ("created_at", "updated_at", "closed_at").
+
+-- Extend translate_gitea_milestone to include html_url and creator fields
+-- present in Gitea webhook payloads but absent from REST list responses.
+local function translate_gitea_milestone_webhook(m)
+  if not m then
+    return nil
+  end
+  local ms = translate_gitea_milestone(m) or {}
+  ms.html_url = m.html_url or ""
+  ms.creator = m.creator and translate_user(m.creator) or nil
+  return ms
+end
+
+-- Action maps: Gitea action string → canonical GitHub action string.
+-- Older Gitea versions (pre-1.19) used different action names for some events;
+-- both old and new spellings are included for compatibility.
+local ISSUES_ACTIONS = {
+  opened = "opened",
+  edited = "edited",
+  closed = "closed",
+  reopened = "reopened",
+  labeled = "labeled",
+  label_updated = "labeled", -- older Gitea spelling
+  unlabeled = "unlabeled",
+  label_cleared = "unlabeled", -- older Gitea spelling
+  assigned = "assigned",
+  unassigned = "unassigned",
+}
+local ISSUE_COMMENT_ACTIONS = {
+  created = "created",
+  edited = "edited",
+  deleted = "deleted",
+}
+local LABEL_ACTIONS = {
+  created = "created",
+  edited = "edited",
+  deleted = "deleted",
+}
+local MILESTONE_ACTIONS = {
+  created = "created",
+  closed = "closed",
+  reopened = "opened", -- GitHub calls this "opened" (re-open a closed milestone)
+  opened = "opened", -- pass-through if Gitea ever sends "opened" directly
+  edited = "edited",
+  deleted = "deleted",
+}
+
+b:webhook("issues", function(payload)
+  local raw_action = payload.action or ""
+  local action = ISSUES_ACTIONS[raw_action]
+  local data = {
+    action = action or "unknown",
+    issue = translate_gitea_issue(payload.issue or {}),
+    repository = translate_repo(payload.repository or {}),
+    sender = translate_user(payload.sender or {}),
+  }
+  -- For labeled/unlabeled (including older Gitea spellings), add the specific
+  -- label that changed.
+  if ISSUES_ACTIONS[raw_action] == "labeled" or ISSUES_ACTIONS[raw_action] == "unlabeled" then
+    data.label = translate_gitea_label(payload.label)
+  end
+  return make_internal_event({
+    event = "issues",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitea",
+    raw = payload,
+    data = data,
+    timestamp = (payload.issue or {}).updated or "",
+  })
+end)
+
+b:webhook("issue_comment", function(payload)
+  local raw_action = payload.action or ""
+  local action = ISSUE_COMMENT_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "issue_comment",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitea",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      issue = translate_gitea_issue(payload.issue or {}),
+      comment = translate_gitea_issue_comment(payload.comment or {}),
+      repository = translate_repo(payload.repository or {}),
+      sender = translate_user(payload.sender or {}),
+    },
+    timestamp = (payload.comment or {}).updated or "",
+  })
+end)
+
+b:webhook("label", function(payload)
+  local raw_action = payload.action or ""
+  local action = LABEL_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "label",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitea",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      label = translate_gitea_label(payload.label),
+      changes = payload.changes or {},
+      repository = translate_repo(payload.repository or {}),
+      sender = translate_user(payload.sender or {}),
+    },
+    timestamp = "",
+  })
+end)
+
+b:webhook("milestone", function(payload)
+  local raw_action = payload.action or ""
+  local action = MILESTONE_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "milestone",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitea",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      milestone = translate_gitea_milestone_webhook(payload.milestone),
+      repository = translate_repo(payload.repository or {}),
+      sender = translate_user(payload.sender or {}),
+    },
+    timestamp = (payload.milestone or {}).updated_at or "",
+  })
+end)
+
 b:capability("repos", repos)
 b:capability("users", users)
 b:capability("orgs", orgs)
@@ -7060,6 +7197,7 @@ b:capability("packages", packages_cap)
 b:capability("search", search_cap)
 b:capability("markdown", markdown_cap)
 b:capability("meta", meta_cap)
+
 b:set_allow_anonymous(_allow_anon)
 local _alias_meta = provider_families.gitea.aliases[config.backend]
 b:build(_alias_meta and _alias_meta.strip)

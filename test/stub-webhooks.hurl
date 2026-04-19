@@ -46,11 +46,14 @@ HTTP 400
 [Asserts]
 jsonpath "$.message" == "Invalid JSON body"
 
-# Dispatch: valid request but no handlers registered (trust-the-network, no event header) → 422
+# Dispatch: valid request with an event type that has no registered handler → 422
+# Using X-Gitea-Event: push which is not yet implemented by any backend.
+# This exercises the dispatch stage regardless of which backend is configured.
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
+X-Gitea-Event: push
 {}
 
 HTTP 422
 [Asserts]
-jsonpath "$.message" == "No webhook handlers registered"
+jsonpath "$.message" == "Unrecognised event type: push"
