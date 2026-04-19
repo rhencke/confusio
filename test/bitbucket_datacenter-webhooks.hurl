@@ -324,3 +324,157 @@ X-Event-Key: pr:merged
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
+
+# ── pr:reviewer:approved → pull_request_review / submitted (approved) ────────
+
+POST http://{{host}}/webhooks/bitbucket_datacenter
+Content-Type: application/json
+X-Event-Key: pr:reviewer:approved
+{
+  "actor": {
+    "name": "carol",
+    "id": 3,
+    "slug": "carol",
+    "displayName": "Carol",
+    "emailAddress": "carol@example.com",
+    "links": {"self": [{"href": ""}]}
+  },
+  "pullRequest": {
+    "id": 7,
+    "title": "Add new feature",
+    "description": "This PR adds a new feature.",
+    "state": "OPEN",
+    "author": {
+      "user": {
+        "name": "bob", "id": 2, "slug": "bob",
+        "displayName": "Bob", "emailAddress": "bob@example.com",
+        "links": {"self": [{"href": ""}]}
+      },
+      "role": "AUTHOR", "approved": false, "status": "UNAPPROVED"
+    },
+    "fromRef": {
+      "id": "refs/heads/feature-branch",
+      "displayId": "feature-branch",
+      "latestCommit": "abc123",
+      "repository": {
+        "id": 100, "slug": "hello-world", "name": "hello-world",
+        "public": true,
+        "project": {"id": 10, "key": "OCTOCAT", "name": "Octocat", "type": "NORMAL"},
+        "links": {"self": [{"href": "http://localhost/projects/OCTOCAT/repos/hello-world/browse"}]}
+      }
+    },
+    "toRef": {
+      "id": "refs/heads/main",
+      "displayId": "main",
+      "latestCommit": "def456",
+      "repository": {
+        "id": 100, "slug": "hello-world", "name": "hello-world",
+        "public": true,
+        "project": {"id": 10, "key": "OCTOCAT", "name": "Octocat", "type": "NORMAL"},
+        "links": {"self": [{"href": "http://localhost/projects/OCTOCAT/repos/hello-world/browse"}]}
+      }
+    },
+    "reviewers": [
+      {
+        "user": {
+          "name": "carol", "id": 3, "slug": "carol",
+          "displayName": "Carol", "emailAddress": "carol@example.com",
+          "links": {"self": [{"href": ""}]}
+        },
+        "role": "REVIEWER", "approved": true, "status": "APPROVED"
+      }
+    ],
+    "createdDate": 1705312800000,
+    "updatedDate": 1705320000000,
+    "links": {"self": [{"href": "http://localhost/projects/OCTOCAT/repos/hello-world/pull-requests/7"}]}
+  },
+  "participant": {
+    "user": {
+      "name": "carol", "id": 3, "slug": "carol",
+      "displayName": "Carol", "emailAddress": "carol@example.com",
+      "links": {"self": [{"href": ""}]}
+    },
+    "role": "REVIEWER", "approved": true, "status": "APPROVED"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── pr:reviewer:needs_work → pull_request_review / submitted (changes_requested)
+
+POST http://{{host}}/webhooks/bitbucket_datacenter
+Content-Type: application/json
+X-Event-Key: pr:reviewer:needs_work
+{
+  "actor": {
+    "name": "carol",
+    "id": 3,
+    "slug": "carol",
+    "displayName": "Carol",
+    "emailAddress": "carol@example.com",
+    "links": {"self": [{"href": ""}]}
+  },
+  "pullRequest": {
+    "id": 7,
+    "title": "Add new feature",
+    "description": "This PR adds a new feature.",
+    "state": "OPEN",
+    "author": {
+      "user": {
+        "name": "bob", "id": 2, "slug": "bob",
+        "displayName": "Bob", "emailAddress": "bob@example.com",
+        "links": {"self": [{"href": ""}]}
+      },
+      "role": "AUTHOR", "approved": false, "status": "UNAPPROVED"
+    },
+    "fromRef": {
+      "id": "refs/heads/feature-branch",
+      "displayId": "feature-branch",
+      "latestCommit": "abc123",
+      "repository": {
+        "id": 100, "slug": "hello-world", "name": "hello-world",
+        "public": true,
+        "project": {"id": 10, "key": "OCTOCAT", "name": "Octocat", "type": "NORMAL"},
+        "links": {"self": [{"href": "http://localhost/projects/OCTOCAT/repos/hello-world/browse"}]}
+      }
+    },
+    "toRef": {
+      "id": "refs/heads/main",
+      "displayId": "main",
+      "latestCommit": "def456",
+      "repository": {
+        "id": 100, "slug": "hello-world", "name": "hello-world",
+        "public": true,
+        "project": {"id": 10, "key": "OCTOCAT", "name": "Octocat", "type": "NORMAL"},
+        "links": {"self": [{"href": "http://localhost/projects/OCTOCAT/repos/hello-world/browse"}]}
+      }
+    },
+    "reviewers": [
+      {
+        "user": {
+          "name": "carol", "id": 3, "slug": "carol",
+          "displayName": "Carol", "emailAddress": "carol@example.com",
+          "links": {"self": [{"href": ""}]}
+        },
+        "role": "REVIEWER", "approved": false, "status": "NEEDS_WORK"
+      }
+    ],
+    "createdDate": 1705312800000,
+    "updatedDate": 1705320600000,
+    "links": {"self": [{"href": "http://localhost/projects/OCTOCAT/repos/hello-world/pull-requests/7"}]}
+  },
+  "participant": {
+    "user": {
+      "name": "carol", "id": 3, "slug": "carol",
+      "displayName": "Carol", "emailAddress": "carol@example.com",
+      "links": {"self": [{"href": ""}]}
+    },
+    "role": "REVIEWER", "approved": false, "status": "NEEDS_WORK"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"

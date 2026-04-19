@@ -1523,6 +1523,50 @@ local function bbs_pr_event(payload, action)
   })
 end
 
+-- Build a pull_request_review event from a BBS reviewer approval payload.
+-- DC sends pr:reviewer:approved when a reviewer approves and pr:reviewer:needs_work
+-- when a reviewer requests changes.  The payload includes a "participant" field with
+-- the reviewer's user object and status (APPROVED / NEEDS_WORK).
+-- DC has no separate review ID or review-level URL; we use the reviewer's user ID
+-- as a stable proxy for the review ID and the PR URL as an approximation for html_url.
+local function bbs_pr_review_event(payload, state)
+  local raw_pr = payload.pullRequest or {}
+  local repo = (raw_pr.toRef or {}).repository
+  local participant = payload.participant or {}
+  local reviewer = participant.user or payload.actor or {}
+  local pr_url = (
+    raw_pr.links
+    and raw_pr.links.self
+    and raw_pr.links.self[1]
+    and raw_pr.links.self[1].href
+  ) or ""
+  local review = {
+    id = reviewer.id or 0,
+    node_id = "",
+    user = translate_bbs_user(reviewer),
+    body = "",
+    state = state,
+    submitted_at = bbs_ts(raw_pr.updatedDate) or "",
+    -- DC does not provide a direct review URL; use the PR URL as a best-effort approximation.
+    html_url = pr_url,
+    pull_request_url = pr_url,
+  }
+  return make_internal_event({
+    event = "pull_request_review",
+    action = "submitted",
+    provider = "bitbucket_datacenter",
+    raw = payload,
+    data = {
+      action = "submitted",
+      review = review,
+      pull_request = translate_bbs_pull(raw_pr),
+      repository = translate_bbs_repo(repo),
+      sender = translate_bbs_user(payload.actor or {}),
+    },
+    timestamp = bbs_ts(raw_pr.updatedDate) or "",
+  })
+end
+
 b:webhook("pr:opened", function(payload)
   return bbs_pr_event(payload, "opened")
 end)
@@ -1554,6 +1598,14 @@ end)
 
 b:webhook("pr:deleted", function(payload)
   return bbs_pr_event(payload, "closed")
+end)
+
+b:webhook("pr:reviewer:approved", function(payload)
+  return bbs_pr_review_event(payload, "approved")
+end)
+
+b:webhook("pr:reviewer:needs_work", function(payload)
+  return bbs_pr_review_event(payload, "changes_requested")
 end)
 
 b:build()
