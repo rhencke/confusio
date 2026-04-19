@@ -36,6 +36,17 @@ PATCH /repos/{owner}/{repo}/releases/assets/{asset_id},n,n,n,y,n,y,n,n,y,y,y,y,n
 DELETE /repos/{owner}/{repo}/releases/assets/{asset_id},n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/keys,n,~,y,y,n,y,n,n,y,y,~,y,~,n,n,y,n,n,n,n,n,n,n,n
 GET /repos/{owner}/{repo}/hooks,~,~,y,y,n,y,n,n,y,y,~,y,~,n,n,y,n,n,n,n,n,n,n,n
+POST /repos/{owner}/{repo}/hooks,~,~,y,y,n,y,n,n,y,y,~,y,~,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/hooks/{hook_id},~,~,y,y,n,y,n,n,y,y,~,y,~,n,n,y,n,n,n,n,n,n,n,n
+PATCH /repos/{owner}/{repo}/hooks/{hook_id},~,~,y,y,n,y,n,n,y,y,~,y,~,n,n,y,n,n,n,n,n,n,n,n
+DELETE /repos/{owner}/{repo}/hooks/{hook_id},~,~,y,y,n,y,n,n,y,y,~,y,~,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/hooks/{hook_id}/config,~,~,y,y,n,y,n,n,y,y,~,y,~,n,n,y,n,n,n,n,n,n,n,n
+PATCH /repos/{owner}/{repo}/hooks/{hook_id}/config,~,~,~,y,n,y,n,n,y,y,~,y,~,n,n,y,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries,n,n,n,n,n,n,n,n,n,n,~,n,n,n,n,n,n,n,n,n,n,n,n,n
+GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries/{delivery_id},n,n,n,n,n,n,n,n,n,n,~,n,n,n,n,n,n,n,n,n,n,n,n,n
+POST /repos/{owner}/{repo}/hooks/{hook_id}/deliveries/{delivery_id}/attempts,n,n,n,n,n,n,n,n,n,n,~,n,n,n,n,n,n,n,n,n,n,n,n,n
+POST /repos/{owner}/{repo}/hooks/{hook_id}/pings,~,~,~,~,n,~,n,n,~,~,~,~,~,n,n,~,n,n,n,n,n,n,n,n
+POST /repos/{owner}/{repo}/hooks/{hook_id}/tests,~,~,~,~,n,~,n,n,~,~,~,~,~,n,n,~,n,n,n,n,n,n,n,n
 GET /user,n,y,n,y,n,y,y,n,y,y,y,y,y,n,n,y,n,y,n,n,n,n,y,n
 PATCH /user,n,n,n,y,n,y,n,n,y,y,y,y,y,n,n,y,n,n,n,n,n,n,n,n
 GET /users,n,n,y,y,n,y,y,y,y,y,y,y,n,n,n,y,y,y,n,n,n,n,n,~

@@ -322,15 +322,54 @@ local endpoint_sections = {
       { "DELETE /repos/{owner}/{repo}/keys/{key_id}", "delete_repo_key" },
 
       -- Webhooks (https://docs.github.com/en/rest/repos/webhooks)
-      { "GET /repos/{owner}/{repo}/hooks", "get_repo_hooks" },
-      { "POST /repos/{owner}/{repo}/hooks", "post_repo_hooks" },
-      { "GET /repos/{owner}/{repo}/hooks/{hook_id}", "get_repo_hook" },
-      { "PATCH /repos/{owner}/{repo}/hooks/{hook_id}", "patch_repo_hook" },
-      { "DELETE /repos/{owner}/{repo}/hooks/{hook_id}", "delete_repo_hook" },
-      { "GET /repos/{owner}/{repo}/hooks/{hook_id}/config", "get_repo_hook_config" },
-      { "PATCH /repos/{owner}/{repo}/hooks/{hook_id}/config", "patch_repo_hook_config" },
-      { "POST /repos/{owner}/{repo}/hooks/{hook_id}/pings", "post_repo_hook_ping" },
-      { "POST /repos/{owner}/{repo}/hooks/{hook_id}/tests", "post_repo_hook_test" },
+      { "GET /repos/{owner}/{repo}/hooks", "get_repo_hooks", defaults.hooks_empty_list },
+      { "POST /repos/{owner}/{repo}/hooks", "post_repo_hooks", defaults.hooks_not_implemented },
+      { "GET /repos/{owner}/{repo}/hooks/{hook_id}", "get_repo_hook", defaults.hook_not_found },
+      {
+        "PATCH /repos/{owner}/{repo}/hooks/{hook_id}",
+        "patch_repo_hook",
+        defaults.hook_not_found,
+      },
+      {
+        "DELETE /repos/{owner}/{repo}/hooks/{hook_id}",
+        "delete_repo_hook",
+        defaults.hook_not_found,
+      },
+      {
+        "GET /repos/{owner}/{repo}/hooks/{hook_id}/config",
+        "get_repo_hook_config",
+        defaults.hook_not_found,
+      },
+      {
+        "PATCH /repos/{owner}/{repo}/hooks/{hook_id}/config",
+        "patch_repo_hook_config",
+        defaults.hook_not_found,
+      },
+      {
+        "GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries",
+        "get_repo_hook_deliveries",
+        defaults.hooks_empty_list,
+      },
+      {
+        "GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries/{delivery_id}",
+        "get_repo_hook_delivery",
+        defaults.hook_not_found,
+      },
+      {
+        "POST /repos/{owner}/{repo}/hooks/{hook_id}/deliveries/{delivery_id}/attempts",
+        "post_repo_hook_delivery_attempt",
+        defaults.hooks_not_implemented,
+      },
+      {
+        "POST /repos/{owner}/{repo}/hooks/{hook_id}/pings",
+        "post_repo_hook_ping",
+        defaults.hook_ping,
+      },
+      {
+        "POST /repos/{owner}/{repo}/hooks/{hook_id}/tests",
+        "post_repo_hook_test",
+        defaults.hook_ping,
+      },
 
       -- Statistics (https://docs.github.com/en/rest/metrics/statistics)
       { "GET /repos/{owner}/{repo}/stats/code_frequency", "get_repo_stats_code_frequency" },
