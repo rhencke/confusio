@@ -2722,6 +2722,150 @@ do
 end
 
 -- ============================================================
+-- make_internal_event
+-- ============================================================
+
+ok(type(make_internal_event) == "function", "make_internal_event: exported as global function")
+
+do
+  -- All required fields present → table with correct keys.
+  local ev = make_internal_event({
+    event = "issues",
+    action = "opened",
+    provider = "gitea",
+    raw = { action = "opened" },
+    data = { issue = { id = 1 } },
+  })
+  eq(ev.event, "issues", "make_internal_event: event field")
+  eq(ev.action, "opened", "make_internal_event: action field")
+  eq(ev.provider, "gitea", "make_internal_event: provider field")
+  eq(type(ev.raw), "table", "make_internal_event: raw is a table")
+  eq(type(ev.data), "table", "make_internal_event: data is a table")
+  eq(ev.timestamp, "", "make_internal_event: timestamp defaults to empty string")
+  ok(ev.raw_action == nil, "make_internal_event: raw_action absent for known action")
+
+  -- With explicit timestamp → preserved.
+  local ev2 = make_internal_event({
+    event = "push",
+    action = "",
+    provider = "gitlab",
+    timestamp = "2024-01-15T10:00:00Z",
+    raw = {},
+    data = {},
+  })
+  eq(ev2.timestamp, "2024-01-15T10:00:00Z", "make_internal_event: explicit timestamp preserved")
+
+  -- Unknown action → action == "unknown" and raw_action set.
+  local ev3 = make_internal_event({
+    event = "issues",
+    action = "unknown",
+    raw_action = "some_new_action",
+    provider = "gitea",
+    raw = { action = "some_new_action" },
+    data = {},
+  })
+  eq(ev3.action, "unknown", "make_internal_event: action == 'unknown' preserved")
+  eq(ev3.raw_action, "some_new_action", "make_internal_event: raw_action preserved")
+
+  -- Missing optional fields default gracefully.
+  local ev4 = make_internal_event({ event = "label", action = "created", provider = "gitea" })
+  eq(ev4.timestamp, "", "make_internal_event: missing timestamp defaults to ''")
+  eq(type(ev4.raw), "table", "make_internal_event: missing raw defaults to {}")
+  eq(type(ev4.data), "table", "make_internal_event: missing data defaults to {}")
+end
+
+-- ============================================================
+-- webhook_receiver: unknown-action sidecar header
+-- ============================================================
+
+do
+  local function call_webhook_full(opts)
+    reset_request(opts)
+    reset_response()
+    app.webhook_receiver()
+    return _last_status, _last_headers
+  end
+
+  local saved_webhooks = app.backend.webhooks
+
+  -- Known action: no X-Confusio-Raw-Action header on 200.
+  app.backend.webhooks = {
+    issues = function(payload)
+      return make_internal_event({
+        event = "issues",
+        action = "opened",
+        provider = "gitea",
+        raw = payload,
+        data = {},
+      })
+    end,
+  }
+  local status1, hdrs1 = call_webhook_full({
+    method = "POST",
+    path = "/webhooks/gitea",
+    headers = { ["Content-Type"] = "application/json", ["X-Gitea-Event"] = "issues" },
+    body = '{"action":"opened"}',
+  })
+  eq(status1, 200, "webhook_receiver: known action → 200")
+  ok(
+    hdrs1["X-Confusio-Raw-Action"] == nil,
+    "webhook_receiver: known action → no X-Confusio-Raw-Action"
+  )
+
+  -- Unknown action: X-Confusio-Raw-Action set with raw action string.
+  app.backend.webhooks = {
+    issues = function(payload)
+      return make_internal_event({
+        event = "issues",
+        action = "unknown",
+        raw_action = payload.action,
+        provider = "gitea",
+        raw = payload,
+        data = {},
+      })
+    end,
+  }
+  local status2, hdrs2 = call_webhook_full({
+    method = "POST",
+    path = "/webhooks/gitea",
+    headers = { ["Content-Type"] = "application/json", ["X-Gitea-Event"] = "issues" },
+    body = '{"action":"pinned"}',
+  })
+  eq(status2, 200, "webhook_receiver: unknown action → still 200")
+  eq(
+    hdrs2["X-Confusio-Raw-Action"],
+    "pinned",
+    "webhook_receiver: unknown action → X-Confusio-Raw-Action set"
+  )
+
+  -- Unknown action but raw_action not set: no header emitted.
+  app.backend.webhooks = {
+    issues = function(payload)
+      return make_internal_event({
+        event = "issues",
+        action = "unknown",
+        provider = "gitea",
+        raw = payload,
+        data = {},
+      })
+    end,
+  }
+  local status3, hdrs3 = call_webhook_full({
+    method = "POST",
+    path = "/webhooks/gitea",
+    headers = { ["Content-Type"] = "application/json", ["X-Gitea-Event"] = "issues" },
+    body = '{"action":"pinned"}',
+  })
+  eq(status3, 200, "webhook_receiver: unknown action without raw_action → 200")
+  ok(
+    hdrs3["X-Confusio-Raw-Action"] == nil,
+    "webhook_receiver: action=unknown, no raw_action → no header"
+  )
+
+  app.backend.webhooks = saved_webhooks
+end
+
+-- ============================================================
 -- Summary
 -- ============================================================
 

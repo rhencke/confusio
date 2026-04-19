@@ -484,6 +484,12 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
       return
     end
 
+    -- When the action was not recognized, surface it in a sidecar header so
+    -- operators can identify unrecognized event variants without breaking delivery.
+    if internal_event.action == "unknown" and internal_event.raw_action then
+      SetHeader("X-Confusio-Raw-Action", internal_event.raw_action)
+    end
+
     respond_json(200, { message = "accepted" })
   end
 end
