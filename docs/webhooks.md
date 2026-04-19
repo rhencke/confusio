@@ -3344,5 +3344,383 @@ per-target state for this target).
 
 ## Multi-Target Dispatch and Configuration
 
-_(Per-target filters, shape selection, and the admin registration surface are specified
-in a subsequent section of this document.)_
+Confusio delivers each inbound event to every matching **target** — an HTTP endpoint
+registered by an operator.  Targets are independent: each has its own event-type filter,
+shape preference, optional signing secret, and lifecycle state.
+
+### Target resource
+
+A target is a persistent object with the following fields:
+
+```json
+{
+  "target_id":  "<uuid>",
+  "url":        "https://example.com/webhook",
+  "status":     "active",
+  "events":     ["issues", "pull_request", "push"],
+  "shape":      "github",
+  "created_at": "<iso8601>",
+  "updated_at": "<iso8601>"
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `target_id` | UUID v4 assigned at creation; immutable |
+| `url` | Delivery endpoint; must be an `https://` or `http://` absolute URL |
+| `status` | Lifecycle state — see [Target lifecycle](#target-lifecycle) |
+| `events` | Event-type filter — see [Event-type filter](#event-type-filter) |
+| `shape` | Output shape: `"github"` or `"confusio"` — see [Shape selection](#shape-selection) |
+| `created_at` | ISO 8601 UTC timestamp when the target was registered |
+| `updated_at` | ISO 8601 UTC timestamp of the last modification |
+
+The `secret` field (see [Outbound signatures](#outbound-signatures)) is **write-only** —
+it is accepted on create and update but never returned in any response.
+
+### Target lifecycle
+
+Each target has a `status` field that controls its participation in fan-out and retry
+dispatch.
+
+| Status | Description |
+|--------|-------------|
+| `active` | Normal operation; receives new events and retries |
+| `paused` | Excluded from fan-out for new events; existing scheduled retries are suspended (see below) |
+| `deleted` | Soft-deleted; excluded from all fan-out; no new delivery records are created; existing records retained until retention window |
+
+**Paused targets:** When a target is paused, confusio stops dispatching to it.  Events
+ingested while the target is paused are not queued; they will not be delivered unless
+explicitly replayed via the replay API after the target is resumed.  Deliveries that are
+`in_flight` when the pause occurs may complete; if they fail, no retry is scheduled until
+the target is resumed.  Deliveries that are `retrying` have their `next_attempt` cleared
+and will resume their retry schedule when the target is resumed.  Circuit breaker and
+retry budget state are preserved across pause/resume cycles.
+
+**Deleted targets:** Deletion is soft.  The target record is marked `deleted` and
+excluded from all fan-out and retry dispatch.  Existing delivery state records in the
+outbox are retained until the 72-hour retention window expires; the replay API returns
+their history but refuses new replay attempts for a deleted target.  The `target_id` is
+never reused.
+
+**Resuming a paused target:** Setting `status` back to `"active"` (via a PATCH request)
+re-enables fan-out for new events.  Deliveries that were `retrying` when the target was
+paused resume their retry schedules from where they left off.
+
+### Event-type filter
+
+The `events` field controls which event families are delivered to a target.
+
+| Value | Meaning |
+|-------|---------|
+| `["*"]` | All event families (wildcard; this is the default) |
+| `["issues", "pull_request"]` | Only the named event families |
+
+Event family names match the GitHub event family identifiers used in `X-GitHub-Event`
+(e.g., `"issues"`, `"push"`, `"pull_request"`, `"release"`).  The full list of supported
+families is the set of event families specified in
+[GitHub-Emulation Contract](#github-emulation-contract).
+
+If an inbound event's family is **not** in the target's filter, confusio creates a
+delivery state record with `status: "ignored"` for that target — no HTTP attempt is made.
+The event remains replayable via the replay API for the 72-hour retention window, allowing
+operators to recover events that arrived before a filter was corrected.
+
+**Filter matching is case-sensitive and exact.**  Wildcards (`"*"`) must appear as the
+sole element of the array; a mixed list like `["*", "push"]` is rejected with
+`400 Bad Request`.
+
+### Shape selection
+
+The `shape` field selects which output format is sent to the target's `url`.
+
+| Value | Description |
+|-------|-------------|
+| `"github"` | GitHub-emulation shape — headers and body byte-compatible with GitHub webhook format (default) |
+| `"confusio"` | Confusio-normalized shape — confusio envelope and namespace; see [Normalized Confusio Event Model](#normalized-confusio-event-model) |
+
+Shape is configured per target and applies to all events delivered to that target.
+Changing the shape of an existing target (via PATCH) takes effect for all subsequent
+delivery attempts, including retries of previously queued events.
+
+**Shape and retry consistency:** If a target's shape is changed while a delivery is
+`retrying`, the next retry attempt uses the new shape.  Both `github_payload` and
+`confusio_payload` are stored in the outbox at ingest time, so the shape selection at
+dispatch time determines which variant is sent — no retranslation is required.
+
+### Outbound signatures
+
+When a `secret` is configured on a target, confusio signs outbound delivery payloads
+using **HMAC-SHA256**.  The signature is sent in the `X-Hub-Signature-256` header,
+mirroring GitHub's outbound webhook signing scheme so consumers can verify payloads using
+standard GitHub webhook libraries.
+
+**Header format:**
+
+```
+X-Hub-Signature-256: sha256=<lowercase hex digest>
+```
+
+The HMAC is computed over the raw serialized request body (the JSON bytes as sent, before
+any content encoding).  The secret is the HMAC key.
+
+**Secret management:**
+
+- The secret is accepted as a plain UTF-8 string in the `secret` field on create or
+  update.
+- The secret is stored at rest (implementation detail; key management is out of scope for
+  this spec).
+- The secret is **never returned** in any GET or list response.  The response object omits
+  the field entirely — there is no placeholder or masked representation.
+- To rotate a secret, PATCH the target with the new `secret` value.  The new secret takes
+  effect on the next delivery attempt.
+- To remove signing entirely, PATCH with `"secret": null`.
+
+**Targets without a secret** receive no `X-Hub-Signature-256` header.
+
+### Fan-out dispatch logic
+
+When confusio successfully ingests and verifies an inbound event, it performs a
+synchronous fan-out pass before returning the HTTP response to the forge.
+
+**Fan-out steps:**
+
+1. Load all targets with `status == "active"`.
+2. For each active target:
+   - Check if the event family matches the target's `events` filter.
+   - **Match:** write `targets/{target_id}/{delivery_id}.json` with `status: "pending"`
+     and enqueue for asynchronous delivery.
+   - **No match:** write the state record with `status: "ignored"`.
+3. Return `200 OK` (or `202 Accepted`) to the forge.  Delivery is asynchronous from this
+   point.
+
+**Paused and deleted targets** are skipped entirely during fan-out — no delivery state
+record is created for them.  Events arriving during a pause period will not be delivered
+to that target unless explicitly replayed after resumption.
+
+**Fan-out atomicity:** All delivery state records for a single event are written before
+the inbound response is returned.  If any write fails, confusio returns
+`500 Internal Server Error` to the forge and does not create a partial set of records.
+The forge will typically retry the inbound request; confusio re-processes it as a new
+event with a new `delivery_id`.
+
+**Fan-out ordering:** Each target's delivery proceeds independently.  No cross-target
+ordering guarantee exists; delivery progress for one target has no effect on another.
+
+---
+
+### Admin API
+
+All target management endpoints require **admin credentials** and are grouped under the
+`/webhooks/targets` base path.  Unauthenticated requests receive `401 Unauthorized`.
+
+#### Error response format
+
+All admin API endpoints use the same error body format as the replay API:
+
+```json
+{
+  "error":   "<machine-readable code>",
+  "message": "<human-readable description>"
+}
+```
+
+| HTTP status | `error` code | When |
+|-------------|-------------|------|
+| `400 Bad Request` | `"invalid_request"` | Request body is not valid JSON, a required field is missing, or a field has an invalid value |
+| `400 Bad Request` | `"invalid_filter"` | `events` array contains unrecognized family names, or mixes `"*"` with named families |
+| `400 Bad Request` | `"invalid_url"` | `url` is not a valid absolute HTTP(S) URL |
+| `400 Bad Request` | `"invalid_status"` | `status` value is not a permitted transition for PATCH |
+| `401 Unauthorized` | `"unauthorized"` | Missing or invalid admin credentials |
+| `404 Not Found` | `"target_not_found"` | Target UUID does not exist or has been deleted |
+| `409 Conflict` | `"target_deleted"` | Operation not permitted on a deleted target (e.g., replay attempt via replay API) |
+| `429 Too Many Requests` | `"rate_limited"` | Admin API rate limit exceeded; `Retry-After` header is set |
+
+#### Create a target
+
+```
+POST /webhooks/targets
+```
+
+**Request body:**
+
+```json
+{
+  "url":    "https://example.com/webhook",
+  "events": ["*"],
+  "shape":  "github",
+  "secret": "s3cr3t"
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `url` | Yes | Absolute `http://` or `https://` delivery endpoint URL |
+| `events` | No | Event filter array; defaults to `["*"]` |
+| `shape` | No | `"github"` or `"confusio"`; defaults to `"github"` |
+| `secret` | No | HMAC signing secret; omit for unsigned delivery |
+
+**Response** (`201 Created`):
+
+```json
+{
+  "target_id":  "a2fb4a9c-1234-5678-abcd-000000000001",
+  "url":        "https://example.com/webhook",
+  "status":     "active",
+  "events":     ["*"],
+  "shape":      "github",
+  "created_at": "2026-04-19T00:00:00Z",
+  "updated_at": "2026-04-19T00:00:00Z"
+}
+```
+
+`secret` is not present in the response.
+
+**Error responses:**
+
+| Code | `error` code | When |
+|------|-------------|------|
+| `400 Bad Request` | `"invalid_request"` | Missing `url` or invalid field value |
+| `400 Bad Request` | `"invalid_filter"` | Malformed `events` array |
+| `400 Bad Request` | `"invalid_url"` | `url` is not a valid absolute HTTP(S) URL |
+| `401 Unauthorized` | `"unauthorized"` | Missing or invalid admin credentials |
+
+#### List targets
+
+```
+GET /webhooks/targets
+```
+
+Returns all non-deleted targets in creation order.  Supports cursor-based pagination.
+
+**Query parameters:**
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `per_page` | `30` | Items per page; max `100` |
+| `cursor` | _(start)_ | Opaque pagination cursor from a previous response's `next_cursor` |
+| `status` | _(all non-deleted)_ | Filter by status: `active` or `paused` |
+
+**Response** (`200 OK`):
+
+```json
+{
+  "targets": [
+    {
+      "target_id":  "<uuid>",
+      "url":        "https://example.com/webhook",
+      "status":     "active",
+      "events":     ["*"],
+      "shape":      "github",
+      "created_at": "<iso8601>",
+      "updated_at": "<iso8601>"
+    }
+  ],
+  "next_cursor": null
+}
+```
+
+Deleted targets are excluded from all list results.  Pagination cursors are stable across
+additions and deletions.
+
+**Error responses:**
+
+| Code | `error` code | When |
+|------|-------------|------|
+| `401 Unauthorized` | `"unauthorized"` | Missing or invalid admin credentials |
+
+#### Get a target
+
+```
+GET /webhooks/targets/{target_id}
+```
+
+Returns the full target record.  Returns `404` for deleted targets.
+
+**Response** (`200 OK`): target object (same shape as each item in the list response).
+
+**Error responses:**
+
+| Code | `error` code | When |
+|------|-------------|------|
+| `401 Unauthorized` | `"unauthorized"` | Missing or invalid admin credentials |
+| `404 Not Found` | `"target_not_found"` | Target UUID unknown or deleted |
+
+#### Update a target
+
+```
+PATCH /webhooks/targets/{target_id}
+```
+
+Partial update — only fields included in the request body are modified.
+
+**Request body** (all fields optional):
+
+```json
+{
+  "url":    "https://new.example.com/webhook",
+  "events": ["push", "issues"],
+  "shape":  "confusio",
+  "status": "paused",
+  "secret": "new-secret"
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `url` | New delivery endpoint URL |
+| `events` | Replacement event filter (full replacement, not merge) |
+| `shape` | New shape; takes effect on the next delivery attempt |
+| `status` | Lifecycle transition: `"active"` or `"paused"`; `"deleted"` is not a valid PATCH value — use DELETE |
+| `secret` | New HMAC signing secret; `null` removes signing |
+
+**Response** (`200 OK`): updated target object (same shape as GET response).
+
+**Error responses:**
+
+| Code | `error` code | When |
+|------|-------------|------|
+| `400 Bad Request` | `"invalid_request"` | Invalid field value |
+| `400 Bad Request` | `"invalid_filter"` | Malformed `events` array |
+| `400 Bad Request` | `"invalid_url"` | Malformed `url` |
+| `400 Bad Request` | `"invalid_status"` | `status` is not `"active"` or `"paused"` |
+| `401 Unauthorized` | `"unauthorized"` | Missing or invalid admin credentials |
+| `404 Not Found` | `"target_not_found"` | Target UUID unknown or deleted |
+
+#### Delete a target
+
+```
+DELETE /webhooks/targets/{target_id}
+```
+
+Soft-deletes the target.  The target is immediately excluded from fan-out and retry
+dispatch.  Existing delivery state records in the outbox are retained until the 72-hour
+retention window expires and are still visible via the replay API delivery history
+endpoints.  Replay is refused for deleted targets.
+
+**Response** (`204 No Content`): empty body.
+
+**Error responses:**
+
+| Code | `error` code | When |
+|------|-------------|------|
+| `401 Unauthorized` | `"unauthorized"` | Missing or invalid admin credentials |
+| `404 Not Found` | `"target_not_found"` | Target UUID unknown or already deleted |
+
+---
+
+### Edge cases
+
+| Scenario | Behaviour |
+|----------|-----------|
+| Target paused while a delivery is `in_flight` | In-flight attempt may complete; if it fails, no retry is scheduled; delivery remains `retrying` (paused) until the target is resumed |
+| Target paused while a delivery is `retrying` | `next_attempt` is cleared; retry is held until the target is resumed, then scheduled from where it left off |
+| Target deleted while a delivery is `retrying` | Delivery transitions to `failed`; no further attempts; outbox record retained until retention window |
+| Target URL updated while retries are pending | Next retry uses the new URL; previous attempt records retain the URL that was used at attempt time (implementation detail; URL is not stored per-attempt in this spec) |
+| Shape changed while deliveries are retrying | Next retry uses the new shape variant from the outbox; consumers may observe a shape change mid-stream |
+| Secret removed while retries are pending | Next retry is sent unsigned; `X-Hub-Signature-256` header is omitted |
+| No active targets at ingest time | Fan-out writes zero records; the event is still written to the outbox; operators can register targets and replay within the 72-hour window |
+| Target registered while a matching event is mid-retry | Late-registered target receives no delivery for that event; replay is required |
+| `events: ["*"]` with a new event family added in a future confusio version | Wildcard filter automatically includes the new family; named-event-list filters do not |
+| Replay attempted against a deleted target | `POST /webhooks/deliveries/{delivery_id}/redeliver` with a deleted `target_id` in `target_ids` returns `409 Conflict` with `"target_deleted"` |
+| PATCH sets `status: "active"` on an already-active target | No-op; returns `200 OK` with the unchanged record |
+| PATCH sets `status: "paused"` on an already-paused target | No-op; returns `200 OK` with the unchanged record |
