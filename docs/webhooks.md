@@ -1568,8 +1568,211 @@ coverage in the [Field-Level Mapping Tables](#field-level-mapping-tables).
 
 ## Normalized Confusio Event Model
 
-_(The confusio-native event namespace, envelope schema, and `X-Confusio-Signature`
-header are specified in a subsequent section of this document.)_
+When a delivery target is configured for the confusio-normalized shape, confusio wraps
+the internal event in a stable, forge-agnostic envelope.  This shape is designed for
+consumers that want cross-forge portability without GitHub's legacy quirks — the same
+schema works regardless of whether the originating forge is Gitea, GitLab, or Sourcehut.
+
+### Design goals
+
+- **Stable across forge versions** — field names and structure do not change when a
+  forge adds or renames its native fields.  Forge-specific details live in `raw`.
+- **Consistent with the internal event model** — the envelope is a thin wrapper around
+  the internal representation defined in [Backend-agnostic internal model](#backend-agnostic-internal-model).
+- **Orthogonal to the GitHub-emulation shape** — no GitHub-specific legacy (e.g.
+  `X-Hub-Signature` vs `sha256=` prefix conventions); confusio defines its own naming.
+- **Self-describing** — the envelope carries enough metadata for a consumer to route
+  and deduplicate without inspecting the payload body.
+
+### Delivery headers
+
+Confusio sends the following HTTP headers with every confusio-normalized delivery:
+
+| Header | Value | Notes |
+|--------|-------|-------|
+| `X-Confusio-Event` | confusio event family name (e.g. `issues`, `push`) | Always present |
+| `X-Confusio-Action` | action within the event family (e.g. `opened`) | Present when the event has an action; absent for action-less events |
+| `X-Confusio-Delivery` | UUID v4, unique per delivery attempt | Always present |
+| `X-Confusio-Provider` | originating backend identifier (e.g. `gitea`, `gitlab`) | Always present |
+| `X-Confusio-Signature-256` | `sha256=<lowercase hex>` | HMAC-SHA256 of body using target's secret; omitted if no secret configured |
+| `Content-Type` | `application/json` | Always `application/json` |
+| `User-Agent` | `Confusio-Hookshot/<version>` | Same as GitHub-emulation deliveries |
+
+**Signature computation:** `X-Confusio-Signature-256` is computed over the raw
+delivery body bytes using the consumer target's configured secret.  The format
+`sha256=<hex>` mirrors the GitHub `X-Hub-Signature-256` convention so consumers can
+reuse the same HMAC verification code path.
+
+**Action-less events:** `push`, `create`, `delete`, `fork`, `status`, and `ping` carry
+no action field — the event type alone identifies the operation.  For these,
+`X-Confusio-Action` is omitted from the delivery headers.
+
+### Namespace
+
+All confusio event family names are lower-snake-case strings in the `confusio.`
+namespace when used in subscription filters and configuration, but the header value
+carries only the short name without the prefix:
+
+```
+X-Confusio-Event: issues       ← short name in header
+subscription filter: confusio.issues   ← full name in config
+```
+
+The canonical event family names match the GitHub event name set defined in
+[Supported event names](#supported-event-names).  This alignment means the same event
+taxonomy is used across both output shapes, simplifying mixed deployments.
+
+### Envelope schema
+
+Every confusio-normalized delivery body follows this structure:
+
+```json
+{
+  "confusio": "1.0",
+  "id":        "<uuid>",
+  "event":     "<event-family>",
+  "action":    "<action or null>",
+  "provider":  "<backend>",
+  "timestamp": "<iso8601>",
+  "data":      { ... },
+  "raw":       { ... }
+}
+```
+
+| Field | Type | R/O | Description |
+|-------|------|-----|-------------|
+| `confusio` | string | R | Envelope schema version; currently `"1.0"` |
+| `id` | string (UUID v4) | R | Unique delivery ID; same value as `X-Confusio-Delivery` header |
+| `event` | string | R | Event family name (e.g. `"issues"`, `"push"`) |
+| `action` | string or null | R | Action within the event family; `null` for action-less events |
+| `provider` | string | R | Originating backend (e.g. `"gitea"`, `"gitlab"`) |
+| `timestamp` | string (ISO 8601) | R | Event timestamp — forge-supplied if available, otherwise confusio ingest time |
+| `data` | object | R | Normalized field bag; schema is event-family-specific (see below) |
+| `raw` | object | R | Original decoded payload from the forge, unmodified |
+
+The `confusio` version field allows consumers to guard against future schema changes:
+
+```json
+if (body.confusio !== "1.0") { /* handle unknown version */ }
+```
+
+### The `data` object
+
+The `data` object contains the normalized event payload.  Its schema mirrors the
+GitHub-emulation output shape with the following differences:
+
+- **No GitHub-specific IDs** — integer IDs that are meaningful only to GitHub are
+  replaced with the forge's native identifier.  Both `id` (forge-native) and
+  `number` (human-visible reference) are included where available.
+- **No `node_id`** — GitHub's GraphQL node ID is not present; confusio does not
+  synthesize a GraphQL node ID for the confusio-normalized shape.
+- **`source_url` instead of `html_url`** — the forge's own web URL for the resource
+  (issue page, PR page, etc.) is in `source_url`.  This makes it clear the URL points
+  to the originating forge, not to GitHub.
+- **Timestamps always ISO 8601** — all timestamp fields use ISO 8601 format in UTC.
+  Fields that are absent from the forge response are `null`, not omitted.
+
+The `data` object for each event family is documented in [Field-Level Mapping Tables](#field-level-mapping-tables).
+
+### Concrete envelope example
+
+A `issues:opened` event originating from Gitea:
+
+```json
+{
+  "confusio":  "1.0",
+  "id":        "72d3162e-cc78-11e3-81ab-4c9367dc0958",
+  "event":     "issues",
+  "action":    "opened",
+  "provider":  "gitea",
+  "timestamp": "2024-01-15T10:00:00Z",
+  "data": {
+    "issue": {
+      "id":         1,
+      "number":     42,
+      "title":      "Found a bug",
+      "body":       "Something broke.",
+      "state":      "open",
+      "source_url": "https://gitea.com/alice/myrepo/issues/42",
+      "author": {
+        "id":         1,
+        "login":      "alice",
+        "source_url": "https://gitea.com/alice"
+      },
+      "labels":     [],
+      "assignees":  [],
+      "milestone":  null,
+      "created_at": "2024-01-15T10:00:00Z",
+      "updated_at": "2024-01-15T10:00:00Z",
+      "closed_at":  null
+    },
+    "repository": {
+      "id":           100,
+      "name":         "myrepo",
+      "full_name":    "alice/myrepo",
+      "private":      false,
+      "source_url":   "https://gitea.com/alice/myrepo",
+      "description":  null,
+      "fork":         false,
+      "default_branch": "main",
+      "owner": {
+        "id":    1,
+        "login": "alice"
+      },
+      "created_at": "2023-01-01T00:00:00Z",
+      "updated_at": "2024-01-15T10:00:00Z",
+      "pushed_at":  "2024-01-15T10:00:00Z"
+    },
+    "sender": {
+      "id":         1,
+      "login":      "alice",
+      "source_url": "https://gitea.com/alice"
+    }
+  },
+  "raw": {
+    "action": "opened",
+    "issue": {
+      "id": 1,
+      "number": 42,
+      "title": "Found a bug"
+    }
+  }
+}
+```
+
+The `raw` object truncated for readability; it contains the complete original forge payload.
+
+### `X-Confusio-Signature-256` verification
+
+Consumer verification follows the same pattern as GitHub's `X-Hub-Signature-256`:
+
+```
+secret        = configured consumer target secret (UTF-8 bytes)
+body          = raw delivery body bytes
+expected      = "sha256=" ++ HMAC-SHA256(secret, body) as lowercase hex
+received      = value of X-Confusio-Signature-256
+
+accept if constant_time_equal(expected, received)
+```
+
+Verification command (for testing):
+```sh
+printf '<body>' | openssl dgst -sha256 -hmac '<secret>'
+# prepend "sha256=" to the output and compare to X-Confusio-Signature-256
+```
+
+### Version negotiation
+
+The `confusio` field in the envelope is the envelope schema version.  Confusio
+increments this on breaking changes.  The current version is `"1.0"`.
+
+| Version | Status | Notes |
+|---------|--------|-------|
+| `1.0` | Current | Initial release |
+
+Additive changes (new optional fields in `data`) do not increment the version.
+Breaking changes (renamed/removed fields, changed types) increment the minor or major
+version string.  Consumers should treat unknown fields as ignorable.
 
 ## Field-Level Mapping Tables
 
