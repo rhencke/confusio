@@ -7228,6 +7228,73 @@ b:webhook("pull_request", function(payload)
   })
 end)
 
+local PULL_REQUEST_REVIEW_ACTIONS = {
+  submitted = "submitted",
+  dismissed = "dismissed",
+  edited = "edited",
+}
+local PULL_REQUEST_REVIEW_COMMENT_ACTIONS = {
+  created = "created",
+  edited = "edited",
+  deleted = "deleted",
+}
+
+-- Map a normalised Gitea review state (UPPERCASE, as returned by
+-- translate_gitea_review) to the lowercase form used in GitHub webhook payloads.
+local REVIEW_STATE_WEBHOOK = {
+  APPROVED = "approved",
+  CHANGES_REQUESTED = "changes_requested",
+  COMMENT = "commented",
+  DISMISSED = "dismissed",
+}
+
+b:webhook("pull_request_review", function(payload)
+  local raw_action = payload.action or ""
+  local action = PULL_REQUEST_REVIEW_ACTIONS[raw_action]
+  local review = translate_gitea_review(payload.review or {})
+  -- Webhook payloads use lowercase state values; the REST translator uses uppercase.
+  review.state = REVIEW_STATE_WEBHOOK[review.state] or "commented"
+  local raw_pr = payload.pull_request or {}
+  local pr = translate_gitea_pull(raw_pr)
+  return make_internal_event({
+    event = "pull_request_review",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitea",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      review = review,
+      pull_request = pr,
+      repository = translate_repo(payload.repository or {}),
+      sender = translate_user(payload.sender or {}),
+    },
+    timestamp = (payload.review or {}).submitted_at or "",
+  })
+end)
+
+b:webhook("pull_request_review_comment", function(payload)
+  local raw_action = payload.action or ""
+  local action = PULL_REQUEST_REVIEW_COMMENT_ACTIONS[raw_action]
+  local raw_pr = payload.pull_request or {}
+  local pr = translate_gitea_pull(raw_pr)
+  return make_internal_event({
+    event = "pull_request_review_comment",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitea",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      comment = translate_gitea_review_comment(payload.comment or {}),
+      pull_request = pr,
+      repository = translate_repo(payload.repository or {}),
+      sender = translate_user(payload.sender or {}),
+    },
+    timestamp = (payload.comment or {}).updated_at or "",
+  })
+end)
+
 local MERGE_GROUP_ACTIONS = {
   checks_requested = "checks_requested",
   destroyed = "destroyed",
