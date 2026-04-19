@@ -91,8 +91,35 @@ end
 -- The dofile stub above silently drops the backend file load.
 arg = { "testbackend" } -- luacheck: globals arg
 
+-- Stub os.getenv to return a valid JSON string for CONFUSIO_WEBHOOK_SECRETS so
+-- that the env-var loading block in .init.lua (lines 28-30) is exercised by
+-- luacov.  Restore immediately after load and clear config.webhook_secrets so
+-- subsequent tests that rely on no secret being configured are unaffected.
+local _real_getenv = os.getenv
+os.getenv = function(k) -- luacheck: globals os
+  if k == "CONFUSIO_WEBHOOK_SECRETS" then
+    return '{"gitea":"ws_coverage_test"}'
+  end
+  return _real_getenv(k)
+end
+
 -- Load the module under test.
 _real_dofile(".init.lua")
+
+-- Verify the env-var block populated config.webhook_secrets.
+assert(
+  config.webhook_secrets ~= nil, -- luacheck: globals config
+  "CONFUSIO_WEBHOOK_SECRETS: config.webhook_secrets should be non-nil after load"
+)
+assert(
+  config.webhook_secrets.gitea == "ws_coverage_test",
+  "CONFUSIO_WEBHOOK_SECRETS: gitea secret mismatch: " .. tostring(config.webhook_secrets.gitea)
+)
+
+-- Restore os.getenv and clear the coverage-only secret so later tests see a
+-- clean config.  (config and app.config reference the same table.)
+os.getenv = _real_getenv -- luacheck: globals os
+config.webhook_secrets = nil
 
 -- Restore dofile so later tests that call it work normally.
 dofile = _real_dofile -- luacheck: globals dofile
@@ -2199,6 +2226,499 @@ do
   eq(_last_status, 422, "dispatcher: /webhooks/* bypasses auth gate (allow_anonymous=false)")
 
   app.allow_anonymous = saved_anon
+end
+
+-- ============================================================
+-- verify_signature: comprehensive per-backend tests
+--
+-- Covers all 24 backends in KNOWN_BACKENDS.  For each:
+--   (a) trust-the-network (no secret configured) → not 401
+--   (b) valid credential/signature → not 401
+--   (c) bad credential/signature → 401
+--   (d) missing header/token → 401
+-- Pagure gets extra cases for its dual-header scheme.
+-- Kallithea gets extra cases for its body-embedded secret.
+-- codecommit/sourcehut/launchpad get both trust-the-network
+-- and "secret configured → always 401" cases.
+-- ============================================================
+do
+  -- GetCryptoHash stub always returns 32 bytes of 0xaa.
+  -- to_hex() converts that to 64 lowercase 'a' characters.
+  local STUB_HEX = string.rep("aa", 32)
+  local SECRET = "mysecret"
+
+  -- Call the webhook receiver for `backend` with the given extra headers and
+  -- body.  `secrets` controls app.config.webhook_secrets.
+  local function call_sig(backend, extra_headers, body, secrets)
+    local saved_config = app.config
+    app.config = {
+      backend = "testbackend",
+      base_url = "",
+      webhook_secrets = secrets or {},
+    }
+    local h = { ["Content-Type"] = "application/json" }
+    for k, v in pairs(extra_headers or {}) do
+      h[k] = v
+    end
+    reset_request({
+      method = "POST",
+      path = "/webhooks/" .. backend,
+      headers = h,
+      body = body or "{}",
+    })
+    reset_response()
+    app.webhook_receiver()
+    local status = _last_status
+    app.config = saved_config
+    return status
+  end
+
+  -- Convenience wrappers
+  local function no_secret(backend, hdrs, body)
+    return call_sig(backend, hdrs, body, {})
+  end
+  local function with_secret(backend, hdrs, body)
+    return call_sig(backend, hdrs, body, { [backend] = SECRET })
+  end
+
+  -- ── HMAC-SHA256 / no prefix: gitea family (X-Gitea-Signature)
+  for _, be in ipairs({ "gitea", "forgejo", "codeberg", "notabug" }) do
+    ok(no_secret(be, {}) ~= 401, "verify_signature " .. be .. ": no secret → not 401")
+    ok(
+      with_secret(be, { ["X-Gitea-Signature"] = STUB_HEX }) ~= 401,
+      "verify_signature " .. be .. ": valid X-Gitea-Signature → not 401"
+    )
+    eq(
+      with_secret(be, { ["X-Gitea-Signature"] = "deadbeef" }),
+      401,
+      "verify_signature " .. be .. ": bad X-Gitea-Signature → 401"
+    )
+    eq(with_secret(be, {}), 401, "verify_signature " .. be .. ": missing X-Gitea-Signature → 401")
+  end
+
+  -- ── HMAC-SHA256 / no prefix: gogs (X-Gogs-Signature)
+  ok(no_secret("gogs", {}) ~= 401, "verify_signature gogs: no secret → not 401")
+  ok(
+    with_secret("gogs", { ["X-Gogs-Signature"] = STUB_HEX }) ~= 401,
+    "verify_signature gogs: valid X-Gogs-Signature → not 401"
+  )
+  eq(
+    with_secret("gogs", { ["X-Gogs-Signature"] = "deadbeef" }),
+    401,
+    "verify_signature gogs: bad X-Gogs-Signature → 401"
+  )
+  eq(with_secret("gogs", {}), 401, "verify_signature gogs: missing X-Gogs-Signature → 401")
+
+  -- ── Verbatim shared token: gitlab (X-Gitlab-Token)
+  ok(no_secret("gitlab", {}) ~= 401, "verify_signature gitlab: no secret → not 401")
+  ok(
+    with_secret("gitlab", { ["X-Gitlab-Token"] = SECRET }) ~= 401,
+    "verify_signature gitlab: valid X-Gitlab-Token → not 401"
+  )
+  eq(
+    with_secret("gitlab", { ["X-Gitlab-Token"] = "wrongtoken" }),
+    401,
+    "verify_signature gitlab: bad X-Gitlab-Token → 401"
+  )
+  eq(with_secret("gitlab", {}), 401, "verify_signature gitlab: missing X-Gitlab-Token → 401")
+
+  -- ── HMAC-SHA256 / sha256= prefix: bitbucket + bitbucket_datacenter (X-Hub-Signature)
+  for _, be in ipairs({ "bitbucket", "bitbucket_datacenter" }) do
+    ok(no_secret(be, {}) ~= 401, "verify_signature " .. be .. ": no secret → not 401")
+    ok(
+      with_secret(be, { ["X-Hub-Signature"] = "sha256=" .. STUB_HEX }) ~= 401,
+      "verify_signature " .. be .. ": valid X-Hub-Signature sha256= → not 401"
+    )
+    eq(
+      with_secret(be, { ["X-Hub-Signature"] = "sha256=deadbeef" }),
+      401,
+      "verify_signature " .. be .. ": bad X-Hub-Signature → 401"
+    )
+    eq(with_secret(be, {}), 401, "verify_signature " .. be .. ": missing X-Hub-Signature → 401")
+  end
+
+  -- ── HMAC-SHA1 / sha1= prefix: gitbucket (X-Hub-Signature)
+  ok(no_secret("gitbucket", {}) ~= 401, "verify_signature gitbucket: no secret → not 401")
+  ok(
+    with_secret("gitbucket", { ["X-Hub-Signature"] = "sha1=" .. STUB_HEX }) ~= 401,
+    "verify_signature gitbucket: valid X-Hub-Signature sha1= → not 401"
+  )
+  eq(
+    with_secret("gitbucket", { ["X-Hub-Signature"] = "sha1=deadbeef" }),
+    401,
+    "verify_signature gitbucket: bad X-Hub-Signature → 401"
+  )
+  eq(
+    with_secret("gitbucket", {}),
+    401,
+    "verify_signature gitbucket: missing X-Hub-Signature → 401"
+  )
+
+  -- ── HMAC-SHA256 / no prefix: phabricator (X-Phabricator-Webhook-Signature)
+  ok(no_secret("phabricator", {}) ~= 401, "verify_signature phabricator: no secret → not 401")
+  ok(
+    with_secret("phabricator", { ["X-Phabricator-Webhook-Signature"] = STUB_HEX }) ~= 401,
+    "verify_signature phabricator: valid X-Phabricator-Webhook-Signature → not 401"
+  )
+  eq(
+    with_secret("phabricator", { ["X-Phabricator-Webhook-Signature"] = "deadbeef" }),
+    401,
+    "verify_signature phabricator: bad X-Phabricator-Webhook-Signature → 401"
+  )
+  eq(
+    with_secret("phabricator", {}),
+    401,
+    "verify_signature phabricator: missing X-Phabricator-Webhook-Signature → 401"
+  )
+
+  -- ── Pagure: dual-header scheme (X-Pagure-Signature-256 / X-Pagure-Signature)
+  -- Prefers SHA-256; falls back to SHA-512; both must verify when both present.
+  ok(no_secret("pagure", {}) ~= 401, "verify_signature pagure: no secret → not 401")
+  ok(
+    with_secret("pagure", { ["X-Pagure-Signature-256"] = STUB_HEX }) ~= 401,
+    "verify_signature pagure: valid sig256 only → not 401"
+  )
+  ok(
+    with_secret("pagure", { ["X-Pagure-Signature"] = STUB_HEX }) ~= 401,
+    "verify_signature pagure: valid sig512 only → not 401"
+  )
+  ok(with_secret("pagure", {
+    ["X-Pagure-Signature-256"] = STUB_HEX,
+    ["X-Pagure-Signature"] = STUB_HEX,
+  }) ~= 401, "verify_signature pagure: both sig256+sig512 valid → not 401")
+  eq(
+    with_secret("pagure", { ["X-Pagure-Signature-256"] = "bad" }),
+    401,
+    "verify_signature pagure: bad sig256 → 401"
+  )
+  eq(
+    with_secret("pagure", { ["X-Pagure-Signature"] = "bad" }),
+    401,
+    "verify_signature pagure: bad sig512 → 401"
+  )
+  eq(
+    with_secret("pagure", {
+      ["X-Pagure-Signature-256"] = STUB_HEX,
+      ["X-Pagure-Signature"] = "bad",
+    }),
+    401,
+    "verify_signature pagure: sig256 valid but sig512 bad → 401"
+  )
+  eq(with_secret("pagure", {}), 401, "verify_signature pagure: no signature headers → 401")
+
+  -- ── Verbatim shared token: harness (X-Harness-Token)
+  ok(no_secret("harness", {}) ~= 401, "verify_signature harness: no secret → not 401")
+  ok(
+    with_secret("harness", { ["X-Harness-Token"] = SECRET }) ~= 401,
+    "verify_signature harness: valid X-Harness-Token → not 401"
+  )
+  eq(
+    with_secret("harness", { ["X-Harness-Token"] = "bad" }),
+    401,
+    "verify_signature harness: bad X-Harness-Token → 401"
+  )
+  eq(with_secret("harness", {}), 401, "verify_signature harness: missing X-Harness-Token → 401")
+
+  -- ── Bearer token: onedev (Authorization: Bearer <secret>)
+  ok(no_secret("onedev", {}) ~= 401, "verify_signature onedev: no secret → not 401")
+  ok(
+    with_secret("onedev", { ["Authorization"] = "Bearer " .. SECRET }) ~= 401,
+    "verify_signature onedev: valid Bearer token → not 401"
+  )
+  ok(
+    with_secret("onedev", { ["Authorization"] = "bearer " .. SECRET }) ~= 401,
+    "verify_signature onedev: Bearer scheme is case-insensitive → not 401"
+  )
+  eq(
+    with_secret("onedev", { ["Authorization"] = "Bearer badtoken" }),
+    401,
+    "verify_signature onedev: bad Bearer token → 401"
+  )
+  eq(
+    with_secret("onedev", { ["Authorization"] = "Basic " .. SECRET }),
+    401,
+    "verify_signature onedev: non-Bearer scheme → 401"
+  )
+  eq(with_secret("onedev", {}), 401, "verify_signature onedev: missing Authorization → 401")
+
+  -- ── Verbatim Authorization header: radicle (raw token, no prefix)
+  ok(no_secret("radicle", {}) ~= 401, "verify_signature radicle: no secret → not 401")
+  ok(
+    with_secret("radicle", { ["Authorization"] = SECRET }) ~= 401,
+    "verify_signature radicle: valid Authorization → not 401"
+  )
+  eq(
+    with_secret("radicle", { ["Authorization"] = "bad" }),
+    401,
+    "verify_signature radicle: bad Authorization → 401"
+  )
+  eq(with_secret("radicle", {}), 401, "verify_signature radicle: missing Authorization → 401")
+
+  -- ── Verbatim Authorization header: gerrit (same scheme as radicle)
+  ok(no_secret("gerrit", {}) ~= 401, "verify_signature gerrit: no secret → not 401")
+  ok(
+    with_secret("gerrit", { ["Authorization"] = SECRET }) ~= 401,
+    "verify_signature gerrit: valid Authorization → not 401"
+  )
+  eq(
+    with_secret("gerrit", { ["Authorization"] = "bad" }),
+    401,
+    "verify_signature gerrit: bad Authorization → 401"
+  )
+  eq(with_secret("gerrit", {}), 401, "verify_signature gerrit: missing Authorization → 401")
+
+  -- ── Verbatim shared token: gitblit (X-Gitblit-Token)
+  ok(no_secret("gitblit", {}) ~= 401, "verify_signature gitblit: no secret → not 401")
+  ok(
+    with_secret("gitblit", { ["X-Gitblit-Token"] = SECRET }) ~= 401,
+    "verify_signature gitblit: valid X-Gitblit-Token → not 401"
+  )
+  eq(
+    with_secret("gitblit", { ["X-Gitblit-Token"] = "bad" }),
+    401,
+    "verify_signature gitblit: bad X-Gitblit-Token → 401"
+  )
+  eq(with_secret("gitblit", {}), 401, "verify_signature gitblit: missing X-Gitblit-Token → 401")
+
+  -- ── Verbatim shared token: rhodecode (X-RhodeCode-Signature)
+  ok(no_secret("rhodecode", {}) ~= 401, "verify_signature rhodecode: no secret → not 401")
+  ok(
+    with_secret("rhodecode", { ["X-RhodeCode-Signature"] = SECRET }) ~= 401,
+    "verify_signature rhodecode: valid X-RhodeCode-Signature → not 401"
+  )
+  eq(
+    with_secret("rhodecode", { ["X-RhodeCode-Signature"] = "bad" }),
+    401,
+    "verify_signature rhodecode: bad X-RhodeCode-Signature → 401"
+  )
+  eq(
+    with_secret("rhodecode", {}),
+    401,
+    "verify_signature rhodecode: missing X-RhodeCode-Signature → 401"
+  )
+
+  -- ── Verbatim shared token: sourceforge (X-Sourceforge-Webhook-Secret)
+  ok(no_secret("sourceforge", {}) ~= 401, "verify_signature sourceforge: no secret → not 401")
+  ok(
+    with_secret("sourceforge", { ["X-Sourceforge-Webhook-Secret"] = SECRET }) ~= 401,
+    "verify_signature sourceforge: valid X-Sourceforge-Webhook-Secret → not 401"
+  )
+  eq(
+    with_secret("sourceforge", { ["X-Sourceforge-Webhook-Secret"] = "bad" }),
+    401,
+    "verify_signature sourceforge: bad X-Sourceforge-Webhook-Secret → 401"
+  )
+  eq(
+    with_secret("sourceforge", {}),
+    401,
+    "verify_signature sourceforge: missing X-Sourceforge-Webhook-Secret → 401"
+  )
+
+  -- ── Verbatim shared token: tuleap (X-Tuleap-Webhook-Secret)
+  ok(no_secret("tuleap", {}) ~= 401, "verify_signature tuleap: no secret → not 401")
+  ok(
+    with_secret("tuleap", { ["X-Tuleap-Webhook-Secret"] = SECRET }) ~= 401,
+    "verify_signature tuleap: valid X-Tuleap-Webhook-Secret → not 401"
+  )
+  eq(
+    with_secret("tuleap", { ["X-Tuleap-Webhook-Secret"] = "bad" }),
+    401,
+    "verify_signature tuleap: bad X-Tuleap-Webhook-Secret → 401"
+  )
+  eq(
+    with_secret("tuleap", {}),
+    401,
+    "verify_signature tuleap: missing X-Tuleap-Webhook-Secret → 401"
+  )
+
+  -- ── Azure DevOps: Authorization: Basic <creds> (DecodeBase64 is identity stub)
+  -- SECRET = "mysecret"; DecodeBase64("mysecret") = "mysecret" (identity), so
+  -- "Basic mysecret" is the valid credential when secret = "mysecret".
+  ok(no_secret("azuredevops", {}) ~= 401, "verify_signature azuredevops: no secret → not 401")
+  ok(
+    with_secret("azuredevops", { ["Authorization"] = "Basic " .. SECRET }) ~= 401,
+    "verify_signature azuredevops: valid Basic creds → not 401"
+  )
+  ok(
+    with_secret("azuredevops", { ["Authorization"] = "basic " .. SECRET }) ~= 401,
+    "verify_signature azuredevops: Basic scheme is case-insensitive → not 401"
+  )
+  eq(
+    with_secret("azuredevops", { ["Authorization"] = "Basic badcreds" }),
+    401,
+    "verify_signature azuredevops: bad Basic creds → 401"
+  )
+  eq(
+    with_secret("azuredevops", { ["Authorization"] = "Bearer " .. SECRET }),
+    401,
+    "verify_signature azuredevops: non-Basic scheme → 401"
+  )
+  eq(
+    with_secret("azuredevops", {}),
+    401,
+    "verify_signature azuredevops: missing Authorization → 401"
+  )
+
+  -- ── Kallithea: body-embedded secret (exception to verify-before-parse rule)
+  ok(no_secret("kallithea", {}) ~= 401, "verify_signature kallithea: no secret → not 401")
+  ok(
+    with_secret("kallithea", {}, '{"secret":"' .. SECRET .. '"}') ~= 401,
+    "verify_signature kallithea: secret in root JSON field → not 401"
+  )
+  ok(
+    with_secret("kallithea", {}, '{"data":{"secret":"' .. SECRET .. '"}}') ~= 401,
+    "verify_signature kallithea: secret in data.secret JSON field → not 401"
+  )
+  eq(
+    with_secret("kallithea", {}, '{"secret":"bad"}'),
+    401,
+    "verify_signature kallithea: bad body secret → 401"
+  )
+  eq(
+    with_secret("kallithea", {}, '{"event":"push"}'),
+    401,
+    "verify_signature kallithea: no secret field in body → 401"
+  )
+  eq(
+    with_secret("kallithea", {}, "not-valid-json"),
+    401,
+    "verify_signature kallithea: invalid JSON body → 401"
+  )
+
+  -- ── Trust-the-network-only backends: codecommit, sourcehut, launchpad
+  -- These use asymmetric/platform-managed schemes not yet implemented.
+  -- No secret → accepted; any secret configured → always rejected.
+  for _, be in ipairs({ "codecommit", "sourcehut", "launchpad" }) do
+    ok(
+      no_secret(be, {}) ~= 401,
+      "verify_signature " .. be .. ": no secret (trust-the-network) → not 401"
+    )
+    eq(
+      call_sig(be, {}, nil, { [be] = SECRET }),
+      401,
+      "verify_signature " .. be .. ": secret configured (unimplemented scheme) → 401"
+    )
+  end
+
+  -- ── Confusio-normalized: X-Confusio-Signature-256, HMAC-SHA256 + timestamp
+  -- Header format: "sha256=<hex>, v=1, ts=<unix>"
+  -- HMAC basestring: "v1:<ts>:<body>"  Replay window: 300 seconds.
+  ok(no_secret("confusio", {}) ~= 401, "verify_signature confusio: no secret → not 401")
+
+  -- Valid: current timestamp, correct stub HMAC hex.
+  -- Using os.time() so the timestamp is within the replay window when the test runs.
+  local confusio_now = os.time()
+  local confusio_valid_hdr = "sha256=" .. STUB_HEX .. ", v=1, ts=" .. tostring(confusio_now)
+  ok(
+    with_secret("confusio", { ["X-Confusio-Signature-256"] = confusio_valid_hdr }) ~= 401,
+    "verify_signature confusio: valid X-Confusio-Signature-256 (current ts) → not 401"
+  )
+
+  -- Stale past timestamp (January 2001): outside replay window.
+  local confusio_stale_past = "sha256=" .. STUB_HEX .. ", v=1, ts=980000000"
+  eq(
+    with_secret("confusio", { ["X-Confusio-Signature-256"] = confusio_stale_past }),
+    401,
+    "verify_signature confusio: stale past timestamp → 401 (replay rejected)"
+  )
+
+  -- Stale future timestamp (year 5138): outside replay window.
+  local confusio_stale_future = "sha256=" .. STUB_HEX .. ", v=1, ts=99999999999"
+  eq(
+    with_secret("confusio", { ["X-Confusio-Signature-256"] = confusio_stale_future }),
+    401,
+    "verify_signature confusio: stale future timestamp → 401 (replay rejected)"
+  )
+
+  -- Bad HMAC (current timestamp but wrong hex): rejected even with fresh ts.
+  local confusio_bad_hmac = "sha256=deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+    .. ", v=1, ts="
+    .. tostring(confusio_now)
+  eq(
+    with_secret("confusio", { ["X-Confusio-Signature-256"] = confusio_bad_hmac }),
+    401,
+    "verify_signature confusio: bad HMAC hex → 401"
+  )
+
+  -- Missing header.
+  eq(with_secret("confusio", {}), 401, "verify_signature confusio: missing header → 401")
+
+  -- Malformed header: missing v=1.
+  local confusio_no_v = "sha256=" .. STUB_HEX .. ", ts=" .. tostring(confusio_now)
+  eq(
+    with_secret("confusio", { ["X-Confusio-Signature-256"] = confusio_no_v }),
+    401,
+    "verify_signature confusio: header missing v=1 → 401"
+  )
+
+  -- Malformed header: missing ts.
+  local confusio_no_ts = "sha256=" .. STUB_HEX .. ", v=1"
+  eq(
+    with_secret("confusio", { ["X-Confusio-Signature-256"] = confusio_no_ts }),
+    401,
+    "verify_signature confusio: header missing ts → 401"
+  )
+end
+
+-- ============================================================
+-- sign_github / sign_confusio
+-- ============================================================
+
+do
+  -- GetCryptoHash stub returns 32 bytes of 0xaa → hex is 64 'a' chars.
+  local STUB_HEX = string.rep("aa", 32)
+  local SECRET = "mysecret"
+  local BODY = '{"action":"opened"}'
+
+  -- ── sign_github ──────────────────────────────────────────
+
+  ok(type(sign_github) == "function", "sign_github: exported as global function")
+
+  -- No secret → both return values are nil.
+  local s256, s1 = sign_github(nil, BODY)
+  ok(s256 == nil, "sign_github(nil): sha256 value is nil")
+  ok(s1 == nil, "sign_github(nil): sha1 value is nil")
+
+  s256, s1 = sign_github("", BODY)
+  ok(s256 == nil, "sign_github(''): sha256 value is nil")
+  ok(s1 == nil, "sign_github(''): sha1 value is nil")
+
+  -- With secret → returns "sha256=<hex>" and "sha1=<hex>".
+  s256, s1 = sign_github(SECRET, BODY)
+  eq(s256, "sha256=" .. STUB_HEX, "sign_github: sha256 value has correct prefix and hex")
+  eq(s1, "sha1=" .. STUB_HEX, "sign_github: sha1 value has correct prefix and hex")
+
+  -- Return values are strings (header-value ready).
+  ok(type(s256) == "string", "sign_github: sha256 return is a string")
+  ok(type(s1) == "string", "sign_github: sha1 return is a string")
+
+  -- ── sign_confusio ─────────────────────────────────────────
+
+  ok(type(sign_confusio) == "function", "sign_confusio: exported as global function")
+
+  -- No secret → returns nil.
+  ok(sign_confusio(nil, BODY, 1700000000) == nil, "sign_confusio(nil): returns nil")
+  ok(sign_confusio("", BODY, 1700000000) == nil, "sign_confusio(''): returns nil")
+
+  -- With secret → returns "sha256=<hex>, v=1, ts=<ts>".
+  local TS = 1700000000
+  local csig = sign_confusio(SECRET, BODY, TS)
+  ok(type(csig) == "string", "sign_confusio: return is a string")
+  eq(csig, "sha256=" .. STUB_HEX .. ", v=1, ts=1700000000", "sign_confusio: header value format")
+
+  -- Timestamp appears verbatim in the returned header value.
+  local ts_val = csig:match(", ts=(%d+)$")
+  eq(tonumber(ts_val), TS, "sign_confusio: ts field matches supplied timestamp")
+
+  -- Different timestamps produce different basestrings (stub ignores input, but
+  -- verify the ts field in the header value changes as expected).
+  local r1 = sign_confusio(SECRET, BODY, 1000)
+  local r2 = sign_confusio(SECRET, BODY, 9999)
+  ok(r1:match(", ts=1000$") ~= nil, "sign_confusio: ts=1000 appears in header")
+  ok(r2:match(", ts=9999$") ~= nil, "sign_confusio: ts=9999 appears in header")
+
+  -- v=1 is present in the header value.
+  ok(csig:find(", v=1,", 1, true) ~= nil, "sign_confusio: v=1 field present in header value")
 end
 
 -- ============================================================

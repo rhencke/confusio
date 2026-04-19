@@ -89,6 +89,9 @@ globals = {
   "graphql_register_builtin_resolvers",
   "make_dispatcher",
   "make_webhook_receiver",
+  -- Outbound delivery signing: internal/signing.lua
+  "sign_github",
+  "sign_confusio",
   "get_client_mutation_id",
   "estimate_query_cost",
   -- GraphQL translators: internal/graphql_translators.lua

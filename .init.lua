@@ -18,6 +18,19 @@ end
 
 config.base_url = config.base_url:gsub("/$", "")
 
+-- CONFUSIO_WEBHOOK_SECRETS: optional JSON object mapping backend names to
+-- webhook secrets.  Used by the test harness to configure signature
+-- verification without recompiling; also useful for single-backend deployments
+-- that prefer environment-variable configuration.
+-- Example: CONFUSIO_WEBHOOK_SECRETS='{"gitea":"mysecret","gitlab":"othersecret"}'
+local ws_env = os.getenv("CONFUSIO_WEBHOOK_SECRETS")
+if ws_env and ws_env ~= "" then
+  local ok_ws, ws_parsed = pcall(DecodeJson, ws_env)
+  if ok_ws and type(ws_parsed) == "table" then
+    config.webhook_secrets = ws_parsed
+  end
+end
+
 dofile("/zip/internal/http.lua")
 dofile("/zip/internal/proxy.lua")
 dofile("/zip/internal/transport.lua")
@@ -54,6 +67,7 @@ dofile("/zip/internal/defaults.lua")
 dofile("/zip/internal/router.lua")
 dofile("/zip/internal/catalog.lua")
 dofile("/zip/internal/dispatch.lua")
+dofile("/zip/internal/signing.lua")
 dofile("/zip/internal/webhooks.lua")
 
 app.route_match = route_match

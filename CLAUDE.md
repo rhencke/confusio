@@ -455,7 +455,7 @@ Do **not** use `proxy_search_envelope` when:
 
 ### Internal module layout
 
-The eleven `internal/` modules are loaded by `.init.lua` in a fixed order. Each exports only globals — no `require`/`return` pattern; `dofile` runs in global scope.
+The twelve `internal/` modules are loaded by `.init.lua` in a fixed order. Each exports only globals — no `require`/`return` pattern; `dofile` runs in global scope.
 
 **Load order and exports:**
 
@@ -472,6 +472,8 @@ The eleven `internal/` modules are loaded by `.init.lua` in a fixed order. Each 
 | `defaults.lua` | `defaults` (table of handler functions) | catalog |
 | `router.lua` | `route_add`, `route_match`, `path_known` | catalog, dispatch |
 | `catalog.lua` | `endpoints` (flat array); registers routes via `route_add` | dispatch, scripts |
+| `signing.lua` | `sign_github`, `sign_confusio` | backends (outbound delivery) |
+| `webhooks.lua` | `make_webhook_receiver` | `.init.lua` (installed as `app.webhook_receiver`) |
 | `dispatch.lua` | `make_dispatcher` | `.init.lua` (called once at startup to install `OnHttpRequest`) |
 
 After `dispatch.lua` is loaded, `.init.lua` completes the composition:
@@ -618,3 +620,9 @@ here so they stay visible without reading all 16 docs:
 - **Pre-routing endpoints need catalog entries for validate-csv/validate-tests.**  `POST /webhooks/{backend}` is intercepted by `dispatch.lua` before the router runs, so the catalog's default stub is never called in production.  The entry exists purely so `validate-csv` and `validate-tests` can account for the endpoint.  Add such handler names to `CONFUSIO_NATIVE` in `scripts/validate-claims.lua` — otherwise `y` CSV claims for all backends will fail because `app.backend.rest` has no entry.
 - **`b:build(strip)` never strips webhook handlers.**  Strip patterns only apply to `app.backend.rest` keys; `app.backend.webhooks` entries registered via `b:webhook()` are always preserved regardless of the strip list passed to `b:build()`.
 - **Raw hurl bodies require backtick syntax.**  To send a body that doesn't start with `{` or `[` (e.g., `not-valid-json` for an invalid-JSON test), wrap it in backticks: `` `not-valid-json` ``.  Without backticks, hurl attempts to parse the first word as an HTTP method and fails with a parse error.
+- **Signature schemes are verified in `verify_signature(backend, secret, body[, now])`** in `internal/webhooks.lua`.  The optional `now` parameter defaults to `os.time()` and exists purely for unit testing — pass a fixed timestamp to test replay prevention without sleeping.  Production code always omits it.
+- **Outbound signing lives in `internal/signing.lua`** (`sign_github`, `sign_confusio`).  `sign_github(secret, body)` returns `(sha256_value, sha1_value)`; `sign_confusio(secret, body, timestamp)` returns the full `X-Confusio-Signature-256` header value.  Both return nil when no secret is configured (unsigned delivery).
+- **Confusio inbound HMAC basestring is `"v1:<ts>:<body>"`** — the timestamp is baked into the signed material, not just the header.  This means a replay with a fresh timestamp produces a different digest and fails even before the window check.  The outbound `sign_confusio` and inbound `verify_signature("confusio", ...)` are symmetric — they must stay in sync.
+- **Replay window is 300 seconds (±5 minutes)** enforced by `REPLAY_WINDOW_SECS` in `webhooks.lua`.  Only the confusio scheme has replay prevention; other schemes (HMAC or token) rely on TLS and network policy.
+- **`CONFUSIO_WEBHOOK_SECRETS` env var** — optional JSON object `{"backend":"secret",...}` that `.init.lua` reads at startup and stores as `config.webhook_secrets`.  Used by the test harness (`test/test-unit.sh` Phase 4) and single-backend deployments that prefer env-var config.  Absent key → empty string → trust-the-network for that backend.
+- **Phase 4 in `test/test-unit.sh`** computes HMAC test vectors at runtime with `openssl dgst` and passes them to `hurl` via `--variable` flags.  Never hard-code pre-computed HMACs in the test file — the confusio signature embeds `$(date +%s)` and would be stale by replay-window expiry if pre-computed.  The gitea/bitbucket/gitbucket vectors are stable (no timestamp), but computing all of them uniformly at runtime is simpler and safer.
