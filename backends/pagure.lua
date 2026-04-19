@@ -1005,4 +1005,93 @@ b:graphql("Query.search", function(_parent, args, ctx)
   }
 end)
 
+-- Webhook handlers: Pagure uses X-Pagure-Event header.
+-- All issue and comment events share the same payload envelope:
+--   msg.issue   — the Pagure issue object
+--   msg.project — the Pagure project (repository)
+--   msg.agent   — username of the acting user (plain string)
+--   msg.comment — present only for comment events
+--
+-- Relevant X-Pagure-Event values:
+--   issue.new            → issues / opened
+--   issue.edit           → issues / edited
+--   issue.status.change  → issues / closed | reopened  (derived from issue.status)
+--   issue.comment.added  → issue_comment / created
+
+-- Helper: build a GitHub-shaped user from a Pagure agent string (bare username).
+local function pagure_agent_user(agent)
+  return translate_pagure_user({ name = agent or "" })
+end
+
+b:webhook("issue.new", function(payload)
+  local msg = payload.msg or {}
+  return make_internal_event({
+    event = "issues",
+    action = "opened",
+    provider = "pagure",
+    raw = payload,
+    data = {
+      action = "opened",
+      issue = translate_pagure_issue(msg.issue),
+      repository = translate_pagure_repo(msg.project),
+      sender = pagure_agent_user(msg.agent),
+    },
+    timestamp = tostring((msg.issue or {}).date_created or ""),
+  })
+end)
+
+b:webhook("issue.edit", function(payload)
+  local msg = payload.msg or {}
+  return make_internal_event({
+    event = "issues",
+    action = "edited",
+    provider = "pagure",
+    raw = payload,
+    data = {
+      action = "edited",
+      issue = translate_pagure_issue(msg.issue),
+      repository = translate_pagure_repo(msg.project),
+      sender = pagure_agent_user(msg.agent),
+    },
+    timestamp = tostring((msg.issue or {}).last_updated or ""),
+  })
+end)
+
+b:webhook("issue.status.change", function(payload)
+  local msg = payload.msg or {}
+  local issue = msg.issue or {}
+  local action = (issue.status == "Open") and "reopened" or "closed"
+  return make_internal_event({
+    event = "issues",
+    action = action,
+    provider = "pagure",
+    raw = payload,
+    data = {
+      action = action,
+      issue = translate_pagure_issue(issue),
+      repository = translate_pagure_repo(msg.project),
+      sender = pagure_agent_user(msg.agent),
+    },
+    timestamp = tostring(issue.last_updated or ""),
+  })
+end)
+
+b:webhook("issue.comment.added", function(payload)
+  local msg = payload.msg or {}
+  return make_internal_event({
+    event = "issue_comment",
+    action = "created",
+    provider = "pagure",
+    raw = payload,
+    data = {
+      action = "created",
+      issue = translate_pagure_issue(msg.issue),
+      comment = translate_pagure_comment(msg.comment),
+      repository = translate_pagure_repo(msg.project),
+      sender = pagure_agent_user(msg.agent),
+    },
+    timestamp = tostring((msg.comment or {}).date_created or ""),
+  })
+end)
+
 b:build()
