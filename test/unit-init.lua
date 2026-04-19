@@ -34,6 +34,7 @@ reset_request()
 -- Override Redbean HTTP context built-ins before loading .init.lua.
 -- luacheck: push
 -- luacheck: globals SetStatus SetHeader Write GetHeader GetPath GetParam GetMethod GetBody Route
+-- luacheck: globals GetCryptoHash DecodeBase64
 SetStatus = function(code, _reason)
   _last_status = code
 end
@@ -58,6 +59,17 @@ end
 Route = function() end
 GetBody = function()
   return _req_body
+end
+-- Stub GetCryptoHash: returns a fixed 32-byte string so unit tests can exercise
+-- the signature verification logic without requiring real crypto.  Integration
+-- tests that need real HMAC run against the live binary where GetCryptoHash is
+-- implemented by Redbean's C layer.
+GetCryptoHash = function(_alg, _msg, _key)
+  return string.rep("\xaa", 32)
+end
+-- Stub DecodeBase64: identity decode for Basic auth verification tests.
+DecodeBase64 = function(s)
+  return s
 end
 -- luacheck: pop
 
@@ -2002,6 +2014,191 @@ do
   reset_response()
   cap_rest_paged(nil, nil, cap_err(401, "unauthorized"), PAGES, nil)
   eq(_last_status, 401, "cap_rest_paged: upstream 401 → 401")
+end
+
+-- ============================================================
+-- make_webhook_receiver
+-- ============================================================
+
+ok(type(make_webhook_receiver) == "function", "make_webhook_receiver: exported as global function")
+ok(type(app.webhook_receiver) == "function", "app.webhook_receiver: installed on app by .init.lua")
+
+do
+  -- Helper: call app.webhook_receiver() with stubbed HTTP context and return status.
+  local function call_webhook(opts)
+    reset_request(opts)
+    reset_response()
+    app.webhook_receiver()
+    return _last_status
+  end
+
+  -- 404 for unknown backend
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/notabackend",
+      headers = { ["Content-Type"] = "application/json" },
+      body = "{}",
+    }),
+    404,
+    "webhook_receiver: unknown backend → 404"
+  )
+
+  -- 404 for trailing path segment
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/gitea/extra",
+      headers = { ["Content-Type"] = "application/json" },
+      body = "{}",
+    }),
+    404,
+    "webhook_receiver: extra path segment → 404"
+  )
+
+  -- 405 for non-POST method
+  eq(
+    call_webhook({
+      method = "GET",
+      path = "/webhooks/gitea",
+      headers = { ["Content-Type"] = "application/json" },
+      body = "{}",
+    }),
+    405,
+    "webhook_receiver: non-POST → 405"
+  )
+
+  -- 400 for wrong Content-Type
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/gitea",
+      headers = { ["Content-Type"] = "application/x-www-form-urlencoded" },
+      body = "",
+    }),
+    400,
+    "webhook_receiver: non-JSON Content-Type → 400"
+  )
+
+  -- 400 for missing Content-Type
+  eq(
+    call_webhook({ method = "POST", path = "/webhooks/gitea", headers = {}, body = "{}" }),
+    400,
+    "webhook_receiver: missing Content-Type → 400"
+  )
+
+  -- With no secret configured (trust-the-network) and no handlers, 422
+  -- because no event-type header is set for gitea.
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/gitea",
+      headers = { ["Content-Type"] = "application/json" },
+      body = "{}",
+    }),
+    422,
+    "webhook_receiver: no X-Gitea-Event header → 422 missing event"
+  )
+
+  -- 422 when event-type header present but no handler registered
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/gitea",
+      headers = {
+        ["Content-Type"] = "application/json",
+        ["X-Gitea-Event"] = "push",
+      },
+      body = "{}",
+    }),
+    422,
+    "webhook_receiver: known event header but no handler → 422"
+  )
+
+  -- 200 when handler is registered and succeeds
+  local saved_webhooks = app.backend.webhooks
+  app.backend.webhooks = {
+    push = function(_payload)
+      return { event = "push" }, nil
+    end,
+  }
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/gitea",
+      headers = {
+        ["Content-Type"] = "application/json",
+        ["X-Gitea-Event"] = "push",
+      },
+      body = '{"ref":"refs/heads/main"}',
+    }),
+    200,
+    "webhook_receiver: registered handler succeeds → 200"
+  )
+
+  -- 422 when handler returns nil (normalisation failed)
+  app.backend.webhooks = {
+    push = function(_payload)
+      return nil, "bad payload"
+    end,
+  }
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/gitea",
+      headers = {
+        ["Content-Type"] = "application/json",
+        ["X-Gitea-Event"] = "push",
+      },
+      body = '{"ref":"refs/heads/main"}',
+    }),
+    422,
+    "webhook_receiver: handler returns nil → 422"
+  )
+
+  -- 401 when secret is configured and X-Gitea-Signature is absent.
+  -- (GetCryptoHash stub returns aaa…; absent header → verify_signature returns false.)
+  app.backend.webhooks = {}
+  local saved_config = app.config
+  app.config = { backend = "gitea", base_url = "", webhook_secrets = { gitea = "mysecret" } }
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/gitea",
+      headers = { ["Content-Type"] = "application/json" },
+      body = "{}",
+    }),
+    401,
+    "webhook_receiver: secret set but no signature header → 401"
+  )
+  app.config = saved_config
+
+  app.backend.webhooks = saved_webhooks
+
+  -- make_dispatcher routes /webhooks/* to the receiver, bypassing auth.
+  -- Simulate allow_anonymous=false with no Authorization header: a REST path
+  -- gets 401, but a webhook path is handled by webhook_receiver (not blocked).
+  local saved_anon = app.allow_anonymous
+  app.allow_anonymous = false
+  -- REST path with no auth → 401
+  reset_request({ method = "GET", path = "/repos/alice/myrepo", headers = {}, body = nil })
+  reset_response()
+  OnHttpRequest()
+  eq(_last_status, 401, "dispatcher: REST path with no auth and allow_anonymous=false → 401")
+
+  -- Webhook path with no auth header → reaches webhook_receiver (not blocked by auth gate).
+  -- It gets 422 because no event-type header is set, which proves auth was bypassed.
+  reset_request({
+    method = "POST",
+    path = "/webhooks/gitea",
+    headers = { ["Content-Type"] = "application/json" },
+    body = "{}",
+  })
+  reset_response()
+  OnHttpRequest()
+  eq(_last_status, 422, "dispatcher: /webhooks/* bypasses auth gate (allow_anonymous=false)")
+
+  app.allow_anonymous = saved_anon
 end
 
 -- ============================================================

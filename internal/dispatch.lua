@@ -4,9 +4,25 @@
 -- bound over the app context a.  The closure reads auth policy, backend handlers,
 -- and router lookups exclusively from a — no ambient globals at dispatch time.
 -- Requires all internal modules to be loaded first (http, proxy, router, catalog).
+--
+-- Auth bypass for /webhooks/*: forge webhook deliveries carry their own
+-- authentication (signature headers or tokens) and must not be gated by the
+-- REST API auth check.  Requests whose path starts with /webhooks/ are routed
+-- to a.webhook_receiver (installed by .init.lua) before the auth check runs.
 
 function make_dispatcher(a) -- luacheck: globals make_dispatcher
   return function()
+    -- Webhook paths bypass the auth gate entirely.  The webhook receiver in
+    -- internal/webhooks.lua verifies forge-supplied signatures independently.
+    if GetPath():match("^/webhooks/") then
+      if a.webhook_receiver then
+        a.webhook_receiver()
+      else
+        respond_json(404, { message = "Not Found" })
+      end
+      return
+    end
+
     if not a.allow_anonymous and not GetHeader("Authorization") then
       respond_json(401, { message = "This instance requires authentication." })
       return

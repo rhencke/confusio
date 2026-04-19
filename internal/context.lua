@@ -20,6 +20,9 @@
 --                             (e.g. "push", "issues"); set by b:build() via make_backend_builder.
 --                             The receiver pipeline calls backend.webhooks[event](raw_payload)
 --                             to normalise a forge event into confusio's internal event model.
+--   webhook_receiver  — webhook receive pipeline; function(); installed by .init.lua after
+--                       make_webhook_receiver(app) is called.  Handles POST /webhooks/{backend}:
+--                       signature verification, event dispatch, and response.  nil until wired.
 --   allow_anonymous — auth-gate flag; true means unauthenticated requests are allowed
 
 function make_app(cfg) -- luacheck: globals make_app

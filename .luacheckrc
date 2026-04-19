@@ -20,6 +20,7 @@ globals = {
   "EncodeBase64",
   "DecodeBase64",
   "EscapeParam",
+  "GetCryptoHash",
   -- Redbean built-ins: routing
   "Route",
   "OnHttpRequest",
@@ -87,6 +88,7 @@ globals = {
   "graphql_handler",
   "graphql_register_builtin_resolvers",
   "make_dispatcher",
+  "make_webhook_receiver",
   "get_client_mutation_id",
   "estimate_query_cost",
   -- GraphQL translators: internal/graphql_translators.lua
