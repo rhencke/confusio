@@ -2790,7 +2790,22 @@ re-send the original translated payload, not a retranslation of a stale forge pa
 | `duration_ms` | Round-trip time in milliseconds; `null` on connection failure |
 | `response_status` | HTTP response status code; `null` on connection failure |
 | `response_body` | First 1 024 bytes of the response body (for debugging); `null` on connection failure |
-| `outcome` | `"delivered"`, `"retrying"`, `"failed"`, or `"timeout"` |
+| `outcome` | `"delivered"`, `"error"`, `"timeout"`, or `"connection_error"` — see below |
+
+**`outcome` values** capture the result of a single HTTP delivery attempt.  They are
+distinct from the overall delivery `status`, which reflects whether more attempts will
+follow.
+
+| `outcome` value | Meaning | Retry follows? |
+|-----------------|---------|---------------|
+| `"delivered"` | Target returned a 2xx response | No — delivery state becomes `delivered` |
+| `"error"` | Target returned a non-2xx response; see `response_status` | Yes, unless retry budget exhausted |
+| `"timeout"` | No response received within the 10-second window | Yes, unless retry budget exhausted |
+| `"connection_error"` | Network-level failure (DNS, refused connection, TLS) | Yes, unless retry budget exhausted |
+
+The delivery `status` field in the parent state record reflects the aggregate:
+`"retrying"` means the last attempt had a non-`"delivered"` outcome and a retry is
+scheduled; `"failed"` means no further automatic retries will occur.
 
 ### Delivery lifecycle
 
@@ -2870,6 +2885,88 @@ the upper end of jitter.
 **Retry budget override** — future work may allow per-target configuration of the
 maximum retry count and schedule.  Until then, the schedule above applies to all targets.
 
+### Retry budget
+
+To prevent a single high-volume incident from consuming unbounded system resources,
+confusio enforces a **per-target hourly retry budget**.  The budget limits how many
+delivery attempts confusio will dispatch to a given target within a rolling 60-minute
+window, across all events.
+
+**Default limits:**
+
+| Limit | Value | Notes |
+|-------|-------|-------|
+| Attempts per target per hour | 50 | Counted across all in-flight deliveries to that target |
+| Attempts per target per day | 500 | Rolling 24-hour window |
+
+When a target's hourly budget is exhausted, any pending retry for that target is held
+without advancing its `next_attempt` timestamp until the budget refills.  Budget
+consumption is recorded in a lightweight counter alongside the target state — it does
+not affect the attempt records or `status` fields.
+
+**Budget and the retry schedule:** Budget exhaustion delays a retry but does not consume
+the retry slot.  If attempt #4 is due at 14:00 but the hourly budget refills at 14:15,
+the attempt fires at 14:15 and the slot is used normally.  Delays caused by budget
+exhaustion are not reflected in the backoff schedule — the next delay after the attempt
+is calculated from the original schedule, not from the delayed actual time.
+
+**Budget and circuit breaker:** Budget limits are checked before the circuit breaker
+(see below).  A target with an open circuit does not consume budget, because no attempts
+are dispatched.
+
+### Circuit breaker
+
+Confusio applies a per-target circuit breaker to protect both confusio and persistently
+failing targets from repeated futile delivery attempts.
+
+**Threshold:** After **5 consecutive non-`"delivered"` outcomes** across any events for a
+target, confusio opens the circuit for that target.
+
+**Open circuit behaviour:**
+- Existing `retrying` deliveries for the target are paused — `next_attempt` is cleared
+  and a new field `circuit_open_until` is set on the target state record.
+- New events arriving for the target are queued as `pending` but no delivery attempt is
+  made immediately.
+- The circuit remains open for **30 minutes**.
+
+**Half-open probe:**
+- After 30 minutes, confusio selects the oldest `pending` delivery for the target and
+  dispatches a single probe attempt.
+- If the probe succeeds (2xx): circuit closes, all `pending` deliveries resume their
+  retry schedules, consecutive-failure counter resets to 0.
+- If the probe fails: circuit stays open, `circuit_open_until` is advanced by another
+  30 minutes, consecutive-failure counter increments.
+
+**Target state record additions for circuit breaker:**
+
+```json
+{
+  "circuit": "open",
+  "circuit_open_until": "<iso8601>",
+  "consecutive_failures": 7
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `circuit` | `"closed"` (normal), `"open"` (blocking), or `"half_open"` (probe in progress) |
+| `circuit_open_until` | ISO 8601 UTC timestamp when the circuit will move to `half_open`; `null` when `"closed"` |
+| `consecutive_failures` | Count of consecutive non-`"delivered"` outcomes; resets to 0 on any success |
+
+These fields are per-target (not per-delivery).  They are stored in a separate
+`targets/{target_id}/circuit.json` file alongside the per-delivery state records.
+
+**Circuit breaker and replay:**  Replays bypass the circuit breaker.  If an operator
+calls `POST /webhooks/deliveries/{delivery_id}/redeliver` while the circuit is open,
+the replay attempt is dispatched immediately.  A successful replay does **not** close
+the circuit — only the automatic half-open probe can close it.  A failed replay does
+**not** advance the consecutive-failure counter.
+
+**Circuit breaker and the `GET /webhooks/targets/{target_id}` endpoint:**  The target
+detail response (defined in the multi-target dispatch section) includes the current
+`circuit` state and `circuit_open_until` timestamp so operators can diagnose delivery
+pauses.
+
 ### Retention and pruning
 
 Outbox records are retained for **72 hours** from `ingested_at`, regardless of delivery
@@ -2904,6 +3001,38 @@ event in the retention window and to trigger additional delivery attempts.
 
 All replay endpoints require **admin credentials** — the same authentication used for
 the target registration surface.  Unauthenticated requests receive `401 Unauthorized`.
+
+### Error response format
+
+All replay API endpoints use a consistent JSON error body:
+
+```json
+{
+  "error": "<machine-readable code>",
+  "message": "<human-readable description>"
+}
+```
+
+| HTTP status | `error` code | When |
+|-------------|-------------|------|
+| `400 Bad Request` | `"invalid_request"` | Request body is not valid JSON, or a required field has the wrong type |
+| `400 Bad Request` | `"unknown_target"` | A UUID in `target_ids` does not match any registered target |
+| `401 Unauthorized` | `"unauthorized"` | Missing or invalid admin credentials |
+| `404 Not Found` | `"delivery_not_found"` | Delivery UUID does not exist or has been pruned from the outbox |
+| `404 Not Found` | `"target_not_found"` | Target UUID does not exist |
+| `429 Too Many Requests` | `"rate_limited"` | Admin API rate limit exceeded; `Retry-After` header is set |
+
+**Example error response:**
+
+```http
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+
+{
+  "error": "delivery_not_found",
+  "message": "Delivery 72d3162e-cc78-11e3-81ab-4c9367dc0958 not found. It may have been pruned after the 72-hour retention window."
+}
+```
 
 ### Base path
 
@@ -2998,12 +3127,12 @@ Returns the full event record plus per-target delivery state for every registere
 }
 ```
 
-**Error responses:**
+**Error responses** (see [Error response format](#error-response-format) for body schema):
 
-| Code | Meaning |
-|------|---------|
-| `404 Not Found` | Delivery ID unknown or pruned |
-| `401 Unauthorized` | Missing or invalid admin credentials |
+| Code | `error` code | When |
+|------|-------------|------|
+| `401 Unauthorized` | `"unauthorized"` | Missing or invalid admin credentials |
+| `404 Not Found` | `"delivery_not_found"` | Delivery UUID unknown or pruned |
 
 ### List attempts for a target
 
@@ -3036,11 +3165,19 @@ without the full delivery record.
       "duration_ms":     5021,
       "response_status": 503,
       "response_body":   "Service Unavailable",
-      "outcome":         "retrying"
+      "outcome":         "error"
     }
   ]
 }
 ```
+
+**Error responses** (see [Error response format](#error-response-format) for body schema):
+
+| Code | `error` code | When |
+|------|-------------|------|
+| `401 Unauthorized` | `"unauthorized"` | Missing or invalid admin credentials |
+| `404 Not Found` | `"delivery_not_found"` | Delivery UUID unknown or pruned |
+| `404 Not Found` | `"target_not_found"` | Target UUID does not exist for this delivery |
 
 ### Replay a delivery
 
@@ -3057,6 +3194,11 @@ the `X-GitHub-Delivery` / `X-Confusio-Delivery` header value for that attempt, a
 consumers to distinguish replays from original deliveries.  The ingest-time delivery UUID
 embedded in the event body (`id` field in the confusio-normalized shape) does **not**
 change — it always identifies the original ingest event.
+
+**Replay bypasses the circuit breaker and retry budget.**  The attempt is dispatched
+immediately regardless of whether the target's circuit is open or its hourly budget is
+exhausted.  See [Circuit breaker](#circuit-breaker) for how replay interacts with the
+circuit state.
 
 **Request body (optional):**
 
@@ -3085,13 +3227,26 @@ or empty, all matching targets are re-delivered.
 | `replayed_to` | Target UUIDs that received the replay |
 | `attempt_ids` | Attempt UUIDs generated for this replay, one per target in `replayed_to` order |
 
-**Error responses:**
+**Error responses** (see [Error response format](#error-response-format) for body schema):
 
-| Code | Meaning |
-|------|---------|
-| `404 Not Found` | Delivery ID unknown or pruned |
-| `400 Bad Request` | `target_ids` contains an unknown or unregistered target UUID |
-| `401 Unauthorized` | Missing or invalid admin credentials |
+| Code | `error` code | When |
+|------|-------------|------|
+| `400 Bad Request` | `"invalid_request"` | Request body is not valid JSON |
+| `400 Bad Request` | `"unknown_target"` | A UUID in `target_ids` is not a registered target |
+| `401 Unauthorized` | `"unauthorized"` | Missing or invalid admin credentials |
+| `404 Not Found` | `"delivery_not_found"` | Delivery UUID unknown or pruned |
+
+**Interaction with pending retries:**  If a target's delivery is currently `in_flight`
+(a scheduled retry is executing), the replay is accepted and dispatched as a separate
+parallel attempt.  Both attempts proceed independently; if both succeed, both are
+recorded in the attempt log and the delivery state remains `delivered`.  If the in-flight
+retry succeeds first, the replay attempt still completes — the target may receive two
+requests.  This is the expected at-least-once behaviour; consumers must be idempotent.
+
+**Interaction with `retrying` state:**  If a target's delivery is `retrying` (an attempt
+failed; the next retry is scheduled but not yet in-flight), the replay fires immediately
+and the existing scheduled retry remains on its original schedule.  The next automatic
+retry fires regardless of whether the replay succeeded.
 
 **Replay of ignored events:** If a target previously received `ignored` for an event
 (because the event type was outside its filter at ingest time), a replay will attempt
@@ -3132,6 +3287,13 @@ per-target state for this target).
 }
 ```
 
+**Error responses** (see [Error response format](#error-response-format) for body schema):
+
+| Code | `error` code | When |
+|------|-------------|------|
+| `401 Unauthorized` | `"unauthorized"` | Missing or invalid admin credentials |
+| `404 Not Found` | `"target_not_found"` | Target UUID does not exist |
+
 ---
 
 ### Edge cases
@@ -3141,8 +3303,15 @@ per-target state for this target).
 | Target URL unreachable at every attempt | Final attempt exhausted → `failed`; replay available while within retention window |
 | Target registered after an event was ingested | The late-registered target does not receive events ingested before registration |
 | Event pruned during a retry window | In-flight attempt may still proceed; on next scheduled retry the event is found pruned and the state transitions to `failed` |
-| Replay requested for a `delivered` event | Accepted; a new attempt is made regardless of prior success |
+| Replay requested for a `delivered` event | Accepted; attempt dispatched regardless of prior success; target may receive a duplicate |
 | Two replays issued concurrently for the same target | Both are accepted; each generates a distinct `attempt_id`; the target receives two requests |
+| Replay issued while target's retry is `in_flight` | Both proceed in parallel; both outcomes recorded; at-least-once behaviour — consumer must be idempotent |
+| Replay issued while target's delivery is `retrying` | Replay fires immediately; scheduled retry fires on its original schedule; target may receive two requests |
+| Hourly retry budget exhausted for a target | Pending retries are held without advancing `next_attempt`; next attempt fires when budget refills |
+| Circuit opens mid-backoff | Remaining retries are paused; `next_attempt` is cleared; circuit probe fires after 30 minutes |
+| Circuit probe succeeds | Circuit closes; all paused `pending` deliveries resume their retry schedules |
+| Circuit probe fails | Circuit stays open; `circuit_open_until` advances by 30 minutes |
+| Replay while circuit is open | Replay bypasses circuit; dispatched immediately; outcome does not affect circuit state |
 | Outbox directory not writable at ingest | Confusio rejects the inbound event with `500 Internal Server Error`; no partial write occurs |
 | `github_payload` or `confusio_payload` too large to store | Payloads larger than 25 MiB are truncated at 25 MiB with a `"_truncated": true` sentinel field added at the top level |
 
