@@ -7079,6 +7079,22 @@ local MILESTONE_ACTIONS = {
   edited = "edited",
   deleted = "deleted",
 }
+local PULL_REQUEST_ACTIONS = {
+  opened = "opened",
+  closed = "closed",
+  reopened = "reopened",
+  edited = "edited",
+  synchronize = "synchronize", -- commits pushed to PR head branch
+  synchronized = "synchronize", -- older Gitea spelling
+  labeled = "labeled",
+  label_updated = "labeled", -- older Gitea spelling
+  unlabeled = "unlabeled",
+  label_cleared = "unlabeled", -- older Gitea spelling
+  assigned = "assigned",
+  unassigned = "unassigned",
+  review_requested = "review_requested",
+  review_request_removed = "review_request_removed",
+}
 
 b:webhook("issues", function(payload)
   local raw_action = payload.action or ""
@@ -7161,6 +7177,54 @@ b:webhook("milestone", function(payload)
       sender = translate_user(payload.sender or {}),
     },
     timestamp = (payload.milestone or {}).updated_at or "",
+  })
+end)
+
+b:webhook("pull_request", function(payload)
+  local raw_action = payload.action or ""
+  local action = PULL_REQUEST_ACTIONS[raw_action]
+  local raw_pr = payload.pull_request or {}
+  local pr = translate_gitea_pull(raw_pr)
+  -- Enrich with labels, assignees, and requested_reviewers from the payload
+  -- (translate_gitea_pull omits them as the REST endpoint fetches them separately).
+  local labels, assignees, requested_reviewers = {}, {}, {}
+  for _, l in ipairs(raw_pr.labels or {}) do
+    labels[#labels + 1] = translate_gitea_label(l)
+  end
+  for _, u in ipairs(raw_pr.assignees or {}) do
+    assignees[#assignees + 1] = translate_user(u)
+  end
+  for _, u in ipairs(raw_pr.requested_reviewers or {}) do
+    requested_reviewers[#requested_reviewers + 1] = translate_user(u)
+  end
+  pr.labels = labels
+  pr.assignees = assignees
+  pr.requested_reviewers = requested_reviewers
+  local data = {
+    action = action or "unknown",
+    number = payload.number,
+    pull_request = pr,
+    repository = translate_repo(payload.repository or {}),
+    sender = translate_user(payload.sender or {}),
+  }
+  -- For labeled/unlabeled, include the specific label that changed.
+  if action == "labeled" or action == "unlabeled" then
+    data.label = translate_gitea_label(payload.label)
+  end
+  -- For review_requested/review_request_removed, include the affected reviewer.
+  if action == "review_requested" or action == "review_request_removed" then
+    data.requested_reviewer = payload.requested_reviewer
+        and translate_user(payload.requested_reviewer)
+      or nil
+  end
+  return make_internal_event({
+    event = "pull_request",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitea",
+    raw = payload,
+    data = data,
+    timestamp = raw_pr.updated or "",
   })
 end)
 
