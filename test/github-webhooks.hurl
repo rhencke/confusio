@@ -359,3 +359,80 @@ X-GitHub-Event: milestone
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
+
+# ── sub_issues: sub_issue_added (known action) → 200 ─────────────────────────
+
+POST http://{{host}}/webhooks/github
+Content-Type: application/json
+X-GitHub-Event: sub_issues
+{
+  "action": "sub_issue_added",
+  "issue": {
+    "id": 1, "number": 1, "title": "Parent issue",
+    "state": "open", "body": "", "user": {"login": "octocat"},
+    "updated_at": "2024-01-01T00:00:00Z"
+  },
+  "sub_issue": {
+    "id": 2, "number": 2, "title": "Sub issue",
+    "state": "open", "body": "", "user": {"login": "octocat"},
+    "updated_at": "2024-01-01T00:00:00Z"
+  },
+  "parent_issue": {},
+  "repository": {
+    "id": 1, "node_id": "", "name": "hello-world",
+    "full_name": "octocat/hello-world", "private": false,
+    "owner": {
+      "login": "octocat", "id": 1, "node_id": "", "avatar_url": "",
+      "url": "", "html_url": "", "type": "User"
+    },
+    "html_url": "http://localhost/octocat/hello-world",
+    "description": "", "fork": false, "url": "",
+    "clone_url": "", "homepage": "", "default_branch": "main",
+    "visibility": "public"
+  },
+  "sender": {
+    "login": "octocat", "id": 1, "node_id": "", "avatar_url": "",
+    "url": "", "html_url": "", "type": "User"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── sub_issues: sub_issue_converted (unknown action → X-Confusio-Raw-Action) ─
+
+POST http://{{host}}/webhooks/github
+Content-Type: application/json
+X-GitHub-Event: sub_issues
+{
+  "action": "sub_issue_converted",
+  "issue": {
+    "id": 1, "number": 1, "title": "Parent issue",
+    "state": "open", "body": "", "user": {"login": "octocat"},
+    "updated_at": "2024-01-01T00:00:00Z"
+  },
+  "sub_issue": {},
+  "parent_issue": {},
+  "repository": {
+    "id": 1, "node_id": "", "name": "hello-world",
+    "full_name": "octocat/hello-world", "private": false,
+    "owner": {
+      "login": "octocat", "id": 1, "node_id": "", "avatar_url": "",
+      "url": "", "html_url": "", "type": "User"
+    },
+    "html_url": "http://localhost/octocat/hello-world",
+    "description": "", "fork": false, "url": "",
+    "clone_url": "", "homepage": "", "default_branch": "main",
+    "visibility": "public"
+  },
+  "sender": {
+    "login": "octocat", "id": 1, "node_id": "", "avatar_url": "",
+    "url": "", "html_url": "", "type": "User"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+header "X-Confusio-Raw-Action" == "sub_issue_converted"

@@ -45,6 +45,12 @@ local GH_MILESTONE_ACTIONS = {
   edited = "edited",
   opened = "opened",
 }
+local GH_SUB_ISSUES_ACTIONS = {
+  parent_issue_added = "parent_issue_added",
+  parent_issue_removed = "parent_issue_removed",
+  sub_issue_added = "sub_issue_added",
+  sub_issue_removed = "sub_issue_removed",
+}
 
 b:webhook("issues", function(payload)
   local raw_action = payload.action or ""
@@ -128,6 +134,27 @@ b:webhook("milestone", function(payload)
       sender = payload.sender or {},
     },
     timestamp = (payload.milestone or {}).updated_at or "",
+  })
+end)
+
+b:webhook("sub_issues", function(payload)
+  local raw_action = payload.action or ""
+  local action = GH_SUB_ISSUES_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "sub_issues",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "github",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      issue = payload.issue or {},
+      parent_issue = payload.parent_issue or {},
+      sub_issue = payload.sub_issue or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.issue or {}).updated_at or "",
   })
 end)
 
