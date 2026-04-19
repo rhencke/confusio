@@ -1674,6 +1674,41 @@ GitHub-emulation output shape with the following differences:
 
 The `data` object for each event family is documented in [Field-Level Mapping Tables](#field-level-mapping-tables).
 
+### Concrete delivery example
+
+A complete outbound delivery for a confusio-normalized `issues:opened` event:
+
+```http
+POST /hooks/confusio-normalized HTTP/1.1
+Host: consumer.example.com
+Content-Type: application/json
+X-Confusio-Event: issues
+X-Confusio-Action: opened
+X-Confusio-Delivery: 72d3162e-cc78-11e3-81ab-4c9367dc0958
+X-Confusio-Provider: gitea
+X-Confusio-Signature-256: sha256=a3b9f12c8d7e4f01bc6234567890abcd1234ef567890abcd1234ef567890abcd
+User-Agent: Confusio-Hookshot/1.0
+Content-Length: 712
+
+{ ... envelope body ... }
+```
+
+A delivery for an action-less event (no `X-Confusio-Action` header):
+
+```http
+POST /hooks/confusio-normalized HTTP/1.1
+Host: consumer.example.com
+Content-Type: application/json
+X-Confusio-Event: push
+X-Confusio-Delivery: 83e4273f-dd89-22f4-92bc-5d0478ed1069
+X-Confusio-Provider: gitlab
+X-Confusio-Signature-256: sha256=b4c0g23d9e8f5g12cd7345678901bcde2345fg678901bcde2345fg678901bcde
+User-Agent: Confusio-Hookshot/1.0
+Content-Length: 891
+
+{ ... envelope body ... }
+```
+
 ### Concrete envelope example
 
 A `issues:opened` event originating from Gitea:
@@ -1773,6 +1808,96 @@ increments this on breaking changes.  The current version is `"1.0"`.
 Additive changes (new optional fields in `data`) do not increment the version.
 Breaking changes (renamed/removed fields, changed types) increment the minor or major
 version string.  Consumers should treat unknown fields as ignorable.
+
+### Actor schema in `data`
+
+User/actor objects inside `data` use a confusio-specific schema that differs from the
+GitHub-emulation shape:
+
+**Confusio-normalized actor:**
+```json
+{
+  "id":           1,
+  "login":        "alice",
+  "display_name": "Alice Smith",
+  "source_url":   "https://gitea.com/alice",
+  "avatar_url":   "https://gitea.com/user/avatar/alice"
+}
+```
+
+**GitHub-emulation actor (for comparison):**
+```json
+{
+  "id":         1,
+  "login":      "alice",
+  "name":       "Alice Smith",
+  "avatar_url": "https://gitea.com/user/avatar/alice",
+  "html_url":   "https://gitea.com/alice",
+  "type":       "User"
+}
+```
+
+| confusio field | GitHub-emulation field | Notes |
+|----------------|----------------------|-------|
+| `id` | `id` | Same |
+| `login` | `login` | Same |
+| `display_name` | `name` | Renamed to avoid ambiguity with repo `name` |
+| `source_url` | `html_url` | Renamed to clarify it points to the originating forge |
+| `avatar_url` | `avatar_url` | Same; may be `null` if forge does not provide one |
+| _(absent)_ | `type` | Not present in confusio shape; `"User"` vs `"Organization"` is inferred from context |
+
+**Naming convention — `author` vs `user`:** In GitHub webhook bodies the issue/PR
+creator field is `user` (which is ambiguous — it could refer to anyone).  Confusio
+uses `author` for the resource creator and `sender` for the actor who triggered the
+webhook event.  These may be different people (e.g. someone else closes your issue).
+
+### `raw` field behaviour
+
+The `raw` field always contains the original JSON payload decoded from the forge
+request body, exactly as received.  No field renaming, translation, or filtering is
+applied.
+
+**Edge cases:**
+
+| Situation | `raw` value |
+|-----------|-------------|
+| Normal delivery | Decoded JSON object from forge body |
+| Forge sends empty body | `{}` (empty object) |
+| Forge sends a JSON array (unusual) | The decoded array |
+| Forge body cannot be decoded as JSON | `null`; confusio logs a warning |
+
+When `raw` is `null`, the `data` object is also `{}` and the event type is
+`"unknown"`.  The delivery is still queued so consumers can inspect the original bytes
+via the replay API.
+
+### Consistency with GitHub-emulation contract
+
+The following table maps each confusio-normalized header to its GitHub-emulation
+equivalent.  Where both shapes carry the same semantic, consumers can share
+verification code with a simple header-name substitution.
+
+| Confusio-normalized header | GitHub-emulation equivalent | Same value? |
+|---------------------------|----------------------------|-------------|
+| `X-Confusio-Event` | `X-GitHub-Event` | Yes — same event family names |
+| `X-Confusio-Action` | _(in body only)_ | Confusio promotes action to a header; GitHub keeps it in `action` field |
+| `X-Confusio-Delivery` | `X-GitHub-Delivery` | Yes — both are UUID v4 |
+| `X-Confusio-Provider` | _(absent)_ | No GitHub equivalent |
+| `X-Confusio-Signature-256` | `X-Hub-Signature-256` | Same format (`sha256=<hex>`), different secret |
+| _(absent)_ | `X-Hub-Signature` | Confusio does not emit a SHA-1 fallback header |
+| `Content-Type` | `Content-Type` | Same |
+| `User-Agent` | `User-Agent` | Same (`Confusio-Hookshot/<version>`) |
+
+**Key differences to call out to consumer authors:**
+
+1. `X-Confusio-Action` is a header in the confusio shape; in GitHub-emulation the
+   action is only in the JSON body's `action` field.
+2. `X-Confusio-Provider` has no GitHub equivalent; use it to route events by source
+   forge without inspecting the body.
+3. There is no SHA-1 fallback header (`X-Hub-Signature`) in the confusio shape.
+   Consumers must use `X-Confusio-Signature-256`.
+4. `source_url` in `data` objects corresponds to `html_url` in the GitHub-emulation
+   shape — same URL, different key name.
+5. `author` in `data` corresponds to `user` in the GitHub-emulation issue/PR objects.
 
 ## Field-Level Mapping Tables
 
