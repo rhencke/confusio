@@ -51,13 +51,15 @@ selects per-target which shape to emit.
 ## Architecture
 
 ```
-Forge                          Confusio                         Consumer(s)
-─────                          ────────                         ─────────────
-Gitea     ──POST /webhooks/gitea──▶  verify sig
-Forgejo   ──POST /webhooks/forgejo──▶  verify sig  ──▶  normalize
-GitLab    ──POST /webhooks/gitlab──▶  verify sig  ──▶  translate  ──▶  outbox ──▶  target A (GitHub shape)
-GitHub    ──POST /webhooks/github──▶  verify sig  ──▶  dispatch   ──▶        ──▶  target B (confusio shape)
-...                                                                            ──▶  target C (filtered subset)
+Forge                          Confusio                          Consumer(s)
+─────                          ────────                          ─────────────
+Gitea   ──▶ /webhooks/gitea  ─┐
+Forgejo ──▶ /webhooks/forgejo ─┤  verify  normalize  write        ┌─▶ target A  (GitHub shape)
+GitLab  ──▶ /webhooks/gitlab  ─┼──▶ sig ──▶  both  ──▶ outbox ───├─▶ target B  (confusio shape)
+GitHub  ──▶ /webhooks/github  ─┤          shapes    fan-out       └─▶ target C  (filtered subset)
+...     ──▶ ...               ─┘          stored    (async)
+
+Operator ──▶ /webhooks/targets ──▶ target registry  (admin: create / update / delete)
 ```
 
 ### Processing stages
@@ -73,15 +75,23 @@ GitHub    ──POST /webhooks/github──▶  verify sig  ──▶  dispatch 
    representation.  This is the canonical intermediate form; both output shapes are
    derived from it.
 
-4. **Translate** — The internal event is converted to the requested output shape:
-   - GitHub emulation applies field-level mappings to produce a byte-compatible GitHub
-     webhook payload.  See [GitHub-Emulation Contract](#github-emulation-contract).
-   - Confusio normalized wraps the internal event in the confusio envelope.  See
-     [Normalized Confusio Event Model](#normalized-confusio-event-model).
+4. **Translate** — The internal event is converted into **both** output shapes
+   simultaneously and the results are stored in the outbox event record:
+   - `github_payload`: GitHub emulation applies field-level mappings to produce a
+     byte-compatible GitHub webhook payload.  See
+     [GitHub-Emulation Contract](#github-emulation-contract).
+   - `confusio_payload`: Confusio normalized wraps the internal event in the confusio
+     envelope.  See [Normalized Confusio Event Model](#normalized-confusio-event-model).
 
-5. **Dispatch** — The translated payload is placed in the durable outbox and delivered
-   to all matching targets.  Filters, retries, and replay are described in
-   [Delivery Semantics](#delivery-semantics).
+   Pre-translating both shapes at ingest means retries and replays re-send the original
+   payload without re-processing the forge request.  Per-target shape selection happens
+   at delivery time by reading the appropriate stored variant.
+
+5. **Dispatch** — The translated payloads are placed in the durable outbox and delivered
+   asynchronously to all matching targets, each receiving the shape and applying the
+   filter configured on its registration.  Filters, retries, and replay are described in
+   [Delivery Semantics](#delivery-semantics) and
+   [Multi-Target Dispatch and Configuration](#multi-target-dispatch-and-configuration).
 
 ### Backend-agnostic internal model
 
@@ -2980,9 +2990,8 @@ the circuit — only the automatic half-open probe can close it.  A failed repla
 **not** advance the consecutive-failure counter.
 
 **Circuit breaker and the `GET /webhooks/targets/{target_id}` endpoint:**  The target
-detail response (defined in the multi-target dispatch section) includes the current
-`circuit` state and `circuit_open_until` timestamp so operators can diagnose delivery
-pauses.
+detail response (see [Get a target](#get-a-target)) includes the current `circuit` state
+and `circuit_open_until` timestamp so operators can diagnose delivery pauses.
 
 ### Retention and pruning
 
@@ -3634,9 +3643,35 @@ additions and deletions.
 GET /webhooks/targets/{target_id}
 ```
 
-Returns the full target record.  Returns `404` for deleted targets.
+Returns the full target record including live circuit breaker diagnostics.  Returns `404`
+for deleted targets.
 
-**Response** (`200 OK`): target object (same shape as each item in the list response).
+**Response** (`200 OK`):
+
+```json
+{
+  "target_id":           "<uuid>",
+  "url":                 "https://example.com/webhook",
+  "status":              "active",
+  "events":              ["*"],
+  "shape":               "github",
+  "created_at":          "<iso8601>",
+  "updated_at":          "<iso8601>",
+  "circuit":             "closed",
+  "circuit_open_until":  null,
+  "consecutive_failures": 0
+}
+```
+
+The list response omits the circuit fields for compactness; they appear only here.
+
+| Field | Description |
+|-------|-------------|
+| `circuit` | Circuit breaker state: `"closed"` (normal), `"open"` (blocking), or `"half_open"` (probe in progress) |
+| `circuit_open_until` | ISO 8601 UTC timestamp when the circuit moves to `half_open`; `null` when `"closed"` |
+| `consecutive_failures` | Count of consecutive non-`"delivered"` outcomes; resets to 0 on any success |
+
+See [Circuit breaker](#circuit-breaker) for full semantics.
 
 **Error responses:**
 
