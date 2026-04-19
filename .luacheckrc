@@ -89,6 +89,8 @@ globals = {
   "graphql_register_builtin_resolvers",
   "make_dispatcher",
   "make_webhook_receiver",
+  -- Webhook event mapping: internal/webhook_event.lua
+  "make_internal_event",
   -- Outbound delivery signing: internal/signing.lua
   "sign_github",
   "sign_confusio",

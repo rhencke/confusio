@@ -6004,6 +6004,237 @@ b:graphql("Query.search", function(_parent, args, ctx)
   }
 end)
 
+-- ─── Inbound webhook event handlers ─────────────────────────────────────────
+--
+-- GitLab uses X-Gitlab-Event with values like "Issues Hook", "Note Hook".
+-- Event data lives in payload.object_attributes; the project uses a simpler
+-- format than the REST API (namespace is a string, not a nested object).
+
+-- Translate a GitLab webhook project object to GitHub repo format.
+-- Webhook project: namespace is a bare string; path_with_namespace gives owner/repo.
+local function translate_gl_webhook_project(p)
+  if not p then
+    return {}
+  end
+  local pns = p.path_with_namespace or ""
+  local slash = pns:find("/", 1, true)
+  local owner_login = slash and pns:sub(1, slash - 1) or pns
+  local repo_name = slash and pns:sub(slash + 1) or (p.name or pns)
+  -- visibility_level: 0=private, 10=internal, 20=public (older versions)
+  -- visibility: "private"/"internal"/"public" (newer versions)
+  local vis = p.visibility_level or (p.visibility == "public" and 20 or 0)
+  return {
+    id = p.id,
+    node_id = "",
+    name = repo_name,
+    full_name = pns,
+    private = vis ~= 20,
+    owner = {
+      login = owner_login,
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      url = "",
+      html_url = "",
+      type = "User",
+    },
+    html_url = p.web_url or p.homepage or "",
+    description = p.description or "",
+    fork = false,
+    url = p.web_url or p.homepage or "",
+    ssh_url = p.git_ssh_url or "",
+    clone_url = p.git_http_url or "",
+    homepage = p.homepage or "",
+    default_branch = p.default_branch or "",
+    visibility = vis == 20 and "public" or "private",
+  }
+end
+
+-- Build a normalized issue table from an Issues Hook payload.
+-- object_attributes has the issue data; labels and assignees are top-level.
+local function webhook_issue_from_gl(payload)
+  local oa = payload.object_attributes or {}
+  local labels_arr, assignees_arr = {}, {}
+  for _, l in ipairs(payload.labels or {}) do
+    labels_arr[#labels_arr + 1] = translate_gl_label(l)
+  end
+  for _, u in ipairs(payload.assignees or {}) do
+    assignees_arr[#assignees_arr + 1] = translate_gl_user(u)
+  end
+  return {
+    id = oa.id,
+    node_id = "",
+    number = oa.iid,
+    title = oa.title,
+    body = oa.description,
+    state = oa.state == "opened" and "open" or (oa.state or "open"),
+    -- author_id is available but not the full user object; use payload.user
+    -- (the event sender) as a best-effort approximation.
+    user = translate_gl_user(payload.user),
+    assignees = assignees_arr,
+    labels = labels_arr,
+    milestone = translate_gl_milestone(payload.milestone),
+    comments = oa.user_notes_count or 0,
+    created_at = oa.created_at,
+    updated_at = oa.updated_at,
+    closed_at = oa.closed_at,
+    html_url = oa.url or "",
+    url = oa.url or "",
+    pull_request = nil,
+  }
+end
+
+-- Action maps: GitLab action string → canonical GitHub action string.
+local GL_ISSUES_ACTIONS = {
+  open = "opened",
+  close = "closed",
+  reopen = "reopened",
+  update = "edited",
+}
+local GL_NOTE_ACTIONS = {
+  create = "created",
+  update = "edited",
+  destroy = "deleted",
+}
+local GL_LABEL_ACTIONS = {
+  create = "created",
+  update = "edited",
+  -- GitLab does not emit a delete event for labels.
+}
+local GL_MILESTONE_ACTIONS = {
+  create = "created",
+  update = "edited",
+  close = "closed",
+  reopen = "opened", -- GitHub calls this "opened" (re-open a closed milestone)
+}
+
+-- issues: opened, closed, reopened, edited.
+-- Registered for X-Gitlab-Event: Issues Hook
+b:webhook("Issues Hook", function(payload)
+  local oa = payload.object_attributes or {}
+  local raw_action = oa.action or ""
+  local action = GL_ISSUES_ACTIONS[raw_action] or "unknown"
+  return make_internal_event({
+    event = "issues",
+    action = action,
+    raw_action = action == "unknown" and raw_action or nil,
+    provider = config.backend,
+    timestamp = oa.updated_at or "",
+    raw = payload,
+    data = {
+      action = action,
+      issue = webhook_issue_from_gl(payload),
+      repository = translate_gl_webhook_project(payload.project),
+      sender = translate_gl_user(payload.user),
+    },
+  })
+end)
+
+-- issue_comment: created, edited, deleted.
+-- Registered for X-Gitlab-Event: Note Hook (covers notes on issues and MRs).
+-- payload.issue is the parent issue in REST API format when noteable_type is Issue.
+b:webhook("Note Hook", function(payload)
+  local oa = payload.object_attributes or {}
+  local raw_action = oa.action or ""
+  local action = GL_NOTE_ACTIONS[raw_action] or "unknown"
+  local comment = {
+    id = oa.id,
+    node_id = "",
+    url = oa.url or "",
+    html_url = oa.url or "",
+    body = oa.note or "",
+    user = translate_gl_user(payload.user),
+    created_at = oa.created_at,
+    updated_at = oa.updated_at,
+  }
+  return make_internal_event({
+    event = "issue_comment",
+    action = action,
+    raw_action = action == "unknown" and raw_action or nil,
+    provider = config.backend,
+    timestamp = oa.updated_at or "",
+    raw = payload,
+    data = {
+      action = action,
+      issue = payload.issue and translate_gl_issue(payload.issue) or nil,
+      comment = comment,
+      repository = translate_gl_webhook_project(payload.project),
+      sender = translate_gl_user(payload.user),
+    },
+  })
+end)
+
+-- label: created, edited.  GitLab does not emit a delete event for labels.
+-- Registered for X-Gitlab-Event: Label Hook
+b:webhook("Label Hook", function(payload)
+  local oa = payload.object_attributes or {}
+  local raw_action = oa.action or ""
+  local action = GL_LABEL_ACTIONS[raw_action] or "unknown"
+  local label = {
+    id = oa.id,
+    node_id = "",
+    url = "",
+    name = oa.title or "",
+    color = (oa.color or ""):gsub("^#", ""),
+    description = oa.description or "",
+    default = false,
+  }
+  return make_internal_event({
+    event = "label",
+    action = action,
+    raw_action = action == "unknown" and raw_action or nil,
+    provider = config.backend,
+    timestamp = oa.updated_at or "",
+    raw = payload,
+    data = {
+      action = action,
+      label = label,
+      changes = {}, -- GitLab does not include changes in label webhook events
+      repository = translate_gl_webhook_project(payload.project),
+      sender = translate_gl_user(payload.user),
+    },
+  })
+end)
+
+-- milestone: created, closed, opened (reopen), edited.
+-- GitLab does not emit a delete event for milestones.
+-- Registered for X-Gitlab-Event: Milestone Hook
+b:webhook("Milestone Hook", function(payload)
+  local oa = payload.object_attributes or {}
+  local raw_action = oa.action or ""
+  local action = GL_MILESTONE_ACTIONS[raw_action] or "unknown"
+  local milestone = {
+    id = oa.id,
+    node_id = "",
+    number = oa.iid or oa.id,
+    title = oa.title or "",
+    description = oa.description or "",
+    state = oa.state == "active" and "open" or "closed",
+    html_url = oa.url or "",
+    open_issues = 0, -- GitLab omits issue counts from milestone webhook payloads
+    closed_issues = 0,
+    due_on = oa.due_date,
+    created_at = oa.created_at,
+    updated_at = oa.updated_at,
+    closed_at = oa.closed_at,
+    creator = nil, -- GitLab does not include creator in milestone webhook events
+  }
+  return make_internal_event({
+    event = "milestone",
+    action = action,
+    raw_action = action == "unknown" and raw_action or nil,
+    provider = config.backend,
+    timestamp = oa.updated_at or "",
+    raw = payload,
+    data = {
+      action = action,
+      milestone = milestone,
+      repository = translate_gl_webhook_project(payload.project),
+      sender = translate_gl_user(payload.user),
+    },
+  })
+end)
+
 b:capability("repos", repos)
 b:capability("users", users)
 b:capability("orgs", orgs)

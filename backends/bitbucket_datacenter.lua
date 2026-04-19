@@ -1497,4 +1497,9 @@ b:graphql("node.PullRequest", function(local_id, _ctx)
   return graphql_translate_pr(translate_bbs_pull(data), owner, repo)
 end)
 
+-- Webhook handlers: Bitbucket Data Center has no native issue tracker
+-- (it defers to Jira for issue management), so no issue:created /
+-- issue:updated / issue:comment_created events exist.  No b:webhook
+-- registrations are needed here.
+
 b:build()

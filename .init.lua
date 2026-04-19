@@ -44,6 +44,7 @@ dofile("/zip/internal/graphql_translators.lua")
 dofile("/zip/internal/families.lua")
 dofile("/zip/internal/context.lua")
 dofile("/zip/internal/registry.lua")
+dofile("/zip/internal/webhook_event.lua")
 
 -- Build the app context.  Backends register handlers via make_backend_builder():b:build().
 app = make_app(config)

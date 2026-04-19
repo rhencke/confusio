@@ -1930,4 +1930,113 @@ b:graphql("node.Repository", function(local_id, _ctx)
   return graphql_translate_repo(translate_ado_repo(data))
 end)
 
+-- Webhook handlers: Azure DevOps embeds the event type in payload.eventType.
+-- The dispatcher extracts it from the body (no header-based dispatch).
+--
+-- Relevant event types for the issues family:
+--   workitem.created   → issues / opened
+--   workitem.updated   → issues / edited | closed | reopened  (derived from state diff)
+--   workitem.commented → issue_comment / created
+--
+-- Payload shapes:
+--   workitem.created/workitem.updated:
+--     resource            — work item object (fields as strings for created;
+--                           revision.fields as strings + fields as diffs for updated)
+--   workitem.commented:
+--     resource.workItemId — ID of the parent work item
+--     resource.text       — comment body
+--     resource.revisedBy  — commenter
+--     resource.revisedDate
+
+-- Helper: build a sender user table from an ADO user field object.
+local function ado_user(u)
+  u = u or {}
+  return {
+    login = u.uniqueName or u.displayName or "",
+    id = 0,
+    node_id = "",
+    avatar_url = "",
+    type = "User",
+  }
+end
+
+-- Helper: derive canonical issues action for workitem.updated from the
+-- diff in resource.fields.  Each changed field is { newValue = ..., oldValue = ... }.
+local function ado_workitem_updated_action(resource)
+  local fields = resource.fields or {}
+  local state_diff = fields["System.State"]
+  if type(state_diff) == "table" then
+    local new_gh = ado_state_to_github(state_diff.newValue)
+    local old_gh = ado_state_to_github(state_diff.oldValue)
+    if new_gh == "closed" and old_gh == "open" then
+      return "closed"
+    elseif new_gh == "open" and old_gh == "closed" then
+      return "reopened"
+    end
+  end
+  return "edited"
+end
+
+b:webhook("workitem.created", function(payload)
+  local resource = payload.resource or {}
+  local issue = translate_ado_workitem(resource)
+  local fields = resource.fields or {}
+  return make_internal_event({
+    event = "issues",
+    action = "opened",
+    provider = "azuredevops",
+    raw = payload,
+    data = {
+      action = "opened",
+      issue = issue,
+      repository = {},
+      sender = ado_user(fields["System.ChangedBy"] or fields["System.CreatedBy"]),
+    },
+    timestamp = fields["System.CreatedDate"] or "",
+  })
+end)
+
+b:webhook("workitem.updated", function(payload)
+  local resource = payload.resource or {}
+  -- revision.fields has current field values as plain strings.
+  local revision = resource.revision or resource
+  local action = ado_workitem_updated_action(resource)
+  local issue = translate_ado_workitem(revision)
+  local rev_fields = revision.fields or {}
+  return make_internal_event({
+    event = "issues",
+    action = action,
+    provider = "azuredevops",
+    raw = payload,
+    data = {
+      action = action,
+      issue = issue,
+      repository = {},
+      sender = ado_user(rev_fields["System.ChangedBy"]),
+    },
+    timestamp = rev_fields["System.ChangedDate"] or "",
+  })
+end)
+
+b:webhook("workitem.commented", function(payload)
+  local resource = payload.resource or {}
+  local wid = resource.workItemId or 0
+  local comment = translate_ado_workitem_comment(resource)
+  local revised_by = resource.revisedBy or {}
+  return make_internal_event({
+    event = "issue_comment",
+    action = "created",
+    provider = "azuredevops",
+    raw = payload,
+    data = {
+      action = "created",
+      issue = { id = wid, number = wid },
+      comment = comment,
+      repository = {},
+      sender = ado_user(revised_by),
+    },
+    timestamp = resource.revisedDate or "",
+  })
+end)
+
 b:build()

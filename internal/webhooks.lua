@@ -136,17 +136,6 @@ local function verify_signature(backend, secret, body, now)
     end
     return ct_equal(secret, tok)
 
-  -- GitHub: X-Hub-Signature-256, HMAC-SHA256, prefix "sha256="
-  elseif backend == "github" then
-    if not secret or secret == "" then
-      return true
-    end
-    local sig = GetHeader("X-Hub-Signature-256")
-    if not sig then
-      return false
-    end
-    return ct_equal("sha256=" .. hmac_hex("sha256", secret, body), sig)
-
   -- Bitbucket Cloud + Bitbucket Datacenter: X-Hub-Signature, HMAC-SHA256, prefix "sha256="
   elseif backend == "bitbucket" or backend == "bitbucket_datacenter" then
     if not secret or secret == "" then
@@ -389,8 +378,8 @@ local function event_header(backend)
   elseif backend == "gitlab" then
     return GetHeader("X-Gitlab-Event")
 
-  -- GitHub + GitBucket (GitHub API-compatible): X-GitHub-Event
-  elseif backend == "github" or backend == "gitbucket" then
+  -- GitBucket (GitHub API-compatible): X-GitHub-Event
+  elseif backend == "gitbucket" then
     return GetHeader("X-GitHub-Event")
 
   -- Bitbucket Cloud + Bitbucket Datacenter: X-Event-Key
@@ -457,9 +446,13 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
 
     -- Determine canonical event name.
     -- For header-based backends: read the event-type header.
-    -- For body-based backends:   the normaliser extracts it; pass nil here and
-    --                            let the normaliser-registered handler decide.
+    -- For body-based backends:   the event type is embedded in the payload.
+    --   Azure DevOps uses payload.eventType (e.g. "workitem.created").
+    --   Other body-based backends follow the same pattern.
     local ev = event_header(backend)
+    if ev == nil and type(payload) == "table" and payload.eventType then
+      ev = payload.eventType
+    end
 
     -- No event-type header and no registered body-event handler → 422.
     if ev == nil and not next(a.backend.webhooks) then
@@ -484,6 +477,14 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
       return
     end
 
-    respond_json(200, { message = "accepted" })
+    -- When the action was not recognized, surface it in a sidecar header so
+    -- operators can identify unrecognized event variants without breaking delivery.
+    -- set_preamble (SetStatus) must be called first — SetStatus clears all
+    -- previously-set headers, so any SetHeader call before it is silently lost.
+    set_preamble(200)
+    if internal_event.action == "unknown" and internal_event.raw_action then
+      SetHeader("X-Confusio-Raw-Action", internal_event.raw_action)
+    end
+    Write(EncodeJson({ message = "accepted" }))
   end
 end
