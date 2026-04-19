@@ -2443,4 +2443,79 @@ b:graphql("Query.search", function(_parent, args, _ctx)
   }
 end)
 
+-- Webhook handlers: Bitbucket Cloud uses X-Event-Key header.
+-- Event keys relevant to the issues family:
+--   issue:created         → issues / opened
+--   issue:updated         → issues / edited | closed | reopened (derived from changes.status)
+--   issue:comment_created → issue_comment / created
+--
+-- Bitbucket Cloud states: "open", "resolved", "wontfix", "invalid", "duplicate",
+-- "on hold", "closed".  Any state other than "open" maps to the closed family.
+
+-- Derive a canonical issues action from an issue:updated payload.
+local function bb_issue_updated_action(payload)
+  local changes = payload.changes or {}
+  local status = changes.status or {}
+  local new_status = status.new
+  local old_status = status.old
+  if new_status then
+    if new_status == "open" and old_status and old_status ~= "open" then
+      return "reopened"
+    elseif new_status ~= "open" and old_status == "open" then
+      return "closed"
+    end
+  end
+  return "edited"
+end
+
+b:webhook("issue:created", function(payload)
+  return make_internal_event({
+    event = "issues",
+    action = "opened",
+    provider = "bitbucket",
+    raw = payload,
+    data = {
+      action = "opened",
+      issue = translate_bb_issue(payload.issue or {}),
+      repository = translate_bb_repo(payload.repository or {}),
+      sender = translate_bb_user(payload.actor or {}),
+    },
+    timestamp = (payload.issue or {}).created_on or "",
+  })
+end)
+
+b:webhook("issue:updated", function(payload)
+  local action = bb_issue_updated_action(payload)
+  return make_internal_event({
+    event = "issues",
+    action = action,
+    provider = "bitbucket",
+    raw = payload,
+    data = {
+      action = action,
+      issue = translate_bb_issue(payload.issue or {}),
+      repository = translate_bb_repo(payload.repository or {}),
+      sender = translate_bb_user(payload.actor or {}),
+    },
+    timestamp = (payload.issue or {}).updated_on or "",
+  })
+end)
+
+b:webhook("issue:comment_created", function(payload)
+  return make_internal_event({
+    event = "issue_comment",
+    action = "created",
+    provider = "bitbucket",
+    raw = payload,
+    data = {
+      action = "created",
+      issue = translate_bb_issue(payload.issue or {}),
+      comment = translate_bb_issue_comment(payload.comment or {}),
+      repository = translate_bb_repo(payload.repository or {}),
+      sender = translate_bb_user(payload.actor or {}),
+    },
+    timestamp = (payload.comment or {}).created_on or "",
+  })
+end)
+
 b:build()
