@@ -175,6 +175,16 @@ local function reactions_not_implemented()
   respond_json(501, { message = "Reactions are not supported by this backend." })
 end
 
+-- Default handler for POST /webhooks/{backend} (webhook receive pipeline).
+--
+-- The real receiver is installed as app.webhook_receiver by .init.lua and
+-- intercepted by dispatch.lua before routing.  This stub is registered in
+-- the catalog for documentation purposes only (validate-csv/validate-tests);
+-- it should never be reached in normal operation.
+local function webhook_receive_stub()
+  respond_json(501, { message = "Webhook receiver not installed." })
+end
+
 -- Default handlers for repo webhook (hooks) endpoints.
 --
 -- GET list → empty array (no hooks configured by default).
@@ -288,6 +298,7 @@ defaults = { -- luacheck: globals defaults
   activity_not_implemented = activity_not_implemented,
   activity_list_empty = activity_list_empty,
   reactions_not_implemented = reactions_not_implemented,
+  webhook_receive_stub = webhook_receive_stub,
   hooks_empty_list = hooks_empty_list,
   hooks_not_implemented = hooks_not_implemented,
   hook_not_found = hook_not_found,

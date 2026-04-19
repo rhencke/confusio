@@ -26,6 +26,20 @@ local endpoint_sections = {
     },
   },
   {
+    "webhooks",
+    {
+      -- Webhook receive pipeline (confusio-specific; not part of the GitHub REST API spec).
+      -- The real handler is installed as app.webhook_receiver by .init.lua and intercepted
+      -- by dispatch.lua before routing.  This catalog entry drives validate-csv/validate-tests
+      -- coverage tracking; the default stub is never reached in normal operation.
+      {
+        "POST /webhooks/{backend}",
+        "post_webhooks_backend",
+        defaults.webhook_receive_stub,
+      },
+    },
+  },
+  {
     "meta",
     {
       -- Root

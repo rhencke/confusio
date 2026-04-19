@@ -33,6 +33,9 @@ local CONFUSIO_NATIVE = {
   -- graphql_handler is the fixed handler for POST /graphql across all backends;
   -- backends populate graphql_resolvers rather than app.backend.rest.graphql_request.
   graphql_request = true,
+  -- The webhook receive pipeline in internal/webhooks.lua handles all backends uniformly;
+  -- backends register event handlers via b:webhook(), not app.backend.rest entries.
+  post_webhooks_backend = true,
 }
 
 local csv_path = (arg and arg[1]) or "site/compatibility.csv" -- luacheck: globals arg
