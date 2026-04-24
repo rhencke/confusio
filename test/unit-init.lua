@@ -67,9 +67,9 @@ end
 GetCryptoHash = function(_alg, _msg, _key)
   return string.rep("\xaa", 32)
 end
--- Stub GetRandom: returns a deterministic byte sequence so make_uuid produces a
+-- Stub GetRandomBytes: returns a deterministic byte sequence so make_uuid produces a
 -- predictable value in tests.  Byte i = (i * 17) % 256, giving 16 distinct bytes.
-GetRandom = function(n) -- luacheck: globals GetRandom
+GetRandomBytes = function(n) -- luacheck: globals GetRandomBytes
   local t = {}
   for i = 1, n do
     t[i] = string.char((i * 17) % 256)
@@ -2878,7 +2878,7 @@ end
 -- make_uuid / iso8601 / now_iso8601 (internal/util.lua)
 -- ============================================================
 
--- make_uuid: format validation with the deterministic GetRandom stub.
+-- make_uuid: format validation with the deterministic GetRandomBytes stub.
 -- Stub returns bytes [17, 34, 51, 68, 85, 102, 119, 136, 153, 170, 187, 204, 221, 238, 255, 16].
 -- byte 7 (119 = 0x77) → (0x77 & 0x0f) | 0x40 = 0x47
 -- byte 9 (153 = 0x99) → (0x99 & 0x3f) | 0x80 = 0x99
@@ -2944,7 +2944,7 @@ eq(now_str:sub(1, 16), expected_prefix, "now_iso8601: within same minute as os.t
 -- luacheck: globals outbox_list_deliveries_for_target outbox_update_delivery
 -- luacheck: globals outbox_pending_retries outbox_prune
 
--- Note: the GetRandom stub is deterministic, so make_uuid() always returns the
+-- Note: the GetRandomBytes stub is deterministic, so make_uuid() always returns the
 -- same UUID.  All tests operate on a single event/delivery at a time.  We use
 -- outbox_get_event / outbox_get_delivery to retrieve the canonical record after
 -- each create, and exercise update/prune sequentially in lifecycle order.
@@ -3115,7 +3115,7 @@ ok(
 
 -- luacheck: globals target_create target_get target_list target_update target_delete target_get_secret
 
--- Note: the GetRandom stub is deterministic, so make_uuid() always returns the
+-- Note: the GetRandomBytes stub is deterministic, so make_uuid() always returns the
 -- same UUID.  All tests therefore operate on a single target_id (the one assigned
 -- by target_create), exercising create → get → update → delete lifecycle in order.
 
@@ -3371,7 +3371,7 @@ do
   )
 
   -- Capture the target_id from a successful create for subsequent tests.
-  -- (GetRandom stub is deterministic so all make_uuid calls return the same ID.)
+  -- (GetRandomBytes stub is deterministic so all make_uuid calls return the same ID.)
   local api_target_id = b_create and b_create.target_id
 
   -- ── GET /webhooks/targets: list ───────────────────────────────
@@ -3552,7 +3552,7 @@ ok(fb_unknown_dec ~= nil, "fanout_body unknown shape: valid JSON")
 eq(fb_unknown_dec.ref, "refs/heads/main", "fanout_body unknown shape: falls back to github")
 
 -- fanout_dispatch: set up a target with wildcard subscription.
--- Note: the GetRandom stub is deterministic, so make_uuid() always returns the
+-- Note: the GetRandomBytes stub is deterministic, so make_uuid() always returns the
 -- same UUID.  Previous test sections may have left multiple copies of that UUID
 -- in the target _order list.  After the targets_api section the record is deleted,
 -- so creating a new target here reactivates it.  target_list() returns one copy

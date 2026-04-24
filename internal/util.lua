@@ -7,8 +7,8 @@
 -- iso8601(t)      — formats Unix epoch t as ISO 8601 UTC string (e.g. "2026-04-24T21:00:00Z")
 -- now_iso8601()   — returns the current time formatted as ISO 8601 UTC
 --
--- make_uuid() uses GetRandom(16) — a Redbean built-in that returns
--- cryptographically secure random bytes.  Unit tests stub GetRandom to a
+-- make_uuid() uses GetRandomBytes(16) — a Redbean built-in that returns
+-- cryptographically secure random bytes.  Unit tests stub GetRandomBytes to a
 -- deterministic sequence.
 --
 -- Globals exported:
@@ -18,7 +18,7 @@
 -- Format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
 -- where 4 is the version nibble and y is the variant nibble (8, 9, a, or b).
 function make_uuid() -- luacheck: globals make_uuid
-  local b = GetRandom(16) -- luacheck: globals GetRandom
+  local b = GetRandomBytes(16) -- luacheck: globals GetRandomBytes
   -- Set version 4: high nibble of byte 7 = 0x4
   local b7 = (b:byte(7) & 0x0f) | 0x40
   -- Set variant 1: high 2 bits of byte 9 = 10xxxxxx

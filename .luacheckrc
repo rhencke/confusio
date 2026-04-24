@@ -21,7 +21,7 @@ globals = {
   "DecodeBase64",
   "EscapeParam",
   "GetCryptoHash",
-  "GetRandom",
+  "GetRandomBytes",
   -- Redbean built-ins: routing
   "Route",
   "OnHttpRequest",
