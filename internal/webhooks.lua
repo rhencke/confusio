@@ -481,6 +481,27 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
       return
     end
 
+    -- Fan out to all active targets that subscribe to this event type.
+    -- deliver_attempt is called synchronously for each matched target; the
+    -- retry scheduler (a later module) will pick up any "retrying" records.
+    local ev, deliveries = fanout_dispatch(backend, internal_event.event, payload)
+    for _, delivery in ipairs(deliveries) do
+      deliver_attempt(delivery.delivery_id)
+    end
+
+    -- Build the response body.  Always include event_id so callers can use
+    -- the delivery-list and replay APIs.  delivery_ids is omitted when there
+    -- are no matched targets — EncodeJson({}) produces "{}" not "[]", so we
+    -- only include the field when there is at least one delivery to list.
+    local resp = { message = "accepted", event_id = ev.event_id }
+    if #deliveries > 0 then
+      local ids = {}
+      for i, d in ipairs(deliveries) do
+        ids[i] = d.delivery_id
+      end
+      resp.delivery_ids = ids
+    end
+
     -- When the action was not recognized, surface it in a sidecar header so
     -- operators can identify unrecognized event variants without breaking delivery.
     -- set_preamble (SetStatus) must be called first — SetStatus clears all
@@ -489,6 +510,6 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
     if internal_event.action == "unknown" and internal_event.raw_action then
       SetHeader("X-Confusio-Raw-Action", internal_event.raw_action)
     end
-    Write(EncodeJson({ message = "accepted" }))
+    Write(EncodeJson(resp))
   end
 end
