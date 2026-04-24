@@ -3759,6 +3759,167 @@ local da_del7 = outbox_get_delivery(da_del_id)
 eq(da_del7.status, "failed", "deliver_attempt deleted target: status is failed")
 
 -- ============================================================
+-- deliveries_api (internal/deliveries_api.lua)
+-- ============================================================
+
+-- luacheck: globals make_deliveries_api outbox_list_all_deliveries
+
+ok(type(make_deliveries_api) == "function", "make_deliveries_api: exported as global function")
+ok(
+  type(outbox_list_all_deliveries) == "function",
+  "outbox_list_all_deliveries: exported as global function"
+)
+
+do
+  -- Helper: call the deliveries API with a fake request and return status + decoded body.
+  local function call_dapi(opts)
+    reset_request(opts)
+    reset_response()
+    app.deliveries_api() -- luacheck: globals app
+    local s_ok, decoded = pcall(DecodeJson, _last_body ~= "" and _last_body or "null")
+    return _last_status, s_ok and decoded or nil
+  end
+
+  local AUTH = { Authorization = "Bearer admin-token" }
+
+  -- ── 401 when Authorization header is missing ─────────────────
+
+  local s401, b401 = call_dapi({ method = "GET", path = "/webhooks/deliveries", headers = {} })
+  eq(s401, 401, "deliveries_api: missing auth → 401")
+  eq(b401 and b401.error, "unauthorized", "deliveries_api: missing auth → error=unauthorized")
+
+  -- ── Set up a fresh event + delivery for the remaining tests ──
+
+  local dapi_ev = outbox_store_event("gitea", "push", { ref = "refs/heads/main" })
+  ok(dapi_ev ~= nil, "deliveries_api setup: event stored")
+  local dapi_target =
+    target_create({ url = "https://dapi-test.example.com/hook", events = { "*" } })
+  ok(dapi_target ~= nil, "deliveries_api setup: target created")
+  local dapi_del = outbox_create_delivery(dapi_ev.event_id, dapi_target.target_id)
+  ok(dapi_del ~= nil, "deliveries_api setup: delivery created")
+
+  -- ── outbox_list_all_deliveries ───────────────────────────────
+
+  local all_dels = outbox_list_all_deliveries()
+  ok(type(all_dels) == "table", "outbox_list_all_deliveries: returns a table")
+  ok(#all_dels >= 1, "outbox_list_all_deliveries: at least one delivery present")
+
+  -- ── GET /webhooks/deliveries → 200 with array ────────────────
+
+  local s_list, b_list =
+    call_dapi({ method = "GET", path = "/webhooks/deliveries", headers = AUTH })
+  eq(s_list, 200, "deliveries_api GET list: 200")
+  ok(type(b_list) == "table", "deliveries_api GET list: response is a table (array)")
+
+  -- ── GET /webhooks/deliveries/{id} → 200 with delivery object ─
+
+  local s_get, b_get = call_dapi({
+    method = "GET",
+    path = "/webhooks/deliveries/" .. dapi_del.delivery_id,
+    headers = AUTH,
+  })
+  eq(s_get, 200, "deliveries_api GET single: 200")
+  eq(
+    b_get and b_get.delivery_id,
+    dapi_del.delivery_id,
+    "deliveries_api GET single: delivery_id matches"
+  )
+  eq(b_get and b_get.event_id, dapi_ev.event_id, "deliveries_api GET single: event_id present")
+  eq(
+    b_get and b_get.target_id,
+    dapi_target.target_id,
+    "deliveries_api GET single: target_id present"
+  )
+  ok(b_get and b_get.status ~= nil, "deliveries_api GET single: status field present")
+  ok(b_get and b_get.created_at ~= nil, "deliveries_api GET single: created_at field present")
+
+  -- ── GET /webhooks/deliveries/nonexistent → 404 ───────────────
+
+  local s_nf, b_nf = call_dapi({
+    method = "GET",
+    path = "/webhooks/deliveries/00000000-0000-4000-8000-000000000000",
+    headers = AUTH,
+  })
+  eq(s_nf, 404, "deliveries_api GET single: unknown id → 404")
+  eq(
+    b_nf and b_nf.error,
+    "delivery_not_found",
+    "deliveries_api GET single: unknown id → delivery_not_found"
+  )
+
+  -- ── GET /webhooks/events/{event_id}/deliveries → 200 ─────────
+
+  local s_ev, b_ev = call_dapi({
+    method = "GET",
+    path = "/webhooks/events/" .. dapi_ev.event_id .. "/deliveries",
+    headers = AUTH,
+  })
+  eq(s_ev, 200, "deliveries_api GET event deliveries: 200")
+  ok(type(b_ev) == "table", "deliveries_api GET event deliveries: response is array")
+  ok(#b_ev >= 1, "deliveries_api GET event deliveries: at least one delivery")
+  eq(
+    b_ev[1] and b_ev[1].event_id,
+    dapi_ev.event_id,
+    "deliveries_api GET event deliveries: event_id matches"
+  )
+
+  -- ── GET /webhooks/events/nonexistent/deliveries → 404 ────────
+
+  local s_ev_nf, b_ev_nf = call_dapi({
+    method = "GET",
+    path = "/webhooks/events/00000000-0000-4000-8000-000000000000/deliveries",
+    headers = AUTH,
+  })
+  eq(s_ev_nf, 404, "deliveries_api GET event deliveries: unknown event → 404")
+  eq(
+    b_ev_nf and b_ev_nf.error,
+    "event_not_found",
+    "deliveries_api GET event deliveries: unknown event → event_not_found"
+  )
+
+  -- ── GET /webhooks/targets/{target_id}/deliveries → 200 ───────
+
+  local s_tgt, b_tgt = call_dapi({
+    method = "GET",
+    path = "/webhooks/targets/" .. dapi_target.target_id .. "/deliveries",
+    headers = AUTH,
+  })
+  eq(s_tgt, 200, "deliveries_api GET target deliveries: 200")
+  ok(type(b_tgt) == "table", "deliveries_api GET target deliveries: response is array")
+  ok(#b_tgt >= 1, "deliveries_api GET target deliveries: at least one delivery")
+  eq(
+    b_tgt[1] and b_tgt[1].target_id,
+    dapi_target.target_id,
+    "deliveries_api GET target deliveries: target_id matches"
+  )
+
+  -- ── GET /webhooks/targets/nonexistent/deliveries → 404 ───────
+
+  local s_tgt_nf, b_tgt_nf = call_dapi({
+    method = "GET",
+    path = "/webhooks/targets/00000000-0000-4000-8000-000000000000/deliveries",
+    headers = AUTH,
+  })
+  eq(s_tgt_nf, 404, "deliveries_api GET target deliveries: unknown target → 404")
+  eq(
+    b_tgt_nf and b_tgt_nf.error,
+    "target_not_found",
+    "deliveries_api GET target deliveries: unknown target → target_not_found"
+  )
+
+  -- ── Non-GET method → 405 ─────────────────────────────────────
+
+  local s_mna, _ = call_dapi({ method = "POST", path = "/webhooks/deliveries", headers = AUTH })
+  eq(s_mna, 405, "deliveries_api: POST /webhooks/deliveries → 405")
+
+  -- ── Unknown sub-path → 404 ───────────────────────────────────
+
+  local s_unk, _ =
+    call_dapi({ method = "GET", path = "/webhooks/deliveries/abc/extra", headers = AUTH })
+  eq(s_unk, 404, "deliveries_api: unrecognised sub-path → 404")
+end
+
+-- ============================================================
 -- Summary
 -- ============================================================
 

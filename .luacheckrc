@@ -101,6 +101,7 @@ globals = {
   "outbox_get_event",
   "outbox_create_delivery",
   "outbox_get_delivery",
+  "outbox_list_all_deliveries",
   "outbox_list_deliveries_for_event",
   "outbox_list_deliveries_for_target",
   "outbox_update_delivery",
@@ -115,6 +116,8 @@ globals = {
   "target_get_secret",
   -- Target admin API: internal/targets_api.lua
   "make_targets_api",
+  -- Delivery inspection API: internal/deliveries_api.lua
+  "make_deliveries_api",
   -- Outbound delivery signing: internal/signing.lua
   "sign_github",
   "sign_confusio",

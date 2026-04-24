@@ -151,6 +151,23 @@ function outbox_pending_retries() -- luacheck: globals outbox_pending_retries
   return result
 end
 
+-- outbox_list_all_deliveries() returns all delivery records, newest first,
+-- limited to 100 records.
+function outbox_list_all_deliveries() -- luacheck: globals outbox_list_all_deliveries
+  local result = {}
+  local limit = 100
+  for i = #_delivery_order, 1, -1 do
+    local d = _deliveries[_delivery_order[i]]
+    if d ~= nil then
+      result[#result + 1] = d
+      if #result >= limit then
+        break
+      end
+    end
+  end
+  return result
+end
+
 -- outbox_prune(max_age_seconds) removes events (and their associated deliveries)
 -- whose received_at timestamp is older than max_age_seconds ago.
 function outbox_prune(max_age_seconds) -- luacheck: globals outbox_prune

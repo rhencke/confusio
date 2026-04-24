@@ -18,7 +18,16 @@ function make_dispatcher(a) -- luacheck: globals make_dispatcher
     -- forge-supplied signatures independently.
     if GetPath():match("^/webhooks/") then
       if GetPath():match("^/webhooks/targets") and a.targets_api then
-        a.targets_api()
+        -- /webhooks/targets/{id}/deliveries is handled by the deliveries API.
+        if GetPath():match("^/webhooks/targets/[^/]+/deliveries") and a.deliveries_api then
+          a.deliveries_api()
+        else
+          a.targets_api()
+        end
+      elseif GetPath():match("^/webhooks/deliveries") and a.deliveries_api then
+        a.deliveries_api()
+      elseif GetPath():match("^/webhooks/events/[^/]+/deliveries") and a.deliveries_api then
+        a.deliveries_api()
       elseif a.webhook_receiver then
         a.webhook_receiver()
       else
