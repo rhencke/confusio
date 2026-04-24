@@ -2933,6 +2933,182 @@ local expected_prefix = iso8601(os.time()):sub(1, 16)
 eq(now_str:sub(1, 16), expected_prefix, "now_iso8601: within same minute as os.time()")
 
 -- ============================================================
+-- outbox_store_event / outbox_get_event / outbox_create_delivery /
+-- outbox_get_delivery / outbox_list_deliveries_for_event /
+-- outbox_list_deliveries_for_target / outbox_update_delivery /
+-- outbox_pending_retries / outbox_prune (internal/outbox.lua)
+-- ============================================================
+
+-- luacheck: globals outbox_store_event outbox_get_event outbox_create_delivery
+-- luacheck: globals outbox_get_delivery outbox_list_deliveries_for_event
+-- luacheck: globals outbox_list_deliveries_for_target outbox_update_delivery
+-- luacheck: globals outbox_pending_retries outbox_prune
+
+-- Note: the GetRandom stub is deterministic, so make_uuid() always returns the
+-- same UUID.  All tests operate on a single event/delivery at a time.  We use
+-- outbox_get_event / outbox_get_delivery to retrieve the canonical record after
+-- each create, and exercise update/prune sequentially in lifecycle order.
+
+-- outbox_store_event: stores an event and returns a record.
+local ob_ev = outbox_store_event("gitea", "push", { ref = "refs/heads/main" })
+ok(ob_ev ~= nil, "outbox_store_event: returns non-nil")
+ok(ob_ev.event_id ~= nil, "outbox_store_event: event_id is set")
+eq(#ob_ev.event_id, 36, "outbox_store_event: event_id is 36 chars (UUID)")
+eq(ob_ev.backend, "gitea", "outbox_store_event: backend stored")
+eq(ob_ev.event_type, "push", "outbox_store_event: event_type stored")
+eq(ob_ev.payload.ref, "refs/heads/main", "outbox_store_event: payload stored")
+ok(ob_ev.received_at ~= nil, "outbox_store_event: received_at is set")
+eq(#ob_ev.received_at, 20, "outbox_store_event: received_at is 20-char ISO 8601")
+
+local ob_ev_id = ob_ev.event_id
+
+-- outbox_get_event: retrieves stored event by id.
+local ob_got_ev = outbox_get_event(ob_ev_id)
+ok(ob_got_ev ~= nil, "outbox_get_event: found stored event")
+eq(ob_got_ev.event_id, ob_ev_id, "outbox_get_event: event_id matches")
+eq(ob_got_ev.event_type, "push", "outbox_get_event: event_type matches")
+
+-- outbox_get_event: returns nil for unknown id.
+ok(
+  outbox_get_event("00000000-0000-4000-8000-000000000000") == nil,
+  "outbox_get_event: nil for unknown id"
+)
+
+-- outbox_create_delivery: creates a delivery record for (event, target).
+local ob_tgt_id = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+local ob_del = outbox_create_delivery(ob_ev_id, ob_tgt_id)
+ok(ob_del ~= nil, "outbox_create_delivery: returns non-nil")
+ok(ob_del.delivery_id ~= nil, "outbox_create_delivery: delivery_id is set")
+eq(#ob_del.delivery_id, 36, "outbox_create_delivery: delivery_id is UUID")
+eq(ob_del.event_id, ob_ev_id, "outbox_create_delivery: event_id stored")
+eq(ob_del.target_id, ob_tgt_id, "outbox_create_delivery: target_id stored")
+eq(ob_del.status, "pending", "outbox_create_delivery: initial status is pending")
+eq(ob_del.attempt_count, 0, "outbox_create_delivery: attempt_count starts at 0")
+ok(ob_del.next_attempt_at == nil, "outbox_create_delivery: next_attempt_at starts nil")
+ok(ob_del.last_http_status == nil, "outbox_create_delivery: last_http_status starts nil")
+ok(ob_del.last_error == nil, "outbox_create_delivery: last_error starts nil")
+ok(ob_del.created_at ~= nil, "outbox_create_delivery: created_at is set")
+ok(ob_del.updated_at ~= nil, "outbox_create_delivery: updated_at is set")
+
+local ob_del_id = ob_del.delivery_id
+
+-- outbox_get_delivery: retrieves a delivery by id.
+local ob_got_del = outbox_get_delivery(ob_del_id)
+ok(ob_got_del ~= nil, "outbox_get_delivery: found stored delivery")
+eq(ob_got_del.delivery_id, ob_del_id, "outbox_get_delivery: delivery_id matches")
+
+-- outbox_get_delivery: returns nil for unknown id.
+ok(
+  outbox_get_delivery("00000000-0000-4000-8000-000000000000") == nil,
+  "outbox_get_delivery: nil for unknown id"
+)
+
+-- outbox_list_deliveries_for_event: returns deliveries for the event.
+local ob_evdels = outbox_list_deliveries_for_event(ob_ev_id)
+ok(#ob_evdels >= 1, "outbox_list_deliveries_for_event: at least 1 delivery for event")
+eq(ob_evdels[1].event_id, ob_ev_id, "outbox_list_deliveries_for_event: delivery event_id matches")
+
+-- outbox_list_deliveries_for_event: empty for unknown event.
+local ob_evdels_empty = outbox_list_deliveries_for_event("00000000-0000-4000-8000-000000000000")
+eq(#ob_evdels_empty, 0, "outbox_list_deliveries_for_event: empty for unknown event_id")
+
+-- outbox_list_deliveries_for_target: returns deliveries for target.
+local ob_tgtdels = outbox_list_deliveries_for_target(ob_tgt_id)
+ok(#ob_tgtdels >= 1, "outbox_list_deliveries_for_target: at least 1 delivery for target")
+eq(
+  ob_tgtdels[1].target_id,
+  ob_tgt_id,
+  "outbox_list_deliveries_for_target: delivery target_id matches"
+)
+
+-- outbox_list_deliveries_for_target: empty for unknown target.
+local ob_tgtdels_empty = outbox_list_deliveries_for_target("00000000-0000-4000-8000-000000000000")
+eq(#ob_tgtdels_empty, 0, "outbox_list_deliveries_for_target: empty for unknown target_id")
+
+-- outbox_update_delivery: updates allowed fields and bumps updated_at.
+local ob_upd = outbox_update_delivery(ob_del_id, {
+  status = "retrying",
+  attempt_count = 1,
+  next_attempt_at = "2000-01-01T00:00:00Z", -- past timestamp for pending_retries test below
+  last_http_status = 503,
+  last_error = "Service Unavailable",
+})
+ok(ob_upd ~= nil, "outbox_update_delivery: returns non-nil")
+eq(ob_upd.status, "retrying", "outbox_update_delivery: status updated")
+eq(ob_upd.attempt_count, 1, "outbox_update_delivery: attempt_count updated")
+eq(
+  ob_upd.next_attempt_at,
+  "2000-01-01T00:00:00Z",
+  "outbox_update_delivery: next_attempt_at updated"
+)
+eq(ob_upd.last_http_status, 503, "outbox_update_delivery: last_http_status updated")
+eq(ob_upd.last_error, "Service Unavailable", "outbox_update_delivery: last_error updated")
+ok(ob_upd.updated_at ~= nil, "outbox_update_delivery: updated_at is set")
+
+-- outbox_update_delivery: partial update (only status).
+local ob_partial = outbox_update_delivery(ob_del_id, { status = "retrying" })
+ok(ob_partial ~= nil, "outbox_update_delivery: partial update returns non-nil")
+eq(ob_partial.status, "retrying", "outbox_update_delivery: partial status preserved")
+eq(
+  ob_partial.attempt_count,
+  1,
+  "outbox_update_delivery: attempt_count unchanged after partial update"
+)
+
+-- outbox_update_delivery: returns nil for unknown delivery_id.
+local ob_upd_miss =
+  outbox_update_delivery("00000000-0000-4000-8000-000000000000", { status = "failed" })
+ok(ob_upd_miss == nil, "outbox_update_delivery: nil for unknown id")
+
+-- outbox_pending_retries: delivery with status=retrying and past next_attempt_at is returned.
+-- (ob_del is currently retrying with next_attempt_at in the past.)
+local ob_retries = outbox_pending_retries()
+local ob_found_retry = false
+for _, d in ipairs(ob_retries) do
+  if d.delivery_id == ob_del_id then
+    ob_found_retry = true
+  end
+end
+ok(ob_found_retry, "outbox_pending_retries: delivery with past next_attempt_at included")
+
+-- outbox_pending_retries: delivery with future next_attempt_at is not returned.
+outbox_update_delivery(ob_del_id, { next_attempt_at = "2099-01-01T00:00:00Z" })
+local ob_retries2 = outbox_pending_retries()
+local ob_found_future = false
+for _, d in ipairs(ob_retries2) do
+  if d.delivery_id == ob_del_id then
+    ob_found_future = true
+  end
+end
+ok(not ob_found_future, "outbox_pending_retries: delivery with future next_attempt_at excluded")
+
+-- outbox_pending_retries: delivery with status=pending is not returned.
+outbox_update_delivery(ob_del_id, { status = "pending", next_attempt_at = "2000-01-01T00:00:00Z" })
+local ob_retries3 = outbox_pending_retries()
+local ob_found_pending = false
+for _, d in ipairs(ob_retries3) do
+  if d.delivery_id == ob_del_id then
+    ob_found_pending = true
+  end
+end
+ok(not ob_found_pending, "outbox_pending_retries: delivery with status=pending not included")
+
+-- outbox_prune: removes events (and their deliveries) older than max_age_seconds.
+-- Use max_age_seconds=-1 so the cutoff is 1 second in the future; all events
+-- received "now" have received_at strictly less than that cutoff and are pruned.
+outbox_prune(-1)
+ok(outbox_get_event(ob_ev_id) == nil, "outbox_prune: event removed when cutoff is future")
+ok(outbox_get_delivery(ob_del_id) == nil, "outbox_prune: delivery removed with its event")
+
+-- outbox_prune: fresh events survive a large max_age prune.
+local ob_ev2 = outbox_store_event("gitlab", "tag_push", { ref = "refs/tags/v1.0" })
+outbox_prune(3600)
+ok(
+  outbox_get_event(ob_ev2.event_id) ~= nil,
+  "outbox_prune: fresh event survives prune with large max_age"
+)
+
+-- ============================================================
 -- target_create / target_get / target_list / target_update /
 -- target_delete / target_get_secret (internal/targets.lua)
 -- ============================================================

@@ -96,6 +96,16 @@ globals = {
   "make_uuid",
   "iso8601",
   "now_iso8601",
+  -- Outbox: internal/outbox.lua
+  "outbox_store_event",
+  "outbox_get_event",
+  "outbox_create_delivery",
+  "outbox_get_delivery",
+  "outbox_list_deliveries_for_event",
+  "outbox_list_deliveries_for_target",
+  "outbox_update_delivery",
+  "outbox_pending_retries",
+  "outbox_prune",
   -- Target registry: internal/targets.lua
   "target_create",
   "target_get",
