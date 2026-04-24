@@ -2277,15 +2277,15 @@ Triggered on pull request lifecycle events.
 
 Triggered when a review is submitted or dismissed on a pull request.
 
-| GitHub field | gitea-family | gitlab | bitbucket-dc | github | All others |
-|---|---|---|---|---|---|
-| `review.id` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `review.body` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `review.state` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `review.html_url` | ✓ | ✓ | ~ | ✓ | ✗ |
-| `review.user` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `review.submitted_at` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `pull_request` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| GitHub field | gitea-family | gitlab | bitbucket | bitbucket-dc | github | All others |
+|---|---|---|---|---|---|---|
+| `review.id` | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `review.body` | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `review.state` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `review.html_url` | ✓ | ✓ | ✗ | ~ | ✓ | ✗ |
+| `review.user` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `review.submitted_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `pull_request` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
 
 #### `review.state` mapping
 
@@ -2297,23 +2297,28 @@ Triggered when a review is submitted or dismissed on a pull request.
 | GitLab `approved` | `"approved"` |
 | GitLab `unapproved` | `"dismissed"` |
 | GitLab `commented` | `"commented"` |
+| Bitbucket Cloud `approved` | `"approved"` |
+| Bitbucket Cloud `unapproved` | `"dismissed"` |
 | Bitbucket DC `APPROVED` | `"approved"` |
 | Bitbucket DC `NEEDS_WORK` | `"changes_requested"` |
 
 #### Supported actions
 
-| Action | gitea-family | gitlab | bitbucket-dc | github |
-|--------|---|---|---|---|
-| `submitted` | ✓ | ✓ | ✓ | ✓ |
-| `dismissed` | ~ | ✓ | ✗ | ✓ |
+| Action | gitea-family | gitlab | bitbucket | bitbucket-dc | github |
+|--------|---|---|---|---|---|
+| `submitted` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `dismissed` | ~ | ✓ | ✓ | ✗ | ✓ |
 
 **Notes:**
 - `pull_request_review` events require the forge to have a native review system.
-  Bitbucket Cloud, Gogs, GitBucket, Azure DevOps, and most self-hosted forges do not
-  emit review events.  The event is never generated for these backends.
+  Gogs, GitBucket, Azure DevOps, and most self-hosted forges do not emit review events.
+  The event is never generated for these backends.
+- Bitbucket Cloud emits `pullrequest:approved` (→ `submitted / APPROVED`) and
+  `pullrequest:unapproved` (→ `dismissed / DISMISSED`).  It has no "request changes"
+  concept; `review.id`, `review.body`, and `review.html_url` are always empty.
 - `dismissed` action: Gitea marks a dismissed review by changing state; confusio
   synthesizes the `dismissed` action from a state transition to `dismissed`.  GitLab
-  supports explicit dismissal.  Bitbucket Datacenter does not.
+  and Bitbucket Cloud support explicit dismissal.  Bitbucket Datacenter does not.
 - `review.html_url`: Bitbucket Datacenter does not provide a direct URL to the review;
   confusio constructs an approximate URL from the PR URL.
 
