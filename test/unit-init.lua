@@ -3323,7 +3323,7 @@ do
 
   -- ── Unknown path under /webhooks/targets/ → 404 ──────────────
 
-  local s_unk, b_unk = call_api({
+  local s_unk, _ = call_api({
     method = "GET",
     path = "/webhooks/targets/abc/extra",
     headers = AUTH,
