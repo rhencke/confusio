@@ -16,6 +16,10 @@ function make_dispatcher(a) -- luacheck: globals make_dispatcher
     -- maybe_prune_outbox() is a no-op if the pruning interval has not elapsed.
     maybe_prune_outbox()
 
+    -- Periodic retry: drive pending retries with exponential backoff.
+    -- maybe_retry_pending() is a no-op if the retry interval has not elapsed.
+    maybe_retry_pending()
+
     -- Webhook paths bypass the auth gate entirely.  /webhooks/targets* routes
     -- to the target admin API (which enforces its own auth); all other
     -- /webhooks/* paths route to the webhook receiver which verifies

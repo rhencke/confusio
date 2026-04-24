@@ -11,9 +11,8 @@
 --   other 4xx        → status "failed",    attempt_count++
 --   network error    → status "retrying",  next_attempt_at = now
 --
--- The retry scheduler (a later module) replaces next_attempt_at with a
--- proper exponential-backoff value.  Setting it to now here ensures records
--- are immediately visible to outbox_pending_retries until the scheduler runs.
+-- next_retry_at(attempt_number) (from internal/retry.lua) computes the
+-- exponential-backoff timestamp for the next attempt.
 --
 -- Globals exported:
 --   deliver_attempt(delivery_id) → ok, http_status_or_nil, error_or_nil
@@ -84,14 +83,15 @@ function deliver_attempt(delivery_id) -- luacheck: globals deliver_attempt
   if not pcall_ok then
     -- result is the error message from pcall
     local err = tostring(result)
+    outbox_record_attempt(delivery_id, { http_status = nil, error = err, outcome = "retrying" })
+    local attempt_number = #outbox_get_attempts(delivery_id)
     outbox_update_delivery(delivery_id, {
       status = "retrying",
       attempt_count = new_count,
-      next_attempt_at = now_iso8601(),
+      next_attempt_at = iso8601(next_retry_at(attempt_number)),
       last_http_status = nil,
       last_error = err,
     })
-    outbox_record_attempt(delivery_id, { http_status = nil, error = err, outcome = "retrying" })
     return false, nil, err
   end
   -- result is the integer HTTP status code
@@ -110,17 +110,18 @@ function deliver_attempt(delivery_id) -- luacheck: globals deliver_attempt
     return true, http_status, nil
   elseif http_status == 429 or http_status >= 500 then
     local err = "HTTP " .. tostring(http_status)
-    outbox_update_delivery(delivery_id, {
-      status = "retrying",
-      attempt_count = new_count,
-      next_attempt_at = now_iso8601(),
-      last_http_status = http_status,
-      last_error = err,
-    })
     outbox_record_attempt(
       delivery_id,
       { http_status = http_status, error = err, outcome = "retrying" }
     )
+    local attempt_number = #outbox_get_attempts(delivery_id)
+    outbox_update_delivery(delivery_id, {
+      status = "retrying",
+      attempt_count = new_count,
+      next_attempt_at = iso8601(next_retry_at(attempt_number)),
+      last_http_status = http_status,
+      last_error = err,
+    })
     return false, http_status, err
   else
     local err = "HTTP " .. tostring(http_status)

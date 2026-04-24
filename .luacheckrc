@@ -134,6 +134,9 @@ globals = {
   "fanout_dispatch",
   -- Outbound HTTP delivery: internal/deliver.lua
   "deliver_attempt",
+  -- Retry scheduler: internal/retry.lua
+  "next_retry_at",
+  "maybe_retry_pending",
   "get_client_mutation_id",
   "estimate_query_cost",
   -- GraphQL translators: internal/graphql_translators.lua

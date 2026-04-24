@@ -4282,6 +4282,45 @@ do
 end
 
 -- ============================================================
+-- retry scheduler (internal/retry.lua)
+-- ============================================================
+
+-- luacheck: globals next_retry_at maybe_retry_pending
+
+ok(type(next_retry_at) == "function", "next_retry_at: exported as global function")
+ok(type(maybe_retry_pending) == "function", "maybe_retry_pending: exported as global function")
+
+do
+  -- next_retry_at(1): first retry → base delay (60s) + jitter [0,30] → [60,90] ahead of now.
+  local before = os.time()
+  local t1 = next_retry_at(1)
+  local after = os.time()
+  ok(t1 >= before + 60, "next_retry_at(1): at least base delay (60s) in the future")
+  ok(t1 <= after + 90, "next_retry_at(1): no more than base + jitter (90s) in the future")
+
+  -- next_retry_at(2): second retry → 120s + jitter.
+  local t2 = next_retry_at(2)
+  ok(t2 >= before + 120, "next_retry_at(2): at least 2x base delay (120s)")
+  ok(t2 <= after + 150, "next_retry_at(2): no more than 120 + jitter (150s)")
+
+  -- next_retry_at(100): large attempt → capped at max_delay (3600s) + jitter.
+  local t100 = next_retry_at(100)
+  ok(t100 >= before + 3600, "next_retry_at(100): at least max_delay (3600s)")
+  ok(t100 <= after + 3630, "next_retry_at(100): no more than max_delay + jitter (3630s)")
+end
+
+do
+  -- First call: _last_retry_at starts at 0 so the interval has elapsed;
+  -- the pass runs immediately.  Verify the call succeeds without error.
+  local retry_ok = pcall(maybe_retry_pending)
+  ok(retry_ok, "maybe_retry_pending: first call succeeds")
+
+  -- Second immediate call: now - _last_retry_at ≈ 0 < 30 → no-op.
+  local retry_ok2 = pcall(maybe_retry_pending)
+  ok(retry_ok2, "maybe_retry_pending: immediate second call succeeds (no-op)")
+end
+
+-- ============================================================
 -- Summary
 -- ============================================================
 
