@@ -2342,6 +2342,18 @@ Triggered when a review is submitted or dismissed on a pull request.
   maps to `COMMENTED`.  Only `submitted` is emitted — Gerrit has no explicit
   dismissal event.  `review.id` and `review.html_url` are always empty.
   `review.submitted_at` is derived from `patchSet.createdOn` (Unix timestamp).
+- **Phabricator** does not emit discrete `pull_request_review` webhook events.
+  Phabricator Hermes webhooks deliver generic object-changed notifications keyed by
+  `object.type` (e.g., `DREV` for differential revisions), not action-typed review
+  events.  Accept/reject/request-changes actions on a differential do not produce a
+  separate review payload; no handler is registered.
+- **OneDev** does not emit a dedicated pull-request review webhook event.  OneDev's
+  webhook system sends generic `PullRequestChanged` notifications when a reviewer's
+  status changes; it does not produce a separate reviewer-vote event with a distinct
+  event type.  No handler is registered.
+- **Sourcehut** has no pull-request model.  Code review on Sourcehut is conducted
+  via mailing-list patch series (lists.sr.ht), which does not emit webhook review
+  events.  No handler is registered.
 
 ---
 
