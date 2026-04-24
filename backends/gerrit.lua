@@ -334,4 +334,141 @@ b:rest("get_repo_content", function(owner, repo_name, path)
   end
 end)
 
+-- Webhook handlers -----------------------------------------------------------
+-- Gerrit emits `comment-added` events when a reviewer adds a comment with an
+-- approval score.  The `approvals` array contains entries like:
+--   { type = "Code-Review", value = "+2", oldValue = "-1" }
+--
+-- Code-Review score → GitHub state mapping:
+--   +2  Approved              → submitted / APPROVED
+--   +1  Looks good to me      → submitted / APPROVED
+--    0  No score              → submitted / COMMENTED
+--   -1  I would prefer this   → submitted / CHANGES_REQUESTED
+--   -2  Do not submit         → submitted / CHANGES_REQUESTED
+
+local function gerrit_approval_state(approvals)
+  local state = "COMMENTED"
+  for _, a in ipairs(approvals or {}) do
+    local v = tonumber(a.value) or 0
+    if v >= 1 then
+      state = "APPROVED"
+      break
+    elseif v <= -1 then
+      state = "CHANGES_REQUESTED"
+      break
+    end
+  end
+  return state
+end
+
+local function translate_gerrit_change(change, patchSet)
+  change = change or {}
+  patchSet = patchSet or {}
+  local full = change.project or ""
+  local o, n = full:match("^(.+)/([^/]+)$")
+  if not o then
+    o = ""
+    n = full
+  end
+  local repo = {
+    id = 0,
+    node_id = "",
+    name = n,
+    full_name = full,
+    private = false,
+    owner = {
+      login = o,
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      url = "",
+      html_url = "",
+      type = "User",
+    },
+    html_url = config.base_url .. "/admin/repos/" .. full,
+    description = nil,
+    fork = false,
+    url = "",
+    clone_url = "",
+    homepage = "",
+    size = 0,
+    stargazers_count = 0,
+    watchers_count = 0,
+    language = nil,
+    has_issues = false,
+    has_wiki = false,
+    forks_count = 0,
+    archived = false,
+    disabled = false,
+    open_issues_count = 0,
+    default_branch = change.branch or "main",
+    visibility = "public",
+    forks = 0,
+    open_issues = 0,
+    watchers = 0,
+    created_at = nil,
+    updated_at = nil,
+    pushed_at = nil,
+  }
+  local pr = {
+    id = change._number or 0,
+    node_id = "",
+    number = change._number or 0,
+    title = change.subject or "",
+    body = "",
+    state = "open",
+    draft = change.wip or false,
+    html_url = config.base_url .. "/c/" .. full .. "/+/" .. (change._number or ""),
+    url = "",
+    user = translate_gerrit_user(change.owner),
+    head = {
+      ref = change.branch or "",
+      sha = patchSet.revision or "",
+      repo = nil,
+    },
+    base = {
+      ref = change.branch or "",
+      sha = "",
+      repo = nil,
+    },
+    created_at = change.created or "",
+    updated_at = change.updated or "",
+    closed_at = nil,
+  }
+  return pr, repo
+end
+
+b:webhook("comment-added", function(payload)
+  local approvals = payload.approvals or {}
+  local state = gerrit_approval_state(approvals)
+  local author = payload.author or {}
+  local pr, repo = translate_gerrit_change(payload.change, payload.patchSet)
+  local review = {
+    id = 0,
+    node_id = "",
+    user = translate_gerrit_user(author),
+    body = payload.comment or "",
+    state = state,
+    submitted_at = (payload.patchSet or {}).createdOn and tostring(
+      (payload.patchSet or {}).createdOn
+    ) or "",
+    html_url = "",
+    pull_request_url = "",
+  }
+  return make_internal_event({
+    event = "pull_request_review",
+    action = "submitted",
+    provider = "gerrit",
+    raw = payload,
+    data = {
+      action = "submitted",
+      review = review,
+      pull_request = pr,
+      repository = repo,
+      sender = translate_gerrit_user(author),
+    },
+    timestamp = review.submitted_at,
+  })
+end)
+
 b:build()

@@ -2277,15 +2277,15 @@ Triggered on pull request lifecycle events.
 
 Triggered when a review is submitted or dismissed on a pull request.
 
-| GitHub field | gitea-family | gitlab | bitbucket | bitbucket-dc | azuredevops | github | gitbucket | All others |
-|---|---|---|---|---|---|---|---|---|
-| `review.id` | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ |
-| `review.body` | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ |
-| `review.state` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `review.html_url` | ✓ | ✓ | ✗ | ~ | ✗ | ✓ | ✓ | ✗ |
-| `review.user` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `review.submitted_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `pull_request` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| GitHub field | gitea-family | gitlab | bitbucket | bitbucket-dc | azuredevops | gerrit | github | gitbucket | All others |
+|---|---|---|---|---|---|---|---|---|---|
+| `review.id` | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `review.body` | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ |
+| `review.state` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `review.html_url` | ✓ | ✓ | ✗ | ~ | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `review.user` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `review.submitted_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ~ | ✓ | ✓ | ✗ |
+| `pull_request` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
 
 #### `review.state` mapping
 
@@ -2306,14 +2306,17 @@ Triggered when a review is submitted or dismissed on a pull request.
 | Azure DevOps vote 0 (no vote / reset) | `"dismissed"` |
 | Azure DevOps vote -5 (waiting for author) | `"changes_requested"` |
 | Azure DevOps vote -10 (rejected) | `"changes_requested"` |
+| Gerrit Code-Review +1 or +2 | `"approved"` |
+| Gerrit Code-Review -1 or -2 | `"changes_requested"` |
+| Gerrit Code-Review 0 or no score | `"commented"` |
 
 #### Supported actions
 
-| Action | gitea-family | gitlab | bitbucket | bitbucket-dc | azuredevops | github | gitbucket |
-|--------|---|---|---|---|---|---|---|
-| `submitted` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `dismissed` | ~ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ |
-| `edited` | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ |
+| Action | gitea-family | gitlab | bitbucket | bitbucket-dc | azuredevops | gerrit | github | gitbucket |
+|--------|---|---|---|---|---|---|---|---|
+| `submitted` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `dismissed` | ~ | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ |
+| `edited` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ |
 
 **Notes:**
 - `pull_request_review` events require the forge to have a native review system.
@@ -2333,6 +2336,12 @@ Triggered when a review is submitted or dismissed on a pull request.
   Vote 10 and 5 → `APPROVED`; vote -5 and -10 → `CHANGES_REQUESTED`; vote 0 (reset)
   → `dismissed / DISMISSED`.  `review.id`, `review.body`, and `review.html_url` are
   always empty because the ADO vote event carries no review body or direct URL.
+- Gerrit emits `comment-added` events when a reviewer scores a change.  The
+  `approvals` array is inspected for the `Code-Review` label; scores +1 or +2
+  map to `APPROVED`, -1 or -2 map to `CHANGES_REQUESTED`, and 0 or no score
+  maps to `COMMENTED`.  Only `submitted` is emitted — Gerrit has no explicit
+  dismissal event.  `review.id` and `review.html_url` are always empty.
+  `review.submitted_at` is derived from `patchSet.createdOn` (Unix timestamp).
 
 ---
 
