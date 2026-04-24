@@ -6344,12 +6344,47 @@ end)
 
 -- pull_request: opened, closed, reopened, synchronize, edited, labeled,
 -- unlabeled, assigned, unassigned, review_requested, review_request_removed.
--- Registered for X-Gitlab-Event: Merge Request Hook.
+-- pull_request_review: submitted (APPROVED) for "approved"; dismissed for
+-- "unapproved".  Both arrive via X-Gitlab-Event: Merge Request Hook.
 -- GitLab uses "merge request" terminology; confusio maps all events to the
--- GitHub pull_request event family.
+-- GitHub pull_request / pull_request_review event families.
 b:webhook("Merge Request Hook", function(payload)
   local oa = payload.object_attributes or {}
   local changes = payload.changes or {}
+  local raw_gl_action = oa.action or ""
+
+  -- GitLab "approved"/"unapproved" are review verdicts, not PR state changes.
+  -- Map them to pull_request_review so consumers don't have to special-case them.
+  if raw_gl_action == "approved" or raw_gl_action == "unapproved" then
+    local review_action = raw_gl_action == "approved" and "submitted" or "dismissed"
+    local review_state = raw_gl_action == "approved" and "APPROVED" or "DISMISSED"
+    local review = {
+      id = 0,
+      node_id = "",
+      user = translate_gl_user(payload.user),
+      body = "",
+      state = review_state,
+      submitted_at = oa.updated_at or "",
+      html_url = "",
+      pull_request_url = "",
+    }
+    return make_internal_event({
+      event = "pull_request_review",
+      action = review_action,
+      raw_action = nil,
+      provider = config.backend,
+      timestamp = oa.updated_at or "",
+      raw = payload,
+      data = {
+        action = review_action,
+        review = review,
+        pull_request = webhook_mr_from_gl(payload),
+        repository = translate_gl_webhook_project(payload.project),
+        sender = translate_gl_user(payload.user),
+      },
+    })
+  end
+
   local action, raw_action = gl_mr_action(oa, changes)
   local data = {
     action = action,
