@@ -7462,9 +7462,9 @@ end
 
 b:webhook("status", function(payload)
   local state = payload.state or "pending"
-  local branches = {}
+  local branch_list = {}
   for _, br in ipairs(payload.branches or {}) do
-    branches[#branches + 1] = translate_gitea_status_branch(br)
+    branch_list[#branch_list + 1] = translate_gitea_status_branch(br)
   end
   local data = {
     id = payload.id,
@@ -7475,7 +7475,7 @@ b:webhook("status", function(payload)
     description = payload.description or "",
     state = state,
     commit = payload.commit,
-    branches = branches,
+    branches = branch_list,
     created_at = payload.created_at or "",
     updated_at = payload.updated_at or "",
     repository = translate_repo(payload.repository or {}),
