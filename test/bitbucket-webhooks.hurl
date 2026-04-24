@@ -489,3 +489,137 @@ X-Event-Key: pullrequest:rejected
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
+
+# ── pullrequest:approved → pull_request_review / submitted / APPROVED ─────────
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: pullrequest:approved
+{
+  "actor": {
+    "nickname": "alice",
+    "display_name": "Alice",
+    "account_id": "abc123",
+    "links": {"avatar": {"href": ""}, "html": {"href": ""}}
+  },
+  "approval": {
+    "date": "2024-01-15T10:30:00Z",
+    "user": {
+      "nickname": "alice",
+      "display_name": "Alice",
+      "account_id": "abc123",
+      "links": {"avatar": {"href": ""}, "html": {"href": ""}}
+    }
+  },
+  "pullrequest": {
+    "id": 7,
+    "title": "Add new feature",
+    "description": "This PR adds a new feature.",
+    "state": "OPEN",
+    "author": {
+      "nickname": "bob", "display_name": "Bob", "account_id": "def456",
+      "links": {"avatar": {"href": ""}, "html": {"href": ""}}
+    },
+    "source": {
+      "branch": {"name": "feature-branch"},
+      "commit": {"hash": "abc123"},
+      "repository": {
+        "full_name": "octocat/hello-world",
+        "links": {"html": {"href": "https://bitbucket.org/octocat/hello-world"}}
+      }
+    },
+    "destination": {
+      "branch": {"name": "main"},
+      "commit": {"hash": "def456"},
+      "repository": {
+        "full_name": "octocat/hello-world",
+        "links": {"html": {"href": "https://bitbucket.org/octocat/hello-world"}}
+      }
+    },
+    "created_on": "2024-01-15T10:00:00Z",
+    "updated_on": "2024-01-15T10:30:00Z",
+    "links": {"html": {"href": "https://bitbucket.org/octocat/hello-world/pull-requests/7"}}
+  },
+  "repository": {
+    "full_name": "octocat/hello-world",
+    "name": "hello-world",
+    "slug": "hello-world",
+    "is_private": false,
+    "owner": {
+      "nickname": "octocat", "display_name": "The Octocat", "account_id": "xyz789",
+      "type": "user", "links": {"avatar": {"href": ""}, "html": {"href": ""}}
+    },
+    "links": {"html": {"href": "https://bitbucket.org/octocat/hello-world"}}
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── pullrequest:unapproved → pull_request_review / dismissed / DISMISSED ──────
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: pullrequest:unapproved
+{
+  "actor": {
+    "nickname": "alice",
+    "display_name": "Alice",
+    "account_id": "abc123",
+    "links": {"avatar": {"href": ""}, "html": {"href": ""}}
+  },
+  "approval": {
+    "date": "2024-01-15T10:45:00Z",
+    "user": {
+      "nickname": "alice",
+      "display_name": "Alice",
+      "account_id": "abc123",
+      "links": {"avatar": {"href": ""}, "html": {"href": ""}}
+    }
+  },
+  "pullrequest": {
+    "id": 7,
+    "title": "Add new feature",
+    "description": "This PR adds a new feature.",
+    "state": "OPEN",
+    "author": {
+      "nickname": "bob", "display_name": "Bob", "account_id": "def456",
+      "links": {"avatar": {"href": ""}, "html": {"href": ""}}
+    },
+    "source": {
+      "branch": {"name": "feature-branch"},
+      "commit": {"hash": "abc123"},
+      "repository": {
+        "full_name": "octocat/hello-world",
+        "links": {"html": {"href": "https://bitbucket.org/octocat/hello-world"}}
+      }
+    },
+    "destination": {
+      "branch": {"name": "main"},
+      "commit": {"hash": "def456"},
+      "repository": {
+        "full_name": "octocat/hello-world",
+        "links": {"html": {"href": "https://bitbucket.org/octocat/hello-world"}}
+      }
+    },
+    "created_on": "2024-01-15T10:00:00Z",
+    "updated_on": "2024-01-15T10:45:00Z",
+    "links": {"html": {"href": "https://bitbucket.org/octocat/hello-world/pull-requests/7"}}
+  },
+  "repository": {
+    "full_name": "octocat/hello-world",
+    "name": "hello-world",
+    "slug": "hello-world",
+    "is_private": false,
+    "owner": {
+      "nickname": "octocat", "display_name": "The Octocat", "account_id": "xyz789",
+      "type": "user", "links": {"avatar": {"href": ""}, "html": {"href": ""}}
+    },
+    "links": {"html": {"href": "https://bitbucket.org/octocat/hello-world"}}
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"

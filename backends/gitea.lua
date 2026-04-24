@@ -7265,6 +7265,72 @@ b:webhook("merge_group", function(payload)
   })
 end)
 
+-- pull_request_review actions: submitted (verdict + body posted), edited (body
+-- changed), dismissed (approved review cleared by a maintainer).
+local PULL_REQUEST_REVIEW_ACTIONS = {
+  submitted = "submitted",
+  edited = "edited",
+  dismissed = "dismissed",
+}
+
+b:webhook("pull_request_review", function(payload)
+  local raw_action = payload.action or ""
+  local action = PULL_REQUEST_REVIEW_ACTIONS[raw_action]
+  local raw_review = payload.review or {}
+  local review = translate_gitea_review(raw_review)
+  local raw_pr = payload.pull_request or {}
+  local pr = translate_gitea_pull(raw_pr)
+  local data = {
+    action = action or "unknown",
+    review = review,
+    pull_request = pr,
+    repository = translate_repo(payload.repository or {}),
+    sender = translate_user(payload.sender or {}),
+  }
+  return make_internal_event({
+    event = "pull_request_review",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitea",
+    raw = payload,
+    data = data,
+    timestamp = raw_review.submitted_at or "",
+  })
+end)
+
+-- pull_request_review_comment actions: inline diff comments on a PR review.
+-- Gitea emits created/edited/deleted matching GitHub's naming directly.
+local PULL_REQUEST_REVIEW_COMMENT_ACTIONS = {
+  created = "created",
+  edited = "edited",
+  deleted = "deleted",
+}
+
+b:webhook("pull_request_review_comment", function(payload)
+  local raw_action = payload.action or ""
+  local action = PULL_REQUEST_REVIEW_COMMENT_ACTIONS[raw_action]
+  local raw_comment = payload.comment or {}
+  local comment = translate_gitea_review_comment(raw_comment)
+  local raw_pr = payload.pull_request or {}
+  local pr = translate_gitea_pull(raw_pr)
+  local data = {
+    action = action or "unknown",
+    comment = comment,
+    pull_request = pr,
+    repository = translate_repo(payload.repository or {}),
+    sender = translate_user(payload.sender or {}),
+  }
+  return make_internal_event({
+    event = "pull_request_review_comment",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitea",
+    raw = payload,
+    data = data,
+    timestamp = raw_comment.updated_at or raw_comment.updated or "",
+  })
+end)
+
 b:capability("repos", repos)
 b:capability("users", users)
 b:capability("orgs", orgs)

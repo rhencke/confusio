@@ -2277,15 +2277,15 @@ Triggered on pull request lifecycle events.
 
 Triggered when a review is submitted or dismissed on a pull request.
 
-| GitHub field | gitea-family | gitlab | bitbucket-dc | github | All others |
-|---|---|---|---|---|---|
-| `review.id` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `review.body` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `review.state` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `review.html_url` | ✓ | ✓ | ~ | ✓ | ✗ |
-| `review.user` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `review.submitted_at` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `pull_request` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| GitHub field | gitea-family | gitlab | bitbucket | bitbucket-dc | azuredevops | gerrit | github | gitbucket | All others |
+|---|---|---|---|---|---|---|---|---|---|
+| `review.id` | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `review.body` | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ |
+| `review.state` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `review.html_url` | ✓ | ✓ | ✗ | ~ | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `review.user` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `review.submitted_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ~ | ✓ | ✓ | ✗ |
+| `pull_request` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
 
 #### `review.state` mapping
 
@@ -2297,25 +2297,91 @@ Triggered when a review is submitted or dismissed on a pull request.
 | GitLab `approved` | `"approved"` |
 | GitLab `unapproved` | `"dismissed"` |
 | GitLab `commented` | `"commented"` |
+| Bitbucket Cloud `approved` | `"approved"` |
+| Bitbucket Cloud `unapproved` | `"dismissed"` |
 | Bitbucket DC `APPROVED` | `"approved"` |
 | Bitbucket DC `NEEDS_WORK` | `"changes_requested"` |
+| Azure DevOps vote 10 (approved) | `"approved"` |
+| Azure DevOps vote 5 (approved with suggestions) | `"approved"` |
+| Azure DevOps vote 0 (no vote / reset) | `"dismissed"` |
+| Azure DevOps vote -5 (waiting for author) | `"changes_requested"` |
+| Azure DevOps vote -10 (rejected) | `"changes_requested"` |
+| Gerrit Code-Review +1 or +2 | `"approved"` |
+| Gerrit Code-Review -1 or -2 | `"changes_requested"` |
+| Gerrit Code-Review 0 or no score | `"commented"` |
 
 #### Supported actions
 
-| Action | gitea-family | gitlab | bitbucket-dc | github |
-|--------|---|---|---|---|
-| `submitted` | ✓ | ✓ | ✓ | ✓ |
-| `dismissed` | ~ | ✓ | ✗ | ✓ |
+| Action | gitea-family | gitlab | bitbucket | bitbucket-dc | azuredevops | gerrit | github | gitbucket |
+|--------|---|---|---|---|---|---|---|---|
+| `submitted` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `dismissed` | ~ | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ |
+| `edited` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ |
 
 **Notes:**
-- `pull_request_review` events require the forge to have a native review system.
-  Bitbucket Cloud, Gogs, GitBucket, Azure DevOps, and most self-hosted forges do not
-  emit review events.  The event is never generated for these backends.
+- `pull_request_review` events require the forge to have a native review/approval
+  system that emits a discrete webhook event for review submissions.  Backends not
+  listed in the table above do not emit this event and have no handler registered;
+  they are documented individually below.
+- GitBucket 4.32+ emits `pull_request_review` in GitHub-compatible format.
+  All fields are passed through without translation.
+- Bitbucket Cloud emits `pullrequest:approved` (→ `submitted / APPROVED`) and
+  `pullrequest:unapproved` (→ `dismissed / DISMISSED`).  It has no "request changes"
+  concept; `review.id`, `review.body`, and `review.html_url` are always empty.
 - `dismissed` action: Gitea marks a dismissed review by changing state; confusio
   synthesizes the `dismissed` action from a state transition to `dismissed`.  GitLab
-  supports explicit dismissal.  Bitbucket Datacenter does not.
+  and Bitbucket Cloud support explicit dismissal.  Bitbucket Datacenter does not.
 - `review.html_url`: Bitbucket Datacenter does not provide a direct URL to the review;
   confusio constructs an approximate URL from the PR URL.
+- Azure DevOps emits `git.pullrequest.reviewervote` when a reviewer's vote changes.
+  Vote 10 and 5 → `APPROVED`; vote -5 and -10 → `CHANGES_REQUESTED`; vote 0 (reset)
+  → `dismissed / DISMISSED`.  `review.id`, `review.body`, and `review.html_url` are
+  always empty because the ADO vote event carries no review body or direct URL.
+- Gerrit emits `comment-added` events when a reviewer scores a change.  The
+  `approvals` array is inspected for the `Code-Review` label; scores +1 or +2
+  map to `APPROVED`, -1 or -2 map to `CHANGES_REQUESTED`, and 0 or no score
+  maps to `COMMENTED`.  Only `submitted` is emitted — Gerrit has no explicit
+  dismissal event.  `review.id` and `review.html_url` are always empty.
+  `review.submitted_at` is derived from `patchSet.createdOn` (Unix timestamp).
+- **Phabricator** does not emit discrete `pull_request_review` webhook events.
+  Phabricator Hermes webhooks deliver generic object-changed notifications keyed by
+  `object.type` (e.g., `DREV` for differential revisions), not action-typed review
+  events.  Accept/reject/request-changes actions on a differential do not produce a
+  separate review payload; no handler is registered.
+- **OneDev** does not emit a dedicated pull-request review webhook event.  OneDev's
+  webhook system sends generic `PullRequestChanged` notifications when a reviewer's
+  status changes; it does not produce a separate reviewer-vote event with a distinct
+  event type.  No handler is registered.
+- **Sourcehut** has no pull-request model.  Code review on Sourcehut is conducted
+  via mailing-list patch series (lists.sr.ht), which does not emit webhook review
+  events.  No handler is registered.
+- **Pagure** does not emit a discrete pull-request review webhook event.  Pagure's
+  webhook system covers PR lifecycle (opened, updated, closed) but has no separate
+  reviewer-approval or review-submission event.  No handler is registered.
+- **Gogs** has a minimal webhook system with no code-review feature.  Gogs does not
+  emit pull-request review events.  No handler is registered.
+- **Gitblit** has a basic webhook system (push notifications only) with no pull-request
+  or review model.  No handler is registered.
+- **Kallithea** has a basic webhook system with no pull-request review event.  No
+  handler is registered.
+- **RhodeCode** (Community Edition) webhooks cover push and repository events; the
+  pull-request model does not include a discrete reviewer-vote or review-submission
+  event.  No handler is registered.
+- **Tuleap** has a pull-request module with review/approval, but its webhook system
+  emits generic `pullrequest:update` notifications rather than discrete review events.
+  No handler is registered.
+- **CodeCommit** webhooks are delivered via Amazon EventBridge/SNS; the basic PR events
+  do not include a reviewer-approval payload — code review is surfaced through
+  CodeGuru Reviewer as a separate service.  No handler is registered.
+- **Harness** is a CI/CD platform whose webhook system covers pipeline and build events;
+  it does not emit pull-request review events.  No handler is registered.
+- **Launchpad** uses Bazaar merge proposals rather than pull requests, and its webhook
+  system does not emit reviewer-approval events.  No handler is registered.
+- **SourceForge** has a basic webhook system (push notifications) with no pull-request
+  review model.  No handler is registered.
+- **Radicle** is a peer-to-peer forge.  Patch proposals have a review/revision concept,
+  but Radicle's event system does not emit a discrete reviewer-approval webhook event.
+  No handler is registered.
 
 ---
 

@@ -2559,4 +2559,49 @@ b:webhook("pullrequest:rejected", function(payload)
   return bb_pr_event(payload, "closed")
 end)
 
+-- pull_request_review events.
+-- pullrequest:approved  → submitted / APPROVED
+-- pullrequest:unapproved → dismissed / DISMISSED
+--
+-- Bitbucket Cloud does not have a "request changes" concept; the only two
+-- review verdict events are approved and its removal (unapproved).  The
+-- approval object carries the reviewer and timestamp.
+local function bb_review_event(payload, action, state)
+  local approval = payload.approval or {}
+  local reviewer = approval.user or payload.actor or {}
+  local raw_pr = payload.pullrequest or {}
+  local review = {
+    id = 0,
+    node_id = "",
+    user = translate_bb_user(reviewer),
+    body = "",
+    state = state,
+    submitted_at = approval.date or "",
+    html_url = "",
+    pull_request_url = "",
+  }
+  return make_internal_event({
+    event = "pull_request_review",
+    action = action,
+    provider = "bitbucket",
+    raw = payload,
+    data = {
+      action = action,
+      review = review,
+      pull_request = translate_bb_pull(raw_pr),
+      repository = translate_bb_repo(payload.repository or {}),
+      sender = translate_bb_user(payload.actor or {}),
+    },
+    timestamp = approval.date or raw_pr.updated_on or "",
+  })
+end
+
+b:webhook("pullrequest:approved", function(payload)
+  return bb_review_event(payload, "submitted", "APPROVED")
+end)
+
+b:webhook("pullrequest:unapproved", function(payload)
+  return bb_review_event(payload, "dismissed", "DISMISSED")
+end)
+
 b:build()

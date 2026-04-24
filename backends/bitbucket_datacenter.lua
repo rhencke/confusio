@@ -1556,4 +1556,51 @@ b:webhook("pr:deleted", function(payload)
   return bbs_pr_event(payload, "closed")
 end)
 
+-- pull_request_review events.
+-- pr:reviewer:approved   → submitted / APPROVED
+-- pr:reviewer:needs_work → submitted / CHANGES_REQUESTED
+--
+-- Bitbucket Datacenter does not have an explicit dismiss action; both
+-- approved and needs_work map to "submitted" with the corresponding state.
+-- The participant object carries the reviewer; the pullRequest carries
+-- the PR context and timestamp.
+local function bbs_review_event(payload, state)
+  local raw_pr = payload.pullRequest or {}
+  local repo = (raw_pr.toRef or {}).repository
+  local participant = payload.participant or {}
+  local reviewer = participant.user or {}
+  local review = {
+    id = 0,
+    node_id = "",
+    user = translate_bbs_user(reviewer),
+    body = "",
+    state = state,
+    submitted_at = bbs_ts(raw_pr.updatedDate) or "",
+    html_url = "",
+    pull_request_url = "",
+  }
+  return make_internal_event({
+    event = "pull_request_review",
+    action = "submitted",
+    provider = "bitbucket_datacenter",
+    raw = payload,
+    data = {
+      action = "submitted",
+      review = review,
+      pull_request = translate_bbs_pull(raw_pr),
+      repository = translate_bbs_repo(repo),
+      sender = translate_bbs_user(payload.actor or {}),
+    },
+    timestamp = bbs_ts(raw_pr.updatedDate) or "",
+  })
+end
+
+b:webhook("pr:reviewer:approved", function(payload)
+  return bbs_review_event(payload, "APPROVED")
+end)
+
+b:webhook("pr:reviewer:needs_work", function(payload)
+  return bbs_review_event(payload, "CHANGES_REQUESTED")
+end)
+
 b:build()
