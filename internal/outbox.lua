@@ -18,6 +18,7 @@
 --   outbox_list_deliveries_for_event(event_id)
 --   outbox_list_deliveries_for_target(target_id)
 --   outbox_update_delivery(delivery_id, fields)
+--   outbox_abandon_deliveries_for_target(target_id)
 --   outbox_pending_retries()
 --   outbox_prune(max_age_seconds)
 
@@ -130,6 +131,22 @@ function outbox_update_delivery(delivery_id, fields) -- luacheck: globals outbox
   end
   d.updated_at = now_iso8601()
   return d
+end
+
+-- outbox_abandon_deliveries_for_target(target_id) moves all "pending" or "retrying"
+-- deliveries for the given target to status="failed" with last_error="target deleted".
+function outbox_abandon_deliveries_for_target(target_id) -- luacheck: globals outbox_abandon_deliveries_for_target
+  local now = now_iso8601()
+  for _, id in ipairs(_delivery_order) do
+    local d = _deliveries[id]
+    if d ~= nil and d.target_id == target_id then
+      if d.status == "pending" or d.status == "retrying" then
+        d.status = "failed"
+        d.last_error = "target deleted"
+        d.updated_at = now
+      end
+    end
+  end
 end
 
 -- outbox_pending_retries() returns all delivery records with status="retrying"

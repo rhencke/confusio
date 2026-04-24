@@ -3459,6 +3459,72 @@ do
     "targets_api PATCH: unknown id → target_not_found"
   )
 
+  -- ── POST /webhooks/targets/{id}/pause ────────────────────────
+  -- Target is currently paused (set by the PATCH test above); pause is idempotent.
+
+  local s_pause, b_pause = call_api({
+    method = "POST",
+    path = "/webhooks/targets/" .. (api_target_id or "x") .. "/pause",
+    headers = AUTH,
+  })
+  eq(s_pause, 200, "targets_api POST pause: 200 on success")
+  eq(b_pause and b_pause.status, "paused", "targets_api POST pause: status is paused")
+  eq(b_pause and b_pause.circuit, "closed", "targets_api POST pause: circuit field present")
+  ok(b_pause and b_pause.secret == nil, "targets_api POST pause: no secret in response")
+
+  -- ── POST /webhooks/targets/{id}/resume ───────────────────────
+
+  local s_resume, b_resume = call_api({
+    method = "POST",
+    path = "/webhooks/targets/" .. (api_target_id or "x") .. "/resume",
+    headers = AUTH,
+  })
+  eq(s_resume, 200, "targets_api POST resume: 200 on success")
+  eq(b_resume and b_resume.status, "active", "targets_api POST resume: status is active")
+  eq(b_resume and b_resume.circuit, "closed", "targets_api POST resume: circuit field present")
+
+  -- ── POST pause/resume: unknown target → 404 ──────────────────
+
+  local s_pause_nf, b_pause_nf = call_api({
+    method = "POST",
+    path = "/webhooks/targets/00000000-0000-4000-8000-000000000000/pause",
+    headers = AUTH,
+  })
+  eq(s_pause_nf, 404, "targets_api POST pause: unknown id → 404")
+  eq(
+    b_pause_nf and b_pause_nf.error,
+    "target_not_found",
+    "targets_api POST pause: unknown id → target_not_found"
+  )
+
+  local s_resume_nf, b_resume_nf = call_api({
+    method = "POST",
+    path = "/webhooks/targets/00000000-0000-4000-8000-000000000000/resume",
+    headers = AUTH,
+  })
+  eq(s_resume_nf, 404, "targets_api POST resume: unknown id → 404")
+  eq(
+    b_resume_nf and b_resume_nf.error,
+    "target_not_found",
+    "targets_api POST resume: unknown id → target_not_found"
+  )
+
+  -- ── Method not allowed on pause/resume ───────────────────────
+
+  local s_pause_mna, _ = call_api({
+    method = "GET",
+    path = "/webhooks/targets/" .. (api_target_id or "x") .. "/pause",
+    headers = AUTH,
+  })
+  eq(s_pause_mna, 405, "targets_api GET /pause → 405")
+
+  local s_resume_mna, _ = call_api({
+    method = "GET",
+    path = "/webhooks/targets/" .. (api_target_id or "x") .. "/resume",
+    headers = AUTH,
+  })
+  eq(s_resume_mna, 405, "targets_api GET /resume → 405")
+
   -- ── DELETE /webhooks/targets/{id} ────────────────────────────
 
   local s_del, body_del = call_api_raw({
@@ -3495,6 +3561,32 @@ do
     b_get_del and b_get_del.error,
     "target_not_found",
     "targets_api GET: deleted target → target_not_found"
+  )
+
+  -- ── POST pause/resume on deleted target → 404 ───────────────
+
+  local s_pause_del, b_pause_del = call_api({
+    method = "POST",
+    path = "/webhooks/targets/" .. (api_target_id or "x") .. "/pause",
+    headers = AUTH,
+  })
+  eq(s_pause_del, 404, "targets_api POST pause: deleted target → 404")
+  eq(
+    b_pause_del and b_pause_del.error,
+    "target_not_found",
+    "targets_api POST pause: deleted target → target_not_found"
+  )
+
+  local s_resume_del, b_resume_del = call_api({
+    method = "POST",
+    path = "/webhooks/targets/" .. (api_target_id or "x") .. "/resume",
+    headers = AUTH,
+  })
+  eq(s_resume_del, 404, "targets_api POST resume: deleted target → 404")
+  eq(
+    b_resume_del and b_resume_del.error,
+    "target_not_found",
+    "targets_api POST resume: deleted target → target_not_found"
   )
 
   -- ── Unknown path under /webhooks/targets/ → 404 ──────────────

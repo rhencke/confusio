@@ -51,7 +51,7 @@ end
 -- array when no targets match.
 function fanout_dispatch(backend, event_type, payload) -- luacheck: globals fanout_dispatch
   local ev = outbox_store_event(backend, event_type, payload)
-  local targets = target_list()
+  local targets = target_list({ status = "active" })
   local deliveries = {}
   for _, target in ipairs(targets) do
     if fanout_event_matches(event_type, target.events) then

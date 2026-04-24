@@ -10,6 +10,8 @@
 --   target_list(filter)            — return array of public records (excludes deleted by default)
 --   target_update(target_id, fields) — partial update; returns public record or nil
 --   target_delete(target_id)       — soft-delete; returns true or nil
+--   target_pause(target_id)        — pause a target; returns public record or nil
+--   target_resume(target_id)       — resume a paused target; returns public record or nil
 --   target_get_secret(target_id)   — return raw secret string (or nil); internal use only
 
 -- Module-local storage.  Keyed by target_id; each entry stores all fields
@@ -123,6 +125,7 @@ function target_update(target_id, fields) -- luacheck: globals target_update
 end
 
 -- target_delete(target_id) soft-deletes a target by setting its status to "deleted".
+-- Also abandons any pending or retrying deliveries for the target.
 -- Returns true on success, or nil if the target is not found or already deleted.
 function target_delete(target_id) -- luacheck: globals target_delete
   local r = _targets[target_id]
@@ -131,7 +134,32 @@ function target_delete(target_id) -- luacheck: globals target_delete
   end
   r.status = "deleted"
   r.updated_at = now_iso8601()
+  outbox_abandon_deliveries_for_target(target_id)
   return true
+end
+
+-- target_pause(target_id) sets a target's status to "paused".
+-- Returns the updated public record, or nil if not found or already deleted.
+function target_pause(target_id) -- luacheck: globals target_pause
+  local r = _targets[target_id]
+  if r == nil or r.status == "deleted" then
+    return nil
+  end
+  r.status = "paused"
+  r.updated_at = now_iso8601()
+  return _public(r)
+end
+
+-- target_resume(target_id) sets a target's status back to "active".
+-- Returns the updated public record, or nil if not found or already deleted.
+function target_resume(target_id) -- luacheck: globals target_resume
+  local r = _targets[target_id]
+  if r == nil or r.status == "deleted" then
+    return nil
+  end
+  r.status = "active"
+  r.updated_at = now_iso8601()
+  return _public(r)
 end
 
 -- target_get_secret(target_id) returns the raw secret string for the given target,

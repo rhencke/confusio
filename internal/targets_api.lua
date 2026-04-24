@@ -9,6 +9,8 @@
 --   GET    /webhooks/targets/{id}         — get a target   (200)
 --   PATCH  /webhooks/targets/{id}         — update a target (200)
 --   DELETE /webhooks/targets/{id}         — soft-delete    (204)
+--   POST   /webhooks/targets/{id}/pause   — pause a target  (200)
+--   POST   /webhooks/targets/{id}/resume  — resume a target (200)
 --
 -- Circuit breaker fields (circuit, circuit_open_until, consecutive_failures) appear
 -- in single-target GET responses.  The circuit breaker is not yet implemented;
@@ -85,6 +87,8 @@ function make_targets_api(_a) -- luacheck: globals make_targets_api
 
     -- Dispatch by path shape.
     local target_id = path:match("^/webhooks/targets/([^/]+)$")
+    local pause_id = path:match("^/webhooks/targets/([^/]+)/pause$")
+    local resume_id = path:match("^/webhooks/targets/([^/]+)/resume$")
 
     if path == "/webhooks/targets" then
       -- ── Collection endpoints ─────────────────────────────────────
@@ -202,6 +206,32 @@ function make_targets_api(_a) -- luacheck: globals make_targets_api
         end
         set_preamble(204)
         Write("")
+      else
+        respond_json(405, { message = "Method Not Allowed" })
+      end
+    elseif pause_id then
+      -- ── Pause endpoint ───────────────────────────────────────────
+
+      if method == "POST" then
+        local t = target_pause(pause_id)
+        if t == nil then
+          _err(404, "target_not_found", "Target " .. pause_id .. " not found.")
+          return
+        end
+        respond_json(200, _with_circuit(t))
+      else
+        respond_json(405, { message = "Method Not Allowed" })
+      end
+    elseif resume_id then
+      -- ── Resume endpoint ──────────────────────────────────────────
+
+      if method == "POST" then
+        local t = target_resume(resume_id)
+        if t == nil then
+          _err(404, "target_not_found", "Target " .. resume_id .. " not found.")
+          return
+        end
+        respond_json(200, _with_circuit(t))
       else
         respond_json(405, { message = "Method Not Allowed" })
       end

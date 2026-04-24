@@ -105,6 +105,7 @@ globals = {
   "outbox_list_deliveries_for_event",
   "outbox_list_deliveries_for_target",
   "outbox_update_delivery",
+  "outbox_abandon_deliveries_for_target",
   "outbox_pending_retries",
   "outbox_prune",
   -- Target registry: internal/targets.lua
@@ -113,6 +114,8 @@ globals = {
   "target_list",
   "target_update",
   "target_delete",
+  "target_pause",
+  "target_resume",
   "target_get_secret",
   -- Target admin API: internal/targets_api.lua
   "make_targets_api",
