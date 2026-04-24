@@ -626,3 +626,221 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 header "X-Confusio-Raw-Action" == "queued"
+
+# ── pull_request_review: submitted (APPROVED) → 200 ──────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: pull_request_review
+{
+  "action": "submitted",
+  "review": {
+    "id": 42,
+    "type": "APPROVED",
+    "body": "LGTM!",
+    "submitted_at": "2024-01-15T11:00:00Z",
+    "user": {"id": 3, "login": "carol", "avatar_url": "", "html_url": ""}
+  },
+  "pull_request": {
+    "id": 500, "number": 7, "title": "Add new feature", "body": null,
+    "state": "open", "draft": false,
+    "html_url": "http://localhost/octocat/hello-world/pulls/7",
+    "url": "",
+    "user": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""},
+    "head": {"ref": "feature-branch", "sha": "abc123", "repo": null},
+    "base": {"ref": "main", "sha": "def456", "repo": null},
+    "labels": [], "assignees": [], "requested_reviewers": [],
+    "merged": false, "merged_at": null, "merge_commit_sha": null, "merged_by": null,
+    "created": "2024-01-15T10:00:00Z",
+    "updated": "2024-01-15T11:00:00Z",
+    "closed": null
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 3, "login": "carol", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+jsonpath "$.data.action" == "submitted"
+jsonpath "$.data.review.state" == "APPROVED"
+jsonpath "$.data.review.body" == "LGTM!"
+jsonpath "$.data.review.submitted_at" == "2024-01-15T11:00:00Z"
+jsonpath "$.data.pull_request.number" == 7
+
+# ── pull_request_review: submitted (CHANGES_REQUESTED via Gitea REJECT) → 200 ─
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: pull_request_review
+{
+  "action": "submitted",
+  "review": {
+    "id": 43,
+    "type": "REJECT",
+    "body": "Please fix the tests.",
+    "submitted_at": "2024-01-15T12:00:00Z",
+    "user": {"id": 3, "login": "carol", "avatar_url": "", "html_url": ""}
+  },
+  "pull_request": {
+    "id": 500, "number": 7, "title": "Add new feature", "body": null,
+    "state": "open", "draft": false,
+    "html_url": "http://localhost/octocat/hello-world/pulls/7",
+    "url": "",
+    "user": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""},
+    "head": {"ref": "feature-branch", "sha": "abc123", "repo": null},
+    "base": {"ref": "main", "sha": "def456", "repo": null},
+    "labels": [], "assignees": [], "requested_reviewers": [],
+    "merged": false, "merged_at": null, "merge_commit_sha": null, "merged_by": null,
+    "created": "2024-01-15T10:00:00Z",
+    "updated": "2024-01-15T12:00:00Z",
+    "closed": null
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 3, "login": "carol", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+jsonpath "$.data.action" == "submitted"
+jsonpath "$.data.review.state" == "CHANGES_REQUESTED"
+
+# ── pull_request_review: edited → 200 ─────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: pull_request_review
+{
+  "action": "edited",
+  "review": {
+    "id": 42,
+    "type": "APPROVED",
+    "body": "LGTM! (updated)",
+    "submitted_at": "2024-01-15T11:00:00Z",
+    "user": {"id": 3, "login": "carol", "avatar_url": "", "html_url": ""}
+  },
+  "pull_request": {
+    "id": 500, "number": 7, "title": "Add new feature", "body": null,
+    "state": "open", "draft": false,
+    "html_url": "http://localhost/octocat/hello-world/pulls/7",
+    "url": "",
+    "user": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""},
+    "head": {"ref": "feature-branch", "sha": "abc123", "repo": null},
+    "base": {"ref": "main", "sha": "def456", "repo": null},
+    "labels": [], "assignees": [], "requested_reviewers": [],
+    "merged": false, "merged_at": null, "merge_commit_sha": null, "merged_by": null,
+    "created": "2024-01-15T10:00:00Z",
+    "updated": "2024-01-15T11:30:00Z",
+    "closed": null
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 3, "login": "carol", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+jsonpath "$.data.action" == "edited"
+jsonpath "$.data.review.id" == 42
+jsonpath "$.data.review.body" == "LGTM! (updated)"
+
+# ── pull_request_review: dismissed → 200 ──────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: pull_request_review
+{
+  "action": "dismissed",
+  "review": {
+    "id": 42,
+    "type": "DISMISSED",
+    "body": "",
+    "submitted_at": "2024-01-15T11:00:00Z",
+    "user": {"id": 3, "login": "carol", "avatar_url": "", "html_url": ""}
+  },
+  "pull_request": {
+    "id": 500, "number": 7, "title": "Add new feature", "body": null,
+    "state": "open", "draft": false,
+    "html_url": "http://localhost/octocat/hello-world/pulls/7",
+    "url": "",
+    "user": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""},
+    "head": {"ref": "feature-branch", "sha": "abc123", "repo": null},
+    "base": {"ref": "main", "sha": "def456", "repo": null},
+    "labels": [], "assignees": [], "requested_reviewers": [],
+    "merged": false, "merged_at": null, "merge_commit_sha": null, "merged_by": null,
+    "created": "2024-01-15T10:00:00Z",
+    "updated": "2024-01-15T13:00:00Z",
+    "closed": null
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+jsonpath "$.data.action" == "dismissed"
+jsonpath "$.data.review.state" == "DISMISSED"
+
+# ── pull_request_review: unknown action → 200 + X-Confusio-Raw-Action sidecar ─
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: pull_request_review
+{
+  "action": "converted_to_draft",
+  "review": {
+    "id": 44,
+    "type": "COMMENT",
+    "body": "Looks interesting.",
+    "submitted_at": "2024-01-15T14:00:00Z",
+    "user": {"id": 3, "login": "carol", "avatar_url": "", "html_url": ""}
+  },
+  "pull_request": {
+    "id": 500, "number": 7, "title": "Add new feature", "body": null,
+    "state": "open", "draft": false,
+    "html_url": "http://localhost/octocat/hello-world/pulls/7",
+    "url": "",
+    "user": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""},
+    "head": {"ref": "feature-branch", "sha": "abc123", "repo": null},
+    "base": {"ref": "main", "sha": "def456", "repo": null},
+    "labels": [], "assignees": [], "requested_reviewers": [],
+    "merged": false, "merged_at": null, "merge_commit_sha": null, "merged_by": null,
+    "created": "2024-01-15T10:00:00Z",
+    "updated": "2024-01-15T14:00:00Z",
+    "closed": null
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 3, "login": "carol", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+header "X-Confusio-Raw-Action" == "converted_to_draft"
