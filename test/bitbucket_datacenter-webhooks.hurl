@@ -490,3 +490,126 @@ X-Event-Key: pr:reviewer:needs_work
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
+
+# ── build:status_created → status / success ───────────────────────────────────
+
+POST http://{{host}}/webhooks/bitbucket_datacenter
+Content-Type: application/json
+X-Event-Key: build:status_created
+{
+  "actor": {
+    "name": "octocat", "id": 1, "slug": "octocat",
+    "displayName": "The Octocat", "emailAddress": "octocat@example.com",
+    "links": {"self": [{"href": ""}]}
+  },
+  "buildStatus": {
+    "state": "SUCCESSFUL",
+    "key": "ci/build",
+    "name": "My CI Build",
+    "description": "Build passed",
+    "url": "https://ci.example.com/builds/42",
+    "createdDate": 1705320000000,
+    "updatedDate": 1705320300000
+  },
+  "commit": {
+    "id": "abc123def456abc123def456abc123def456abc123",
+    "displayId": "abc123d",
+    "message": "Update readme",
+    "author": {
+      "name": "The Octocat", "emailAddress": "octocat@example.com"
+    },
+    "authorTimestamp": 1705319900000
+  },
+  "repository": {
+    "id": 100, "slug": "hello-world", "name": "hello-world",
+    "public": true,
+    "project": {"id": 10, "key": "OCTOCAT", "name": "Octocat", "type": "NORMAL"},
+    "links": {"self": [{"href": "http://localhost/projects/OCTOCAT/repos/hello-world/browse"}]}
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── build:status_updated → status / pending ───────────────────────────────────
+
+POST http://{{host}}/webhooks/bitbucket_datacenter
+Content-Type: application/json
+X-Event-Key: build:status_updated
+{
+  "actor": {
+    "name": "bob", "id": 2, "slug": "bob",
+    "displayName": "Bob", "emailAddress": "bob@example.com",
+    "links": {"self": [{"href": ""}]}
+  },
+  "buildStatus": {
+    "state": "INPROGRESS",
+    "key": "ci/test",
+    "name": "My CI Tests",
+    "description": "Running tests...",
+    "url": "https://ci.example.com/builds/43",
+    "createdDate": 1705323600000,
+    "updatedDate": 1705323660000
+  },
+  "commit": {
+    "id": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    "displayId": "deadbee",
+    "message": "Add feature",
+    "author": {
+      "name": "Bob", "emailAddress": "bob@example.com"
+    },
+    "authorTimestamp": 1705323500000
+  },
+  "repository": {
+    "id": 100, "slug": "hello-world", "name": "hello-world",
+    "public": true,
+    "project": {"id": 10, "key": "OCTOCAT", "name": "Octocat", "type": "NORMAL"},
+    "links": {"self": [{"href": "http://localhost/projects/OCTOCAT/repos/hello-world/browse"}]}
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── build:status_updated → status / failure ───────────────────────────────────
+
+POST http://{{host}}/webhooks/bitbucket_datacenter
+Content-Type: application/json
+X-Event-Key: build:status_updated
+{
+  "actor": {
+    "name": "octocat", "id": 1, "slug": "octocat",
+    "displayName": "The Octocat", "emailAddress": "octocat@example.com",
+    "links": {"self": [{"href": ""}]}
+  },
+  "buildStatus": {
+    "state": "FAILED",
+    "key": "ci/build",
+    "name": "My CI Build",
+    "description": "Build failed: compilation error",
+    "url": "https://ci.example.com/builds/44",
+    "createdDate": 1705327200000,
+    "updatedDate": 1705327500000
+  },
+  "commit": {
+    "id": "cafebabecafebabecafebabecafebabecafebabe",
+    "displayId": "cafebab",
+    "message": "Fix compile error",
+    "author": {
+      "name": "The Octocat", "emailAddress": "octocat@example.com"
+    },
+    "authorTimestamp": 1705327100000
+  },
+  "repository": {
+    "id": 100, "slug": "hello-world", "name": "hello-world",
+    "public": true,
+    "project": {"id": 10, "key": "OCTOCAT", "name": "Octocat", "type": "NORMAL"},
+    "links": {"self": [{"href": "http://localhost/projects/OCTOCAT/repos/hello-world/browse"}]}
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"

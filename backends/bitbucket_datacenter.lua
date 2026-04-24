@@ -1603,4 +1603,57 @@ b:webhook("pr:reviewer:needs_work", function(payload)
   return bbs_review_event(payload, "CHANGES_REQUESTED")
 end)
 
+-- Build status events: build:status_created, build:status_updated.
+-- Bitbucket Data Center emits these when an external CI system posts a build
+-- result against a commit.  Both events carry the same payload shape and map
+-- to the GitHub status event.  The translated state is promoted to the action
+-- slot for consumer-side filtering without payload inspection.
+-- DC uses camelCase field names and epoch-millisecond timestamps (bbs_ts).
+-- The commit SHA is the top-level commit.id field (unlike Bitbucket Cloud,
+-- where it must be extracted from a link href).
+local BBS_BUILD_STATE_TO_GITHUB = {
+  INPROGRESS = "pending",
+  SUCCESSFUL = "success",
+  FAILED = "failure",
+  STOPPED = "error",
+}
+local function bbs_build_status_event(payload)
+  local bs = payload.buildStatus or {}
+  local commit = payload.commit or {}
+  local state = BBS_BUILD_STATE_TO_GITHUB[bs.state or ""] or "error"
+  local sha = commit.id or ""
+  local repo = payload.repository or {}
+  local data = {
+    id = 0,
+    sha = sha,
+    name = repo.slug or "",
+    target_url = bs.url,
+    context = bs.key or "",
+    description = bs.description or "",
+    state = state,
+    commit = nil,
+    branches = {},
+    created_at = bbs_ts(bs.createdDate) or "",
+    updated_at = bbs_ts(bs.updatedDate) or "",
+    repository = translate_bbs_repo(repo),
+    sender = translate_bbs_user(payload.actor or {}),
+  }
+  return make_internal_event({
+    event = "status",
+    action = state,
+    provider = "bitbucket_datacenter",
+    raw = payload,
+    data = data,
+    timestamp = bbs_ts(bs.updatedDate) or bbs_ts(bs.createdDate) or "",
+  })
+end
+
+b:webhook("build:status_created", function(payload)
+  return bbs_build_status_event(payload)
+end)
+
+b:webhook("build:status_updated", function(payload)
+  return bbs_build_status_event(payload)
+end)
+
 b:build()
