@@ -484,7 +484,7 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
     -- Fan out to all active targets that subscribe to this event type.
     -- deliver_attempt is called synchronously for each matched target; the
     -- retry scheduler (a later module) will pick up any "retrying" records.
-    local ev, deliveries = fanout_dispatch(backend, internal_event.event, payload)
+    local outbox_ev, deliveries = fanout_dispatch(backend, internal_event.event, payload)
     for _, delivery in ipairs(deliveries) do
       deliver_attempt(delivery.delivery_id)
     end
@@ -493,7 +493,7 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
     -- the delivery-list and replay APIs.  delivery_ids is omitted when there
     -- are no matched targets — EncodeJson({}) produces "{}" not "[]", so we
     -- only include the field when there is at least one delivery to list.
-    local resp = { message = "accepted", event_id = ev.event_id }
+    local resp = { message = "accepted", event_id = outbox_ev.event_id }
     if #deliveries > 0 then
       local ids = {}
       for i, d in ipairs(deliveries) do
