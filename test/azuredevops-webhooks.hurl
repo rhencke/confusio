@@ -381,3 +381,108 @@ Content-Type: application/json
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
+
+# ── build.complete (succeeded) → workflow_run / completed / success ───────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+{
+  "subscriptionId": "sub-1",
+  "notificationId": 20,
+  "id": "evt-20",
+  "eventType": "build.complete",
+  "resource": {
+    "id": 1001,
+    "buildNumber": "20240115.1",
+    "status": "completed",
+    "result": "succeeded",
+    "queueTime": "2024-01-15T10:00:00Z",
+    "startTime": "2024-01-15T10:01:00Z",
+    "finishTime": "2024-01-15T10:05:00Z",
+    "url": "https://dev.azure.com/org/project/_apis/build/builds/1001",
+    "_links": {
+      "web": {"href": "https://dev.azure.com/org/project/_build/results?buildId=1001"}
+    },
+    "definition": {"id": 1, "name": "CI Pipeline"},
+    "sourceBranch": "refs/heads/main",
+    "sourceVersion": "abc123def456abc123def456abc123def456abc123",
+    "requestedBy": {"displayName": "The Octocat", "uniqueName": "octocat"},
+    "requestedFor": {"displayName": "The Octocat", "uniqueName": "octocat"},
+    "repository": {}
+  },
+  "createdDate": "2024-01-15T10:05:00Z"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── build.complete (failed) → workflow_run / completed / failure ───────────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+{
+  "subscriptionId": "sub-1",
+  "notificationId": 21,
+  "id": "evt-21",
+  "eventType": "build.complete",
+  "resource": {
+    "id": 1002,
+    "buildNumber": "20240115.2",
+    "status": "completed",
+    "result": "failed",
+    "queueTime": "2024-01-15T11:00:00Z",
+    "startTime": "2024-01-15T11:01:00Z",
+    "finishTime": "2024-01-15T11:04:00Z",
+    "url": "https://dev.azure.com/org/project/_apis/build/builds/1002",
+    "_links": {
+      "web": {"href": "https://dev.azure.com/org/project/_build/results?buildId=1002"}
+    },
+    "definition": {"id": 1, "name": "CI Pipeline"},
+    "sourceBranch": "refs/heads/feature",
+    "sourceVersion": "deadbeefdeadbeef",
+    "requestedBy": {"displayName": "Bob", "uniqueName": "bob"},
+    "requestedFor": {"displayName": "Bob", "uniqueName": "bob"},
+    "repository": {}
+  },
+  "createdDate": "2024-01-15T11:04:00Z"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── build.complete (canceled) → workflow_run / completed / cancelled ───────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+{
+  "subscriptionId": "sub-1",
+  "notificationId": 22,
+  "id": "evt-22",
+  "eventType": "build.complete",
+  "resource": {
+    "id": 1003,
+    "buildNumber": "20240115.3",
+    "status": "completed",
+    "result": "canceled",
+    "queueTime": "2024-01-15T12:00:00Z",
+    "startTime": "2024-01-15T12:01:00Z",
+    "finishTime": "2024-01-15T12:02:00Z",
+    "url": "https://dev.azure.com/org/project/_apis/build/builds/1003",
+    "_links": {
+      "web": {"href": "https://dev.azure.com/org/project/_build/results?buildId=1003"}
+    },
+    "definition": {"id": 2, "name": "Deploy Pipeline"},
+    "sourceBranch": "refs/heads/main",
+    "sourceVersion": "cafebabecafebabe",
+    "requestedBy": {"displayName": "Alice", "uniqueName": "alice"},
+    "requestedFor": {"displayName": "Alice", "uniqueName": "alice"},
+    "repository": {}
+  },
+  "createdDate": "2024-01-15T12:02:00Z"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
