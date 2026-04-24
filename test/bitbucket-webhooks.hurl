@@ -623,3 +623,135 @@ X-Event-Key: pullrequest:unapproved
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
+
+# ── repo:commit_status_created → status / success ────────────────────────────
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: repo:commit_status_created
+{
+  "actor": {
+    "nickname": "octocat",
+    "display_name": "The Octocat",
+    "account_id": "xyz789",
+    "links": {"avatar": {"href": ""}, "html": {"href": ""}}
+  },
+  "commit_status": {
+    "state": "SUCCESSFUL",
+    "key": "ci/build",
+    "description": "Build passed",
+    "url": "https://ci.example.com/builds/42",
+    "name": "My CI",
+    "created_on": "2024-01-15T10:05:00+00:00",
+    "updated_on": "2024-01-15T10:05:00+00:00",
+    "links": {
+      "commit": {
+        "href": "https://api.bitbucket.org/2.0/repositories/octocat/hello-world/commit/abc123def456"
+      },
+      "self": {"href": "https://api.bitbucket.org/2.0/repositories/octocat/hello-world/commit/abc123def456/statuses/build/ci-build"}
+    }
+  },
+  "repository": {
+    "full_name": "octocat/hello-world",
+    "name": "hello-world",
+    "slug": "hello-world",
+    "is_private": false,
+    "owner": {
+      "nickname": "octocat", "display_name": "The Octocat", "account_id": "xyz789",
+      "type": "user", "links": {"avatar": {"href": ""}, "html": {"href": ""}}
+    },
+    "links": {"html": {"href": "https://bitbucket.org/octocat/hello-world"}}
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── repo:commit_status_updated → status / pending ─────────────────────────────
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: repo:commit_status_updated
+{
+  "actor": {
+    "nickname": "bob",
+    "display_name": "Bob",
+    "account_id": "def456",
+    "links": {"avatar": {"href": ""}, "html": {"href": ""}}
+  },
+  "commit_status": {
+    "state": "INPROGRESS",
+    "key": "ci/test",
+    "description": "Running tests...",
+    "url": "https://ci.example.com/builds/43",
+    "name": "My CI",
+    "created_on": "2024-01-15T11:00:00+00:00",
+    "updated_on": "2024-01-15T11:01:00+00:00",
+    "links": {
+      "commit": {
+        "href": "https://api.bitbucket.org/2.0/repositories/octocat/hello-world/commit/deadbeef"
+      },
+      "self": {"href": ""}
+    }
+  },
+  "repository": {
+    "full_name": "octocat/hello-world",
+    "name": "hello-world",
+    "slug": "hello-world",
+    "is_private": false,
+    "owner": {
+      "nickname": "octocat", "display_name": "The Octocat", "account_id": "xyz789",
+      "type": "user", "links": {"avatar": {"href": ""}, "html": {"href": ""}}
+    },
+    "links": {"html": {"href": "https://bitbucket.org/octocat/hello-world"}}
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── repo:commit_status_updated → status / failure ─────────────────────────────
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: repo:commit_status_updated
+{
+  "actor": {
+    "nickname": "octocat",
+    "display_name": "The Octocat",
+    "account_id": "xyz789",
+    "links": {"avatar": {"href": ""}, "html": {"href": ""}}
+  },
+  "commit_status": {
+    "state": "FAILED",
+    "key": "ci/build",
+    "description": "Build failed",
+    "url": "https://ci.example.com/builds/44",
+    "name": "My CI",
+    "created_on": "2024-01-15T12:00:00+00:00",
+    "updated_on": "2024-01-15T12:05:00+00:00",
+    "links": {
+      "commit": {
+        "href": "https://api.bitbucket.org/2.0/repositories/octocat/hello-world/commit/cafebabe"
+      },
+      "self": {"href": ""}
+    }
+  },
+  "repository": {
+    "full_name": "octocat/hello-world",
+    "name": "hello-world",
+    "slug": "hello-world",
+    "is_private": false,
+    "owner": {
+      "nickname": "octocat", "display_name": "The Octocat", "account_id": "xyz789",
+      "type": "user", "links": {"avatar": {"href": ""}, "html": {"href": ""}}
+    },
+    "links": {"html": {"href": "https://bitbucket.org/octocat/hello-world"}}
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
