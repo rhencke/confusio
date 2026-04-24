@@ -7331,6 +7331,166 @@ b:webhook("pull_request_review_comment", function(payload)
   })
 end)
 
+-- workflow_run actions mirror GitHub's naming exactly — Gitea Actions follows
+-- the GitHub Actions webhook contract.
+local WORKFLOW_RUN_ACTIONS = {
+  requested = "requested",
+  in_progress = "in_progress",
+  completed = "completed",
+}
+
+b:webhook("workflow_run", function(payload)
+  local raw_action = payload.action or ""
+  local action = WORKFLOW_RUN_ACTIONS[raw_action]
+  local raw_run = payload.workflow_run or {}
+  local raw_workflow = payload.workflow or {}
+  -- Gitea's workflow_run payload mirrors GitHub's shape; normalise fields that
+  -- may be absent and apply translate_user for actor objects.
+  local workflow_run = {
+    id = raw_run.id,
+    name = raw_run.name or "",
+    head_branch = raw_run.head_branch or "",
+    head_sha = raw_run.head_sha or "",
+    run_number = raw_run.run_number,
+    event = raw_run.event or "",
+    display_title = raw_run.display_title or raw_run.name or "",
+    status = raw_run.status or "",
+    conclusion = raw_run.conclusion,
+    workflow_id = raw_run.workflow_id,
+    url = raw_run.url or "",
+    html_url = raw_run.html_url or "",
+    pull_requests = raw_run.pull_requests or {},
+    created_at = raw_run.created_at or "",
+    updated_at = raw_run.updated_at or "",
+    run_attempt = raw_run.run_attempt or 1,
+    referenced_workflows = raw_run.referenced_workflows or {},
+    actor = translate_user(raw_run.actor or {}),
+    triggering_actor = translate_user(raw_run.triggering_actor or raw_run.actor or {}),
+  }
+  local workflow = {
+    id = raw_workflow.id,
+    name = raw_workflow.name or "",
+    path = raw_workflow.path or "",
+    state = raw_workflow.state or "active",
+    url = raw_workflow.url or "",
+    html_url = raw_workflow.html_url or "",
+    badge_url = raw_workflow.badge_url or "",
+    created_at = raw_workflow.created_at or "",
+    updated_at = raw_workflow.updated_at or "",
+  }
+  return make_internal_event({
+    event = "workflow_run",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitea",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      workflow_run = workflow_run,
+      workflow = workflow,
+      repository = translate_repo(payload.repository or {}),
+      sender = translate_user(payload.sender or {}),
+    },
+    timestamp = raw_run.updated_at or raw_run.created_at or "",
+  })
+end)
+
+-- workflow_job actions also mirror GitHub's naming.
+local WORKFLOW_JOB_ACTIONS = {
+  queued = "queued",
+  in_progress = "in_progress",
+  completed = "completed",
+  waiting = "waiting",
+}
+
+b:webhook("workflow_job", function(payload)
+  local raw_action = payload.action or ""
+  local action = WORKFLOW_JOB_ACTIONS[raw_action]
+  local raw_job = payload.workflow_job or {}
+  local workflow_job = {
+    id = raw_job.id,
+    run_id = raw_job.run_id,
+    run_url = raw_job.run_url or "",
+    run_attempt = raw_job.run_attempt or 1,
+    name = raw_job.name or "",
+    head_sha = raw_job.head_sha or "",
+    url = raw_job.url or "",
+    html_url = raw_job.html_url or "",
+    status = raw_job.status or "",
+    conclusion = raw_job.conclusion,
+    started_at = raw_job.started_at,
+    completed_at = raw_job.completed_at,
+    steps = raw_job.steps or {},
+    labels = raw_job.labels or {},
+    runner_id = raw_job.runner_id,
+    runner_name = raw_job.runner_name or "",
+  }
+  return make_internal_event({
+    event = "workflow_job",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitea",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      workflow_job = workflow_job,
+      repository = translate_repo(payload.repository or {}),
+      sender = translate_user(payload.sender or {}),
+    },
+    timestamp = raw_job.completed_at or raw_job.started_at or "",
+  })
+end)
+
+-- status: commit status update.  Gitea sends no action field; the state
+-- (pending/success/failure/error) is used as the action value so consumers can
+-- filter by state without inspecting the data payload.
+-- Gitea branch objects use commit.id; normalise to commit.sha for GitHub shape.
+local function translate_gitea_status_branch(br)
+  if not br then
+    return {}
+  end
+  local commit = br.commit or {}
+  return {
+    name = br.name or "",
+    commit = {
+      sha = commit.sha or commit.id or "",
+      url = commit.url or "",
+    },
+    protected = br.protected or false,
+  }
+end
+
+b:webhook("status", function(payload)
+  local state = payload.state or "pending"
+  local branches = {}
+  for _, br in ipairs(payload.branches or {}) do
+    branches[#branches + 1] = translate_gitea_status_branch(br)
+  end
+  local data = {
+    id = payload.id,
+    sha = payload.sha or "",
+    name = (payload.repository or {}).full_name or "",
+    target_url = payload.target_url,
+    context = payload.context or "",
+    description = payload.description or "",
+    state = state,
+    commit = payload.commit,
+    branches = branches,
+    created_at = payload.created_at or "",
+    updated_at = payload.updated_at or "",
+    repository = translate_repo(payload.repository or {}),
+    sender = translate_user(payload.sender or {}),
+  }
+  return make_internal_event({
+    event = "status",
+    action = state,
+    provider = "gitea",
+    raw = payload,
+    data = data,
+    timestamp = payload.updated_at or payload.created_at or "",
+  })
+end)
+
 b:capability("repos", repos)
 b:capability("users", users)
 b:capability("orgs", orgs)

@@ -832,3 +832,306 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 header "X-Confusio-Raw-Action" == "converted_to_draft"
+
+# ── workflow_run: completed → 200 ────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: workflow_run
+{
+  "action": "completed",
+  "workflow_run": {
+    "id": 1001, "name": "CI", "head_branch": "main", "head_sha": "abc123def456",
+    "run_number": 42, "event": "push", "display_title": "Update readme",
+    "status": "completed", "conclusion": "success", "workflow_id": 1,
+    "url": "http://localhost/octocat/hello-world/actions/runs/1001",
+    "html_url": "http://localhost/octocat/hello-world/actions/runs/1001",
+    "pull_requests": [], "run_attempt": 1, "referenced_workflows": [],
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:05:00Z",
+    "actor": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+    "triggering_actor": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "workflow": {
+    "id": 1, "name": "CI", "path": ".gitea/workflows/ci.yml", "state": "active",
+    "url": "http://localhost/octocat/hello-world/actions/workflows/ci.yml",
+    "html_url": "http://localhost/octocat/hello-world/actions/workflows/ci.yml",
+    "badge_url": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── workflow_run: requested → 200 ────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: workflow_run
+{
+  "action": "requested",
+  "workflow_run": {
+    "id": 1002, "name": "CI", "head_branch": "feature", "head_sha": "deadbeef",
+    "run_number": 43, "event": "push", "display_title": "Add feature",
+    "status": "queued", "conclusion": null, "workflow_id": 1,
+    "url": "http://localhost/octocat/hello-world/actions/runs/1002",
+    "html_url": "http://localhost/octocat/hello-world/actions/runs/1002",
+    "pull_requests": [], "run_attempt": 1, "referenced_workflows": [],
+    "created_at": "2024-01-15T11:00:00Z", "updated_at": "2024-01-15T11:00:00Z",
+    "actor": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""},
+    "triggering_actor": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
+  },
+  "workflow": {
+    "id": 1, "name": "CI", "path": ".gitea/workflows/ci.yml", "state": "active",
+    "url": "", "html_url": "", "badge_url": "",
+    "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── workflow_run: unknown action → 200 + X-Confusio-Raw-Action sidecar ───────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: workflow_run
+{
+  "action": "cancelled",
+  "workflow_run": {
+    "id": 1003, "name": "CI", "head_branch": "main", "head_sha": "abc123",
+    "run_number": 44, "event": "push", "display_title": "Hotfix",
+    "status": "completed", "conclusion": "cancelled", "workflow_id": 1,
+    "url": "", "html_url": "", "pull_requests": [], "run_attempt": 1,
+    "referenced_workflows": [],
+    "created_at": "2024-01-15T12:00:00Z", "updated_at": "2024-01-15T12:01:00Z",
+    "actor": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+    "triggering_actor": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "workflow": {
+    "id": 1, "name": "CI", "path": ".gitea/workflows/ci.yml", "state": "active",
+    "url": "", "html_url": "", "badge_url": "",
+    "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+header "X-Confusio-Raw-Action" == "cancelled"
+
+# ── workflow_job: completed → 200 ─────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: workflow_job
+{
+  "action": "completed",
+  "workflow_job": {
+    "id": 2001, "run_id": 1001, "run_attempt": 1,
+    "run_url": "http://localhost/octocat/hello-world/actions/runs/1001",
+    "name": "build", "head_sha": "abc123def456",
+    "url": "http://localhost/octocat/hello-world/actions/runs/1001/jobs/2001",
+    "html_url": "http://localhost/octocat/hello-world/actions/runs/1001/jobs/2001",
+    "status": "completed", "conclusion": "success",
+    "started_at": "2024-01-15T10:01:00Z", "completed_at": "2024-01-15T10:04:00Z",
+    "steps": [
+      {
+        "name": "Set up job", "status": "completed", "conclusion": "success",
+        "number": 1,
+        "started_at": "2024-01-15T10:01:00Z", "completed_at": "2024-01-15T10:02:00Z"
+      }
+    ],
+    "labels": ["ubuntu-latest"], "runner_id": 1, "runner_name": "runner-1"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── workflow_job: queued → 200 ────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: workflow_job
+{
+  "action": "queued",
+  "workflow_job": {
+    "id": 2002, "run_id": 1002, "run_attempt": 1,
+    "run_url": "http://localhost/octocat/hello-world/actions/runs/1002",
+    "name": "test", "head_sha": "deadbeef",
+    "url": "", "html_url": "",
+    "status": "queued", "conclusion": null,
+    "started_at": null, "completed_at": null,
+    "steps": [], "labels": [], "runner_id": null, "runner_name": ""
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── workflow_job: unknown action → 200 + X-Confusio-Raw-Action sidecar ────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: workflow_job
+{
+  "action": "skipped",
+  "workflow_job": {
+    "id": 2003, "run_id": 1003, "run_attempt": 1,
+    "run_url": "", "name": "lint", "head_sha": "abc123",
+    "url": "", "html_url": "",
+    "status": "completed", "conclusion": "skipped",
+    "started_at": null, "completed_at": null,
+    "steps": [], "labels": [], "runner_id": null, "runner_name": ""
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+header "X-Confusio-Raw-Action" == "skipped"
+
+# ── status: success → 200 ─────────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: status
+{
+  "id": 501,
+  "sha": "abc123def456abc123def456abc123def456abc123",
+  "state": "success",
+  "target_url": "https://ci.example.com/builds/99",
+  "context": "ci/build",
+  "description": "Build passed",
+  "branches": [
+    {
+      "name": "main",
+      "commit": {"id": "abc123def456abc123def456abc123def456abc123", "url": ""},
+      "protected": false
+    }
+  ],
+  "commit": {"id": "abc123def456abc123def456abc123def456abc123", "message": "Update readme"},
+  "created_at": "2024-01-15T10:05:00Z",
+  "updated_at": "2024-01-15T10:05:00Z",
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── status: pending → 200 ─────────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: status
+{
+  "id": 502,
+  "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+  "state": "pending",
+  "target_url": null,
+  "context": "ci/test",
+  "description": "Running tests...",
+  "branches": [
+    {
+      "name": "feature",
+      "commit": {"id": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "url": ""},
+      "protected": false
+    }
+  ],
+  "commit": {"id": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "message": "Add feature"},
+  "created_at": "2024-01-15T11:00:00Z",
+  "updated_at": "2024-01-15T11:00:00Z",
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── status: failure → 200 ─────────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: status
+{
+  "id": 503,
+  "sha": "cafebabecafebabecafebabecafebabecafebabe",
+  "state": "failure",
+  "target_url": "https://ci.example.com/builds/101",
+  "context": "ci/build",
+  "description": "Build failed",
+  "branches": [],
+  "commit": null,
+  "created_at": "2024-01-15T12:00:00Z",
+  "updated_at": "2024-01-15T12:01:00Z",
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
