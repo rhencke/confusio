@@ -690,4 +690,225 @@ b:rest("patch_user", function()
   end, fetch_json(base() .. "/user", "PATCH", GetBody()))
 end)
 
+-- Webhook handlers: Harness CI pipeline execution events -------------------
+--
+-- Harness CI embeds the event type in payload.eventType (no event-type
+-- header).  Pipeline execution events map to GitHub workflow_run; stage
+-- execution events map to workflow_job.
+--
+-- Pipeline event types:
+--   pipeline_execution_started → workflow_run / in_progress
+--   pipeline_execution_success → workflow_run / completed / success
+--   pipeline_execution_failed  → workflow_run / completed / failure
+--   pipeline_execution_aborted → workflow_run / completed / cancelled
+--
+-- Stage event types:
+--   stage_execution_started → workflow_job / in_progress
+--   stage_execution_success → workflow_job / completed / success
+--   stage_execution_failed  → workflow_job / completed / failure
+--   stage_execution_aborted → workflow_job / completed / cancelled
+--
+-- Harness timestamps are epoch milliseconds; convert to ISO 8601 for GitHub.
+
+local function harness_ts(ms)
+  if not ms or ms == 0 then
+    return nil
+  end
+  return os.date("!%Y-%m-%dT%H:%M:%SZ", math.floor(ms / 1000))
+end
+
+local function harness_webhook_sender(payload)
+  local tb = payload.triggeredBy or {}
+  return {
+    login = tb.name or tb.email or "",
+    id = 0,
+    node_id = "",
+    avatar_url = "",
+    url = "",
+    html_url = "",
+    type = "User",
+    site_admin = false,
+  }
+end
+
+local function harness_webhook_repo(payload)
+  local ci = (payload.moduleInfo or {}).ci or {}
+  local owner = payload.orgIdentifier or payload.projectIdentifier or ""
+  local name = ci.repoName or ""
+  return {
+    id = 0,
+    node_id = "",
+    name = name,
+    full_name = owner ~= "" and (owner .. "/" .. name) or name,
+    private = true,
+    owner = {
+      login = owner,
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      url = "",
+      html_url = "",
+      type = "Organization",
+    },
+    html_url = "",
+    description = nil,
+    fork = false,
+    url = "",
+    clone_url = "",
+    homepage = "",
+    size = 0,
+    stargazers_count = 0,
+    watchers_count = 0,
+    language = nil,
+    has_issues = false,
+    has_wiki = false,
+    forks_count = 0,
+    archived = false,
+    disabled = false,
+    open_issues_count = 0,
+    default_branch = "main",
+    visibility = "private",
+    forks = 0,
+    open_issues = 0,
+    watchers = 0,
+    created_at = nil,
+    updated_at = nil,
+    pushed_at = nil,
+  }
+end
+
+-- harness_pipeline_event builds a workflow_run internal event.
+-- gh_action: "in_progress" | "completed"
+-- gh_status: "in_progress" | "completed"
+-- gh_conclusion: "success" | "failure" | "cancelled" | nil
+local function harness_pipeline_event(payload, gh_action, gh_status, gh_conclusion)
+  local ci = (payload.moduleInfo or {}).ci or {}
+  local sender = harness_webhook_sender(payload)
+  local start_iso = harness_ts(payload.startTs)
+  local end_iso = harness_ts(payload.endTs)
+  local workflow_run = {
+    id = 0,
+    node_id = "",
+    name = payload.pipelineIdentifier or "",
+    head_branch = ci.branch or "",
+    head_sha = ci.commitSha or ci.sha or "",
+    run_number = payload.runSequence or 0,
+    event = "push",
+    display_title = payload.pipelineIdentifier or "",
+    status = gh_status,
+    conclusion = gh_conclusion,
+    workflow_id = 0,
+    url = "",
+    html_url = "",
+    pull_requests = {},
+    created_at = start_iso or "",
+    updated_at = end_iso or start_iso or "",
+    run_attempt = 1,
+    referenced_workflows = {},
+    actor = sender,
+    triggering_actor = sender,
+  }
+  local workflow = {
+    id = 0,
+    name = payload.pipelineIdentifier or "",
+    path = "",
+    state = "active",
+    url = "",
+    html_url = "",
+    badge_url = "",
+    created_at = "",
+    updated_at = "",
+  }
+  return make_internal_event({
+    event = "workflow_run",
+    action = gh_action,
+    provider = "harness",
+    raw = payload,
+    data = {
+      action = gh_action,
+      workflow_run = workflow_run,
+      workflow = workflow,
+      repository = harness_webhook_repo(payload),
+      sender = sender,
+    },
+    timestamp = end_iso or start_iso or "",
+  })
+end
+
+-- harness_stage_event builds a workflow_job internal event.
+local function harness_stage_event(payload, gh_action, gh_status, gh_conclusion)
+  local sender = harness_webhook_sender(payload)
+  local start_iso = harness_ts(payload.startTs)
+  local end_iso = harness_ts(payload.endTs)
+  local job = {
+    id = 0,
+    run_id = 0,
+    run_url = "",
+    run_attempt = 1,
+    node_id = "",
+    head_sha = "",
+    url = "",
+    html_url = "",
+    status = gh_status,
+    conclusion = gh_conclusion,
+    started_at = start_iso or "",
+    completed_at = gh_status == "completed" and (end_iso or start_iso) or nil,
+    name = payload.stageName or payload.stageIdentifier or "",
+    steps = {},
+    check_run_url = "",
+    labels = {},
+    runner_id = nil,
+    runner_name = nil,
+    runner_group_id = nil,
+    runner_group_name = nil,
+    workflow_name = payload.pipelineIdentifier or "",
+    head_branch = "",
+  }
+  return make_internal_event({
+    event = "workflow_job",
+    action = gh_action,
+    provider = "harness",
+    raw = payload,
+    data = {
+      action = gh_action,
+      workflow_job = job,
+      repository = harness_webhook_repo(payload),
+      sender = sender,
+    },
+    timestamp = end_iso or start_iso or "",
+  })
+end
+
+b:webhook("pipeline_execution_started", function(payload)
+  return harness_pipeline_event(payload, "in_progress", "in_progress", nil)
+end)
+
+b:webhook("pipeline_execution_success", function(payload)
+  return harness_pipeline_event(payload, "completed", "completed", "success")
+end)
+
+b:webhook("pipeline_execution_failed", function(payload)
+  return harness_pipeline_event(payload, "completed", "completed", "failure")
+end)
+
+b:webhook("pipeline_execution_aborted", function(payload)
+  return harness_pipeline_event(payload, "completed", "completed", "cancelled")
+end)
+
+b:webhook("stage_execution_started", function(payload)
+  return harness_stage_event(payload, "in_progress", "in_progress", nil)
+end)
+
+b:webhook("stage_execution_success", function(payload)
+  return harness_stage_event(payload, "completed", "completed", "success")
+end)
+
+b:webhook("stage_execution_failed", function(payload)
+  return harness_stage_event(payload, "completed", "completed", "failure")
+end)
+
+b:webhook("stage_execution_aborted", function(payload)
+  return harness_stage_event(payload, "completed", "completed", "cancelled")
+end)
+
 b:build()
