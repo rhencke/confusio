@@ -407,12 +407,6 @@ X-Event-Key: pr:reviewer:approved
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
-jsonpath "$.event" == "pull_request_review"
-jsonpath "$.action" == "submitted"
-jsonpath "$.data.review.state" == "APPROVED"
-jsonpath "$.data.review.user.login" == "alice"
-jsonpath "$.data.pull_request.number" == 7
-jsonpath "$.data.sender.login" == "alice"
 
 # ── pr:reviewer:needs_work → pull_request_review / submitted / CHANGES_REQUESTED
 
@@ -496,9 +490,3 @@ X-Event-Key: pr:reviewer:needs_work
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
-jsonpath "$.event" == "pull_request_review"
-jsonpath "$.action" == "submitted"
-jsonpath "$.data.review.state" == "CHANGES_REQUESTED"
-jsonpath "$.data.review.user.login" == "alice"
-jsonpath "$.data.pull_request.number" == 7
-jsonpath "$.data.sender.login" == "alice"

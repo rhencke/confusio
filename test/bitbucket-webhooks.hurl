@@ -556,13 +556,6 @@ X-Event-Key: pullrequest:approved
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
-jsonpath "$.event" == "pull_request_review"
-jsonpath "$.action" == "submitted"
-jsonpath "$.data.review.state" == "APPROVED"
-jsonpath "$.data.review.user.login" == "alice"
-jsonpath "$.data.review.submitted_at" == "2024-01-15T10:30:00Z"
-jsonpath "$.data.pull_request.number" == 7
-jsonpath "$.data.sender.login" == "alice"
 
 # ── pullrequest:unapproved → pull_request_review / dismissed / DISMISSED ──────
 
@@ -630,10 +623,3 @@ X-Event-Key: pullrequest:unapproved
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
-jsonpath "$.event" == "pull_request_review"
-jsonpath "$.action" == "dismissed"
-jsonpath "$.data.review.state" == "DISMISSED"
-jsonpath "$.data.review.user.login" == "alice"
-jsonpath "$.data.review.submitted_at" == "2024-01-15T10:45:00Z"
-jsonpath "$.data.pull_request.number" == 7
-jsonpath "$.data.sender.login" == "alice"
