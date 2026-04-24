@@ -2454,4 +2454,30 @@ b:webhook("pull_request", function(payload)
   })
 end)
 
+local GB_PULL_REQUEST_REVIEW_ACTIONS = {
+  submitted = "submitted",
+  dismissed = "dismissed",
+  edited = "edited",
+}
+
+b:webhook("pull_request_review", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_PULL_REQUEST_REVIEW_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "pull_request_review",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      review = payload.review or {},
+      pull_request = payload.pull_request or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.review or {}).submitted_at or "",
+  })
+end)
+
 b:build()

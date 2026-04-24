@@ -2277,15 +2277,15 @@ Triggered on pull request lifecycle events.
 
 Triggered when a review is submitted or dismissed on a pull request.
 
-| GitHub field | gitea-family | gitlab | bitbucket | bitbucket-dc | azuredevops | github | All others |
-|---|---|---|---|---|---|---|---|
-| `review.id` | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ |
-| `review.body` | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ |
-| `review.state` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `review.html_url` | ✓ | ✓ | ✗ | ~ | ✗ | ✓ | ✗ |
-| `review.user` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `review.submitted_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `pull_request` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| GitHub field | gitea-family | gitlab | bitbucket | bitbucket-dc | azuredevops | github | gitbucket | All others |
+|---|---|---|---|---|---|---|---|---|
+| `review.id` | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `review.body` | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `review.state` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `review.html_url` | ✓ | ✓ | ✗ | ~ | ✗ | ✓ | ✓ | ✗ |
+| `review.user` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `review.submitted_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `pull_request` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
 
 #### `review.state` mapping
 
@@ -2309,15 +2309,18 @@ Triggered when a review is submitted or dismissed on a pull request.
 
 #### Supported actions
 
-| Action | gitea-family | gitlab | bitbucket | bitbucket-dc | azuredevops | github |
-|--------|---|---|---|---|---|---|
-| `submitted` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `dismissed` | ~ | ✓ | ✓ | ✗ | ✓ | ✓ |
+| Action | gitea-family | gitlab | bitbucket | bitbucket-dc | azuredevops | github | gitbucket |
+|--------|---|---|---|---|---|---|---|
+| `submitted` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `dismissed` | ~ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ |
+| `edited` | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ |
 
 **Notes:**
 - `pull_request_review` events require the forge to have a native review system.
-  Gogs, GitBucket, and most self-hosted forges do not emit review events.
+  Gogs and most self-hosted forges do not emit review events.
   The event is never generated for these backends.
+- GitBucket 4.32+ emits `pull_request_review` in GitHub-compatible format.
+  All fields are passed through without translation.
 - Bitbucket Cloud emits `pullrequest:approved` (→ `submitted / APPROVED`) and
   `pullrequest:unapproved` (→ `dismissed / DISMISSED`).  It has no "request changes"
   concept; `review.id`, `review.body`, and `review.html_url` are always empty.
