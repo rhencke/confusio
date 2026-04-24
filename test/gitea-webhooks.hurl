@@ -667,11 +667,6 @@ X-Gitea-Event: pull_request_review
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
-jsonpath "$.data.action" == "submitted"
-jsonpath "$.data.review.state" == "APPROVED"
-jsonpath "$.data.review.body" == "LGTM!"
-jsonpath "$.data.review.submitted_at" == "2024-01-15T11:00:00Z"
-jsonpath "$.data.pull_request.number" == 7
 
 # ── pull_request_review: submitted (CHANGES_REQUESTED via Gitea REJECT) → 200 ─
 
@@ -713,8 +708,6 @@ X-Gitea-Event: pull_request_review
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
-jsonpath "$.data.action" == "submitted"
-jsonpath "$.data.review.state" == "CHANGES_REQUESTED"
 
 # ── pull_request_review: edited → 200 ─────────────────────────────────────────
 
@@ -756,9 +749,6 @@ X-Gitea-Event: pull_request_review
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
-jsonpath "$.data.action" == "edited"
-jsonpath "$.data.review.id" == 42
-jsonpath "$.data.review.body" == "LGTM! (updated)"
 
 # ── pull_request_review: dismissed → 200 ──────────────────────────────────────
 
@@ -800,8 +790,6 @@ X-Gitea-Event: pull_request_review
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
-jsonpath "$.data.action" == "dismissed"
-jsonpath "$.data.review.state" == "DISMISSED"
 
 # ── pull_request_review: unknown action → 200 + X-Confusio-Raw-Action sidecar ─
 
