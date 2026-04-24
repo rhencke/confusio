@@ -31,6 +31,17 @@ if ws_env and ws_env ~= "" then
   end
 end
 
+-- CONFUSIO_WEBHOOK_TARGETS: optional JSON array of target configs to register at startup.
+-- Each entry may include: url (required), events (array), shape ("github"|"confusio"), secret.
+-- Example: CONFUSIO_WEBHOOK_TARGETS='[{"url":"https://hook.example.com","events":["push"]}]'
+local wt_env = os.getenv("CONFUSIO_WEBHOOK_TARGETS")
+if wt_env and wt_env ~= "" then
+  local ok_wt, wt_parsed = pcall(DecodeJson, wt_env)
+  if ok_wt and type(wt_parsed) == "table" then
+    config.webhook_targets = wt_parsed
+  end
+end
+
 dofile("/zip/internal/http.lua")
 dofile("/zip/internal/proxy.lua")
 dofile("/zip/internal/transport.lua")
@@ -84,4 +95,15 @@ app.path_known = path_known
 app.targets_api = make_targets_api(app)
 app.deliveries_api = make_deliveries_api(app)
 app.webhook_receiver = make_webhook_receiver(app)
+
+-- Register any targets pre-configured via CONFUSIO_WEBHOOK_TARGETS at startup.
+-- Invalid entries (missing url, wrong types) are silently skipped.
+if config.webhook_targets then
+  for _, t in ipairs(config.webhook_targets) do
+    if type(t) == "table" and type(t.url) == "string" and t.url ~= "" then
+      target_create(t)
+    end
+  end
+end
+
 OnHttpRequest = make_dispatcher(app)
