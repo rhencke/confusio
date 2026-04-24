@@ -2177,4 +2177,74 @@ b:webhook("git.pullrequest.reviewervote", function(payload)
   })
 end)
 
+-- build.complete: fires when a Classic or YAML pipeline build finishes.
+-- Maps to GitHub workflow_run / completed.  The ADO result field
+-- (succeeded/failed/canceled/partiallySucceeded) determines the conclusion.
+-- There is no in-progress build event in ADO webhooks, so only "completed"
+-- actions are produced here.
+local ADO_BUILD_RESULT_TO_CONCLUSION = {
+  succeeded = "success",
+  failed = "failure",
+  canceled = "cancelled",
+  partiallySucceeded = "failure",
+}
+
+b:webhook("build.complete", function(payload)
+  local resource = payload.resource or {}
+  local definition = resource.definition or {}
+  local result = resource.result or ""
+  local conclusion = ADO_BUILD_RESULT_TO_CONCLUSION[result] or "failure"
+  -- Extract short branch name from "refs/heads/..." if present.
+  local source_branch = resource.sourceBranch or ""
+  local head_branch = source_branch:match("refs/heads/(.+)") or source_branch
+  -- Prefer the browser-accessible URL from _links.web over the API URL.
+  local web_href = ((resource._links or {}).web or {}).href or resource.url or ""
+  local workflow_run = {
+    id = resource.id,
+    name = definition.name or "",
+    head_branch = head_branch,
+    head_sha = resource.sourceVersion or "",
+    run_number = resource.id,
+    event = "push",
+    display_title = resource.buildNumber or "",
+    status = "completed",
+    conclusion = conclusion,
+    workflow_id = definition.id or 0,
+    url = web_href,
+    html_url = web_href,
+    pull_requests = {},
+    created_at = resource.queueTime or "",
+    updated_at = resource.finishTime or resource.startTime or "",
+    run_attempt = 1,
+    referenced_workflows = {},
+    actor = ado_user(resource.requestedBy or resource.requestedFor),
+    triggering_actor = ado_user(resource.requestedFor or resource.requestedBy),
+  }
+  local workflow = {
+    id = definition.id or 0,
+    name = definition.name or "",
+    path = "",
+    state = "active",
+    url = "",
+    html_url = "",
+    badge_url = "",
+    created_at = "",
+    updated_at = "",
+  }
+  return make_internal_event({
+    event = "workflow_run",
+    action = "completed",
+    provider = "azuredevops",
+    raw = payload,
+    data = {
+      action = "completed",
+      workflow_run = workflow_run,
+      workflow = workflow,
+      repository = translate_ado_repo(resource.repository),
+      sender = ado_user(resource.requestedBy or resource.requestedFor),
+    },
+    timestamp = resource.finishTime or resource.startTime or "",
+  })
+end)
+
 b:build()

@@ -2604,4 +2604,50 @@ b:webhook("pullrequest:unapproved", function(payload)
   return bb_review_event(payload, "dismissed", "DISMISSED")
 end)
 
+-- Commit status events: repo:commit_status_created, repo:commit_status_updated.
+-- Bitbucket Cloud emits these when an external CI system posts a build result
+-- against a commit.  Both event types carry the same payload shape and map to
+-- the GitHub status event.  The translated state (success/failure/pending/error)
+-- is promoted to the action slot so consumers can filter by state without
+-- inspecting the payload body.
+-- The commit SHA is embedded in the links.commit.href URL; extract it from there.
+local function bb_commit_status_event(payload)
+  local cs = payload.commit_status or {}
+  local state = bb_state_to_github(cs.state or "")
+  local commit_href = ((cs.links or {}).commit or {}).href or ""
+  local sha = commit_href:match("/commit/([0-9a-fA-F]+)$") or ""
+  local repo = payload.repository or {}
+  local data = {
+    id = 0,
+    sha = sha,
+    name = repo.full_name or repo.slug or "",
+    target_url = cs.url,
+    context = cs.key or "",
+    description = cs.description or "",
+    state = state,
+    commit = nil,
+    branches = {},
+    created_at = cs.created_on or "",
+    updated_at = cs.updated_on or "",
+    repository = translate_bb_repo(repo),
+    sender = translate_bb_user(payload.actor or {}),
+  }
+  return make_internal_event({
+    event = "status",
+    action = state,
+    provider = "bitbucket",
+    raw = payload,
+    data = data,
+    timestamp = cs.updated_on or cs.created_on or "",
+  })
+end
+
+b:webhook("repo:commit_status_created", function(payload)
+  return bb_commit_status_event(payload)
+end)
+
+b:webhook("repo:commit_status_updated", function(payload)
+  return bb_commit_status_event(payload)
+end)
+
 b:build()
