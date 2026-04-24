@@ -135,7 +135,10 @@ globals = {
   -- Outbound HTTP delivery: internal/deliver.lua
   "deliver_attempt",
   -- Retry scheduler: internal/retry.lua
+  "RETRY_BUDGET_HOURLY",
+  "RETRY_BUDGET_DAILY",
   "next_retry_at",
+  "retry_budget_ok",
   "maybe_retry_pending",
   "get_client_mutation_id",
   "estimate_query_cost",

@@ -4285,10 +4285,13 @@ end
 -- retry scheduler (internal/retry.lua)
 -- ============================================================
 
--- luacheck: globals next_retry_at maybe_retry_pending
+-- luacheck: globals next_retry_at maybe_retry_pending retry_budget_ok RETRY_BUDGET_HOURLY RETRY_BUDGET_DAILY
 
 ok(type(next_retry_at) == "function", "next_retry_at: exported as global function")
 ok(type(maybe_retry_pending) == "function", "maybe_retry_pending: exported as global function")
+ok(type(retry_budget_ok) == "function", "retry_budget_ok: exported as global function")
+ok(RETRY_BUDGET_HOURLY == 10, "RETRY_BUDGET_HOURLY: constant is 10")
+ok(RETRY_BUDGET_DAILY == 50, "RETRY_BUDGET_DAILY: constant is 50")
 
 do
   -- next_retry_at(1): first retry → base delay (60s) + jitter [0,30] → [60,90] ahead of now.
@@ -4318,6 +4321,67 @@ do
   -- Second immediate call: now - _last_retry_at ≈ 0 < 30 → no-op.
   local retry_ok2 = pcall(maybe_retry_pending)
   ok(retry_ok2, "maybe_retry_pending: immediate second call succeeds (no-op)")
+end
+
+-- luacheck: globals outbox_store_event outbox_create_delivery outbox_record_attempt
+
+do
+  -- retry_budget_ok: target with no deliveries → budget is ok.
+  local target_id = "budget-test-" .. tostring(os.time())
+  ok(retry_budget_ok(target_id), "retry_budget_ok: target with no deliveries returns true")
+end
+
+do
+  -- retry_budget_ok: attempts with outcome other than "retrying" are not counted.
+  local ev = outbox_store_event("gitea", "push", "{}")
+  local d = outbox_create_delivery(ev.event_id, "budget-other-outcome")
+  for _ = 1, 5 do
+    outbox_record_attempt(d.delivery_id, { outcome = "delivered" })
+  end
+  ok(
+    retry_budget_ok("budget-other-outcome"),
+    "retry_budget_ok: delivered outcomes not counted toward budget"
+  )
+end
+
+do
+  -- retry_budget_ok: fewer retrying attempts than hourly limit → budget ok.
+  local ev = outbox_store_event("gitea", "push", "{}")
+  local d = outbox_create_delivery(ev.event_id, "budget-under-limit")
+  for _ = 1, RETRY_BUDGET_HOURLY - 1 do
+    outbox_record_attempt(d.delivery_id, { outcome = "retrying" })
+  end
+  ok(retry_budget_ok("budget-under-limit"), "retry_budget_ok: under hourly limit returns true")
+end
+
+do
+  -- retry_budget_ok: exactly RETRY_BUDGET_HOURLY retrying attempts → hourly budget exhausted.
+  local ev = outbox_store_event("gitea", "push", "{}")
+  local d = outbox_create_delivery(ev.event_id, "budget-at-hourly-limit")
+  for _ = 1, RETRY_BUDGET_HOURLY do
+    outbox_record_attempt(d.delivery_id, { outcome = "retrying" })
+  end
+  ok(
+    not retry_budget_ok("budget-at-hourly-limit"),
+    "retry_budget_ok: at hourly limit returns false"
+  )
+end
+
+do
+  -- retry_budget_ok: counts across multiple deliveries for the same target.
+  local ev1 = outbox_store_event("gitea", "push", "{}")
+  local ev2 = outbox_store_event("gitea", "push", "{}")
+  local d1 = outbox_create_delivery(ev1.event_id, "budget-multi-delivery")
+  local d2 = outbox_create_delivery(ev2.event_id, "budget-multi-delivery")
+  -- Split the hourly limit: 5 in d1, 5 in d2 = exactly at limit.
+  for _ = 1, 5 do
+    outbox_record_attempt(d1.delivery_id, { outcome = "retrying" })
+    outbox_record_attempt(d2.delivery_id, { outcome = "retrying" })
+  end
+  ok(
+    not retry_budget_ok("budget-multi-delivery"),
+    "retry_budget_ok: counts retrying attempts across multiple deliveries"
+  )
 end
 
 -- ============================================================
