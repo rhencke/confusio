@@ -74,7 +74,7 @@ function deliver_attempt(delivery_id) -- luacheck: globals deliver_attempt
   local body = fanout_body(event.backend, event.event_type, event.payload, target.shape)
   local hdrs = _deliver_headers(event, delivery, target.shape, secret, body)
   local new_count = delivery.attempt_count + 1
-  local pcall_ok, result, _resp_hdrs, _resp_body =
+  local pcall_ok, result =
     pcall(Fetch, target.url, { method = "POST", body = body, headers = hdrs })
   if not pcall_ok then
     -- result is the error message from pcall

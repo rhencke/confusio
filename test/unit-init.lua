@@ -3604,7 +3604,7 @@ local da_target = target_create({
 })
 ok(da_target ~= nil, "deliver_attempt setup: target created")
 
-local da_ev, da_dels = fanout_dispatch("gitea", "push", { ref = "refs/heads/main" })
+local _, da_dels = fanout_dispatch("gitea", "push", { ref = "refs/heads/main" })
 ok(#da_dels >= 1, "deliver_attempt setup: at least one delivery created")
 local da_del_id = da_dels[1].delivery_id
 
