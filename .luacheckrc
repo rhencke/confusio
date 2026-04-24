@@ -21,6 +21,7 @@ globals = {
   "DecodeBase64",
   "EscapeParam",
   "GetCryptoHash",
+  "GetRandom",
   -- Redbean built-ins: routing
   "Route",
   "OnHttpRequest",
@@ -91,6 +92,10 @@ globals = {
   "make_webhook_receiver",
   -- Webhook event mapping: internal/webhook_event.lua
   "make_internal_event",
+  -- UUID and timestamp utilities: internal/util.lua
+  "make_uuid",
+  "iso8601",
+  "now_iso8601",
   -- Outbound delivery signing: internal/signing.lua
   "sign_github",
   "sign_confusio",

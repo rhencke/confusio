@@ -67,6 +67,15 @@ end
 GetCryptoHash = function(_alg, _msg, _key)
   return string.rep("\xaa", 32)
 end
+-- Stub GetRandom: returns a deterministic byte sequence so make_uuid produces a
+-- predictable value in tests.  Byte i = (i * 17) % 256, giving 16 distinct bytes.
+GetRandom = function(n) -- luacheck: globals GetRandom
+  local t = {}
+  for i = 1, n do
+    t[i] = string.char((i * 17) % 256)
+  end
+  return table.concat(t)
+end
 -- Stub DecodeBase64: identity decode for Basic auth verification tests.
 DecodeBase64 = function(s)
   return s
@@ -2864,6 +2873,64 @@ do
 
   app.backend.webhooks = saved_webhooks
 end
+
+-- ============================================================
+-- make_uuid / iso8601 / now_iso8601 (internal/util.lua)
+-- ============================================================
+
+-- make_uuid: format validation with the deterministic GetRandom stub.
+-- Stub returns bytes [17, 34, 51, 68, 85, 102, 119, 136, 153, 170, 187, 204, 221, 238, 255, 16].
+-- byte 7 (119 = 0x77) → (0x77 & 0x0f) | 0x40 = 0x47
+-- byte 9 (153 = 0x99) → (0x99 & 0x3f) | 0x80 = 0x99
+-- Expected UUID: "11223344-5566-4788-99aa-bbccddeeff10"
+local uuid1 = make_uuid() -- luacheck: globals make_uuid
+eq(#uuid1, 36, "make_uuid: length is 36")
+eq(uuid1:sub(9, 9), "-", "make_uuid: dash at position 9")
+eq(uuid1:sub(14, 14), "-", "make_uuid: dash at position 14")
+eq(uuid1:sub(19, 19), "-", "make_uuid: dash at position 19")
+eq(uuid1:sub(24, 24), "-", "make_uuid: dash at position 24")
+eq(uuid1:sub(15, 15), "4", "make_uuid: version nibble is 4")
+ok(
+  uuid1:sub(20, 20):match("[89ab]") ~= nil,
+  "make_uuid: variant nibble is 8, 9, a, or b (got " .. uuid1:sub(20, 20) .. ")"
+)
+ok(
+  uuid1:match("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$") ~= nil,
+  "make_uuid: matches xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx pattern"
+)
+eq(uuid1, "11223344-5566-4788-99aa-bbccddeeff10", "make_uuid: deterministic from stub")
+
+-- make_uuid: two successive calls return the same value when the stub is deterministic.
+local uuid2 = make_uuid()
+eq(uuid1, uuid2, "make_uuid: stub is deterministic — same bytes → same UUID")
+
+-- iso8601: known epoch values.
+local ts0 = iso8601(0) -- luacheck: globals iso8601
+eq(ts0, "1970-01-01T00:00:00Z", "iso8601(0): Unix epoch")
+local ts1 = iso8601(1000000000)
+eq(ts1, "2001-09-09T01:46:40Z", "iso8601(1000000000): known timestamp")
+local ts2 = iso8601(1714003200)
+eq(ts2, "2024-04-25T00:00:00Z", "iso8601(1714003200): 2024-04-25T00:00:00Z")
+
+-- iso8601: format shape — 20 characters, ends with Z.
+eq(#ts0, 20, "iso8601: length is 20")
+eq(ts0:sub(20, 20), "Z", "iso8601: ends with Z")
+eq(ts0:sub(5, 5), "-", "iso8601: first dash after year")
+eq(ts0:sub(8, 8), "-", "iso8601: second dash after month")
+eq(ts0:sub(11, 11), "T", "iso8601: T separator")
+eq(ts0:sub(14, 14), ":", "iso8601: first colon")
+eq(ts0:sub(17, 17), ":", "iso8601: second colon")
+
+-- now_iso8601: returns a 20-character ISO 8601 string matching the current minute.
+local now_str = now_iso8601() -- luacheck: globals now_iso8601
+eq(#now_str, 20, "now_iso8601: length is 20")
+ok(
+  now_str:match("^%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%dZ$") ~= nil,
+  "now_iso8601: matches yyyy-mm-ddThh:mm:ssZ pattern"
+)
+-- Verify it's within 5 seconds of os.time().
+local expected_prefix = iso8601(os.time()):sub(1, 16)
+eq(now_str:sub(1, 16), expected_prefix, "now_iso8601: within same minute as os.time()")
 
 -- ============================================================
 -- Summary
