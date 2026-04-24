@@ -2933,6 +2933,158 @@ local expected_prefix = iso8601(os.time()):sub(1, 16)
 eq(now_str:sub(1, 16), expected_prefix, "now_iso8601: within same minute as os.time()")
 
 -- ============================================================
+-- target_create / target_get / target_list / target_update /
+-- target_delete / target_get_secret (internal/targets.lua)
+-- ============================================================
+
+-- luacheck: globals target_create target_get target_list target_update target_delete target_get_secret
+
+-- Note: the GetRandom stub is deterministic, so make_uuid() always returns the
+-- same UUID.  All tests therefore operate on a single target_id (the one assigned
+-- by target_create), exercising create → get → update → delete lifecycle in order.
+
+-- target_create: basic creation with all fields.
+local ta = target_create({
+  url = "https://example.com/hook",
+  events = { "push" },
+  shape = "confusio",
+  secret = "s3cr3t",
+})
+ok(ta ~= nil, "target_create: returns non-nil")
+ok(ta.target_id ~= nil, "target_create: target_id is set")
+eq(#ta.target_id, 36, "target_create: target_id is 36 chars (UUID)")
+eq(ta.url, "https://example.com/hook", "target_create: url is stored")
+eq(ta.status, "active", "target_create: default status is active")
+eq(ta.shape, "confusio", "target_create: shape is set")
+eq(ta.events[1], "push", "target_create: events stored")
+ok(ta.created_at ~= nil, "target_create: created_at is set")
+ok(ta.updated_at ~= nil, "target_create: updated_at is set")
+-- secret must not be in the public record.
+ok(ta.secret == nil, "target_create: secret is not in public record")
+
+-- target_create: defaults for events and shape when omitted (re-creates same id; overwrites).
+local tb_events_check = target_create({ url = "https://b.example.com/hook" })
+eq(tb_events_check.events[1], "*", 'target_create: events defaults to ["*"]')
+eq(tb_events_check.shape, "github", "target_create: shape defaults to github")
+
+-- target_get_secret: returns the raw secret for the stored target (now has no secret after overwrite).
+-- Restore a known target with secret so we can test get_secret accurately.
+local ts = target_create({ url = "https://secret.example.com/hook", secret = "s3cr3t" })
+local ts_id = ts.target_id
+local s1 = target_get_secret(ts_id)
+eq(s1, "s3cr3t", "target_get_secret: returns stored secret")
+
+-- target_get: returns public record for existing active target (check before overwriting).
+local g1 = target_get(ts_id)
+ok(g1 ~= nil, "target_get: found active target")
+eq(g1.target_id, ts_id, "target_get: target_id matches")
+eq(g1.url, "https://secret.example.com/hook", "target_get: url matches")
+ok(g1.secret == nil, "target_get: no secret in public record")
+
+-- target_get_secret: returns nil for a target with no secret.
+-- Note: make_uuid is deterministic in tests so this re-uses ts_id, overwriting the store.
+local tnosec = target_create({ url = "https://nosec.example.com/hook" })
+ok(target_get_secret(tnosec.target_id) == nil, "target_get_secret: returns nil when no secret")
+
+-- target_get_secret: returns nil for an unknown target_id.
+ok(
+  target_get_secret("00000000-0000-4000-8000-000000000000") == nil,
+  "target_get_secret: nil for unknown id"
+)
+
+-- target_get: returns nil for unknown id.
+ok(target_get("00000000-0000-4000-8000-000000000000") == nil, "target_get: nil for unknown id")
+
+-- target_list: returns at least the targets we created (excludes deleted by default).
+local list0 = target_list()
+ok(#list0 >= 1, "target_list: at least 1 active target")
+ok(list0[1].secret == nil, "target_list: no secret in listed records")
+
+-- Verify the ts target is present in the list.
+local found_ts = false
+for _, entry in ipairs(list0) do
+  if entry.target_id == ts_id then
+    found_ts = true
+  end
+end
+ok(found_ts, "target_list: created target appears in list")
+
+-- target_list: filter by status=active.
+local list_active = target_list({ status = "active" })
+ok(#list_active >= 1, "target_list(active): returns active targets")
+
+-- target_update: update url and shape.
+local upd1 = target_update(ts_id, { url = "https://new.example.com/hook", shape = "github" })
+ok(upd1 ~= nil, "target_update: returns non-nil for valid update")
+eq(upd1.url, "https://new.example.com/hook", "target_update: url is updated")
+eq(upd1.shape, "github", "target_update: shape is updated")
+ok(upd1.secret == nil, "target_update: no secret in public update record")
+
+-- target_update: update status to paused.
+local upd2 = target_update(ts_id, { status = "paused" })
+ok(upd2 ~= nil, "target_update(paused): returns non-nil")
+eq(upd2.status, "paused", "target_update(paused): status is paused")
+
+-- target_update: restore to active.
+target_update(ts_id, { status = "active" })
+
+-- target_update: set secret.
+target_update(ts_id, { secret = "newsecret" })
+eq(target_get_secret(ts_id), "newsecret", "target_update: secret is updated")
+
+-- target_update: remove secret with false.
+target_update(ts_id, { secret = false })
+ok(target_get_secret(ts_id) == nil, "target_update(secret=false): secret removed")
+
+-- target_update: status "deleted" is ignored (must use target_delete).
+local before_status = target_get(ts_id).status
+target_update(ts_id, { status = "deleted" })
+eq(target_get(ts_id).status, before_status, "target_update: status=deleted is ignored")
+
+-- target_update: returns nil for unknown id.
+local upd_miss = target_update("00000000-0000-4000-8000-000000000000", { url = "https://x.com/" })
+ok(upd_miss == nil, "target_update: nil for unknown id")
+
+-- target_delete: soft-deletes a target.
+local del1 = target_delete(ts_id)
+ok(del1 == true, "target_delete: returns true on success")
+
+-- target_get returns nil for deleted target.
+ok(target_get(ts_id) == nil, "target_get: nil for deleted target")
+
+-- target_list excludes deleted targets by default.
+local list_after_del = target_list()
+local found_deleted = false
+for _, entry in ipairs(list_after_del) do
+  if entry.target_id == ts_id then
+    found_deleted = true
+  end
+end
+ok(not found_deleted, "target_list: deleted target excluded from default list")
+
+-- target_list with status=deleted includes deleted targets.
+local list_deleted = target_list({ status = "deleted" })
+local found_in_deleted = false
+for _, entry in ipairs(list_deleted) do
+  if entry.target_id == ts_id then
+    found_in_deleted = true
+  end
+end
+ok(found_in_deleted, "target_list(deleted): includes deleted target")
+
+-- target_delete: returns nil when already deleted.
+local del2 = target_delete(ts_id)
+ok(del2 == nil, "target_delete: nil when already deleted")
+
+-- target_delete: returns nil for unknown id.
+local del_miss = target_delete("00000000-0000-4000-8000-000000000000")
+ok(del_miss == nil, "target_delete: nil for unknown id")
+
+-- target_update: returns nil for a deleted target.
+local upd_del = target_update(ts_id, { url = "https://x.com/" })
+ok(upd_del == nil, "target_update: nil for deleted target")
+
+-- ============================================================
 -- Summary
 -- ============================================================
 

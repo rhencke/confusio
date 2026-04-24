@@ -69,6 +69,7 @@ dofile("/zip/internal/router.lua")
 dofile("/zip/internal/catalog.lua")
 dofile("/zip/internal/dispatch.lua")
 dofile("/zip/internal/util.lua")
+dofile("/zip/internal/targets.lua")
 dofile("/zip/internal/signing.lua")
 dofile("/zip/internal/webhooks.lua")
 

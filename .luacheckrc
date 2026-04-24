@@ -96,6 +96,13 @@ globals = {
   "make_uuid",
   "iso8601",
   "now_iso8601",
+  -- Target registry: internal/targets.lua
+  "target_create",
+  "target_get",
+  "target_list",
+  "target_update",
+  "target_delete",
+  "target_get_secret",
   -- Outbound delivery signing: internal/signing.lua
   "sign_github",
   "sign_confusio",
