@@ -134,6 +134,14 @@ globals = {
   "fanout_dispatch",
   -- Outbound HTTP delivery: internal/deliver.lua
   "deliver_attempt",
+  -- Circuit breaker: internal/circuit_breaker.lua
+  "CB_FAILURE_THRESHOLD",
+  "CB_OPEN_SECS",
+  "CB_HALF_OPEN_MAX",
+  "cb_state",
+  "cb_record_success",
+  "cb_record_failure",
+  "cb_ok",
   -- Retry scheduler: internal/retry.lua
   "RETRY_BUDGET_HOURLY",
   "RETRY_BUDGET_DAILY",

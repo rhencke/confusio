@@ -83,6 +83,7 @@ function deliver_attempt(delivery_id) -- luacheck: globals deliver_attempt
   if not pcall_ok then
     -- result is the error message from pcall
     local err = tostring(result)
+    cb_record_failure(delivery.target_id)
     outbox_record_attempt(delivery_id, { http_status = nil, error = err, outcome = "retrying" })
     local attempt_number = #outbox_get_attempts(delivery_id)
     outbox_update_delivery(delivery_id, {
@@ -97,6 +98,7 @@ function deliver_attempt(delivery_id) -- luacheck: globals deliver_attempt
   -- result is the integer HTTP status code
   local http_status = result
   if http_status >= 200 and http_status < 300 then
+    cb_record_success(delivery.target_id)
     outbox_update_delivery(delivery_id, {
       status = "delivered",
       attempt_count = new_count,
@@ -109,6 +111,7 @@ function deliver_attempt(delivery_id) -- luacheck: globals deliver_attempt
     )
     return true, http_status, nil
   elseif http_status == 429 or http_status >= 500 then
+    cb_record_failure(delivery.target_id)
     local err = "HTTP " .. tostring(http_status)
     outbox_record_attempt(
       delivery_id,
@@ -124,6 +127,7 @@ function deliver_attempt(delivery_id) -- luacheck: globals deliver_attempt
     })
     return false, http_status, err
   else
+    cb_record_failure(delivery.target_id)
     local err = "HTTP " .. tostring(http_status)
     outbox_update_delivery(delivery_id, {
       status = "failed",

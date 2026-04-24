@@ -100,7 +100,7 @@ function maybe_retry_pending() -- luacheck: globals maybe_retry_pending
     local pending = outbox_pending_retries()
     for _, delivery in ipairs(pending) do
       local d = outbox_get_delivery(delivery.delivery_id)
-      if d ~= nil and retry_budget_ok(d.target_id) then
+      if d ~= nil and retry_budget_ok(d.target_id) and cb_ok(d.target_id) then
         deliver_attempt(delivery.delivery_id)
       end
     end
