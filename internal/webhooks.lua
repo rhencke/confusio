@@ -448,10 +448,14 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
     -- For header-based backends: read the event-type header.
     -- For body-based backends:   the event type is embedded in the payload.
     --   Azure DevOps uses payload.eventType (e.g. "workitem.created").
-    --   Other body-based backends follow the same pattern.
+    --   Gerrit uses payload.type (e.g. "comment-added").
     local ev = event_header(backend)
-    if ev == nil and type(payload) == "table" and payload.eventType then
-      ev = payload.eventType
+    if ev == nil and type(payload) == "table" then
+      if payload.eventType then
+        ev = payload.eventType
+      elseif backend == "gerrit" and payload.type then
+        ev = payload.type
+      end
     end
 
     -- No event-type header and no registered body-event handler → 422.
