@@ -3517,6 +3517,79 @@ do
 end
 
 -- ============================================================
+-- fanout_body / fanout_dispatch (internal/fanout.lua)
+-- ============================================================
+
+-- luacheck: globals fanout_body fanout_dispatch
+
+-- fanout_body: github shape — re-encodes payload at root level.
+local fb_github = fanout_body("gitea", "push", { ref = "refs/heads/main" }, "github")
+ok(type(fb_github) == "string", "fanout_body github: returns string")
+local fb_github_dec = DecodeJson(fb_github)
+ok(fb_github_dec ~= nil, "fanout_body github: valid JSON")
+eq(fb_github_dec.ref, "refs/heads/main", "fanout_body github: payload field at root")
+ok(fb_github_dec.source == nil, "fanout_body github: no source wrapper field")
+ok(fb_github_dec.event == nil, "fanout_body github: no event wrapper field")
+
+-- fanout_body: confusio shape — wraps in {source, event, payload} envelope.
+local fb_confusio = fanout_body("gitea", "push", { ref = "refs/heads/main" }, "confusio")
+ok(type(fb_confusio) == "string", "fanout_body confusio: returns string")
+local fb_confusio_dec = DecodeJson(fb_confusio)
+ok(fb_confusio_dec ~= nil, "fanout_body confusio: valid JSON")
+eq(fb_confusio_dec.source, "gitea", "fanout_body confusio: source field")
+eq(fb_confusio_dec.event, "push", "fanout_body confusio: event field")
+ok(fb_confusio_dec.payload ~= nil, "fanout_body confusio: payload field present")
+eq(
+  fb_confusio_dec.payload.ref,
+  "refs/heads/main",
+  "fanout_body confusio: payload nested under payload key"
+)
+
+-- fanout_body: unknown shape falls back to github behaviour.
+local fb_unknown = fanout_body("gitea", "push", { ref = "refs/heads/main" }, "unknown")
+local fb_unknown_dec = DecodeJson(fb_unknown)
+ok(fb_unknown_dec ~= nil, "fanout_body unknown shape: valid JSON")
+eq(fb_unknown_dec.ref, "refs/heads/main", "fanout_body unknown shape: falls back to github")
+
+-- fanout_dispatch: set up a target with wildcard subscription.
+-- Note: the GetRandom stub is deterministic, so make_uuid() always returns the
+-- same UUID.  Previous test sections may have left multiple copies of that UUID
+-- in the target _order list.  After the targets_api section the record is deleted,
+-- so creating a new target here reactivates it.  target_list() returns one copy
+-- per entry in _order, which can be > 1.  All assertions use >= 1 for counts.
+local fd_target = target_create({ url = "https://fd-test.example.com/hook", events = { "*" } })
+ok(fd_target ~= nil, "fanout_dispatch setup: target created")
+
+local fd_ev, fd_dels = fanout_dispatch("gitea", "push", { ref = "refs/heads/main" })
+ok(fd_ev ~= nil, "fanout_dispatch: returns event record")
+ok(fd_ev.event_id ~= nil, "fanout_dispatch: event_id is set")
+eq(fd_ev.backend, "gitea", "fanout_dispatch: event backend stored")
+eq(fd_ev.event_type, "push", "fanout_dispatch: event type stored")
+ok(type(fd_dels) == "table", "fanout_dispatch: returns deliveries table")
+ok(#fd_dels >= 1, "fanout_dispatch: at least one delivery for wildcard target")
+eq(fd_dels[1].event_id, fd_ev.event_id, "fanout_dispatch: delivery event_id matches event")
+eq(fd_dels[1].target_id, fd_target.target_id, "fanout_dispatch: delivery target_id matches target")
+eq(fd_dels[1].status, "pending", "fanout_dispatch: delivery status is pending")
+
+-- fanout_dispatch: event type filtering — update target to "issues" only.
+target_update(fd_target.target_id, { events = { "issues" } })
+
+local fd_ev2, fd_dels2 = fanout_dispatch("gitea", "push", { ref = "refs/heads/main" })
+ok(fd_ev2 ~= nil, "fanout_dispatch filtered: event stored even with no matching targets")
+eq(#fd_dels2, 0, "fanout_dispatch filtered: push not delivered to issues-only target")
+
+-- fanout_dispatch: matching event IS delivered to filtered target.
+local fd_ev3, fd_dels3 = fanout_dispatch("gitea", "issues", { action = "opened" })
+ok(fd_ev3 ~= nil, "fanout_dispatch match: event stored")
+ok(#fd_dels3 >= 1, "fanout_dispatch match: issues event delivered to issues target")
+eq(fd_dels3[1].target_id, fd_target.target_id, "fanout_dispatch match: correct target_id")
+
+-- fanout_dispatch: deleted target receives no deliveries.
+target_delete(fd_target.target_id)
+local _, fd_dels4 = fanout_dispatch("gitea", "push", { ref = "refs/heads/main" })
+eq(#fd_dels4, 0, "fanout_dispatch deleted: deleted target receives no deliveries")
+
+-- ============================================================
 -- Summary
 -- ============================================================
 

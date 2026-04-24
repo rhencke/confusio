@@ -73,6 +73,7 @@ dofile("/zip/internal/outbox.lua")
 dofile("/zip/internal/targets.lua")
 dofile("/zip/internal/targets_api.lua")
 dofile("/zip/internal/signing.lua")
+dofile("/zip/internal/fanout.lua")
 dofile("/zip/internal/webhooks.lua")
 
 app.route_match = route_match

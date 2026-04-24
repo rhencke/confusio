@@ -118,6 +118,9 @@ globals = {
   -- Outbound delivery signing: internal/signing.lua
   "sign_github",
   "sign_confusio",
+  -- Fan-out dispatcher: internal/fanout.lua
+  "fanout_body",
+  "fanout_dispatch",
   "get_client_mutation_id",
   "estimate_query_cost",
   -- GraphQL translators: internal/graphql_translators.lua
