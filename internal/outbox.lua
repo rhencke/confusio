@@ -19,6 +19,8 @@
 --   outbox_list_deliveries_for_target(target_id)
 --   outbox_update_delivery(delivery_id, fields)
 --   outbox_abandon_deliveries_for_target(target_id)
+--   outbox_record_attempt(delivery_id, fields)
+--   outbox_get_attempts(delivery_id)
 --   outbox_pending_retries()
 --   outbox_prune(max_age_seconds)
 
@@ -67,6 +69,7 @@ function outbox_create_delivery(event_id, target_id) -- luacheck: globals outbox
     next_attempt_at = nil,
     last_http_status = nil,
     last_error = nil,
+    attempts = {},
   }
   _deliveries[id] = record
   _delivery_order[#_delivery_order + 1] = id
@@ -131,6 +134,36 @@ function outbox_update_delivery(delivery_id, fields) -- luacheck: globals outbox
   end
   d.updated_at = now_iso8601()
   return d
+end
+
+-- outbox_record_attempt(delivery_id, fields) appends one attempt record to the delivery's
+-- history.  fields: { http_status?, error?, outcome }.
+-- outcome is one of "delivered", "retrying", "failed".
+-- Returns the new attempt record, or nil if the delivery is not found.
+function outbox_record_attempt(delivery_id, fields) -- luacheck: globals outbox_record_attempt
+  local d = _deliveries[delivery_id]
+  if d == nil then
+    return nil
+  end
+  local attempt = {
+    attempt_number = #d.attempts + 1,
+    attempted_at = now_iso8601(),
+    http_status = fields.http_status,
+    error = fields.error,
+    outcome = fields.outcome,
+  }
+  d.attempts[#d.attempts + 1] = attempt
+  return attempt
+end
+
+-- outbox_get_attempts(delivery_id) returns the attempts array for the given delivery,
+-- or nil if the delivery is not found.
+function outbox_get_attempts(delivery_id) -- luacheck: globals outbox_get_attempts
+  local d = _deliveries[delivery_id]
+  if d == nil then
+    return nil
+  end
+  return d.attempts
 end
 
 -- outbox_abandon_deliveries_for_target(target_id) moves all "pending" or "retrying"

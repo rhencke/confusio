@@ -3850,6 +3850,49 @@ ok(da_e7 ~= nil, "deliver_attempt deleted target: error message set")
 local da_del7 = outbox_get_delivery(da_del_id)
 eq(da_del7.status, "failed", "deliver_attempt deleted target: status is failed")
 
+-- Verify attempt history was recorded across all the deliver_attempt tests above.
+-- da_del_id has been through 7 attempts (200, 503, 429, 422, network-error, confusio-200,
+-- deleted-target) even though attempt_count was reset to 0 before the last one.
+-- luacheck: globals outbox_get_attempts outbox_record_attempt
+do
+  local da_final = outbox_get_delivery(da_del_id)
+  ok(type(da_final.attempts) == "table", "deliver_attempt: attempts array exists on delivery")
+  ok(#da_final.attempts >= 7, "deliver_attempt: all 7 attempts recorded in history")
+  -- First attempt: 200 → delivered
+  ok(da_final.attempts[1] ~= nil, "deliver_attempt: attempt[1] recorded")
+  eq(da_final.attempts[1].attempt_number, 1, "deliver_attempt: attempt[1].attempt_number is 1")
+  eq(da_final.attempts[1].outcome, "delivered", "deliver_attempt: attempt[1] outcome is delivered")
+  eq(da_final.attempts[1].http_status, 200, "deliver_attempt: attempt[1] http_status is 200")
+  ok(da_final.attempts[1].error == nil, "deliver_attempt: attempt[1] has no error")
+  ok(da_final.attempts[1].attempted_at ~= nil, "deliver_attempt: attempt[1] has attempted_at")
+  -- Second attempt: 503 → retrying
+  eq(da_final.attempts[2].outcome, "retrying", "deliver_attempt: attempt[2] outcome is retrying")
+  eq(da_final.attempts[2].http_status, 503, "deliver_attempt: attempt[2] http_status is 503")
+  -- Fourth attempt: 422 → failed
+  eq(da_final.attempts[4].outcome, "failed", "deliver_attempt: attempt[4] outcome is failed")
+  eq(da_final.attempts[4].http_status, 422, "deliver_attempt: attempt[4] http_status is 422")
+  -- Fifth attempt: network error → retrying, no http_status
+  eq(da_final.attempts[5].outcome, "retrying", "deliver_attempt: attempt[5] outcome is retrying")
+  ok(da_final.attempts[5].http_status == nil, "deliver_attempt: attempt[5] has no http_status")
+  ok(da_final.attempts[5].error ~= nil, "deliver_attempt: attempt[5] has error message")
+  -- Last attempt: deleted target → failed
+  local da_last_attempt = da_final.attempts[#da_final.attempts]
+  eq(da_last_attempt.outcome, "failed", "deliver_attempt deleted: attempt recorded as failed")
+  ok(da_last_attempt.http_status == nil, "deliver_attempt deleted: attempt has no http_status")
+
+  -- outbox_record_attempt: unknown delivery_id → nil
+  local da_ra_nil = outbox_record_attempt("00000000-0000-4000-8000-000000000000", {
+    http_status = nil,
+    error = "noop",
+    outcome = "failed",
+  })
+  ok(da_ra_nil == nil, "outbox_record_attempt: unknown delivery_id returns nil")
+
+  -- outbox_get_attempts: unknown delivery_id → nil
+  local da_ga_nil = outbox_get_attempts("00000000-0000-4000-8000-000000000000")
+  ok(da_ga_nil == nil, "outbox_get_attempts: unknown delivery_id returns nil")
+end
+
 -- ============================================================
 -- deliveries_api (internal/deliveries_api.lua)
 -- ============================================================
@@ -4009,6 +4052,134 @@ do
   local s_unk, _ =
     call_dapi({ method = "GET", path = "/webhooks/deliveries/abc/extra", headers = AUTH })
   eq(s_unk, 404, "deliveries_api: unrecognised sub-path → 404")
+
+  -- ── GET /webhooks/deliveries/{id}/attempts → 200 with [] ─────
+  -- dapi_del was created directly (no deliver_attempt called), so attempts is empty.
+
+  local s_att, b_att = call_dapi({
+    method = "GET",
+    path = "/webhooks/deliveries/" .. dapi_del.delivery_id .. "/attempts",
+    headers = AUTH,
+  })
+  eq(s_att, 200, "deliveries_api GET attempts: 200")
+  ok(type(b_att) == "table", "deliveries_api GET attempts: returns array")
+  eq(#b_att, 0, "deliveries_api GET attempts: empty for fresh delivery")
+
+  -- Plant an attempt and verify the endpoint reflects it.
+  outbox_record_attempt(
+    dapi_del.delivery_id,
+    { http_status = 200, error = nil, outcome = "delivered" }
+  )
+  local s_att2, b_att2 = call_dapi({
+    method = "GET",
+    path = "/webhooks/deliveries/" .. dapi_del.delivery_id .. "/attempts",
+    headers = AUTH,
+  })
+  eq(s_att2, 200, "deliveries_api GET attempts after record: 200")
+  eq(#b_att2, 1, "deliveries_api GET attempts after record: one attempt")
+  eq(b_att2[1] and b_att2[1].outcome, "delivered", "deliveries_api GET attempts: outcome delivered")
+  eq(b_att2[1] and b_att2[1].attempt_number, 1, "deliveries_api GET attempts: attempt_number is 1")
+
+  -- ── GET /webhooks/deliveries/nonexistent/attempts → 404 ──────
+
+  local s_att_nf, b_att_nf = call_dapi({
+    method = "GET",
+    path = "/webhooks/deliveries/00000000-0000-4000-8000-000000000000/attempts",
+    headers = AUTH,
+  })
+  eq(s_att_nf, 404, "deliveries_api GET attempts: unknown id → 404")
+  eq(
+    b_att_nf and b_att_nf.error,
+    "delivery_not_found",
+    "deliveries_api GET attempts: unknown id → delivery_not_found"
+  )
+
+  -- ── DELETE on /attempts → 405 ────────────────────────────────
+
+  local s_att_mna, _ = call_dapi({
+    method = "DELETE",
+    path = "/webhooks/deliveries/" .. dapi_del.delivery_id .. "/attempts",
+    headers = AUTH,
+  })
+  eq(s_att_mna, 405, "deliveries_api: DELETE /attempts → 405")
+end
+
+-- ============================================================
+-- deliveries_api replay: POST .../redeliver
+-- ============================================================
+
+do
+  -- luacheck: globals outbox_record_attempt
+  local AUTH = { Authorization = "Bearer admin-token" }
+
+  local function call_dapi(opts)
+    reset_request(opts)
+    reset_response()
+    app.deliveries_api() -- luacheck: globals app
+    local s_ok, decoded = pcall(DecodeJson, _last_body ~= "" and _last_body or "null")
+    return _last_status, s_ok and decoded or nil
+  end
+
+  -- Fresh fixtures for redeliver tests.
+  local rd_ev = outbox_store_event("gitea", "push", { ref = "refs/heads/main" })
+  local rd_target = target_create({ url = "https://rd-test.example.com/hook", events = { "*" } })
+  local rd_del = outbox_create_delivery(rd_ev.event_id, rd_target.target_id)
+
+  -- Mock Fetch so deliver_attempt doesn't hit the network.
+  local _rd_real_Fetch = Fetch -- luacheck: globals Fetch
+  local _rd_mock_status = 200
+  Fetch = function(_url, _opts) -- luacheck: globals Fetch
+    return _rd_mock_status, {}, "{}"
+  end
+
+  -- ── POST /redeliver → 201 on success ─────────────────────────
+
+  local s_rd, b_rd = call_dapi({
+    method = "POST",
+    path = "/webhooks/deliveries/" .. rd_del.delivery_id .. "/redeliver",
+    headers = AUTH,
+  })
+  eq(s_rd, 201, "deliveries_api POST redeliver: 201 on success")
+  ok(b_rd ~= nil, "deliveries_api POST redeliver: body is non-nil")
+  ok(b_rd and b_rd.delivery_id ~= nil, "deliveries_api POST redeliver: new delivery_id present")
+  eq(b_rd and b_rd.event_id, rd_ev.event_id, "deliveries_api POST redeliver: same event_id")
+  eq(b_rd and b_rd.target_id, rd_target.target_id, "deliveries_api POST redeliver: same target_id")
+  eq(b_rd and b_rd.status, "delivered", "deliveries_api POST redeliver: status delivered after 200")
+
+  -- Redeliver when upstream returns 503 → new delivery status "retrying".
+  _rd_mock_status = 503
+  local s_rd2, b_rd2 = call_dapi({
+    method = "POST",
+    path = "/webhooks/deliveries/" .. rd_del.delivery_id .. "/redeliver",
+    headers = AUTH,
+  })
+  eq(s_rd2, 201, "deliveries_api POST redeliver 503: 201")
+  eq(b_rd2 and b_rd2.status, "retrying", "deliveries_api POST redeliver 503: status retrying")
+
+  Fetch = _rd_real_Fetch -- luacheck: globals Fetch
+
+  -- ── POST redeliver: unknown delivery → 404 ───────────────────
+
+  local s_rd_nf, b_rd_nf = call_dapi({
+    method = "POST",
+    path = "/webhooks/deliveries/00000000-0000-4000-8000-000000000000/redeliver",
+    headers = AUTH,
+  })
+  eq(s_rd_nf, 404, "deliveries_api POST redeliver: unknown id → 404")
+  eq(
+    b_rd_nf and b_rd_nf.error,
+    "delivery_not_found",
+    "deliveries_api POST redeliver: unknown id → delivery_not_found"
+  )
+
+  -- ── GET on /redeliver → 405 ───────────────────────────────────
+
+  local s_rd_mna, _ = call_dapi({
+    method = "GET",
+    path = "/webhooks/deliveries/" .. rd_del.delivery_id .. "/redeliver",
+    headers = AUTH,
+  })
+  eq(s_rd_mna, 405, "deliveries_api: GET /redeliver → 405")
 end
 
 -- ============================================================

@@ -106,6 +106,8 @@ globals = {
   "outbox_list_deliveries_for_target",
   "outbox_update_delivery",
   "outbox_abandon_deliveries_for_target",
+  "outbox_record_attempt",
+  "outbox_get_attempts",
   "outbox_pending_retries",
   "outbox_prune",
   -- Target registry: internal/targets.lua

@@ -68,6 +68,11 @@ function deliver_attempt(delivery_id) -- luacheck: globals deliver_attempt
       attempt_count = delivery.attempt_count + 1,
       last_error = "target not found or deleted",
     })
+    outbox_record_attempt(delivery_id, {
+      http_status = nil,
+      error = "target not found or deleted",
+      outcome = "failed",
+    })
     return false, nil, "target not found or deleted"
   end
   local secret = target_get_secret(delivery.target_id)
@@ -86,6 +91,7 @@ function deliver_attempt(delivery_id) -- luacheck: globals deliver_attempt
       last_http_status = nil,
       last_error = err,
     })
+    outbox_record_attempt(delivery_id, { http_status = nil, error = err, outcome = "retrying" })
     return false, nil, err
   end
   -- result is the integer HTTP status code
@@ -97,6 +103,10 @@ function deliver_attempt(delivery_id) -- luacheck: globals deliver_attempt
       last_http_status = http_status,
       last_error = nil,
     })
+    outbox_record_attempt(
+      delivery_id,
+      { http_status = http_status, error = nil, outcome = "delivered" }
+    )
     return true, http_status, nil
   elseif http_status == 429 or http_status >= 500 then
     local err = "HTTP " .. tostring(http_status)
@@ -107,6 +117,10 @@ function deliver_attempt(delivery_id) -- luacheck: globals deliver_attempt
       last_http_status = http_status,
       last_error = err,
     })
+    outbox_record_attempt(
+      delivery_id,
+      { http_status = http_status, error = err, outcome = "retrying" }
+    )
     return false, http_status, err
   else
     local err = "HTTP " .. tostring(http_status)
@@ -116,6 +130,10 @@ function deliver_attempt(delivery_id) -- luacheck: globals deliver_attempt
       last_http_status = http_status,
       last_error = err,
     })
+    outbox_record_attempt(
+      delivery_id,
+      { http_status = http_status, error = err, outcome = "failed" }
+    )
     return false, http_status, err
   end
 end
