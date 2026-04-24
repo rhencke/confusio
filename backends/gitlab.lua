@@ -6404,6 +6404,193 @@ b:webhook("Merge Request Hook", function(payload)
   })
 end)
 
+-- Pipeline Hook: maps GitLab pipeline lifecycle events to workflow_run.
+-- GitLab uses a status field rather than an action field; the status drives
+-- the canonical GitHub action.  Terminal statuses (success/failed/canceled/
+-- skipped) become "completed"; running becomes "in_progress"; everything else
+-- (created/pending/manual/scheduled/waiting_for_resource/preparing) → "requested".
+local GL_PIPELINE_STATUS_TO_ACTION = {
+  created = "requested",
+  waiting_for_resource = "requested",
+  preparing = "in_progress",
+  pending = "requested",
+  running = "in_progress",
+  success = "completed",
+  failed = "completed",
+  canceled = "completed",
+  cancelled = "completed", -- defensive alternate spelling
+  skipped = "completed",
+  manual = "requested",
+  scheduled = "requested",
+}
+local GL_PIPELINE_CONCLUSION = {
+  success = "success",
+  failed = "failure",
+  canceled = "cancelled",
+  cancelled = "cancelled",
+  skipped = "skipped",
+}
+
+b:webhook("Pipeline Hook", function(payload)
+  local oa = payload.object_attributes or {}
+  local gl_status = oa.status or ""
+  local action = GL_PIPELINE_STATUS_TO_ACTION[gl_status]
+  local conclusion = (action == "completed") and (GL_PIPELINE_CONCLUSION[gl_status] or "failure")
+    or nil
+  -- Map action to GitHub workflow_run.status vocabulary.
+  local gh_status = (action == "in_progress") and "in_progress"
+    or (action == "completed") and "completed"
+    or "queued"
+  local pipeline_url = oa.url or ""
+  local commit = payload.commit or {}
+  local workflow_run = {
+    id = oa.id,
+    name = "Pipeline",
+    head_branch = oa.ref or "",
+    head_sha = oa.sha or "",
+    run_number = oa.iid or oa.id,
+    event = oa.source or "push",
+    display_title = commit.title or commit.message or "",
+    status = gh_status,
+    conclusion = conclusion,
+    workflow_id = 0,
+    url = pipeline_url,
+    html_url = pipeline_url,
+    pull_requests = {},
+    created_at = oa.created_at or "",
+    updated_at = oa.finished_at or oa.updated_at or oa.started_at or "",
+    run_attempt = 1,
+    referenced_workflows = {},
+    actor = translate_gl_user(payload.user),
+    triggering_actor = translate_gl_user(payload.user),
+  }
+  local workflow = {
+    id = 0,
+    name = "Pipeline",
+    path = ".gitlab-ci.yml",
+    state = "active",
+    url = "",
+    html_url = "",
+    badge_url = "",
+    created_at = "",
+    updated_at = "",
+  }
+  return make_internal_event({
+    event = "workflow_run",
+    action = action or "unknown",
+    raw_action = action and nil or gl_status,
+    provider = config.backend,
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      workflow_run = workflow_run,
+      workflow = workflow,
+      repository = translate_gl_webhook_project(payload.project),
+      sender = translate_gl_user(payload.user),
+    },
+    timestamp = oa.finished_at or oa.updated_at or oa.started_at or "",
+  })
+end)
+
+-- Job Hook: maps GitLab job lifecycle events to workflow_job.
+-- Fields are top-level (build_id, build_name, build_status, …) rather than
+-- nested under object_attributes.  Repository info is a lightweight object;
+-- owner is extracted from project_name ("Group / Project" format).
+local GL_JOB_STATUS_TO_ACTION = {
+  created = "queued",
+  pending = "queued",
+  manual = "queued",
+  scheduled = "queued",
+  waiting_for_resource = "waiting",
+  preparing = "in_progress",
+  running = "in_progress",
+  success = "completed",
+  failed = "completed",
+  canceled = "completed",
+  cancelled = "completed", -- defensive alternate spelling
+  skipped = "completed",
+}
+local GL_JOB_CONCLUSION = {
+  success = "success",
+  failed = "failure",
+  canceled = "cancelled",
+  cancelled = "cancelled",
+  skipped = "skipped",
+}
+
+b:webhook("Job Hook", function(payload)
+  local raw_status = payload.build_status or ""
+  local action = GL_JOB_STATUS_TO_ACTION[raw_status]
+  local conclusion = (action == "completed") and (GL_JOB_CONCLUSION[raw_status] or "failure") or nil
+  local gh_status = (action == "in_progress") and "in_progress"
+    or (action == "waiting") and "waiting"
+    or (action == "completed") and "completed"
+    or "queued"
+  local runner = payload.runner or {}
+  -- Build a repository object from the limited fields available in Job Hook.
+  -- project_name is "Group / Project"; split to extract owner_login.
+  local repo_info = payload.repository or {}
+  local repo_name = repo_info.name or ""
+  local repo_homepage = repo_info.homepage or ""
+  local pname = payload.project_name or ""
+  local sep = pname:find(" / ", 1, true)
+  local owner_login = sep and pname:sub(1, sep - 1):gsub("%s+$", "") or ""
+  local full_name = owner_login ~= "" and (owner_login .. "/" .. repo_name) or repo_name
+  local repository = {
+    id = payload.project_id,
+    node_id = "",
+    name = repo_name,
+    full_name = full_name,
+    private = false, -- not available in Job Hook
+    owner = {
+      login = owner_login,
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      url = "",
+      html_url = "",
+      type = "User",
+    },
+    html_url = repo_homepage,
+    description = repo_info.description or "",
+    fork = false,
+    url = repo_homepage,
+    default_branch = "",
+  }
+  local workflow_job = {
+    id = payload.build_id,
+    run_id = payload.pipeline_id,
+    run_url = "",
+    run_attempt = 1,
+    name = payload.build_name or "",
+    head_sha = payload.sha or "",
+    url = "",
+    html_url = "",
+    status = gh_status,
+    conclusion = conclusion,
+    started_at = payload.build_started_at,
+    completed_at = payload.build_finished_at,
+    steps = {},
+    labels = runner.tags or {},
+    runner_id = runner.id,
+    runner_name = runner.description or "",
+  }
+  return make_internal_event({
+    event = "workflow_job",
+    action = action or "unknown",
+    raw_action = action and nil or raw_status,
+    provider = config.backend,
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      workflow_job = workflow_job,
+      repository = repository,
+      sender = translate_gl_user(payload.user),
+    },
+    timestamp = payload.build_finished_at or payload.build_started_at or "",
+  })
+end)
+
 b:capability("repos", repos)
 b:capability("users", users)
 b:capability("orgs", orgs)
