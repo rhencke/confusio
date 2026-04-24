@@ -2128,4 +2128,53 @@ b:webhook("git.pullrequest.updated", function(payload)
   })
 end)
 
+-- pull_request_review events.
+-- Azure DevOps emits git.pullrequest.reviewervote when a reviewer's vote changes.
+--
+-- ADO vote values and their GitHub state mappings:
+--   10  Approved                  → submitted / APPROVED
+--    5  Approved with suggestions → submitted / APPROVED
+--    0  No vote (reset / removed) → dismissed / DISMISSED
+--   -5  Waiting for author        → submitted / CHANGES_REQUESTED
+--  -10  Rejected                  → submitted / CHANGES_REQUESTED
+local ADO_VOTE_MAP = {
+  [10] = { state = "APPROVED", action = "submitted" },
+  [5] = { state = "APPROVED", action = "submitted" },
+  [0] = { state = "DISMISSED", action = "dismissed" },
+  [-5] = { state = "CHANGES_REQUESTED", action = "submitted" },
+  [-10] = { state = "CHANGES_REQUESTED", action = "submitted" },
+}
+
+b:webhook("git.pullrequest.reviewervote", function(payload)
+  local resource = payload.resource or {}
+  local reviewer = resource.reviewer or {}
+  local raw_pr = resource.pullRequest or {}
+  local vote = tonumber(resource.vote) or 0
+  local mapping = ADO_VOTE_MAP[vote] or { state = "APPROVED", action = "submitted" }
+  local review = {
+    id = 0,
+    node_id = "",
+    user = ado_user(reviewer),
+    body = "",
+    state = mapping.state,
+    submitted_at = payload.createdDate or "",
+    html_url = "",
+    pull_request_url = "",
+  }
+  return make_internal_event({
+    event = "pull_request_review",
+    action = mapping.action,
+    provider = "azuredevops",
+    raw = payload,
+    data = {
+      action = mapping.action,
+      review = review,
+      pull_request = translate_ado_pull(raw_pr),
+      repository = translate_ado_repo(raw_pr.repository),
+      sender = ado_user(reviewer),
+    },
+    timestamp = payload.createdDate or "",
+  })
+end)
+
 b:build()

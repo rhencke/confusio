@@ -2277,15 +2277,15 @@ Triggered on pull request lifecycle events.
 
 Triggered when a review is submitted or dismissed on a pull request.
 
-| GitHub field | gitea-family | gitlab | bitbucket | bitbucket-dc | github | All others |
-|---|---|---|---|---|---|---|
-| `review.id` | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ |
-| `review.body` | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ |
-| `review.state` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `review.html_url` | ✓ | ✓ | ✗ | ~ | ✓ | ✗ |
-| `review.user` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `review.submitted_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `pull_request` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| GitHub field | gitea-family | gitlab | bitbucket | bitbucket-dc | azuredevops | github | All others |
+|---|---|---|---|---|---|---|---|
+| `review.id` | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ |
+| `review.body` | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ |
+| `review.state` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `review.html_url` | ✓ | ✓ | ✗ | ~ | ✗ | ✓ | ✗ |
+| `review.user` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `review.submitted_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `pull_request` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
 
 #### `review.state` mapping
 
@@ -2301,17 +2301,22 @@ Triggered when a review is submitted or dismissed on a pull request.
 | Bitbucket Cloud `unapproved` | `"dismissed"` |
 | Bitbucket DC `APPROVED` | `"approved"` |
 | Bitbucket DC `NEEDS_WORK` | `"changes_requested"` |
+| Azure DevOps vote 10 (approved) | `"approved"` |
+| Azure DevOps vote 5 (approved with suggestions) | `"approved"` |
+| Azure DevOps vote 0 (no vote / reset) | `"dismissed"` |
+| Azure DevOps vote -5 (waiting for author) | `"changes_requested"` |
+| Azure DevOps vote -10 (rejected) | `"changes_requested"` |
 
 #### Supported actions
 
-| Action | gitea-family | gitlab | bitbucket | bitbucket-dc | github |
-|--------|---|---|---|---|---|
-| `submitted` | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `dismissed` | ~ | ✓ | ✓ | ✗ | ✓ |
+| Action | gitea-family | gitlab | bitbucket | bitbucket-dc | azuredevops | github |
+|--------|---|---|---|---|---|---|
+| `submitted` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `dismissed` | ~ | ✓ | ✓ | ✗ | ✓ | ✓ |
 
 **Notes:**
 - `pull_request_review` events require the forge to have a native review system.
-  Gogs, GitBucket, Azure DevOps, and most self-hosted forges do not emit review events.
+  Gogs, GitBucket, and most self-hosted forges do not emit review events.
   The event is never generated for these backends.
 - Bitbucket Cloud emits `pullrequest:approved` (→ `submitted / APPROVED`) and
   `pullrequest:unapproved` (→ `dismissed / DISMISSED`).  It has no "request changes"
@@ -2321,6 +2326,10 @@ Triggered when a review is submitted or dismissed on a pull request.
   and Bitbucket Cloud support explicit dismissal.  Bitbucket Datacenter does not.
 - `review.html_url`: Bitbucket Datacenter does not provide a direct URL to the review;
   confusio constructs an approximate URL from the PR URL.
+- Azure DevOps emits `git.pullrequest.reviewervote` when a reviewer's vote changes.
+  Vote 10 and 5 → `APPROVED`; vote -5 and -10 → `CHANGES_REQUESTED`; vote 0 (reset)
+  → `dismissed / DISMISSED`.  `review.id`, `review.body`, and `review.html_url` are
+  always empty because the ADO vote event carries no review body or direct URL.
 
 ---
 

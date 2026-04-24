@@ -258,3 +258,126 @@ Content-Type: application/json
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
+
+# ── git.pullrequest.reviewervote (vote=10, approved) → pull_request_review / submitted / APPROVED
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+{
+  "subscriptionId": "sub-1",
+  "notificationId": 9,
+  "id": "evt-9",
+  "eventType": "git.pullrequest.reviewervote",
+  "resource": {
+    "reviewerUrl": "",
+    "vote": 10,
+    "reviewer": {
+      "displayName": "Alice",
+      "uniqueName": "alice",
+      "id": "user-id-alice",
+      "imageUrl": "",
+      "isContainer": false
+    },
+    "pullRequest": {
+      "pullRequestId": 42,
+      "title": "Add feature X",
+      "description": "This PR adds feature X.",
+      "status": "active",
+      "isDraft": false,
+      "sourceRefName": "refs/heads/feature-x",
+      "targetRefName": "refs/heads/main",
+      "createdBy": {"displayName": "Bob", "uniqueName": "bob"},
+      "creationDate": "2024-01-15T12:00:00Z",
+      "lastMergeSourceCommit": {"commitId": "abc123"},
+      "lastMergeTargetCommit": {"commitId": "def456"},
+      "repository": {}
+    }
+  },
+  "createdDate": "2024-01-15T13:00:00Z"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── git.pullrequest.reviewervote (vote=-10, rejected) → pull_request_review / submitted / CHANGES_REQUESTED
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+{
+  "subscriptionId": "sub-1",
+  "notificationId": 10,
+  "id": "evt-10",
+  "eventType": "git.pullrequest.reviewervote",
+  "resource": {
+    "reviewerUrl": "",
+    "vote": -10,
+    "reviewer": {
+      "displayName": "Alice",
+      "uniqueName": "alice",
+      "id": "user-id-alice",
+      "imageUrl": "",
+      "isContainer": false
+    },
+    "pullRequest": {
+      "pullRequestId": 42,
+      "title": "Add feature X",
+      "description": "This PR adds feature X.",
+      "status": "active",
+      "isDraft": false,
+      "sourceRefName": "refs/heads/feature-x",
+      "targetRefName": "refs/heads/main",
+      "createdBy": {"displayName": "Bob", "uniqueName": "bob"},
+      "creationDate": "2024-01-15T12:00:00Z",
+      "lastMergeSourceCommit": {"commitId": "abc123"},
+      "lastMergeTargetCommit": {"commitId": "def456"},
+      "repository": {}
+    }
+  },
+  "createdDate": "2024-01-15T13:05:00Z"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── git.pullrequest.reviewervote (vote=0, reset) → pull_request_review / dismissed / DISMISSED
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+{
+  "subscriptionId": "sub-1",
+  "notificationId": 11,
+  "id": "evt-11",
+  "eventType": "git.pullrequest.reviewervote",
+  "resource": {
+    "reviewerUrl": "",
+    "vote": 0,
+    "reviewer": {
+      "displayName": "Alice",
+      "uniqueName": "alice",
+      "id": "user-id-alice",
+      "imageUrl": "",
+      "isContainer": false
+    },
+    "pullRequest": {
+      "pullRequestId": 42,
+      "title": "Add feature X",
+      "description": "This PR adds feature X.",
+      "status": "active",
+      "isDraft": false,
+      "sourceRefName": "refs/heads/feature-x",
+      "targetRefName": "refs/heads/main",
+      "createdBy": {"displayName": "Bob", "uniqueName": "bob"},
+      "creationDate": "2024-01-15T12:00:00Z",
+      "lastMergeSourceCommit": {"commitId": "abc123"},
+      "lastMergeTargetCommit": {"commitId": "def456"},
+      "repository": {}
+    }
+  },
+  "createdDate": "2024-01-15T13:10:00Z"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
