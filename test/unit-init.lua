@@ -3590,6 +3590,175 @@ local _, fd_dels4 = fanout_dispatch("gitea", "push", { ref = "refs/heads/main" }
 eq(#fd_dels4, 0, "fanout_dispatch deleted: deleted target receives no deliveries")
 
 -- ============================================================
+-- deliver_attempt (internal/deliver.lua)
+-- ============================================================
+
+-- luacheck: globals deliver_attempt
+
+-- Setup: create a target and use fanout_dispatch to get a delivery record.
+-- (The fanout section left fd_target deleted; recreate it.)
+local da_target = target_create({
+  url = "https://da-test.example.com/hook",
+  events = { "*" },
+  secret = "test-secret",
+})
+ok(da_target ~= nil, "deliver_attempt setup: target created")
+
+local da_ev, da_dels = fanout_dispatch("gitea", "push", { ref = "refs/heads/main" })
+ok(#da_dels >= 1, "deliver_attempt setup: at least one delivery created")
+local da_del_id = da_dels[1].delivery_id
+
+-- deliver_attempt: unknown delivery_id returns error without touching the outbox.
+local da_err_ok, da_err_status, da_err_msg = deliver_attempt("00000000-0000-4000-8000-000000000000")
+ok(da_err_ok == false, "deliver_attempt unknown id: ok is false")
+ok(da_err_status == nil, "deliver_attempt unknown id: http_status is nil")
+ok(da_err_msg ~= nil, "deliver_attempt unknown id: error message set")
+
+-- Mock Fetch to intercept outbound HTTP calls.  We capture the last call's
+-- url and opts so tests can verify headers are set correctly.
+local _da_last_url = nil
+local _da_last_opts = nil
+local _da_mock_status = 200
+local _da_mock_error = nil
+local _real_Fetch = Fetch
+Fetch = function(url, opts) -- luacheck: globals Fetch
+  _da_last_url = url
+  _da_last_opts = opts
+  if _da_mock_error ~= nil then
+    error(_da_mock_error)
+  end
+  return _da_mock_status, {}, "{}"
+end
+
+-- deliver_attempt: 200 → status "delivered".
+_da_mock_status = 200
+local da_ok1, da_s1, da_e1 = deliver_attempt(da_del_id)
+ok(da_ok1 == true, "deliver_attempt 200: ok is true")
+eq(da_s1, 200, "deliver_attempt 200: http_status is 200")
+ok(da_e1 == nil, "deliver_attempt 200: no error")
+local da_del1 = outbox_get_delivery(da_del_id)
+eq(da_del1.status, "delivered", "deliver_attempt 200: delivery status is delivered")
+eq(da_del1.last_http_status, 200, "deliver_attempt 200: last_http_status recorded")
+eq(da_del1.attempt_count, 1, "deliver_attempt 200: attempt_count incremented to 1")
+
+-- Verify the request was POSTed to the correct URL with expected headers.
+eq(_da_last_url, "https://da-test.example.com/hook", "deliver_attempt: posts to target url")
+ok(_da_last_opts ~= nil, "deliver_attempt: opts passed to Fetch")
+eq(_da_last_opts.method, "POST", "deliver_attempt: method is POST")
+ok(_da_last_opts.body ~= nil, "deliver_attempt: body is set")
+ok(_da_last_opts.headers ~= nil, "deliver_attempt: headers table present")
+eq(
+  _da_last_opts.headers["Content-Type"],
+  "application/json",
+  "deliver_attempt: Content-Type is application/json"
+)
+eq(
+  _da_last_opts.headers["X-GitHub-Event"],
+  "push",
+  "deliver_attempt github shape: X-GitHub-Event header set"
+)
+eq(
+  _da_last_opts.headers["X-GitHub-Delivery"],
+  da_del_id,
+  "deliver_attempt github shape: X-GitHub-Delivery is delivery_id"
+)
+-- Secret was set so signatures should be present.
+ok(
+  _da_last_opts.headers["X-Hub-Signature-256"] ~= nil,
+  "deliver_attempt github shape: X-Hub-Signature-256 present"
+)
+ok(
+  _da_last_opts.headers["X-Hub-Signature"] ~= nil,
+  "deliver_attempt github shape: X-Hub-Signature present"
+)
+
+-- deliver_attempt: 503 → status "retrying" with next_attempt_at set.
+_da_mock_status = 503
+local da_ok2, da_s2, da_e2 = deliver_attempt(da_del_id)
+ok(da_ok2 == false, "deliver_attempt 503: ok is false")
+eq(da_s2, 503, "deliver_attempt 503: http_status is 503")
+ok(da_e2 ~= nil, "deliver_attempt 503: error message set")
+local da_del2 = outbox_get_delivery(da_del_id)
+eq(da_del2.status, "retrying", "deliver_attempt 503: status is retrying")
+eq(da_del2.last_http_status, 503, "deliver_attempt 503: last_http_status is 503")
+eq(da_del2.attempt_count, 2, "deliver_attempt 503: attempt_count is 2")
+ok(da_del2.next_attempt_at ~= nil, "deliver_attempt 503: next_attempt_at is set")
+
+-- deliver_attempt: 429 (Too Many Requests) → status "retrying".
+_da_mock_status = 429
+local da_ok3, da_s3, _ = deliver_attempt(da_del_id)
+ok(da_ok3 == false, "deliver_attempt 429: ok is false")
+eq(da_s3, 429, "deliver_attempt 429: http_status is 429")
+local da_del3 = outbox_get_delivery(da_del_id)
+eq(da_del3.status, "retrying", "deliver_attempt 429: status is retrying")
+
+-- deliver_attempt: 422 (client error) → status "failed".
+_da_mock_status = 422
+local da_ok4, da_s4, da_e4 = deliver_attempt(da_del_id)
+ok(da_ok4 == false, "deliver_attempt 422: ok is false")
+eq(da_s4, 422, "deliver_attempt 422: http_status is 422")
+ok(da_e4 ~= nil, "deliver_attempt 422: error message set")
+local da_del4 = outbox_get_delivery(da_del_id)
+eq(da_del4.status, "failed", "deliver_attempt 422: status is failed")
+eq(da_del4.last_http_status, 422, "deliver_attempt 422: last_http_status is 422")
+
+-- deliver_attempt: network error → status "retrying", http_status nil.
+_da_mock_status = 200
+_da_mock_error = "connection refused"
+local da_ok5, da_s5, da_e5 = deliver_attempt(da_del_id)
+ok(da_ok5 == false, "deliver_attempt network error: ok is false")
+ok(da_s5 == nil, "deliver_attempt network error: http_status is nil")
+ok(da_e5 ~= nil, "deliver_attempt network error: error message set")
+local da_del5 = outbox_get_delivery(da_del_id)
+eq(da_del5.status, "retrying", "deliver_attempt network error: status is retrying")
+-- outbox_update_delivery uses partial-update semantics: passing last_http_status=nil
+-- is a no-op, so the previous value is preserved.  Only check that status is correct.
+ok(da_del5.last_error ~= nil, "deliver_attempt network error: last_error records the message")
+_da_mock_error = nil
+
+-- deliver_attempt: confusio shape target uses Confusio headers.
+target_update(da_target.target_id, { shape = "confusio" })
+_da_mock_status = 200
+local da_ok6, _, _ = deliver_attempt(da_del_id)
+ok(da_ok6 == true, "deliver_attempt confusio shape: ok is true")
+ok(
+  _da_last_opts.headers["X-Confusio-Event"] ~= nil,
+  "deliver_attempt confusio shape: X-Confusio-Event present"
+)
+eq(
+  _da_last_opts.headers["X-Confusio-Event"],
+  "push",
+  "deliver_attempt confusio shape: X-Confusio-Event is push"
+)
+eq(
+  _da_last_opts.headers["X-Confusio-Source"],
+  "gitea",
+  "deliver_attempt confusio shape: X-Confusio-Source is backend"
+)
+ok(
+  _da_last_opts.headers["X-Confusio-Signature-256"] ~= nil,
+  "deliver_attempt confusio shape: X-Confusio-Signature-256 present"
+)
+ok(
+  _da_last_opts.headers["X-Hub-Signature-256"] == nil,
+  "deliver_attempt confusio shape: no github signature header"
+)
+
+-- Restore Fetch.
+Fetch = _real_Fetch
+
+-- deliver_attempt: deleted target → "failed" without making any network call.
+target_delete(da_target.target_id)
+-- Reset delivery to pending so we can test the deleted-target path.
+outbox_update_delivery(da_del_id, { status = "pending", attempt_count = 0 })
+local da_ok7, da_s7, da_e7 = deliver_attempt(da_del_id)
+ok(da_ok7 == false, "deliver_attempt deleted target: ok is false")
+ok(da_s7 == nil, "deliver_attempt deleted target: http_status is nil")
+ok(da_e7 ~= nil, "deliver_attempt deleted target: error message set")
+local da_del7 = outbox_get_delivery(da_del_id)
+eq(da_del7.status, "failed", "deliver_attempt deleted target: status is failed")
+
+-- ============================================================
 -- Summary
 -- ============================================================
 

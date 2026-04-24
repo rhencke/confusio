@@ -121,6 +121,8 @@ globals = {
   -- Fan-out dispatcher: internal/fanout.lua
   "fanout_body",
   "fanout_dispatch",
+  -- Outbound HTTP delivery: internal/deliver.lua
+  "deliver_attempt",
   "get_client_mutation_id",
   "estimate_query_cost",
   -- GraphQL translators: internal/graphql_translators.lua
