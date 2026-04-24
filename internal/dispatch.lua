@@ -12,10 +12,14 @@
 
 function make_dispatcher(a) -- luacheck: globals make_dispatcher
   return function()
-    -- Webhook paths bypass the auth gate entirely.  The webhook receiver in
-    -- internal/webhooks.lua verifies forge-supplied signatures independently.
+    -- Webhook paths bypass the auth gate entirely.  /webhooks/targets* routes
+    -- to the target admin API (which enforces its own auth); all other
+    -- /webhooks/* paths route to the webhook receiver which verifies
+    -- forge-supplied signatures independently.
     if GetPath():match("^/webhooks/") then
-      if a.webhook_receiver then
+      if GetPath():match("^/webhooks/targets") and a.targets_api then
+        a.targets_api()
+      elseif a.webhook_receiver then
         a.webhook_receiver()
       else
         respond_json(404, { message = "Not Found" })

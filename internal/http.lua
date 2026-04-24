@@ -12,6 +12,7 @@ local HTTP_STATUS_TEXT = {
   [401] = "Unauthorized",
   [404] = "Not Found",
   [405] = "Method Not Allowed",
+  [409] = "Conflict",
   [410] = "Gone",
   [418] = "I'm a Teapot",
   [422] = "Unprocessable Entity",

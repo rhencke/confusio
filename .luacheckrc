@@ -103,6 +103,8 @@ globals = {
   "target_update",
   "target_delete",
   "target_get_secret",
+  -- Target admin API: internal/targets_api.lua
+  "make_targets_api",
   -- Outbound delivery signing: internal/signing.lua
   "sign_github",
   "sign_confusio",

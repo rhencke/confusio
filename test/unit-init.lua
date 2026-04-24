@@ -3085,6 +3085,262 @@ local upd_del = target_update(ts_id, { url = "https://x.com/" })
 ok(upd_del == nil, "target_update: nil for deleted target")
 
 -- ============================================================
+-- targets_api (internal/targets_api.lua)
+-- ============================================================
+
+ok(type(make_targets_api) == "function", "make_targets_api: exported as global function") -- luacheck: globals make_targets_api
+
+do
+  -- Helper: call the targets API with a fake request and return status + decoded body.
+  local function call_api(opts)
+    reset_request(opts)
+    reset_response()
+    app.targets_api() -- luacheck: globals app
+    local body = _last_body ~= "" and pcall(DecodeJson, _last_body) and DecodeJson(_last_body)
+      or nil
+    return _last_status, body
+  end
+
+  -- Helper: call and return raw body string (for 204 empty body or error checks).
+  local function call_api_raw(opts)
+    reset_request(opts)
+    reset_response()
+    app.targets_api()
+    return _last_status, _last_body
+  end
+
+  local AUTH = { Authorization = "Bearer admin-token" }
+
+  -- ── 401 when Authorization header is missing ─────────────────
+
+  local s401, b401 = call_api({
+    method = "POST",
+    path = "/webhooks/targets",
+    headers = {},
+    body = '{"url":"https://a.example.com/hook"}',
+  })
+  eq(s401, 401, "targets_api: missing auth → 401")
+  eq(b401 and b401.error, "unauthorized", "targets_api: missing auth → error=unauthorized")
+
+  -- ── POST /webhooks/targets: create a target ──────────────────
+
+  local s_create, b_create = call_api({
+    method = "POST",
+    path = "/webhooks/targets",
+    headers = AUTH,
+    body = '{"url":"https://api.example.com/hook","events":["push"],"shape":"confusio"}',
+  })
+  eq(s_create, 201, "targets_api POST: 201 on create")
+  ok(b_create ~= nil, "targets_api POST: body is non-nil")
+  ok(b_create and b_create.target_id ~= nil, "targets_api POST: target_id in response")
+  eq(b_create and b_create.url, "https://api.example.com/hook", "targets_api POST: url in response")
+  eq(b_create and b_create.status, "active", "targets_api POST: status is active")
+  eq(b_create and b_create.shape, "confusio", "targets_api POST: shape in response")
+  ok(b_create and b_create.secret == nil, "targets_api POST: secret not in response")
+
+  -- ── POST: missing url → 400 ──────────────────────────────────
+
+  local s_no_url, b_no_url = call_api({
+    method = "POST",
+    path = "/webhooks/targets",
+    headers = AUTH,
+    body = '{"events":["push"]}',
+  })
+  eq(s_no_url, 400, "targets_api POST: missing url → 400")
+  eq(
+    b_no_url and b_no_url.error,
+    "invalid_request",
+    "targets_api POST: missing url → invalid_request"
+  )
+
+  -- ── POST: invalid url → 400 ──────────────────────────────────
+
+  local s_bad_url, b_bad_url = call_api({
+    method = "POST",
+    path = "/webhooks/targets",
+    headers = AUTH,
+    body = '{"url":"not-a-url"}',
+  })
+  eq(s_bad_url, 400, "targets_api POST: invalid url → 400")
+  eq(b_bad_url and b_bad_url.error, "invalid_url", "targets_api POST: invalid url → invalid_url")
+
+  -- ── POST: mixed wildcard events → 400 ────────────────────────
+
+  local s_bad_ev, b_bad_ev = call_api({
+    method = "POST",
+    path = "/webhooks/targets",
+    headers = AUTH,
+    body = '{"url":"https://x.example.com/hook","events":["*","push"]}',
+  })
+  eq(s_bad_ev, 400, "targets_api POST: mixed wildcard → 400")
+  eq(
+    b_bad_ev and b_bad_ev.error,
+    "invalid_filter",
+    "targets_api POST: mixed wildcard → invalid_filter"
+  )
+
+  -- ── POST: invalid shape → 400 ────────────────────────────────
+
+  local s_bad_shape, b_bad_shape = call_api({
+    method = "POST",
+    path = "/webhooks/targets",
+    headers = AUTH,
+    body = '{"url":"https://x.example.com/hook","shape":"unknown"}',
+  })
+  eq(s_bad_shape, 400, "targets_api POST: invalid shape → 400")
+  eq(
+    b_bad_shape and b_bad_shape.error,
+    "invalid_request",
+    "targets_api POST: invalid shape → invalid_request"
+  )
+
+  -- Capture the target_id from a successful create for subsequent tests.
+  -- (GetRandom stub is deterministic so all make_uuid calls return the same ID.)
+  local api_target_id = b_create and b_create.target_id
+
+  -- ── GET /webhooks/targets: list ───────────────────────────────
+
+  local s_list, b_list = call_api({
+    method = "GET",
+    path = "/webhooks/targets",
+    headers = AUTH,
+  })
+  eq(s_list, 200, "targets_api GET list: 200")
+  ok(b_list and type(b_list.targets) == "table", "targets_api GET list: targets array present")
+  ok(b_list and b_list.next_cursor == nil, "targets_api GET list: next_cursor is null")
+
+  -- ── GET /webhooks/targets/{id}: get single target ─────────────
+
+  local s_get, b_get = call_api({
+    method = "GET",
+    path = "/webhooks/targets/" .. (api_target_id or "x"),
+    headers = AUTH,
+  })
+  eq(s_get, 200, "targets_api GET single: 200")
+  eq(b_get and b_get.target_id, api_target_id, "targets_api GET single: target_id matches")
+  eq(b_get and b_get.circuit, "closed", "targets_api GET single: circuit field present")
+  ok(
+    b_get and b_get.circuit_open_until == nil,
+    "targets_api GET single: circuit_open_until is null"
+  )
+  eq(b_get and b_get.consecutive_failures, 0, "targets_api GET single: consecutive_failures is 0")
+  ok(b_get and b_get.secret == nil, "targets_api GET single: no secret in response")
+
+  -- ── GET /webhooks/targets/{id}: not found → 404 ──────────────
+
+  local s_nf, b_nf = call_api({
+    method = "GET",
+    path = "/webhooks/targets/00000000-0000-4000-8000-000000000000",
+    headers = AUTH,
+  })
+  eq(s_nf, 404, "targets_api GET single: unknown id → 404")
+  eq(
+    b_nf and b_nf.error,
+    "target_not_found",
+    "targets_api GET single: unknown id → target_not_found"
+  )
+
+  -- ── PATCH /webhooks/targets/{id}: partial update ──────────────
+
+  local s_patch, b_patch = call_api({
+    method = "PATCH",
+    path = "/webhooks/targets/" .. (api_target_id or "x"),
+    headers = AUTH,
+    body = '{"status":"paused","shape":"github"}',
+  })
+  eq(s_patch, 200, "targets_api PATCH: 200 on update")
+  eq(b_patch and b_patch.status, "paused", "targets_api PATCH: status updated to paused")
+  eq(b_patch and b_patch.shape, "github", "targets_api PATCH: shape updated to github")
+  eq(b_patch and b_patch.circuit, "closed", "targets_api PATCH: circuit field present in response")
+
+  -- ── PATCH: invalid status → 400 ──────────────────────────────
+
+  local s_bad_st, b_bad_st = call_api({
+    method = "PATCH",
+    path = "/webhooks/targets/" .. (api_target_id or "x"),
+    headers = AUTH,
+    body = '{"status":"deleted"}',
+  })
+  eq(s_bad_st, 400, "targets_api PATCH: status=deleted → 400")
+  eq(
+    b_bad_st and b_bad_st.error,
+    "invalid_status",
+    "targets_api PATCH: status=deleted → invalid_status"
+  )
+
+  -- ── PATCH: not found → 404 ───────────────────────────────────
+
+  local s_patch_nf, b_patch_nf = call_api({
+    method = "PATCH",
+    path = "/webhooks/targets/00000000-0000-4000-8000-000000000000",
+    headers = AUTH,
+    body = '{"status":"active"}',
+  })
+  eq(s_patch_nf, 404, "targets_api PATCH: unknown id → 404")
+  eq(
+    b_patch_nf and b_patch_nf.error,
+    "target_not_found",
+    "targets_api PATCH: unknown id → target_not_found"
+  )
+
+  -- ── DELETE /webhooks/targets/{id} ────────────────────────────
+
+  local s_del, body_del = call_api_raw({
+    method = "DELETE",
+    path = "/webhooks/targets/" .. (api_target_id or "x"),
+    headers = AUTH,
+  })
+  eq(s_del, 204, "targets_api DELETE: 204 on success")
+  eq(body_del, "", "targets_api DELETE: empty body")
+
+  -- ── DELETE: already deleted → 404 ────────────────────────────
+
+  local s_del2, b_del2 = call_api({
+    method = "DELETE",
+    path = "/webhooks/targets/" .. (api_target_id or "x"),
+    headers = AUTH,
+  })
+  eq(s_del2, 404, "targets_api DELETE: already deleted → 404")
+  eq(
+    b_del2 and b_del2.error,
+    "target_not_found",
+    "targets_api DELETE: already deleted → target_not_found"
+  )
+
+  -- ── GET: deleted target → 404 ────────────────────────────────
+
+  local s_get_del, b_get_del = call_api({
+    method = "GET",
+    path = "/webhooks/targets/" .. (api_target_id or "x"),
+    headers = AUTH,
+  })
+  eq(s_get_del, 404, "targets_api GET: deleted target → 404")
+  eq(
+    b_get_del and b_get_del.error,
+    "target_not_found",
+    "targets_api GET: deleted target → target_not_found"
+  )
+
+  -- ── Unknown path under /webhooks/targets/ → 404 ──────────────
+
+  local s_unk, b_unk = call_api({
+    method = "GET",
+    path = "/webhooks/targets/abc/extra",
+    headers = AUTH,
+  })
+  eq(s_unk, 404, "targets_api: unrecognised sub-path → 404")
+
+  -- ── Method not allowed ────────────────────────────────────────
+
+  local s_mna, _ = call_api({
+    method = "PUT",
+    path = "/webhooks/targets",
+    headers = AUTH,
+  })
+  eq(s_mna, 405, "targets_api: PUT /webhooks/targets → 405")
+end
+
+-- ============================================================
 -- Summary
 -- ============================================================
 
