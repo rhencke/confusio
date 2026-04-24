@@ -2319,9 +2319,10 @@ Triggered when a review is submitted or dismissed on a pull request.
 | `edited` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ |
 
 **Notes:**
-- `pull_request_review` events require the forge to have a native review system.
-  Gogs and most self-hosted forges do not emit review events.
-  The event is never generated for these backends.
+- `pull_request_review` events require the forge to have a native review/approval
+  system that emits a discrete webhook event for review submissions.  Backends not
+  listed in the table above do not emit this event and have no handler registered;
+  they are documented individually below.
 - GitBucket 4.32+ emits `pull_request_review` in GitHub-compatible format.
   All fields are passed through without translation.
 - Bitbucket Cloud emits `pullrequest:approved` (→ `submitted / APPROVED`) and
@@ -2354,6 +2355,33 @@ Triggered when a review is submitted or dismissed on a pull request.
 - **Sourcehut** has no pull-request model.  Code review on Sourcehut is conducted
   via mailing-list patch series (lists.sr.ht), which does not emit webhook review
   events.  No handler is registered.
+- **Pagure** does not emit a discrete pull-request review webhook event.  Pagure's
+  webhook system covers PR lifecycle (opened, updated, closed) but has no separate
+  reviewer-approval or review-submission event.  No handler is registered.
+- **Gogs** has a minimal webhook system with no code-review feature.  Gogs does not
+  emit pull-request review events.  No handler is registered.
+- **Gitblit** has a basic webhook system (push notifications only) with no pull-request
+  or review model.  No handler is registered.
+- **Kallithea** has a basic webhook system with no pull-request review event.  No
+  handler is registered.
+- **RhodeCode** (Community Edition) webhooks cover push and repository events; the
+  pull-request model does not include a discrete reviewer-vote or review-submission
+  event.  No handler is registered.
+- **Tuleap** has a pull-request module with review/approval, but its webhook system
+  emits generic `pullrequest:update` notifications rather than discrete review events.
+  No handler is registered.
+- **CodeCommit** webhooks are delivered via Amazon EventBridge/SNS; the basic PR events
+  do not include a reviewer-approval payload — code review is surfaced through
+  CodeGuru Reviewer as a separate service.  No handler is registered.
+- **Harness** is a CI/CD platform whose webhook system covers pipeline and build events;
+  it does not emit pull-request review events.  No handler is registered.
+- **Launchpad** uses Bazaar merge proposals rather than pull requests, and its webhook
+  system does not emit reviewer-approval events.  No handler is registered.
+- **SourceForge** has a basic webhook system (push notifications) with no pull-request
+  review model.  No handler is registered.
+- **Radicle** is a peer-to-peer forge.  Patch proposals have a review/revision concept,
+  but Radicle's event system does not emit a discrete reviewer-approval webhook event.
+  No handler is registered.
 
 ---
 
