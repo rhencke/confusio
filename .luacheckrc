@@ -110,6 +110,9 @@ globals = {
   "outbox_get_attempts",
   "outbox_pending_retries",
   "outbox_prune",
+  -- Pruner: internal/pruner.lua
+  "OUTBOX_MAX_AGE_SECS",
+  "maybe_prune_outbox",
   -- Target registry: internal/targets.lua
   "target_create",
   "target_get",

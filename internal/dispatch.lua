@@ -12,6 +12,10 @@
 
 function make_dispatcher(a) -- luacheck: globals make_dispatcher
   return function()
+    -- Periodic housekeeping: prune outbox entries older than 72 hours.
+    -- maybe_prune_outbox() is a no-op if the pruning interval has not elapsed.
+    maybe_prune_outbox()
+
     -- Webhook paths bypass the auth gate entirely.  /webhooks/targets* routes
     -- to the target admin API (which enforces its own auth); all other
     -- /webhooks/* paths route to the webhook receiver which verifies

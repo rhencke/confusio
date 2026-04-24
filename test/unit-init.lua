@@ -4183,6 +4183,26 @@ do
 end
 
 -- ============================================================
+-- pruner (internal/pruner.lua)
+-- ============================================================
+
+-- luacheck: globals OUTBOX_MAX_AGE_SECS maybe_prune_outbox
+
+eq(OUTBOX_MAX_AGE_SECS, 72 * 3600, "OUTBOX_MAX_AGE_SECS is 259200 (72 hours in seconds)")
+ok(type(maybe_prune_outbox) == "function", "maybe_prune_outbox: exported as global function")
+
+do
+  -- First call: _last_prune_at starts at 0 so the interval has elapsed;
+  -- pruning runs immediately.  Verify the call succeeds without error.
+  local prune_ok = pcall(maybe_prune_outbox)
+  ok(prune_ok, "maybe_prune_outbox: first call succeeds")
+
+  -- Second immediate call: now - _last_prune_at ≈ 0 < 3600 → no-op.
+  local prune_ok2 = pcall(maybe_prune_outbox)
+  ok(prune_ok2, "maybe_prune_outbox: immediate second call succeeds (no-op)")
+end
+
+-- ============================================================
 -- Summary
 -- ============================================================
 
