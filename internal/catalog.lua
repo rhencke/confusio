@@ -37,19 +37,6 @@ local endpoint_sections = {
         "post_webhooks_backend",
         defaults.webhook_receive_stub,
       },
-      -- Outbound dispatcher: delivery inspection API (confusio-specific; not part of the GitHub REST API spec).
-      -- Intercepted by dispatch.lua before routing; default stubs are never reached.
-      { "GET /webhooks/deliveries", "get_webhooks_deliveries", defaults.webhook_receive_stub },
-      {
-        "GET /webhooks/deliveries/{delivery_id}",
-        "get_webhooks_delivery",
-        defaults.webhook_receive_stub,
-      },
-      {
-        "GET /webhooks/deliveries/{delivery_id}/attempts",
-        "get_webhooks_delivery_attempts",
-        defaults.webhook_receive_stub,
-      },
     },
   },
   {

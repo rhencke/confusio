@@ -481,19 +481,11 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
       return
     end
 
-    -- Dispatch to the single active target if it subscribes to this event type.
-    -- deliver_attempt is called synchronously; the retry scheduler will pick up
-    -- any delivery left in "retrying" state.
-    local outbox_ev, delivery = fanout_dispatch(backend, internal_event.event, payload)
-
-    -- Build the response body.  Always include event_id so callers can use
-    -- the delivery inspection APIs.  delivery_id is omitted when there is no
-    -- matched target.
-    local resp = { message = "accepted", event_id = outbox_ev.event_id }
-    if delivery then
-      deliver_attempt(delivery.delivery_id)
-      resp.delivery_id = delivery.delivery_id
-    end
+    -- Dispatch to all registered targets whose event subscription covers this
+    -- event type.  Delivery is fire-and-record: each POST is attempted
+    -- synchronously, the outcome is logged, and confusio responds immediately.
+    -- No retry, no persistence.
+    fanout_dispatch(backend, internal_event.event, payload) -- luacheck: globals fanout_dispatch
 
     -- When the action was not recognized, surface it in a sidecar header so
     -- operators can identify unrecognized event variants without breaking delivery.
@@ -503,6 +495,6 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
     if internal_event.action == "unknown" and internal_event.raw_action then
       SetHeader("X-Confusio-Raw-Action", internal_event.raw_action)
     end
-    Write(EncodeJson(resp))
+    Write(EncodeJson({ message = "accepted" }))
   end
 end

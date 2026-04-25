@@ -1,20 +1,22 @@
 -- Single-target dispatcher for the outbound webhook system.
 --
--- Receives a normalized inbound event and dispatches it to the single active
--- target (if any) whose event subscription covers the event type.  A delivery
--- record is created with status="pending" when the target matches.
+-- Receives a normalized inbound event and dispatches it to all registered
+-- targets whose event subscription covers the event type.  Delivery is
+-- fire-and-record: the HTTP POST is attempted immediately, the outcome is
+-- logged, and confusio moves on.  No retry, no persistence.
 --
 -- "Shape" controls how the request body is serialised for the target:
 --   "github"   — re-encodes the raw inbound payload unchanged (GitHub-emulation)
 --   "confusio" — wraps the payload in a metadata envelope {source, event, payload}
 --
--- The actual HTTP dispatch lives in the outbound delivery module.
--- This module is responsible only for routing decisions (does the target receive
--- the event) and body serialisation (what the target receives).
---
 -- Globals exported:
 --   fanout_body(backend, event_type, payload, shape) → body string
---   fanout_dispatch(backend, event_type, payload)    → event_record, delivery_or_nil
+--   fanout_register_target(target)                   — register a static outbound target
+--   fanout_dispatch(backend, event_type, payload)    — fire to all matching targets
+
+-- _fanout_targets: in-memory list of registered outbound targets.
+-- Each entry is a table: { url, events, shape, secret }
+local _fanout_targets = {}
 
 -- fanout_event_matches: returns true when event_type is covered by the target's
 -- events subscription list.  The wildcard "*" matches any event type.
@@ -33,7 +35,7 @@ end
 -- Any unknown shape value falls back to "github" behaviour.
 function fanout_body(backend, event_type, payload, shape) -- luacheck: globals fanout_body
   if shape == "confusio" then
-    return EncodeJson({
+    return EncodeJson({ -- luacheck: globals EncodeJson
       source = backend,
       event = event_type,
       payload = payload,
@@ -43,18 +45,33 @@ function fanout_body(backend, event_type, payload, shape) -- luacheck: globals f
   return EncodeJson(payload)
 end
 
--- fanout_dispatch: stores an inbound event in the outbox and creates one
--- pending delivery record if the single active target subscribes to this
--- event type.
--- Returns (event_record, delivery) where delivery is the new record, or
--- (event_record, nil) when there is no active target or the event is filtered.
-function fanout_dispatch(backend, event_type, payload) -- luacheck: globals fanout_dispatch
-  local ev = outbox_store_event(backend, event_type, payload)
-  local targets = target_list({ status = "active" })
-  local target = targets[1]
-  if target and fanout_event_matches(event_type, target.events) then
-    local delivery = outbox_create_delivery(ev.event_id, target.target_id)
-    return ev, delivery
+-- fanout_register_target: adds a static outbound target to the registry.
+-- target must be a table with at least a non-empty url field.
+-- Optional fields: events (array; default {"*"}), shape (string; default "github"),
+-- secret (string; used for HMAC signing).
+function fanout_register_target(target) -- luacheck: globals fanout_register_target
+  if type(target) ~= "table" or type(target.url) ~= "string" or target.url == "" then
+    return
   end
-  return ev, nil
+  local entry = {
+    url = target.url,
+    events = target.events or { "*" },
+    shape = target.shape or "github",
+    secret = target.secret or "",
+  }
+  _fanout_targets[#_fanout_targets + 1] = entry
+end
+
+-- fanout_dispatch: fires the inbound event to all matching registered targets.
+-- Delivery is fire-and-record: deliver_fire() is called for each matching target.
+-- Returns the number of targets that matched (regardless of delivery success).
+function fanout_dispatch(backend, event_type, payload) -- luacheck: globals fanout_dispatch deliver_fire
+  local count = 0
+  for _, target in ipairs(_fanout_targets) do
+    if fanout_event_matches(event_type, target.events) then
+      deliver_fire(target, backend, event_type, payload)
+      count = count + 1
+    end
+  end
+  return count
 end
