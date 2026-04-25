@@ -101,7 +101,7 @@ end
 arg = { "testbackend" } -- luacheck: globals arg
 
 -- Stub os.getenv to return valid JSON for CONFUSIO_WEBHOOK_SECRETS and
--- CONFUSIO_WEBHOOK_TARGETS so that both env-var loading blocks in .init.lua
+-- CONFUSIO_WEBHOOK_TARGET so that both env-var loading blocks in .init.lua
 -- are exercised by luacov.  Restore immediately after load and clear both
 -- config fields so subsequent tests that rely on clean config are unaffected.
 local _real_getenv = os.getenv
@@ -109,8 +109,8 @@ os.getenv = function(k) -- luacheck: globals os
   if k == "CONFUSIO_WEBHOOK_SECRETS" then
     return '{"gitea":"ws_coverage_test"}'
   end
-  if k == "CONFUSIO_WEBHOOK_TARGETS" then
-    return '[{"url":"https://hook.example.com/wt-coverage","events":["push"],"shape":"github"}]'
+  if k == "CONFUSIO_WEBHOOK_TARGET" then
+    return '{"url":"https://hook.example.com/wt-coverage","events":["push"],"shape":"github"}'
   end
   return _real_getenv(k)
 end
@@ -128,25 +128,25 @@ assert(
   "CONFUSIO_WEBHOOK_SECRETS: gitea secret mismatch: " .. tostring(config.webhook_secrets.gitea)
 )
 
--- Verify the env-var block populated config.webhook_targets.
+-- Verify the env-var block populated config.webhook_target.
 assert(
-  config.webhook_targets ~= nil,
-  "CONFUSIO_WEBHOOK_TARGETS: config.webhook_targets should be non-nil after load"
+  config.webhook_target ~= nil,
+  "CONFUSIO_WEBHOOK_TARGET: config.webhook_target should be non-nil after load"
 )
 assert(
-  type(config.webhook_targets) == "table" and #config.webhook_targets == 1,
-  "CONFUSIO_WEBHOOK_TARGETS: expected 1 entry, got " .. tostring(#(config.webhook_targets or {}))
+  type(config.webhook_target) == "table",
+  "CONFUSIO_WEBHOOK_TARGET: expected a table, got " .. type(config.webhook_target)
 )
 assert(
-  config.webhook_targets[1].url == "https://hook.example.com/wt-coverage",
-  "CONFUSIO_WEBHOOK_TARGETS: url mismatch: " .. tostring((config.webhook_targets[1] or {}).url)
+  config.webhook_target.url == "https://hook.example.com/wt-coverage",
+  "CONFUSIO_WEBHOOK_TARGET: url mismatch: " .. tostring((config.webhook_target or {}).url)
 )
 
 -- Restore os.getenv and clear coverage-only state so later tests see a
 -- clean config.  (config and app.config reference the same table.)
 os.getenv = _real_getenv -- luacheck: globals os
 config.webhook_secrets = nil
-config.webhook_targets = nil
+config.webhook_target = nil
 
 -- Restore dofile so later tests that call it work normally.
 dofile = _real_dofile -- luacheck: globals dofile
@@ -3670,34 +3670,33 @@ eq(fb_unknown_dec.ref, "refs/heads/main", "fanout_body unknown shape: falls back
 local fd_target = target_create({ url = "https://fd-test.example.com/hook", events = { "*" } })
 ok(fd_target ~= nil, "fanout_dispatch setup: target created")
 
-local fd_ev, fd_dels = fanout_dispatch("gitea", "push", { ref = "refs/heads/main" })
+local fd_ev, fd_del = fanout_dispatch("gitea", "push", { ref = "refs/heads/main" })
 ok(fd_ev ~= nil, "fanout_dispatch: returns event record")
 ok(fd_ev.event_id ~= nil, "fanout_dispatch: event_id is set")
 eq(fd_ev.backend, "gitea", "fanout_dispatch: event backend stored")
 eq(fd_ev.event_type, "push", "fanout_dispatch: event type stored")
-ok(type(fd_dels) == "table", "fanout_dispatch: returns deliveries table")
-ok(#fd_dels >= 1, "fanout_dispatch: at least one delivery for wildcard target")
-eq(fd_dels[1].event_id, fd_ev.event_id, "fanout_dispatch: delivery event_id matches event")
-eq(fd_dels[1].target_id, fd_target.target_id, "fanout_dispatch: delivery target_id matches target")
-eq(fd_dels[1].status, "pending", "fanout_dispatch: delivery status is pending")
+ok(fd_del ~= nil, "fanout_dispatch: returns delivery record for wildcard target")
+eq(fd_del.event_id, fd_ev.event_id, "fanout_dispatch: delivery event_id matches event")
+eq(fd_del.target_id, fd_target.target_id, "fanout_dispatch: delivery target_id matches target")
+eq(fd_del.status, "pending", "fanout_dispatch: delivery status is pending")
 
 -- fanout_dispatch: event type filtering — update target to "issues" only.
 target_update(fd_target.target_id, { events = { "issues" } })
 
-local fd_ev2, fd_dels2 = fanout_dispatch("gitea", "push", { ref = "refs/heads/main" })
+local fd_ev2, fd_del2 = fanout_dispatch("gitea", "push", { ref = "refs/heads/main" })
 ok(fd_ev2 ~= nil, "fanout_dispatch filtered: event stored even with no matching targets")
-eq(#fd_dels2, 0, "fanout_dispatch filtered: push not delivered to issues-only target")
+ok(fd_del2 == nil, "fanout_dispatch filtered: push not delivered to issues-only target")
 
 -- fanout_dispatch: matching event IS delivered to filtered target.
-local fd_ev3, fd_dels3 = fanout_dispatch("gitea", "issues", { action = "opened" })
+local fd_ev3, fd_del3 = fanout_dispatch("gitea", "issues", { action = "opened" })
 ok(fd_ev3 ~= nil, "fanout_dispatch match: event stored")
-ok(#fd_dels3 >= 1, "fanout_dispatch match: issues event delivered to issues target")
-eq(fd_dels3[1].target_id, fd_target.target_id, "fanout_dispatch match: correct target_id")
+ok(fd_del3 ~= nil, "fanout_dispatch match: issues event delivered to issues target")
+eq(fd_del3.target_id, fd_target.target_id, "fanout_dispatch match: correct target_id")
 
 -- fanout_dispatch: deleted target receives no deliveries.
 target_delete(fd_target.target_id)
-local _, fd_dels4 = fanout_dispatch("gitea", "push", { ref = "refs/heads/main" })
-eq(#fd_dels4, 0, "fanout_dispatch deleted: deleted target receives no deliveries")
+local _, fd_del4 = fanout_dispatch("gitea", "push", { ref = "refs/heads/main" })
+ok(fd_del4 == nil, "fanout_dispatch deleted: deleted target receives no deliveries")
 
 -- ============================================================
 -- deliver_attempt (internal/deliver.lua)
@@ -3714,9 +3713,9 @@ local da_target = target_create({
 })
 ok(da_target ~= nil, "deliver_attempt setup: target created")
 
-local _, da_dels = fanout_dispatch("gitea", "push", { ref = "refs/heads/main" })
-ok(#da_dels >= 1, "deliver_attempt setup: at least one delivery created")
-local da_del_id = da_dels[1].delivery_id
+local _, da_del = fanout_dispatch("gitea", "push", { ref = "refs/heads/main" })
+ok(da_del ~= nil, "deliver_attempt setup: delivery created")
+local da_del_id = da_del.delivery_id
 
 -- deliver_attempt: unknown delivery_id returns error without touching the outbox.
 local da_err_ok, da_err_status, da_err_msg = deliver_attempt("00000000-0000-4000-8000-000000000000")
@@ -4221,12 +4220,12 @@ do
 end
 
 -- ============================================================
--- CONFUSIO_WEBHOOK_TARGETS env-var wiring
+-- CONFUSIO_WEBHOOK_TARGET env-var wiring
 -- ============================================================
 
 do
   -- The startup-load stub already exercised the happy path and verified
-  -- config.webhook_targets was populated.  Here we verify the target was
+  -- config.webhook_target was populated.  Here we verify the target was
   -- actually registered by inspecting the targets registry.
   --
   -- NOTE: target_create was called once during .init.lua startup for the
@@ -4239,26 +4238,23 @@ do
     events = { "push", "pull_request" },
     shape = "confusio",
   })
-  ok(type(wt_target) == "table", "CONFUSIO_WEBHOOK_TARGETS: target_create returns a table")
-  ok(
-    type(wt_target.target_id) == "string",
-    "CONFUSIO_WEBHOOK_TARGETS: created target has target_id"
-  )
+  ok(type(wt_target) == "table", "CONFUSIO_WEBHOOK_TARGET: target_create returns a table")
+  ok(type(wt_target.target_id) == "string", "CONFUSIO_WEBHOOK_TARGET: created target has target_id")
   eq(
     wt_target.url,
     "https://hook.example.com/wt-unit",
-    "CONFUSIO_WEBHOOK_TARGETS: created target has correct url"
+    "CONFUSIO_WEBHOOK_TARGET: created target has correct url"
   )
-  eq(wt_target.shape, "confusio", "CONFUSIO_WEBHOOK_TARGETS: created target has correct shape")
-  eq(wt_target.status, "active", "CONFUSIO_WEBHOOK_TARGETS: created target is active")
+  eq(wt_target.shape, "confusio", "CONFUSIO_WEBHOOK_TARGET: created target has correct shape")
+  eq(wt_target.status, "active", "CONFUSIO_WEBHOOK_TARGET: created target is active")
 
   -- Verify the target is retrievable.
   local wt_fetched = target_get(wt_target.target_id)
-  ok(wt_fetched ~= nil, "CONFUSIO_WEBHOOK_TARGETS: target_get finds the registered target")
+  ok(wt_fetched ~= nil, "CONFUSIO_WEBHOOK_TARGET: target_get finds the registered target")
   eq(
     wt_fetched.url,
     "https://hook.example.com/wt-unit",
-    "CONFUSIO_WEBHOOK_TARGETS: fetched target url matches"
+    "CONFUSIO_WEBHOOK_TARGET: fetched target url matches"
   )
 
   -- Verify that an entry with a missing url is silently skipped.
@@ -4272,13 +4268,9 @@ do
   }
   for _, bad in ipairs(bad_entries) do
     local is_valid = type(bad.url) == "string" and bad.url ~= ""
-    ok(not is_valid, "CONFUSIO_WEBHOOK_TARGETS: bad entry correctly identified as invalid")
+    ok(not is_valid, "CONFUSIO_WEBHOOK_TARGET: bad entry correctly identified as invalid")
   end
-  eq(
-    #target_list(),
-    before_count,
-    "CONFUSIO_WEBHOOK_TARGETS: bad entries did not grow the registry"
-  )
+  eq(#target_list(), before_count, "CONFUSIO_WEBHOOK_TARGET: bad entries did not grow the registry")
 end
 
 -- ============================================================
