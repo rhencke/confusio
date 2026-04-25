@@ -104,9 +104,9 @@ end
 -- Case 1: file not found → startup error.
 do
   local saved_arg = arg -- luacheck: globals arg
-  arg = { "testbackend", "webhook_secret_file_gitea=/tmp/no-such-file-fido-test-9x7z.txt" }
+  arg = { "testbackend", "webhook_secret_file_gitea=/tmp/no-such-file-fido-test-9x7z.txt" } -- luacheck: globals arg
   local ok1, err1 = pcall(_real_dofile, ".init.lua")
-  arg = saved_arg
+  arg = saved_arg -- luacheck: globals arg
   assert(not ok1, "read_secret_file: missing file should cause startup error")
   assert(
     type(err1) == "string" and err1:find("not found"),
@@ -141,9 +141,9 @@ do
   fh2:write("secret")
   fh2:close()
   os.execute("chmod 600 " .. tmpf2)
-  arg = { "testbackend", "webhook_secret_file_gitea=" .. tmpf2 }
+  arg = { "testbackend", "webhook_secret_file_gitea=" .. tmpf2 } -- luacheck: globals arg
   local ok2, err2 = pcall(_real_dofile, ".init.lua")
-  arg = saved_arg
+  arg = saved_arg -- luacheck: globals arg
   unix.stat = saved_stat
   unix.geteuid = saved_geteuid
   os.remove(tmpf2)
@@ -162,9 +162,9 @@ do
   fh3:write("secret")
   fh3:close()
   os.execute("chmod 644 " .. tmpf3)
-  arg = { "testbackend", "webhook_secret_file_gitea=" .. tmpf3 }
+  arg = { "testbackend", "webhook_secret_file_gitea=" .. tmpf3 } -- luacheck: globals arg
   local ok3, err3 = pcall(_real_dofile, ".init.lua")
-  arg = saved_arg
+  arg = saved_arg -- luacheck: globals arg
   os.remove(tmpf3)
   assert(not ok3, "read_secret_file: wrong permissions should cause startup error")
   assert(
