@@ -102,12 +102,14 @@ end
 --   webhook_target=URL: outbound delivery target
 --   webhook_target_events=push,pull_request: event filter
 --   webhook_target_shape=github: delivery shape
+--   webhook_target_secret=SECRET: HMAC signing secret for the outbound target
 arg = { -- luacheck: globals arg
   "testbackend",
   "webhook_secret_gitea=ws_coverage_test",
   "webhook_target=https://hook.example.com/wt-coverage",
   "webhook_target_events=push,pull_request",
   "webhook_target_shape=github",
+  "webhook_target_secret=wt-hmac-secret",
 }
 
 -- Load the module under test.
@@ -143,6 +145,11 @@ assert(
 assert(
   config.webhook_target.events[2] == "pull_request",
   "webhook_target_events CLI arg: events[2] should be pull_request"
+)
+assert(
+  config.webhook_target.secret == "wt-hmac-secret",
+  "webhook_target_secret CLI arg: secret mismatch: "
+    .. tostring((config.webhook_target or {}).secret)
 )
 
 -- Clear coverage-only state so later tests see a clean config.
