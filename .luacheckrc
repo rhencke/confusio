@@ -3,6 +3,8 @@ std = "lua54"
 max_line_length = 200
 
 globals = {
+  -- Redbean built-ins: POSIX syscall table (unix.stat, unix.geteuid, etc.)
+  "unix",
   -- Redbean built-ins: request inspection
   "GetMethod",
   "GetPath",

@@ -5,30 +5,63 @@ config = {
   backend = "",
   base_url = "",
   -- webhook_secrets: table mapping backend name → inbound signing secret.
-  -- Populated by webhook_secret_BACKEND=SECRET SCRIPTARGS.
+  -- Populated by webhook_secret_file_BACKEND=/path SCRIPTARGS.
   -- Absent entry (or empty string) → trust-the-network for that backend.
   webhook_secrets = {},
 }
+
+-- read_secret_file: reads a signing secret from a file after verifying that
+-- the file is owned by the current process's effective uid and has permissions
+-- exactly 0600 (owner read+write only — no group or other access).
+-- Trims trailing whitespace so `echo secret > file` works without surprises.
+-- Calls error() on any violation; startup fails loudly rather than silently
+-- falling through to trust-the-network mode with a bad or missing path.
+local function read_secret_file(path)
+  local st, stat_err = unix.stat(path) -- luacheck: globals unix
+  if not st then
+    error("webhook secret file not found: " .. path .. " (" .. tostring(stat_err) .. ")")
+  end
+  if st:uid() ~= unix.geteuid() then
+    error(string.format(
+      "webhook secret file %s must be owned by uid %d (got %d)",
+      path,
+      unix.geteuid(),
+      st:uid()
+    ))
+  end
+  local perm = st:mode() & 0x1FF -- lower 9 bits: rwxrwxrwx
+  if perm ~= 0x180 then -- 0x180 = 0600 octal: owner rw, no group/other
+    error(string.format(
+      "webhook secret file %s must have permissions 0600 (got %04o)",
+      path,
+      perm
+    ))
+  end
+  local f = assert(io.open(path, "r"))
+  local secret = f:read("*a")
+  f:close()
+  return (secret:gsub("%s+$", ""))
+end
 
 -- SCRIPTARGS (positional after --):
 --   First positional  = backend
 --   Second positional = base_url
 --
 -- Key=value pairs (any arg containing "=") configure webhook options:
---   webhook_secret_BACKEND=SECRET  — inbound signature secret for BACKEND
---   webhook_target=URL             — outbound delivery target URL
---   webhook_target_events=A,B,C   — comma-separated event filter (default: *)
---   webhook_target_shape=SHAPE    — delivery shape: "github" (default) or "confusio"
---   webhook_target_secret=SECRET  — HMAC signing secret for the outbound target
+--   webhook_secret_file_BACKEND=/path — path to 0600 file with inbound signing secret
+--   webhook_target=URL                — outbound delivery target URL
+--   webhook_target_events=A,B,C      — comma-separated event filter (default: *)
+--   webhook_target_shape=SHAPE       — delivery shape: "github" (default) or "confusio"
+--   webhook_target_secret_file=/path — path to 0600 file with outbound HMAC signing secret
 local positional_keys = { "backend", "base_url" }
 local pos_idx = 1
 for _, a in ipairs(arg or {}) do
   local kv_key, kv_val = a:match("^([^=]+)=(.*)$")
   if kv_key then
     -- Key=value pair: webhook config.
-    local wh_backend = kv_key:match("^webhook_secret_(.+)$")
+    local wh_backend = kv_key:match("^webhook_secret_file_(.+)$")
     if wh_backend then
-      config.webhook_secrets[wh_backend] = kv_val
+      config.webhook_secrets[wh_backend] = read_secret_file(kv_val)
     elseif kv_key == "webhook_target" then
       config.webhook_target = config.webhook_target or {}
       config.webhook_target.url = kv_val
@@ -42,9 +75,9 @@ for _, a in ipairs(arg or {}) do
     elseif kv_key == "webhook_target_shape" then
       config.webhook_target = config.webhook_target or {}
       config.webhook_target.shape = kv_val
-    elseif kv_key == "webhook_target_secret" then
+    elseif kv_key == "webhook_target_secret_file" then
       config.webhook_target = config.webhook_target or {}
-      config.webhook_target.secret = kv_val
+      config.webhook_target.secret = read_secret_file(kv_val)
     end
   elseif positional_keys[pos_idx] then
     config[positional_keys[pos_idx]] = a

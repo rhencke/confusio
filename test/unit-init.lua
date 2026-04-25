@@ -96,33 +96,130 @@ function dofile(path) -- luacheck: globals dofile
   return _real_dofile(path)
 end
 
+-- Exercise the read_secret_file error branches in .init.lua before the main
+-- init call.  Each case loads .init.lua in a pcall with a bad arg; the early
+-- error exits before any module loading, so the main test environment is
+-- unaffected by the repeated calls.  Uses bare assert() — ok/eq not yet loaded.
+
+-- Case 1: file not found → startup error.
+do
+  local saved_arg = arg -- luacheck: globals arg
+  arg = { "testbackend", "webhook_secret_file_gitea=/tmp/no-such-file-fido-test-9x7z.txt" }
+  local ok1, err1 = pcall(_real_dofile, ".init.lua")
+  arg = saved_arg
+  assert(not ok1, "read_secret_file: missing file should cause startup error")
+  assert(
+    type(err1) == "string" and err1:find("not found"),
+    "read_secret_file: missing file error should mention 'not found' (got: "
+      .. tostring(err1)
+      .. ")"
+  )
+end
+
+-- Case 2: file owned by wrong uid → startup error.  Mock unix.stat to return
+-- uid=0 (root) while unix.geteuid() returns 1000, then load with a real 0600 file.
+do
+  local saved_arg = arg
+  local saved_stat = unix.stat -- luacheck: globals unix
+  local saved_geteuid = unix.geteuid
+  unix.stat = function(_path)
+    return {
+      uid = function()
+        return 0
+      end,
+      mode = function()
+        return 0x8180
+      end,
+    },
+      nil
+  end
+  unix.geteuid = function()
+    return 1000
+  end
+  local tmpf2 = os.tmpname()
+  local fh2 = io.open(tmpf2, "w")
+  fh2:write("secret")
+  fh2:close()
+  os.execute("chmod 600 " .. tmpf2)
+  arg = { "testbackend", "webhook_secret_file_gitea=" .. tmpf2 }
+  local ok2, err2 = pcall(_real_dofile, ".init.lua")
+  arg = saved_arg
+  unix.stat = saved_stat
+  unix.geteuid = saved_geteuid
+  os.remove(tmpf2)
+  assert(not ok2, "read_secret_file: uid mismatch should cause startup error")
+  assert(
+    type(err2) == "string" and err2:find("uid"),
+    "read_secret_file: uid mismatch error should mention 'uid' (got: " .. tostring(err2) .. ")"
+  )
+end
+
+-- Case 3: file has wrong permissions (0644) → startup error.
+do
+  local saved_arg = arg
+  local tmpf3 = os.tmpname()
+  local fh3 = io.open(tmpf3, "w")
+  fh3:write("secret")
+  fh3:close()
+  os.execute("chmod 644 " .. tmpf3)
+  arg = { "testbackend", "webhook_secret_file_gitea=" .. tmpf3 }
+  local ok3, err3 = pcall(_real_dofile, ".init.lua")
+  arg = saved_arg
+  os.remove(tmpf3)
+  assert(not ok3, "read_secret_file: wrong permissions should cause startup error")
+  assert(
+    type(err3) == "string" and err3:find("0600"),
+    "read_secret_file: perm error should mention '0600' (got: " .. tostring(err3) .. ")"
+  )
+end
+
+-- Create temp secret files (0600) for the main init call.
+-- These exercise the success path of read_secret_file.
+local _ws_secret_file = os.tmpname()
+local _wt_secret_file = os.tmpname()
+do
+  local f_ws = io.open(_ws_secret_file, "w")
+  f_ws:write("ws_coverage_test")
+  f_ws:close()
+  os.execute("chmod 600 " .. _ws_secret_file)
+  local f_wt = io.open(_wt_secret_file, "w")
+  f_wt:write("wt-hmac-secret")
+  f_wt:close()
+  os.execute("chmod 600 " .. _wt_secret_file)
+end
+
 -- Provide SCRIPTARGS entries to exercise all CLI parsing paths in .init.lua:
 --   positional: backend name (backend file load is suppressed by the dofile stub)
---   webhook_secret_BACKEND=SECRET: inbound signing secret for a backend
+--   webhook_secret_file_BACKEND: path to 0600 file with inbound signing secret
 --   webhook_target=URL: outbound delivery target
 --   webhook_target_events=push,pull_request: event filter
 --   webhook_target_shape=github: delivery shape
---   webhook_target_secret=SECRET: HMAC signing secret for the outbound target
+--   webhook_target_secret_file: path to 0600 file with outbound HMAC signing secret
 arg = { -- luacheck: globals arg
   "testbackend",
-  "webhook_secret_gitea=ws_coverage_test",
+  "webhook_secret_file_gitea=" .. _ws_secret_file,
   "webhook_target=https://hook.example.com/wt-coverage",
   "webhook_target_events=push,pull_request",
   "webhook_target_shape=github",
-  "webhook_target_secret=wt-hmac-secret",
+  "webhook_target_secret_file=" .. _wt_secret_file,
 }
 
 -- Load the module under test.
 _real_dofile(".init.lua")
 
--- Verify the SCRIPTARGS webhook_secret_* arg populated config.webhook_secrets.
+-- Clean up temp secret files (secrets are now in config, files no longer needed).
+os.remove(_ws_secret_file)
+os.remove(_wt_secret_file)
+
+-- Verify the SCRIPTARGS webhook_secret_file_* arg populated config.webhook_secrets.
 assert(
   type(config.webhook_secrets) == "table", -- luacheck: globals config
-  "webhook_secret_gitea CLI arg: config.webhook_secrets should be a table after load"
+  "webhook_secret_file_gitea CLI arg: config.webhook_secrets should be a table after load"
 )
 assert(
   config.webhook_secrets.gitea == "ws_coverage_test",
-  "webhook_secret_gitea CLI arg: gitea secret mismatch: " .. tostring(config.webhook_secrets.gitea)
+  "webhook_secret_file_gitea CLI arg: gitea secret mismatch: "
+    .. tostring(config.webhook_secrets.gitea)
 )
 
 -- Verify the webhook_target CLI arg populated config.webhook_target.
@@ -148,7 +245,7 @@ assert(
 )
 assert(
   config.webhook_target.secret == "wt-hmac-secret",
-  "webhook_target_secret CLI arg: secret mismatch: "
+  "webhook_target_secret_file CLI arg: secret mismatch: "
     .. tostring((config.webhook_target or {}).secret)
 )
 
