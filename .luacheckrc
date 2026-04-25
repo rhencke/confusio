@@ -3,6 +3,8 @@ std = "lua54"
 max_line_length = 200
 
 globals = {
+  -- Redbean built-ins: POSIX syscall table (unix.stat, unix.geteuid, etc.)
+  "unix",
   -- Redbean built-ins: request inspection
   "GetMethod",
   "GetPath",
@@ -22,6 +24,10 @@ globals = {
   "EscapeParam",
   "GetCryptoHash",
   "GetRandomBytes",
+  -- Redbean built-ins: logging
+  "Log",
+  "kLogWarn",
+  "kLogVerbose",
   -- Redbean built-ins: routing
   "Route",
   "OnHttpRequest",
@@ -96,58 +102,15 @@ globals = {
   "make_uuid",
   "iso8601",
   "now_iso8601",
-  -- Outbox: internal/outbox.lua
-  "outbox_store_event",
-  "outbox_get_event",
-  "outbox_create_delivery",
-  "outbox_get_delivery",
-  "outbox_list_all_deliveries",
-  "outbox_list_deliveries_for_event",
-  "outbox_list_deliveries_for_target",
-  "outbox_update_delivery",
-  "outbox_abandon_deliveries_for_target",
-  "outbox_record_attempt",
-  "outbox_get_attempts",
-  "outbox_pending_retries",
-  "outbox_prune",
-  -- Pruner: internal/pruner.lua
-  "OUTBOX_MAX_AGE_SECS",
-  "maybe_prune_outbox",
-  -- Target registry: internal/targets.lua
-  "target_create",
-  "target_get",
-  "target_list",
-  "target_update",
-  "target_delete",
-  "target_pause",
-  "target_resume",
-  "target_get_secret",
-  -- Target admin API: internal/targets_api.lua
-  "make_targets_api",
-  -- Delivery inspection API: internal/deliveries_api.lua
-  "make_deliveries_api",
   -- Outbound delivery signing: internal/signing.lua
   "sign_github",
-  "sign_confusio",
+  "sign_for_backend",
   -- Fan-out dispatcher: internal/fanout.lua
   "fanout_body",
   "fanout_dispatch",
+  "fanout_register_target",
   -- Outbound HTTP delivery: internal/deliver.lua
-  "deliver_attempt",
-  -- Circuit breaker: internal/circuit_breaker.lua
-  "CB_FAILURE_THRESHOLD",
-  "CB_OPEN_SECS",
-  "CB_HALF_OPEN_MAX",
-  "cb_state",
-  "cb_record_success",
-  "cb_record_failure",
-  "cb_ok",
-  -- Retry scheduler: internal/retry.lua
-  "RETRY_BUDGET_HOURLY",
-  "RETRY_BUDGET_DAILY",
-  "next_retry_at",
-  "retry_budget_ok",
-  "maybe_retry_pending",
+  "deliver_fire",
   "get_client_mutation_id",
   "estimate_query_cost",
   -- GraphQL translators: internal/graphql_translators.lua

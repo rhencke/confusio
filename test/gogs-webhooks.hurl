@@ -4,7 +4,7 @@
 # handlers via dofile("backends/gitea.lua").  Tests mirror gitea-webhooks.hurl
 # but POST to /webhooks/gogs (which uses X-Gogs-Signature for auth and
 # X-Gitea-Event for the event type).
-# Trust-the-network mode (no CONFUSIO_WEBHOOK_SECRETS): signature headers omitted.
+# Trust-the-network mode (no webhook_secret_BACKEND CLI arg): signature headers omitted.
 
 # ── issues: known action → 200 ───────────────────────────────────────────────
 

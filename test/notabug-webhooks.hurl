@@ -3,7 +3,7 @@
 # NotABug is API-compatible with Gitea; it inherits the same four event-family
 # handlers via dofile("backends/gitea.lua").  Tests mirror gitea-webhooks.hurl
 # but POST to /webhooks/notabug.
-# Trust-the-network mode (no CONFUSIO_WEBHOOK_SECRETS): signature headers omitted.
+# Trust-the-network mode (no webhook_secret_BACKEND CLI arg): signature headers omitted.
 
 # ── issues: known action → 200 ───────────────────────────────────────────────
 

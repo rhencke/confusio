@@ -94,11 +94,16 @@ sh ./confusio.com -p 8080 -- gitea https://gitea.com
 
 ## Configuration system
 
-Config is supplied as positional SCRIPTARGS after `--`: first arg = backend, second arg = base_url.
+Config is supplied as SCRIPTARGS after `--`.  Positional args set the backend and base URL; key=value args configure webhook options.
 
 | Mechanism | Syntax |
 |-----------|--------|
 | SCRIPTARGS (positional) | `sh ./confusio.com -- <backend> [base_url]` |
+| SCRIPTARGS (inbound secret file) | `webhook_secret_file_BACKEND=/path` — path to 0600 file containing inbound signing secret |
+| SCRIPTARGS (outbound target) | `webhook_target=URL` — outbound delivery target URL |
+| SCRIPTARGS (target events) | `webhook_target_events=push,pull_request` — comma-separated filter (default: *) |
+| SCRIPTARGS (target shape) | `webhook_target_shape=confusio` — `github` (default) or `confusio` |
+| SCRIPTARGS (target secret file) | `webhook_target_secret_file=/path` — path to 0600 file containing outbound HMAC signing secret |
 | Defaults | hardcoded in `.init.lua` |
 
 ## GitHub API reference
@@ -289,9 +294,8 @@ db:close()
 - **`sqlite3` global is `nil`** — the module is not auto-loaded; always `require("lsqlite3")`.
 - **`sq.open(path)` returns `nil` on failure** (not an error), so check the result.
 - **`stmt:bind_values(...)` handles nil correctly** — a nil argument binds to SQL NULL.  `select("#", ...)` counts trailing nils in Lua 5.4, so the C layer sees the correct count.
-- **`INSERT OR REPLACE` is the idiom for upsert** — it deletes the existing row then inserts, so foreign-key dependents (e.g., attempts) are NOT cascade-deleted unless you delete them explicitly first.
+- **`INSERT OR REPLACE` is the idiom for upsert** — it deletes the existing row then inserts, so foreign-key dependents are NOT cascade-deleted unless you delete them explicitly first.
 - **`db:exec()` is fine for `BEGIN`/`COMMIT`** — no binding needed; use `_exec(sql, ...)` only for parametrised statements.
-- **Unit-test deterministic UUIDs can collide** — when `make_uuid()` is stubbed to return the same UUID every call, a second `INSERT` into a `PRIMARY KEY` column would fail.  The outbox uses `INSERT OR REPLACE` for events and deliveries, and explicitly deletes associated attempts before replacing a delivery row to avoid stale attempt rows accumulating.
 
 ### Redbean
 
@@ -652,42 +656,28 @@ here so they stay visible without reading all 16 docs:
 - **Outbound signing lives in `internal/signing.lua`** (`sign_github`, `sign_for_backend`).  `sign_github(secret, body)` returns `(sha256_value, sha1_value)`; `sign_for_backend(backend, secret, body)` returns a table of native signature headers for the given backend (empty table when no secret).
 - **Confusio inbound HMAC basestring is `"v1:<ts>:<body>"`** — the timestamp is baked into the signed material, not just the header.  This means a replay with a fresh timestamp produces a different digest and fails even before the window check.  The `confusio` case in `sign_for_backend` and inbound `verify_signature("confusio", ...)` are symmetric — they must stay in sync.
 - **Replay window is 300 seconds (±5 minutes)** enforced by `REPLAY_WINDOW_SECS` in `webhooks.lua`.  Only the confusio scheme has replay prevention; other schemes (HMAC or token) rely on TLS and network policy.
-- **`CONFUSIO_WEBHOOK_SECRETS` env var** — optional JSON object `{"backend":"secret",...}` that `.init.lua` reads at startup and stores as `config.webhook_secrets`.  Used by the test harness (`test/test-unit.sh` Phase 4) and single-backend deployments that prefer env-var config.  Absent key → empty string → trust-the-network for that backend.
-- **Phase 4 in `test/test-unit.sh`** computes HMAC test vectors at runtime with `openssl dgst` and passes them to `hurl` via `--variable` flags.  Never hard-code pre-computed HMACs in the test file — the confusio signature embeds `$(date +%s)` and would be stale by replay-window expiry if pre-computed.  The gitea/bitbucket/gitbucket vectors are stable (no timestamp), but computing all of them uniformly at runtime is simpler and safer.
+- **`webhook_secret_file_BACKEND=/path` SCRIPTARG** — path to a file containing the inbound signing secret for a specific backend.  The file must be owned by the current process's effective uid and have permissions exactly 0600; confusio errors at startup if these conditions are not met.  Absent key → trust-the-network for that backend.  Example: `sh ./confusio.com -- gitea webhook_secret_file_gitea=/run/secrets/gitea-webhook`.
+- **Phase 4 in `test/test-unit.sh`** computes HMAC test vectors at runtime with `openssl dgst` and passes them to `hurl` via `--variable` flags.  Never hard-code pre-computed HMACs in the test file — the confusio signature embeds `$(date +%s)` and would be stale by replay-window expiry if pre-computed.  The gitea/bitbucket/gitbucket vectors are stable (no timestamp), but computing all of them uniformly at runtime is simpler and safer.  Secrets are written to temp files with `chmod 600` and passed via `webhook_secret_file_BACKEND=/path` SCRIPTARGS.
 
 ### Outbound webhook dispatcher
 
-When a webhook event arrives from a forge backend, confusio can forward it to a single configured outbound target.  Events and delivery state are stored in a SQLite-backed outbox (optionally persistent across restarts).  There are no admin write endpoints — the target is configured at startup via environment variable and delivery records are read-only.
+When a webhook event arrives from a forge backend, confusio can forward it to a single configured outbound target.  Delivery is fire-and-record: the HTTP POST is attempted synchronously, the outcome is logged (status code or error), and confusio responds immediately.  There is no SQLite persistence, no retry scheduler, and no circuit breaker.
 
 **Modules:**
 
 | Module | Role |
 |--------|------|
-| `internal/targets.lua` | In-memory target registry (single target, configured at startup via env var) |
-| `internal/outbox.lua` | SQLite-backed outbox: event storage, delivery records, attempt history, 72-hour retention |
-| `internal/deliver.lua` | Outbound HTTP delivery with signing and attempt recording |
+| `internal/fanout.lua` | In-memory target registry; `fanout_register_target`, `fanout_dispatch`, `fanout_body` |
+| `internal/deliver.lua` | Outbound HTTP delivery: `deliver_fire(target, backend, event_type, payload)` |
 | `internal/signing.lua` | HMAC signing for outbound deliveries using the backend's native scheme |
-| `internal/retry.lua` | Retry scheduler with exponential backoff, jitter, and per-target budget |
-| `internal/circuit_breaker.lua` | Per-target circuit breaker (open/half-open/closed) |
-| `internal/pruner.lua` | Periodic outbox pruning; invoked from `make_dispatcher` on every request |
-| `internal/deliveries_api.lua` | Read-only HTTP API for delivery inspection; exports `make_deliveries_api(a)` |
-
-**Delivery inspection API** (`/webhooks/deliveries*`) — requires `Authorization` header:
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /webhooks/deliveries` | List all deliveries, newest first, max 100 (200) |
-| `GET /webhooks/deliveries/{delivery_id}` | Get a single delivery record (200) |
-| `GET /webhooks/deliveries/{delivery_id}/attempts` | Attempt history for a delivery (200) |
 
 **Configuration:**
-- **`CONFUSIO_WEBHOOK_TARGET` env var** — optional JSON object configuring the single outbound target at startup.  Must include at minimum `url`; `events` (array) and `shape` (`"github"`|`"confusio"`) are optional.  The target lives in the in-memory registry for the process lifetime (no persistence).
-- **`CONFUSIO_WEBHOOK_HMAC_SECRET_FILE` env var** — optional path to a file containing the outbound HMAC signing secret.  Signing uses the active backend's native webhook scheme (e.g. `X-Gitea-Signature` for Gitea, `X-Gitlab-Token` for GitLab).  Absent → deliveries are unsigned.
-- **`CONFUSIO_OUTBOX_DB` env var** — optional path for the outbox SQLite database (e.g. `/var/lib/confusio/outbox.db`).  Defaults to `":memory:"` when not set (transient: events and deliveries are lost on restart).  Set to a file path to persist deliveries across restarts.
-- **`CONFUSIO_WEBHOOK_SECRETS`** (existing) provides per-backend inbound signing secrets.
+- **`webhook_target=URL` SCRIPTARG** — URL of the single outbound target.  Optional; when absent, no deliveries are made.  Example: `sh ./confusio.com -- gitea webhook_target=https://hook.example.com`.
+- **`webhook_target_events=A,B`** — comma-separated event filter (default: `*` = all events).
+- **`webhook_target_shape=github|confusio`** — delivery body shape (default: `github`).
+- **`webhook_target_secret_file=/path`** — path to a 0600-permission file containing the HMAC signing secret for the outbound target.
+- **`webhook_secret_file_BACKEND=/path`** provides per-backend inbound signing secrets (see above).
 
-**Dispatch flow:** `dispatch.lua` calls `maybe_prune_outbox()` and `maybe_retry_pending()` on every request before routing.  After the webhook receiver validates an inbound event, `fanout.lua` stores it in the outbox, checks the single active target's event subscription, and creates a pending delivery if the event matches.  `deliver.lua` sends the HTTP POST with optional HMAC signing and records the outcome.  Failed deliveries are re-queued by `retry.lua` with exponential backoff; the circuit breaker in `circuit_breaker.lua` trips after repeated consecutive failures and holds the target open until a half-open probe succeeds.
-
-**Catalog and validate-claims:** the three delivery inspection endpoints are confusio-native and are exempted from the per-backend handler presence check in `scripts/validate-claims.lua` via the `CONFUSIO_NATIVE` table.  Their catalog entries use `defaults.webhook_receive_stub` as the default function (never reached in production) purely to satisfy `validate-tests` and `validate-csv`.
+**Dispatch flow:** After the webhook receiver validates an inbound event, `fanout_dispatch(backend, event_type, payload)` fires `deliver_fire` for each registered target whose event subscription matches.  `deliver_fire` makes one HTTP POST with optional HMAC signing and logs the outcome (HTTP status or error message) at `kLogWarn` on failure or `kLogVerbose` on success.  Returns `(ok, http_status_or_nil, error_or_nil)`.  The caller does not inspect the return values — the result is purely for log visibility.
 
 - **Outbound signing mirrors the active backend's inbound scheme.** The `sign_for_backend` function in `internal/signing.lua` maps backend names to their native signature headers using the same schemes documented in `verify_signature` in `internal/webhooks.lua`.  The two must stay in sync when new backends are added.

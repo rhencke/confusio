@@ -96,86 +96,163 @@ function dofile(path) -- luacheck: globals dofile
   return _real_dofile(path)
 end
 
--- Provide one SCRIPTARGS entry so the loop body executes.
--- The dofile stub above silently drops the backend file load.
-arg = { "testbackend" } -- luacheck: globals arg
+-- Exercise the read_secret_file error branches in .init.lua before the main
+-- init call.  Each case loads .init.lua in a pcall with a bad arg; the early
+-- error exits before any module loading, so the main test environment is
+-- unaffected by the repeated calls.  Uses bare assert() — ok/eq not yet loaded.
 
--- Stub os.getenv to return values for CONFUSIO_WEBHOOK_SECRETS,
--- CONFUSIO_WEBHOOK_TARGET, CONFUSIO_WEBHOOK_HMAC_SECRET_FILE, and
--- CONFUSIO_OUTBOX_DB so that all env-var loading blocks in .init.lua are
--- exercised by luacov.  Restore immediately after load and clear all config
--- fields so subsequent tests that rely on clean config are unaffected.
-local _real_getenv = os.getenv
-local _real_io_open = io.open
-os.getenv = function(k) -- luacheck: globals os
-  if k == "CONFUSIO_WEBHOOK_SECRETS" then
-    return '{"gitea":"ws_coverage_test"}'
-  end
-  if k == "CONFUSIO_WEBHOOK_TARGET" then
-    return '{"url":"https://hook.example.com/wt-coverage","events":["push"],"shape":"github"}'
-  end
-  if k == "CONFUSIO_WEBHOOK_HMAC_SECRET_FILE" then
-    return "/tmp/fido-test-hmac-secret"
-  end
-  if k == "CONFUSIO_OUTBOX_DB" then
-    return ":memory:"
-  end
-  return _real_getenv(k)
+-- Case 1: file not found → startup error.
+do
+  local saved_arg = arg -- luacheck: globals arg
+  arg = { "testbackend", "webhook_secret_file_gitea=/tmp/no-such-file-fido-test-9x7z.txt" } -- luacheck: globals arg
+  local ok1, err1 = pcall(_real_dofile, ".init.lua")
+  arg = saved_arg -- luacheck: globals arg
+  assert(not ok1, "read_secret_file: missing file should cause startup error")
+  assert(
+    type(err1) == "string" and err1:find("not found"),
+    "read_secret_file: missing file error should mention 'not found' (got: "
+      .. tostring(err1)
+      .. ")"
+  )
 end
-io.open = function(path, ...) -- luacheck: globals io
-  if path == "/tmp/fido-test-hmac-secret" then
+
+-- Case 2: file owned by wrong uid → startup error.  Mock unix.stat to return
+-- uid=0 (root) while unix.geteuid() returns 1000, then load with a real 0600 file.
+do
+  local saved_arg = arg
+  local saved_stat = unix.stat -- luacheck: globals unix
+  local saved_geteuid = unix.geteuid
+  unix.stat = function(_path)
     return {
-      read = function(_, _)
-        return "test-hmac-key\n"
+      uid = function()
+        return 0
       end,
-      close = function() end,
-    }
+      mode = function()
+        return 0x8180
+      end,
+    },
+      nil
   end
-  return _real_io_open(path, ...)
+  unix.geteuid = function()
+    return 1000
+  end
+  local tmpf2 = os.tmpname()
+  local fh2 = io.open(tmpf2, "w")
+  fh2:write("secret")
+  fh2:close()
+  os.execute("chmod 600 " .. tmpf2)
+  arg = { "testbackend", "webhook_secret_file_gitea=" .. tmpf2 } -- luacheck: globals arg
+  local ok2, err2 = pcall(_real_dofile, ".init.lua")
+  arg = saved_arg -- luacheck: globals arg
+  unix.stat = saved_stat
+  unix.geteuid = saved_geteuid
+  os.remove(tmpf2)
+  assert(not ok2, "read_secret_file: uid mismatch should cause startup error")
+  assert(
+    type(err2) == "string" and err2:find("uid"),
+    "read_secret_file: uid mismatch error should mention 'uid' (got: " .. tostring(err2) .. ")"
+  )
 end
+
+-- Case 3: file has wrong permissions (0644) → startup error.
+do
+  local saved_arg = arg
+  local tmpf3 = os.tmpname()
+  local fh3 = io.open(tmpf3, "w")
+  fh3:write("secret")
+  fh3:close()
+  os.execute("chmod 644 " .. tmpf3)
+  arg = { "testbackend", "webhook_secret_file_gitea=" .. tmpf3 } -- luacheck: globals arg
+  local ok3, err3 = pcall(_real_dofile, ".init.lua")
+  arg = saved_arg -- luacheck: globals arg
+  os.remove(tmpf3)
+  assert(not ok3, "read_secret_file: wrong permissions should cause startup error")
+  assert(
+    type(err3) == "string" and err3:find("0600"),
+    "read_secret_file: perm error should mention '0600' (got: " .. tostring(err3) .. ")"
+  )
+end
+
+-- Create temp secret files (0600) for the main init call.
+-- These exercise the success path of read_secret_file.
+local _ws_secret_file = os.tmpname()
+local _wt_secret_file = os.tmpname()
+do
+  local f_ws = io.open(_ws_secret_file, "w")
+  f_ws:write("ws_coverage_test")
+  f_ws:close()
+  os.execute("chmod 600 " .. _ws_secret_file)
+  local f_wt = io.open(_wt_secret_file, "w")
+  f_wt:write("wt-hmac-secret")
+  f_wt:close()
+  os.execute("chmod 600 " .. _wt_secret_file)
+end
+
+-- Provide SCRIPTARGS entries to exercise all CLI parsing paths in .init.lua:
+--   positional: backend name (backend file load is suppressed by the dofile stub)
+--   webhook_secret_file_BACKEND: path to 0600 file with inbound signing secret
+--   webhook_target=URL: outbound delivery target
+--   webhook_target_events=push,pull_request: event filter
+--   webhook_target_shape=github: delivery shape
+--   webhook_target_secret_file: path to 0600 file with outbound HMAC signing secret
+arg = { -- luacheck: globals arg
+  "testbackend",
+  "webhook_secret_file_gitea=" .. _ws_secret_file,
+  "webhook_target=https://hook.example.com/wt-coverage",
+  "webhook_target_events=push,pull_request",
+  "webhook_target_shape=github",
+  "webhook_target_secret_file=" .. _wt_secret_file,
+}
 
 -- Load the module under test.
 _real_dofile(".init.lua")
 
--- Verify the env-var block populated config.webhook_secrets.
+-- Clean up temp secret files (secrets are now in config, files no longer needed).
+os.remove(_ws_secret_file)
+os.remove(_wt_secret_file)
+
+-- Verify the SCRIPTARGS webhook_secret_file_* arg populated config.webhook_secrets.
 assert(
-  config.webhook_secrets ~= nil, -- luacheck: globals config
-  "CONFUSIO_WEBHOOK_SECRETS: config.webhook_secrets should be non-nil after load"
+  type(config.webhook_secrets) == "table", -- luacheck: globals config
+  "webhook_secret_file_gitea CLI arg: config.webhook_secrets should be a table after load"
 )
 assert(
   config.webhook_secrets.gitea == "ws_coverage_test",
-  "CONFUSIO_WEBHOOK_SECRETS: gitea secret mismatch: " .. tostring(config.webhook_secrets.gitea)
+  "webhook_secret_file_gitea CLI arg: gitea secret mismatch: "
+    .. tostring(config.webhook_secrets.gitea)
 )
 
--- Verify the env-var block populated config.webhook_target.
-assert(
-  config.webhook_target ~= nil,
-  "CONFUSIO_WEBHOOK_TARGET: config.webhook_target should be non-nil after load"
-)
+-- Verify the webhook_target CLI arg populated config.webhook_target.
 assert(
   type(config.webhook_target) == "table",
-  "CONFUSIO_WEBHOOK_TARGET: expected a table, got " .. type(config.webhook_target)
+  "webhook_target CLI arg: config.webhook_target should be a table after load"
 )
 assert(
   config.webhook_target.url == "https://hook.example.com/wt-coverage",
-  "CONFUSIO_WEBHOOK_TARGET: url mismatch: " .. tostring((config.webhook_target or {}).url)
+  "webhook_target CLI arg: url mismatch: " .. tostring((config.webhook_target or {}).url)
 )
-
--- Verify the env-var block populated config.hmac_secret.
 assert(
-  config.hmac_secret == "test-hmac-key",
-  "CONFUSIO_WEBHOOK_HMAC_SECRET_FILE: config.hmac_secret populated: "
-    .. tostring(config.hmac_secret)
+  type(config.webhook_target.events) == "table",
+  "webhook_target_events CLI arg: events should be a table after load"
+)
+assert(
+  config.webhook_target.events[1] == "push",
+  "webhook_target_events CLI arg: events[1] should be push"
+)
+assert(
+  config.webhook_target.events[2] == "pull_request",
+  "webhook_target_events CLI arg: events[2] should be pull_request"
+)
+assert(
+  config.webhook_target.secret == "wt-hmac-secret",
+  "webhook_target_secret_file CLI arg: secret mismatch: "
+    .. tostring((config.webhook_target or {}).secret)
 )
 
--- Restore os.getenv, io.open, and clear coverage-only state so later tests
--- see a clean config.  (config and app.config reference the same table.)
-os.getenv = _real_getenv -- luacheck: globals os
-io.open = _real_io_open -- luacheck: globals io
-config.webhook_secrets = nil
+-- Clear coverage-only state so later tests see a clean config.
+-- (config and app.config reference the same table.)
+config.webhook_secrets = {}
 config.webhook_target = nil
-config.hmac_secret = nil
-config.outbox_db = nil
 
 -- Restore dofile so later tests that call it work normally.
 dofile = _real_dofile -- luacheck: globals dofile
@@ -2977,1010 +3054,292 @@ local expected_prefix = iso8601(os.time()):sub(1, 16)
 eq(now_str:sub(1, 16), expected_prefix, "now_iso8601: within same minute as os.time()")
 
 -- ============================================================
--- outbox_store_event / outbox_get_event / outbox_create_delivery /
--- outbox_get_delivery / outbox_list_deliveries_for_event /
--- outbox_list_deliveries_for_target / outbox_update_delivery /
--- outbox_pending_retries / outbox_prune (internal/outbox.lua)
--- ============================================================
-
--- luacheck: globals outbox_store_event outbox_get_event outbox_create_delivery
--- luacheck: globals outbox_get_delivery outbox_list_deliveries_for_event
--- luacheck: globals outbox_list_deliveries_for_target outbox_update_delivery
--- luacheck: globals outbox_pending_retries outbox_prune
-
--- Note: the GetRandomBytes stub is deterministic, so make_uuid() always returns the
--- same UUID.  All tests operate on a single event/delivery at a time.  We use
--- outbox_get_event / outbox_get_delivery to retrieve the canonical record after
--- each create, and exercise update/prune sequentially in lifecycle order.
-
--- outbox_store_event: stores an event and returns a record.
-local ob_ev = outbox_store_event("gitea", "push", { ref = "refs/heads/main" })
-ok(ob_ev ~= nil, "outbox_store_event: returns non-nil")
-ok(ob_ev.event_id ~= nil, "outbox_store_event: event_id is set")
-eq(#ob_ev.event_id, 36, "outbox_store_event: event_id is 36 chars (UUID)")
-eq(ob_ev.backend, "gitea", "outbox_store_event: backend stored")
-eq(ob_ev.event_type, "push", "outbox_store_event: event_type stored")
-eq(ob_ev.payload.ref, "refs/heads/main", "outbox_store_event: payload stored")
-ok(ob_ev.received_at ~= nil, "outbox_store_event: received_at is set")
-eq(#ob_ev.received_at, 20, "outbox_store_event: received_at is 20-char ISO 8601")
-
-local ob_ev_id = ob_ev.event_id
-
--- outbox_get_event: retrieves stored event by id.
-local ob_got_ev = outbox_get_event(ob_ev_id)
-ok(ob_got_ev ~= nil, "outbox_get_event: found stored event")
-eq(ob_got_ev.event_id, ob_ev_id, "outbox_get_event: event_id matches")
-eq(ob_got_ev.event_type, "push", "outbox_get_event: event_type matches")
-
--- outbox_get_event: returns nil for unknown id.
-ok(
-  outbox_get_event("00000000-0000-4000-8000-000000000000") == nil,
-  "outbox_get_event: nil for unknown id"
-)
-
--- outbox_create_delivery: creates a delivery record for (event, target).
-local ob_tgt_id = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
-local ob_del = outbox_create_delivery(ob_ev_id, ob_tgt_id)
-ok(ob_del ~= nil, "outbox_create_delivery: returns non-nil")
-ok(ob_del.delivery_id ~= nil, "outbox_create_delivery: delivery_id is set")
-eq(#ob_del.delivery_id, 36, "outbox_create_delivery: delivery_id is UUID")
-eq(ob_del.event_id, ob_ev_id, "outbox_create_delivery: event_id stored")
-eq(ob_del.target_id, ob_tgt_id, "outbox_create_delivery: target_id stored")
-eq(ob_del.status, "pending", "outbox_create_delivery: initial status is pending")
-eq(ob_del.attempt_count, 0, "outbox_create_delivery: attempt_count starts at 0")
-ok(ob_del.next_attempt_at == nil, "outbox_create_delivery: next_attempt_at starts nil")
-ok(ob_del.last_http_status == nil, "outbox_create_delivery: last_http_status starts nil")
-ok(ob_del.last_error == nil, "outbox_create_delivery: last_error starts nil")
-ok(ob_del.created_at ~= nil, "outbox_create_delivery: created_at is set")
-ok(ob_del.updated_at ~= nil, "outbox_create_delivery: updated_at is set")
-
-local ob_del_id = ob_del.delivery_id
-
--- outbox_get_delivery: retrieves a delivery by id.
-local ob_got_del = outbox_get_delivery(ob_del_id)
-ok(ob_got_del ~= nil, "outbox_get_delivery: found stored delivery")
-eq(ob_got_del.delivery_id, ob_del_id, "outbox_get_delivery: delivery_id matches")
-
--- outbox_get_delivery: returns nil for unknown id.
-ok(
-  outbox_get_delivery("00000000-0000-4000-8000-000000000000") == nil,
-  "outbox_get_delivery: nil for unknown id"
-)
-
--- outbox_list_deliveries_for_event: returns deliveries for the event.
-local ob_evdels = outbox_list_deliveries_for_event(ob_ev_id)
-ok(#ob_evdels >= 1, "outbox_list_deliveries_for_event: at least 1 delivery for event")
-eq(ob_evdels[1].event_id, ob_ev_id, "outbox_list_deliveries_for_event: delivery event_id matches")
-
--- outbox_list_deliveries_for_event: empty for unknown event.
-local ob_evdels_empty = outbox_list_deliveries_for_event("00000000-0000-4000-8000-000000000000")
-eq(#ob_evdels_empty, 0, "outbox_list_deliveries_for_event: empty for unknown event_id")
-
--- outbox_list_deliveries_for_target: returns deliveries for target.
-local ob_tgtdels = outbox_list_deliveries_for_target(ob_tgt_id)
-ok(#ob_tgtdels >= 1, "outbox_list_deliveries_for_target: at least 1 delivery for target")
-eq(
-  ob_tgtdels[1].target_id,
-  ob_tgt_id,
-  "outbox_list_deliveries_for_target: delivery target_id matches"
-)
-
--- outbox_list_deliveries_for_target: empty for unknown target.
-local ob_tgtdels_empty = outbox_list_deliveries_for_target("00000000-0000-4000-8000-000000000000")
-eq(#ob_tgtdels_empty, 0, "outbox_list_deliveries_for_target: empty for unknown target_id")
-
--- outbox_update_delivery: updates allowed fields and bumps updated_at.
-local ob_upd = outbox_update_delivery(ob_del_id, {
-  status = "retrying",
-  attempt_count = 1,
-  next_attempt_at = "2000-01-01T00:00:00Z", -- past timestamp for pending_retries test below
-  last_http_status = 503,
-  last_error = "Service Unavailable",
-})
-ok(ob_upd ~= nil, "outbox_update_delivery: returns non-nil")
-eq(ob_upd.status, "retrying", "outbox_update_delivery: status updated")
-eq(ob_upd.attempt_count, 1, "outbox_update_delivery: attempt_count updated")
-eq(
-  ob_upd.next_attempt_at,
-  "2000-01-01T00:00:00Z",
-  "outbox_update_delivery: next_attempt_at updated"
-)
-eq(ob_upd.last_http_status, 503, "outbox_update_delivery: last_http_status updated")
-eq(ob_upd.last_error, "Service Unavailable", "outbox_update_delivery: last_error updated")
-ok(ob_upd.updated_at ~= nil, "outbox_update_delivery: updated_at is set")
-
--- outbox_update_delivery: partial update (only status).
-local ob_partial = outbox_update_delivery(ob_del_id, { status = "retrying" })
-ok(ob_partial ~= nil, "outbox_update_delivery: partial update returns non-nil")
-eq(ob_partial.status, "retrying", "outbox_update_delivery: partial status preserved")
-eq(
-  ob_partial.attempt_count,
-  1,
-  "outbox_update_delivery: attempt_count unchanged after partial update"
-)
-
--- outbox_update_delivery: returns nil for unknown delivery_id.
-local ob_upd_miss =
-  outbox_update_delivery("00000000-0000-4000-8000-000000000000", { status = "failed" })
-ok(ob_upd_miss == nil, "outbox_update_delivery: nil for unknown id")
-
--- outbox_pending_retries: delivery with status=retrying and past next_attempt_at is returned.
--- (ob_del is currently retrying with next_attempt_at in the past.)
-local ob_retries = outbox_pending_retries()
-local ob_found_retry = false
-for _, d in ipairs(ob_retries) do
-  if d.delivery_id == ob_del_id then
-    ob_found_retry = true
-  end
-end
-ok(ob_found_retry, "outbox_pending_retries: delivery with past next_attempt_at included")
-
--- outbox_pending_retries: delivery with future next_attempt_at is not returned.
-outbox_update_delivery(ob_del_id, { next_attempt_at = "2099-01-01T00:00:00Z" })
-local ob_retries2 = outbox_pending_retries()
-local ob_found_future = false
-for _, d in ipairs(ob_retries2) do
-  if d.delivery_id == ob_del_id then
-    ob_found_future = true
-  end
-end
-ok(not ob_found_future, "outbox_pending_retries: delivery with future next_attempt_at excluded")
-
--- outbox_pending_retries: delivery with status=pending is not returned.
-outbox_update_delivery(ob_del_id, { status = "pending", next_attempt_at = "2000-01-01T00:00:00Z" })
-local ob_retries3 = outbox_pending_retries()
-local ob_found_pending = false
-for _, d in ipairs(ob_retries3) do
-  if d.delivery_id == ob_del_id then
-    ob_found_pending = true
-  end
-end
-ok(not ob_found_pending, "outbox_pending_retries: delivery with status=pending not included")
-
--- outbox_prune: removes events (and their deliveries) older than max_age_seconds.
--- Use max_age_seconds=-1 so the cutoff is 1 second in the future; all events
--- received "now" have received_at strictly less than that cutoff and are pruned.
-outbox_prune(-1)
-ok(outbox_get_event(ob_ev_id) == nil, "outbox_prune: event removed when cutoff is future")
-ok(outbox_get_delivery(ob_del_id) == nil, "outbox_prune: delivery removed with its event")
-
--- outbox_prune: fresh events survive a large max_age prune.
-local ob_ev2 = outbox_store_event("gitlab", "tag_push", { ref = "refs/tags/v1.0" })
-outbox_prune(3600)
-ok(
-  outbox_get_event(ob_ev2.event_id) ~= nil,
-  "outbox_prune: fresh event survives prune with large max_age"
-)
-
--- ============================================================
--- target_create / target_get / target_list / target_update /
--- target_delete (internal/targets.lua)
--- ============================================================
-
--- luacheck: globals target_create target_get target_list target_update target_delete
-
--- Note: the GetRandomBytes stub is deterministic, so make_uuid() always returns the
--- same UUID.  All tests therefore operate on a single target_id (the one assigned
--- by target_create), exercising create → get → update → delete lifecycle in order.
-
--- target_create: basic creation with all fields.
-local ta = target_create({
-  url = "https://example.com/hook",
-  events = { "push" },
-  shape = "confusio",
-})
-ok(ta ~= nil, "target_create: returns non-nil")
-ok(ta.target_id ~= nil, "target_create: target_id is set")
-eq(#ta.target_id, 36, "target_create: target_id is 36 chars (UUID)")
-eq(ta.url, "https://example.com/hook", "target_create: url is stored")
-eq(ta.status, "active", "target_create: default status is active")
-eq(ta.shape, "confusio", "target_create: shape is set")
-eq(ta.events[1], "push", "target_create: events stored")
-ok(ta.created_at ~= nil, "target_create: created_at is set")
-ok(ta.updated_at ~= nil, "target_create: updated_at is set")
-
--- target_create: defaults for events and shape when omitted (re-creates same id; overwrites).
-local tb_events_check = target_create({ url = "https://b.example.com/hook" })
-eq(tb_events_check.events[1], "*", 'target_create: events defaults to ["*"]')
-eq(tb_events_check.shape, "github", "target_create: shape defaults to github")
-
--- Create a known target for the lifecycle tests.
-local ts = target_create({ url = "https://secret.example.com/hook" })
-local ts_id = ts.target_id
-
--- target_get: returns public record for existing active target.
-local g1 = target_get(ts_id)
-ok(g1 ~= nil, "target_get: found active target")
-eq(g1.target_id, ts_id, "target_get: target_id matches")
-eq(g1.url, "https://secret.example.com/hook", "target_get: url matches")
-
--- target_get: returns nil for unknown id.
-ok(target_get("00000000-0000-4000-8000-000000000000") == nil, "target_get: nil for unknown id")
-
--- target_list: returns at least the targets we created (excludes deleted by default).
-local list0 = target_list()
-ok(#list0 >= 1, "target_list: at least 1 active target")
-ok(list0[1].secret == nil, "target_list: no secret in listed records")
-
--- Verify the ts target is present in the list.
-local found_ts = false
-for _, entry in ipairs(list0) do
-  if entry.target_id == ts_id then
-    found_ts = true
-  end
-end
-ok(found_ts, "target_list: created target appears in list")
-
--- target_list: filter by status=active.
-local list_active = target_list({ status = "active" })
-ok(#list_active >= 1, "target_list(active): returns active targets")
-
--- target_update: update url and shape.
-local upd1 = target_update(ts_id, { url = "https://new.example.com/hook", shape = "github" })
-ok(upd1 ~= nil, "target_update: returns non-nil for valid update")
-eq(upd1.url, "https://new.example.com/hook", "target_update: url is updated")
-eq(upd1.shape, "github", "target_update: shape is updated")
-
--- target_update: update status to paused.
-local upd2 = target_update(ts_id, { status = "paused" })
-ok(upd2 ~= nil, "target_update(paused): returns non-nil")
-eq(upd2.status, "paused", "target_update(paused): status is paused")
-
--- target_update: restore to active.
-target_update(ts_id, { status = "active" })
-
--- target_update: status "deleted" is ignored (must use target_delete).
-local before_status = target_get(ts_id).status
-target_update(ts_id, { status = "deleted" })
-eq(target_get(ts_id).status, before_status, "target_update: status=deleted is ignored")
-
--- target_update: returns nil for unknown id.
-local upd_miss = target_update("00000000-0000-4000-8000-000000000000", { url = "https://x.com/" })
-ok(upd_miss == nil, "target_update: nil for unknown id")
-
--- target_delete: soft-deletes a target.
-local del1 = target_delete(ts_id)
-ok(del1 == true, "target_delete: returns true on success")
-
--- target_get returns nil for deleted target.
-ok(target_get(ts_id) == nil, "target_get: nil for deleted target")
-
--- target_list excludes deleted targets by default.
-local list_after_del = target_list()
-local found_deleted = false
-for _, entry in ipairs(list_after_del) do
-  if entry.target_id == ts_id then
-    found_deleted = true
-  end
-end
-ok(not found_deleted, "target_list: deleted target excluded from default list")
-
--- target_list with status=deleted includes deleted targets.
-local list_deleted = target_list({ status = "deleted" })
-local found_in_deleted = false
-for _, entry in ipairs(list_deleted) do
-  if entry.target_id == ts_id then
-    found_in_deleted = true
-  end
-end
-ok(found_in_deleted, "target_list(deleted): includes deleted target")
-
--- target_delete: returns nil when already deleted.
-local del2 = target_delete(ts_id)
-ok(del2 == nil, "target_delete: nil when already deleted")
-
--- target_delete: returns nil for unknown id.
-local del_miss = target_delete("00000000-0000-4000-8000-000000000000")
-ok(del_miss == nil, "target_delete: nil for unknown id")
-
--- target_update: returns nil for a deleted target.
-local upd_del = target_update(ts_id, { url = "https://x.com/" })
-ok(upd_del == nil, "target_update: nil for deleted target")
-
--- ============================================================
--- fanout_body / fanout_dispatch (internal/fanout.lua)
--- ============================================================
-
--- luacheck: globals fanout_body fanout_dispatch
-
--- fanout_body: github shape — re-encodes payload at root level.
-local fb_github = fanout_body("gitea", "push", { ref = "refs/heads/main" }, "github")
-ok(type(fb_github) == "string", "fanout_body github: returns string")
-local fb_github_dec = DecodeJson(fb_github)
-ok(fb_github_dec ~= nil, "fanout_body github: valid JSON")
-eq(fb_github_dec.ref, "refs/heads/main", "fanout_body github: payload field at root")
-ok(fb_github_dec.source == nil, "fanout_body github: no source wrapper field")
-ok(fb_github_dec.event == nil, "fanout_body github: no event wrapper field")
-
--- fanout_body: confusio shape — wraps in {source, event, payload} envelope.
-local fb_confusio = fanout_body("gitea", "push", { ref = "refs/heads/main" }, "confusio")
-ok(type(fb_confusio) == "string", "fanout_body confusio: returns string")
-local fb_confusio_dec = DecodeJson(fb_confusio)
-ok(fb_confusio_dec ~= nil, "fanout_body confusio: valid JSON")
-eq(fb_confusio_dec.source, "gitea", "fanout_body confusio: source field")
-eq(fb_confusio_dec.event, "push", "fanout_body confusio: event field")
-ok(fb_confusio_dec.payload ~= nil, "fanout_body confusio: payload field present")
-eq(
-  fb_confusio_dec.payload.ref,
-  "refs/heads/main",
-  "fanout_body confusio: payload nested under payload key"
-)
-
--- fanout_body: unknown shape falls back to github behaviour.
-local fb_unknown = fanout_body("gitea", "push", { ref = "refs/heads/main" }, "unknown")
-local fb_unknown_dec = DecodeJson(fb_unknown)
-ok(fb_unknown_dec ~= nil, "fanout_body unknown shape: valid JSON")
-eq(fb_unknown_dec.ref, "refs/heads/main", "fanout_body unknown shape: falls back to github")
-
--- fanout_dispatch: set up a target with wildcard subscription.
--- Note: the GetRandomBytes stub is deterministic, so make_uuid() always returns the
--- same UUID.  Previous test sections may have left multiple copies of that UUID
--- in the target _order list.  target_list() returns one copy per entry in _order,
--- which can be > 1.  All assertions use >= 1 for counts.
-local fd_target = target_create({ url = "https://fd-test.example.com/hook", events = { "*" } })
-ok(fd_target ~= nil, "fanout_dispatch setup: target created")
-
-local fd_ev, fd_del = fanout_dispatch("gitea", "push", { ref = "refs/heads/main" })
-ok(fd_ev ~= nil, "fanout_dispatch: returns event record")
-ok(fd_ev.event_id ~= nil, "fanout_dispatch: event_id is set")
-eq(fd_ev.backend, "gitea", "fanout_dispatch: event backend stored")
-eq(fd_ev.event_type, "push", "fanout_dispatch: event type stored")
-ok(fd_del ~= nil, "fanout_dispatch: returns delivery record for wildcard target")
-eq(fd_del.event_id, fd_ev.event_id, "fanout_dispatch: delivery event_id matches event")
-eq(fd_del.target_id, fd_target.target_id, "fanout_dispatch: delivery target_id matches target")
-eq(fd_del.status, "pending", "fanout_dispatch: delivery status is pending")
-
--- fanout_dispatch: event type filtering — update target to "issues" only.
-target_update(fd_target.target_id, { events = { "issues" } })
-
-local fd_ev2, fd_del2 = fanout_dispatch("gitea", "push", { ref = "refs/heads/main" })
-ok(fd_ev2 ~= nil, "fanout_dispatch filtered: event stored even with no matching targets")
-ok(fd_del2 == nil, "fanout_dispatch filtered: push not delivered to issues-only target")
-
--- fanout_dispatch: matching event IS delivered to filtered target.
-local fd_ev3, fd_del3 = fanout_dispatch("gitea", "issues", { action = "opened" })
-ok(fd_ev3 ~= nil, "fanout_dispatch match: event stored")
-ok(fd_del3 ~= nil, "fanout_dispatch match: issues event delivered to issues target")
-eq(fd_del3.target_id, fd_target.target_id, "fanout_dispatch match: correct target_id")
-
--- fanout_dispatch: deleted target receives no deliveries.
-target_delete(fd_target.target_id)
-local _, fd_del4 = fanout_dispatch("gitea", "push", { ref = "refs/heads/main" })
-ok(fd_del4 == nil, "fanout_dispatch deleted: deleted target receives no deliveries")
-
--- ============================================================
--- deliver_attempt (internal/deliver.lua)
--- ============================================================
-
--- luacheck: globals deliver_attempt
-
--- Setup: create a target and use fanout_dispatch to get a delivery record.
--- (The fanout section left fd_target deleted; recreate it.)
-local da_target = target_create({
-  url = "https://da-test.example.com/hook",
-  events = { "*" },
-})
-ok(da_target ~= nil, "deliver_attempt setup: target created")
-
--- Set config.hmac_secret so signature headers are generated for assertion tests.
-config.hmac_secret = "test-secret"
-
-local _, da_del = fanout_dispatch("gitea", "push", { ref = "refs/heads/main" })
-ok(da_del ~= nil, "deliver_attempt setup: delivery created")
-local da_del_id = da_del.delivery_id
-
--- deliver_attempt: unknown delivery_id returns error without touching the outbox.
-local da_err_ok, da_err_status, da_err_msg = deliver_attempt("00000000-0000-4000-8000-000000000000")
-ok(da_err_ok == false, "deliver_attempt unknown id: ok is false")
-ok(da_err_status == nil, "deliver_attempt unknown id: http_status is nil")
-ok(da_err_msg ~= nil, "deliver_attempt unknown id: error message set")
-
--- Mock Fetch to intercept outbound HTTP calls.  We capture the last call's
--- url and opts so tests can verify headers are set correctly.
-local _da_last_url = nil
-local _da_last_opts = nil
-local _da_mock_status = 200
-local _da_mock_error = nil
-local _real_Fetch = Fetch
-Fetch = function(url, opts) -- luacheck: globals Fetch
-  _da_last_url = url
-  _da_last_opts = opts
-  if _da_mock_error ~= nil then
-    error(_da_mock_error)
-  end
-  return _da_mock_status, {}, "{}"
-end
-
--- deliver_attempt: 200 → status "delivered".
-_da_mock_status = 200
-local da_ok1, da_s1, da_e1 = deliver_attempt(da_del_id)
-ok(da_ok1 == true, "deliver_attempt 200: ok is true")
-eq(da_s1, 200, "deliver_attempt 200: http_status is 200")
-ok(da_e1 == nil, "deliver_attempt 200: no error")
-local da_del1 = outbox_get_delivery(da_del_id)
-eq(da_del1.status, "delivered", "deliver_attempt 200: delivery status is delivered")
-eq(da_del1.last_http_status, 200, "deliver_attempt 200: last_http_status recorded")
-eq(da_del1.attempt_count, 1, "deliver_attempt 200: attempt_count incremented to 1")
-
--- Verify the request was POSTed to the correct URL with expected headers.
-eq(_da_last_url, "https://da-test.example.com/hook", "deliver_attempt: posts to target url")
-ok(_da_last_opts ~= nil, "deliver_attempt: opts passed to Fetch")
-eq(_da_last_opts.method, "POST", "deliver_attempt: method is POST")
-ok(_da_last_opts.body ~= nil, "deliver_attempt: body is set")
-ok(_da_last_opts.headers ~= nil, "deliver_attempt: headers table present")
-eq(
-  _da_last_opts.headers["Content-Type"],
-  "application/json",
-  "deliver_attempt: Content-Type is application/json"
-)
-eq(
-  _da_last_opts.headers["X-GitHub-Event"],
-  "push",
-  "deliver_attempt github shape: X-GitHub-Event header set"
-)
-eq(
-  _da_last_opts.headers["X-GitHub-Delivery"],
-  da_del_id,
-  "deliver_attempt github shape: X-GitHub-Delivery is delivery_id"
-)
--- config.hmac_secret is set so signature header should be present.
--- Backend is "gitea" so sign_for_backend returns X-Gitea-Signature.
-ok(
-  _da_last_opts.headers["X-Gitea-Signature"] ~= nil,
-  "deliver_attempt gitea backend: X-Gitea-Signature present"
-)
-
--- deliver_attempt: 503 → status "retrying" with next_attempt_at set.
-_da_mock_status = 503
-local da_ok2, da_s2, da_e2 = deliver_attempt(da_del_id)
-ok(da_ok2 == false, "deliver_attempt 503: ok is false")
-eq(da_s2, 503, "deliver_attempt 503: http_status is 503")
-ok(da_e2 ~= nil, "deliver_attempt 503: error message set")
-local da_del2 = outbox_get_delivery(da_del_id)
-eq(da_del2.status, "retrying", "deliver_attempt 503: status is retrying")
-eq(da_del2.last_http_status, 503, "deliver_attempt 503: last_http_status is 503")
-eq(da_del2.attempt_count, 2, "deliver_attempt 503: attempt_count is 2")
-ok(da_del2.next_attempt_at ~= nil, "deliver_attempt 503: next_attempt_at is set")
-
--- deliver_attempt: 429 (Too Many Requests) → status "retrying".
-_da_mock_status = 429
-local da_ok3, da_s3, _ = deliver_attempt(da_del_id)
-ok(da_ok3 == false, "deliver_attempt 429: ok is false")
-eq(da_s3, 429, "deliver_attempt 429: http_status is 429")
-local da_del3 = outbox_get_delivery(da_del_id)
-eq(da_del3.status, "retrying", "deliver_attempt 429: status is retrying")
-
--- deliver_attempt: 422 (client error) → status "failed".
-_da_mock_status = 422
-local da_ok4, da_s4, da_e4 = deliver_attempt(da_del_id)
-ok(da_ok4 == false, "deliver_attempt 422: ok is false")
-eq(da_s4, 422, "deliver_attempt 422: http_status is 422")
-ok(da_e4 ~= nil, "deliver_attempt 422: error message set")
-local da_del4 = outbox_get_delivery(da_del_id)
-eq(da_del4.status, "failed", "deliver_attempt 422: status is failed")
-eq(da_del4.last_http_status, 422, "deliver_attempt 422: last_http_status is 422")
-
--- deliver_attempt: network error → status "retrying", http_status nil.
-_da_mock_status = 200
-_da_mock_error = "connection refused"
-local da_ok5, da_s5, da_e5 = deliver_attempt(da_del_id)
-ok(da_ok5 == false, "deliver_attempt network error: ok is false")
-ok(da_s5 == nil, "deliver_attempt network error: http_status is nil")
-ok(da_e5 ~= nil, "deliver_attempt network error: error message set")
-local da_del5 = outbox_get_delivery(da_del_id)
-eq(da_del5.status, "retrying", "deliver_attempt network error: status is retrying")
--- outbox_update_delivery uses partial-update semantics: passing last_http_status=nil
--- is a no-op, so the previous value is preserved.  Only check that status is correct.
-ok(da_del5.last_error ~= nil, "deliver_attempt network error: last_error records the message")
-_da_mock_error = nil
-
--- deliver_attempt: confusio shape target uses Confusio event headers.
--- Signing is still backend-native (gitea → X-Gitea-Signature).
-target_update(da_target.target_id, { shape = "confusio" })
-_da_mock_status = 200
-local da_ok6, _, _ = deliver_attempt(da_del_id)
-ok(da_ok6 == true, "deliver_attempt confusio shape: ok is true")
-ok(
-  _da_last_opts.headers["X-Confusio-Event"] ~= nil,
-  "deliver_attempt confusio shape: X-Confusio-Event present"
-)
-eq(
-  _da_last_opts.headers["X-Confusio-Event"],
-  "push",
-  "deliver_attempt confusio shape: X-Confusio-Event is push"
-)
-eq(
-  _da_last_opts.headers["X-Confusio-Source"],
-  "gitea",
-  "deliver_attempt confusio shape: X-Confusio-Source is backend"
-)
-ok(
-  _da_last_opts.headers["X-Gitea-Signature"] ~= nil,
-  "deliver_attempt confusio shape: X-Gitea-Signature present (backend-native signing)"
-)
-
--- Restore Fetch.
-Fetch = _real_Fetch
-
--- Clean up config.hmac_secret.
-config.hmac_secret = nil
-
--- deliver_attempt: deleted target → "failed" without making any network call.
-target_delete(da_target.target_id)
--- Reset delivery to pending so we can test the deleted-target path.
-outbox_update_delivery(da_del_id, { status = "pending", attempt_count = 0 })
-local da_ok7, da_s7, da_e7 = deliver_attempt(da_del_id)
-ok(da_ok7 == false, "deliver_attempt deleted target: ok is false")
-ok(da_s7 == nil, "deliver_attempt deleted target: http_status is nil")
-ok(da_e7 ~= nil, "deliver_attempt deleted target: error message set")
-local da_del7 = outbox_get_delivery(da_del_id)
-eq(da_del7.status, "failed", "deliver_attempt deleted target: status is failed")
-
--- Verify attempt history was recorded across all the deliver_attempt tests above.
--- da_del_id has been through 7 attempts (200, 503, 429, 422, network-error, confusio-200,
--- deleted-target) even though attempt_count was reset to 0 before the last one.
--- luacheck: globals outbox_get_attempts outbox_record_attempt
-do
-  local da_attempts = outbox_get_attempts(da_del_id)
-  ok(type(da_attempts) == "table", "deliver_attempt: attempts array exists on delivery")
-  ok(#da_attempts >= 7, "deliver_attempt: all 7 attempts recorded in history")
-  -- First attempt: 200 → delivered
-  ok(da_attempts[1] ~= nil, "deliver_attempt: attempt[1] recorded")
-  eq(da_attempts[1].attempt_number, 1, "deliver_attempt: attempt[1].attempt_number is 1")
-  eq(da_attempts[1].outcome, "delivered", "deliver_attempt: attempt[1] outcome is delivered")
-  eq(da_attempts[1].http_status, 200, "deliver_attempt: attempt[1] http_status is 200")
-  ok(da_attempts[1].error == nil, "deliver_attempt: attempt[1] has no error")
-  ok(da_attempts[1].attempted_at ~= nil, "deliver_attempt: attempt[1] has attempted_at")
-  -- Second attempt: 503 → retrying
-  eq(da_attempts[2].outcome, "retrying", "deliver_attempt: attempt[2] outcome is retrying")
-  eq(da_attempts[2].http_status, 503, "deliver_attempt: attempt[2] http_status is 503")
-  -- Fourth attempt: 422 → failed
-  eq(da_attempts[4].outcome, "failed", "deliver_attempt: attempt[4] outcome is failed")
-  eq(da_attempts[4].http_status, 422, "deliver_attempt: attempt[4] http_status is 422")
-  -- Fifth attempt: network error → retrying, no http_status
-  eq(da_attempts[5].outcome, "retrying", "deliver_attempt: attempt[5] outcome is retrying")
-  ok(da_attempts[5].http_status == nil, "deliver_attempt: attempt[5] has no http_status")
-  ok(da_attempts[5].error ~= nil, "deliver_attempt: attempt[5] has error message")
-  -- Last attempt: deleted target → failed
-  local da_last_attempt = da_attempts[#da_attempts]
-  eq(da_last_attempt.outcome, "failed", "deliver_attempt deleted: attempt recorded as failed")
-  ok(da_last_attempt.http_status == nil, "deliver_attempt deleted: attempt has no http_status")
-
-  -- outbox_record_attempt: unknown delivery_id → nil
-  local da_ra_nil = outbox_record_attempt("00000000-0000-4000-8000-000000000000", {
-    http_status = nil,
-    error = "noop",
-    outcome = "failed",
-  })
-  ok(da_ra_nil == nil, "outbox_record_attempt: unknown delivery_id returns nil")
-
-  -- outbox_get_attempts: unknown delivery_id → nil
-  local da_ga_nil = outbox_get_attempts("00000000-0000-4000-8000-000000000000")
-  ok(da_ga_nil == nil, "outbox_get_attempts: unknown delivery_id returns nil")
-end
-
--- ============================================================
--- deliveries_api (internal/deliveries_api.lua)
--- ============================================================
-
--- luacheck: globals make_deliveries_api outbox_list_all_deliveries
-
-ok(type(make_deliveries_api) == "function", "make_deliveries_api: exported as global function")
-ok(
-  type(outbox_list_all_deliveries) == "function",
-  "outbox_list_all_deliveries: exported as global function"
-)
-
-do
-  -- Helper: call the deliveries API with a fake request and return status + decoded body.
-  local function call_dapi(opts)
-    reset_request(opts)
-    reset_response()
-    app.deliveries_api() -- luacheck: globals app
-    local s_ok, decoded = pcall(DecodeJson, _last_body ~= "" and _last_body or "null")
-    return _last_status, s_ok and decoded or nil
-  end
-
-  local AUTH = { Authorization = "Bearer admin-token" }
-
-  -- ── 401 when Authorization header is missing ─────────────────
-
-  local s401, b401 = call_dapi({ method = "GET", path = "/webhooks/deliveries", headers = {} })
-  eq(s401, 401, "deliveries_api: missing auth → 401")
-  eq(b401 and b401.error, "unauthorized", "deliveries_api: missing auth → error=unauthorized")
-
-  -- ── Set up a fresh event + delivery for the remaining tests ──
-
-  local dapi_ev = outbox_store_event("gitea", "push", { ref = "refs/heads/main" })
-  ok(dapi_ev ~= nil, "deliveries_api setup: event stored")
-  local dapi_target =
-    target_create({ url = "https://dapi-test.example.com/hook", events = { "*" } })
-  ok(dapi_target ~= nil, "deliveries_api setup: target created")
-  local dapi_del = outbox_create_delivery(dapi_ev.event_id, dapi_target.target_id)
-  ok(dapi_del ~= nil, "deliveries_api setup: delivery created")
-
-  -- ── outbox_list_all_deliveries ───────────────────────────────
-
-  local all_dels = outbox_list_all_deliveries()
-  ok(type(all_dels) == "table", "outbox_list_all_deliveries: returns a table")
-  ok(#all_dels >= 1, "outbox_list_all_deliveries: at least one delivery present")
-
-  -- ── GET /webhooks/deliveries → 200 with array ────────────────
-
-  local s_list, b_list =
-    call_dapi({ method = "GET", path = "/webhooks/deliveries", headers = AUTH })
-  eq(s_list, 200, "deliveries_api GET list: 200")
-  ok(type(b_list) == "table", "deliveries_api GET list: response is a table (array)")
-
-  -- ── GET /webhooks/deliveries/{id} → 200 with delivery object ─
-
-  local s_get, b_get = call_dapi({
-    method = "GET",
-    path = "/webhooks/deliveries/" .. dapi_del.delivery_id,
-    headers = AUTH,
-  })
-  eq(s_get, 200, "deliveries_api GET single: 200")
-  eq(
-    b_get and b_get.delivery_id,
-    dapi_del.delivery_id,
-    "deliveries_api GET single: delivery_id matches"
-  )
-  eq(b_get and b_get.event_id, dapi_ev.event_id, "deliveries_api GET single: event_id present")
-  eq(
-    b_get and b_get.target_id,
-    dapi_target.target_id,
-    "deliveries_api GET single: target_id present"
-  )
-  ok(b_get and b_get.status ~= nil, "deliveries_api GET single: status field present")
-  ok(b_get and b_get.created_at ~= nil, "deliveries_api GET single: created_at field present")
-
-  -- ── GET /webhooks/deliveries/nonexistent → 404 ───────────────
-
-  local s_nf, b_nf = call_dapi({
-    method = "GET",
-    path = "/webhooks/deliveries/00000000-0000-4000-8000-000000000000",
-    headers = AUTH,
-  })
-  eq(s_nf, 404, "deliveries_api GET single: unknown id → 404")
-  eq(
-    b_nf and b_nf.error,
-    "delivery_not_found",
-    "deliveries_api GET single: unknown id → delivery_not_found"
-  )
-
-  -- ── Non-GET method → 405 ─────────────────────────────────────
-
-  local s_mna, _ = call_dapi({ method = "POST", path = "/webhooks/deliveries", headers = AUTH })
-  eq(s_mna, 405, "deliveries_api: POST /webhooks/deliveries → 405")
-
-  -- ── Unknown sub-path → 404 ───────────────────────────────────
-
-  local s_unk, _ =
-    call_dapi({ method = "GET", path = "/webhooks/deliveries/abc/extra", headers = AUTH })
-  eq(s_unk, 404, "deliveries_api: unrecognised sub-path → 404")
-
-  -- ── GET /webhooks/deliveries/{id}/attempts → 200 with [] ─────
-  -- dapi_del was created directly (no deliver_attempt called), so attempts is empty.
-
-  local s_att, b_att = call_dapi({
-    method = "GET",
-    path = "/webhooks/deliveries/" .. dapi_del.delivery_id .. "/attempts",
-    headers = AUTH,
-  })
-  eq(s_att, 200, "deliveries_api GET attempts: 200")
-  ok(type(b_att) == "table", "deliveries_api GET attempts: returns array")
-  eq(#b_att, 0, "deliveries_api GET attempts: empty for fresh delivery")
-
-  -- Plant an attempt and verify the endpoint reflects it.
-  outbox_record_attempt(
-    dapi_del.delivery_id,
-    { http_status = 200, error = nil, outcome = "delivered" }
-  )
-  local s_att2, b_att2 = call_dapi({
-    method = "GET",
-    path = "/webhooks/deliveries/" .. dapi_del.delivery_id .. "/attempts",
-    headers = AUTH,
-  })
-  eq(s_att2, 200, "deliveries_api GET attempts after record: 200")
-  eq(#b_att2, 1, "deliveries_api GET attempts after record: one attempt")
-  eq(b_att2[1] and b_att2[1].outcome, "delivered", "deliveries_api GET attempts: outcome delivered")
-  eq(b_att2[1] and b_att2[1].attempt_number, 1, "deliveries_api GET attempts: attempt_number is 1")
-
-  -- ── GET /webhooks/deliveries/nonexistent/attempts → 404 ──────
-
-  local s_att_nf, b_att_nf = call_dapi({
-    method = "GET",
-    path = "/webhooks/deliveries/00000000-0000-4000-8000-000000000000/attempts",
-    headers = AUTH,
-  })
-  eq(s_att_nf, 404, "deliveries_api GET attempts: unknown id → 404")
-  eq(
-    b_att_nf and b_att_nf.error,
-    "delivery_not_found",
-    "deliveries_api GET attempts: unknown id → delivery_not_found"
-  )
-
-  -- ── DELETE on /attempts → 405 ────────────────────────────────
-
-  local s_att_mna, _ = call_dapi({
-    method = "DELETE",
-    path = "/webhooks/deliveries/" .. dapi_del.delivery_id .. "/attempts",
-    headers = AUTH,
-  })
-  eq(s_att_mna, 405, "deliveries_api: DELETE /attempts → 405")
-end
-
--- ============================================================
--- pruner (internal/pruner.lua)
--- ============================================================
-
--- luacheck: globals OUTBOX_MAX_AGE_SECS maybe_prune_outbox
-
-eq(OUTBOX_MAX_AGE_SECS, 72 * 3600, "OUTBOX_MAX_AGE_SECS is 259200 (72 hours in seconds)")
-ok(type(maybe_prune_outbox) == "function", "maybe_prune_outbox: exported as global function")
-
-do
-  -- First call: _last_prune_at starts at 0 so the interval has elapsed;
-  -- pruning runs immediately.  Verify the call succeeds without error.
-  local prune_ok = pcall(maybe_prune_outbox)
-  ok(prune_ok, "maybe_prune_outbox: first call succeeds")
-
-  -- Second immediate call: now - _last_prune_at ≈ 0 < 3600 → no-op.
-  local prune_ok2 = pcall(maybe_prune_outbox)
-  ok(prune_ok2, "maybe_prune_outbox: immediate second call succeeds (no-op)")
-end
-
--- ============================================================
--- CONFUSIO_WEBHOOK_TARGET env-var wiring
+-- fanout_body (internal/fanout.lua)
 -- ============================================================
 
 do
-  -- The startup-load stub already exercised the happy path and verified
-  -- config.webhook_target was populated.  Here we verify the target was
-  -- actually registered by inspecting the targets registry.
-  --
-  -- NOTE: target_create was called once during .init.lua startup for the
-  -- coverage stub entry.  We cannot easily enumerate all targets at this
-  -- point, but we CAN verify target_create is a callable (wired correctly)
-  -- and that calling it with a valid entry creates a retrievable target.
+  -- luacheck: globals fanout_body
+  local payload = { ref = "refs/heads/main", after = "abc123" }
 
-  local wt_target = target_create({
+  -- "github" shape: body is EncodeJson(payload) — raw payload forwarded unchanged.
+  local gb = fanout_body("gitea", "push", payload, "github")
+  ok(type(gb) == "string", "fanout_body github: returns a string")
+  local decoded_gb = DecodeJson(gb) -- luacheck: globals DecodeJson
+  ok(type(decoded_gb) == "table", "fanout_body github: body is valid JSON")
+  eq(decoded_gb.ref, "refs/heads/main", "fanout_body github: payload fields forwarded")
+  ok(decoded_gb.source == nil, "fanout_body github: no envelope wrapper")
+
+  -- "confusio" shape: body is {source, event, payload} envelope.
+  local cb = fanout_body("gitea", "push", payload, "confusio")
+  ok(type(cb) == "string", "fanout_body confusio: returns a string")
+  local decoded_cb = DecodeJson(cb)
+  ok(type(decoded_cb) == "table", "fanout_body confusio: body is valid JSON")
+  eq(decoded_cb.source, "gitea", "fanout_body confusio: source is backend name")
+  eq(decoded_cb.event, "push", "fanout_body confusio: event is event_type")
+  ok(type(decoded_cb.payload) == "table", "fanout_body confusio: payload is a table")
+  eq(decoded_cb.payload.ref, "refs/heads/main", "fanout_body confusio: payload fields preserved")
+
+  -- Unknown shape falls back to "github" behaviour.
+  local ub = fanout_body("gitea", "push", payload, "unknown")
+  local decoded_ub = DecodeJson(ub)
+  ok(decoded_ub.source == nil, "fanout_body unknown shape: falls back to raw payload (no wrapper)")
+
+  -- nil shape also falls back to "github" behaviour.
+  local nb = fanout_body("gitea", "push", payload, nil)
+  local decoded_nb = DecodeJson(nb)
+  ok(decoded_nb.source == nil, "fanout_body nil shape: falls back to raw payload (no wrapper)")
+end
+
+-- fanout_register_target / fanout_dispatch (internal/fanout.lua)
+-- ============================================================
+
+-- luacheck: globals fanout_register_target fanout_dispatch deliver_fire
+
+-- fanout_register_target: invalid entries are silently ignored.
+fanout_register_target(nil)
+fanout_register_target({})
+fanout_register_target({ url = "" })
+fanout_register_target({ url = 42 })
+
+-- Mock deliver_fire for all fanout tests so no real HTTP calls are made.
+-- The startup wiring (webhook_target CLI arg) already registered one target
+-- with events=["push"].  Tests use an event type of "create" to get a clean baseline
+-- (the pre-registered target only subscribes to "push").
+local _fd_calls = {}
+local _real_deliver_fire = deliver_fire
+deliver_fire = function(tgt, backend, event_type, payload) -- luacheck: globals deliver_fire
+  _fd_calls[#_fd_calls + 1] = {
+    tgt = tgt,
+    backend = backend,
+    event_type = event_type,
+    payload = payload,
+  }
+  return true, 200, nil
+end
+
+-- fanout_dispatch with no matching targets (event "create" vs. pre-registered "push") → 0.
+local fd0 = fanout_dispatch("gitea", "create", { ref = "refs/tags/v1.0" })
+eq(fd0, 0, "fanout_dispatch no matching targets: returns 0 for unsubscribed event")
+
+-- Register a wildcard target and verify dispatch calls deliver_fire.
+fanout_register_target({ url = "https://fd-test.example.com/hook", events = { "*" } })
+
+_fd_calls = {}
+local fd1 = fanout_dispatch("gitea", "create", { ref = "refs/tags/v1.0" })
+eq(fd1, 1, "fanout_dispatch wildcard: returns 1 for matching wildcard target")
+ok(#_fd_calls == 1, "fanout_dispatch wildcard: deliver_fire called once")
+eq(_fd_calls[1].backend, "gitea", "fanout_dispatch wildcard: backend passed to deliver_fire")
+eq(_fd_calls[1].event_type, "create", "fanout_dispatch wildcard: event_type passed")
+eq(_fd_calls[1].tgt.url, "https://fd-test.example.com/hook", "fanout_dispatch wildcard: target url")
+
+-- fanout_dispatch with non-matching event type for an issues-only target.
+fanout_register_target({ url = "https://filtered.example.com/hook", events = { "issues" } })
+_fd_calls = {}
+local fd2 = fanout_dispatch("gitea", "create", { ref = "refs/tags/v1.0" })
+-- Only the wildcard matches "create"; issues-only target does not.
+eq(fd2, 1, "fanout_dispatch filtered: issues-only target does not match create")
+eq(
+  _fd_calls[1].tgt.url,
+  "https://fd-test.example.com/hook",
+  "fanout_dispatch filtered: correct target fired"
+)
+
+-- Matching event type delivers to both wildcard and issues targets.
+_fd_calls = {}
+local fd3 = fanout_dispatch("gitea", "issues", { action = "opened" })
+eq(fd3, 2, "fanout_dispatch match: wildcard and issues targets both match issues event")
+
+deliver_fire = _real_deliver_fire -- luacheck: globals deliver_fire
+
+-- ============================================================
+-- deliver_fire (internal/deliver.lua)
+-- ============================================================
+
+-- luacheck: globals deliver_fire sign_for_backend
+
+do
+  -- Set up a mock Fetch to capture outbound calls.
+  local _df_last_url = nil
+  local _df_last_opts = nil
+  local _df_mock_status = 200
+  local _df_mock_error = nil
+  local _real_Fetch = Fetch
+  Fetch = function(url, opts) -- luacheck: globals Fetch
+    _df_last_url = url
+    _df_last_opts = opts
+    if _df_mock_error ~= nil then
+      error(_df_mock_error)
+    end
+    return _df_mock_status, {}, "{}"
+  end
+
+  local target_github = {
+    url = "https://df-test.example.com/hook",
+    shape = "github",
+    secret = "",
+  }
+
+  -- deliver_fire: 200 → ok=true, http_status=200, no error.
+  _df_mock_status = 200
+  local ok1, s1, e1 = deliver_fire(target_github, "gitea", "push", { ref = "refs/heads/main" })
+  ok(ok1 == true, "deliver_fire 200: ok is true")
+  eq(s1, 200, "deliver_fire 200: http_status is 200")
+  ok(e1 == nil, "deliver_fire 200: error is nil")
+  eq(_df_last_url, "https://df-test.example.com/hook", "deliver_fire: posts to target url")
+  eq(_df_last_opts.method, "POST", "deliver_fire: method is POST")
+  ok(_df_last_opts.body ~= nil, "deliver_fire: body is set")
+  eq(
+    _df_last_opts.headers["Content-Type"],
+    "application/json",
+    "deliver_fire: Content-Type is application/json"
+  )
+  eq(
+    _df_last_opts.headers["X-GitHub-Event"],
+    "push",
+    "deliver_fire github shape: X-GitHub-Event header"
+  )
+  ok(
+    _df_last_opts.headers["X-GitHub-Delivery"] ~= nil,
+    "deliver_fire github shape: X-GitHub-Delivery header present"
+  )
+
+  -- deliver_fire: 503 → ok=false.
+  _df_mock_status = 503
+  local ok2, s2, e2 = deliver_fire(target_github, "gitea", "push", { ref = "refs/heads/main" })
+  ok(ok2 == false, "deliver_fire 503: ok is false")
+  eq(s2, 503, "deliver_fire 503: http_status is 503")
+  ok(e2 == nil, "deliver_fire 503: no error string on HTTP failure")
+
+  -- deliver_fire: network error → ok=false, http_status=nil, error message set.
+  _df_mock_status = 200
+  _df_mock_error = "connection refused"
+  local ok3, s3, e3 = deliver_fire(target_github, "gitea", "push", { ref = "refs/heads/main" })
+  ok(ok3 == false, "deliver_fire network error: ok is false")
+  ok(s3 == nil, "deliver_fire network error: http_status is nil")
+  ok(e3 ~= nil, "deliver_fire network error: error message set")
+  _df_mock_error = nil
+
+  -- deliver_fire: confusio shape uses X-Confusio-* headers.
+  local target_confusio = {
+    url = "https://df-confusio.example.com/hook",
+    shape = "confusio",
+    secret = "",
+  }
+  _df_mock_status = 200
+  local ok4 = deliver_fire(target_confusio, "gitea", "push", { ref = "refs/heads/main" })
+  ok(ok4 == true, "deliver_fire confusio shape: ok is true")
+  eq(
+    _df_last_opts.headers["X-Confusio-Event"],
+    "push",
+    "deliver_fire confusio shape: X-Confusio-Event header"
+  )
+  eq(
+    _df_last_opts.headers["X-Confusio-Source"],
+    "gitea",
+    "deliver_fire confusio shape: X-Confusio-Source is backend"
+  )
+  ok(
+    _df_last_opts.headers["X-Confusio-Delivery"] ~= nil,
+    "deliver_fire confusio shape: X-Confusio-Delivery present"
+  )
+  ok(
+    _df_last_opts.headers["X-GitHub-Event"] == nil,
+    "deliver_fire confusio shape: no X-GitHub-Event header"
+  )
+
+  -- deliver_fire: secret present → backend-native signature header included.
+  local target_signed = {
+    url = "https://df-signed.example.com/hook",
+    shape = "github",
+    secret = "test-hmac-secret",
+  }
+  _df_mock_status = 200
+  deliver_fire(target_signed, "gitea", "push", { ref = "refs/heads/main" })
+  ok(
+    _df_last_opts.headers["X-Gitea-Signature"] ~= nil,
+    "deliver_fire with secret: X-Gitea-Signature header present for gitea backend"
+  )
+
+  -- deliver_fire: outcome logging — Log is called with kLogWarn on failure
+  -- and kLogVerbose on success.
+  local _log_calls = {}
+  local _real_Log = Log
+  Log = function(level, msg) -- luacheck: globals Log
+    _log_calls[#_log_calls + 1] = { level = level, msg = msg }
+  end
+
+  -- Successful delivery: Log called at kLogVerbose with status in message.
+  _df_mock_status = 200
+  _log_calls = {}
+  deliver_fire(target_github, "gitea", "push", { ref = "refs/heads/main" })
+  ok(#_log_calls == 1, "deliver_fire success: Log called once")
+  eq(_log_calls[1].level, kLogVerbose, "deliver_fire success: logged at kLogVerbose") -- luacheck: globals kLogVerbose
+  ok(_log_calls[1].msg:find("status=200") ~= nil, "deliver_fire success: log contains status=200")
+  ok(_log_calls[1].msg:find("url=") ~= nil, "deliver_fire success: log contains url=")
+  ok(_log_calls[1].msg:find("event=push") ~= nil, "deliver_fire success: log contains event=push")
+
+  -- HTTP error delivery: Log called at kLogWarn.
+  _df_mock_status = 503
+  _log_calls = {}
+  deliver_fire(target_github, "gitea", "push", { ref = "refs/heads/main" })
+  ok(#_log_calls == 1, "deliver_fire 503: Log called once")
+  eq(_log_calls[1].level, kLogWarn, "deliver_fire 503: logged at kLogWarn") -- luacheck: globals kLogWarn
+  ok(_log_calls[1].msg:find("status=503") ~= nil, "deliver_fire 503: log contains status=503")
+
+  -- Network error: Log called at kLogWarn with error in message.
+  _df_mock_status = 200
+  _df_mock_error = "connection refused"
+  _log_calls = {}
+  deliver_fire(target_github, "gitea", "push", { ref = "refs/heads/main" })
+  ok(#_log_calls == 1, "deliver_fire network error: Log called once")
+  eq(_log_calls[1].level, kLogWarn, "deliver_fire network error: logged at kLogWarn")
+  ok(_log_calls[1].msg:find("error=") ~= nil, "deliver_fire network error: log contains error=")
+  _df_mock_error = nil
+
+  -- Restore Log and Fetch.
+  Log = _real_Log
+  Fetch = _real_Fetch
+end
+
+-- ============================================================
+-- webhook_target CLI SCRIPTARG wiring
+-- ============================================================
+
+do
+  -- Verify fanout_register_target is callable and accepts valid/invalid entries.
+  -- The startup webhook_target=URL arg already registered a target at load time;
+  -- here we only verify the function's guard behaviour.
+  -- We cannot enumerate _fanout_targets directly, but dispatch to the
+  -- startup-registered URL should hit it.  Instead, verify fanout_register_target
+  -- is callable (wired correctly) and that valid/invalid entries behave correctly.
+
+  -- Valid entry: silently accepted (no error).
+  local ok_reg = pcall(fanout_register_target, {
     url = "https://hook.example.com/wt-unit",
     events = { "push", "pull_request" },
     shape = "confusio",
   })
-  ok(type(wt_target) == "table", "CONFUSIO_WEBHOOK_TARGET: target_create returns a table")
-  ok(type(wt_target.target_id) == "string", "CONFUSIO_WEBHOOK_TARGET: created target has target_id")
-  eq(
-    wt_target.url,
-    "https://hook.example.com/wt-unit",
-    "CONFUSIO_WEBHOOK_TARGET: created target has correct url"
-  )
-  eq(wt_target.shape, "confusio", "CONFUSIO_WEBHOOK_TARGET: created target has correct shape")
-  eq(wt_target.status, "active", "CONFUSIO_WEBHOOK_TARGET: created target is active")
+  ok(ok_reg, "webhook_target CLI arg: fanout_register_target with valid entry succeeds")
 
-  -- Verify the target is retrievable.
-  local wt_fetched = target_get(wt_target.target_id)
-  ok(wt_fetched ~= nil, "CONFUSIO_WEBHOOK_TARGET: target_get finds the registered target")
-  eq(
-    wt_fetched.url,
-    "https://hook.example.com/wt-unit",
-    "CONFUSIO_WEBHOOK_TARGET: fetched target url matches"
-  )
-
-  -- Verify that an entry with a missing url is silently skipped.
-  -- (The guard in .init.lua: type(t.url) == "string" and t.url ~= "")
-  local before_count = #target_list()
-  -- Simulate the guard logic: invalid entries produce no target.
-  local bad_entries = {
-    {},
-    { url = "" },
-    { url = 42 },
-  }
-  for _, bad in ipairs(bad_entries) do
-    local is_valid = type(bad.url) == "string" and bad.url ~= ""
-    ok(not is_valid, "CONFUSIO_WEBHOOK_TARGET: bad entry correctly identified as invalid")
-  end
-  eq(#target_list(), before_count, "CONFUSIO_WEBHOOK_TARGET: bad entries did not grow the registry")
+  -- Invalid entries: silently ignored.
+  local ok_bad1 = pcall(fanout_register_target, {})
+  local ok_bad2 = pcall(fanout_register_target, { url = "" })
+  local ok_bad3 = pcall(fanout_register_target, { url = 42 })
+  ok(ok_bad1, "webhook_target CLI arg: empty table silently ignored")
+  ok(ok_bad2, "webhook_target CLI arg: empty url silently ignored")
+  ok(ok_bad3, "webhook_target CLI arg: non-string url silently ignored")
 end
 
 -- ============================================================
--- retry scheduler (internal/retry.lua)
+-- Summary line placeholder (kept to end-of-file)
 -- ============================================================
 
--- luacheck: globals next_retry_at maybe_retry_pending retry_budget_ok RETRY_BUDGET_HOURLY RETRY_BUDGET_DAILY
+-- NOTE: outbox, target CRUD, deliver_attempt, deliveries_api, pruner, retry,
+-- and circuit_breaker modules were removed.  The webhook system now uses
+-- fire-and-record delivery: deliver_fire is called synchronously with no
+-- persistence, retry scheduler, or circuit breaker.  See CLAUDE.md.
 
-ok(type(next_retry_at) == "function", "next_retry_at: exported as global function")
-ok(type(maybe_retry_pending) == "function", "maybe_retry_pending: exported as global function")
-ok(type(retry_budget_ok) == "function", "retry_budget_ok: exported as global function")
-ok(RETRY_BUDGET_HOURLY == 10, "RETRY_BUDGET_HOURLY: constant is 10")
-ok(RETRY_BUDGET_DAILY == 50, "RETRY_BUDGET_DAILY: constant is 50")
-
-do
-  -- next_retry_at(1): first retry → base delay (60s) + jitter [0,30] → [60,90] ahead of now.
-  local before = os.time()
-  local t1 = next_retry_at(1)
-  local after = os.time()
-  ok(t1 >= before + 60, "next_retry_at(1): at least base delay (60s) in the future")
-  ok(t1 <= after + 90, "next_retry_at(1): no more than base + jitter (90s) in the future")
-
-  -- next_retry_at(2): second retry → 120s + jitter.
-  local t2 = next_retry_at(2)
-  ok(t2 >= before + 120, "next_retry_at(2): at least 2x base delay (120s)")
-  ok(t2 <= after + 150, "next_retry_at(2): no more than 120 + jitter (150s)")
-
-  -- next_retry_at(100): large attempt → capped at max_delay (3600s) + jitter.
-  local t100 = next_retry_at(100)
-  ok(t100 >= before + 3600, "next_retry_at(100): at least max_delay (3600s)")
-  ok(t100 <= after + 3630, "next_retry_at(100): no more than max_delay + jitter (3630s)")
-end
-
-do
-  -- First call: _last_retry_at starts at 0 so the interval has elapsed;
-  -- the pass runs immediately.  Verify the call succeeds without error.
-  local retry_ok = pcall(maybe_retry_pending)
-  ok(retry_ok, "maybe_retry_pending: first call succeeds")
-
-  -- Second immediate call: now - _last_retry_at ≈ 0 < 30 → no-op.
-  local retry_ok2 = pcall(maybe_retry_pending)
-  ok(retry_ok2, "maybe_retry_pending: immediate second call succeeds (no-op)")
-end
-
--- luacheck: globals outbox_store_event outbox_create_delivery outbox_record_attempt
-
-do
-  -- retry_budget_ok: target with no deliveries → budget is ok.
-  local target_id = "budget-test-" .. tostring(os.time())
-  ok(retry_budget_ok(target_id), "retry_budget_ok: target with no deliveries returns true")
-end
-
-do
-  -- retry_budget_ok: attempts with outcome other than "retrying" are not counted.
-  local ev = outbox_store_event("gitea", "push", "{}")
-  local d = outbox_create_delivery(ev.event_id, "budget-other-outcome")
-  for _ = 1, 5 do
-    outbox_record_attempt(d.delivery_id, { outcome = "delivered" })
-  end
-  ok(
-    retry_budget_ok("budget-other-outcome"),
-    "retry_budget_ok: delivered outcomes not counted toward budget"
-  )
-end
-
-do
-  -- retry_budget_ok: fewer retrying attempts than hourly limit → budget ok.
-  local ev = outbox_store_event("gitea", "push", "{}")
-  local d = outbox_create_delivery(ev.event_id, "budget-under-limit")
-  for _ = 1, RETRY_BUDGET_HOURLY - 1 do
-    outbox_record_attempt(d.delivery_id, { outcome = "retrying" })
-  end
-  ok(retry_budget_ok("budget-under-limit"), "retry_budget_ok: under hourly limit returns true")
-end
-
-do
-  -- retry_budget_ok: exactly RETRY_BUDGET_HOURLY retrying attempts → hourly budget exhausted.
-  local ev = outbox_store_event("gitea", "push", "{}")
-  local d = outbox_create_delivery(ev.event_id, "budget-at-hourly-limit")
-  for _ = 1, RETRY_BUDGET_HOURLY do
-    outbox_record_attempt(d.delivery_id, { outcome = "retrying" })
-  end
-  ok(
-    not retry_budget_ok("budget-at-hourly-limit"),
-    "retry_budget_ok: at hourly limit returns false"
-  )
-end
-
-do
-  -- retry_budget_ok: counts across multiple deliveries for the same target.
-  local ev1 = outbox_store_event("gitea", "push", "{}")
-  local ev2 = outbox_store_event("gitea", "push", "{}")
-  local d1 = outbox_create_delivery(ev1.event_id, "budget-multi-delivery")
-  local d2 = outbox_create_delivery(ev2.event_id, "budget-multi-delivery")
-  -- Split the hourly limit: 5 in d1, 5 in d2 = exactly at limit.
-  for _ = 1, 5 do
-    outbox_record_attempt(d1.delivery_id, { outcome = "retrying" })
-    outbox_record_attempt(d2.delivery_id, { outcome = "retrying" })
-  end
-  ok(
-    not retry_budget_ok("budget-multi-delivery"),
-    "retry_budget_ok: counts retrying attempts across multiple deliveries"
-  )
-end
-
--- ============================================================
--- circuit_breaker
--- ============================================================
-
-do
-  -- cb_state for an unknown target returns "closed".
-  ok(cb_state("cb-unknown-target") == "closed", "cb_state: unknown target returns closed")
-end
-
-do
-  -- cb_ok returns true for an unknown (closed) target.
-  ok(cb_ok("cb-ok-unknown") == true, "cb_ok: unknown target returns true")
-end
-
-do
-  -- cb_record_failure below threshold does not open the breaker.
-  local tid = "cb-below-threshold"
-  for _ = 1, CB_FAILURE_THRESHOLD - 1 do
-    cb_record_failure(tid)
-  end
-  ok(cb_state(tid) == "closed", "cb_record_failure: below threshold stays closed")
-  ok(cb_ok(tid) == true, "cb_ok: below threshold returns true")
-end
-
-do
-  -- cb_record_failure at threshold trips the breaker to open.
-  local tid = "cb-at-threshold"
-  for _ = 1, CB_FAILURE_THRESHOLD do
-    cb_record_failure(tid)
-  end
-  ok(cb_state(tid) == "open", "cb_record_failure: at threshold trips to open")
-  ok(cb_ok(tid) == false, "cb_ok: open state returns false")
-end
-
-do
-  -- cb_record_failure beyond threshold keeps breaker open.
-  local tid = "cb-beyond-threshold"
-  for _ = 1, CB_FAILURE_THRESHOLD + 3 do
-    cb_record_failure(tid)
-  end
-  ok(cb_state(tid) == "open", "cb_record_failure: beyond threshold stays open")
-end
-
-do
-  -- cb_record_success resets an open breaker to closed.
-  local tid = "cb-success-resets"
-  for _ = 1, CB_FAILURE_THRESHOLD do
-    cb_record_failure(tid)
-  end
-  ok(cb_state(tid) == "open", "cb_record_success: precondition open")
-  cb_record_success(tid)
-  ok(cb_state(tid) == "closed", "cb_record_success: resets open to closed")
-  ok(cb_ok(tid) == true, "cb_ok: after success reset returns true")
-end
-
-do
-  -- cb_record_success on an unknown target is a no-op (no error).
-  cb_record_success("cb-success-noop")
-  ok(
-    cb_state("cb-success-noop") == "closed",
-    "cb_record_success: no-op on unknown target stays closed"
-  )
-end
-
-do
-  -- After success reset, subsequent failures count from zero again.
-  local tid = "cb-reset-then-fail"
-  for _ = 1, CB_FAILURE_THRESHOLD do
-    cb_record_failure(tid)
-  end
-  cb_record_success(tid)
-  for _ = 1, CB_FAILURE_THRESHOLD - 1 do
-    cb_record_failure(tid)
-  end
-  ok(cb_state(tid) == "closed", "cb_record_failure: after reset, below threshold stays closed")
-end
-
-do
-  -- half_open state: failure in half_open goes back to open immediately.
-  -- Simulate half_open by tripping to open then testing cb_record_failure directly.
-  -- We cannot advance os.time(), so we test the half_open failure path by calling
-  -- cb_record_failure when the state is manually set via internal knowledge:
-  -- trip to open, then call the internal state transition via a fresh entry.
-  -- Instead: trip, confirm open; call cb_record_failure twice more (one would re-trip);
-  -- this tests that the open→open path still works cleanly (no panic/error).
-  local tid = "cb-half-open-reopen"
-  for _ = 1, CB_FAILURE_THRESHOLD do
-    cb_record_failure(tid)
-  end
-  ok(cb_state(tid) == "open", "cb half_open: precondition open")
-  -- Additional failures while open don't crash or change state to something unexpected.
-  cb_record_failure(tid)
-  ok(cb_state(tid) == "open", "cb half_open: extra failure while open stays open")
-end
+-- (end of webhook fire-and-record tests)
 
 -- ============================================================
 -- Summary

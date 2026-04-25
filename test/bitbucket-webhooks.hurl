@@ -2,7 +2,7 @@
 #
 # Bitbucket Cloud uses X-Event-Key header.  Issue events are only available
 # for Cloud (Bitbucket DC has no native issue tracker).
-# Trust-the-network mode (no CONFUSIO_WEBHOOK_SECRETS): signature headers omitted.
+# Trust-the-network mode (no webhook_secret_BACKEND CLI arg): signature headers omitted.
 
 # ── issue:created → issues / opened ──────────────────────────────────────────
 

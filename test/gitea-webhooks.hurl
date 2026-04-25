@@ -1,7 +1,7 @@
 # Gitea webhook normalizer tests — run by Phase 5 in test-unit.sh.
 #
 # Exercises the five event families registered in backends/gitea.lua.
-# Trust-the-network mode (no CONFUSIO_WEBHOOK_SECRETS): signature headers omitted.
+# Trust-the-network mode (no webhook_secret_BACKEND CLI arg): signature headers omitted.
 # All paths return 200 when a registered handler succeeds.
 
 # ── issues: known action → 200 ───────────────────────────────────────────────

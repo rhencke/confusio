@@ -1,7 +1,7 @@
 # Gerrit webhook normalizer tests — run by test-unit-gerrit.
 #
 # Gerrit uses a shared secret in the Authorization header (Bearer or Basic).
-# Trust-the-network mode (no CONFUSIO_WEBHOOK_SECRETS): Authorization header omitted.
+# Trust-the-network mode (no webhook_secret_BACKEND CLI arg): Authorization header omitted.
 # Event type is determined from the body field `type`.
 
 # ── comment-added with Code-Review +2 → pull_request_review / submitted / APPROVED ──
