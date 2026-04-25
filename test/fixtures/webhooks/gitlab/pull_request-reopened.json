@@ -1,0 +1,21 @@
+{
+  "object_kind": "merge_request",
+  "user": {"id": 1, "name": "The Octocat", "username": "octocat", "avatar_url": "", "web_url": "http://localhost/octocat"},
+  "project": {
+    "id": 10, "name": "hello-world", "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "visibility_level": 20, "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 200, "iid": 1, "title": "Add new feature", "description": "This MR adds a new feature.",
+    "state": "opened", "action": "reopen",
+    "source_branch": "feature-branch", "target_branch": "main",
+    "url": "http://localhost/octocat/hello-world/-/merge_requests/1",
+    "created_at": "2024-01-15T14:00:00Z", "updated_at": "2024-01-15T14:02:00Z",
+    "draft": false, "work_in_progress": false,
+    "diff_refs": {"base_sha": "abc123", "head_sha": "def456"}
+  },
+  "labels": [], "assignees": [], "reviewers": [], "changes": {}
+}

@@ -1,0 +1,20 @@
+{
+  "object_kind": "build",
+  "user": {"id": 1, "name": "The Octocat", "username": "octocat", "avatar_url": "", "web_url": "http://localhost/octocat"},
+  "project_name": "octocat / hello-world",
+  "project_id": 10,
+  "repository": {
+    "name": "hello-world",
+    "homepage": "http://localhost/octocat/hello-world",
+    "description": ""
+  },
+  "build_id": 400,
+  "build_name": "test",
+  "build_status": "success",
+  "build_stage": "test",
+  "pipeline_id": 300,
+  "sha": "abc123",
+  "runner": {"id": 5, "description": "shared-runner", "tags": ["linux"]},
+  "build_started_at": "2024-01-15T16:01:30Z",
+  "build_finished_at": "2024-01-15T16:03:00Z"
+}
