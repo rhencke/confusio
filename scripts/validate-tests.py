@@ -16,7 +16,10 @@ import os
 import sys
 
 catalog = json.load(sys.stdin)
-groups = list(dict.fromkeys(e["group"] for e in catalog))
+# Skip groups whose entries are informational-only webhook event rows — they are not
+# HTTP endpoints and have no hurl test files.  The existing *-webhooks.hurl files
+# cover the event delivery pipeline; per-(event,action) rows need no separate tests.
+groups = list(dict.fromkeys(e["group"] for e in catalog if not e.get("is_webhook_event")))
 backends = sys.argv[1:]
 
 gaps = []

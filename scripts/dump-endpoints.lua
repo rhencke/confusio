@@ -34,6 +34,8 @@ for i, e in ipairs(endpoints) do -- luacheck: globals endpoints
     .. EncodeJson(e.group)
     .. ',"has_default":'
     .. (e[3] ~= nil and "true" or "false")
+    .. ',"is_webhook_event":'
+    .. (e.is_webhook_event and "true" or "false")
     .. "}"
 end
 io.write("[\n" .. table.concat(parts, ",\n") .. "\n]\n")
