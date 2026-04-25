@@ -629,44 +629,28 @@ here so they stay visible without reading all 16 docs:
 
 ### Outbound webhook dispatcher
 
-The outbound dispatcher stores targets and deliveries in memory, fans received events to registered targets, retries on failure, and exposes admin APIs for target management and delivery inspection.  All admin endpoints are confusio-native (backend-agnostic) and are intercepted by `dispatch.lua` before routing — they have no entries in `app.backend.rest`.
+The outbound dispatcher stores targets and deliveries in memory, fans received events to registered targets, retries on failure, and exposes read-only delivery inspection endpoints.  These endpoints are confusio-native (backend-agnostic) and are intercepted by `dispatch.lua` before routing — they have no entries in `app.backend.rest`.
 
 **Modules:**
 
 | Module | Role |
 |--------|------|
 | `internal/targets.lua` | In-memory target registry: CRUD, pause/resume, soft-delete |
-| `internal/targets_api.lua` | HTTP admin API for target management; exports `make_targets_api(a)` |
 | `internal/outbox.lua` | In-memory outbox: event storage, delivery state records, 72-hour retention |
 | `internal/fanout.lua` | Fan-out dispatcher: event filtering, shape selection (github/confusio), per-target delivery |
 | `internal/deliver.lua` | Outbound HTTP delivery with signing and attempt recording |
 | `internal/retry.lua` | Retry scheduler with exponential backoff and jitter |
 | `internal/circuit_breaker.lua` | Per-target circuit breaker (open/half-open/closed) |
 | `internal/pruner.lua` | Periodic outbox pruning; invoked from `make_dispatcher` on every request |
-| `internal/deliveries_api.lua` | HTTP admin API for delivery inspection and replay; exports `make_deliveries_api(a)` |
+| `internal/deliveries_api.lua` | Read-only HTTP API for delivery inspection; exports `make_deliveries_api(a)` |
 
-**Target admin API** (`/webhooks/targets*`) — requires `Authorization` header:
-
-| Endpoint | Description |
-|----------|-------------|
-| `POST /webhooks/targets` | Create a target (201) |
-| `GET /webhooks/targets` | List all targets (200) |
-| `GET /webhooks/targets/{target_id}` | Get a single target with circuit-breaker state (200) |
-| `PATCH /webhooks/targets/{target_id}` | Update URL, events, shape, or retry budget (200) |
-| `DELETE /webhooks/targets/{target_id}` | Soft-delete a target (204) |
-| `POST /webhooks/targets/{target_id}/pause` | Pause delivery to a target (200) |
-| `POST /webhooks/targets/{target_id}/resume` | Resume delivery to a paused target (200) |
-
-**Delivery inspection API** (`/webhooks/deliveries*`, `/webhooks/events/*`, `/webhooks/targets/*/deliveries`) — requires `Authorization` header:
+**Delivery inspection API** (`/webhooks/deliveries*`) — requires `Authorization` header:
 
 | Endpoint | Description |
 |----------|-------------|
 | `GET /webhooks/deliveries` | List all deliveries, newest first, max 100 (200) |
 | `GET /webhooks/deliveries/{delivery_id}` | Get a single delivery record (200) |
-| `POST /webhooks/deliveries/{delivery_id}/redeliver` | Create a new delivery for the same (event, target) pair (201) |
 | `GET /webhooks/deliveries/{delivery_id}/attempts` | Attempt history for a delivery (200) |
-| `GET /webhooks/events/{event_id}/deliveries` | All deliveries for a given event (200) |
-| `GET /webhooks/targets/{target_id}/deliveries` | All deliveries for a given target (200) |
 
 **Configuration:**
 - **`CONFUSIO_WEBHOOK_TARGET` env var** — optional JSON object configuring the single outbound target loaded at startup by `.init.lua`.  Must include at minimum `url`; `events` (array) and `shape` (`"github"`|`"confusio"`) are optional.  The target is registered into the in-memory registry and survives only for the process lifetime (no persistence).
@@ -675,6 +659,6 @@ The outbound dispatcher stores targets and deliveries in memory, fans received e
 
 **Dispatch flow:** `dispatch.lua` calls `maybe_prune_outbox()` and `maybe_retry_pending()` on every request before routing.  After the webhook receiver validates and stores an inbound event in the outbox, `fanout.lua` checks the single active target, applies event and shape filters, calls `deliver.lua` if the event matches, and records the delivery outcome.  Failed deliveries are re-queued by `retry.lua` with exponential backoff; the circuit breaker in `circuit_breaker.lua` trips after repeated consecutive failures and holds the target open until a half-open probe succeeds.
 
-**Catalog and validate-claims:** all 13 admin endpoints are confusio-native and are exempted from the per-backend handler presence check in `scripts/validate-claims.lua` via the `CONFUSIO_NATIVE` table.  Their catalog entries use `defaults.webhook_receive_stub` as the default function (never reached in production) purely to satisfy `validate-tests` and `validate-csv`.
+**Catalog and validate-claims:** the three delivery inspection endpoints are confusio-native and are exempted from the per-backend handler presence check in `scripts/validate-claims.lua` via the `CONFUSIO_NATIVE` table.  Their catalog entries use `defaults.webhook_receive_stub` as the default function (never reached in production) purely to satisfy `validate-tests` and `validate-csv`.
 
 - **Outbound signing mirrors the active backend's inbound scheme.** The `sign_for_backend` function in `internal/signing.lua` maps backend names to their native signature headers using the same schemes documented in `verify_signature` in `internal/webhooks.lua`.  The two must stay in sync when new backends are added.

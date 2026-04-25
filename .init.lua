@@ -95,7 +95,6 @@ dofile("/zip/internal/dispatch.lua")
 dofile("/zip/internal/util.lua")
 dofile("/zip/internal/outbox.lua")
 dofile("/zip/internal/targets.lua")
-dofile("/zip/internal/targets_api.lua")
 dofile("/zip/internal/deliveries_api.lua")
 dofile("/zip/internal/signing.lua")
 dofile("/zip/internal/fanout.lua")
@@ -107,7 +106,6 @@ dofile("/zip/internal/webhooks.lua")
 
 app.route_match = route_match
 app.path_known = path_known
-app.targets_api = make_targets_api(app)
 app.deliveries_api = make_deliveries_api(app)
 app.webhook_receiver = make_webhook_receiver(app)
 
