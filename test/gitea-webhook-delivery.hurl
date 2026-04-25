@@ -18,7 +18,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: issues
-file,test/fixtures/webhooks/gitea/issues-opened.json;
+file,fixtures/webhooks/gitea/issues-opened.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -40,7 +40,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: issues
-file,test/fixtures/webhooks/gitea/issues-edited.json;
+file,fixtures/webhooks/gitea/issues-edited.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -62,7 +62,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: issues
-file,test/fixtures/webhooks/gitea/issues-closed.json;
+file,fixtures/webhooks/gitea/issues-closed.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -84,7 +84,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: issues
-file,test/fixtures/webhooks/gitea/issues-reopened.json;
+file,fixtures/webhooks/gitea/issues-reopened.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -106,7 +106,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: issues
-file,test/fixtures/webhooks/gitea/issues-labeled.json;
+file,fixtures/webhooks/gitea/issues-labeled.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -128,7 +128,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: issues
-file,test/fixtures/webhooks/gitea/issues-unlabeled.json;
+file,fixtures/webhooks/gitea/issues-unlabeled.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -150,7 +150,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: issues
-file,test/fixtures/webhooks/gitea/issues-assigned.json;
+file,fixtures/webhooks/gitea/issues-assigned.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -172,7 +172,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: issues
-file,test/fixtures/webhooks/gitea/issues-unassigned.json;
+file,fixtures/webhooks/gitea/issues-unassigned.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -194,7 +194,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: issue_comment
-file,test/fixtures/webhooks/gitea/issue_comment-created.json;
+file,fixtures/webhooks/gitea/issue_comment-created.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -216,7 +216,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: issue_comment
-file,test/fixtures/webhooks/gitea/issue_comment-edited.json;
+file,fixtures/webhooks/gitea/issue_comment-edited.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -238,7 +238,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: issue_comment
-file,test/fixtures/webhooks/gitea/issue_comment-deleted.json;
+file,fixtures/webhooks/gitea/issue_comment-deleted.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -260,7 +260,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: label
-file,test/fixtures/webhooks/gitea/label-created.json;
+file,fixtures/webhooks/gitea/label-created.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -282,7 +282,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: label
-file,test/fixtures/webhooks/gitea/label-edited.json;
+file,fixtures/webhooks/gitea/label-edited.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -304,7 +304,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: label
-file,test/fixtures/webhooks/gitea/label-deleted.json;
+file,fixtures/webhooks/gitea/label-deleted.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -326,7 +326,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: milestone
-file,test/fixtures/webhooks/gitea/milestone-created.json;
+file,fixtures/webhooks/gitea/milestone-created.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -348,7 +348,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: milestone
-file,test/fixtures/webhooks/gitea/milestone-closed.json;
+file,fixtures/webhooks/gitea/milestone-closed.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -370,7 +370,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: milestone
-file,test/fixtures/webhooks/gitea/milestone-reopened.json;
+file,fixtures/webhooks/gitea/milestone-reopened.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -392,7 +392,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: milestone
-file,test/fixtures/webhooks/gitea/milestone-edited.json;
+file,fixtures/webhooks/gitea/milestone-edited.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -414,7 +414,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: milestone
-file,test/fixtures/webhooks/gitea/milestone-deleted.json;
+file,fixtures/webhooks/gitea/milestone-deleted.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -436,7 +436,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: pull_request
-file,test/fixtures/webhooks/gitea/pull_request-opened.json;
+file,fixtures/webhooks/gitea/pull_request-opened.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -458,7 +458,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: pull_request
-file,test/fixtures/webhooks/gitea/pull_request-closed.json;
+file,fixtures/webhooks/gitea/pull_request-closed.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -480,7 +480,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: pull_request
-file,test/fixtures/webhooks/gitea/pull_request-reopened.json;
+file,fixtures/webhooks/gitea/pull_request-reopened.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -502,7 +502,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: pull_request
-file,test/fixtures/webhooks/gitea/pull_request-edited.json;
+file,fixtures/webhooks/gitea/pull_request-edited.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -524,7 +524,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: pull_request
-file,test/fixtures/webhooks/gitea/pull_request-synchronize.json;
+file,fixtures/webhooks/gitea/pull_request-synchronize.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -546,7 +546,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: pull_request
-file,test/fixtures/webhooks/gitea/pull_request-labeled.json;
+file,fixtures/webhooks/gitea/pull_request-labeled.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -568,7 +568,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: pull_request
-file,test/fixtures/webhooks/gitea/pull_request-unlabeled.json;
+file,fixtures/webhooks/gitea/pull_request-unlabeled.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -590,7 +590,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: pull_request
-file,test/fixtures/webhooks/gitea/pull_request-assigned.json;
+file,fixtures/webhooks/gitea/pull_request-assigned.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -612,7 +612,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: pull_request
-file,test/fixtures/webhooks/gitea/pull_request-unassigned.json;
+file,fixtures/webhooks/gitea/pull_request-unassigned.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -634,7 +634,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: pull_request
-file,test/fixtures/webhooks/gitea/pull_request-review_requested.json;
+file,fixtures/webhooks/gitea/pull_request-review_requested.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -656,7 +656,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: pull_request
-file,test/fixtures/webhooks/gitea/pull_request-review_request_removed.json;
+file,fixtures/webhooks/gitea/pull_request-review_request_removed.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -678,7 +678,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: merge_group
-file,test/fixtures/webhooks/gitea/merge_group-checks_requested.json;
+file,fixtures/webhooks/gitea/merge_group-checks_requested.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -700,7 +700,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: merge_group
-file,test/fixtures/webhooks/gitea/merge_group-destroyed.json;
+file,fixtures/webhooks/gitea/merge_group-destroyed.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -722,7 +722,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: pull_request_review
-file,test/fixtures/webhooks/gitea/pull_request_review-submitted.json;
+file,fixtures/webhooks/gitea/pull_request_review-submitted.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -744,7 +744,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: pull_request_review
-file,test/fixtures/webhooks/gitea/pull_request_review-edited.json;
+file,fixtures/webhooks/gitea/pull_request_review-edited.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -766,7 +766,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: pull_request_review
-file,test/fixtures/webhooks/gitea/pull_request_review-dismissed.json;
+file,fixtures/webhooks/gitea/pull_request_review-dismissed.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -788,7 +788,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: pull_request_review_comment
-file,test/fixtures/webhooks/gitea/pull_request_review_comment-created.json;
+file,fixtures/webhooks/gitea/pull_request_review_comment-created.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -810,7 +810,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: pull_request_review_comment
-file,test/fixtures/webhooks/gitea/pull_request_review_comment-edited.json;
+file,fixtures/webhooks/gitea/pull_request_review_comment-edited.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -832,7 +832,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: pull_request_review_comment
-file,test/fixtures/webhooks/gitea/pull_request_review_comment-deleted.json;
+file,fixtures/webhooks/gitea/pull_request_review_comment-deleted.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -854,7 +854,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: workflow_run
-file,test/fixtures/webhooks/gitea/workflow_run-requested.json;
+file,fixtures/webhooks/gitea/workflow_run-requested.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -876,7 +876,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: workflow_run
-file,test/fixtures/webhooks/gitea/workflow_run-in_progress.json;
+file,fixtures/webhooks/gitea/workflow_run-in_progress.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -898,7 +898,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: workflow_run
-file,test/fixtures/webhooks/gitea/workflow_run-completed.json;
+file,fixtures/webhooks/gitea/workflow_run-completed.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -920,7 +920,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: workflow_job
-file,test/fixtures/webhooks/gitea/workflow_job-queued.json;
+file,fixtures/webhooks/gitea/workflow_job-queued.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -942,7 +942,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: workflow_job
-file,test/fixtures/webhooks/gitea/workflow_job-in_progress.json;
+file,fixtures/webhooks/gitea/workflow_job-in_progress.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -964,7 +964,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: workflow_job
-file,test/fixtures/webhooks/gitea/workflow_job-completed.json;
+file,fixtures/webhooks/gitea/workflow_job-completed.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -986,7 +986,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: workflow_job
-file,test/fixtures/webhooks/gitea/workflow_job-waiting.json;
+file,fixtures/webhooks/gitea/workflow_job-waiting.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -1008,7 +1008,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: status
-file,test/fixtures/webhooks/gitea/status-success.json;
+file,fixtures/webhooks/gitea/status-success.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -1030,7 +1030,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: status
-file,test/fixtures/webhooks/gitea/status-pending.json;
+file,fixtures/webhooks/gitea/status-pending.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -1052,7 +1052,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: status
-file,test/fixtures/webhooks/gitea/status-failure.json;
+file,fixtures/webhooks/gitea/status-failure.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
