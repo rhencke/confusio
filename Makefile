@@ -224,7 +224,7 @@ test-unit-graphql: $(REDBEAN_BIN) $(INIT_SRCS) $(wildcard test/unit-*.lua)
 	$(REDBEAN) test/unit-graphql.lua
 
 # Sequential preamble (boot-path checks), then all backends in parallel
-test-unit: test-unit-functions confusio.com $(MOCKS) hurl
+test-unit: test-unit-functions confusio.com $(MOCKS) mock-target.com hurl
 	bash test/test-unit.sh
 	$(MAKE) -j$$(nproc) test-unit-backends
 
@@ -250,5 +250,5 @@ test-coverage: $(REDBEAN_BIN) luacov $(INIT_SRCS) $(wildcard test/unit-*.lua)
 	$(REDBEAN) scripts/luacov-report.lua
 
 clean:
-	rm -f redbean.com confusio.com $(MOCKS) hurl stylua luacheck .make-families.mk
+	rm -f redbean.com confusio.com $(MOCKS) mock-target.com hurl stylua luacheck .make-families.mk
 	rm -rf _site luacov

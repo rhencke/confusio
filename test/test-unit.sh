@@ -5,8 +5,10 @@ set -euo pipefail
 
 CONFUSIO_PORT=18080
 MOCK_PORT=18081
+DELIVERY_TARGET_PORT=18082
 CONFUSIO_BIN=$(pwd)/confusio.com
 MOCK_GITEA_BIN=$(pwd)/mock-gitea.com
+DELIVERY_TARGET_BIN=$(pwd)/mock-target.com
 HURL=$(pwd)/hurl
 
 start_isolated() {
@@ -50,6 +52,23 @@ run_mock_phase() {
   trap "kill $PID 2>/dev/null || true; kill $MOCK_PID 2>/dev/null || true; rm -rf $tmpdir" EXIT
   run_hurl "$hurl_file"
   kill $PID 2>/dev/null || true; kill $MOCK_PID 2>/dev/null || true; sleep 0.3
+}
+
+# run_delivery_phase: start confusio + mock gitea backend + mock delivery target,
+# run the hurl file with both {{host}} (confusio) and {{target}} (delivery target) vars.
+run_delivery_phase() {
+  local hurl_file="$1"; shift
+  local tmpdir; tmpdir=$(mktemp -d)
+  # Delivery target must run uniprocess (-u) so its global delivery log persists.
+  start_isolated sh "$DELIVERY_TARGET_BIN" -u -p "$DELIVERY_TARGET_PORT"; TARGET_PID=$!
+  start_isolated sh "$MOCK_GITEA_BIN" -p "$MOCK_PORT"; MOCK_PID=$!
+  start_confusio "$tmpdir" "$@"; PID=$!
+  trap "kill $PID 2>/dev/null || true; kill $MOCK_PID 2>/dev/null || true; kill $TARGET_PID 2>/dev/null || true; rm -rf $tmpdir" EXIT
+  $HURL --retry 10 --retry-interval 200 --connect-timeout 1 --max-time 5 \
+    --variable "host=localhost:$CONFUSIO_PORT" \
+    --variable "target=localhost:$DELIVERY_TARGET_PORT" \
+    "$hurl_file"
+  kill $PID 2>/dev/null || true; kill $MOCK_PID 2>/dev/null || true; kill $TARGET_PID 2>/dev/null || true; sleep 0.3
 }
 
 MOCK_ARGS="-- gitea http://127.0.0.1:$MOCK_PORT"
@@ -96,3 +115,10 @@ kill $WH_PID 2>/dev/null || true; sleep 0.3
 
 # Phase 5: Gitea webhook event normalisers (issues, issue_comment, label, milestone)
 run_mock_phase test/gitea-webhooks.hurl $MOCK_ARGS
+
+# Phase 6: Outbound webhook delivery — confusio forwards to the mock delivery target.
+# Delivery target runs on DELIVERY_TARGET_PORT (18082); confusio is wired to it via
+# webhook_target=URL.  The hurl file uses {{target}} to query the delivery log.
+run_delivery_phase test/webhook-delivery.hurl \
+  -- gitea "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
