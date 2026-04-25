@@ -1,8 +1,7 @@
 -- In-memory target registry for the outbound webhook dispatcher.
 --
 -- A "target" is an HTTP(S) endpoint that receives delivered webhook events.
--- Each target has a stable UUID, URL, signing secret, event filter, shape,
--- status, and timestamps.
+-- Each target has a stable UUID, URL, event filter, shape, status, and timestamps.
 --
 -- Globals exported:
 --   target_create(fields)          — create and store a new target; returns public record
@@ -12,14 +11,13 @@
 --   target_delete(target_id)       — soft-delete; returns true or nil
 --   target_pause(target_id)        — pause a target; returns public record or nil
 --   target_resume(target_id)       — resume a paused target; returns public record or nil
---   target_get_secret(target_id)   — return raw secret string (or nil); internal use only
 
--- Module-local storage.  Keyed by target_id; each entry stores all fields
--- including secret.  An ordered insertion list tracks creation order.
+-- Module-local storage.  Keyed by target_id; each entry stores all fields.
+-- An ordered insertion list tracks creation order.
 local _targets = {} -- target_id → full record
 local _order = {} -- insertion-order list of target_ids
 
--- _public(record) returns a copy of record with the secret field omitted.
+-- _public(record) returns a shallow copy of the public fields of record.
 local function _public(r)
   return {
     target_id = r.target_id,
@@ -33,12 +31,11 @@ local function _public(r)
 end
 
 -- target_create(fields) creates and stores a new target.
--- fields: { url, events?, shape?, secret? }
+-- fields: { url, events?, shape? }
 --   url     — required, absolute HTTP(S) URL
 --   events  — optional array of event family names; defaults to {"*"}
 --   shape   — optional "github" or "confusio"; defaults to "github"
---   secret  — optional HMAC signing secret string
--- Returns the public target record (without secret).
+-- Returns the public target record.
 function target_create(fields) -- luacheck: globals target_create
   local now = now_iso8601()
   local id = make_uuid()
@@ -48,7 +45,6 @@ function target_create(fields) -- luacheck: globals target_create
     status = "active",
     events = fields.events or { "*" },
     shape = fields.shape or "github",
-    secret = fields.secret or nil,
     created_at = now,
     updated_at = now,
   }
@@ -93,8 +89,7 @@ function target_list(filter) -- luacheck: globals target_list
 end
 
 -- target_update(target_id, fields) applies a partial update to an existing target.
--- fields: { url?, events?, shape?, status?, secret? }
---   secret may be set to false to remove the signing secret.
+-- fields: { url?, events?, shape?, status? }
 --   status "deleted" is not accepted here; use target_delete instead.
 -- Returns the updated public record, or nil if not found or already deleted.
 function target_update(target_id, fields) -- luacheck: globals target_update
@@ -113,12 +108,6 @@ function target_update(target_id, fields) -- luacheck: globals target_update
   end
   if fields.status ~= nil and fields.status ~= "deleted" then
     r.status = fields.status
-  end
-  -- secret = false removes the secret; any other non-nil value sets it.
-  if fields.secret == false then
-    r.secret = nil
-  elseif fields.secret ~= nil then
-    r.secret = fields.secret
   end
   r.updated_at = now_iso8601()
   return _public(r)
@@ -160,15 +149,4 @@ function target_resume(target_id) -- luacheck: globals target_resume
   r.status = "active"
   r.updated_at = now_iso8601()
   return _public(r)
-end
-
--- target_get_secret(target_id) returns the raw secret string for the given target,
--- or nil if the target does not exist or has no secret configured.
--- This is for internal dispatcher use only — never include secrets in API responses.
-function target_get_secret(target_id) -- luacheck: globals target_get_secret
-  local r = _targets[target_id]
-  if r == nil then
-    return nil
-  end
-  return r.secret
 end

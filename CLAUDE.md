@@ -472,7 +472,7 @@ The twelve `internal/` modules are loaded by `.init.lua` in a fixed order. Each 
 | `defaults.lua` | `defaults` (table of handler functions) | catalog |
 | `router.lua` | `route_add`, `route_match`, `path_known` | catalog, dispatch |
 | `catalog.lua` | `endpoints` (flat array); registers routes via `route_add` | dispatch, scripts |
-| `signing.lua` | `sign_github`, `sign_confusio` | backends (outbound delivery) |
+| `signing.lua` | `sign_github`, `sign_for_backend` | backends (outbound delivery) |
 | `webhooks.lua` | `make_webhook_receiver` | `.init.lua` (installed as `app.webhook_receiver`) |
 | `dispatch.lua` | `make_dispatcher` | `.init.lua` (called once at startup to install `OnHttpRequest`) |
 
@@ -621,8 +621,8 @@ here so they stay visible without reading all 16 docs:
 - **`b:build(strip)` never strips webhook handlers.**  Strip patterns only apply to `app.backend.rest` keys; `app.backend.webhooks` entries registered via `b:webhook()` are always preserved regardless of the strip list passed to `b:build()`.
 - **Raw hurl bodies require backtick syntax.**  To send a body that doesn't start with `{` or `[` (e.g., `not-valid-json` for an invalid-JSON test), wrap it in backticks: `` `not-valid-json` ``.  Without backticks, hurl attempts to parse the first word as an HTTP method and fails with a parse error.
 - **Signature schemes are verified in `verify_signature(backend, secret, body[, now])`** in `internal/webhooks.lua`.  The optional `now` parameter defaults to `os.time()` and exists purely for unit testing — pass a fixed timestamp to test replay prevention without sleeping.  Production code always omits it.
-- **Outbound signing lives in `internal/signing.lua`** (`sign_github`, `sign_confusio`).  `sign_github(secret, body)` returns `(sha256_value, sha1_value)`; `sign_confusio(secret, body, timestamp)` returns the full `X-Confusio-Signature-256` header value.  Both return nil when no secret is configured (unsigned delivery).
-- **Confusio inbound HMAC basestring is `"v1:<ts>:<body>"`** — the timestamp is baked into the signed material, not just the header.  This means a replay with a fresh timestamp produces a different digest and fails even before the window check.  The outbound `sign_confusio` and inbound `verify_signature("confusio", ...)` are symmetric — they must stay in sync.
+- **Outbound signing lives in `internal/signing.lua`** (`sign_github`, `sign_for_backend`).  `sign_github(secret, body)` returns `(sha256_value, sha1_value)`; `sign_for_backend(backend, secret, body)` returns a table of native signature headers for the given backend (empty table when no secret).
+- **Confusio inbound HMAC basestring is `"v1:<ts>:<body>"`** — the timestamp is baked into the signed material, not just the header.  This means a replay with a fresh timestamp produces a different digest and fails even before the window check.  The `confusio` case in `sign_for_backend` and inbound `verify_signature("confusio", ...)` are symmetric — they must stay in sync.
 - **Replay window is 300 seconds (±5 minutes)** enforced by `REPLAY_WINDOW_SECS` in `webhooks.lua`.  Only the confusio scheme has replay prevention; other schemes (HMAC or token) rely on TLS and network policy.
 - **`CONFUSIO_WEBHOOK_SECRETS` env var** — optional JSON object `{"backend":"secret",...}` that `.init.lua` reads at startup and stores as `config.webhook_secrets`.  Used by the test harness (`test/test-unit.sh` Phase 4) and single-backend deployments that prefer env-var config.  Absent key → empty string → trust-the-network for that backend.
 - **Phase 4 in `test/test-unit.sh`** computes HMAC test vectors at runtime with `openssl dgst` and passes them to `hurl` via `--variable` flags.  Never hard-code pre-computed HMACs in the test file — the confusio signature embeds `$(date +%s)` and would be stale by replay-window expiry if pre-computed.  The gitea/bitbucket/gitbucket vectors are stable (no timestamp), but computing all of them uniformly at runtime is simpler and safer.
@@ -670,8 +670,11 @@ The outbound dispatcher stores targets and deliveries in memory, fans received e
 
 **Configuration:**
 - **`CONFUSIO_WEBHOOK_TARGET` env var** — optional JSON object configuring the single outbound target loaded at startup by `.init.lua`.  Must include at minimum `url`; `events` (array) and `shape` (`"github"`|`"confusio"`) are optional.  The target is registered into the in-memory registry and survives only for the process lifetime (no persistence).
+- **`CONFUSIO_WEBHOOK_HMAC_SECRET_FILE` env var** — optional path to a file containing the outbound HMAC signing secret.  Signing uses the active backend's native webhook scheme (e.g. `X-Gitea-Signature` for Gitea, `X-Gitlab-Token` for GitLab).  Absent → deliveries are unsigned.
 - **`CONFUSIO_WEBHOOK_SECRETS`** (existing) provides per-backend inbound signing secrets.
 
 **Dispatch flow:** `dispatch.lua` calls `maybe_prune_outbox()` and `maybe_retry_pending()` on every request before routing.  After the webhook receiver validates and stores an inbound event in the outbox, `fanout.lua` checks the single active target, applies event and shape filters, calls `deliver.lua` if the event matches, and records the delivery outcome.  Failed deliveries are re-queued by `retry.lua` with exponential backoff; the circuit breaker in `circuit_breaker.lua` trips after repeated consecutive failures and holds the target open until a half-open probe succeeds.
 
 **Catalog and validate-claims:** all 13 admin endpoints are confusio-native and are exempted from the per-backend handler presence check in `scripts/validate-claims.lua` via the `CONFUSIO_NATIVE` table.  Their catalog entries use `defaults.webhook_receive_stub` as the default function (never reached in production) purely to satisfy `validate-tests` and `validate-csv`.
+
+- **Outbound signing mirrors the active backend's inbound scheme.** The `sign_for_backend` function in `internal/signing.lua` maps backend names to their native signature headers using the same schemes documented in `verify_signature` in `internal/webhooks.lua`.  The two must stay in sync when new backends are added.

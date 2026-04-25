@@ -1,4 +1,4 @@
--- Outbound delivery signing for GitHub-emulation and confusio-normalized shapes.
+-- Outbound delivery signing for GitHub-emulation and backend-native shapes.
 --
 -- sign_github(secret, body)
 --   Computes the GitHub-emulation delivery signatures.
@@ -7,16 +7,14 @@
 --     X-Hub-Signature-256: <sha256_value>
 --     X-Hub-Signature:     <sha1_value>
 --
--- sign_confusio(secret, body, timestamp)
---   Computes the confusio-normalized delivery signature.
---   timestamp is Unix epoch seconds (integer); it is folded into the HMAC
---   basestring ("v1:<ts>:<body>") so that replaying an old delivery with a valid
---   body but a stale timestamp produces a different digest.
---   Returns the complete X-Confusio-Signature-256 header value string ("sha256=<hex>,
---   v=1, ts=<ts>"), or nil when no secret is configured.
+-- sign_for_backend(backend, secret, body)
+--   Returns a Lua table of signature headers appropriate for the given backend's
+--   native webhook scheme.  Returns an empty table {} when no secret is configured.
+--   The signing scheme matches what verify_signature in internal/webhooks.lua expects
+--   for each backend — both must stay in sync when new backends are added.
 --
 -- Globals exported:
---   sign_github, sign_confusio
+--   sign_github, sign_for_backend
 
 local function to_hex(bytes)
   local hex = {}
@@ -39,15 +37,65 @@ function sign_github(secret, body) -- luacheck: globals sign_github
   return "sha256=" .. hmac_hex("sha256", secret, body), "sha1=" .. hmac_hex("sha1", secret, body)
 end
 
--- sign_confusio(secret, body, timestamp) computes the confusio-normalized delivery
--- signature.  The HMAC basestring is "v1:<timestamp>:<body>"; the v=1 and ts=<ts>
--- fields in the header value allow consumers to extract and verify the timestamp
--- without a second parse pass.
-function sign_confusio(secret, body, timestamp) -- luacheck: globals sign_confusio
+-- sign_for_backend(backend, secret, body) returns a table of signature headers
+-- using the native webhook scheme for the given backend.
+-- Returns {} (empty table) when no secret is configured.
+function sign_for_backend(backend, secret, body) -- luacheck: globals sign_for_backend
   if not secret or secret == "" then
-    return nil
+    return {}
   end
-  local ts = tostring(timestamp)
-  local basestring = "v1:" .. ts .. ":" .. body
-  return "sha256=" .. hmac_hex("sha256", secret, basestring) .. ", v=1, ts=" .. ts
+  if
+    backend == "gitea"
+    or backend == "forgejo"
+    or backend == "codeberg"
+    or backend == "notabug"
+  then
+    return { ["X-Gitea-Signature"] = hmac_hex("sha256", secret, body) }
+  elseif backend == "gogs" then
+    return { ["X-Gogs-Signature"] = hmac_hex("sha256", secret, body) }
+  elseif backend == "gitlab" then
+    return { ["X-Gitlab-Token"] = secret }
+  elseif backend == "bitbucket" or backend == "bitbucket_datacenter" then
+    return { ["X-Hub-Signature"] = "sha256=" .. hmac_hex("sha256", secret, body) }
+  elseif backend == "gitbucket" then
+    return { ["X-Hub-Signature"] = "sha1=" .. hmac_hex("sha1", secret, body) }
+  elseif backend == "phabricator" then
+    return { ["X-Phabricator-Webhook-Signature"] = hmac_hex("sha256", secret, body) }
+  elseif backend == "pagure" then
+    return {
+      ["X-Pagure-Signature-256"] = hmac_hex("sha256", secret, body),
+      ["X-Pagure-Signature"] = hmac_hex("sha512", secret, body),
+    }
+  elseif backend == "harness" then
+    return { ["X-Harness-Token"] = secret }
+  elseif backend == "onedev" then
+    return { ["Authorization"] = "Bearer " .. secret }
+  elseif backend == "gerrit" or backend == "radicle" then
+    return { ["Authorization"] = secret }
+  elseif backend == "gitblit" then
+    return { ["X-Gitblit-Token"] = secret }
+  elseif backend == "rhodecode" then
+    return { ["X-RhodeCode-Signature"] = secret }
+  elseif backend == "sourceforge" then
+    return { ["X-Sourceforge-Webhook-Secret"] = secret }
+  elseif backend == "tuleap" then
+    return { ["X-Tuleap-Webhook-Secret"] = secret }
+  elseif backend == "azuredevops" then
+    return { ["Authorization"] = "Basic " .. EncodeBase64(secret) } -- luacheck: globals EncodeBase64
+  elseif backend == "confusio" then
+    local ts = tostring(os.time())
+    local basestring = "v1:" .. ts .. ":" .. body
+    return {
+      ["X-Confusio-Signature-256"] = "sha256="
+        .. hmac_hex("sha256", secret, basestring)
+        .. ", v=1, ts="
+        .. ts,
+    }
+  else
+    -- Default (unknown/github/sourcehut/etc.): GitHub-style dual signatures.
+    return {
+      ["X-Hub-Signature-256"] = "sha256=" .. hmac_hex("sha256", secret, body),
+      ["X-Hub-Signature"] = "sha1=" .. hmac_hex("sha1", secret, body),
+    }
+  end
 end

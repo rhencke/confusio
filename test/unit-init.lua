@@ -100,11 +100,13 @@ end
 -- The dofile stub above silently drops the backend file load.
 arg = { "testbackend" } -- luacheck: globals arg
 
--- Stub os.getenv to return valid JSON for CONFUSIO_WEBHOOK_SECRETS and
--- CONFUSIO_WEBHOOK_TARGET so that both env-var loading blocks in .init.lua
--- are exercised by luacov.  Restore immediately after load and clear both
--- config fields so subsequent tests that rely on clean config are unaffected.
+-- Stub os.getenv to return valid JSON for CONFUSIO_WEBHOOK_SECRETS,
+-- CONFUSIO_WEBHOOK_TARGET, and CONFUSIO_WEBHOOK_HMAC_SECRET_FILE so that all
+-- env-var loading blocks in .init.lua are exercised by luacov.  Restore
+-- immediately after load and clear all config fields so subsequent tests that
+-- rely on clean config are unaffected.
 local _real_getenv = os.getenv
+local _real_io_open = io.open
 os.getenv = function(k) -- luacheck: globals os
   if k == "CONFUSIO_WEBHOOK_SECRETS" then
     return '{"gitea":"ws_coverage_test"}'
@@ -112,7 +114,21 @@ os.getenv = function(k) -- luacheck: globals os
   if k == "CONFUSIO_WEBHOOK_TARGET" then
     return '{"url":"https://hook.example.com/wt-coverage","events":["push"],"shape":"github"}'
   end
+  if k == "CONFUSIO_WEBHOOK_HMAC_SECRET_FILE" then
+    return "/tmp/fido-test-hmac-secret"
+  end
   return _real_getenv(k)
+end
+io.open = function(path, ...) -- luacheck: globals io
+  if path == "/tmp/fido-test-hmac-secret" then
+    return {
+      read = function(_, _)
+        return "test-hmac-key\n"
+      end,
+      close = function() end,
+    }
+  end
+  return _real_io_open(path, ...)
 end
 
 -- Load the module under test.
@@ -142,11 +158,20 @@ assert(
   "CONFUSIO_WEBHOOK_TARGET: url mismatch: " .. tostring((config.webhook_target or {}).url)
 )
 
--- Restore os.getenv and clear coverage-only state so later tests see a
--- clean config.  (config and app.config reference the same table.)
+-- Verify the env-var block populated config.hmac_secret.
+assert(
+  config.hmac_secret == "test-hmac-key",
+  "CONFUSIO_WEBHOOK_HMAC_SECRET_FILE: config.hmac_secret populated: "
+    .. tostring(config.hmac_secret)
+)
+
+-- Restore os.getenv, io.open, and clear coverage-only state so later tests
+-- see a clean config.  (config and app.config reference the same table.)
 os.getenv = _real_getenv -- luacheck: globals os
+io.open = _real_io_open -- luacheck: globals io
 config.webhook_secrets = nil
 config.webhook_target = nil
+config.hmac_secret = nil
 
 -- Restore dofile so later tests that call it work normally.
 dofile = _real_dofile -- luacheck: globals dofile
@@ -2688,7 +2713,7 @@ do
 end
 
 -- ============================================================
--- sign_github / sign_confusio
+-- sign_github / sign_for_backend
 -- ============================================================
 
 do
@@ -2719,33 +2744,30 @@ do
   ok(type(s256) == "string", "sign_github: sha256 return is a string")
   ok(type(s1) == "string", "sign_github: sha1 return is a string")
 
-  -- ── sign_confusio ─────────────────────────────────────────
+  -- ── sign_for_backend ─────────────────────────────────────
+  -- luacheck: globals sign_for_backend
+  ok(type(sign_for_backend) == "function", "sign_for_backend: exported as global function")
 
-  ok(type(sign_confusio) == "function", "sign_confusio: exported as global function")
+  -- No secret: returns empty table for any backend.
+  local sfb_empty = sign_for_backend("gitea", nil, BODY)
+  ok(type(sfb_empty) == "table", "sign_for_backend(nil): returns table")
+  ok(next(sfb_empty) == nil, "sign_for_backend(nil): empty table")
 
-  -- No secret → returns nil.
-  ok(sign_confusio(nil, BODY, 1700000000) == nil, "sign_confusio(nil): returns nil")
-  ok(sign_confusio("", BODY, 1700000000) == nil, "sign_confusio(''): returns nil")
+  -- Gitea family: X-Gitea-Signature, HMAC-SHA256, no prefix.
+  for _, be in ipairs({ "gitea", "forgejo", "codeberg", "notabug" }) do
+    local h = sign_for_backend(be, SECRET, BODY)
+    ok(h["X-Gitea-Signature"] ~= nil, "sign_for_backend " .. be .. ": X-Gitea-Signature present")
+    ok(h["X-Hub-Signature-256"] == nil, "sign_for_backend " .. be .. ": no X-Hub-Signature-256")
+  end
 
-  -- With secret → returns "sha256=<hex>, v=1, ts=<ts>".
-  local TS = 1700000000
-  local csig = sign_confusio(SECRET, BODY, TS)
-  ok(type(csig) == "string", "sign_confusio: return is a string")
-  eq(csig, "sha256=" .. STUB_HEX .. ", v=1, ts=1700000000", "sign_confusio: header value format")
+  -- GitLab: verbatim token.
+  local sfb_gl = sign_for_backend("gitlab", SECRET, BODY)
+  eq(sfb_gl["X-Gitlab-Token"], SECRET, "sign_for_backend gitlab: X-Gitlab-Token is the secret")
 
-  -- Timestamp appears verbatim in the returned header value.
-  local ts_val = csig:match(", ts=(%d+)$")
-  eq(tonumber(ts_val), TS, "sign_confusio: ts field matches supplied timestamp")
-
-  -- Different timestamps produce different basestrings (stub ignores input, but
-  -- verify the ts field in the header value changes as expected).
-  local r1 = sign_confusio(SECRET, BODY, 1000)
-  local r2 = sign_confusio(SECRET, BODY, 9999)
-  ok(r1:match(", ts=1000$") ~= nil, "sign_confusio: ts=1000 appears in header")
-  ok(r2:match(", ts=9999$") ~= nil, "sign_confusio: ts=9999 appears in header")
-
-  -- v=1 is present in the header value.
-  ok(csig:find(", v=1,", 1, true) ~= nil, "sign_confusio: v=1 field present in header value")
+  -- Default (unknown backend): GitHub-style.
+  local sfb_def = sign_for_backend("unknown_backend", SECRET, BODY)
+  ok(sfb_def["X-Hub-Signature-256"] ~= nil, "sign_for_backend unknown: X-Hub-Signature-256 present")
+  ok(sfb_def["X-Hub-Signature"] ~= nil, "sign_for_backend unknown: X-Hub-Signature present")
 end
 
 -- ============================================================
@@ -3128,10 +3150,10 @@ ok(
 
 -- ============================================================
 -- target_create / target_get / target_list / target_update /
--- target_delete / target_get_secret (internal/targets.lua)
+-- target_delete (internal/targets.lua)
 -- ============================================================
 
--- luacheck: globals target_create target_get target_list target_update target_delete target_get_secret
+-- luacheck: globals target_create target_get target_list target_update target_delete
 
 -- Note: the GetRandomBytes stub is deterministic, so make_uuid() always returns the
 -- same UUID.  All tests therefore operate on a single target_id (the one assigned
@@ -3142,7 +3164,6 @@ local ta = target_create({
   url = "https://example.com/hook",
   events = { "push" },
   shape = "confusio",
-  secret = "s3cr3t",
 })
 ok(ta ~= nil, "target_create: returns non-nil")
 ok(ta.target_id ~= nil, "target_create: target_id is set")
@@ -3153,38 +3174,21 @@ eq(ta.shape, "confusio", "target_create: shape is set")
 eq(ta.events[1], "push", "target_create: events stored")
 ok(ta.created_at ~= nil, "target_create: created_at is set")
 ok(ta.updated_at ~= nil, "target_create: updated_at is set")
--- secret must not be in the public record.
-ok(ta.secret == nil, "target_create: secret is not in public record")
 
 -- target_create: defaults for events and shape when omitted (re-creates same id; overwrites).
 local tb_events_check = target_create({ url = "https://b.example.com/hook" })
 eq(tb_events_check.events[1], "*", 'target_create: events defaults to ["*"]')
 eq(tb_events_check.shape, "github", "target_create: shape defaults to github")
 
--- target_get_secret: returns the raw secret for the stored target (now has no secret after overwrite).
--- Restore a known target with secret so we can test get_secret accurately.
-local ts = target_create({ url = "https://secret.example.com/hook", secret = "s3cr3t" })
+-- Create a known target for the lifecycle tests.
+local ts = target_create({ url = "https://secret.example.com/hook" })
 local ts_id = ts.target_id
-local s1 = target_get_secret(ts_id)
-eq(s1, "s3cr3t", "target_get_secret: returns stored secret")
 
--- target_get: returns public record for existing active target (check before overwriting).
+-- target_get: returns public record for existing active target.
 local g1 = target_get(ts_id)
 ok(g1 ~= nil, "target_get: found active target")
 eq(g1.target_id, ts_id, "target_get: target_id matches")
 eq(g1.url, "https://secret.example.com/hook", "target_get: url matches")
-ok(g1.secret == nil, "target_get: no secret in public record")
-
--- target_get_secret: returns nil for a target with no secret.
--- Note: make_uuid is deterministic in tests so this re-uses ts_id, overwriting the store.
-local tnosec = target_create({ url = "https://nosec.example.com/hook" })
-ok(target_get_secret(tnosec.target_id) == nil, "target_get_secret: returns nil when no secret")
-
--- target_get_secret: returns nil for an unknown target_id.
-ok(
-  target_get_secret("00000000-0000-4000-8000-000000000000") == nil,
-  "target_get_secret: nil for unknown id"
-)
 
 -- target_get: returns nil for unknown id.
 ok(target_get("00000000-0000-4000-8000-000000000000") == nil, "target_get: nil for unknown id")
@@ -3212,7 +3216,6 @@ local upd1 = target_update(ts_id, { url = "https://new.example.com/hook", shape 
 ok(upd1 ~= nil, "target_update: returns non-nil for valid update")
 eq(upd1.url, "https://new.example.com/hook", "target_update: url is updated")
 eq(upd1.shape, "github", "target_update: shape is updated")
-ok(upd1.secret == nil, "target_update: no secret in public update record")
 
 -- target_update: update status to paused.
 local upd2 = target_update(ts_id, { status = "paused" })
@@ -3221,14 +3224,6 @@ eq(upd2.status, "paused", "target_update(paused): status is paused")
 
 -- target_update: restore to active.
 target_update(ts_id, { status = "active" })
-
--- target_update: set secret.
-target_update(ts_id, { secret = "newsecret" })
-eq(target_get_secret(ts_id), "newsecret", "target_update: secret is updated")
-
--- target_update: remove secret with false.
-target_update(ts_id, { secret = false })
-ok(target_get_secret(ts_id) == nil, "target_update(secret=false): secret removed")
 
 -- target_update: status "deleted" is ignored (must use target_delete).
 local before_status = target_get(ts_id).status
@@ -3330,7 +3325,6 @@ do
   eq(b_create and b_create.url, "https://api.example.com/hook", "targets_api POST: url in response")
   eq(b_create and b_create.status, "active", "targets_api POST: status is active")
   eq(b_create and b_create.shape, "confusio", "targets_api POST: shape in response")
-  ok(b_create and b_create.secret == nil, "targets_api POST: secret not in response")
 
   -- ── POST: missing url → 400 ──────────────────────────────────
 
@@ -3418,7 +3412,6 @@ do
     "targets_api GET single: circuit_open_until is null"
   )
   eq(b_get and b_get.consecutive_failures, 0, "targets_api GET single: consecutive_failures is 0")
-  ok(b_get and b_get.secret == nil, "targets_api GET single: no secret in response")
 
   -- ── GET /webhooks/targets/{id}: not found → 404 ──────────────
 
@@ -3488,7 +3481,6 @@ do
   eq(s_pause, 200, "targets_api POST pause: 200 on success")
   eq(b_pause and b_pause.status, "paused", "targets_api POST pause: status is paused")
   eq(b_pause and b_pause.circuit, "closed", "targets_api POST pause: circuit field present")
-  ok(b_pause and b_pause.secret == nil, "targets_api POST pause: no secret in response")
 
   -- ── POST /webhooks/targets/{id}/resume ───────────────────────
 
@@ -3709,9 +3701,11 @@ ok(fd_del4 == nil, "fanout_dispatch deleted: deleted target receives no deliveri
 local da_target = target_create({
   url = "https://da-test.example.com/hook",
   events = { "*" },
-  secret = "test-secret",
 })
 ok(da_target ~= nil, "deliver_attempt setup: target created")
+
+-- Set config.hmac_secret so signature headers are generated for assertion tests.
+config.hmac_secret = "test-secret"
 
 local _, da_del = fanout_dispatch("gitea", "push", { ref = "refs/heads/main" })
 ok(da_del ~= nil, "deliver_attempt setup: delivery created")
@@ -3771,14 +3765,11 @@ eq(
   da_del_id,
   "deliver_attempt github shape: X-GitHub-Delivery is delivery_id"
 )
--- Secret was set so signatures should be present.
+-- config.hmac_secret is set so signature header should be present.
+-- Backend is "gitea" so sign_for_backend returns X-Gitea-Signature.
 ok(
-  _da_last_opts.headers["X-Hub-Signature-256"] ~= nil,
-  "deliver_attempt github shape: X-Hub-Signature-256 present"
-)
-ok(
-  _da_last_opts.headers["X-Hub-Signature"] ~= nil,
-  "deliver_attempt github shape: X-Hub-Signature present"
+  _da_last_opts.headers["X-Gitea-Signature"] ~= nil,
+  "deliver_attempt gitea backend: X-Gitea-Signature present"
 )
 
 -- deliver_attempt: 503 → status "retrying" with next_attempt_at set.
@@ -3825,7 +3816,8 @@ eq(da_del5.status, "retrying", "deliver_attempt network error: status is retryin
 ok(da_del5.last_error ~= nil, "deliver_attempt network error: last_error records the message")
 _da_mock_error = nil
 
--- deliver_attempt: confusio shape target uses Confusio headers.
+-- deliver_attempt: confusio shape target uses Confusio event headers.
+-- Signing is still backend-native (gitea → X-Gitea-Signature).
 target_update(da_target.target_id, { shape = "confusio" })
 _da_mock_status = 200
 local da_ok6, _, _ = deliver_attempt(da_del_id)
@@ -3845,16 +3837,15 @@ eq(
   "deliver_attempt confusio shape: X-Confusio-Source is backend"
 )
 ok(
-  _da_last_opts.headers["X-Confusio-Signature-256"] ~= nil,
-  "deliver_attempt confusio shape: X-Confusio-Signature-256 present"
-)
-ok(
-  _da_last_opts.headers["X-Hub-Signature-256"] == nil,
-  "deliver_attempt confusio shape: no github signature header"
+  _da_last_opts.headers["X-Gitea-Signature"] ~= nil,
+  "deliver_attempt confusio shape: X-Gitea-Signature present (backend-native signing)"
 )
 
 -- Restore Fetch.
 Fetch = _real_Fetch
+
+-- Clean up config.hmac_secret.
+config.hmac_secret = nil
 
 -- deliver_attempt: deleted target → "failed" without making any network call.
 target_delete(da_target.target_id)

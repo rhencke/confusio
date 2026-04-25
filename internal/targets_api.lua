@@ -135,7 +135,6 @@ function make_targets_api(_a) -- luacheck: globals make_targets_api
           url = body.url,
           events = body.events,
           shape = body.shape,
-          secret = body.secret,
         })
         set_preamble(201)
         Write(EncodeJson(rec))
@@ -183,19 +182,11 @@ function make_targets_api(_a) -- luacheck: globals make_targets_api
           _err(400, "invalid_status", 'status must be "active" or "paused".')
           return
         end
-        -- Detect "secret": null in the raw body to distinguish explicit null
-        -- (remove signing) from absent key (leave secret unchanged).
-        -- DecodeJson maps JSON null → Lua nil, so we inspect the raw string.
-        local secret_val = body.secret
-        if secret_val == nil and body_str and body_str:match('"secret"%s*:%s*null') then
-          secret_val = false -- signal target_update to remove the secret
-        end
         local updated = target_update(target_id, {
           url = body.url,
           events = body.events,
           shape = body.shape,
           status = body.status,
-          secret = secret_val,
         })
         respond_json(200, _with_circuit(updated))
       elseif method == "DELETE" then

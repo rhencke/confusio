@@ -31,6 +31,19 @@ if ws_env and ws_env ~= "" then
   end
 end
 
+-- CONFUSIO_WEBHOOK_HMAC_SECRET_FILE: optional path to a file containing the
+-- outbound HMAC signing secret for webhook deliveries.  The secret is read at
+-- startup; trailing newlines are stripped.  The signing scheme used for each
+-- delivery matches the active backend's native webhook format.
+local hs_file = os.getenv("CONFUSIO_WEBHOOK_HMAC_SECRET_FILE")
+if hs_file and hs_file ~= "" then
+  local f = io.open(hs_file, "r")
+  if f then
+    config.hmac_secret = f:read("*a"):gsub("[\r\n]+$", "")
+    f:close()
+  end
+end
+
 -- CONFUSIO_WEBHOOK_TARGET: optional JSON object configuring the single outbound target.
 -- Fields: url (required), events (array), shape ("github"|"confusio").
 -- Example: CONFUSIO_WEBHOOK_TARGET='{"url":"https://hook.example.com","events":["push"]}'

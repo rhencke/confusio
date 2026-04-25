@@ -2,8 +2,8 @@
 --
 -- deliver_attempt(delivery_id) performs one HTTP delivery attempt.
 -- It looks up the delivery record, the originating event, and the target;
--- serialises the body for the target's shape; signs it if a secret is
--- configured; and POSTs to the target URL.
+-- serialises the body for the target's shape; adds provider-native HMAC headers
+-- if CONFUSIO_WEBHOOK_HMAC_SECRET_FILE is configured; and POSTs to the target URL.
 --
 -- The delivery record is updated with the outcome:
 --   2xx              → status "delivered", attempt_count++
@@ -18,9 +18,9 @@
 --   deliver_attempt(delivery_id) → ok, http_status_or_nil, error_or_nil
 
 -- _deliver_headers: builds the outbound request headers table.
--- For "github" shape: X-GitHub-Event, X-GitHub-Delivery, and Hub-Signature headers.
--- For "confusio" shape: X-Confusio-Event/Source/Delivery and Confusio-Signature header.
-local function _deliver_headers(event, delivery, shape, secret, body)
+-- For "github" shape: X-GitHub-Event, X-GitHub-Delivery, and provider-native signature headers.
+-- For "confusio" shape: X-Confusio-Event/Source/Delivery and provider-native signature headers.
+local function _deliver_headers(event, delivery, shape, body)
   local headers = {
     ["Content-Type"] = "application/json",
     ["User-Agent"] = "confusio/1.0",
@@ -29,19 +29,14 @@ local function _deliver_headers(event, delivery, shape, secret, body)
     headers["X-Confusio-Event"] = event.event_type
     headers["X-Confusio-Source"] = event.backend
     headers["X-Confusio-Delivery"] = delivery.delivery_id
-    local sig = sign_confusio(secret, body, os.time())
-    if sig ~= nil then
-      headers["X-Confusio-Signature-256"] = sig
-    end
   else
     -- "github" shape (default and fallback)
     headers["X-GitHub-Event"] = event.event_type
     headers["X-GitHub-Delivery"] = delivery.delivery_id
-    local sig256, sig1 = sign_github(secret, body)
-    if sig256 ~= nil then
-      headers["X-Hub-Signature-256"] = sig256
-      headers["X-Hub-Signature"] = sig1
-    end
+  end
+  local sig_hdrs = sign_for_backend(event.backend, config.hmac_secret, body) -- luacheck: globals sign_for_backend config
+  for k, v in pairs(sig_hdrs) do
+    headers[k] = v
   end
   return headers
 end
@@ -74,9 +69,8 @@ function deliver_attempt(delivery_id) -- luacheck: globals deliver_attempt
     })
     return false, nil, "target not found or deleted"
   end
-  local secret = target_get_secret(delivery.target_id)
   local body = fanout_body(event.backend, event.event_type, event.payload, target.shape)
-  local hdrs = _deliver_headers(event, delivery, target.shape, secret, body)
+  local hdrs = _deliver_headers(event, delivery, target.shape, body)
   local new_count = delivery.attempt_count + 1
   local pcall_ok, result =
     pcall(Fetch, target.url, { method = "POST", body = body, headers = hdrs })
