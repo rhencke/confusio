@@ -657,17 +657,17 @@ here so they stay visible without reading all 16 docs:
 
 ### Outbound webhook dispatcher
 
-The outbound dispatcher fans received events to the registered target, retries on failure, and exposes read-only delivery inspection endpoints.  These endpoints are confusio-native (backend-agnostic) and are intercepted by `dispatch.lua` before routing — they have no entries in `app.backend.rest`.
+When a webhook event arrives from a forge backend, confusio can forward it to a single configured outbound target.  Events and delivery state are stored in a SQLite-backed outbox (optionally persistent across restarts).  There are no admin write endpoints — the target is configured at startup via environment variable and delivery records are read-only.
 
 **Modules:**
 
 | Module | Role |
 |--------|------|
-| `internal/targets.lua` | In-memory target registry: CRUD, pause/resume, soft-delete |
-| `internal/outbox.lua` | SQLite-backed outbox: event storage, delivery state records, attempt history, 72-hour retention |
-| `internal/fanout.lua` | Fan-out dispatcher: event filtering, shape selection (github/confusio), per-target delivery |
+| `internal/targets.lua` | In-memory target registry (single target, configured at startup via env var) |
+| `internal/outbox.lua` | SQLite-backed outbox: event storage, delivery records, attempt history, 72-hour retention |
 | `internal/deliver.lua` | Outbound HTTP delivery with signing and attempt recording |
-| `internal/retry.lua` | Retry scheduler with exponential backoff and jitter |
+| `internal/signing.lua` | HMAC signing for outbound deliveries using the backend's native scheme |
+| `internal/retry.lua` | Retry scheduler with exponential backoff, jitter, and per-target budget |
 | `internal/circuit_breaker.lua` | Per-target circuit breaker (open/half-open/closed) |
 | `internal/pruner.lua` | Periodic outbox pruning; invoked from `make_dispatcher` on every request |
 | `internal/deliveries_api.lua` | Read-only HTTP API for delivery inspection; exports `make_deliveries_api(a)` |
@@ -681,12 +681,12 @@ The outbound dispatcher fans received events to the registered target, retries o
 | `GET /webhooks/deliveries/{delivery_id}/attempts` | Attempt history for a delivery (200) |
 
 **Configuration:**
-- **`CONFUSIO_WEBHOOK_TARGET` env var** — optional JSON object configuring the single outbound target loaded at startup by `.init.lua`.  Must include at minimum `url`; `events` (array) and `shape` (`"github"`|`"confusio"`) are optional.  The target is registered into the in-memory registry and survives only for the process lifetime (no persistence).
+- **`CONFUSIO_WEBHOOK_TARGET` env var** — optional JSON object configuring the single outbound target at startup.  Must include at minimum `url`; `events` (array) and `shape` (`"github"`|`"confusio"`) are optional.  The target lives in the in-memory registry for the process lifetime (no persistence).
 - **`CONFUSIO_WEBHOOK_HMAC_SECRET_FILE` env var** — optional path to a file containing the outbound HMAC signing secret.  Signing uses the active backend's native webhook scheme (e.g. `X-Gitea-Signature` for Gitea, `X-Gitlab-Token` for GitLab).  Absent → deliveries are unsigned.
 - **`CONFUSIO_OUTBOX_DB` env var** — optional path for the outbox SQLite database (e.g. `/var/lib/confusio/outbox.db`).  Defaults to `":memory:"` when not set (transient: events and deliveries are lost on restart).  Set to a file path to persist deliveries across restarts.
 - **`CONFUSIO_WEBHOOK_SECRETS`** (existing) provides per-backend inbound signing secrets.
 
-**Dispatch flow:** `dispatch.lua` calls `maybe_prune_outbox()` and `maybe_retry_pending()` on every request before routing.  After the webhook receiver validates and stores an inbound event in the outbox, `fanout.lua` checks the single active target, applies event and shape filters, calls `deliver.lua` if the event matches, and records the delivery outcome.  Failed deliveries are re-queued by `retry.lua` with exponential backoff; the circuit breaker in `circuit_breaker.lua` trips after repeated consecutive failures and holds the target open until a half-open probe succeeds.
+**Dispatch flow:** `dispatch.lua` calls `maybe_prune_outbox()` and `maybe_retry_pending()` on every request before routing.  After the webhook receiver validates an inbound event, `fanout.lua` stores it in the outbox, checks the single active target's event subscription, and creates a pending delivery if the event matches.  `deliver.lua` sends the HTTP POST with optional HMAC signing and records the outcome.  Failed deliveries are re-queued by `retry.lua` with exponential backoff; the circuit breaker in `circuit_breaker.lua` trips after repeated consecutive failures and holds the target open until a half-open probe succeeds.
 
 **Catalog and validate-claims:** the three delivery inspection endpoints are confusio-native and are exempted from the per-backend handler presence check in `scripts/validate-claims.lua` via the `CONFUSIO_NATIVE` table.  Their catalog entries use `defaults.webhook_receive_stub` as the default function (never reached in production) purely to satisfy `validate-tests` and `validate-csv`.
 
