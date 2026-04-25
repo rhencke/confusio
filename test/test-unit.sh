@@ -181,3 +181,68 @@ run_delivery_phase test/webhook-delivery-bitbucket_datacenter-confusio-shape.hur
   -- bitbucket_datacenter "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
+
+# Phase 15: Azure DevOps fixture-based delivery tests — every event type.
+# Azure DevOps embeds eventType in the body; no event-type header is required.
+run_delivery_phase test/webhook-delivery-azuredevops.hurl \
+  -- azuredevops "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 16: Azure DevOps delivery with "confusio" shape — spot-checks X-Confusio-* headers.
+# Verifies X-Confusio-Source is "azuredevops" and X-GitHub-Event is absent.
+run_delivery_phase test/webhook-delivery-azuredevops-confusio-shape.hurl \
+  -- azuredevops "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+  "webhook_target_shape=confusio"
+
+# Phase 17: Gerrit fixture-based delivery tests — comment-added event.
+# Gerrit embeds the event type in the body (payload.type); no event-type header required.
+run_delivery_phase test/webhook-delivery-gerrit.hurl \
+  -- gerrit "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 18: Gerrit delivery with "confusio" shape — spot-checks X-Confusio-* headers.
+# Verifies X-Confusio-Source is "gerrit" and X-GitHub-Event is absent.
+run_delivery_phase test/webhook-delivery-gerrit-confusio-shape.hurl \
+  -- gerrit "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+  "webhook_target_shape=confusio"
+
+# Phase 19: GitBucket fixture-based delivery tests — every event × action triple.
+# GitBucket uses X-GitHub-Event header (GitHub-compatible format).
+run_delivery_phase test/webhook-delivery-gitbucket.hurl \
+  -- gitbucket "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 20: GitBucket delivery with "confusio" shape — spot-checks X-Confusio-* headers.
+# Verifies X-Confusio-Source is "gitbucket" and X-GitHub-Event is absent.
+run_delivery_phase test/webhook-delivery-gitbucket-confusio-shape.hurl \
+  -- gitbucket "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+  "webhook_target_shape=confusio"
+
+# Phase 21: Harness fixture-based delivery tests — pipeline and stage events.
+# Harness embeds eventType in the body; no event-type header is required.
+run_delivery_phase test/webhook-delivery-harness.hurl \
+  -- harness "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 22: Harness delivery with "confusio" shape — spot-checks X-Confusio-* headers.
+# Verifies X-Confusio-Source is "harness" and X-GitHub-Event is absent.
+run_delivery_phase test/webhook-delivery-harness-confusio-shape.hurl \
+  -- harness "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+  "webhook_target_shape=confusio"
+
+# Phase 23: Pagure fixture-based delivery tests — every event type.
+# Pagure uses X-Pagure-Event header to indicate the event type.
+run_delivery_phase test/webhook-delivery-pagure.hurl \
+  -- pagure "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 24: Pagure delivery with "confusio" shape — spot-checks X-Confusio-* headers.
+# Verifies X-Confusio-Source is "pagure" and X-GitHub-Event is absent.
+run_delivery_phase test/webhook-delivery-pagure-confusio-shape.hurl \
+  -- pagure "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+  "webhook_target_shape=confusio"

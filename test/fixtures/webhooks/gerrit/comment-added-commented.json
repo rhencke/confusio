@@ -1,0 +1,22 @@
+{
+  "type": "comment-added",
+  "change": {
+    "_number": 1001,
+    "project": "myorg/my-repo",
+    "branch": "main",
+    "subject": "Fix login bug",
+    "status": "NEW",
+    "wip": false,
+    "owner": {"name": "Alice", "email": "alice@example.com", "username": "alice"},
+    "created": "2024-01-15T10:00:00Z",
+    "updated": "2024-01-15T12:00:00Z"
+  },
+  "patchSet": {
+    "number": 2,
+    "revision": "bbb222ccc333",
+    "createdOn": 1705316400
+  },
+  "author": {"name": "Charlie", "email": "charlie@example.com", "username": "charlie"},
+  "comment": "Just a comment, no vote",
+  "approvals": []
+}

@@ -1,0 +1,19 @@
+{
+  "eventType": "stage_execution_failed",
+  "pipelineIdentifier": "my-pipeline",
+  "stageIdentifier": "test",
+  "stageName": "Test Stage",
+  "orgIdentifier": "myorg",
+  "projectIdentifier": "myproject",
+  "runSequence": 2,
+  "startTs": 1705316500000,
+  "endTs": 1705316900000,
+  "triggeredBy": {"name": "bob", "email": "bob@example.com"},
+  "moduleInfo": {
+    "ci": {
+      "branch": "feature-branch",
+      "commitSha": "bbb222ccc333",
+      "repoName": "my-repo"
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "eventType": "workitem.updated",
+  "resource": {
+    "id": 1,
+    "revision": {
+      "fields": {
+        "System.Title": "Fix login bug",
+        "System.State": "Active",
+        "System.WorkItemType": "Bug",
+        "System.Description": "Login fails intermittently",
+        "System.ChangedBy": {"uniqueName": "bob@example.com", "displayName": "Bob"},
+        "System.ChangedDate": "2024-01-15T11:00:00Z"
+      }
+    },
+    "fields": {}
+  },
+  "createdDate": "2024-01-15T11:00:00Z"
+}

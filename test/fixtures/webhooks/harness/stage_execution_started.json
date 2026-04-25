@@ -1,0 +1,19 @@
+{
+  "eventType": "stage_execution_started",
+  "pipelineIdentifier": "my-pipeline",
+  "stageIdentifier": "build",
+  "stageName": "Build Stage",
+  "orgIdentifier": "myorg",
+  "projectIdentifier": "myproject",
+  "runSequence": 1,
+  "startTs": 1705312900000,
+  "endTs": 0,
+  "triggeredBy": {"name": "alice", "email": "alice@example.com"},
+  "moduleInfo": {
+    "ci": {
+      "branch": "main",
+      "commitSha": "abc123def456",
+      "repoName": "my-repo"
+    }
+  }
+}

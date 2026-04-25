@@ -1,0 +1,35 @@
+{
+  "topic": "pagure.pull-request.updated",
+  "msg": {
+    "agent": "alice",
+    "pullrequest": {
+      "id": 5,
+      "title": "Add awesome feature",
+      "initial_comment": "This PR adds an awesome feature.",
+      "status": "Open",
+      "branch": "main",
+      "branch_from": "feature-branch",
+      "commit_start": "bbb222",
+      "commit_stop": "bbb222",
+      "date_created": "1705312800",
+      "last_updated": "1705316400",
+      "user": {"name": "alice", "fullname": "Alice Smith", "url_path": "user/alice"},
+      "repo_from": {
+        "name": "my-repo",
+        "namespace": "myorg",
+        "fullname": "myorg/my-repo",
+        "url_path": "myorg/my-repo",
+        "description": "My repository",
+        "private": false
+      }
+    },
+    "project": {
+      "name": "my-repo",
+      "namespace": "myorg",
+      "fullname": "myorg/my-repo",
+      "url_path": "myorg/my-repo",
+      "description": "My repository",
+      "private": false
+    }
+  }
+}

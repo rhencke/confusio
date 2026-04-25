@@ -1,0 +1,18 @@
+{
+  "eventType": "build.complete",
+  "resource": {
+    "id": 102,
+    "buildNumber": "20240115.2",
+    "status": "completed",
+    "result": "failed",
+    "sourceBranch": "refs/heads/feature-branch",
+    "sourceVersion": "bbb222ccc333",
+    "queueTime": "2024-01-15T11:00:00Z",
+    "startTime": "2024-01-15T11:01:00Z",
+    "finishTime": "2024-01-15T11:10:00Z",
+    "url": "https://dev.azure.com/myorg/myproject/_build/results?buildId=102",
+    "_links": {"web": {"href": "https://dev.azure.com/myorg/myproject/_build/results?buildId=102"}},
+    "definition": {"id": 5, "name": "CI Pipeline"}
+  },
+  "createdDate": "2024-01-15T11:10:00Z"
+}

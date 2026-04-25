@@ -1,0 +1,19 @@
+{
+  "eventType": "stage_execution_aborted",
+  "pipelineIdentifier": "my-pipeline",
+  "stageIdentifier": "deploy",
+  "stageName": "Deploy Stage",
+  "orgIdentifier": "myorg",
+  "projectIdentifier": "myproject",
+  "runSequence": 3,
+  "startTs": 1705320100000,
+  "endTs": 1705320200000,
+  "triggeredBy": {"name": "alice", "email": "alice@example.com"},
+  "moduleInfo": {
+    "ci": {
+      "branch": "main",
+      "commitSha": "ddd444eee555",
+      "repoName": "my-repo"
+    }
+  }
+}
