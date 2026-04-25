@@ -36,6 +36,11 @@ local CONFUSIO_NATIVE = {
   -- The webhook receive pipeline in internal/webhooks.lua handles all backends uniformly;
   -- backends register event handlers via b:webhook(), not app.backend.rest entries.
   post_webhooks_backend = true,
+  -- The outbound dispatcher delivery inspection APIs are confusio-native;
+  -- they are intercepted by dispatch.lua before routing and have no per-backend handlers.
+  get_webhooks_deliveries = true,
+  get_webhooks_delivery = true,
+  get_webhooks_delivery_attempts = true,
 }
 
 local csv_path = (arg and arg[1]) or "site/compatibility.csv" -- luacheck: globals arg

@@ -9,13 +9,26 @@
 -- authentication (signature headers or tokens) and must not be gated by the
 -- REST API auth check.  Requests whose path starts with /webhooks/ are routed
 -- to a.webhook_receiver (installed by .init.lua) before the auth check runs.
+-- /webhooks/deliveries* is routed to a.deliveries_api for read-only inspection.
 
 function make_dispatcher(a) -- luacheck: globals make_dispatcher
   return function()
-    -- Webhook paths bypass the auth gate entirely.  The webhook receiver in
-    -- internal/webhooks.lua verifies forge-supplied signatures independently.
+    -- Periodic housekeeping: prune outbox entries older than 72 hours.
+    -- maybe_prune_outbox() is a no-op if the pruning interval has not elapsed.
+    maybe_prune_outbox()
+
+    -- Periodic retry: drive pending retries with exponential backoff.
+    -- maybe_retry_pending() is a no-op if the retry interval has not elapsed.
+    maybe_retry_pending()
+
+    -- Webhook paths bypass the auth gate entirely.
+    -- /webhooks/deliveries* routes to the read-only deliveries inspection API.
+    -- All other /webhooks/* paths route to the webhook receiver which verifies
+    -- forge-supplied signatures independently.
     if GetPath():match("^/webhooks/") then
-      if a.webhook_receiver then
+      if GetPath():match("^/webhooks/deliveries") and a.deliveries_api then
+        a.deliveries_api()
+      elseif a.webhook_receiver then
         a.webhook_receiver()
       else
         respond_json(404, { message = "Not Found" })
