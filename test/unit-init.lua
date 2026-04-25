@@ -96,42 +96,58 @@ function dofile(path) -- luacheck: globals dofile
   return _real_dofile(path)
 end
 
--- Provide one SCRIPTARGS entry so the loop body executes.
--- The dofile stub above silently drops the backend file load.
-arg = { "testbackend" } -- luacheck: globals arg
-
--- Stub os.getenv to return values for CONFUSIO_WEBHOOK_SECRETS and
--- CONFUSIO_WEBHOOK_TARGET so that all env-var loading blocks in .init.lua are
--- exercised by luacov.  Restore immediately after load and clear all config
--- fields so subsequent tests that rely on clean config are unaffected.
-local _real_getenv = os.getenv
-os.getenv = function(k) -- luacheck: globals os
-  if k == "CONFUSIO_WEBHOOK_SECRETS" then
-    return '{"gitea":"ws_coverage_test"}'
-  end
-  if k == "CONFUSIO_WEBHOOK_TARGET" then
-    return '{"url":"https://hook.example.com/wt-coverage","events":["push"],"shape":"github"}'
-  end
-  return _real_getenv(k)
-end
+-- Provide SCRIPTARGS entries to exercise all CLI parsing paths in .init.lua:
+--   positional: backend name (backend file load is suppressed by the dofile stub)
+--   webhook_secret_BACKEND=SECRET: inbound signing secret for a backend
+--   webhook_target=URL: outbound delivery target
+--   webhook_target_events=push,pull_request: event filter
+--   webhook_target_shape=github: delivery shape
+arg = { -- luacheck: globals arg
+  "testbackend",
+  "webhook_secret_gitea=ws_coverage_test",
+  "webhook_target=https://hook.example.com/wt-coverage",
+  "webhook_target_events=push,pull_request",
+  "webhook_target_shape=github",
+}
 
 -- Load the module under test.
 _real_dofile(".init.lua")
 
--- Verify the env-var block populated config.webhook_secrets.
+-- Verify the SCRIPTARGS webhook_secret_* arg populated config.webhook_secrets.
 assert(
-  config.webhook_secrets ~= nil, -- luacheck: globals config
-  "CONFUSIO_WEBHOOK_SECRETS: config.webhook_secrets should be non-nil after load"
+  type(config.webhook_secrets) == "table", -- luacheck: globals config
+  "webhook_secret_gitea CLI arg: config.webhook_secrets should be a table after load"
 )
 assert(
   config.webhook_secrets.gitea == "ws_coverage_test",
-  "CONFUSIO_WEBHOOK_SECRETS: gitea secret mismatch: " .. tostring(config.webhook_secrets.gitea)
+  "webhook_secret_gitea CLI arg: gitea secret mismatch: " .. tostring(config.webhook_secrets.gitea)
 )
 
--- Restore os.getenv and clear coverage-only state so later tests
--- see a clean config.  (config and app.config reference the same table.)
-os.getenv = _real_getenv -- luacheck: globals os
-config.webhook_secrets = nil
+-- Verify the webhook_target CLI arg populated config.webhook_target.
+assert(
+  type(config.webhook_target) == "table",
+  "webhook_target CLI arg: config.webhook_target should be a table after load"
+)
+assert(
+  config.webhook_target.url == "https://hook.example.com/wt-coverage",
+  "webhook_target CLI arg: url mismatch: " .. tostring((config.webhook_target or {}).url)
+)
+assert(
+  type(config.webhook_target.events) == "table",
+  "webhook_target_events CLI arg: events should be a table after load"
+)
+assert(
+  config.webhook_target.events[1] == "push",
+  "webhook_target_events CLI arg: events[1] should be push"
+)
+assert(
+  config.webhook_target.events[2] == "pull_request",
+  "webhook_target_events CLI arg: events[2] should be pull_request"
+)
+
+-- Clear coverage-only state so later tests see a clean config.
+-- (config and app.config reference the same table.)
+config.webhook_secrets = {}
 config.webhook_target = nil
 
 -- Restore dofile so later tests that call it work normally.
@@ -3109,11 +3125,13 @@ do
 end
 
 -- ============================================================
--- CONFUSIO_WEBHOOK_TARGET env-var wiring
+-- webhook_target CLI SCRIPTARG wiring
 -- ============================================================
 
 do
-  -- Verify the startup target was registered by fanout_register_target.
+  -- Verify fanout_register_target is callable and accepts valid/invalid entries.
+  -- The startup webhook_target=URL arg already registered a target at load time;
+  -- here we only verify the function's guard behaviour.
   -- We cannot enumerate _fanout_targets directly, but dispatch to the
   -- startup-registered URL should hit it.  Instead, verify fanout_register_target
   -- is callable (wired correctly) and that valid/invalid entries behave correctly.

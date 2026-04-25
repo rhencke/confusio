@@ -4,43 +4,55 @@
 config = {
   backend = "",
   base_url = "",
+  -- webhook_secrets: table mapping backend name → inbound signing secret.
+  -- Populated by webhook_secret_BACKEND=SECRET SCRIPTARGS.
+  -- Absent entry (or empty string) → trust-the-network for that backend.
+  webhook_secrets = {},
 }
 
--- SCRIPTARGS (positional after --): first arg = backend, second = base_url.
+-- SCRIPTARGS (positional after --):
+--   First positional  = backend
+--   Second positional = base_url
+--
+-- Key=value pairs (any arg containing "=") configure webhook options:
+--   webhook_secret_BACKEND=SECRET  — inbound signature secret for BACKEND
+--   webhook_target=URL             — outbound delivery target URL
+--   webhook_target_events=A,B,C   — comma-separated event filter (default: *)
+--   webhook_target_shape=SHAPE    — delivery shape: "github" (default) or "confusio"
+--   webhook_target_secret=SECRET  — HMAC signing secret for the outbound target
 local positional_keys = { "backend", "base_url" }
 local pos_idx = 1
 for _, a in ipairs(arg or {}) do
-  if positional_keys[pos_idx] then
+  local kv_key, kv_val = a:match("^([^=]+)=(.*)$")
+  if kv_key then
+    -- Key=value pair: webhook config.
+    local wh_backend = kv_key:match("^webhook_secret_(.+)$")
+    if wh_backend then
+      config.webhook_secrets[wh_backend] = kv_val
+    elseif kv_key == "webhook_target" then
+      config.webhook_target = config.webhook_target or {}
+      config.webhook_target.url = kv_val
+    elseif kv_key == "webhook_target_events" then
+      config.webhook_target = config.webhook_target or {}
+      local events = {}
+      for e in kv_val:gmatch("[^,]+") do
+        events[#events + 1] = e
+      end
+      config.webhook_target.events = events
+    elseif kv_key == "webhook_target_shape" then
+      config.webhook_target = config.webhook_target or {}
+      config.webhook_target.shape = kv_val
+    elseif kv_key == "webhook_target_secret" then
+      config.webhook_target = config.webhook_target or {}
+      config.webhook_target.secret = kv_val
+    end
+  elseif positional_keys[pos_idx] then
     config[positional_keys[pos_idx]] = a
     pos_idx = pos_idx + 1
   end
 end
 
 config.base_url = config.base_url:gsub("/$", "")
-
--- CONFUSIO_WEBHOOK_SECRETS: optional JSON object mapping backend names to
--- webhook secrets.  Used by the test harness to configure signature
--- verification without recompiling; also useful for single-backend deployments
--- that prefer environment-variable configuration.
--- Example: CONFUSIO_WEBHOOK_SECRETS='{"gitea":"mysecret","gitlab":"othersecret"}'
-local ws_env = os.getenv("CONFUSIO_WEBHOOK_SECRETS")
-if ws_env and ws_env ~= "" then
-  local ok_ws, ws_parsed = pcall(DecodeJson, ws_env)
-  if ok_ws and type(ws_parsed) == "table" then
-    config.webhook_secrets = ws_parsed
-  end
-end
-
--- CONFUSIO_WEBHOOK_TARGET: optional JSON object configuring the single outbound target.
--- Fields: url (required), events (array), shape ("github"|"confusio").
--- Example: CONFUSIO_WEBHOOK_TARGET='{"url":"https://hook.example.com","events":["push"]}'
-local wt_env = os.getenv("CONFUSIO_WEBHOOK_TARGET")
-if wt_env and wt_env ~= "" then
-  local ok_wt, wt_parsed = pcall(DecodeJson, wt_env)
-  if ok_wt and type(wt_parsed) == "table" then
-    config.webhook_target = wt_parsed
-  end
-end
 
 dofile("/zip/internal/http.lua")
 dofile("/zip/internal/proxy.lua")
@@ -89,7 +101,7 @@ app.route_match = route_match
 app.path_known = path_known
 app.webhook_receiver = make_webhook_receiver(app)
 
--- Register the single outbound target pre-configured via CONFUSIO_WEBHOOK_TARGET at startup.
+-- Register the single outbound target declared via webhook_target=URL at startup.
 -- Silently ignored if missing or malformed (missing url, wrong type).
 if config.webhook_target then
   fanout_register_target(config.webhook_target)

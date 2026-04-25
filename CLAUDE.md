@@ -94,11 +94,16 @@ sh ./confusio.com -p 8080 -- gitea https://gitea.com
 
 ## Configuration system
 
-Config is supplied as positional SCRIPTARGS after `--`: first arg = backend, second arg = base_url.
+Config is supplied as SCRIPTARGS after `--`.  Positional args set the backend and base URL; key=value args configure webhook options.
 
 | Mechanism | Syntax |
 |-----------|--------|
 | SCRIPTARGS (positional) | `sh ./confusio.com -- <backend> [base_url]` |
+| SCRIPTARGS (inbound secret) | `webhook_secret_BACKEND=SECRET` — inbound signature secret per backend |
+| SCRIPTARGS (outbound target) | `webhook_target=URL` — outbound delivery target URL |
+| SCRIPTARGS (target events) | `webhook_target_events=push,pull_request` — comma-separated filter (default: *) |
+| SCRIPTARGS (target shape) | `webhook_target_shape=confusio` — `github` (default) or `confusio` |
+| SCRIPTARGS (target secret) | `webhook_target_secret=SECRET` — HMAC signing secret for the outbound target |
 | Defaults | hardcoded in `.init.lua` |
 
 ## GitHub API reference
@@ -651,8 +656,8 @@ here so they stay visible without reading all 16 docs:
 - **Outbound signing lives in `internal/signing.lua`** (`sign_github`, `sign_for_backend`).  `sign_github(secret, body)` returns `(sha256_value, sha1_value)`; `sign_for_backend(backend, secret, body)` returns a table of native signature headers for the given backend (empty table when no secret).
 - **Confusio inbound HMAC basestring is `"v1:<ts>:<body>"`** — the timestamp is baked into the signed material, not just the header.  This means a replay with a fresh timestamp produces a different digest and fails even before the window check.  The `confusio` case in `sign_for_backend` and inbound `verify_signature("confusio", ...)` are symmetric — they must stay in sync.
 - **Replay window is 300 seconds (±5 minutes)** enforced by `REPLAY_WINDOW_SECS` in `webhooks.lua`.  Only the confusio scheme has replay prevention; other schemes (HMAC or token) rely on TLS and network policy.
-- **`CONFUSIO_WEBHOOK_SECRETS` env var** — optional JSON object `{"backend":"secret",...}` that `.init.lua` reads at startup and stores as `config.webhook_secrets`.  Used by the test harness (`test/test-unit.sh` Phase 4) and single-backend deployments that prefer env-var config.  Absent key → empty string → trust-the-network for that backend.
-- **Phase 4 in `test/test-unit.sh`** computes HMAC test vectors at runtime with `openssl dgst` and passes them to `hurl` via `--variable` flags.  Never hard-code pre-computed HMACs in the test file — the confusio signature embeds `$(date +%s)` and would be stale by replay-window expiry if pre-computed.  The gitea/bitbucket/gitbucket vectors are stable (no timestamp), but computing all of them uniformly at runtime is simpler and safer.
+- **`webhook_secret_BACKEND=SECRET` SCRIPTARG** — inbound signature secret for a specific backend.  Set one per backend that should enforce signature verification.  Absent key (or empty string) → trust-the-network for that backend.  Example: `sh ./confusio.com -- gitea webhook_secret_gitea=mysecret`.
+- **Phase 4 in `test/test-unit.sh`** computes HMAC test vectors at runtime with `openssl dgst` and passes them to `hurl` via `--variable` flags.  Never hard-code pre-computed HMACs in the test file — the confusio signature embeds `$(date +%s)` and would be stale by replay-window expiry if pre-computed.  The gitea/bitbucket/gitbucket vectors are stable (no timestamp), but computing all of them uniformly at runtime is simpler and safer.  Secrets are passed via `webhook_secret_BACKEND=SECRET` SCRIPTARGS (no env vars).
 
 ### Outbound webhook dispatcher
 
@@ -667,8 +672,11 @@ When a webhook event arrives from a forge backend, confusio can forward it to a 
 | `internal/signing.lua` | HMAC signing for outbound deliveries using the backend's native scheme |
 
 **Configuration:**
-- **`CONFUSIO_WEBHOOK_TARGET` env var** — optional JSON object configuring the single outbound target at startup.  Must include at minimum `url`; `events` (array) and `shape` (`"github"`|`"confusio"`) are optional.  The target lives in the in-memory list for the process lifetime.
-- **`CONFUSIO_WEBHOOK_SECRETS`** provides per-backend inbound signing secrets.
+- **`webhook_target=URL` SCRIPTARG** — URL of the single outbound target.  Optional; when absent, no deliveries are made.  Example: `sh ./confusio.com -- gitea webhook_target=https://hook.example.com`.
+- **`webhook_target_events=A,B`** — comma-separated event filter (default: `*` = all events).
+- **`webhook_target_shape=github|confusio`** — delivery body shape (default: `github`).
+- **`webhook_target_secret=SECRET`** — HMAC signing secret for the outbound target.
+- **`webhook_secret_BACKEND=SECRET`** provides per-backend inbound signing secrets (see above).
 
 **Dispatch flow:** After the webhook receiver validates an inbound event, `fanout_dispatch(backend, event_type, payload)` fires `deliver_fire` for each registered target whose event subscription matches.  `deliver_fire` makes one HTTP POST with optional HMAC signing and logs the outcome (HTTP status or error message) at `kLogWarn` on failure or `kLogVerbose` on success.  Returns `(ok, http_status_or_nil, error_or_nil)`.  The caller does not inspect the return values — the result is purely for log visibility.
 
