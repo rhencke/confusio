@@ -100,11 +100,11 @@ end
 -- The dofile stub above silently drops the backend file load.
 arg = { "testbackend" } -- luacheck: globals arg
 
--- Stub os.getenv to return valid JSON for CONFUSIO_WEBHOOK_SECRETS,
--- CONFUSIO_WEBHOOK_TARGET, and CONFUSIO_WEBHOOK_HMAC_SECRET_FILE so that all
--- env-var loading blocks in .init.lua are exercised by luacov.  Restore
--- immediately after load and clear all config fields so subsequent tests that
--- rely on clean config are unaffected.
+-- Stub os.getenv to return values for CONFUSIO_WEBHOOK_SECRETS,
+-- CONFUSIO_WEBHOOK_TARGET, CONFUSIO_WEBHOOK_HMAC_SECRET_FILE, and
+-- CONFUSIO_OUTBOX_DB so that all env-var loading blocks in .init.lua are
+-- exercised by luacov.  Restore immediately after load and clear all config
+-- fields so subsequent tests that rely on clean config are unaffected.
 local _real_getenv = os.getenv
 local _real_io_open = io.open
 os.getenv = function(k) -- luacheck: globals os
@@ -116,6 +116,9 @@ os.getenv = function(k) -- luacheck: globals os
   end
   if k == "CONFUSIO_WEBHOOK_HMAC_SECRET_FILE" then
     return "/tmp/fido-test-hmac-secret"
+  end
+  if k == "CONFUSIO_OUTBOX_DB" then
+    return ":memory:"
   end
   return _real_getenv(k)
 end
@@ -172,6 +175,7 @@ io.open = _real_io_open -- luacheck: globals io
 config.webhook_secrets = nil
 config.webhook_target = nil
 config.hmac_secret = nil
+config.outbox_db = nil
 
 -- Restore dofile so later tests that call it work normally.
 dofile = _real_dofile -- luacheck: globals dofile
@@ -3517,28 +3521,28 @@ eq(da_del7.status, "failed", "deliver_attempt deleted target: status is failed")
 -- deleted-target) even though attempt_count was reset to 0 before the last one.
 -- luacheck: globals outbox_get_attempts outbox_record_attempt
 do
-  local da_final = outbox_get_delivery(da_del_id)
-  ok(type(da_final.attempts) == "table", "deliver_attempt: attempts array exists on delivery")
-  ok(#da_final.attempts >= 7, "deliver_attempt: all 7 attempts recorded in history")
+  local da_attempts = outbox_get_attempts(da_del_id)
+  ok(type(da_attempts) == "table", "deliver_attempt: attempts array exists on delivery")
+  ok(#da_attempts >= 7, "deliver_attempt: all 7 attempts recorded in history")
   -- First attempt: 200 → delivered
-  ok(da_final.attempts[1] ~= nil, "deliver_attempt: attempt[1] recorded")
-  eq(da_final.attempts[1].attempt_number, 1, "deliver_attempt: attempt[1].attempt_number is 1")
-  eq(da_final.attempts[1].outcome, "delivered", "deliver_attempt: attempt[1] outcome is delivered")
-  eq(da_final.attempts[1].http_status, 200, "deliver_attempt: attempt[1] http_status is 200")
-  ok(da_final.attempts[1].error == nil, "deliver_attempt: attempt[1] has no error")
-  ok(da_final.attempts[1].attempted_at ~= nil, "deliver_attempt: attempt[1] has attempted_at")
+  ok(da_attempts[1] ~= nil, "deliver_attempt: attempt[1] recorded")
+  eq(da_attempts[1].attempt_number, 1, "deliver_attempt: attempt[1].attempt_number is 1")
+  eq(da_attempts[1].outcome, "delivered", "deliver_attempt: attempt[1] outcome is delivered")
+  eq(da_attempts[1].http_status, 200, "deliver_attempt: attempt[1] http_status is 200")
+  ok(da_attempts[1].error == nil, "deliver_attempt: attempt[1] has no error")
+  ok(da_attempts[1].attempted_at ~= nil, "deliver_attempt: attempt[1] has attempted_at")
   -- Second attempt: 503 → retrying
-  eq(da_final.attempts[2].outcome, "retrying", "deliver_attempt: attempt[2] outcome is retrying")
-  eq(da_final.attempts[2].http_status, 503, "deliver_attempt: attempt[2] http_status is 503")
+  eq(da_attempts[2].outcome, "retrying", "deliver_attempt: attempt[2] outcome is retrying")
+  eq(da_attempts[2].http_status, 503, "deliver_attempt: attempt[2] http_status is 503")
   -- Fourth attempt: 422 → failed
-  eq(da_final.attempts[4].outcome, "failed", "deliver_attempt: attempt[4] outcome is failed")
-  eq(da_final.attempts[4].http_status, 422, "deliver_attempt: attempt[4] http_status is 422")
+  eq(da_attempts[4].outcome, "failed", "deliver_attempt: attempt[4] outcome is failed")
+  eq(da_attempts[4].http_status, 422, "deliver_attempt: attempt[4] http_status is 422")
   -- Fifth attempt: network error → retrying, no http_status
-  eq(da_final.attempts[5].outcome, "retrying", "deliver_attempt: attempt[5] outcome is retrying")
-  ok(da_final.attempts[5].http_status == nil, "deliver_attempt: attempt[5] has no http_status")
-  ok(da_final.attempts[5].error ~= nil, "deliver_attempt: attempt[5] has error message")
+  eq(da_attempts[5].outcome, "retrying", "deliver_attempt: attempt[5] outcome is retrying")
+  ok(da_attempts[5].http_status == nil, "deliver_attempt: attempt[5] has no http_status")
+  ok(da_attempts[5].error ~= nil, "deliver_attempt: attempt[5] has error message")
   -- Last attempt: deleted target → failed
-  local da_last_attempt = da_final.attempts[#da_final.attempts]
+  local da_last_attempt = da_attempts[#da_attempts]
   eq(da_last_attempt.outcome, "failed", "deliver_attempt deleted: attempt recorded as failed")
   ok(da_last_attempt.http_status == nil, "deliver_attempt deleted: attempt has no http_status")
 

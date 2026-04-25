@@ -55,6 +55,15 @@ if wt_env and wt_env ~= "" then
   end
 end
 
+-- CONFUSIO_OUTBOX_DB: optional path for the outbox SQLite database.
+-- Defaults to ":memory:" when not set (transient, cleared on restart).
+-- Set to a file path to persist deliveries across restarts.
+-- Example: CONFUSIO_OUTBOX_DB=/var/lib/confusio/outbox.db
+local outbox_db_env = os.getenv("CONFUSIO_OUTBOX_DB")
+if outbox_db_env and outbox_db_env ~= "" then
+  config.outbox_db = outbox_db_env
+end
+
 dofile("/zip/internal/http.lua")
 dofile("/zip/internal/proxy.lua")
 dofile("/zip/internal/transport.lua")
