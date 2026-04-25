@@ -10,6 +10,7 @@
 -- REST API auth check.  Requests whose path starts with /webhooks/ are routed
 -- to a.webhook_receiver (installed by .init.lua) before the auth check runs.
 -- /webhooks/deliveries* is routed to a.deliveries_api for read-only inspection.
+-- /webhooks/targets* is routed to a.targets_api for target CRUD.
 
 function make_dispatcher(a) -- luacheck: globals make_dispatcher
   return function()
@@ -28,6 +29,8 @@ function make_dispatcher(a) -- luacheck: globals make_dispatcher
     if GetPath():match("^/webhooks/") then
       if GetPath():match("^/webhooks/deliveries") and a.deliveries_api then
         a.deliveries_api()
+      elseif GetPath():match("^/webhooks/targets") and a.targets_api then
+        a.targets_api()
       elseif a.webhook_receiver then
         a.webhook_receiver()
       else

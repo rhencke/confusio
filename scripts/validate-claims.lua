@@ -41,6 +41,15 @@ local CONFUSIO_NATIVE = {
   get_webhooks_deliveries = true,
   get_webhooks_delivery = true,
   get_webhooks_delivery_attempts = true,
+  -- The target registration APIs are confusio-native;
+  -- they are intercepted by dispatch.lua before routing and have no per-backend handlers.
+  get_webhooks_targets = true,
+  post_webhooks_targets = true,
+  get_webhooks_target = true,
+  patch_webhooks_target = true,
+  delete_webhooks_target = true,
+  post_webhooks_target_pause = true,
+  post_webhooks_target_resume = true,
 }
 
 local csv_path = (arg and arg[1]) or "site/compatibility.csv" -- luacheck: globals arg

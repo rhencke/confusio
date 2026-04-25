@@ -4,6 +4,13 @@ POST /webhooks/{backend},y,y,y,y,~no CI events,y,~no CI events,~no CI events,~no
 GET /webhooks/deliveries,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y
 GET /webhooks/deliveries/{delivery_id},y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y
 GET /webhooks/deliveries/{delivery_id}/attempts,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y
+GET /webhooks/targets,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y
+POST /webhooks/targets,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y
+GET /webhooks/targets/{target_id},y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y
+PATCH /webhooks/targets/{target_id},y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y
+DELETE /webhooks/targets/{target_id},y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y
+POST /webhooks/targets/{target_id}/pause,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y
+POST /webhooks/targets/{target_id}/resume,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y,y
 GET /repos/{owner}/{repo},y,y,y,y,y,y,y,y,y,y,y,y,y,n,n,y,y,y,n,y,n,n,y,~
 PATCH /repos/{owner}/{repo},y,y,y,y,n,y,y,n,y,y,y,y,y,n,n,y,y,y,n,y,n,n,y,n
 DELETE /repos/{owner}/{repo},y,y,y,y,n,y,n,n,y,y,y,y,y,n,n,y,y,y,n,~stub; returns 405,n,n,y,n

@@ -3711,6 +3711,232 @@ do
 end
 
 -- ============================================================
+-- targets_api (internal/targets_api.lua)
+-- ============================================================
+
+-- luacheck: globals make_targets_api
+
+ok(type(make_targets_api) == "function", "make_targets_api: exported as global function")
+
+do
+  -- Helper: call the targets API with a fake request and return status + decoded body.
+  local function call_tapi(opts)
+    reset_request(opts)
+    reset_response()
+    app.targets_api() -- luacheck: globals app
+    local s_ok, decoded = pcall(DecodeJson, _last_body ~= "" and _last_body or "null")
+    return _last_status, s_ok and decoded or nil
+  end
+
+  local AUTH = { Authorization = "Bearer admin-token" }
+
+  -- ── 401 when Authorization header is missing ─────────────────
+
+  local s401, b401 = call_tapi({ method = "GET", path = "/webhooks/targets", headers = {} })
+  eq(s401, 401, "targets_api: missing auth → 401")
+  eq(b401 and b401.error, "unauthorized", "targets_api: missing auth → error=unauthorized")
+
+  -- ── GET /webhooks/targets → 200 with empty array initially ───
+
+  local s_list0, b_list0 = call_tapi({ method = "GET", path = "/webhooks/targets", headers = AUTH })
+  eq(s_list0, 200, "targets_api GET list: 200")
+  ok(type(b_list0) == "table", "targets_api GET list: returns a table (array)")
+
+  -- ── POST /webhooks/targets → 201 with new target ─────────────
+
+  local s_create, b_create = call_tapi({
+    method = "POST",
+    path = "/webhooks/targets",
+    headers = AUTH,
+    body = '{"url":"https://tapi-test.example.com/hook","events":["push"],"shape":"github"}',
+  })
+  eq(s_create, 201, "targets_api POST: 201")
+  ok(b_create ~= nil, "targets_api POST: body present")
+  ok(b_create and b_create.target_id ~= nil, "targets_api POST: target_id present")
+  eq(
+    b_create and b_create.url,
+    "https://tapi-test.example.com/hook",
+    "targets_api POST: url matches"
+  )
+  eq(b_create and b_create.status, "active", "targets_api POST: status is active")
+  eq(b_create and b_create.shape, "github", "targets_api POST: shape matches")
+  local tapi_id = b_create and b_create.target_id
+
+  -- ── POST /webhooks/targets missing url → 422 ─────────────────
+
+  local s_no_url, b_no_url = call_tapi({
+    method = "POST",
+    path = "/webhooks/targets",
+    headers = AUTH,
+    body = '{"events":["push"]}',
+  })
+  eq(s_no_url, 422, "targets_api POST missing url: 422")
+  eq(
+    b_no_url and b_no_url.error,
+    "validation_error",
+    "targets_api POST missing url: validation_error"
+  )
+
+  -- ── POST /webhooks/targets invalid JSON → 400 ────────────────
+
+  local s_bad, b_bad = call_tapi({
+    method = "POST",
+    path = "/webhooks/targets",
+    headers = AUTH,
+    body = "not-json",
+  })
+  eq(s_bad, 400, "targets_api POST bad JSON: 400")
+  eq(b_bad and b_bad.error, "bad_request", "targets_api POST bad JSON: bad_request")
+
+  -- ── GET /webhooks/targets → list includes the created target ─
+
+  local s_list1, b_list1 = call_tapi({ method = "GET", path = "/webhooks/targets", headers = AUTH })
+  eq(s_list1, 200, "targets_api GET list after create: 200")
+  ok(#b_list1 >= 1, "targets_api GET list after create: at least one entry")
+
+  -- ── GET /webhooks/targets/{id} → 200 ─────────────────────────
+
+  local s_get, b_get = call_tapi({
+    method = "GET",
+    path = "/webhooks/targets/" .. tapi_id,
+    headers = AUTH,
+  })
+  eq(s_get, 200, "targets_api GET single: 200")
+  eq(b_get and b_get.target_id, tapi_id, "targets_api GET single: target_id matches")
+  eq(
+    b_get and b_get.url,
+    "https://tapi-test.example.com/hook",
+    "targets_api GET single: url matches"
+  )
+
+  -- ── GET /webhooks/targets/nonexistent → 404 ──────────────────
+
+  local s_nf, b_nf = call_tapi({
+    method = "GET",
+    path = "/webhooks/targets/00000000-0000-4000-8000-000000000000",
+    headers = AUTH,
+  })
+  eq(s_nf, 404, "targets_api GET single: unknown id → 404")
+  eq(
+    b_nf and b_nf.error,
+    "target_not_found",
+    "targets_api GET single: unknown id → target_not_found"
+  )
+
+  -- ── PATCH /webhooks/targets/{id} → 200 ───────────────────────
+
+  local s_patch, b_patch = call_tapi({
+    method = "PATCH",
+    path = "/webhooks/targets/" .. tapi_id,
+    headers = AUTH,
+    body = '{"url":"https://tapi-updated.example.com/hook"}',
+  })
+  eq(s_patch, 200, "targets_api PATCH: 200")
+  eq(
+    b_patch and b_patch.url,
+    "https://tapi-updated.example.com/hook",
+    "targets_api PATCH: url updated"
+  )
+  eq(b_patch and b_patch.target_id, tapi_id, "targets_api PATCH: target_id unchanged")
+
+  -- ── PATCH /webhooks/targets/nonexistent → 404 ────────────────
+
+  local s_patch_nf, b_patch_nf = call_tapi({
+    method = "PATCH",
+    path = "/webhooks/targets/00000000-0000-4000-8000-000000000000",
+    headers = AUTH,
+    body = '{"url":"https://x.example.com"}',
+  })
+  eq(s_patch_nf, 404, "targets_api PATCH nonexistent: 404")
+  eq(
+    b_patch_nf and b_patch_nf.error,
+    "target_not_found",
+    "targets_api PATCH nonexistent: target_not_found"
+  )
+
+  -- ── POST /webhooks/targets/{id}/pause → 200 ──────────────────
+
+  local s_pause, b_pause = call_tapi({
+    method = "POST",
+    path = "/webhooks/targets/" .. tapi_id .. "/pause",
+    headers = AUTH,
+  })
+  eq(s_pause, 200, "targets_api pause: 200")
+  eq(b_pause and b_pause.status, "paused", "targets_api pause: status is paused")
+
+  -- ── POST /webhooks/targets/{id}/resume → 200 ─────────────────
+
+  local s_resume, b_resume = call_tapi({
+    method = "POST",
+    path = "/webhooks/targets/" .. tapi_id .. "/resume",
+    headers = AUTH,
+  })
+  eq(s_resume, 200, "targets_api resume: 200")
+  eq(b_resume and b_resume.status, "active", "targets_api resume: status is active")
+
+  -- ── POST /webhooks/targets/{id}/pause on nonexistent → 404 ───
+
+  local s_pause_nf, b_pause_nf = call_tapi({
+    method = "POST",
+    path = "/webhooks/targets/00000000-0000-4000-8000-000000000000/pause",
+    headers = AUTH,
+  })
+  eq(s_pause_nf, 404, "targets_api pause nonexistent: 404")
+  eq(
+    b_pause_nf and b_pause_nf.error,
+    "target_not_found",
+    "targets_api pause nonexistent: target_not_found"
+  )
+
+  -- ── DELETE /webhooks/targets/{id} → 204 ──────────────────────
+
+  local s_del, _ = call_tapi({
+    method = "DELETE",
+    path = "/webhooks/targets/" .. tapi_id,
+    headers = AUTH,
+  })
+  eq(s_del, 204, "targets_api DELETE: 204")
+
+  -- After delete, GET returns 404.
+  local s_after_del, b_after_del = call_tapi({
+    method = "GET",
+    path = "/webhooks/targets/" .. tapi_id,
+    headers = AUTH,
+  })
+  eq(s_after_del, 404, "targets_api GET after delete: 404")
+  eq(
+    b_after_del and b_after_del.error,
+    "target_not_found",
+    "targets_api GET after delete: target_not_found"
+  )
+
+  -- ── DELETE /webhooks/targets/nonexistent → 404 ───────────────
+
+  local s_del_nf, b_del_nf = call_tapi({
+    method = "DELETE",
+    path = "/webhooks/targets/00000000-0000-4000-8000-000000000000",
+    headers = AUTH,
+  })
+  eq(s_del_nf, 404, "targets_api DELETE nonexistent: 404")
+  eq(
+    b_del_nf and b_del_nf.error,
+    "target_not_found",
+    "targets_api DELETE nonexistent: target_not_found"
+  )
+
+  -- ── Method Not Allowed on /webhooks/targets ───────────────────
+
+  local s_mna, _ = call_tapi({ method = "DELETE", path = "/webhooks/targets", headers = AUTH })
+  eq(s_mna, 405, "targets_api: DELETE /webhooks/targets → 405")
+
+  -- ── Unknown sub-path → 404 ───────────────────────────────────
+
+  local s_unk, _ =
+    call_tapi({ method = "GET", path = "/webhooks/targets/abc/unknown", headers = AUTH })
+  eq(s_unk, 404, "targets_api: unrecognised sub-path → 404")
+end
+
+-- ============================================================
 -- pruner (internal/pruner.lua)
 -- ============================================================
 

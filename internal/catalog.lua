@@ -50,6 +50,35 @@ local endpoint_sections = {
         "get_webhooks_delivery_attempts",
         defaults.webhook_receive_stub,
       },
+      -- Target registration API (confusio-specific; not part of the GitHub REST API spec).
+      -- Intercepted by dispatch.lua before routing; default stubs are never reached.
+      { "GET /webhooks/targets", "get_webhooks_targets", defaults.webhook_receive_stub },
+      { "POST /webhooks/targets", "post_webhooks_targets", defaults.webhook_receive_stub },
+      {
+        "GET /webhooks/targets/{target_id}",
+        "get_webhooks_target",
+        defaults.webhook_receive_stub,
+      },
+      {
+        "PATCH /webhooks/targets/{target_id}",
+        "patch_webhooks_target",
+        defaults.webhook_receive_stub,
+      },
+      {
+        "DELETE /webhooks/targets/{target_id}",
+        "delete_webhooks_target",
+        defaults.webhook_receive_stub,
+      },
+      {
+        "POST /webhooks/targets/{target_id}/pause",
+        "post_webhooks_target_pause",
+        defaults.webhook_receive_stub,
+      },
+      {
+        "POST /webhooks/targets/{target_id}/resume",
+        "post_webhooks_target_resume",
+        defaults.webhook_receive_stub,
+      },
     },
   },
   {
