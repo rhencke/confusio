@@ -1,0 +1,24 @@
+{
+  "eventType": "git.pullrequest.created",
+  "resource": {
+    "pullRequestId": 42,
+    "title": "Add new feature",
+    "description": "This PR adds a new feature",
+    "status": "active",
+    "isDraft": false,
+    "sourceRefName": "refs/heads/feature-branch",
+    "targetRefName": "refs/heads/main",
+    "lastMergeSourceCommit": {"commitId": "abc123"},
+    "lastMergeTargetCommit": {"commitId": "def456"},
+    "createdBy": {"uniqueName": "alice@example.com", "displayName": "Alice"},
+    "creationDate": "2024-01-15T10:00:00Z",
+    "repository": {
+      "id": "repo-id-1",
+      "name": "my-repo",
+      "remoteUrl": "https://dev.azure.com/myorg/myproject/_git/my-repo",
+      "isPrivate": false,
+      "project": {"id": "proj-id-1", "name": "myproject"}
+    }
+  },
+  "createdDate": "2024-01-15T10:00:00Z"
+}

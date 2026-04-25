@@ -145,7 +145,7 @@ endef
 
 $(foreach b,$(BACKENDS),$(eval $(call BACKEND_RULE,$(b))))
 
-.PHONY: build site dump-endpoints dump-families dump-claims validate-csv validate-tests validate-providers validate-claims validate-builders generate-schema validate-schema dump-capabilities validate-capabilities test test-unit test-unit-functions test-unit-graphql test-unit-backends test-integration validate-mock test-format test-lint test-coverage clean
+.PHONY: build site dump-endpoints dump-families dump-claims validate-csv validate-tests validate-providers validate-claims validate-builders generate-schema validate-schema dump-capabilities validate-capabilities validate-fixtures test test-unit test-unit-functions test-unit-graphql test-unit-backends test-integration validate-mock test-format test-lint test-coverage clean
 
 build: confusio.com
 
@@ -198,6 +198,9 @@ dump-capabilities: $(REDBEAN_BIN) $(DUMP_CAPS_SCRIPT) $(BACKEND_SRCS)
 validate-capabilities: $(REDBEAN_BIN) $(DUMP_CAPS_SCRIPT) $(VALIDATE_CAPS_SCRIPT) $(BACKEND_SRCS)
 	$(REDBEAN) $(DUMP_CAPS_SCRIPT) $(BACKENDS) | $(REDBEAN) $(VALIDATE_CAPS_SCRIPT)
 
+validate-fixtures:
+	python3 scripts/validate-fixtures.py test
+
 generate-schema: $(REDBEAN_BIN) $(GEN_GRAPHQL_SCHEMA_SCRIPT)
 	$(REDBEAN) $(GEN_GRAPHQL_SCHEMA_SCRIPT)
 
@@ -211,7 +214,7 @@ site: $(REDBEAN_BIN) $(DUMP_ENDPOINTS_SCRIPT) $(INIT_SRCS)
 	$(REDBEAN) $(DUMP_ENDPOINTS_SCRIPT) | \
 	  python3 scripts/gen-matrix.py - site/compatibility.csv site/index.html _site/index.html
 
-test: test-unit test-integration test-format test-lint validate-csv validate-tests validate-providers validate-claims validate-schema validate-builders validate-capabilities
+test: test-unit test-integration test-format test-lint validate-csv validate-tests validate-providers validate-claims validate-schema validate-builders validate-capabilities validate-fixtures
 
 # Pure-Lua unit tests (no HTTP server needed): .init.lua functions + GraphQL subsystem
 test-unit-functions: $(REDBEAN_BIN) $(INIT_SRCS) $(wildcard test/unit-*.lua)
@@ -224,7 +227,7 @@ test-unit-graphql: $(REDBEAN_BIN) $(INIT_SRCS) $(wildcard test/unit-*.lua)
 	$(REDBEAN) test/unit-graphql.lua
 
 # Sequential preamble (boot-path checks), then all backends in parallel
-test-unit: test-unit-functions confusio.com $(MOCKS) hurl
+test-unit: test-unit-functions confusio.com $(MOCKS) mock-target.com hurl
 	bash test/test-unit.sh
 	$(MAKE) -j$$(nproc) test-unit-backends
 
@@ -250,5 +253,5 @@ test-coverage: $(REDBEAN_BIN) luacov $(INIT_SRCS) $(wildcard test/unit-*.lua)
 	$(REDBEAN) scripts/luacov-report.lua
 
 clean:
-	rm -f redbean.com confusio.com $(MOCKS) hurl stylua luacheck .make-families.mk
+	rm -f redbean.com confusio.com $(MOCKS) mock-target.com hurl stylua luacheck .make-families.mk
 	rm -rf _site luacov

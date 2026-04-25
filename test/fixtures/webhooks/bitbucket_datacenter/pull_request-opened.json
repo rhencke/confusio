@@ -1,0 +1,34 @@
+{
+  "actor": {"name": "octocat", "slug": "octocat", "id": 1, "displayName": "The Octocat", "emailAddress": "octocat@example.com"},
+  "pullRequest": {
+    "id": 1,
+    "title": "Fix the bug",
+    "description": "This fixes the bug.",
+    "state": "OPEN",
+    "fromRef": {
+      "id": "refs/heads/fix-bug",
+      "displayId": "fix-bug",
+      "latestCommit": "abc1234567890",
+      "repository": {
+        "slug": "hello-world", "id": 10,
+        "project": {"key": "OCTO", "id": 1, "type": "NORMAL"},
+        "links": {"self": [{"href": "https://bitbucket.example.com/projects/OCTO/repos/hello-world"}]}
+      }
+    },
+    "toRef": {
+      "id": "refs/heads/main",
+      "displayId": "main",
+      "latestCommit": "def4567890abc",
+      "repository": {
+        "slug": "hello-world", "id": 10,
+        "project": {"key": "OCTO", "id": 1, "type": "NORMAL"},
+        "links": {"self": [{"href": "https://bitbucket.example.com/projects/OCTO/repos/hello-world"}]}
+      }
+    },
+    "author": {"user": {"name": "octocat", "slug": "octocat", "id": 1, "displayName": "The Octocat", "emailAddress": "octocat@example.com"}, "role": "AUTHOR", "approved": false, "status": "UNAPPROVED"},
+    "reviewers": [],
+    "createdDate": 1705312800000,
+    "updatedDate": 1705312800000,
+    "links": {"self": [{"href": "https://bitbucket.example.com/projects/OCTO/repos/hello-world/pull-requests/1"}]}
+  }
+}

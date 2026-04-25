@@ -1,0 +1,10 @@
+{
+  "eventType": "workitem.commented",
+  "resource": {
+    "workItemId": 1,
+    "text": "This is a comment on the work item",
+    "revisedDate": "2024-01-15T12:00:00Z",
+    "revisedBy": {"uniqueName": "bob@example.com", "displayName": "Bob"}
+  },
+  "createdDate": "2024-01-15T12:00:00Z"
+}

@@ -1,0 +1,18 @@
+{
+  "eventType": "build.complete",
+  "resource": {
+    "id": 103,
+    "buildNumber": "20240115.3",
+    "status": "completed",
+    "result": "canceled",
+    "sourceBranch": "refs/heads/main",
+    "sourceVersion": "ddd444eee555",
+    "queueTime": "2024-01-15T12:00:00Z",
+    "startTime": "2024-01-15T12:01:00Z",
+    "finishTime": "2024-01-15T12:05:00Z",
+    "url": "https://dev.azure.com/myorg/myproject/_build/results?buildId=103",
+    "_links": {"web": {"href": "https://dev.azure.com/myorg/myproject/_build/results?buildId=103"}},
+    "definition": {"id": 5, "name": "CI Pipeline"}
+  },
+  "createdDate": "2024-01-15T12:05:00Z"
+}

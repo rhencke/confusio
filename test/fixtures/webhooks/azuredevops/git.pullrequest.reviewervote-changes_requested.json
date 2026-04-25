@@ -1,0 +1,25 @@
+{
+  "eventType": "git.pullrequest.reviewervote",
+  "resource": {
+    "vote": -10,
+    "reviewer": {"uniqueName": "bob@example.com", "displayName": "Bob"},
+    "pullRequest": {
+      "pullRequestId": 42,
+      "title": "Add new feature",
+      "status": "active",
+      "isDraft": false,
+      "sourceRefName": "refs/heads/feature-branch",
+      "targetRefName": "refs/heads/main",
+      "createdBy": {"uniqueName": "alice@example.com", "displayName": "Alice"},
+      "creationDate": "2024-01-15T10:00:00Z",
+      "repository": {
+        "id": "repo-id-1",
+        "name": "my-repo",
+        "remoteUrl": "https://dev.azure.com/myorg/myproject/_git/my-repo",
+        "isPrivate": false,
+        "project": {"id": "proj-id-1", "name": "myproject"}
+      }
+    }
+  },
+  "createdDate": "2024-01-15T11:45:00Z"
+}

@@ -5,8 +5,10 @@ set -euo pipefail
 
 CONFUSIO_PORT=18080
 MOCK_PORT=18081
+DELIVERY_TARGET_PORT=18082
 CONFUSIO_BIN=$(pwd)/confusio.com
 MOCK_GITEA_BIN=$(pwd)/mock-gitea.com
+DELIVERY_TARGET_BIN=$(pwd)/mock-target.com
 HURL=$(pwd)/hurl
 
 start_isolated() {
@@ -50,6 +52,23 @@ run_mock_phase() {
   trap "kill $PID 2>/dev/null || true; kill $MOCK_PID 2>/dev/null || true; rm -rf $tmpdir" EXIT
   run_hurl "$hurl_file"
   kill $PID 2>/dev/null || true; kill $MOCK_PID 2>/dev/null || true; sleep 0.3
+}
+
+# run_delivery_phase: start confusio + mock gitea backend + mock delivery target,
+# run the hurl file with both {{host}} (confusio) and {{target}} (delivery target) vars.
+run_delivery_phase() {
+  local hurl_file="$1"; shift
+  local tmpdir; tmpdir=$(mktemp -d)
+  # Delivery target must run uniprocess (-u) so its global delivery log persists.
+  start_isolated sh "$DELIVERY_TARGET_BIN" -u -p "$DELIVERY_TARGET_PORT"; TARGET_PID=$!
+  start_isolated sh "$MOCK_GITEA_BIN" -p "$MOCK_PORT"; MOCK_PID=$!
+  start_confusio "$tmpdir" "$@"; PID=$!
+  trap "kill $PID 2>/dev/null || true; kill $MOCK_PID 2>/dev/null || true; kill $TARGET_PID 2>/dev/null || true; rm -rf $tmpdir" EXIT
+  $HURL --retry 10 --retry-interval 200 --connect-timeout 1 --max-time 5 \
+    --variable "host=localhost:$CONFUSIO_PORT" \
+    --variable "target=localhost:$DELIVERY_TARGET_PORT" \
+    "$hurl_file"
+  kill $PID 2>/dev/null || true; kill $MOCK_PID 2>/dev/null || true; kill $TARGET_PID 2>/dev/null || true; sleep 0.3
 }
 
 MOCK_ARGS="-- gitea http://127.0.0.1:$MOCK_PORT"
@@ -96,3 +115,134 @@ kill $WH_PID 2>/dev/null || true; sleep 0.3
 
 # Phase 5: Gitea webhook event normalisers (issues, issue_comment, label, milestone)
 run_mock_phase test/gitea-webhooks.hurl $MOCK_ARGS
+
+# Phase 6: Outbound webhook delivery — confusio forwards to the mock delivery target.
+# Delivery target runs on DELIVERY_TARGET_PORT (18082); confusio is wired to it via
+# webhook_target=URL.  The hurl file uses {{target}} to query the delivery log.
+run_delivery_phase test/webhook-delivery.hurl \
+  -- gitea "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 7: Gitea fixture-based delivery tests — every event × action triple.
+# Uses fixture files from test/fixtures/webhooks/gitea/ instead of inline payloads.
+# Verifies github_event, github_delivery UUID, and confusio User-Agent for each.
+run_delivery_phase test/webhook-delivery-gitea.hurl \
+  -- gitea "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 8: Gitea delivery with "confusio" shape — spot-checks X-Confusio-* headers.
+# Runs the same fixture files but with webhook_target_shape=confusio to verify the
+# alternate header set (X-Confusio-Event/Source/Delivery) instead of X-GitHub-*.
+run_delivery_phase test/webhook-delivery-gitea-confusio-shape.hurl \
+  -- gitea "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+  "webhook_target_shape=confusio"
+
+# Phase 9: GitLab fixture-based delivery tests — every event × action triple.
+# Uses fixture files from test/fixtures/webhooks/gitlab/ instead of inline payloads.
+# GitLab backend does not probe the upstream at startup, so the mock URL is unused
+# during these tests (only the webhook receiver path is exercised).
+run_delivery_phase test/webhook-delivery-gitlab.hurl \
+  -- gitlab "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 10: GitLab delivery with "confusio" shape — spot-checks X-Confusio-* headers.
+# Verifies X-Confusio-Source is "gitlab" and X-GitHub-Event is absent.
+run_delivery_phase test/webhook-delivery-gitlab-confusio-shape.hurl \
+  -- gitlab "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+  "webhook_target_shape=confusio"
+
+# Phase 11: Bitbucket Cloud fixture-based delivery tests — every event × action triple.
+# Uses fixture files from test/fixtures/webhooks/bitbucket/ instead of inline payloads.
+# Bitbucket Cloud backend does not probe the upstream at startup, so the mock URL is unused
+# during these tests (only the webhook receiver path is exercised).
+run_delivery_phase test/webhook-delivery-bitbucket.hurl \
+  -- bitbucket "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 12: Bitbucket Cloud delivery with "confusio" shape — spot-checks X-Confusio-* headers.
+# Verifies X-Confusio-Source is "bitbucket" and X-GitHub-Event is absent.
+run_delivery_phase test/webhook-delivery-bitbucket-confusio-shape.hurl \
+  -- bitbucket "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+  "webhook_target_shape=confusio"
+
+# Phase 13: Bitbucket Datacenter fixture-based delivery tests — every event × action triple.
+# Uses fixture files from test/fixtures/webhooks/bitbucket_datacenter/ instead of inline payloads.
+# Bitbucket Datacenter backend does not probe the upstream at startup.
+run_delivery_phase test/webhook-delivery-bitbucket_datacenter.hurl \
+  -- bitbucket_datacenter "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 14: Bitbucket Datacenter delivery with "confusio" shape — spot-checks X-Confusio-* headers.
+# Verifies X-Confusio-Source is "bitbucket_datacenter" and X-GitHub-Event is absent.
+run_delivery_phase test/webhook-delivery-bitbucket_datacenter-confusio-shape.hurl \
+  -- bitbucket_datacenter "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+  "webhook_target_shape=confusio"
+
+# Phase 15: Azure DevOps fixture-based delivery tests — every event type.
+# Azure DevOps embeds eventType in the body; no event-type header is required.
+run_delivery_phase test/webhook-delivery-azuredevops.hurl \
+  -- azuredevops "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 16: Azure DevOps delivery with "confusio" shape — spot-checks X-Confusio-* headers.
+# Verifies X-Confusio-Source is "azuredevops" and X-GitHub-Event is absent.
+run_delivery_phase test/webhook-delivery-azuredevops-confusio-shape.hurl \
+  -- azuredevops "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+  "webhook_target_shape=confusio"
+
+# Phase 17: Gerrit fixture-based delivery tests — comment-added event.
+# Gerrit embeds the event type in the body (payload.type); no event-type header required.
+run_delivery_phase test/webhook-delivery-gerrit.hurl \
+  -- gerrit "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 18: Gerrit delivery with "confusio" shape — spot-checks X-Confusio-* headers.
+# Verifies X-Confusio-Source is "gerrit" and X-GitHub-Event is absent.
+run_delivery_phase test/webhook-delivery-gerrit-confusio-shape.hurl \
+  -- gerrit "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+  "webhook_target_shape=confusio"
+
+# Phase 19: GitBucket fixture-based delivery tests — every event × action triple.
+# GitBucket uses X-GitHub-Event header (GitHub-compatible format).
+run_delivery_phase test/webhook-delivery-gitbucket.hurl \
+  -- gitbucket "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 20: GitBucket delivery with "confusio" shape — spot-checks X-Confusio-* headers.
+# Verifies X-Confusio-Source is "gitbucket" and X-GitHub-Event is absent.
+run_delivery_phase test/webhook-delivery-gitbucket-confusio-shape.hurl \
+  -- gitbucket "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+  "webhook_target_shape=confusio"
+
+# Phase 21: Harness fixture-based delivery tests — pipeline and stage events.
+# Harness embeds eventType in the body; no event-type header is required.
+run_delivery_phase test/webhook-delivery-harness.hurl \
+  -- harness "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 22: Harness delivery with "confusio" shape — spot-checks X-Confusio-* headers.
+# Verifies X-Confusio-Source is "harness" and X-GitHub-Event is absent.
+run_delivery_phase test/webhook-delivery-harness-confusio-shape.hurl \
+  -- harness "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+  "webhook_target_shape=confusio"
+
+# Phase 23: Pagure fixture-based delivery tests — every event type.
+# Pagure uses X-Pagure-Event header to indicate the event type.
+run_delivery_phase test/webhook-delivery-pagure.hurl \
+  -- pagure "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 24: Pagure delivery with "confusio" shape — spot-checks X-Confusio-* headers.
+# Verifies X-Confusio-Source is "pagure" and X-GitHub-Event is absent.
+run_delivery_phase test/webhook-delivery-pagure-confusio-shape.hurl \
+  -- pagure "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+  "webhook_target_shape=confusio"

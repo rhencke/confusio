@@ -1,0 +1,21 @@
+{
+  "action": "closed",
+  "number": 5,
+  "pull_request": {
+    "id": 500, "number": 5, "state": "closed", "title": "Add awesome feature",
+    "body": "This PR adds an awesome feature.",
+    "head": {"ref": "feature-branch", "sha": "abc123", "label": "feature-branch"},
+    "base": {"ref": "main", "sha": "def456", "label": "main"},
+    "user": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""},
+    "draft": false, "locked": false, "merged": true,
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T14:00:00Z",
+    "closed_at": "2024-01-15T14:00:00Z", "merged_at": "2024-01-15T14:00:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
+}

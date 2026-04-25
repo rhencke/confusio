@@ -1,0 +1,17 @@
+{
+  "eventType": "pipeline_execution_success",
+  "pipelineIdentifier": "my-pipeline",
+  "orgIdentifier": "myorg",
+  "projectIdentifier": "myproject",
+  "runSequence": 1,
+  "startTs": 1705312800000,
+  "endTs": 1705313400000,
+  "triggeredBy": {"name": "alice", "email": "alice@example.com"},
+  "moduleInfo": {
+    "ci": {
+      "branch": "main",
+      "commitSha": "abc123def456",
+      "repoName": "my-repo"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "action": "created",
+  "label": {"id": 5, "name": "enhancement", "color": "a2eeef"},
+  "changes": {},
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}

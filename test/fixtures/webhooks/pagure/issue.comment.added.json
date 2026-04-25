@@ -1,0 +1,31 @@
+{
+  "topic": "pagure.issue.comment.added",
+  "msg": {
+    "agent": "bob",
+    "issue": {
+      "id": 1,
+      "title": "Bug report",
+      "content": "Something is broken",
+      "status": "Open",
+      "tags": [],
+      "assignee": null,
+      "date_created": "1705312800",
+      "last_updated": "1705316400",
+      "user": {"name": "alice", "fullname": "Alice Smith", "url_path": "user/alice"}
+    },
+    "comment": {
+      "id": 100,
+      "comment": "I can reproduce this too.",
+      "date_created": "1705316400",
+      "user": {"name": "bob", "fullname": "Bob Jones", "url_path": "user/bob"}
+    },
+    "project": {
+      "name": "my-repo",
+      "namespace": "myorg",
+      "fullname": "myorg/my-repo",
+      "url_path": "myorg/my-repo",
+      "description": "My repository",
+      "private": false
+    }
+  }
+}

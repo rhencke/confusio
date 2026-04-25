@@ -1,0 +1,18 @@
+{
+  "actor": {"name": "octocat", "slug": "octocat", "id": 1, "displayName": "The Octocat", "emailAddress": "octocat@example.com"},
+  "buildStatus": {
+    "state": "INPROGRESS",
+    "key": "my-ci/build",
+    "name": "CI Build",
+    "url": "https://ci.example.com/build/43",
+    "description": "Build in progress.",
+    "createdDate": 1705312800000,
+    "updatedDate": 1705313400000
+  },
+  "commit": {"id": "abc1234567890abcdef1234567890abcdef12345"},
+  "repository": {
+    "slug": "hello-world", "id": 10,
+    "project": {"key": "OCTO", "id": 1, "type": "NORMAL"},
+    "links": {"self": [{"href": "https://bitbucket.example.com/projects/OCTO/repos/hello-world"}]}
+  }
+}
