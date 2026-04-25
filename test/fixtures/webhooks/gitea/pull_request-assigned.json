@@ -1,0 +1,25 @@
+{
+  "action": "assigned",
+  "number": 7,
+  "pull_request": {
+    "id": 500, "number": 7, "title": "Add new feature", "body": null,
+    "state": "open", "draft": false,
+    "html_url": "http://localhost/octocat/hello-world/pulls/7",
+    "url": "", "user": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""},
+    "head": {"ref": "feature-branch", "sha": "abc123", "repo": null},
+    "base": {"ref": "main", "sha": "def456", "repo": null},
+    "labels": [],
+    "assignees": [{"id": 3, "login": "carol", "avatar_url": "", "html_url": ""}],
+    "requested_reviewers": [],
+    "merged": false, "merged_at": null, "merge_commit_sha": null, "merged_by": null,
+    "created": "2024-01-15T10:00:00Z", "updated": "2024-01-15T10:04:00Z", "closed": null
+  },
+  "assignee": {"id": 3, "login": "carol", "avatar_url": "", "html_url": ""},
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
