@@ -126,14 +126,14 @@ run_delivery_phase test/webhook-delivery.hurl \
 # Phase 7: Gitea fixture-based delivery tests — every event × action triple.
 # Uses fixture files from test/fixtures/webhooks/gitea/ instead of inline payloads.
 # Verifies github_event, github_delivery UUID, and confusio User-Agent for each.
-run_delivery_phase test/gitea-webhook-delivery.hurl \
+run_delivery_phase test/webhook-delivery-gitea.hurl \
   -- gitea "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
 # Phase 8: Gitea delivery with "confusio" shape — spot-checks X-Confusio-* headers.
 # Runs the same fixture files but with webhook_target_shape=confusio to verify the
 # alternate header set (X-Confusio-Event/Source/Delivery) instead of X-GitHub-*.
-run_delivery_phase test/gitea-webhook-delivery-confusio-shape.hurl \
+run_delivery_phase test/webhook-delivery-gitea-confusio-shape.hurl \
   -- gitea "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
