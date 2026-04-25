@@ -152,3 +152,32 @@ run_delivery_phase test/webhook-delivery-gitlab-confusio-shape.hurl \
   -- gitlab "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
+
+# Phase 11: Bitbucket Cloud fixture-based delivery tests — every event × action triple.
+# Uses fixture files from test/fixtures/webhooks/bitbucket/ instead of inline payloads.
+# Bitbucket Cloud backend does not probe the upstream at startup, so the mock URL is unused
+# during these tests (only the webhook receiver path is exercised).
+run_delivery_phase test/webhook-delivery-bitbucket.hurl \
+  -- bitbucket "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 12: Bitbucket Cloud delivery with "confusio" shape — spot-checks X-Confusio-* headers.
+# Verifies X-Confusio-Source is "bitbucket" and X-GitHub-Event is absent.
+run_delivery_phase test/webhook-delivery-bitbucket-confusio-shape.hurl \
+  -- bitbucket "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+  "webhook_target_shape=confusio"
+
+# Phase 13: Bitbucket Datacenter fixture-based delivery tests — every event × action triple.
+# Uses fixture files from test/fixtures/webhooks/bitbucket_datacenter/ instead of inline payloads.
+# Bitbucket Datacenter backend does not probe the upstream at startup.
+run_delivery_phase test/webhook-delivery-bitbucket_datacenter.hurl \
+  -- bitbucket_datacenter "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 14: Bitbucket Datacenter delivery with "confusio" shape — spot-checks X-Confusio-* headers.
+# Verifies X-Confusio-Source is "bitbucket_datacenter" and X-GitHub-Event is absent.
+run_delivery_phase test/webhook-delivery-bitbucket_datacenter-confusio-shape.hurl \
+  -- bitbucket_datacenter "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+  "webhook_target_shape=confusio"

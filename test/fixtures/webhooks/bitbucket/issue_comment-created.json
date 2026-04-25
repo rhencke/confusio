@@ -1,0 +1,23 @@
+{
+  "actor": {"account_id": "1", "nickname": "octocat", "display_name": "The Octocat", "links": {"avatar": {"href": ""}}},
+  "issue": {
+    "id": 1, "title": "Found a bug", "content": {"raw": "Something broke."},
+    "state": "open",
+    "created_on": "2024-01-15T10:00:00+00:00",
+    "updated_on": "2024-01-15T10:00:00+00:00",
+    "links": {"html": {"href": "https://bitbucket.org/octocat/hello-world/issues/1"}},
+    "reporter": {"account_id": "1", "nickname": "octocat", "display_name": "The Octocat", "links": {"avatar": {"href": ""}}}
+  },
+  "comment": {
+    "id": 101, "content": {"raw": "This is a comment."},
+    "created_on": "2024-01-15T10:30:00+00:00",
+    "updated_on": "2024-01-15T10:30:00+00:00",
+    "links": {"html": {"href": "https://bitbucket.org/octocat/hello-world/issues/1/_/diff#comment-101"}}
+  },
+  "repository": {
+    "full_name": "octocat/hello-world", "name": "hello-world",
+    "is_private": false,
+    "owner": {"account_id": "1", "nickname": "octocat", "display_name": "The Octocat", "links": {"avatar": {"href": ""}}},
+    "links": {"html": {"href": "https://bitbucket.org/octocat/hello-world"}, "avatar": {"href": ""}}
+  }
+}
