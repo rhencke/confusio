@@ -1,7 +1,7 @@
 # GitLab webhook normalizer tests.
 #
 # Exercises the five event families registered in backends/gitlab.lua.
-# Trust-the-network mode (no CONFUSIO_WEBHOOK_SECRETS): signature headers omitted.
+# Trust-the-network mode (no webhook_secret_BACKEND CLI arg): signature headers omitted.
 # All paths return 200 when a registered handler succeeds.
 
 # ── Issues Hook: opened → 200 ─────────────────────────────────────────────────

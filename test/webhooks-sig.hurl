@@ -1,6 +1,6 @@
 # Webhook signature verification — integration tests with real HMAC.
 #
-# Run by Phase 4 in test-unit.sh with CONFUSIO_WEBHOOK_SECRETS configured.
+# Run by Phase 4 in test-unit.sh with webhook_secret_BACKEND CLI args configured.
 # Variables injected by the test script (computed via openssl at runtime):
 #   gitea_sig   — HMAC-SHA256("{}", secret) as hex (for X-Gitea-Signature)
 #   gitlab_tok  — the shared secret verbatim (for X-Gitlab-Token)

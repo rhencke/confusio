@@ -3,7 +3,7 @@
 # GitBucket emits GitHub-compatible payloads, so action names are
 # identity-mapped (same map as the GitHub backend).  Uses X-GitHub-Event
 # header, same as GitHub.
-# Trust-the-network mode (no CONFUSIO_WEBHOOK_SECRETS): signature headers omitted.
+# Trust-the-network mode (no webhook_secret_BACKEND CLI arg): signature headers omitted.
 
 # ── issues: opened → 200 ─────────────────────────────────────────────────────
 

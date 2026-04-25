@@ -1,7 +1,7 @@
 # Harness CI webhook normalizer tests — run by test-unit-harness.
 #
 # Harness CI embeds eventType in the JSON body (no event-type header).
-# Trust-the-network mode (no CONFUSIO_WEBHOOK_SECRETS): X-Harness-Token omitted.
+# Trust-the-network mode (no webhook_secret_BACKEND CLI arg): X-Harness-Token omitted.
 # Pipeline execution events → workflow_run.
 # Stage execution events    → workflow_job.
 

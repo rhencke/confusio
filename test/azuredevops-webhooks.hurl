@@ -1,7 +1,7 @@
 # Azure DevOps webhook normalizer tests — run by test-unit-azuredevops.
 #
 # ADO embeds the event type in payload.eventType (no event-type header).
-# Trust-the-network mode (no CONFUSIO_WEBHOOK_SECRETS): Authorization header omitted.
+# Trust-the-network mode (no webhook_secret_BACKEND CLI arg): Authorization header omitted.
 # Repository field is empty ({}) since ADO work items are not repo-scoped.
 
 # ── workitem.created → issues / opened ───────────────────────────────────────

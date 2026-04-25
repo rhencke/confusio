@@ -2,7 +2,7 @@
 #
 # BBS uses X-Event-Key header.  PR events are the primary event type supported
 # (BBS has no native issue tracker).
-# Trust-the-network mode (no CONFUSIO_WEBHOOK_SECRETS): signature headers omitted.
+# Trust-the-network mode (no webhook_secret_BACKEND CLI arg): signature headers omitted.
 
 # ── pr:opened → pull_request / opened ────────────────────────────────────────
 

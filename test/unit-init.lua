@@ -2950,6 +2950,42 @@ local expected_prefix = iso8601(os.time()):sub(1, 16)
 eq(now_str:sub(1, 16), expected_prefix, "now_iso8601: within same minute as os.time()")
 
 -- ============================================================
+-- fanout_body (internal/fanout.lua)
+-- ============================================================
+
+do
+  -- luacheck: globals fanout_body
+  local payload = { ref = "refs/heads/main", after = "abc123" }
+
+  -- "github" shape: body is EncodeJson(payload) — raw payload forwarded unchanged.
+  local gb = fanout_body("gitea", "push", payload, "github")
+  ok(type(gb) == "string", "fanout_body github: returns a string")
+  local decoded_gb = DecodeJson(gb) -- luacheck: globals DecodeJson
+  ok(type(decoded_gb) == "table", "fanout_body github: body is valid JSON")
+  eq(decoded_gb.ref, "refs/heads/main", "fanout_body github: payload fields forwarded")
+  ok(decoded_gb.source == nil, "fanout_body github: no envelope wrapper")
+
+  -- "confusio" shape: body is {source, event, payload} envelope.
+  local cb = fanout_body("gitea", "push", payload, "confusio")
+  ok(type(cb) == "string", "fanout_body confusio: returns a string")
+  local decoded_cb = DecodeJson(cb)
+  ok(type(decoded_cb) == "table", "fanout_body confusio: body is valid JSON")
+  eq(decoded_cb.source, "gitea", "fanout_body confusio: source is backend name")
+  eq(decoded_cb.event, "push", "fanout_body confusio: event is event_type")
+  ok(type(decoded_cb.payload) == "table", "fanout_body confusio: payload is a table")
+  eq(decoded_cb.payload.ref, "refs/heads/main", "fanout_body confusio: payload fields preserved")
+
+  -- Unknown shape falls back to "github" behaviour.
+  local ub = fanout_body("gitea", "push", payload, "unknown")
+  local decoded_ub = DecodeJson(ub)
+  ok(decoded_ub.source == nil, "fanout_body unknown shape: falls back to raw payload (no wrapper)")
+
+  -- nil shape also falls back to "github" behaviour.
+  local nb = fanout_body("gitea", "push", payload, nil)
+  local decoded_nb = DecodeJson(nb)
+  ok(decoded_nb.source == nil, "fanout_body nil shape: falls back to raw payload (no wrapper)")
+end
+
 -- fanout_register_target / fanout_dispatch (internal/fanout.lua)
 -- ============================================================
 
@@ -2962,7 +2998,7 @@ fanout_register_target({ url = "" })
 fanout_register_target({ url = 42 })
 
 -- Mock deliver_fire for all fanout tests so no real HTTP calls are made.
--- The startup wiring (CONFUSIO_WEBHOOK_TARGET stub) already registered one target
+-- The startup wiring (webhook_target CLI arg) already registered one target
 -- with events=["push"].  Tests use an event type of "create" to get a clean baseline
 -- (the pre-registered target only subscribes to "push").
 local _fd_calls = {}
@@ -3120,7 +3156,44 @@ do
     "deliver_fire with secret: X-Gitea-Signature header present for gitea backend"
   )
 
-  -- Restore Fetch.
+  -- deliver_fire: outcome logging — Log is called with kLogWarn on failure
+  -- and kLogVerbose on success.
+  local _log_calls = {}
+  local _real_Log = Log
+  Log = function(level, msg) -- luacheck: globals Log
+    _log_calls[#_log_calls + 1] = { level = level, msg = msg }
+  end
+
+  -- Successful delivery: Log called at kLogVerbose with status in message.
+  _df_mock_status = 200
+  _log_calls = {}
+  deliver_fire(target_github, "gitea", "push", { ref = "refs/heads/main" })
+  ok(#_log_calls == 1, "deliver_fire success: Log called once")
+  eq(_log_calls[1].level, kLogVerbose, "deliver_fire success: logged at kLogVerbose") -- luacheck: globals kLogVerbose
+  ok(_log_calls[1].msg:find("status=200") ~= nil, "deliver_fire success: log contains status=200")
+  ok(_log_calls[1].msg:find("url=") ~= nil, "deliver_fire success: log contains url=")
+  ok(_log_calls[1].msg:find("event=push") ~= nil, "deliver_fire success: log contains event=push")
+
+  -- HTTP error delivery: Log called at kLogWarn.
+  _df_mock_status = 503
+  _log_calls = {}
+  deliver_fire(target_github, "gitea", "push", { ref = "refs/heads/main" })
+  ok(#_log_calls == 1, "deliver_fire 503: Log called once")
+  eq(_log_calls[1].level, kLogWarn, "deliver_fire 503: logged at kLogWarn") -- luacheck: globals kLogWarn
+  ok(_log_calls[1].msg:find("status=503") ~= nil, "deliver_fire 503: log contains status=503")
+
+  -- Network error: Log called at kLogWarn with error in message.
+  _df_mock_status = 200
+  _df_mock_error = "connection refused"
+  _log_calls = {}
+  deliver_fire(target_github, "gitea", "push", { ref = "refs/heads/main" })
+  ok(#_log_calls == 1, "deliver_fire network error: Log called once")
+  eq(_log_calls[1].level, kLogWarn, "deliver_fire network error: logged at kLogWarn")
+  ok(_log_calls[1].msg:find("error=") ~= nil, "deliver_fire network error: log contains error=")
+  _df_mock_error = nil
+
+  -- Restore Log and Fetch.
+  Log = _real_Log
   Fetch = _real_Fetch
 end
 
@@ -3142,15 +3215,15 @@ do
     events = { "push", "pull_request" },
     shape = "confusio",
   })
-  ok(ok_reg, "CONFUSIO_WEBHOOK_TARGET: fanout_register_target with valid entry succeeds")
+  ok(ok_reg, "webhook_target CLI arg: fanout_register_target with valid entry succeeds")
 
   -- Invalid entries: silently ignored.
   local ok_bad1 = pcall(fanout_register_target, {})
   local ok_bad2 = pcall(fanout_register_target, { url = "" })
   local ok_bad3 = pcall(fanout_register_target, { url = 42 })
-  ok(ok_bad1, "CONFUSIO_WEBHOOK_TARGET: empty table silently ignored")
-  ok(ok_bad2, "CONFUSIO_WEBHOOK_TARGET: empty url silently ignored")
-  ok(ok_bad3, "CONFUSIO_WEBHOOK_TARGET: non-string url silently ignored")
+  ok(ok_bad1, "webhook_target CLI arg: empty table silently ignored")
+  ok(ok_bad2, "webhook_target CLI arg: empty url silently ignored")
+  ok(ok_bad3, "webhook_target CLI arg: non-string url silently ignored")
 end
 
 -- ============================================================

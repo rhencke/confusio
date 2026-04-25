@@ -2,7 +2,7 @@
 #
 # Pagure uses X-Pagure-Event header.  Payload envelope: {topic, msg: {issue,
 # project, agent, [comment]}}.
-# Trust-the-network mode (no CONFUSIO_WEBHOOK_SECRETS): X-Pagure-Token omitted.
+# Trust-the-network mode (no webhook_secret_BACKEND CLI arg): X-Pagure-Token omitted.
 
 # ── issue.new → issues / opened ──────────────────────────────────────────────
 
