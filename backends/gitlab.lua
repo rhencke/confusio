@@ -6695,11 +6695,11 @@ b:webhook("Push Hook", function(payload)
   end
 
   -- Regular branch push — emit GitHub push event.
-  local commits = {}
+  local push_commits = {}
   for _, c in ipairs(payload.commits or {}) do
-    commits[#commits + 1] = translate_gl_push_commit(c)
+    push_commits[#push_commits + 1] = translate_gl_push_commit(c)
   end
-  local head_commit = #commits > 0 and commits[#commits] or nil
+  local head_commit = #push_commits > 0 and push_commits[#push_commits] or nil
   local web_url = project.web_url or project.homepage or ""
   local compare = (before ~= "" and after ~= "")
       and (web_url .. "/compare/" .. before .. "..." .. after)
@@ -6717,7 +6717,7 @@ b:webhook("Push Hook", function(payload)
       deleted = false,
       forced = false,
       compare = compare,
-      commits = commits,
+      commits = push_commits,
       head_commit = head_commit,
       pusher = {
         name = payload.user_name or "",
@@ -6785,11 +6785,11 @@ b:webhook("Tag Push Hook", function(payload)
   end
 
   -- Regular tag push — emit GitHub push event.
-  local commits = {}
+  local push_commits = {}
   for _, c in ipairs(payload.commits or {}) do
-    commits[#commits + 1] = translate_gl_push_commit(c)
+    push_commits[#push_commits + 1] = translate_gl_push_commit(c)
   end
-  local head_commit = #commits > 0 and commits[#commits] or nil
+  local head_commit = #push_commits > 0 and push_commits[#push_commits] or nil
   local web_url = project.web_url or project.homepage or ""
   local compare = (before ~= "" and after ~= "")
       and (web_url .. "/compare/" .. before .. "..." .. after)
@@ -6807,7 +6807,7 @@ b:webhook("Tag Push Hook", function(payload)
       deleted = false,
       forced = false,
       compare = compare,
-      commits = commits,
+      commits = push_commits,
       head_commit = head_commit,
       pusher = {
         name = payload.user_name or "",
