@@ -79,6 +79,7 @@ gitea|pull_request_review_comment-created.json|pull_request_review_comment-edite
 gitea|workflow_run-requested.json|workflow_run-in_progress.json|.action = "in_progress" | .workflow_run.status = "in_progress" | .workflow_run.updated_at = "2024-01-15T11:01:00Z"
 gitea|release-published.json|release-edited.json|.action = "edited" | .release.name = "Release 1.0.0 (updated)" | .release.body = "Updated notes"
 gitea|release-published.json|release-deleted.json|.action = "deleted"
+gitea|deploy_key-created.json|deploy_key-deleted.json|.action = "deleted"
 gitea|gollum-created.json|gollum-edited.json|.pages[0].action = "edited"
 gitea|repository-created.json|repository-deleted.json|.action = "deleted"
 gitea|repository-created.json|repository-renamed.json|.action = "renamed" | .repository.name = "hello-universe" | .repository.full_name = "octocat/hello-universe" | .changes = {"name": {"from": "hello-world"}}
@@ -96,6 +97,7 @@ gitbucket|label-created.json|label-edited.json|.action = "edited" | .label.color
 gitbucket|issue_comment-created.json|issue_comment-deleted.json|.action = "deleted" | .issue.updated_at = "2024-01-15T10:25:00Z"
 gitbucket|issue_comment-created.json|issue_comment-edited.json|.action = "edited" | .issue.updated_at = "2024-01-15T10:20:00Z" | .comment.body = "I can reproduce this too. (edited)" | .comment.updated_at = "2024-01-15T10:20:00Z"
 gitbucket|pull_request_review-submitted.json|pull_request_review-dismissed.json|.action = "dismissed" | .review.state = "DISMISSED" | .review.body = "Review dismissed." | .pull_request.updated_at = "2024-01-15T14:00:00Z" | .sender.id = 1 | .sender.login = "alice"
+gitbucket|deploy_key-created.json|deploy_key-deleted.json|.action = "deleted"
 gitbucket|gollum-created.json|gollum-edited.json|.pages[0].action = "edited"
 gitbucket|release-published.json|release-edited.json|.action = "edited" | .release.name = "Release 1.0.0 (edited)" | .release.body = "First release (edited)" | .changes = {}
 gitbucket|release-published.json|release-deleted.json|.action = "deleted"

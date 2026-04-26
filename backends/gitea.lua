@@ -7695,6 +7695,35 @@ b:webhook("repository", function(payload)
   })
 end)
 
+-- deploy_key: SSH deploy key added or removed from a repository.
+-- Gitea sends X-Gitea-Event: deploy_key with GitHub-compatible payload.
+b:webhook("deploy_key", function(payload)
+  local action = payload.action or "unknown"
+  local key = payload.key or {}
+  local data = {
+    action = action,
+    key = {
+      id = key.id or 0,
+      key = key.key or "",
+      url = key.url or "",
+      title = key.title or "",
+      verified = key.verified or false,
+      created_at = key.created_at or "",
+      read_only = key.read_only or false,
+    },
+    repository = translate_repo(payload.repository or {}),
+    sender = translate_user(payload.sender or {}),
+  }
+  return make_internal_event({
+    event = "deploy_key",
+    action = action,
+    provider = "gitea",
+    raw = payload,
+    data = data,
+    timestamp = key.created_at or "",
+  })
+end)
+
 -- gollum: wiki page created or edited.
 -- Gitea sends X-Gitea-Event: gollum with GitHub-compatible payload.
 -- The pages[] array carries the per-page action; there is no top-level action.

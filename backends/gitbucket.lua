@@ -2601,6 +2601,26 @@ b:webhook("fork", function(payload)
   })
 end)
 
+-- deploy_key: SSH deploy key added or removed.
+-- GitBucket sends X-GitHub-Event: deploy_key with GitHub-compatible payload.
+b:webhook("deploy_key", function(payload)
+  local action = payload.action or "unknown"
+  local data = {
+    action = action,
+    key = payload.key or {},
+    repository = payload.repository or {},
+    sender = payload.sender or {},
+  }
+  return make_internal_event({
+    event = "deploy_key",
+    action = action,
+    provider = "gitbucket",
+    raw = payload,
+    data = data,
+    timestamp = (payload.key or {}).created_at or "",
+  })
+end)
+
 -- gollum: wiki page created or edited.
 -- GitBucket sends X-GitHub-Event: gollum with GitHub-compatible payload.
 -- The pages[] array carries the per-page action; there is no top-level action.

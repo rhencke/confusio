@@ -33,6 +33,7 @@ test/fixtures/webhooks/gitea/workflow_run-in_progress.json
 test/fixtures/webhooks/gitea/release-edited.json
 test/fixtures/webhooks/gitea/release-deleted.json
 test/fixtures/webhooks/gitea/release-prereleased.json
+test/fixtures/webhooks/gitea/deploy_key-deleted.json
 test/fixtures/webhooks/gitea/gollum-edited.json
 test/fixtures/webhooks/gitea/repository-deleted.json
 test/fixtures/webhooks/gitea/repository-renamed.json
@@ -86,6 +87,7 @@ test/fixtures/webhooks/pagure/delete.json
 test/fixtures/webhooks/azuredevops/delete.json
 test/fixtures/webhooks/azuredevops/repository-deleted.json
 test/fixtures/webhooks/azuredevops/repository-renamed.json
+test/fixtures/webhooks/gitbucket/deploy_key-deleted.json
 test/fixtures/webhooks/gitbucket/gollum-edited.json
 test/fixtures/webhooks/gitbucket/repository-deleted.json
 test/fixtures/webhooks/gerrit/comment-added-changes_requested.json
