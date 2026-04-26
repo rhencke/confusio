@@ -6971,16 +6971,25 @@ b:webhook("Deployment Hook", function(payload)
   })
 end)
 
--- System Hook: repository lifecycle events (project_create, project_destroy,
--- project_rename, project_transfer, project_update for publicized/privatized).
+-- System Hook: repository and group (organization) lifecycle events.
 -- GitLab sends X-Gitlab-Event: System Hook with event_name in the body.
--- Non-repository event_names (user_create, key_add, etc.) return an error so
--- the receiver responds with 422 rather than silently accepting them.
+-- Non-repository / non-group event_names (user_create, key_add, etc.) return
+-- an error so the receiver responds with 422 rather than silently accepting them.
 local GL_SYSTEM_HOOK_REPOSITORY_ACTIONS = {
   project_create = "created",
   project_destroy = "deleted",
   project_rename = "renamed",
   project_transfer = "transferred",
+}
+
+-- Group lifecycle event_names that map to GitHub's organization event.
+-- group_create → "created"; group_destroy → "deleted"; group_rename → "renamed".
+-- GitHub's organization event does not officially include "created", but confusio
+-- emits it as a best-effort mapping for consumers that want to track org creation.
+local GL_SYSTEM_HOOK_GROUP_ACTIONS = {
+  group_create = "created",
+  group_destroy = "deleted",
+  group_rename = "renamed",
 }
 
 -- Build a minimal repository object from a GitLab system hook payload.
@@ -7017,51 +7026,106 @@ end
 
 b:webhook("System Hook", function(payload)
   local event_name = payload.event_name or ""
-  local action = GL_SYSTEM_HOOK_REPOSITORY_ACTIONS[event_name]
+
+  -- ── Repository / project events ────────────────────────────────────────────
+  local repo_action = GL_SYSTEM_HOOK_REPOSITORY_ACTIONS[event_name]
 
   -- project_update: infer publicized/privatized from new visibility field.
   -- GitLab does not include the old visibility in the payload, so we map
   -- based on the new state: "public" → publicized, anything else → privatized.
-  if not action and event_name == "project_update" then
+  if not repo_action and event_name == "project_update" then
     local vis = payload.project_visibility or ""
-    action = vis == "public" and "publicized" or "privatized"
+    repo_action = vis == "public" and "publicized" or "privatized"
   end
 
-  if not action then
-    return nil, "Unhandled system hook event: " .. event_name
-  end
-
-  local repository = translate_gl_system_hook_repo(payload)
-  local sender = translate_gl_user({
-    name = payload.owner_name or "",
-    username = payload.owner_name or "",
-    avatar_url = "",
-  })
-  local data = {
-    action = action,
-    repository = repository,
-    sender = sender,
-  }
-
-  -- For renamed and transferred, include changes.repository.name.from sourced
-  -- from old_path_with_namespace.
-  if action == "renamed" then
-    local old_pns = payload.old_path_with_namespace or ""
-    local old_slash = old_pns:find("/", 1, true)
-    local old_name = old_slash and old_pns:sub(old_slash + 1) or old_pns
-    data.changes = {
-      repository = { name = { from = old_name } },
+  if repo_action then
+    local repository = translate_gl_system_hook_repo(payload)
+    local sender = translate_gl_user({
+      name = payload.owner_name or "",
+      username = payload.owner_name or "",
+      avatar_url = "",
+    })
+    local data = {
+      action = repo_action,
+      repository = repository,
+      sender = sender,
     }
+
+    -- For renamed and transferred, include changes.repository.name.from sourced
+    -- from old_path_with_namespace.
+    if repo_action == "renamed" then
+      local old_pns = payload.old_path_with_namespace or ""
+      local old_slash = old_pns:find("/", 1, true)
+      local old_name = old_slash and old_pns:sub(old_slash + 1) or old_pns
+      data.changes = {
+        repository = { name = { from = old_name } },
+      }
+    end
+
+    return make_internal_event({
+      event = "repository",
+      action = repo_action,
+      provider = config.backend,
+      raw = payload,
+      data = data,
+      timestamp = payload.updated_at or payload.created_at or "",
+    })
   end
 
-  return make_internal_event({
-    event = "repository",
-    action = action,
-    provider = config.backend,
-    raw = payload,
-    data = data,
-    timestamp = payload.updated_at or payload.created_at or "",
-  })
+  -- ── Group / organization events ────────────────────────────────────────────
+  -- System hook group payloads carry: group_id, name, path, full_path,
+  -- and for group_rename: old_path, old_full_path.  There is no owner field.
+  local org_action = GL_SYSTEM_HOOK_GROUP_ACTIONS[event_name]
+
+  if org_action then
+    local org = {
+      login = payload.path or payload.full_path or "",
+      id = payload.group_id or 0,
+      node_id = "",
+      description = "",
+      url = "",
+      html_url = "",
+      avatar_url = "",
+      public_repos = 0,
+      public_gists = 0,
+      followers = 0,
+      following = 0,
+      created_at = payload.created_at or "",
+      type = "Organization",
+    }
+    local sender = {
+      login = "",
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      html_url = "",
+      type = "User",
+      site_admin = false,
+    }
+    local data = {
+      action = org_action,
+      organization = org,
+      sender = sender,
+    }
+
+    -- For renamed, include changes.login.from = old_path.
+    if org_action == "renamed" then
+      data.changes = {
+        login = { from = payload.old_path or "" },
+      }
+    end
+
+    return make_internal_event({
+      event = "organization",
+      action = org_action,
+      provider = config.backend,
+      raw = payload,
+      data = data,
+      timestamp = payload.updated_at or payload.created_at or "",
+    })
+  end
+
+  return nil, "Unhandled system hook event: " .. event_name
 end)
 
 -- gollum: wiki page created or edited.

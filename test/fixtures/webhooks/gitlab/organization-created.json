@@ -1,0 +1,11 @@
+{
+  "event_name": "group_create",
+  "created_at": "2024-01-15T10:00:00.000Z",
+  "updated_at": "2024-01-15T10:00:00.000Z",
+  "name": "Engineering",
+  "path": "engineering",
+  "full_path": "engineering",
+  "group_id": 10,
+  "owner_name": null,
+  "owner_email": null
+}

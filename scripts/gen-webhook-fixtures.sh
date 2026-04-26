@@ -144,6 +144,8 @@ gitlab|repository-created.json|repository-transferred.json|.event_name = "projec
 gitlab|repository-created.json|repository-publicized.json|.event_name = "project_update" | .project_visibility = "public"
 gitlab|repository-created.json|repository-privatized.json|.event_name = "project_update" | .project_visibility = "private"
 gitlab|member-added.json|member-removed.json|.action = "removed"
+gitlab|organization-created.json|organization-deleted.json|.event_name = "group_destroy"
+gitlab|organization-created.json|organization-renamed.json|.event_name = "group_rename" | .path = "engineering-renamed" | .full_path = "engineering-renamed" | .old_path = "engineering" | .old_full_path = "engineering"
 VARIANTS
 
 # ---------------------------------------------------------------------------
