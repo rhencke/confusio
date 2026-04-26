@@ -2845,3 +2845,106 @@ for _, section in ipairs(endpoint_sections) do
     route_add(e[1], e[2], e[3])
   end
 end
+
+-- ---------------------------------------------------------------------------
+-- Webhook event compatibility entries.
+--
+-- These entries drive the per-(event, action) rows in the compatibility matrix.
+-- They are informational only: NOT HTTP routes, NOT registered with route_add.
+-- The "method" field uses the pseudo-verb "webhook" and the "path" field is
+-- "event/action", giving CSV keys like "webhook issues/opened".
+--
+-- Authoritative source: the fixture filenames under test/fixtures/webhooks/gitea/
+-- (gitea is the most complete backend; all 48 pairs are covered there).
+-- Other backends support subsets; their CSV values are filled in site/compatibility.csv.
+--
+-- e.is_webhook_event = true marks these as non-routable informational entries so
+-- that validate-tests.py can skip them (they have no hurl test files of their own).
+-- ---------------------------------------------------------------------------
+local webhook_event_sections = {
+  {
+    "webhook-events",
+    {
+      -- issues
+      { "webhook issues/opened", "wh_issues_opened" },
+      { "webhook issues/closed", "wh_issues_closed" },
+      { "webhook issues/edited", "wh_issues_edited" },
+      { "webhook issues/reopened", "wh_issues_reopened" },
+      { "webhook issues/labeled", "wh_issues_labeled" },
+      { "webhook issues/unlabeled", "wh_issues_unlabeled" },
+      { "webhook issues/assigned", "wh_issues_assigned" },
+      { "webhook issues/unassigned", "wh_issues_unassigned" },
+
+      -- issue_comment
+      { "webhook issue_comment/created", "wh_issue_comment_created" },
+      { "webhook issue_comment/edited", "wh_issue_comment_edited" },
+      { "webhook issue_comment/deleted", "wh_issue_comment_deleted" },
+
+      -- label
+      { "webhook label/created", "wh_label_created" },
+      { "webhook label/edited", "wh_label_edited" },
+      { "webhook label/deleted", "wh_label_deleted" },
+
+      -- merge_group
+      { "webhook merge_group/checks_requested", "wh_merge_group_checks_requested" },
+      { "webhook merge_group/destroyed", "wh_merge_group_destroyed" },
+
+      -- milestone
+      { "webhook milestone/created", "wh_milestone_created" },
+      { "webhook milestone/closed", "wh_milestone_closed" },
+      { "webhook milestone/opened", "wh_milestone_opened" },
+      { "webhook milestone/edited", "wh_milestone_edited" },
+      { "webhook milestone/deleted", "wh_milestone_deleted" },
+      { "webhook milestone/reopened", "wh_milestone_reopened" },
+
+      -- pull_request
+      { "webhook pull_request/opened", "wh_pull_request_opened" },
+      { "webhook pull_request/closed", "wh_pull_request_closed" },
+      { "webhook pull_request/reopened", "wh_pull_request_reopened" },
+      { "webhook pull_request/edited", "wh_pull_request_edited" },
+      { "webhook pull_request/synchronize", "wh_pull_request_synchronize" },
+      { "webhook pull_request/labeled", "wh_pull_request_labeled" },
+      { "webhook pull_request/unlabeled", "wh_pull_request_unlabeled" },
+      { "webhook pull_request/assigned", "wh_pull_request_assigned" },
+      { "webhook pull_request/unassigned", "wh_pull_request_unassigned" },
+      { "webhook pull_request/review_requested", "wh_pull_request_review_requested" },
+      { "webhook pull_request/review_request_removed", "wh_pull_request_review_request_removed" },
+
+      -- pull_request_review
+      { "webhook pull_request_review/submitted", "wh_pull_request_review_submitted" },
+      { "webhook pull_request_review/edited", "wh_pull_request_review_edited" },
+      { "webhook pull_request_review/dismissed", "wh_pull_request_review_dismissed" },
+
+      -- pull_request_review_comment
+      { "webhook pull_request_review_comment/created", "wh_pull_request_review_comment_created" },
+      { "webhook pull_request_review_comment/edited", "wh_pull_request_review_comment_edited" },
+      { "webhook pull_request_review_comment/deleted", "wh_pull_request_review_comment_deleted" },
+
+      -- status
+      { "webhook status/pending", "wh_status_pending" },
+      { "webhook status/success", "wh_status_success" },
+      { "webhook status/failure", "wh_status_failure" },
+
+      -- workflow_run
+      { "webhook workflow_run/requested", "wh_workflow_run_requested" },
+      { "webhook workflow_run/in_progress", "wh_workflow_run_in_progress" },
+      { "webhook workflow_run/completed", "wh_workflow_run_completed" },
+
+      -- workflow_job
+      { "webhook workflow_job/queued", "wh_workflow_job_queued" },
+      { "webhook workflow_job/in_progress", "wh_workflow_job_in_progress" },
+      { "webhook workflow_job/completed", "wh_workflow_job_completed" },
+      { "webhook workflow_job/waiting", "wh_workflow_job_waiting" },
+    },
+  },
+}
+
+for _, section in ipairs(webhook_event_sections) do
+  local g = section[1]
+  for _, e in ipairs(section[2]) do
+    e.group = g
+    e.is_webhook_event = true
+    endpoints[#endpoints + 1] = e
+    -- No route_add: these are compatibility matrix rows, not HTTP endpoints.
+  end
+end

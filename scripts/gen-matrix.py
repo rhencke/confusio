@@ -10,10 +10,15 @@ Usage:
   output   path to write result        (default: stdout)
 
 The template must contain the marker <!-- COMPAT_MATRIX --> where the
-generated <table> element will be inserted.
+generated REST endpoint <table> element will be inserted, and the marker
+<!-- WEBHOOK_MATRIX --> where the webhook events <table> will be inserted.
 
 The catalog JSON is produced by: ./redbean.com -i scripts/dump-endpoints.lua
-Each entry has: method, path, handler, group, has_default.
+Each entry has: method, path, handler, group, has_default, is_webhook_event.
+
+Entries with is_webhook_event=true use method "webhook" and path "event/action"
+(e.g. "webhook issues/opened").  They are rendered in a separate table keyed
+by event type (the segment before "/"), with the action as the row label.
 
 The CSV contains support values (y/n/~) keyed by "METHOD /path". Section
 headers are derived from the catalog group names; the CSV has no section rows.
@@ -84,6 +89,22 @@ GROUP_NAMES = {
     "git":                  "Git Database",
 }
 
+# Human-readable names for webhook event types (the segment before "/" in the path).
+WEBHOOK_EVENT_NAMES = {
+    "issues":                       "Issues",
+    "issue_comment":                "Issue Comments",
+    "label":                        "Labels",
+    "merge_group":                  "Merge Group",
+    "milestone":                    "Milestones",
+    "pull_request":                 "Pull Requests",
+    "pull_request_review":          "PR Reviews",
+    "pull_request_review_comment":  "PR Review Comments",
+    "push":                         "Push",
+    "status":                       "Commit Status",
+    "workflow_run":                 "Workflow Run",
+    "workflow_job":                 "Workflow Job",
+}
+
 
 def make_cell(val):
     val = val.strip()
@@ -99,6 +120,7 @@ def make_cell(val):
 
 
 def generate_table(catalog, support, providers):
+    """Generate the REST endpoint compatibility table (non-webhook entries)."""
     num_cols = len(providers) + 1  # +1 for the endpoint column
 
     # thead
@@ -111,6 +133,8 @@ def generate_table(catalog, support, providers):
     tbody_rows = []
     current_group = None
     for entry in catalog:
+        if entry.get("is_webhook_event"):
+            continue
         group = entry["group"]
         if group != current_group:
             section = GROUP_NAMES.get(group, group)
@@ -121,6 +145,54 @@ def generate_table(catalog, support, providers):
         endpoint = entry["method"] + " " + entry["path"]
         row = support.get(endpoint, {})
         cells = [f'<td class="ep">{endpoint}</td>']
+        for p in providers:
+            val = row.get(p, "n")
+            cells.append(make_cell(val))
+        tbody_rows.append("        <tr>" + "".join(cells) + "</tr>")
+
+    tbody = "      <tbody>\n" + "\n".join(tbody_rows) + "\n      </tbody>"
+    return f"    <table>\n{thead}\n{tbody}\n    </table>"
+
+
+def generate_webhook_table(catalog, support, providers):
+    """Generate the webhook event compatibility table.
+
+    Rows come from catalog entries with is_webhook_event=true.  Their path is
+    "event/action" (e.g. "issues/opened").  Section headers group by the event
+    type (before "/"); the row label shows only the action (after "/").
+
+    The CSV key for each entry is "webhook event/action" (method + " " + path).
+    """
+    num_cols = len(providers) + 1  # +1 for the action column
+
+    # thead
+    header_cells = ["<th>Action</th>"]
+    for p in providers:
+        header_cells.append(f"<th>{PROVIDER_NAMES.get(p, p)}</th>")
+    thead = "      <thead>\n        <tr>" + "".join(header_cells) + "</tr>\n      </thead>"
+
+    tbody_rows = []
+    current_event = None
+    for entry in catalog:
+        if not entry.get("is_webhook_event"):
+            continue
+        path = entry["path"]  # e.g. "issues/opened"
+        if "/" in path:
+            event, action = path.split("/", 1)
+        else:
+            event, action = path, ""
+
+        if event != current_event:
+            section = WEBHOOK_EVENT_NAMES.get(event, event)
+            tbody_rows.append(
+                f'        <tr><td colspan="{num_cols}" class="section-hdr">{section}</td></tr>'
+            )
+            current_event = event
+
+        csv_key = entry["method"] + " " + path  # e.g. "webhook issues/opened"
+        row = support.get(csv_key, {})
+        label = action if action else path
+        cells = [f'<td class="ep">{label}</td>']
         for p in providers:
             val = row.get(p, "n")
             cells.append(make_cell(val))
@@ -150,9 +222,12 @@ def main():
         for row in reader:
             support[row["endpoint"]] = {p: row.get(p, "n") for p in providers}
 
-    table_html = generate_table(catalog, support, providers)
+    rest_table_html    = generate_table(catalog, support, providers)
+    webhook_table_html = generate_webhook_table(catalog, support, providers)
+
     template = template_path.read_text()
-    output = template.replace("<!-- COMPAT_MATRIX -->", table_html, 1)
+    output = template.replace("<!-- COMPAT_MATRIX -->", rest_table_html, 1)
+    output = output.replace("<!-- WEBHOOK_MATRIX -->", webhook_table_html, 1)
 
     if output_path:
         output_path.parent.mkdir(parents=True, exist_ok=True)
