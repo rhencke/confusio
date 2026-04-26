@@ -2200,7 +2200,6 @@ b:webhook("git.push", function(payload)
   local update = ref_updates[1] or {}
   local pushed_by = resource.pushedBy or {}
 
-  local ZERO_SHA = "0000000000000000000000000000000000000000"
   local ref_name_full = update.name or ""
   local before = update.oldObjectId or ZERO_SHA
   local after = update.newObjectId or ZERO_SHA
