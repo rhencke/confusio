@@ -7491,6 +7491,138 @@ b:webhook("status", function(payload)
   })
 end)
 
+-- push: commits pushed to a branch or tag.  Gitea sends this event as
+-- "push".  The event has no action sub-field; "push" is used as the action
+-- value so downstream consumers can filter by event name uniformly.
+--
+-- Gitea commit objects include author/committer git identities and an
+-- optional username.  The compare URL is in `compare_url` (not `compare`).
+local function translate_gitea_push_commit(c)
+  if not c then
+    return {}
+  end
+  local author = c.author or {}
+  local committer = c.committer or {}
+  return {
+    id = c.id or "",
+    message = c.message or "",
+    timestamp = c.timestamp or "",
+    url = c.url or "",
+    author = {
+      name = author.name or "",
+      email = author.email or "",
+      username = author.username or "",
+    },
+    committer = {
+      name = committer.name or "",
+      email = committer.email or "",
+      username = committer.username or "",
+    },
+    added = c.added or {},
+    removed = c.removed or {},
+    modified = c.modified or {},
+  }
+end
+
+b:webhook("push", function(payload)
+  local commits = {}
+  for _, c in ipairs(payload.commits or {}) do
+    commits[#commits + 1] = translate_gitea_push_commit(c)
+  end
+  local head_raw = payload.head_commit
+  local head_commit = head_raw and translate_gitea_push_commit(head_raw) or nil
+  local pusher = payload.pusher or {}
+  local data = {
+    ref = payload.ref or "",
+    before = payload.before or "",
+    after = payload.after or "",
+    created = payload.created or false,
+    deleted = payload.deleted or false,
+    forced = payload.forced or false,
+    compare = payload.compare_url or "",
+    commits = commits,
+    head_commit = head_commit,
+    pusher = {
+      name = pusher.login or pusher.name or "",
+      email = pusher.email or "",
+    },
+    repository = translate_repo(payload.repository or {}),
+    sender = translate_user(payload.sender or {}),
+  }
+  return make_internal_event({
+    event = "push",
+    action = "push",
+    provider = "gitea",
+    raw = payload,
+    data = data,
+    timestamp = payload.head_commit and payload.head_commit.timestamp or "",
+  })
+end)
+
+-- create: branch or tag created.  Gitea sends `ref_type` ("branch"/"tag") and
+-- `ref` (the name, not the full refspec).  `master_branch` and `pusher_type`
+-- are derived locally since Gitea omits them from the create payload.
+b:webhook("create", function(payload)
+  local repo = payload.repository or {}
+  local data = {
+    ref = payload.ref or "",
+    ref_type = payload.ref_type or "branch",
+    master_branch = repo.default_branch or "",
+    description = repo.description,
+    pusher_type = "user",
+    repository = translate_repo(repo),
+    sender = translate_user(payload.sender or {}),
+  }
+  return make_internal_event({
+    event = "create",
+    action = "create",
+    provider = "gitea",
+    raw = payload,
+    data = data,
+    timestamp = "",
+  })
+end)
+
+-- delete: branch or tag deleted.  Same shape as create.
+b:webhook("delete", function(payload)
+  local repo = payload.repository or {}
+  local data = {
+    ref = payload.ref or "",
+    ref_type = payload.ref_type or "branch",
+    master_branch = repo.default_branch or "",
+    description = repo.description,
+    pusher_type = "user",
+    repository = translate_repo(repo),
+    sender = translate_user(payload.sender or {}),
+  }
+  return make_internal_event({
+    event = "delete",
+    action = "delete",
+    provider = "gitea",
+    raw = payload,
+    data = data,
+    timestamp = "",
+  })
+end)
+
+-- fork: repository forked.  Gitea sends `forkee` (the newly created fork) and
+-- `repository` (the upstream source).  Both are translated with translate_repo.
+b:webhook("fork", function(payload)
+  local data = {
+    forkee = translate_repo(payload.forkee or {}),
+    repository = translate_repo(payload.repository or {}),
+    sender = translate_user(payload.sender or {}),
+  }
+  return make_internal_event({
+    event = "fork",
+    action = "fork",
+    provider = "gitea",
+    raw = payload,
+    data = data,
+    timestamp = "",
+  })
+end)
+
 b:capability("repos", repos)
 b:capability("users", users)
 b:capability("orgs", orgs)

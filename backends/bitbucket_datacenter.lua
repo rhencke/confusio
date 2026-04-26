@@ -1656,4 +1656,95 @@ b:webhook("build:status_updated", function(payload)
   return bbs_build_status_event(payload)
 end)
 
+-- repo:refs_changed: branch or tag push (including creation and deletion).
+-- BBS uses a single `repo:refs_changed` event for all ref operations.
+-- The change.type field identifies the operation:
+--   "ADD"    → branch or tag created → GitHub create event
+--   "DELETE" → branch or tag deleted → GitHub delete event
+--   "UPDATE" → regular push           → GitHub push event
+-- BBS webhook payloads do not include a commit list in refs_changed; the push
+-- event therefore has an empty commits array and no head_commit.
+b:webhook("repo:refs_changed", function(payload)
+  local changes = payload.changes or {}
+  local change = changes[1] or {}
+  local ref = change.ref or {}
+  local repo = payload.repository or {}
+  local actor = payload.actor or {}
+  local sender = translate_bbs_user(actor)
+  local repository = translate_bbs_repo(repo)
+  local ref_type = (ref.type or "BRANCH"):lower()
+  local ref_name = ref.displayId or ""
+  local full_ref = ref.id or ""
+  local change_type = change.type or ""
+
+  if change_type == "ADD" then
+    -- Branch or tag created — emit GitHub create event.
+    return make_internal_event({
+      event = "create",
+      action = "create",
+      provider = "bitbucket_datacenter",
+      raw = payload,
+      data = {
+        ref = ref_name,
+        ref_type = ref_type,
+        master_branch = repository.default_branch or "",
+        description = repo.description,
+        pusher_type = "user",
+        repository = repository,
+        sender = sender,
+      },
+      timestamp = "",
+    })
+  end
+
+  if change_type == "DELETE" then
+    -- Branch or tag deleted — emit GitHub delete event.
+    return make_internal_event({
+      event = "delete",
+      action = "delete",
+      provider = "bitbucket_datacenter",
+      raw = payload,
+      data = {
+        ref = ref_name,
+        ref_type = ref_type,
+        master_branch = repository.default_branch or "",
+        description = repo.description,
+        pusher_type = "user",
+        repository = repository,
+        sender = sender,
+      },
+      timestamp = "",
+    })
+  end
+
+  -- Regular push (UPDATE) — emit GitHub push event.
+  -- BBS does not include a commit list in refs_changed payloads.
+  local before = change.fromHash or "0000000000000000000000000000000000000000"
+  local after = change.toHash or "0000000000000000000000000000000000000000"
+  return make_internal_event({
+    event = "push",
+    action = "push",
+    provider = "bitbucket_datacenter",
+    raw = payload,
+    data = {
+      ref = full_ref,
+      before = before,
+      after = after,
+      created = false,
+      deleted = false,
+      forced = false,
+      compare = "",
+      commits = {},
+      head_commit = nil,
+      pusher = {
+        name = actor.name or actor.displayName or "",
+        email = actor.emailAddress or "",
+      },
+      repository = repository,
+      sender = sender,
+    },
+    timestamp = "",
+  })
+end)
+
 b:build()

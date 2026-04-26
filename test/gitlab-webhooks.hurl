@@ -1087,3 +1087,180 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 header "X-Confusio-Raw-Action" == "stale"
+
+# ── Push Hook: branch push with commits → 200 (push event) ───────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Push Hook
+{
+  "object_kind": "push",
+  "event_name": "push",
+  "before": "95790bf891e76fee5db5ef17d2523a6f6e048239",
+  "after":  "da1560886d4f094c3e6c9ef40349f7d38b5d27d0",
+  "ref": "refs/heads/main",
+  "checkout_sha": "da1560886d4f094c3e6c9ef40349f7d38b5d27d0",
+  "user_id": 4,
+  "user_name": "Alice Smith",
+  "user_username": "alice",
+  "user_email": "alice@example.com",
+  "user_avatar": "",
+  "project_id": 15,
+  "project": {
+    "id": 15, "name": "hello-world", "description": "My first repo",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "namespace": "octocat", "visibility_level": 20,
+    "path_with_namespace": "octocat/hello-world",
+    "default_branch": "main",
+    "homepage": "http://localhost/octocat/hello-world"
+  },
+  "commits": [
+    {
+      "id": "da1560886d4f094c3e6c9ef40349f7d38b5d27d0",
+      "message": "Fix login bug",
+      "timestamp": "2024-01-15T10:00:00+00:00",
+      "url": "http://localhost/octocat/hello-world/commit/da1560886d4f094c3e6c9ef40349f7d38b5d27d0",
+      "author": {"name": "Alice Smith", "email": "alice@example.com"},
+      "added": [], "modified": ["README.md"], "removed": []
+    }
+  ],
+  "total_commits_count": 1,
+  "repository": {
+    "name": "hello-world",
+    "url": "git@localhost:octocat/hello-world.git",
+    "description": "My first repo",
+    "homepage": "http://localhost/octocat/hello-world"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Push Hook: before = zero SHA → 200 (create event, branch created) ─────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Push Hook
+{
+  "object_kind": "push",
+  "event_name": "push",
+  "before": "0000000000000000000000000000000000000000",
+  "after":  "da1560886d4f094c3e6c9ef40349f7d38b5d27d0",
+  "ref": "refs/heads/feature-branch",
+  "checkout_sha": "da1560886d4f094c3e6c9ef40349f7d38b5d27d0",
+  "user_id": 5,
+  "user_name": "Bob Jones",
+  "user_username": "bob",
+  "user_email": "bob@example.com",
+  "user_avatar": "",
+  "project_id": 15,
+  "project": {
+    "id": 15, "name": "hello-world", "description": "My first repo",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "namespace": "octocat", "visibility_level": 20,
+    "path_with_namespace": "octocat/hello-world",
+    "default_branch": "main",
+    "homepage": "http://localhost/octocat/hello-world"
+  },
+  "commits": [],
+  "total_commits_count": 0,
+  "repository": {
+    "name": "hello-world",
+    "url": "git@localhost:octocat/hello-world.git",
+    "description": "My first repo",
+    "homepage": "http://localhost/octocat/hello-world"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Push Hook: after = zero SHA → 200 (delete event, branch deleted) ──────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Push Hook
+{
+  "object_kind": "push",
+  "event_name": "push",
+  "before": "95790bf891e76fee5db5ef17d2523a6f6e048239",
+  "after":  "0000000000000000000000000000000000000000",
+  "ref": "refs/heads/stale-branch",
+  "checkout_sha": null,
+  "user_id": 5,
+  "user_name": "Bob Jones",
+  "user_username": "bob",
+  "user_email": "bob@example.com",
+  "user_avatar": "",
+  "project_id": 15,
+  "project": {
+    "id": 15, "name": "hello-world", "description": "My first repo",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "namespace": "octocat", "visibility_level": 20,
+    "path_with_namespace": "octocat/hello-world",
+    "default_branch": "main",
+    "homepage": "http://localhost/octocat/hello-world"
+  },
+  "commits": [],
+  "total_commits_count": 0,
+  "repository": {
+    "name": "hello-world",
+    "url": "git@localhost:octocat/hello-world.git",
+    "description": "My first repo",
+    "homepage": "http://localhost/octocat/hello-world"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Tag Push Hook: tag push with commit → 200 (push event) ───────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Tag Push Hook
+{
+  "object_kind": "tag_push",
+  "event_name": "tag_push",
+  "before": "0000000000000000000000000000000000000000",
+  "after":  "da1560886d4f094c3e6c9ef40349f7d38b5d27d0",
+  "ref": "refs/tags/v1.0.0",
+  "checkout_sha": "da1560886d4f094c3e6c9ef40349f7d38b5d27d0",
+  "user_id": 4,
+  "user_name": "Alice Smith",
+  "user_username": "alice",
+  "user_email": "alice@example.com",
+  "user_avatar": "",
+  "project_id": 15,
+  "project": {
+    "id": 15, "name": "hello-world", "description": "My first repo",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "namespace": "octocat", "visibility_level": 20,
+    "path_with_namespace": "octocat/hello-world",
+    "default_branch": "main",
+    "homepage": "http://localhost/octocat/hello-world"
+  },
+  "commits": [],
+  "total_commits_count": 0,
+  "repository": {
+    "name": "hello-world",
+    "url": "git@localhost:octocat/hello-world.git",
+    "description": "My first repo",
+    "homepage": "http://localhost/octocat/hello-world"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"

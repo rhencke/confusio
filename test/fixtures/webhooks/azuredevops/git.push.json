@@ -1,0 +1,31 @@
+{
+  "eventType": "git.push",
+  "resource": {
+    "repository": {
+      "id": "repo-id-001",
+      "name": "hello-world",
+      "remoteUrl": "https://dev.azure.com/octocat/hello-world/_git/hello-world",
+      "defaultBranch": "refs/heads/main",
+      "isPrivate": false,
+      "project": {"id": "proj-id-001", "name": "octocat"}
+    },
+    "refUpdates": [
+      {
+        "name": "refs/heads/main",
+        "oldObjectId": "6dcb09b5b57875f334f61aebed695e2e4193db5e",
+        "newObjectId": "f1d2d2f924e986ac86fdf7b36c94bcdf32beec15"
+      }
+    ],
+    "commits": [
+      {
+        "commitId": "f1d2d2f924e986ac86fdf7b36c94bcdf32beec15",
+        "comment": "Update readme",
+        "author": {"name": "Bob Jones", "email": "bob@example.com", "date": "2024-01-15T10:00:00Z"},
+        "committer": {"name": "Bob Jones", "email": "bob@example.com", "date": "2024-01-15T10:00:00Z"}
+      }
+    ],
+    "pushedBy": {"displayName": "Bob Jones", "uniqueName": "bob@example.com"},
+    "pushId": 1
+  },
+  "createdDate": "2024-01-15T10:00:00Z"
+}

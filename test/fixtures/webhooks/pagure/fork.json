@@ -1,0 +1,31 @@
+{
+  "topic": "pagure.project.forked",
+  "msg": {
+    "agent": "bob",
+    "project": {
+      "id": 100,
+      "name": "hello-world",
+      "namespace": "octocat",
+      "fullname": "octocat/hello-world",
+      "url_path": "octocat/hello-world",
+      "full_url": "http://localhost/octocat/hello-world",
+      "description": "My first repo",
+      "default_branch": "main",
+      "private": false,
+      "user": {"name": "octocat", "url_path": "user/octocat"}
+    },
+    "fork": {
+      "id": 101,
+      "name": "hello-world",
+      "namespace": null,
+      "fullname": "forks/bob/hello-world",
+      "url_path": "fork/bob/hello-world",
+      "full_url": "http://localhost/fork/bob/hello-world",
+      "description": "My first repo",
+      "default_branch": "main",
+      "private": false,
+      "parent": {"fullname": "octocat/hello-world"},
+      "user": {"name": "bob", "url_path": "user/bob"}
+    }
+  }
+}

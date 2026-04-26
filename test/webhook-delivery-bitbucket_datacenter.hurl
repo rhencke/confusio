@@ -231,6 +231,72 @@ jsonpath "$[0].github_event" == "pull_request_review"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 
+# ── push: push (repo:refs_changed / UPDATE) ───────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/bitbucket_datacenter
+Content-Type: application/json
+X-Event-Key: repo:refs_changed
+file,fixtures/webhooks/bitbucket_datacenter/push.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "push"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
+# ── create: create (repo:refs_changed / ADD) ──────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/bitbucket_datacenter
+Content-Type: application/json
+X-Event-Key: repo:refs_changed
+file,fixtures/webhooks/bitbucket_datacenter/create.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "create"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
+# ── delete: delete (repo:refs_changed / DELETE) ───────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/bitbucket_datacenter
+Content-Type: application/json
+X-Event-Key: repo:refs_changed
+file,fixtures/webhooks/bitbucket_datacenter/delete.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "delete"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
 # ── status: success (build:status_created) ────────────────────────────────────
 
 POST http://{{target}}/reset

@@ -1,0 +1,24 @@
+{
+  "topic": "pagure.git.receive",
+  "msg": {
+    "agent": "bob",
+    "repo": {
+      "id": 100,
+      "name": "hello-world",
+      "namespace": "octocat",
+      "fullname": "octocat/hello-world",
+      "url_path": "octocat/hello-world",
+      "full_url": "http://localhost/octocat/hello-world",
+      "description": "My first repo",
+      "default_branch": "main",
+      "private": false,
+      "user": {"name": "octocat", "url_path": "user/octocat"}
+    },
+    "branch": "refs/heads/feature-branch",
+    "start_commit": "0000000000000000000000000000000000000000",
+    "end_commit": "da1560886d4f094c3e6c9ef40349f7d38b5d27d0",
+    "forced": false,
+    "total_commits": 0,
+    "commits": []
+  }
+}

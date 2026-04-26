@@ -2865,6 +2865,15 @@ local webhook_event_sections = {
   {
     "webhook-events",
     {
+      -- create
+      { "webhook create/create", "wh_create_create" },
+
+      -- delete
+      { "webhook delete/delete", "wh_delete_delete" },
+
+      -- fork
+      { "webhook fork/fork", "wh_fork_fork" },
+
       -- issues
       { "webhook issues/opened", "wh_issues_opened" },
       { "webhook issues/closed", "wh_issues_closed" },
@@ -2919,6 +2928,9 @@ local webhook_event_sections = {
       { "webhook pull_request_review_comment/created", "wh_pull_request_review_comment_created" },
       { "webhook pull_request_review_comment/edited", "wh_pull_request_review_comment_edited" },
       { "webhook pull_request_review_comment/deleted", "wh_pull_request_review_comment_deleted" },
+
+      -- push
+      { "webhook push/push", "wh_push_push" },
 
       -- status
       { "webhook status/pending", "wh_status_pending" },

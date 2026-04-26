@@ -452,6 +452,115 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 
+# ── git.push (regular push) → push / push ─────────────────────────────────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+{
+  "subscriptionId": "sub-1",
+  "notificationId": 30,
+  "id": "evt-30",
+  "eventType": "git.push",
+  "resource": {
+    "repository": {
+      "id": "repo-id-001", "name": "hello-world",
+      "remoteUrl": "https://dev.azure.com/octocat/hello-world/_git/hello-world",
+      "defaultBranch": "refs/heads/main", "isPrivate": false,
+      "project": {"id": "proj-id-001", "name": "octocat"}
+    },
+    "refUpdates": [
+      {
+        "name": "refs/heads/main",
+        "oldObjectId": "6dcb09b5b57875f334f61aebed695e2e4193db5e",
+        "newObjectId": "f1d2d2f924e986ac86fdf7b36c94bcdf32beec15"
+      }
+    ],
+    "commits": [
+      {
+        "commitId": "f1d2d2f924e986ac86fdf7b36c94bcdf32beec15",
+        "comment": "Update readme",
+        "author": {"name": "Bob Jones", "email": "bob@example.com", "date": "2024-01-15T10:00:00Z"},
+        "committer": {"name": "Bob Jones", "email": "bob@example.com", "date": "2024-01-15T10:00:00Z"}
+      }
+    ],
+    "pushedBy": {"displayName": "Bob Jones", "uniqueName": "bob@example.com"},
+    "pushId": 1
+  },
+  "createdDate": "2024-01-15T10:00:00Z"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── git.push (oldObjectId = zero) → create / create ───────────────────────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+{
+  "subscriptionId": "sub-1",
+  "notificationId": 31,
+  "id": "evt-31",
+  "eventType": "git.push",
+  "resource": {
+    "repository": {
+      "id": "repo-id-001", "name": "hello-world",
+      "remoteUrl": "https://dev.azure.com/octocat/hello-world/_git/hello-world",
+      "defaultBranch": "refs/heads/main", "isPrivate": false,
+      "project": {"id": "proj-id-001", "name": "octocat"}
+    },
+    "refUpdates": [
+      {
+        "name": "refs/heads/feature-branch",
+        "oldObjectId": "0000000000000000000000000000000000000000",
+        "newObjectId": "da1560886d4f094c3e6c9ef40349f7d38b5d27d0"
+      }
+    ],
+    "commits": [],
+    "pushedBy": {"displayName": "Bob Jones", "uniqueName": "bob@example.com"},
+    "pushId": 2
+  },
+  "createdDate": "2024-01-15T11:00:00Z"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── git.push (newObjectId = zero) → delete / delete ───────────────────────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+{
+  "subscriptionId": "sub-1",
+  "notificationId": 32,
+  "id": "evt-32",
+  "eventType": "git.push",
+  "resource": {
+    "repository": {
+      "id": "repo-id-001", "name": "hello-world",
+      "remoteUrl": "https://dev.azure.com/octocat/hello-world/_git/hello-world",
+      "defaultBranch": "refs/heads/main", "isPrivate": false,
+      "project": {"id": "proj-id-001", "name": "octocat"}
+    },
+    "refUpdates": [
+      {
+        "name": "refs/heads/stale-branch",
+        "oldObjectId": "95790bf891e76fee5db5ef17d2523a6f6e048239",
+        "newObjectId": "0000000000000000000000000000000000000000"
+      }
+    ],
+    "commits": [],
+    "pushedBy": {"displayName": "Bob Jones", "uniqueName": "bob@example.com"},
+    "pushId": 3
+  },
+  "createdDate": "2024-01-15T12:00:00Z"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
 # ── build.complete (canceled) → workflow_run / completed / cancelled ───────────
 
 POST http://{{host}}/webhooks/azuredevops

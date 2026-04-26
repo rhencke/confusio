@@ -1135,3 +1135,285 @@ X-Gitea-Event: status
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
+
+# ── push: branch push with commits → 200 ─────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: push
+{
+  "ref": "refs/heads/main",
+  "before": "abc123def456abc123def456abc123def456abc1",
+  "after":  "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+  "created": false,
+  "deleted": false,
+  "forced":  false,
+  "compare_url": "http://localhost/octocat/hello-world/compare/abc123...deadbeef",
+  "commits": [
+    {
+      "id": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "message": "Fix bug",
+      "timestamp": "2024-01-15T10:00:00Z",
+      "url": "http://localhost/octocat/hello-world/commit/deadbeef",
+      "author":    {"name": "Alice", "email": "alice@example.com", "username": "alice"},
+      "committer": {"name": "Alice", "email": "alice@example.com", "username": "alice"},
+      "added": [], "removed": [], "modified": ["README.md"]
+    }
+  ],
+  "head_commit": {
+    "id": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    "message": "Fix bug",
+    "timestamp": "2024-01-15T10:00:00Z",
+    "url": "http://localhost/octocat/hello-world/commit/deadbeef",
+    "author":    {"name": "Alice", "email": "alice@example.com", "username": "alice"},
+    "committer": {"name": "Alice", "email": "alice@example.com", "username": "alice"},
+    "added": [], "removed": [], "modified": ["README.md"]
+  },
+  "pusher": {"id": 1, "login": "alice", "email": "alice@example.com", "avatar_url": "", "html_url": ""},
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── push: branch deletion (after = zero SHA, deleted = true) → 200 ───────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: push
+{
+  "ref": "refs/heads/stale-branch",
+  "before": "abc123def456abc123def456abc123def456abc1",
+  "after":  "0000000000000000000000000000000000000000",
+  "created": false,
+  "deleted": true,
+  "forced":  false,
+  "compare_url": "",
+  "commits": [],
+  "head_commit": null,
+  "pusher": {"id": 1, "login": "alice", "email": "alice@example.com", "avatar_url": "", "html_url": ""},
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── push: force push (forced = true) → 200 ────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: push
+{
+  "ref": "refs/heads/main",
+  "before": "abc123def456abc123def456abc123def456abc1",
+  "after":  "cafebabecafebabecafebabecafebabecafebabe",
+  "created": false,
+  "deleted": false,
+  "forced":  true,
+  "compare_url": "http://localhost/octocat/hello-world/compare/abc123...cafebabe",
+  "commits": [
+    {
+      "id": "cafebabecafebabecafebabecafebabecafebabe",
+      "message": "Amend: reword commit",
+      "timestamp": "2024-01-15T11:00:00Z",
+      "url": "http://localhost/octocat/hello-world/commit/cafebabe",
+      "author":    {"name": "Bob", "email": "bob@example.com", "username": "bob"},
+      "committer": {"name": "Bob", "email": "bob@example.com", "username": "bob"},
+      "added": [], "removed": [], "modified": []
+    }
+  ],
+  "head_commit": {
+    "id": "cafebabecafebabecafebabecafebabecafebabe",
+    "message": "Amend: reword commit",
+    "timestamp": "2024-01-15T11:00:00Z",
+    "url": "http://localhost/octocat/hello-world/commit/cafebabe",
+    "author":    {"name": "Bob", "email": "bob@example.com", "username": "bob"},
+    "committer": {"name": "Bob", "email": "bob@example.com", "username": "bob"},
+    "added": [], "removed": [], "modified": []
+  },
+  "pusher": {"id": 2, "login": "bob", "email": "bob@example.com", "avatar_url": "", "html_url": ""},
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── push: tag push (ref = refs/tags/…, created = true) → 200 ─────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: push
+{
+  "ref": "refs/tags/v1.0.0",
+  "before": "0000000000000000000000000000000000000000",
+  "after":  "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+  "created": true,
+  "deleted": false,
+  "forced":  false,
+  "compare_url": "",
+  "commits": [],
+  "head_commit": {
+    "id": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    "message": "Release v1.0.0",
+    "timestamp": "2024-01-15T12:00:00Z",
+    "url": "http://localhost/octocat/hello-world/commit/deadbeef",
+    "author":    {"name": "Alice", "email": "alice@example.com", "username": "alice"},
+    "committer": {"name": "Alice", "email": "alice@example.com", "username": "alice"},
+    "added": [], "removed": [], "modified": []
+  },
+  "pusher": {"id": 1, "login": "alice", "email": "alice@example.com", "avatar_url": "", "html_url": ""},
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── create: branch created → 200 ─────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: create
+{
+  "ref": "feature-branch",
+  "ref_type": "branch",
+  "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "description": "A friendly repo",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── create: tag created → 200 ────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: create
+{
+  "ref": "v2.0.0",
+  "ref_type": "tag",
+  "sha": "cafebabecafebabecafebabecafebabecafebabe",
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "description": null,
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── delete: branch deleted → 200 ─────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: delete
+{
+  "ref": "stale-branch",
+  "ref_type": "branch",
+  "sha": "abc123def456abc123def456abc123def456abc1",
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "description": "A friendly repo",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── delete: tag deleted → 200 ────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: delete
+{
+  "ref": "v0.9.0",
+  "ref_type": "tag",
+  "sha": "abc123def456abc123def456abc123def456abc1",
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "description": null,
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── fork: repository forked → 200 ────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: fork
+{
+  "forkee": {
+    "id": 200,
+    "name": "hello-world",
+    "full_name": "bob/hello-world",
+    "private": false,
+    "html_url": "http://localhost/bob/hello-world",
+    "description": "Fork of octocat/hello-world",
+    "fork": true,
+    "default_branch": "main",
+    "owner": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
