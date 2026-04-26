@@ -912,6 +912,10 @@ action availability.
 | `deploy_key` | SSH deploy key added or removed | `created`, `deleted` |
 | `public` | Private repository made public | _(no action field)_ |
 | `member` | Collaborator added or removed | `added`, `removed`, `edited` |
+| `membership` | Team membership changed | `added`, `removed` |
+| `organization` | Org lifecycle event | `created`, `deleted`, `renamed`, `member_added`, `member_invited`, `member_removed` |
+| `team` | Team lifecycle event | `created`, `deleted`, `edited`, `added_to_repository`, `removed_from_repository` |
+| `team_add` | Team granted access to repository | _(no action field)_ |
 | `milestone` | Milestone lifecycle | `created`, `closed`, `opened`, `edited`, `deleted` |
 | `label` | Label lifecycle | `created`, `edited`, `deleted` |
 | `commit_comment` | Comment on a commit | `created` |
@@ -1330,6 +1334,111 @@ source repository.
 `changes` is populated for `"edited"` actions with before/after values of changed
 fields (e.g. `{ "permission": { "from": "pull" } }`).  It is empty for `"added"` and
 `"removed"`.
+
+#### `membership`
+
+```json
+{
+  "action":       "added",
+  "scope":        "team",
+  "member":       { "id": 7, "login": "carol", "html_url": "<url>", "type": "User" },
+  "team":         {
+    "id":               42,
+    "name":             "backend-team",
+    "slug":             "backend-team",
+    "description":      "<string>",
+    "privacy":          "closed",
+    "permission":       "pull",
+    "html_url":         "<url>",
+    "members_url":      "<url>",
+    "repositories_url": "<url>"
+  },
+  "organization": { ... },
+  "sender":       { ... }
+}
+```
+
+`scope` is always `"team"`.  GitBucket passes the payload through verbatim from its
+GitHub-compatible webhook.  GitLab maps group-member events to this shape, using the
+group as both the team stub and the organization; there are no sub-team IDs.
+
+#### `organization`
+
+```json
+{
+  "action":       "member_added",
+  "organization": {
+    "login":        "<string>",
+    "id":           1,
+    "description":  "<string>",
+    "html_url":     "<url>",
+    "type":         "Organization"
+  },
+  "membership":   {
+    "user":   { ... },
+    "role":   "member",
+    "state":  "active"
+  },
+  "sender": { ... }
+}
+```
+
+`membership` is present for `member_added`, `member_invited`, and `member_removed`
+actions; absent for `created`, `deleted`, and `renamed`.  For `renamed`, confusio
+includes `changes.login.from` with the old organization login.  GitBucket passes the
+payload through verbatim.  GitLab maps group lifecycle events to this shape via System
+Hook; `sender` fields are empty stubs because GitLab System Hook payloads do not
+include an actor.
+
+#### `team`
+
+```json
+{
+  "action":       "created",
+  "team":         {
+    "id":               42,
+    "name":             "backend-team",
+    "slug":             "backend-team",
+    "description":      "<string>",
+    "privacy":          "closed",
+    "permission":       "pull",
+    "html_url":         "<url>",
+    "members_url":      "<url>",
+    "repositories_url": "<url>"
+  },
+  "organization": { ... },
+  "repository":   { ... },
+  "sender":       { ... }
+}
+```
+
+`repository` is present for `added_to_repository`, `removed_from_repository`, and
+`edited` actions that affect repository access; absent for `created` and `deleted`.
+GitBucket passes the payload through verbatim from its GitHub-compatible webhook.
+
+#### `team_add`
+
+```json
+{
+  "team":         {
+    "id":               42,
+    "name":             "backend-team",
+    "slug":             "backend-team",
+    "description":      "<string>",
+    "privacy":          "closed",
+    "permission":       "pull",
+    "html_url":         "<url>",
+    "members_url":      "<url>",
+    "repositories_url": "<url>"
+  },
+  "repository":   { ... },
+  "organization": { ... },
+  "sender":       { ... }
+}
+```
+
+There is no `action` field.  The event itself indicates that a team was granted access
+to a repository.  GitBucket passes the payload through verbatim.
 
 #### `commit_comment`
 
@@ -2835,6 +2944,142 @@ This event is in the org/access-control category.
 
 ---
 
+### `membership`
+
+Triggered when a user is added to or removed from a team.
+
+| GitHub field | github | gitbucket | gitlab | All others |
+|---|---|---|---|---|
+| `scope` | ✓ | ✓ | ✓ | — |
+| `member.id` | ✓ | ✓ | ✓ | — |
+| `member.login` | ✓ | ✓ | ✓ | — |
+| `member.html_url` | ✓ | ✓ | ✗ | — |
+| `member.type` | ✓ | ✓ | ✓ | — |
+| `team.id` | ✓ | ✓ | ~ | — |
+| `team.name` | ✓ | ✓ | ✓ | — |
+| `team.slug` | ✓ | ✓ | ✓ | — |
+| `team.description` | ✓ | ✓ | ✗ | — |
+| `team.privacy` | ✓ | ✓ | ~ | — |
+| `team.permission` | ✓ | ✓ | ~ | — |
+| `team.html_url` | ✓ | ✓ | ✗ | — |
+| `organization` | ✓ | ✓ | ✓ | — |
+
+#### Supported actions
+
+| Action | github | gitbucket | gitlab |
+|--------|---|---|---|
+| `added` | ✓ | ✓ | ✓ |
+| `removed` | ✓ | ✓ | ✓ |
+
+**Notes:**
+- GitBucket emits GitHub-compatible `membership` payloads; confusio passes them through verbatim.
+- GitLab maps `user_add_to_group` / `user_remove_from_group` System Hook events.  GitLab
+  groups have no sub-team concept; the group itself is used as the team stub and as the
+  organization.  `team.id` is set to the group ID; `team.privacy` and `team.permission` are
+  stub values (`"closed"`, `"pull"`).  `member.html_url` and `team.html_url` are empty because
+  the System Hook payload does not include URLs.  `sender` fields are empty stubs.
+- Backends not listed do not emit team-membership events.
+
+---
+
+### `organization`
+
+Triggered on organization lifecycle events and org-level membership changes.
+
+| GitHub field | github | gitbucket | gitlab | All others |
+|---|---|---|---|---|
+| `organization.login` | ✓ | ✓ | ✓ | — |
+| `organization.id` | ✓ | ✓ | ✓ | — |
+| `organization.description` | ✓ | ✓ | ✗ | — |
+| `organization.html_url` | ✓ | ✓ | ✗ | — |
+| `organization.type` | ✓ | ✓ | ✓ | — |
+| `membership` | ✓ | ✓ | ✗ | — |
+| `changes` | ✓ | ✓ | ~ | — |
+| `sender` | ✓ | ✓ | ✗ | — |
+
+#### Supported actions
+
+| Action | github | gitbucket | gitlab |
+|--------|---|---|---|
+| `created` | ✓ | ✗ | ✓ |
+| `deleted` | ✓ | ✓ | ✓ |
+| `renamed` | ✓ | ✓ | ✓ |
+| `member_added` | ✓ | ✓ | ✗ |
+| `member_invited` | ✓ | ✓ | ✗ |
+| `member_removed` | ✓ | ✓ | ✗ |
+
+**Notes:**
+- GitBucket emits GitHub-compatible `organization` payloads; confusio passes them through
+  verbatim.  GitBucket does not emit `created` events.
+- GitLab maps group lifecycle System Hook events (`group_create`, `group_destroy`,
+  `group_rename`).  GitLab `sender` fields are always empty stubs because System Hook payloads
+  do not include an actor user.  `organization.description` and `organization.html_url` are
+  empty because the System Hook payload omits them.  `membership` is always absent (GitLab uses
+  separate `user_add_to_group` events instead).
+- `changes.login.from` is populated for `renamed` events from both GitBucket and GitLab.
+- Backends not listed do not emit organization lifecycle events.
+
+---
+
+### `team`
+
+Triggered on team lifecycle and repository assignment events.
+
+| GitHub field | github | gitbucket | All others |
+|---|---|---|---|
+| `team.id` | ✓ | ✓ | — |
+| `team.name` | ✓ | ✓ | — |
+| `team.slug` | ✓ | ✓ | — |
+| `team.description` | ✓ | ✓ | — |
+| `team.privacy` | ✓ | ✓ | — |
+| `team.permission` | ✓ | ✓ | — |
+| `team.html_url` | ✓ | ✓ | — |
+| `organization` | ✓ | ✓ | — |
+| `repository` | ✓ | ✓ | — |
+| `sender` | ✓ | ✓ | — |
+
+#### Supported actions
+
+| Action | github | gitbucket |
+|--------|---|---|
+| `created` | ✓ | ✓ |
+| `deleted` | ✓ | ✓ |
+| `edited` | ✓ | ✓ |
+| `added_to_repository` | ✓ | ✓ |
+| `removed_from_repository` | ✓ | ✓ |
+
+**Notes:**
+- GitBucket emits GitHub-compatible `team` payloads; confusio passes them through verbatim.
+- `repository` is present for `added_to_repository`, `removed_from_repository`, and repository-
+  scoped `edited` actions; absent for `created` and `deleted`.
+- Backends not listed do not emit team lifecycle events.
+
+---
+
+### `team_add`
+
+Triggered when a team is granted access to a repository.  There is no `action` field.
+
+| GitHub field | github | gitbucket | All others |
+|---|---|---|---|
+| `team.id` | ✓ | ✓ | — |
+| `team.name` | ✓ | ✓ | — |
+| `team.slug` | ✓ | ✓ | — |
+| `team.description` | ✓ | ✓ | — |
+| `team.privacy` | ✓ | ✓ | — |
+| `team.permission` | ✓ | ✓ | — |
+| `team.html_url` | ✓ | ✓ | — |
+| `repository` | ✓ | ✓ | — |
+| `organization` | ✓ | ✓ | — |
+| `sender` | ✓ | ✓ | — |
+
+**Notes:**
+- GitBucket emits GitHub-compatible `team_add` payloads; confusio passes them through verbatim.
+- This event has no action field; the event type itself is the action.
+- Backends not listed do not emit team-to-repository grant events.
+
+---
+
 ### `milestone`
 
 Triggered on milestone lifecycle events.
@@ -3409,19 +3654,22 @@ Triggered when branch protection is enabled or disabled for a repository.
 
 ### Org events
 
-The only org-category event currently in the GitHub-emulation output is `member` (see above).
-The following GitHub event families have no cross-forge mapping today:
+The org-category events in the GitHub-emulation output are `member`, `membership`,
+`organization`, `team`, and `team_add`.  `member` is documented in its own section
+above; the others are documented below.  Backend support varies — see the field-level
+mapping tables that follow.
 
-| GitHub event | Status | Reason |
+| GitHub event | Status | Notes |
 |---|---|---|
-| `organization` | ✗ | Org lifecycle events (creation, deletion, rename) are not emitted by any non-GitHub forge as webhooks. |
-| `membership` | ✗ | Team membership changes are not exposed as webhook events by Gitea, GitLab, or other backends. |
-| `team` | ✗ | Team CRUD events are GitHub-specific. |
-| `team_add` | ✗ | Repository-to-team addition events are GitHub-specific. |
-| `org_block` | ✗ | No cross-forge equivalent. |
+| `member` | ✓ gitea-family, gitlab, gitbucket | See `member` field-level mapping table above |
+| `membership` | ✓ gitbucket, gitlab | GitBucket pass-through; GitLab group-member system hook |
+| `organization` | ✓ gitbucket, gitlab | GitBucket pass-through; GitLab group lifecycle system hook |
+| `team` | ✓ gitbucket | GitBucket pass-through only |
+| `team_add` | ✓ gitbucket | GitBucket pass-through only |
+| `org_block` | ✗ | No cross-forge equivalent |
 
-When the originating backend is GitHub, these events pass through verbatim.  For all other
-backends they are silently dropped.
+When the originating backend is GitHub, all these events pass through verbatim.  For
+backends without a mapping, events are silently dropped.
 
 ### Repository automation events
 
