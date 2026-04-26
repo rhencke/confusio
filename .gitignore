@@ -9,3 +9,5 @@ mock-*.com
 hurl
 stylua
 luacheck
+# Generated webhook fixture directories (produced by scripts/gen-webhook-fixtures.sh)
+test/fixtures/webhooks/forgejo/
