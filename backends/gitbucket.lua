@@ -2662,4 +2662,22 @@ b:webhook("repository", function(payload)
   })
 end)
 
+-- public: a private repository was made public.
+-- GitBucket sends X-GitHub-Event: public with GitHub-compatible payload.
+-- There is no action field; the event itself is the signal.
+b:webhook("public", function(payload)
+  local data = {
+    repository = payload.repository or {},
+    sender = payload.sender or {},
+  }
+  return make_internal_event({
+    event = "public",
+    action = "publicized",
+    provider = "gitbucket",
+    raw = payload,
+    data = data,
+    timestamp = "",
+  })
+end)
+
 b:build()
