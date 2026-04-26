@@ -1,0 +1,36 @@
+{
+  "action": "published",
+  "repository_advisory": {
+    "ghsa_id": "GHSA-yy88-4321-8765",
+    "cve_id": null,
+    "url": "http://localhost/api/v3/repos/octocat/hello-world/security-advisories/GHSA-yy88-4321-8765",
+    "html_url": "http://localhost/octocat/hello-world/security/advisories/GHSA-yy88-4321-8765",
+    "summary": "Buffer overflow in hello-world",
+    "description": "A buffer overflow vulnerability exists in the parsing code.",
+    "severity": "medium",
+    "state": "published",
+    "vulnerabilities": [
+      {
+        "package": {"ecosystem": "npm", "name": "hello-world"},
+        "vulnerable_version_range": "< 2.0.0",
+        "patched_versions": "2.0.0",
+        "vulnerable_functions": []
+      }
+    ],
+    "cvss": {
+      "score": 6.5,
+      "vector_string": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:L"
+    },
+    "credits": [],
+    "published_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T10:00:00Z",
+    "withdrawn_at": null
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}

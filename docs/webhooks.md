@@ -3148,18 +3148,262 @@ beyond what `status` can express.
 
 ### Security events
 
-No security event families are currently in scope for the GitHub-emulation output.
-GitHub's `security_advisory`, `secret_scanning_alert`, `dependabot_alert`, and
-`code_scanning_alert` events are GitHub-specific and have no cross-forge equivalents in
-any backend confusio supports.
+GitHub's security event families are GitHub-specific and have no cross-forge equivalents
+in any backend confusio currently supports.  When the originating backend is GitHub itself,
+these events pass through verbatim.  For all other backends they are silently dropped —
+there is no mapping target.
 
-When the originating backend is GitHub itself, these events are passed through verbatim as
-GitHub-emulation webhooks (no field translation needed).  For all other backends they are
-silently dropped — there is no mapping target.
+| GitHub event | Emitted from GitHub backend | Emitted from other backends |
+|---|---|---|
+| `security_advisory` | ✓ pass-through | ✗ |
+| `repository_advisory` | ✓ pass-through | ✗ |
+| `code_scanning_alert` | ✓ pass-through | ✗ |
+| `secret_scanning_alert` | ✓ pass-through | ✗ |
+| `secret_scanning_alert_location` | ✓ pass-through | ✗ |
+| `dependabot_alert` | ✓ pass-through | ✗ |
+| `repository_vulnerability_alert` | ✓ pass-through | ✗ |
+| `branch_protection_rule` | ✓ pass-through | ✗ |
+| `branch_protection_configuration` | ✓ pass-through | ✗ |
+
+Because these events are exclusively emitted from the GitHub backend, the field tables
+below use a two-column format: `github` (native pass-through, all fields `✓`) and
+`All others` (not applicable, all fields `—`).
 
 Future work may introduce confusio-normalized `security_finding` or `advisory` event
 families for backends that expose vulnerability or secret-scanning data through their own
 APIs (e.g. GitLab's security findings, Gitea's audit log).
+
+#### `security_advisory`
+
+Triggered when a GitHub security advisory is published, updated, or withdrawn.
+
+| GitHub field | github | All others |
+|---|---|---|
+| `action` | ✓ | — |
+| `security_advisory` | ✓ | — |
+| `enterprise` | ✓ | — |
+| `installation` | ✓ | — |
+| `organization` | ✓ | — |
+| `repository` | ✓ | — |
+| `sender` | ✓ | — |
+
+**Supported actions:**
+
+| Action | github | All others |
+|--------|--------|------------|
+| `published` | ✓ | — |
+| `updated` | ✓ | — |
+| `withdrawn` | ✓ | — |
+
+#### `code_scanning_alert`
+
+Triggered when a code scanning alert is created, closed, fixed, or reassigned.
+
+| GitHub field | github | All others |
+|---|---|---|
+| `action` | ✓ | — |
+| `alert` | ✓ | — |
+| `enterprise` | ✓ | — |
+| `installation` | ✓ | — |
+| `organization` | ✓ | — |
+| `repository` | ✓ | — |
+| `sender` | ✓ | — |
+
+**Supported actions:**
+
+| Action | github | All others |
+|--------|--------|------------|
+| `appeared_in_branch` | ✓ | — |
+| `closed_by_user` | ✓ | — |
+| `created` | ✓ | — |
+| `fixed` | ✓ | — |
+| `reopened` | ✓ | — |
+| `reopened_by_user` | ✓ | — |
+| `updated_assignment` | ✓ | — |
+
+#### `secret_scanning_alert`
+
+Triggered when a secret scanning alert is created, resolved, validated, or assigned.
+
+| GitHub field | github | All others |
+|---|---|---|
+| `action` | ✓ | — |
+| `alert` | ✓ | — |
+| `assignee` | ✓ | — |
+| `enterprise` | ✓ | — |
+| `installation` | ✓ | — |
+| `organization` | ✓ | — |
+| `repository` | ✓ | — |
+| `sender` | ✓ | — |
+
+**Supported actions:**
+
+| Action | github | All others |
+|--------|--------|------------|
+| `assigned` | ✓ | — |
+| `created` | ✓ | — |
+| `publicly_leaked` | ✓ | — |
+| `reopened` | ✓ | — |
+| `resolved` | ✓ | — |
+| `unassigned` | ✓ | — |
+| `validated` | ✓ | — |
+
+**Notes:**
+- `assignee`: present only for `assigned` and `unassigned` actions; `null` for all others.
+
+#### `secret_scanning_alert_location`
+
+Triggered when a new location is discovered for an existing secret scanning alert.
+Subscribe to this event alongside `secret_scanning_alert` to receive location-level detail.
+
+| GitHub field | github | All others |
+|---|---|---|
+| `action` | ✓ | — |
+| `alert` | ✓ | — |
+| `installation` | ✓ | — |
+| `location` | ✓ | — |
+| `organization` | ✓ | — |
+| `repository` | ✓ | — |
+| `sender` | ✓ | — |
+
+**Supported actions:**
+
+| Action | github | All others |
+|--------|--------|------------|
+| `created` | ✓ | — |
+
+#### `dependabot_alert`
+
+Triggered when a Dependabot alert is created, dismissed, fixed, or reassigned.
+
+| GitHub field | github | All others |
+|---|---|---|
+| `action` | ✓ | — |
+| `alert` | ✓ | — |
+| `enterprise` | ✓ | — |
+| `installation` | ✓ | — |
+| `organization` | ✓ | — |
+| `repository` | ✓ | — |
+| `sender` | ✓ | — |
+
+**Supported actions:**
+
+| Action | github | All others |
+|--------|--------|------------|
+| `assignees_changed` | ✓ | — |
+| `auto_dismissed` | ✓ | — |
+| `auto_reopened` | ✓ | — |
+| `created` | ✓ | — |
+| `dismissed` | ✓ | — |
+| `fixed` | ✓ | — |
+| `reintroduced` | ✓ | — |
+| `reopened` | ✓ | — |
+
+**Notes:**
+- `dependabot_alert` supersedes the older `repository_vulnerability_alert` event, which
+  is closing down.  New integrations should subscribe to `dependabot_alert` instead.
+
+#### `repository_advisory`
+
+Triggered when a repository security advisory is published or reported.
+
+| GitHub field | github | All others |
+|---|---|---|
+| `action` | ✓ | — |
+| `enterprise` | ✓ | — |
+| `installation` | ✓ | — |
+| `organization` | ✓ | — |
+| `repository` | ✓ | — |
+| `repository_advisory` | ✓ | — |
+| `sender` | ✓ | — |
+
+**Supported actions:**
+
+| Action | github | All others |
+|--------|--------|------------|
+| `published` | ✓ | — |
+| `reported` | ✓ | — |
+
+#### `repository_vulnerability_alert`
+
+Triggered when a repository vulnerability alert is created, dismissed, reopened, or
+resolved.  This event is the deprecated predecessor to `dependabot_alert`; confusio
+normalises incoming `repository_vulnerability_alert` events to the `dependabot_alert`
+event family with translated action names.
+
+| GitHub field | github | All others |
+|---|---|---|
+| `action` | ✓ | — |
+| `alert` | ✓ | — |
+| `enterprise` | ✓ | — |
+| `installation` | ✓ | — |
+| `organization` | ✓ | — |
+| `repository` | ✓ | — |
+| `sender` | ✓ | — |
+
+**Supported actions (emitted as `dependabot_alert`):**
+
+| Wire action | Emitted action |
+|-------------|----------------|
+| `create` | `created` |
+| `dismiss` | `dismissed` |
+| `reopen` | `reopened` |
+| `resolve` | `fixed` |
+
+**Notes:**
+- `repository_vulnerability_alert` is deprecated.  Prefer `dependabot_alert` for new
+  integrations.  confusio translates the legacy wire actions to `dependabot_alert`
+  action names so subscribers to `dependabot_alert` receive both event streams.
+
+#### `branch_protection_rule`
+
+Triggered when a branch protection rule is created, edited, or deleted.
+
+| GitHub field | github | All others |
+|---|---|---|
+| `action` | ✓ | — |
+| `changes` | ✓ | — |
+| `enterprise` | ✓ | — |
+| `installation` | ✓ | — |
+| `organization` | ✓ | — |
+| `repository` | ✓ | — |
+| `rule` | ✓ | — |
+| `sender` | ✓ | — |
+
+**Supported actions:**
+
+| Action | github | All others |
+|--------|--------|------------|
+| `created` | ✓ | — |
+| `deleted` | ✓ | — |
+| `edited` | ✓ | — |
+
+**Notes:**
+- `rule`: present for all actions.  Includes the full branch protection rule object with
+  settings such as `admin_enforced`, `required_approving_review_count`,
+  `required_status_checks`, and enforcement levels for various checks.
+- `changes`: present only for `edited` action.  Each key in `changes` has a `from` field
+  recording the previous value.  Keys match the corresponding fields in `rule`.
+
+#### `branch_protection_configuration`
+
+Triggered when branch protection is enabled or disabled for a repository.
+
+| GitHub field | github | All others |
+|---|---|---|
+| `action` | ✓ | — |
+| `enterprise` | ✓ | — |
+| `installation` | ✓ | — |
+| `organization` | ✓ | — |
+| `repository` | ✓ | — |
+| `sender` | ✓ | — |
+
+**Supported actions:**
+
+| Action | github | All others |
+|--------|--------|------------|
+| `disabled` | ✓ | — |
+| `enabled` | ✓ | — |
 
 ---
 

@@ -2680,4 +2680,207 @@ b:webhook("public", function(payload)
   })
 end)
 
+-- code_scanning_alert: a code scanning alert was created, fixed, or closed.
+-- GitBucket mirrors the GitHub event format; action names are identity-mapped.
+local GB_CODE_SCANNING_ALERT_ACTIONS = {
+  appeared_in_branch = "appeared_in_branch",
+  closed_by_user = "closed_by_user",
+  created = "created",
+  fixed = "fixed",
+  reopened = "reopened",
+  reopened_by_user = "reopened_by_user",
+  updated_assignment = "updated_assignment",
+}
+
+b:webhook("code_scanning_alert", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_CODE_SCANNING_ALERT_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "code_scanning_alert",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      alert = payload.alert or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.alert or {}).updated_at or "",
+  })
+end)
+
+-- dependabot_alert: a Dependabot alert was created, dismissed, fixed, or
+-- reassigned.  GitBucket mirrors the GitHub event format; action names are
+-- identity-mapped.
+local GB_DEPENDABOT_ALERT_ACTIONS = {
+  assignees_changed = "assignees_changed",
+  auto_dismissed = "auto_dismissed",
+  auto_reopened = "auto_reopened",
+  created = "created",
+  dismissed = "dismissed",
+  fixed = "fixed",
+  reintroduced = "reintroduced",
+  reopened = "reopened",
+}
+
+b:webhook("dependabot_alert", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_DEPENDABOT_ALERT_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "dependabot_alert",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      alert = payload.alert or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.alert or {}).updated_at or "",
+  })
+end)
+
+-- secret_scanning_alert: a secret scanning alert was created, resolved,
+-- validated, or assigned.  GitBucket mirrors the GitHub event format; action
+-- names are identity-mapped.
+local GB_SECRET_SCANNING_ALERT_ACTIONS = {
+  assigned = "assigned",
+  created = "created",
+  publicly_leaked = "publicly_leaked",
+  reopened = "reopened",
+  resolved = "resolved",
+  unassigned = "unassigned",
+  validated = "validated",
+}
+
+b:webhook("secret_scanning_alert", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_SECRET_SCANNING_ALERT_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "secret_scanning_alert",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      alert = payload.alert or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.alert or {}).updated_at or "",
+  })
+end)
+
+-- secret_scanning_alert_location: a new location was discovered for an
+-- existing secret scanning alert.  GitBucket mirrors the GitHub event format;
+-- the only known action is "created".
+b:webhook("secret_scanning_alert_location", function(payload)
+  local raw_action = payload.action or ""
+  local action = raw_action == "created" and "created" or nil
+  return make_internal_event({
+    event = "secret_scanning_alert_location",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      alert = payload.alert or {},
+      location = payload.location or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.alert or {}).updated_at or "",
+  })
+end)
+
+-- security_advisory: a GitHub Security Advisory was published, updated, or
+-- withdrawn.  GitBucket mirrors the GitHub event format; action names are
+-- identity-mapped.
+local GB_SECURITY_ADVISORY_ACTIONS = {
+  published = "published",
+  updated = "updated",
+  withdrawn = "withdrawn",
+}
+
+b:webhook("security_advisory", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_SECURITY_ADVISORY_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "security_advisory",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      security_advisory = payload.security_advisory or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.security_advisory or {}).updated_at or "",
+  })
+end)
+
+-- repository_advisory: a repository security advisory was published or
+-- reported.  GitBucket mirrors the GitHub event format; action names are
+-- identity-mapped.
+local GB_REPOSITORY_ADVISORY_ACTIONS = {
+  published = "published",
+  reported = "reported",
+}
+
+b:webhook("repository_advisory", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_REPOSITORY_ADVISORY_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "repository_advisory",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      repository_advisory = payload.repository_advisory or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.repository_advisory or {}).updated_at or "",
+  })
+end)
+
+-- repository_vulnerability_alert: deprecated predecessor to dependabot_alert.
+-- GitBucket may still emit this event; confusio normalises it to the
+-- dependabot_alert event family with translated action names.
+local GB_REPO_VULN_ALERT_ACTION_MAP = {
+  create = "created",
+  dismiss = "dismissed",
+  reopen = "reopened",
+  resolve = "fixed",
+}
+
+b:webhook("repository_vulnerability_alert", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_REPO_VULN_ALERT_ACTION_MAP[raw_action]
+  return make_internal_event({
+    event = "dependabot_alert",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      alert = payload.alert or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.alert or {}).updated_at or "",
+  })
+end)
+
 b:build()

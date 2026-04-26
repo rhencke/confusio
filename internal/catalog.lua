@@ -2961,6 +2961,79 @@ local webhook_event_sections = {
 
       -- deployment_protection_rule
       { "webhook deployment_protection_rule/requested", "wh_deployment_protection_rule_requested" },
+
+      -- code_scanning_alert
+      {
+        "webhook code_scanning_alert/appeared_in_branch",
+        "wh_code_scanning_alert_appeared_in_branch",
+      },
+      { "webhook code_scanning_alert/closed_by_user", "wh_code_scanning_alert_closed_by_user" },
+      { "webhook code_scanning_alert/created", "wh_code_scanning_alert_created" },
+      { "webhook code_scanning_alert/fixed", "wh_code_scanning_alert_fixed" },
+      { "webhook code_scanning_alert/reopened", "wh_code_scanning_alert_reopened" },
+      { "webhook code_scanning_alert/reopened_by_user", "wh_code_scanning_alert_reopened_by_user" },
+      {
+        "webhook code_scanning_alert/updated_assignment",
+        "wh_code_scanning_alert_updated_assignment",
+      },
+
+      -- dependabot_alert
+      { "webhook dependabot_alert/assignees_changed", "wh_dependabot_alert_assignees_changed" },
+      { "webhook dependabot_alert/auto_dismissed", "wh_dependabot_alert_auto_dismissed" },
+      { "webhook dependabot_alert/auto_reopened", "wh_dependabot_alert_auto_reopened" },
+      { "webhook dependabot_alert/created", "wh_dependabot_alert_created" },
+      { "webhook dependabot_alert/dismissed", "wh_dependabot_alert_dismissed" },
+      { "webhook dependabot_alert/fixed", "wh_dependabot_alert_fixed" },
+      { "webhook dependabot_alert/reintroduced", "wh_dependabot_alert_reintroduced" },
+      { "webhook dependabot_alert/reopened", "wh_dependabot_alert_reopened" },
+
+      -- secret_scanning_alert
+      { "webhook secret_scanning_alert/assigned", "wh_secret_scanning_alert_assigned" },
+      { "webhook secret_scanning_alert/created", "wh_secret_scanning_alert_created" },
+      {
+        "webhook secret_scanning_alert/publicly_leaked",
+        "wh_secret_scanning_alert_publicly_leaked",
+      },
+      { "webhook secret_scanning_alert/reopened", "wh_secret_scanning_alert_reopened" },
+      { "webhook secret_scanning_alert/resolved", "wh_secret_scanning_alert_resolved" },
+      { "webhook secret_scanning_alert/unassigned", "wh_secret_scanning_alert_unassigned" },
+      { "webhook secret_scanning_alert/validated", "wh_secret_scanning_alert_validated" },
+
+      -- secret_scanning_alert_location
+      {
+        "webhook secret_scanning_alert_location/created",
+        "wh_secret_scanning_alert_location_created",
+      },
+
+      -- security_advisory
+      { "webhook security_advisory/published", "wh_security_advisory_published" },
+      { "webhook security_advisory/updated", "wh_security_advisory_updated" },
+      { "webhook security_advisory/withdrawn", "wh_security_advisory_withdrawn" },
+
+      -- repository_advisory
+      { "webhook repository_advisory/published", "wh_repository_advisory_published" },
+      { "webhook repository_advisory/reported", "wh_repository_advisory_reported" },
+
+      -- repository_vulnerability_alert (deprecated; normalised to dependabot_alert)
+      {
+        "webhook repository_vulnerability_alert/create",
+        "wh_repository_vulnerability_alert_create",
+      },
+      {
+        "webhook repository_vulnerability_alert/dismiss",
+        "wh_repository_vulnerability_alert_dismiss",
+      },
+      {
+        "webhook repository_vulnerability_alert/reopen",
+        "wh_repository_vulnerability_alert_reopen",
+      },
+      {
+        "webhook repository_vulnerability_alert/resolve",
+        "wh_repository_vulnerability_alert_resolve",
+      },
+
+      -- security_and_analysis
+      { "webhook security_and_analysis/changed", "wh_security_and_analysis_changed" },
     },
   },
 }

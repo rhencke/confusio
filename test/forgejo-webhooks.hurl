@@ -1137,3 +1137,30 @@ X-Gitea-Event: status
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
+
+# ── security_and_analysis: changed → 200 (no action field) ──────────────────
+
+POST http://{{host}}/webhooks/forgejo
+Content-Type: application/json
+X-Gitea-Event: security_and_analysis
+{
+  "changes": {
+    "from": {
+      "security_and_analysis": {
+        "advanced_security": {"status": "disabled"}
+      }
+    }
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+    "security_and_analysis": {"advanced_security": {"status": "enabled"}}
+  },
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
