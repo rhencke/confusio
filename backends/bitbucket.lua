@@ -2751,6 +2751,30 @@ b:webhook("repo:push", function(payload)
   })
 end)
 
+-- repo:created / repo:deleted: repository lifecycle events.
+-- Bitbucket Cloud sends these when a repository is created or deleted.
+-- No rename or transfer events are emitted by Bitbucket Cloud; those actions
+-- do not fire repository-lifecycle webhooks.
+local function bb_repo_lifecycle_handler(action)
+  return function(payload)
+    return make_internal_event({
+      event = "repository",
+      action = action,
+      provider = "bitbucket",
+      raw = payload,
+      data = {
+        action = action,
+        repository = translate_bb_repo(payload.repository or {}),
+        sender = translate_bb_user(payload.actor or {}),
+      },
+      timestamp = "",
+    })
+  end
+end
+
+b:webhook("repo:created", bb_repo_lifecycle_handler("created"))
+b:webhook("repo:deleted", bb_repo_lifecycle_handler("deleted"))
+
 -- repo:fork: repository forked.  Bitbucket Cloud fires this event when a user
 -- forks a repository.  The `fork` key holds the newly-created fork; the
 -- `repository` key is the upstream source.

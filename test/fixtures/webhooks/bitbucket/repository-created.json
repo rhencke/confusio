@@ -1,0 +1,30 @@
+{
+  "actor": {
+    "nickname": "alice",
+    "display_name": "Alice Smith",
+    "account_id": "5e0401d2-e94f-5b98-cd10-abcdef123456",
+    "links": {
+      "avatar": {"href": ""},
+      "html": {"href": "http://localhost/alice"}
+    }
+  },
+  "repository": {
+    "full_name": "octocat/hello-world",
+    "name": "hello-world",
+    "slug": "hello-world",
+    "is_private": false,
+    "description": "My first repo",
+    "mainbranch": {"name": "main"},
+    "owner": {
+      "nickname": "octocat",
+      "display_name": "The Octocat",
+      "account_id": "owner-account-id",
+      "type": "user",
+      "links": {"avatar": {"href": ""}, "html": {"href": "http://localhost/octocat"}}
+    },
+    "links": {
+      "html": {"href": "http://localhost/octocat/hello-world"},
+      "self": {"href": ""}
+    }
+  }
+}
