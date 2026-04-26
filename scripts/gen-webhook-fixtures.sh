@@ -40,21 +40,10 @@ if [ ! -d "$FIXTURES/gitea" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 1. Cross-backend aliases: derive forgejo/ from gitea/
-# ---------------------------------------------------------------------------
-for backend in forgejo; do
-  out_dir="$FIXTURES/$backend"
-  mkdir -p "$out_dir"
-  for src in "$FIXTURES/gitea"/*.json; do
-    name=$(basename "$src")
-    jq '.' "$src" > "$out_dir/$name"
-  done
-  count=$(ls "$out_dir"/*.json | wc -l | tr -d ' ')
-  echo "gen-webhook-fixtures: $backend ($count files)"
-done
-
-# ---------------------------------------------------------------------------
-# 2. Within-backend variants: derive delete.json from create.json
+# 1. Within-backend variants: derive delete.json from create.json
+#
+# Run this BEFORE the cross-backend alias step so that gitea/delete.json
+# exists when forgejo is generated from gitea.
 #
 # Table format: backend|jq-filter
 # The filter is applied to <backend>/create.json → <backend>/delete.json.
@@ -76,3 +65,20 @@ pagure|.msg.branch = "refs/heads/stale-branch" | .msg.start_commit = "95790bf891
 azuredevops|.resource.refUpdates[0].name = "refs/heads/stale-branch" | .resource.refUpdates[0].oldObjectId = "95790bf891e76fee5db5ef17d2523a6f6e048239" | .resource.refUpdates[0].newObjectId = "0000000000000000000000000000000000000000" | .resource.pushId = 3 | .createdDate = "2024-01-15T12:00:00Z"
 bitbucket_datacenter|.changes[0].ref.id = "refs/heads/stale-branch" | .changes[0].ref.displayId = "stale-branch" | .changes[0].refId = "refs/heads/stale-branch" | .changes[0].fromHash = "95790bf891e76fee5db5ef17d2523a6f6e048239" | .changes[0].toHash = "0000000000000000000000000000000000000000" | .changes[0].type = "DELETE"
 VARIANTS
+
+# ---------------------------------------------------------------------------
+# 2. Cross-backend aliases: derive forgejo/ from gitea/
+#
+# Must run AFTER step 1 so that gitea/delete.json (generated above) is
+# present and gets copied into forgejo/ as well.
+# ---------------------------------------------------------------------------
+for backend in forgejo; do
+  out_dir="$FIXTURES/$backend"
+  mkdir -p "$out_dir"
+  for src in "$FIXTURES/gitea"/*.json; do
+    name=$(basename "$src")
+    jq '.' "$src" > "$out_dir/$name"
+  done
+  count=$(ls "$out_dir"/*.json | wc -l | tr -d ' ')
+  echo "gen-webhook-fixtures: $backend ($count files)"
+done
