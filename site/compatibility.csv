@@ -463,3 +463,52 @@ GET /users/{username}/received_events,~empty list,~empty list,~empty list,~empty
 GET /users/{username}/received_events/public,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
 GET /users/{username}/starred,~empty list,~empty list,~empty list,y,~empty list,y,~empty list,~empty list,~empty list,y,~empty list,y,~empty list,~empty list,~empty list,y,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
 GET /users/{username}/subscriptions,~empty list,~empty list,~empty list,y,~empty list,y,~empty list,~empty list,~empty list,y,~empty list,y,~empty list,~empty list,~empty list,y,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
+webhook issues/opened,y,y,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
+webhook issues/closed,y,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
+webhook issues/edited,y,y,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
+webhook issues/reopened,y,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
+webhook issues/labeled,n,n,n,y,n,y,n,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook issues/unlabeled,n,n,n,y,n,y,n,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook issues/assigned,n,n,n,y,n,y,n,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook issues/unassigned,n,n,n,y,n,y,n,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook issue_comment/created,y,y,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
+webhook issue_comment/edited,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook issue_comment/deleted,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook label/created,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook label/edited,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook label/deleted,n,n,n,y,n,y,n,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook merge_group/checks_requested,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook merge_group/destroyed,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook milestone/created,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook milestone/closed,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook milestone/opened,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook milestone/edited,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook milestone/deleted,n,n,n,y,n,y,n,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook milestone/reopened,~reopen emits opened,n,n,~reopen emits opened,n,~reopen emits opened,n,n,~reopen emits opened,~reopen emits opened,n,~reopen emits opened,n,n,n,~reopen emits opened,n,n,n,n,n,n,n,n
+webhook pull_request/opened,y,y,y,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
+webhook pull_request/closed,y,y,y,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
+webhook pull_request/reopened,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook pull_request/edited,n,y,y,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook pull_request/synchronize,y,y,y,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
+webhook pull_request/labeled,n,n,n,y,n,y,n,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook pull_request/unlabeled,n,n,n,y,n,y,n,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook pull_request/assigned,n,n,n,y,n,y,n,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook pull_request/unassigned,n,n,n,y,n,y,n,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook pull_request/review_requested,n,n,y,y,n,y,n,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook pull_request/review_request_removed,n,n,y,y,n,y,n,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook pull_request_review/submitted,y,y,y,y,n,y,y,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook pull_request_review/edited,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook pull_request_review/dismissed,y,y,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook pull_request_review_comment/created,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook pull_request_review_comment/edited,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook pull_request_review_comment/deleted,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook status/pending,n,y,y,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook status/success,n,y,y,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook status/failure,n,y,y,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook workflow_run/requested,n,n,n,y,n,y,n,n,n,y,y,y,y,n,n,y,n,n,n,n,n,n,n,n
+webhook workflow_run/in_progress,n,n,n,y,n,y,n,n,n,y,y,y,y,n,n,y,n,n,n,n,n,n,n,n
+webhook workflow_run/completed,y,n,n,y,n,y,n,n,n,y,y,y,y,n,n,y,n,n,n,n,n,n,n,n
+webhook workflow_job/queued,n,n,n,y,n,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook workflow_job/in_progress,n,n,n,y,n,y,n,n,n,y,y,y,y,n,n,y,n,n,n,n,n,n,n,n
+webhook workflow_job/completed,n,n,n,y,n,y,n,n,n,y,y,y,y,n,n,y,n,n,n,n,n,n,n,n
+webhook workflow_job/waiting,n,n,n,y,n,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
