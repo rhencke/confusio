@@ -1297,3 +1297,163 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 header "X-Confusio-Raw-Action" == "scope_changed"
+
+# ── secret_scanning_alert: created → 200 ──────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: secret_scanning_alert
+{
+  "action": "created",
+  "alert": {
+    "number": 1, "state": "open",
+    "secret_type": "github_personal_access_token",
+    "secret_type_display_name": "GitHub Personal Access Token",
+    "resolution": null, "resolved_by": null, "resolved_at": null,
+    "html_url": "http://localhost/octocat/hello-world/security/secret-scanning/1",
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── secret_scanning_alert: resolved → 200 ─────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: secret_scanning_alert
+{
+  "action": "resolved",
+  "alert": {
+    "number": 1, "state": "resolved",
+    "secret_type": "github_personal_access_token",
+    "secret_type_display_name": "GitHub Personal Access Token",
+    "resolution": "false_positive",
+    "resolved_by": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""},
+    "resolved_at": "2024-01-16T09:00:00Z",
+    "html_url": "http://localhost/octocat/hello-world/security/secret-scanning/1",
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-16T09:00:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── secret_scanning_alert: unknown action → 200 + X-Confusio-Raw-Action ───────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: secret_scanning_alert
+{
+  "action": "revoked",
+  "alert": {
+    "number": 1, "state": "open",
+    "secret_type": "github_personal_access_token",
+    "secret_type_display_name": "GitHub Personal Access Token",
+    "resolution": null, "resolved_by": null, "resolved_at": null,
+    "html_url": "http://localhost/octocat/hello-world/security/secret-scanning/1",
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T11:00:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+header "X-Confusio-Raw-Action" == "revoked"
+
+# ── secret_scanning_alert_location: created → 200 ─────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: secret_scanning_alert_location
+{
+  "action": "created",
+  "alert": {
+    "number": 1, "state": "open",
+    "secret_type": "github_personal_access_token",
+    "secret_type_display_name": "GitHub Personal Access Token",
+    "resolution": null, "resolved_by": null, "resolved_at": null,
+    "html_url": "http://localhost/octocat/hello-world/security/secret-scanning/1",
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "location": {
+    "type": "commit",
+    "details": {
+      "path": "src/config.js", "start_line": 12, "end_line": 12,
+      "blob_sha": "abc123def456abc123def456abc123def456abc1",
+      "commit_sha": "abc123def456abc123def456abc123def456abc1"
+    }
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── secret_scanning_alert_location: unknown action → 200 + X-Confusio-Raw-Action
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: secret_scanning_alert_location
+{
+  "action": "updated",
+  "alert": {
+    "number": 1, "state": "open",
+    "secret_type": "github_personal_access_token",
+    "secret_type_display_name": "GitHub Personal Access Token",
+    "resolution": null, "resolved_by": null, "resolved_at": null,
+    "html_url": "http://localhost/octocat/hello-world/security/secret-scanning/1",
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:30:00Z"
+  },
+  "location": {
+    "type": "commit",
+    "details": {
+      "path": "src/config.js", "start_line": 12, "end_line": 12,
+      "blob_sha": "abc123def456abc123def456abc123def456abc1",
+      "commit_sha": "abc123def456abc123def456abc123def456abc1"
+    }
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+header "X-Confusio-Raw-Action" == "updated"

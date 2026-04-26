@@ -2744,4 +2744,59 @@ b:webhook("dependabot_alert", function(payload)
   })
 end)
 
+-- secret_scanning_alert: a secret scanning alert was created, resolved,
+-- validated, or assigned.  GitBucket mirrors the GitHub event format; action
+-- names are identity-mapped.
+local GB_SECRET_SCANNING_ALERT_ACTIONS = {
+  assigned = "assigned",
+  created = "created",
+  publicly_leaked = "publicly_leaked",
+  reopened = "reopened",
+  resolved = "resolved",
+  unassigned = "unassigned",
+  validated = "validated",
+}
+
+b:webhook("secret_scanning_alert", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_SECRET_SCANNING_ALERT_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "secret_scanning_alert",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      alert = payload.alert or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.alert or {}).updated_at or "",
+  })
+end)
+
+-- secret_scanning_alert_location: a new location was discovered for an
+-- existing secret scanning alert.  GitBucket mirrors the GitHub event format;
+-- the only known action is "created".
+b:webhook("secret_scanning_alert_location", function(payload)
+  local raw_action = payload.action or ""
+  local action = raw_action == "created" and "created" or nil
+  return make_internal_event({
+    event = "secret_scanning_alert_location",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      alert = payload.alert or {},
+      location = payload.location or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.alert or {}).updated_at or "",
+  })
+end)
+
 b:build()
