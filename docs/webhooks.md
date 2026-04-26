@@ -925,6 +925,9 @@ action availability.
 | `deployment_review` | Deployment awaiting or receiving review | `approved`, `rejected`, `requested` |
 | `deployment_protection_rule` | Deployment protection rule triggered | `requested` |
 | `ping` | Sent on webhook registration | _(no action field)_ |
+| `star` | Repository starred or unstarred | `created`, `deleted` |
+| `watch` | User started watching repository | `started` |
+| `sponsorship` | GitHub Sponsors lifecycle | `created`, `cancelled`, `edited`, `tier_changed`, `pending_cancellation`, `pending_tier_change` |
 
 Events not in this table are not currently emitted by confusio in GitHub-emulation
 shape.  Backends that produce event types with no GitHub equivalent are dropped or
@@ -3358,6 +3361,81 @@ regardless of the originating backend.
   GitBucket).  Those inbound pings are consumed by confusio during webhook registration
   confirmation but are not forwarded to targets — confusio emits exactly one synthetic
   `ping` per registration regardless.
+
+---
+
+### `star`
+
+Triggered when a user stars or removes a star from a repository.
+
+| GitHub field | github | gitea-family | All others |
+|---|---|---|---|
+| `action` | ✓ | ✓ | — |
+| `starred_at` | ✓ | ✓ | — |
+| `repository` | ✓ | ✓ | — |
+| `sender` | ✓ | ✓ | — |
+
+#### Supported actions
+
+| Action | github | gitea-family |
+|--------|--------|-------------|
+| `created` | ✓ | ✓ |
+| `deleted` | ✓ | ✓ |
+
+**Notes:**
+- `starred_at`: Gitea emits an ISO 8601 timestamp for the `created` action and `null` for
+  `deleted`.  GitHub behaves identically.
+- The gitea-family includes Gitea 1.20+, Forgejo, and Codeberg.  Gogs and NotaBug share the
+  handler code but do not emit star webhook events; no delivery will occur for those backends.
+- Backends not listed do not emit star lifecycle events.
+
+---
+
+### `watch`
+
+Triggered when a user starts watching (subscribing to) a repository.  GitHub only defines the
+`started` action — there is no GitHub webhook for unwatching a repository.
+
+| GitHub field | github | gitea-family | All others |
+|---|---|---|---|
+| `action` | ✓ | ✓ | — |
+| `repository` | ✓ | ✓ | — |
+| `sender` | ✓ | ✓ | — |
+
+#### Supported actions
+
+| Action | github | gitea-family |
+|--------|--------|-------------|
+| `started` | ✓ | ✓ |
+
+**Notes:**
+- The gitea-family includes Gitea, Forgejo, and Codeberg.
+- Backends not listed do not emit watch lifecycle events.
+
+---
+
+### `sponsorship`
+
+GitHub Sponsors lifecycle events.  These events are only available on GitHub.com and require
+a webhook registered on a sponsored account — they cannot be created on any self-hosted forge.
+Confusio does not emit these events for any backend.
+
+| GitHub field | github | All others |
+|---|---|---|
+| `action` | ✓ | — |
+| `sponsorship` | ✓ | — |
+| `sender` | ✓ | — |
+
+#### Supported actions
+
+| Action | github | All others |
+|--------|--------|-----------|
+| `created` | ✓ | — |
+| `cancelled` | ✓ | — |
+| `edited` | ✓ | — |
+| `tier_changed` | ✓ | — |
+| `pending_cancellation` | ✓ | — |
+| `pending_tier_change` | ✓ | — |
 
 ---
 
