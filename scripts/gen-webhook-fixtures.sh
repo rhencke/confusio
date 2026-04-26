@@ -122,6 +122,8 @@ gerrit|comment-added-approved.json|comment-added-changes_requested.json|.change.
 harness|pipeline_execution_started.json|pipeline_execution_success.json|.eventType = "pipeline_execution_success" | .endTs = 1705313400000
 harness|stage_execution_started.json|stage_execution_success.json|.eventType = "stage_execution_success" | .endTs = 1705313300000
 gitlab|deployment_status-created-success.json|deployment_status-created-failed.json|.status = "failed" | .status_changed_at = "2024-01-15T16:06:00Z"
+azuredevops|repository-created.json|repository-deleted.json|.eventType = "git.repository.deleted"
+azuredevops|repository-created.json|repository-renamed.json|.eventType = "git.repository.renamed" | .resource.name = "hello-universe"
 gitlab|repository-created.json|repository-deleted.json|.event_name = "project_destroy"
 gitlab|repository-created.json|repository-renamed.json|.event_name = "project_rename" | .name = "hello-universe" | .path = "hello-universe" | .path_with_namespace = "octocat/hello-universe" | .old_path_with_namespace = "octocat/hello-world"
 gitlab|repository-created.json|repository-transferred.json|.event_name = "project_transfer" | .path_with_namespace = "newowner/hello-world" | .old_path_with_namespace = "octocat/hello-world"

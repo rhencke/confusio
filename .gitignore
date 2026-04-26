@@ -82,6 +82,8 @@ test/fixtures/webhooks/bitbucket_datacenter/delete.json
 test/fixtures/webhooks/bitbucket_datacenter/status-updated-pending.json
 test/fixtures/webhooks/pagure/delete.json
 test/fixtures/webhooks/azuredevops/delete.json
+test/fixtures/webhooks/azuredevops/repository-deleted.json
+test/fixtures/webhooks/azuredevops/repository-renamed.json
 test/fixtures/webhooks/gerrit/comment-added-changes_requested.json
 test/fixtures/webhooks/harness/pipeline_execution_success.json
 test/fixtures/webhooks/harness/stage_execution_success.json
