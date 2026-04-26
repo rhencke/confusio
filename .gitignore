@@ -69,6 +69,11 @@ test/fixtures/webhooks/gitlab/workflow_run-completed.json
 test/fixtures/webhooks/gitlab/workflow_job-in_progress.json
 test/fixtures/webhooks/gitlab/workflow_job-completed.json
 test/fixtures/webhooks/gitlab/deployment_status-created-failed.json
+test/fixtures/webhooks/gitlab/repository-deleted.json
+test/fixtures/webhooks/gitlab/repository-renamed.json
+test/fixtures/webhooks/gitlab/repository-transferred.json
+test/fixtures/webhooks/gitlab/repository-publicized.json
+test/fixtures/webhooks/gitlab/repository-privatized.json
 test/fixtures/webhooks/bitbucket/issues-closed.json
 test/fixtures/webhooks/bitbucket/issues-edited.json
 test/fixtures/webhooks/bitbucket/issues-reopened.json

@@ -6971,6 +6971,99 @@ b:webhook("Deployment Hook", function(payload)
   })
 end)
 
+-- System Hook: repository lifecycle events (project_create, project_destroy,
+-- project_rename, project_transfer, project_update for publicized/privatized).
+-- GitLab sends X-Gitlab-Event: System Hook with event_name in the body.
+-- Non-repository event_names (user_create, key_add, etc.) return an error so
+-- the receiver responds with 422 rather than silently accepting them.
+local GL_SYSTEM_HOOK_REPOSITORY_ACTIONS = {
+  project_create = "created",
+  project_destroy = "deleted",
+  project_rename = "renamed",
+  project_transfer = "transferred",
+}
+
+-- Build a minimal repository object from a GitLab system hook payload.
+-- System hooks do not carry the full project struct, only path/visibility info.
+local function translate_gl_system_hook_repo(p)
+  local pns = p.path_with_namespace or ""
+  local slash = pns:find("/", 1, true)
+  local owner_login = slash and pns:sub(1, slash - 1) or pns
+  local repo_name = p.name or (slash and pns:sub(slash + 1) or pns)
+  local vis = p.project_visibility or ""
+  return {
+    id = p.project_id or 0,
+    node_id = "",
+    name = repo_name,
+    full_name = pns,
+    private = vis ~= "public",
+    owner = {
+      login = owner_login,
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      url = "",
+      html_url = "",
+      type = "User",
+    },
+    html_url = "",
+    description = "",
+    fork = false,
+    url = "",
+    default_branch = "",
+    visibility = vis ~= "" and vis or "private",
+  }
+end
+
+b:webhook("System Hook", function(payload)
+  local event_name = payload.event_name or ""
+  local action = GL_SYSTEM_HOOK_REPOSITORY_ACTIONS[event_name]
+
+  -- project_update: infer publicized/privatized from new visibility field.
+  -- GitLab does not include the old visibility in the payload, so we map
+  -- based on the new state: "public" → publicized, anything else → privatized.
+  if not action and event_name == "project_update" then
+    local vis = payload.project_visibility or ""
+    action = vis == "public" and "publicized" or "privatized"
+  end
+
+  if not action then
+    return nil, "Unhandled system hook event: " .. event_name
+  end
+
+  local repository = translate_gl_system_hook_repo(payload)
+  local sender = translate_gl_user({
+    name = payload.owner_name or "",
+    username = payload.owner_name or "",
+    avatar_url = "",
+  })
+  local data = {
+    action = action,
+    repository = repository,
+    sender = sender,
+  }
+
+  -- For renamed and transferred, include changes.repository.name.from sourced
+  -- from old_path_with_namespace.
+  if action == "renamed" then
+    local old_pns = payload.old_path_with_namespace or ""
+    local old_slash = old_pns:find("/", 1, true)
+    local old_name = old_slash and old_pns:sub(old_slash + 1) or old_pns
+    data.changes = {
+      repository = { name = { from = old_name } },
+    }
+  end
+
+  return make_internal_event({
+    event = "repository",
+    action = action,
+    provider = config.backend,
+    raw = payload,
+    data = data,
+    timestamp = payload.updated_at or payload.created_at or "",
+  })
+end)
+
 b:capability("repos", repos)
 b:capability("users", users)
 b:capability("orgs", orgs)
