@@ -246,3 +246,16 @@ run_delivery_phase test/webhook-delivery-pagure-confusio-shape.hurl \
   -- pagure "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
+
+# Phase 25: Forgejo fixture-based delivery tests — every event × action triple.
+# Forgejo uses X-Gitea-Event header (API-compatible with Gitea).
+run_delivery_phase test/webhook-delivery-forgejo.hurl \
+  -- forgejo "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 26: Forgejo delivery with "confusio" shape — spot-checks X-Confusio-* headers.
+# Verifies X-Confusio-Source is "forgejo" and X-GitHub-Event is absent.
+run_delivery_phase test/webhook-delivery-forgejo-confusio-shape.hurl \
+  -- forgejo "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+  "webhook_target_shape=confusio"
