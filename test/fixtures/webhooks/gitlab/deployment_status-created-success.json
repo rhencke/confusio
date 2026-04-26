@@ -1,0 +1,30 @@
+{
+  "object_kind": "deployment",
+  "status": "success",
+  "status_changed_at": "2024-01-15T16:05:00Z",
+  "deployment_id": 15,
+  "deployable_id": 796,
+  "deployable_url": "http://localhost/octocat/hello-world/-/jobs/796",
+  "environment": "production",
+  "project": {
+    "id": 10,
+    "name": "hello-world",
+    "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "visibility_level": 20,
+    "default_branch": "main"
+  },
+  "short_sha": "2b6127f",
+  "user": {
+    "id": 1,
+    "name": "The Octocat",
+    "username": "octocat",
+    "avatar_url": ""
+  },
+  "user_url": "http://localhost/octocat",
+  "commit_url": "http://localhost/octocat/hello-world/-/commit/2b6127f",
+  "commit_title": "Fix bug",
+  "ref": "main"
+}

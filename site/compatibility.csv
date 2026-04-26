@@ -516,3 +516,9 @@ webhook workflow_job/queued,n,n,n,y,n,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook workflow_job/in_progress,n,n,n,y,n,y,n,n,n,y,y,y,y,n,n,y,n,n,n,n,n,n,n,n
 webhook workflow_job/completed,n,n,n,y,n,y,n,n,n,y,y,y,y,n,n,y,n,n,n,n,n,n,n,n
 webhook workflow_job/waiting,n,n,n,y,n,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook deployment/created,n,n,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook deployment_status/created,n,n,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook deployment_review/approved,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook deployment_review/rejected,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook deployment_review/requested,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook deployment_protection_rule/requested,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n

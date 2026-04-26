@@ -2947,6 +2947,20 @@ local webhook_event_sections = {
       { "webhook workflow_job/in_progress", "wh_workflow_job_in_progress" },
       { "webhook workflow_job/completed", "wh_workflow_job_completed" },
       { "webhook workflow_job/waiting", "wh_workflow_job_waiting" },
+
+      -- deployment
+      { "webhook deployment/created", "wh_deployment_created" },
+
+      -- deployment_status
+      { "webhook deployment_status/created", "wh_deployment_status_created" },
+
+      -- deployment_review
+      { "webhook deployment_review/approved", "wh_deployment_review_approved" },
+      { "webhook deployment_review/rejected", "wh_deployment_review_rejected" },
+      { "webhook deployment_review/requested", "wh_deployment_review_requested" },
+
+      -- deployment_protection_rule
+      { "webhook deployment_protection_rule/requested", "wh_deployment_protection_rule_requested" },
     },
   },
 }

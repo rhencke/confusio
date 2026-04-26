@@ -119,6 +119,7 @@ bitbucket_datacenter|status-created-success.json|status-updated-pending.json|.bu
 gerrit|comment-added-approved.json|comment-added-changes_requested.json|.change.updated = "2024-01-15T11:30:00Z" | .comment = "This needs more work. -2" | .approvals[0].value = "-2"
 harness|pipeline_execution_started.json|pipeline_execution_success.json|.eventType = "pipeline_execution_success" | .endTs = 1705313400000
 harness|stage_execution_started.json|stage_execution_success.json|.eventType = "stage_execution_success" | .endTs = 1705313300000
+gitlab|deployment_status-created-success.json|deployment_status-created-failed.json|.status = "failed" | .status_changed_at = "2024-01-15T16:06:00Z"
 VARIANTS
 
 # ---------------------------------------------------------------------------

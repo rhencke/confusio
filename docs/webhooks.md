@@ -913,6 +913,10 @@ action availability.
 | `label` | Label lifecycle | `created`, `edited`, `deleted` |
 | `commit_comment` | Comment on a commit | `created` |
 | `status` | Commit status update | _(no action field — status is a single event)_ |
+| `deployment` | Deployment created | `created` |
+| `deployment_status` | Deployment status updated | `created` |
+| `deployment_review` | Deployment awaiting or receiving review | `approved`, `rejected`, `requested` |
+| `deployment_protection_rule` | Deployment protection rule triggered | `requested` |
 | `ping` | Sent on webhook registration | _(no action field)_ |
 
 Events not in this table are not currently emitted by confusio in GitHub-emulation
@@ -1112,6 +1116,120 @@ When `action` is `"closed"` and `pull_request.merged` is `true`, the PR was merg
   "sender":     { ... }
 }
 ```
+
+#### `deployment`
+
+```json
+{
+  "action": "created",
+  "deployment": {
+    "id":                     1,
+    "sha":                    "<commit sha>",
+    "ref":                    "main",
+    "task":                   "deploy",
+    "environment":            "production",
+    "original_environment":   "staging",
+    "description":            "<string or null>",
+    "payload":                {},
+    "creator":                { ... },
+    "created_at":             "<iso8601>",
+    "updated_at":             "<iso8601>",
+    "statuses_url":           "<url>",
+    "repository_url":         "<url>",
+    "production_environment": true,
+    "transient_environment":  false
+  },
+  "workflow":     { ... },
+  "workflow_run": { ... },
+  "repository":   { ... },
+  "sender":       { ... }
+}
+```
+
+`task` is typically `"deploy"`.  `environment` is a free-form string naming the target
+(e.g. `"production"`, `"staging"`).  `original_environment` is the environment that was
+configured before any promotion.  `payload` is an arbitrary JSON object provided by the
+creator.  `production_environment` and `transient_environment` are booleans set by the
+creator at deployment time.  `workflow` and `workflow_run` are present when the deployment
+was triggered by a GitHub Actions workflow and are `null` otherwise.
+
+#### `deployment_status`
+
+```json
+{
+  "action": "created",
+  "deployment_status": {
+    "id":               2,
+    "state":            "success",
+    "description":      "<string or null>",
+    "environment":      "production",
+    "environment_url":  "<url or null>",
+    "log_url":          "<url or null>",
+    "target_url":       "<url or null>",
+    "deployment_url":   "<url>",
+    "created_at":       "<iso8601>",
+    "updated_at":       "<iso8601>",
+    "creator":          { ... }
+  },
+  "deployment":   { ... },
+  "repository":   { ... },
+  "sender":       { ... }
+}
+```
+
+`state` values: `"error"`, `"failure"`, `"inactive"`, `"pending"`, `"success"`,
+`"queued"`, `"in_progress"`, `"waiting"`.  `deployment` is the full deployment object
+(same shape as in the `deployment` event body).  `environment_url` is a URL for the
+live environment, if set.  `log_url` is a direct link to the deployment log.
+
+#### `deployment_review`
+
+```json
+{
+  "action":       "approved",
+  "approver":     { "login": "<string>", "id": 0 },
+  "comment":      "<string or null>",
+  "since":        "<iso8601>",
+  "environment":  "production",
+  "reviewers":    [
+    {
+      "type":     "User",
+      "reviewer": { "login": "<string>", "id": 0 }
+    }
+  ],
+  "workflow_run": { ... },
+  "repository":   { ... },
+  "sender":       { ... }
+}
+```
+
+Fired when a deployment pending a required review is approved or rejected, or when a
+review is first requested.  `approver` is present on `approved` and `rejected` actions.
+`reviewers` is the list of users or teams that can review the deployment.  `since` is the
+ISO 8601 timestamp from which the review request has been pending.
+
+#### `deployment_protection_rule`
+
+```json
+{
+  "action":                  "requested",
+  "environment":             "production",
+  "event":                   "pull_request",
+  "sha":                     "<commit sha>",
+  "ref":                     "main",
+  "deployment_callback_url": "<url>",
+  "deployment":              { ... },
+  "pull_requests":           [ { ... } ],
+  "repository":              { ... },
+  "sender":                  { ... }
+}
+```
+
+Fired when a deployment protection rule is triggered for an environment.  `event` is the
+GitHub event that triggered the deployment (e.g. `"pull_request"`, `"push"`).
+`deployment_callback_url` is the URL that an integration must POST to in order to approve
+or reject the deployment.  `deployment` is the full deployment object; `pull_requests`
+is the list of pull requests that triggered this deployment (may be empty).
 
 #### `ping`
 
@@ -2708,6 +2826,174 @@ Triggered when a repository label is created, edited, or deleted.
 
 ---
 
+### `deployment`
+
+Triggered when a deployment is created.  Deployment events represent the initiation of a
+deployment to a named environment — distinct from the status updates that follow.
+
+#### Deployment object fields
+
+| GitHub field | github | gitlab | All others |
+|---|---|---|---|
+| `deployment.id` | ✓ | ✓ | ✗ |
+| `deployment.sha` | ✓ | ~ | ✗ |
+| `deployment.ref` | ✓ | ✓ | ✗ |
+| `deployment.task` | ✓ | ✗ | ✗ |
+| `deployment.environment` | ✓ | ✓ | ✗ |
+| `deployment.original_environment` | ✓ | ✗ | ✗ |
+| `deployment.description` | ✓ | ✗ | ✗ |
+| `deployment.payload` | ✓ | ✗ | ✗ |
+| `deployment.creator` | ✓ | ✓ | ✗ |
+| `deployment.created_at` | ✓ | ~ | ✗ |
+| `deployment.updated_at` | ✓ | ~ | ✗ |
+| `deployment.statuses_url` | ✓ | ✗ | ✗ |
+| `deployment.repository_url` | ✓ | ✗ | ✗ |
+| `deployment.production_environment` | ✓ | ✗ | ✗ |
+| `deployment.transient_environment` | ✓ | ✗ | ✗ |
+
+#### Supported actions
+
+| Action | github | gitlab |
+|--------|--------|--------|
+| `created` | ✓ | ✓ |
+
+**Notes:**
+- **GitLab**: GitLab fires a single "Deployment events" webhook per status transition.
+  Confusio emits a synthetic `deployment` (`created`) event when a GitLab deployment first
+  enters the `running` state.  The deployment object is reconstructed from the GitLab
+  payload: `id` is `deployment_id`, `ref` and `environment` map directly, `creator` is
+  the GitLab `user` object.
+- `deployment.sha`: GitLab provides only a short SHA (`short_sha`); confusio emits it as-is.
+  Full SHAs are not available without a back-fetch.
+- `deployment.created_at` / `updated_at`: GitLab provides `status_changed_at`; confusio
+  uses it for both timestamps.
+- `deployment.task`: GitLab has no task concept; confusio emits `"deploy"` as a stub.
+- `deployment.payload`: GitLab has no custom payload; confusio emits `{}`.
+- `deployment.original_environment`, `production_environment`, `transient_environment`:
+  GitLab does not expose these; confusio emits stubs (`""`, `false`, `false`).
+- `deployment.statuses_url`, `repository_url`: GitLab does not provide these URLs;
+  confusio emits `""`.
+- `workflow` / `workflow_run`: present in GitHub pass-through when the deployment was
+  triggered by GitHub Actions; always `null` in confusio-translated output.
+- Backends not listed (Gitea-family, Bitbucket, Azure DevOps, etc.) do not emit
+  deployment lifecycle events.  Gitea explicitly has no deployment webhook equivalent.
+
+---
+
+### `deployment_status`
+
+Triggered when the status of a deployment changes.
+
+#### Deployment status object fields
+
+| GitHub field | github | gitlab | All others |
+|---|---|---|---|
+| `deployment_status.id` | ✓ | ✗ | ✗ |
+| `deployment_status.state` | ✓ | ~ | ✗ |
+| `deployment_status.description` | ✓ | ✗ | ✗ |
+| `deployment_status.environment` | ✓ | ✓ | ✗ |
+| `deployment_status.environment_url` | ✓ | ✗ | ✗ |
+| `deployment_status.log_url` | ✓ | ~ | ✗ |
+| `deployment_status.target_url` | ✓ | ✗ | ✗ |
+| `deployment_status.deployment_url` | ✓ | ✗ | ✗ |
+| `deployment_status.creator` | ✓ | ✓ | ✗ |
+| `deployment_status.created_at` | ✓ | ~ | ✗ |
+| `deployment_status.updated_at` | ✓ | ~ | ✗ |
+| `deployment` (full object) | ✓ | ~ | ✗ |
+
+#### Supported actions
+
+| Action | github | gitlab |
+|--------|--------|--------|
+| `created` | ✓ | ✓ |
+
+**`state` mapping from GitLab:**
+
+| GitLab `status` | GitHub `state` |
+|----------------|----------------|
+| `running` | `in_progress` |
+| `success` | `success` |
+| `failed` | `failure` |
+| `canceled` | `inactive` |
+| `blocked` | `waiting` |
+
+**Notes:**
+- **GitLab**: GitLab fires "Deployment events" webhooks for every status transition.
+  Confusio emits a `deployment_status` (`created`) event for each GitLab deployment
+  event regardless of direction.  The `deployment` object embedded in the body is the
+  same reconstructed deployment object as in the `deployment` event.
+- `deployment_status.id`: GitLab does not expose a separate status ID; confusio emits `0`.
+- `deployment_status.state`: Mapped from GitLab's `status` field using the table above.
+- `deployment_status.log_url`: GitLab's `deployable_url` (a link to the CI job) is used.
+- `deployment_status.target_url`, `environment_url`, `deployment_url`: GitLab does not
+  provide these separately; confusio emits `""`.
+- `deployment_status.description`: GitLab has no free-form description; confusio emits `""`.
+- `created_at` / `updated_at`: GitLab provides `status_changed_at`; confusio uses it for
+  both timestamps.
+- `deployment` (embedded): reconstructed from GitLab fields — same fidelity as the
+  `deployment` event object (see `deployment` section Notes above).
+- Backends not listed do not emit deployment status events.
+
+---
+
+### `deployment_review`
+
+Triggered when a deployment pending a required review is approved, rejected, or first
+requested.  This event is specific to GitHub's environment protection rules.
+
+| GitHub field | github | All others |
+|---|---|---|
+| `approver` | ✓ | — |
+| `comment` | ✓ | — |
+| `since` | ✓ | — |
+| `environment` | ✓ | — |
+| `reviewers` | ✓ | — |
+| `workflow_run` | ✓ | — |
+
+#### Supported actions
+
+| Action | github | All others |
+|--------|--------|------------|
+| `approved` | ✓ | — |
+| `rejected` | ✓ | — |
+| `requested` | ✓ | — |
+
+**Notes:**
+- `deployment_review` is a GitHub Actions-specific event with no cross-forge equivalent.
+  No non-GitHub backend emits review-gated deployment events; confusio marks all
+  non-GitHub backends as `—` (not applicable).
+- When the originating backend is GitHub, the event passes through verbatim.
+
+---
+
+### `deployment_protection_rule`
+
+Triggered when a configured deployment protection rule is evaluated.  This event is
+specific to GitHub's custom deployment protection integrations.
+
+| GitHub field | github | All others |
+|---|---|---|
+| `environment` | ✓ | — |
+| `event` | ✓ | — |
+| `sha` | ✓ | — |
+| `ref` | ✓ | — |
+| `deployment_callback_url` | ✓ | — |
+| `deployment` | ✓ | — |
+| `pull_requests` | ✓ | — |
+
+#### Supported actions
+
+| Action | github | All others |
+|--------|--------|------------|
+| `requested` | ✓ | — |
+
+**Notes:**
+- `deployment_protection_rule` is a GitHub-specific integration mechanism with no
+  cross-forge equivalent.  Confusio marks all non-GitHub backends as `—` (not applicable).
+- When the originating backend is GitHub, the event passes through verbatim.
+
+---
+
 ### `ping`
 
 The `ping` event is synthetic.  It is emitted by confusio itself — not translated from an
@@ -2752,8 +3038,15 @@ surfaced via the `status` event (see above).
 | `check_suite` | ✓ pass-through | ✗ |
 | `workflow_run` | ✓ pass-through | ✗ |
 | `workflow_job` | ✓ pass-through | ✗ |
-| `deployment` | ✓ pass-through | ✗ |
-| `deployment_status` | ✓ pass-through | ✗ |
+| `deployment_review` | ✓ pass-through | ✗ |
+| `deployment_protection_rule` | ✓ pass-through | ✗ |
+
+`deployment_review` and `deployment_protection_rule` are GitHub Actions-specific events tied
+to GitHub's required-reviewer enforcement model.  No other forge has an equivalent concept.
+
+The `deployment` and `deployment_status` events have cross-forge mapping targets and are
+documented as full event families below (see [`deployment`](#deployment-1) and
+[`deployment_status`](#deployment_status-1)).
 
 For cross-forge CI/CD signal in confusio-normalized shape the `status` event provides a
 consistent envelope regardless of backend.  Future work may add a `pipeline_run` event
