@@ -9,5 +9,15 @@ mock-*.com
 hurl
 stylua
 luacheck
-# Generated webhook fixture directories (produced by scripts/gen-webhook-fixtures.sh)
+# Generated webhook fixture files (produced by scripts/gen-webhook-fixtures.sh)
 test/fixtures/webhooks/forgejo/
+test/fixtures/webhooks/gitea/delete.json
+test/fixtures/webhooks/gitbucket/delete.json
+test/fixtures/webhooks/gitlab/delete.json
+test/fixtures/webhooks/pagure/delete.json
+test/fixtures/webhooks/azuredevops/delete.json
+test/fixtures/webhooks/bitbucket_datacenter/delete.json
+
+# Core dumps
+core
+core.*
