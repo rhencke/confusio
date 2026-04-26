@@ -2601,4 +2601,83 @@ b:webhook("fork", function(payload)
   })
 end)
 
+-- deploy_key: SSH deploy key added or removed.
+-- GitBucket sends X-GitHub-Event: deploy_key with GitHub-compatible payload.
+b:webhook("deploy_key", function(payload)
+  local action = payload.action or "unknown"
+  local data = {
+    action = action,
+    key = payload.key or {},
+    repository = payload.repository or {},
+    sender = payload.sender or {},
+  }
+  return make_internal_event({
+    event = "deploy_key",
+    action = action,
+    provider = "gitbucket",
+    raw = payload,
+    data = data,
+    timestamp = (payload.key or {}).created_at or "",
+  })
+end)
+
+-- gollum: wiki page created or edited.
+-- GitBucket sends X-GitHub-Event: gollum with GitHub-compatible payload.
+-- The pages[] array carries the per-page action; there is no top-level action.
+b:webhook("gollum", function(payload)
+  local pages = payload.pages or {}
+  local first_action = (pages[1] or {}).action or "edited"
+  local data = {
+    pages = pages,
+    repository = payload.repository or {},
+    sender = payload.sender or {},
+  }
+  return make_internal_event({
+    event = "gollum",
+    action = first_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = data,
+    timestamp = "",
+  })
+end)
+
+-- repository: lifecycle events.  GitBucket emits GitHub-compatible repository
+-- payloads for created and deleted actions in newer versions; pass through as-is.
+-- Rename/transfer/visibility actions are not emitted by GitBucket.
+b:webhook("repository", function(payload)
+  local action = payload.action or "unknown"
+  local data = {
+    action = action,
+    repository = payload.repository or {},
+    sender = payload.sender or {},
+  }
+  return make_internal_event({
+    event = "repository",
+    action = action,
+    provider = "gitbucket",
+    raw = payload,
+    data = data,
+    timestamp = "",
+  })
+end)
+
+-- public: a private repository was made public.
+-- GitBucket sends X-GitHub-Event: public with GitHub-compatible payload.
+-- There is no action field; the event itself is the signal.
+b:webhook("public", function(payload)
+  local data = {
+    repository = payload.repository or {},
+    sender = payload.sender or {},
+  }
+  return make_internal_event({
+    event = "public",
+    action = "publicized",
+    provider = "gitbucket",
+    raw = payload,
+    data = data,
+    timestamp = "",
+  })
+end)
+
 b:build()

@@ -7668,6 +7668,83 @@ b:webhook("fork", function(payload)
   })
 end)
 
+-- repository: lifecycle events (created, deleted, renamed).
+-- Gitea sends X-Gitea-Event: repository.  For "renamed", Gitea includes a
+-- changes.name.from field; we map that to GitHub's changes.repository.name.from
+-- shape in the normalized data.
+b:webhook("repository", function(payload)
+  local action = payload.action or "unknown"
+  local data = {
+    action = action,
+    repository = translate_repo(payload.repository or {}),
+    sender = translate_user(payload.sender or {}),
+  }
+  if action == "renamed" then
+    local old_name = ((payload.changes or {}).name or {}).from
+    data.changes = {
+      repository = { name = { from = old_name } },
+    }
+  end
+  return make_internal_event({
+    event = "repository",
+    action = action,
+    provider = "gitea",
+    raw = payload,
+    data = data,
+    timestamp = "",
+  })
+end)
+
+-- deploy_key: SSH deploy key added or removed from a repository.
+-- Gitea sends X-Gitea-Event: deploy_key with GitHub-compatible payload.
+b:webhook("deploy_key", function(payload)
+  local action = payload.action or "unknown"
+  local key = payload.key or {}
+  local data = {
+    action = action,
+    key = {
+      id = key.id or 0,
+      key = key.key or "",
+      url = key.url or "",
+      title = key.title or "",
+      verified = key.verified or false,
+      created_at = key.created_at or "",
+      read_only = key.read_only or false,
+    },
+    repository = translate_repo(payload.repository or {}),
+    sender = translate_user(payload.sender or {}),
+  }
+  return make_internal_event({
+    event = "deploy_key",
+    action = action,
+    provider = "gitea",
+    raw = payload,
+    data = data,
+    timestamp = key.created_at or "",
+  })
+end)
+
+-- gollum: wiki page created or edited.
+-- Gitea sends X-Gitea-Event: gollum with GitHub-compatible payload.
+-- The pages[] array carries the per-page action; there is no top-level action.
+b:webhook("gollum", function(payload)
+  local pages = payload.pages or {}
+  local first_action = (pages[1] or {}).action or "edited"
+  local data = {
+    pages = pages,
+    repository = translate_repo(payload.repository or {}),
+    sender = translate_user(payload.sender or {}),
+  }
+  return make_internal_event({
+    event = "gollum",
+    action = first_action,
+    provider = "gitea",
+    raw = payload,
+    data = data,
+    timestamp = "",
+  })
+end)
+
 b:capability("repos", repos)
 b:capability("users", users)
 b:capability("orgs", orgs)

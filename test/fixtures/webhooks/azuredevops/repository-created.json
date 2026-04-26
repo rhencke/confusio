@@ -1,0 +1,15 @@
+{
+  "eventType": "git.repository.created",
+  "resource": {
+    "id": "repo-id-001",
+    "name": "hello-world",
+    "remoteUrl": "https://dev.azure.com/octocat/octocat/_git/hello-world",
+    "defaultBranch": "refs/heads/main",
+    "isPrivate": false,
+    "project": {
+      "id": "proj-id-001",
+      "name": "octocat"
+    }
+  },
+  "createdDate": "2024-01-15T10:00:00Z"
+}

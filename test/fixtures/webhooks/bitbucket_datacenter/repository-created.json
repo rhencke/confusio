@@ -1,0 +1,27 @@
+{
+  "actor": {
+    "name": "alice",
+    "slug": "alice",
+    "id": 1,
+    "displayName": "Alice Smith",
+    "emailAddress": "alice@example.com",
+    "links": {"self": [{"href": "http://localhost/users/alice"}]}
+  },
+  "repository": {
+    "slug": "hello-world",
+    "id": 100,
+    "name": "hello-world",
+    "description": "My first repo",
+    "public": true,
+    "project": {
+      "key": "OCTOCAT",
+      "id": 1,
+      "name": "octocat",
+      "type": "NORMAL",
+      "links": {"self": [{"href": "http://localhost/projects/OCTOCAT"}]}
+    },
+    "links": {
+      "self": [{"href": "http://localhost/projects/OCTOCAT/repos/hello-world/browse"}]
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "pages": [
+    {
+      "page_name": "Home",
+      "title": "Home",
+      "summary": null,
+      "action": "created",
+      "sha": "91ea1bd42aa2ba166b86e8aefe049e9837b5e1c3",
+      "html_url": "http://localhost/octocat/hello-world/wiki/Home"
+    }
+  ],
+  "repository": {
+    "id": 1, "node_id": "", "name": "hello-world",
+    "full_name": "octocat/hello-world", "private": false,
+    "owner": {"login": "octocat", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"},
+    "html_url": "http://localhost/octocat/hello-world",
+    "description": "My first repo", "fork": false, "url": "",
+    "clone_url": "", "homepage": "", "default_branch": "main",
+    "visibility": "public"
+  },
+  "sender": {"login": "alice", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"}
+}

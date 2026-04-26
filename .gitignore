@@ -33,6 +33,10 @@ test/fixtures/webhooks/gitea/workflow_run-in_progress.json
 test/fixtures/webhooks/gitea/release-edited.json
 test/fixtures/webhooks/gitea/release-deleted.json
 test/fixtures/webhooks/gitea/release-prereleased.json
+test/fixtures/webhooks/gitea/deploy_key-deleted.json
+test/fixtures/webhooks/gitea/gollum-edited.json
+test/fixtures/webhooks/gitea/repository-deleted.json
+test/fixtures/webhooks/gitea/repository-renamed.json
 test/fixtures/webhooks/gitbucket/delete.json
 test/fixtures/webhooks/gitbucket/issues-closed.json
 test/fixtures/webhooks/gitbucket/issues-edited.json
@@ -67,6 +71,12 @@ test/fixtures/webhooks/gitlab/workflow_run-completed.json
 test/fixtures/webhooks/gitlab/workflow_job-in_progress.json
 test/fixtures/webhooks/gitlab/workflow_job-completed.json
 test/fixtures/webhooks/gitlab/deployment_status-created-failed.json
+test/fixtures/webhooks/gitlab/wiki_page-edited.json
+test/fixtures/webhooks/gitlab/repository-deleted.json
+test/fixtures/webhooks/gitlab/repository-renamed.json
+test/fixtures/webhooks/gitlab/repository-transferred.json
+test/fixtures/webhooks/gitlab/repository-publicized.json
+test/fixtures/webhooks/gitlab/repository-privatized.json
 test/fixtures/webhooks/bitbucket/issues-closed.json
 test/fixtures/webhooks/bitbucket/issues-edited.json
 test/fixtures/webhooks/bitbucket/issues-reopened.json
@@ -75,6 +85,11 @@ test/fixtures/webhooks/bitbucket_datacenter/delete.json
 test/fixtures/webhooks/bitbucket_datacenter/status-updated-pending.json
 test/fixtures/webhooks/pagure/delete.json
 test/fixtures/webhooks/azuredevops/delete.json
+test/fixtures/webhooks/azuredevops/repository-deleted.json
+test/fixtures/webhooks/azuredevops/repository-renamed.json
+test/fixtures/webhooks/gitbucket/deploy_key-deleted.json
+test/fixtures/webhooks/gitbucket/gollum-edited.json
+test/fixtures/webhooks/gitbucket/repository-deleted.json
 test/fixtures/webhooks/gerrit/comment-added-changes_requested.json
 test/fixtures/webhooks/harness/pipeline_execution_success.json
 test/fixtures/webhooks/harness/stage_execution_success.json

@@ -1,0 +1,22 @@
+{
+  "action": "created",
+  "key": {
+    "id": 1,
+    "key": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC... deploy-key",
+    "url": "http://localhost/api/v3/repos/octocat/hello-world/keys/1",
+    "title": "Deploy key",
+    "verified": false,
+    "created_at": "2024-01-15T10:00:00Z",
+    "read_only": true
+  },
+  "repository": {
+    "id": 1, "node_id": "", "name": "hello-world",
+    "full_name": "octocat/hello-world", "private": false,
+    "owner": {"login": "octocat", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"},
+    "html_url": "http://localhost/octocat/hello-world",
+    "description": "My first repo", "fork": false, "url": "",
+    "clone_url": "", "homepage": "", "default_branch": "main",
+    "visibility": "public"
+  },
+  "sender": {"login": "alice", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"}
+}

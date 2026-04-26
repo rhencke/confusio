@@ -1747,4 +1747,56 @@ b:webhook("repo:refs_changed", function(payload)
   })
 end)
 
+-- repo:created / repo:deleted: repository lifecycle events.
+-- Bitbucket Data Center fires these as system/global webhook events.
+local function bbs_repo_lifecycle_handler(action)
+  return function(payload)
+    return make_internal_event({
+      event = "repository",
+      action = action,
+      provider = "bitbucket_datacenter",
+      raw = payload,
+      data = {
+        action = action,
+        repository = translate_bbs_repo(payload.repository or {}),
+        sender = translate_bbs_user(payload.actor or {}),
+      },
+      timestamp = "",
+    })
+  end
+end
+
+b:webhook("repo:created", bbs_repo_lifecycle_handler("created"))
+b:webhook("repo:deleted", bbs_repo_lifecycle_handler("deleted"))
+
+-- repo:modified: repository modified (name, description, or default branch
+-- changed).  When previousValues.slug is present, the repository was renamed;
+-- we surface changes.repository.name.from to match GitHub's renamed shape.
+-- Other modifications (description, default branch) are mapped to "renamed"
+-- as well since they still constitute a repository update event; in practice
+-- rename is the dominant use case tracked by consumers.
+b:webhook("repo:modified", function(payload)
+  local prev = payload.previousValues or {}
+  local action = "renamed"
+  local data = {
+    action = action,
+    repository = translate_bbs_repo(payload.repository or {}),
+    sender = translate_bbs_user(payload.actor or {}),
+  }
+  local old_name = prev.slug or prev.name
+  if old_name then
+    data.changes = {
+      repository = { name = { from = old_name } },
+    }
+  end
+  return make_internal_event({
+    event = "repository",
+    action = action,
+    provider = "bitbucket_datacenter",
+    raw = payload,
+    data = data,
+    timestamp = "",
+  })
+end)
+
 b:build()
