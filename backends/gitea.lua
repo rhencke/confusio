@@ -7605,6 +7605,51 @@ b:webhook("delete", function(payload)
   })
 end)
 
+-- release: release lifecycle.  Gitea and GitHub release objects share the same
+-- field names, so only the nested `author` user object needs translation.
+-- The `edited` action does not carry a `changes` object in Gitea; confusio
+-- emits `changes: {}` as a stub to preserve GitHub shape.
+-- Actions are 1-to-1: published, edited, deleted, prereleased.
+local function translate_gitea_webhook_release(r)
+  r = r or {}
+  return {
+    id = r.id,
+    tag_name = r.tag_name or "",
+    name = r.name,
+    body = r.body,
+    draft = r.draft or false,
+    prerelease = r.prerelease or false,
+    html_url = r.html_url or "",
+    tarball_url = r.tarball_url,
+    zipball_url = r.zipball_url,
+    author = translate_user(r.author or {}),
+    created_at = r.created_at or "",
+    published_at = r.published_at,
+  }
+end
+
+b:webhook("release", function(payload)
+  local action = payload.action or "unknown"
+  local rel = translate_gitea_webhook_release(payload.release)
+  local data = {
+    action = action,
+    release = rel,
+    repository = translate_repo(payload.repository or {}),
+    sender = translate_user(payload.sender or {}),
+  }
+  if action == "edited" then
+    data.changes = {}
+  end
+  return make_internal_event({
+    event = "release",
+    action = action,
+    provider = "gitea",
+    raw = payload,
+    data = data,
+    timestamp = rel.published_at or rel.created_at or "",
+  })
+end)
+
 -- fork: repository forked.  Gitea sends `forkee` (the newly created fork) and
 -- `repository` (the upstream source).  Both are translated with translate_repo.
 b:webhook("fork", function(payload)
