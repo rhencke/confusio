@@ -1,0 +1,50 @@
+{
+  "actor": {
+    "nickname": "bob",
+    "display_name": "Bob Jones",
+    "account_id": "6e0401d2-e94f-5b98-cd10-bcdef234567",
+    "links": {
+      "avatar": {"href": ""},
+      "html": {"href": "http://localhost/bob"}
+    }
+  },
+  "fork": {
+    "full_name": "bob/hello-world",
+    "name": "hello-world",
+    "slug": "hello-world",
+    "is_private": false,
+    "description": "My first repo",
+    "mainbranch": {"name": "main"},
+    "parent": {"full_name": "octocat/hello-world"},
+    "owner": {
+      "nickname": "bob",
+      "display_name": "Bob Jones",
+      "account_id": "6e0401d2-e94f-5b98-cd10-bcdef234567",
+      "type": "user",
+      "links": {"avatar": {"href": ""}, "html": {"href": "http://localhost/bob"}}
+    },
+    "links": {
+      "html": {"href": "http://localhost/bob/hello-world"},
+      "self": {"href": ""}
+    }
+  },
+  "repository": {
+    "full_name": "octocat/hello-world",
+    "name": "hello-world",
+    "slug": "hello-world",
+    "is_private": false,
+    "description": "My first repo",
+    "mainbranch": {"name": "main"},
+    "owner": {
+      "nickname": "octocat",
+      "display_name": "The Octocat",
+      "account_id": "owner-account-id",
+      "type": "user",
+      "links": {"avatar": {"href": ""}, "html": {"href": "http://localhost/octocat"}}
+    },
+    "links": {
+      "html": {"href": "http://localhost/octocat/hello-world"},
+      "self": {"href": ""}
+    }
+  }
+}

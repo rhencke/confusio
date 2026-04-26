@@ -755,3 +755,208 @@ X-Event-Key: repo:commit_status_updated
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
+
+# ── repo:push: regular branch push → 200 (push event) ────────────────────────
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: repo:push
+{
+  "actor": {
+    "nickname": "alice",
+    "display_name": "Alice Smith",
+    "account_id": "acct-alice",
+    "links": {"avatar": {"href": ""}, "html": {"href": ""}}
+  },
+  "push": {
+    "changes": [
+      {
+        "new": {
+          "type": "branch",
+          "name": "main",
+          "target": {
+            "hash": "da1560886d4f094c3e6c9ef40349f7d38b5d27d0",
+            "message": "Fix login bug",
+            "date": "2024-01-15T10:00:00+00:00",
+            "author": {
+              "raw": "Alice Smith <alice@example.com>",
+              "user": {"nickname": "alice", "display_name": "Alice Smith", "account_id": "acct-alice",
+                       "links": {"avatar": {"href": ""}, "html": {"href": ""}}}
+            },
+            "parents": [{"hash": "95790bf891e76fee5db5ef17d2523a6f6e048239"}],
+            "links": {"html": {"href": ""}}
+          },
+          "links": {"html": {"href": ""}}
+        },
+        "old": {
+          "type": "branch",
+          "name": "main",
+          "target": {"hash": "95790bf891e76fee5db5ef17d2523a6f6e048239"}
+        },
+        "created": false,
+        "closed": false,
+        "forced": false,
+        "truncated": false,
+        "commits": [
+          {
+            "hash": "da1560886d4f094c3e6c9ef40349f7d38b5d27d0",
+            "message": "Fix login bug",
+            "date": "2024-01-15T10:00:00+00:00",
+            "author": {
+              "raw": "Alice Smith <alice@example.com>",
+              "user": {"nickname": "alice", "display_name": "Alice Smith", "account_id": "acct-alice",
+                       "links": {"avatar": {"href": ""}, "html": {"href": ""}}}
+            },
+            "parents": [{"hash": "95790bf891e76fee5db5ef17d2523a6f6e048239"}],
+            "links": {"html": {"href": ""}}
+          }
+        ],
+        "links": {"html": {"href": "http://localhost/octocat/hello-world/compare"}, "diff": {"href": ""}}
+      }
+    ]
+  },
+  "repository": {
+    "full_name": "octocat/hello-world", "name": "hello-world", "slug": "hello-world",
+    "is_private": false, "description": "My first repo",
+    "mainbranch": {"name": "main"},
+    "owner": {"nickname": "octocat", "display_name": "The Octocat", "account_id": "owner-id",
+              "type": "user", "links": {"avatar": {"href": ""}, "html": {"href": ""}}},
+    "links": {"html": {"href": "http://localhost/octocat/hello-world"}, "self": {"href": ""}}
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── repo:push: created=true → 200 (create event, branch created) ─────────────
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: repo:push
+{
+  "actor": {
+    "nickname": "bob",
+    "display_name": "Bob Jones",
+    "account_id": "acct-bob",
+    "links": {"avatar": {"href": ""}, "html": {"href": ""}}
+  },
+  "push": {
+    "changes": [
+      {
+        "new": {
+          "type": "branch",
+          "name": "feature-branch",
+          "target": {
+            "hash": "da1560886d4f094c3e6c9ef40349f7d38b5d27d0",
+            "date": "2024-01-15T11:00:00+00:00",
+            "author": {"raw": "Bob Jones <bob@example.com>",
+                       "user": {"nickname": "bob", "display_name": "Bob Jones", "account_id": "acct-bob",
+                                "links": {"avatar": {"href": ""}, "html": {"href": ""}}}},
+            "parents": [],
+            "links": {"html": {"href": ""}}
+          },
+          "links": {"html": {"href": ""}}
+        },
+        "old": null,
+        "created": true,
+        "closed": false,
+        "forced": false,
+        "truncated": false,
+        "commits": [],
+        "links": {"html": {"href": ""}, "diff": {"href": ""}}
+      }
+    ]
+  },
+  "repository": {
+    "full_name": "octocat/hello-world", "name": "hello-world", "slug": "hello-world",
+    "is_private": false, "description": "My first repo",
+    "mainbranch": {"name": "main"},
+    "owner": {"nickname": "octocat", "display_name": "The Octocat", "account_id": "owner-id",
+              "type": "user", "links": {"avatar": {"href": ""}, "html": {"href": ""}}},
+    "links": {"html": {"href": "http://localhost/octocat/hello-world"}, "self": {"href": ""}}
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── repo:push: closed=true → 200 (delete event, branch deleted) ──────────────
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: repo:push
+{
+  "actor": {
+    "nickname": "bob",
+    "display_name": "Bob Jones",
+    "account_id": "acct-bob",
+    "links": {"avatar": {"href": ""}, "html": {"href": ""}}
+  },
+  "push": {
+    "changes": [
+      {
+        "new": null,
+        "old": {
+          "type": "branch",
+          "name": "stale-branch",
+          "target": {"hash": "95790bf891e76fee5db5ef17d2523a6f6e048239"}
+        },
+        "created": false,
+        "closed": true,
+        "forced": false,
+        "truncated": false,
+        "commits": [],
+        "links": {"html": {"href": ""}, "diff": {"href": ""}}
+      }
+    ]
+  },
+  "repository": {
+    "full_name": "octocat/hello-world", "name": "hello-world", "slug": "hello-world",
+    "is_private": false, "description": "My first repo",
+    "mainbranch": {"name": "main"},
+    "owner": {"nickname": "octocat", "display_name": "The Octocat", "account_id": "owner-id",
+              "type": "user", "links": {"avatar": {"href": ""}, "html": {"href": ""}}},
+    "links": {"html": {"href": "http://localhost/octocat/hello-world"}, "self": {"href": ""}}
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── repo:fork → 200 ───────────────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: repo:fork
+{
+  "actor": {
+    "nickname": "bob",
+    "display_name": "Bob Jones",
+    "account_id": "acct-bob",
+    "links": {"avatar": {"href": ""}, "html": {"href": ""}}
+  },
+  "fork": {
+    "full_name": "bob/hello-world", "name": "hello-world", "slug": "hello-world",
+    "is_private": false, "description": "My first repo",
+    "mainbranch": {"name": "main"},
+    "parent": {"full_name": "octocat/hello-world"},
+    "owner": {"nickname": "bob", "display_name": "Bob Jones", "account_id": "acct-bob",
+              "type": "user", "links": {"avatar": {"href": ""}, "html": {"href": "http://localhost/bob"}}},
+    "links": {"html": {"href": "http://localhost/bob/hello-world"}, "self": {"href": ""}}
+  },
+  "repository": {
+    "full_name": "octocat/hello-world", "name": "hello-world", "slug": "hello-world",
+    "is_private": false, "description": "My first repo",
+    "mainbranch": {"name": "main"},
+    "owner": {"nickname": "octocat", "display_name": "The Octocat", "account_id": "owner-id",
+              "type": "user", "links": {"avatar": {"href": ""}, "html": {"href": ""}}},
+    "links": {"html": {"href": "http://localhost/octocat/hello-world"}, "self": {"href": ""}}
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"

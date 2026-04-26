@@ -2650,4 +2650,123 @@ b:webhook("repo:commit_status_updated", function(payload)
   return bb_commit_status_event(payload)
 end)
 
+-- repo:push: branch or tag push (including creation and deletion).
+--
+-- Bitbucket Cloud has no separate create/delete webhook events for branches
+-- or tags; all ref operations arrive as `repo:push` with `change.created` or
+-- `change.closed` set to true.  Confusio routes these to the appropriate
+-- GitHub event type:
+--   change.created == true → GitHub create event
+--   change.closed  == true → GitHub delete event
+--   otherwise              → GitHub push event
+--
+-- When a single push updates multiple refs, only the first change is processed.
+-- The full `payload.push.changes` array remains available in `raw`.
+b:webhook("repo:push", function(payload)
+  local changes = (payload.push or {}).changes or {}
+  local change = changes[1] or {}
+  local new_ref = change.new or {}
+  local old_ref = change.old or {}
+  local repo = payload.repository or {}
+  local actor = payload.actor or {}
+  local sender = translate_bb_user(actor)
+  local repository = translate_bb_repo(repo)
+  local ref_type = new_ref.type or old_ref.type or "branch"
+  local ref_name = new_ref.name or old_ref.name or ""
+  local full_ref = (ref_type == "tag") and ("refs/tags/" .. ref_name) or ("refs/heads/" .. ref_name)
+
+  if change.created then
+    -- Branch or tag created — emit GitHub create event.
+    return make_internal_event({
+      event = "create",
+      action = "create",
+      provider = "bitbucket",
+      raw = payload,
+      data = {
+        ref = ref_name,
+        ref_type = ref_type,
+        master_branch = (repo.mainbranch or {}).name or "",
+        description = repo.description,
+        pusher_type = "user",
+        repository = repository,
+        sender = sender,
+      },
+      timestamp = "",
+    })
+  end
+
+  if change.closed then
+    -- Branch or tag deleted — emit GitHub delete event.
+    return make_internal_event({
+      event = "delete",
+      action = "delete",
+      provider = "bitbucket",
+      raw = payload,
+      data = {
+        ref = ref_name,
+        ref_type = ref_type,
+        master_branch = (repo.mainbranch or {}).name or "",
+        description = repo.description,
+        pusher_type = "user",
+        repository = repository,
+        sender = sender,
+      },
+      timestamp = "",
+    })
+  end
+
+  -- Regular push — emit GitHub push event.
+  local ZERO_SHA = "0000000000000000000000000000000000000000"
+  local before = (old_ref.target or {}).hash or ZERO_SHA
+  local after = (new_ref.target or {}).hash or ZERO_SHA
+  local push_commits = {}
+  for _, c in ipairs(change.commits or {}) do
+    push_commits[#push_commits + 1] = translate_bb_commit(c)
+  end
+  local head_commit = #push_commits > 0 and push_commits[1] or nil
+  local compare = ((change.links or {}).html or {}).href or ""
+  return make_internal_event({
+    event = "push",
+    action = "push",
+    provider = "bitbucket",
+    raw = payload,
+    data = {
+      ref = full_ref,
+      before = before,
+      after = after,
+      created = false,
+      deleted = false,
+      forced = change.forced or false,
+      compare = compare,
+      commits = push_commits,
+      head_commit = head_commit,
+      pusher = {
+        name = actor.nickname or actor.display_name or "",
+        email = "",
+      },
+      repository = repository,
+      sender = sender,
+    },
+    timestamp = (new_ref.target or {}).date or "",
+  })
+end)
+
+-- repo:fork: repository forked.  Bitbucket Cloud fires this event when a user
+-- forks a repository.  The `fork` key holds the newly-created fork; the
+-- `repository` key is the upstream source.
+b:webhook("repo:fork", function(payload)
+  return make_internal_event({
+    event = "fork",
+    action = "fork",
+    provider = "bitbucket",
+    raw = payload,
+    data = {
+      forkee = translate_bb_repo(payload.fork or {}),
+      repository = translate_bb_repo(payload.repository or {}),
+      sender = translate_bb_user(payload.actor or {}),
+    },
+    timestamp = "",
+  })
+end)
+
 b:build()

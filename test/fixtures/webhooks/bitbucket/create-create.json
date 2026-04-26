@@ -1,0 +1,67 @@
+{
+  "actor": {
+    "nickname": "bob",
+    "display_name": "Bob Jones",
+    "account_id": "6e0401d2-e94f-5b98-cd10-bcdef234567",
+    "links": {
+      "avatar": {"href": ""},
+      "html": {"href": "http://localhost/bob"}
+    }
+  },
+  "push": {
+    "changes": [
+      {
+        "new": {
+          "type": "branch",
+          "name": "feature-branch",
+          "target": {
+            "hash": "da1560886d4f094c3e6c9ef40349f7d38b5d27d0",
+            "message": "Initial commit on feature branch",
+            "date": "2024-01-15T11:00:00+00:00",
+            "author": {
+              "raw": "Bob Jones <bob@example.com>",
+              "user": {
+                "nickname": "bob",
+                "display_name": "Bob Jones",
+                "account_id": "6e0401d2-e94f-5b98-cd10-bcdef234567",
+                "links": {"avatar": {"href": ""}, "html": {"href": ""}}
+              }
+            },
+            "parents": [],
+            "links": {"html": {"href": ""}}
+          },
+          "links": {"html": {"href": "http://localhost/octocat/hello-world/branch/feature-branch"}}
+        },
+        "old": null,
+        "created": true,
+        "closed": false,
+        "forced": false,
+        "truncated": false,
+        "commits": [],
+        "links": {
+          "html": {"href": ""},
+          "diff": {"href": ""}
+        }
+      }
+    ]
+  },
+  "repository": {
+    "full_name": "octocat/hello-world",
+    "name": "hello-world",
+    "slug": "hello-world",
+    "is_private": false,
+    "description": "My first repo",
+    "mainbranch": {"name": "main"},
+    "owner": {
+      "nickname": "octocat",
+      "display_name": "The Octocat",
+      "account_id": "owner-account-id",
+      "type": "user",
+      "links": {"avatar": {"href": ""}, "html": {"href": "http://localhost/octocat"}}
+    },
+    "links": {
+      "html": {"href": "http://localhost/octocat/hello-world"},
+      "self": {"href": ""}
+    }
+  }
+}

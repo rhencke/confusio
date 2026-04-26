@@ -1,0 +1,92 @@
+{
+  "actor": {
+    "nickname": "alice",
+    "display_name": "Alice Smith",
+    "account_id": "5d0301c1-d83e-4a87-bc09-abcdef123456",
+    "links": {
+      "avatar": {"href": ""},
+      "html": {"href": "http://localhost/alice"}
+    }
+  },
+  "push": {
+    "changes": [
+      {
+        "new": {
+          "type": "branch",
+          "name": "main",
+          "target": {
+            "hash": "da1560886d4f094c3e6c9ef40349f7d38b5d27d0",
+            "message": "Fix login bug",
+            "date": "2024-01-15T10:00:00+00:00",
+            "author": {
+              "raw": "Alice Smith <alice@example.com>",
+              "user": {
+                "nickname": "alice",
+                "display_name": "Alice Smith",
+                "account_id": "5d0301c1-d83e-4a87-bc09-abcdef123456",
+                "links": {"avatar": {"href": ""}, "html": {"href": ""}}
+              }
+            },
+            "parents": [
+              {"hash": "95790bf891e76fee5db5ef17d2523a6f6e048239"}
+            ],
+            "links": {"html": {"href": "http://localhost/octocat/hello-world/commits/da1560886d4f094c3e6c9ef40349f7d38b5d27d0"}}
+          },
+          "links": {"html": {"href": "http://localhost/octocat/hello-world/branch/main"}}
+        },
+        "old": {
+          "type": "branch",
+          "name": "main",
+          "target": {
+            "hash": "95790bf891e76fee5db5ef17d2523a6f6e048239"
+          }
+        },
+        "created": false,
+        "closed": false,
+        "forced": false,
+        "truncated": false,
+        "commits": [
+          {
+            "hash": "da1560886d4f094c3e6c9ef40349f7d38b5d27d0",
+            "message": "Fix login bug",
+            "date": "2024-01-15T10:00:00+00:00",
+            "author": {
+              "raw": "Alice Smith <alice@example.com>",
+              "user": {
+                "nickname": "alice",
+                "display_name": "Alice Smith",
+                "account_id": "5d0301c1-d83e-4a87-bc09-abcdef123456",
+                "links": {"avatar": {"href": ""}, "html": {"href": ""}}
+              }
+            },
+            "parents": [{"hash": "95790bf891e76fee5db5ef17d2523a6f6e048239"}],
+            "links": {"html": {"href": ""}}
+          }
+        ],
+        "links": {
+          "html": {"href": "http://localhost/octocat/hello-world/branches/compare/da1560886d4f094c3e6c9ef40349f7d38b5d27d0..95790bf891e76fee5db5ef17d2523a6f6e048239"},
+          "diff": {"href": "http://localhost/octocat/hello-world/diff/da1560886d4f094c3e6c9ef40349f7d38b5d27d0..95790bf891e76fee5db5ef17d2523a6f6e048239"}
+        }
+      }
+    ]
+  },
+  "repository": {
+    "full_name": "octocat/hello-world",
+    "name": "hello-world",
+    "slug": "hello-world",
+    "is_private": false,
+    "description": "My first repo",
+    "mainbranch": {"name": "main"},
+    "owner": {
+      "nickname": "octocat",
+      "display_name": "The Octocat",
+      "account_id": "owner-account-id",
+      "type": "user",
+      "links": {"avatar": {"href": ""}, "html": {"href": "http://localhost/octocat"}}
+    },
+    "links": {
+      "html": {"href": "http://localhost/octocat/hello-world"},
+      "self": {"href": ""}
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "actor": {
+    "nickname": "bob",
+    "display_name": "Bob Jones",
+    "account_id": "6e0401d2-e94f-5b98-cd10-bcdef234567",
+    "links": {
+      "avatar": {"href": ""},
+      "html": {"href": "http://localhost/bob"}
+    }
+  },
+  "push": {
+    "changes": [
+      {
+        "new": null,
+        "old": {
+          "type": "branch",
+          "name": "stale-branch",
+          "target": {
+            "hash": "95790bf891e76fee5db5ef17d2523a6f6e048239"
+          }
+        },
+        "created": false,
+        "closed": true,
+        "forced": false,
+        "truncated": false,
+        "commits": [],
+        "links": {
+          "html": {"href": ""},
+          "diff": {"href": ""}
+        }
+      }
+    ]
+  },
+  "repository": {
+    "full_name": "octocat/hello-world",
+    "name": "hello-world",
+    "slug": "hello-world",
+    "is_private": false,
+    "description": "My first repo",
+    "mainbranch": {"name": "main"},
+    "owner": {
+      "nickname": "octocat",
+      "display_name": "The Octocat",
+      "account_id": "owner-account-id",
+      "type": "user",
+      "links": {"avatar": {"href": ""}, "html": {"href": "http://localhost/octocat"}}
+    },
+    "links": {
+      "html": {"href": "http://localhost/octocat/hello-world"},
+      "self": {"href": ""}
+    }
+  }
+}
