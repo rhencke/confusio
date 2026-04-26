@@ -3148,18 +3148,156 @@ beyond what `status` can express.
 
 ### Security events
 
-No security event families are currently in scope for the GitHub-emulation output.
-GitHub's `security_advisory`, `secret_scanning_alert`, `dependabot_alert`, and
-`code_scanning_alert` events are GitHub-specific and have no cross-forge equivalents in
-any backend confusio supports.
+GitHub's security event families are GitHub-specific and have no cross-forge equivalents
+in any backend confusio currently supports.  When the originating backend is GitHub itself,
+these events pass through verbatim.  For all other backends they are silently dropped —
+there is no mapping target.
 
-When the originating backend is GitHub itself, these events are passed through verbatim as
-GitHub-emulation webhooks (no field translation needed).  For all other backends they are
-silently dropped — there is no mapping target.
+| GitHub event | Emitted from GitHub backend | Emitted from other backends |
+|---|---|---|
+| `security_advisory` | ✓ pass-through | ✗ |
+| `code_scanning_alert` | ✓ pass-through | ✗ |
+| `secret_scanning_alert` | ✓ pass-through | ✗ |
+| `secret_scanning_alert_location` | ✓ pass-through | ✗ |
+| `dependabot_alert` | ✓ pass-through | ✗ |
+
+Because these events are exclusively emitted from the GitHub backend, the field tables
+below use a two-column format: `github` (native pass-through, all fields `✓`) and
+`All others` (not applicable, all fields `—`).
 
 Future work may introduce confusio-normalized `security_finding` or `advisory` event
 families for backends that expose vulnerability or secret-scanning data through their own
 APIs (e.g. GitLab's security findings, Gitea's audit log).
+
+#### `security_advisory`
+
+Triggered when a GitHub security advisory is published, updated, or withdrawn.
+
+| GitHub field | github | All others |
+|---|---|---|
+| `action` | ✓ | — |
+| `security_advisory` | ✓ | — |
+| `enterprise` | ✓ | — |
+| `installation` | ✓ | — |
+| `organization` | ✓ | — |
+| `repository` | ✓ | — |
+| `sender` | ✓ | — |
+
+**Supported actions:**
+
+| Action | github | All others |
+|--------|--------|------------|
+| `published` | ✓ | — |
+| `updated` | ✓ | — |
+| `withdrawn` | ✓ | — |
+
+#### `code_scanning_alert`
+
+Triggered when a code scanning alert is created, closed, fixed, or reassigned.
+
+| GitHub field | github | All others |
+|---|---|---|
+| `action` | ✓ | — |
+| `alert` | ✓ | — |
+| `enterprise` | ✓ | — |
+| `installation` | ✓ | — |
+| `organization` | ✓ | — |
+| `repository` | ✓ | — |
+| `sender` | ✓ | — |
+
+**Supported actions:**
+
+| Action | github | All others |
+|--------|--------|------------|
+| `appeared_in_branch` | ✓ | — |
+| `closed_by_user` | ✓ | — |
+| `created` | ✓ | — |
+| `fixed` | ✓ | — |
+| `reopened` | ✓ | — |
+| `reopened_by_user` | ✓ | — |
+| `updated_assignment` | ✓ | — |
+
+#### `secret_scanning_alert`
+
+Triggered when a secret scanning alert is created, resolved, validated, or assigned.
+
+| GitHub field | github | All others |
+|---|---|---|
+| `action` | ✓ | — |
+| `alert` | ✓ | — |
+| `assignee` | ✓ | — |
+| `enterprise` | ✓ | — |
+| `installation` | ✓ | — |
+| `organization` | ✓ | — |
+| `repository` | ✓ | — |
+| `sender` | ✓ | — |
+
+**Supported actions:**
+
+| Action | github | All others |
+|--------|--------|------------|
+| `assigned` | ✓ | — |
+| `created` | ✓ | — |
+| `publicly_leaked` | ✓ | — |
+| `reopened` | ✓ | — |
+| `resolved` | ✓ | — |
+| `unassigned` | ✓ | — |
+| `validated` | ✓ | — |
+
+**Notes:**
+- `assignee`: present only for `assigned` and `unassigned` actions; `null` for all others.
+
+#### `secret_scanning_alert_location`
+
+Triggered when a new location is discovered for an existing secret scanning alert.
+Subscribe to this event alongside `secret_scanning_alert` to receive location-level detail.
+
+| GitHub field | github | All others |
+|---|---|---|
+| `action` | ✓ | — |
+| `alert` | ✓ | — |
+| `installation` | ✓ | — |
+| `location` | ✓ | — |
+| `organization` | ✓ | — |
+| `repository` | ✓ | — |
+| `sender` | ✓ | — |
+
+**Supported actions:**
+
+| Action | github | All others |
+|--------|--------|------------|
+| `created` | ✓ | — |
+
+#### `dependabot_alert`
+
+Triggered when a Dependabot alert is created, dismissed, fixed, or reassigned.
+
+| GitHub field | github | All others |
+|---|---|---|
+| `action` | ✓ | — |
+| `alert` | ✓ | — |
+| `enterprise` | ✓ | — |
+| `installation` | ✓ | — |
+| `organization` | ✓ | — |
+| `repository` | ✓ | — |
+| `sender` | ✓ | — |
+
+**Supported actions:**
+
+| Action | github | All others |
+|--------|--------|------------|
+| `assignees_changed` | ✓ | — |
+| `auto_dismissed` | ✓ | — |
+| `auto_reopened` | ✓ | — |
+| `created` | ✓ | — |
+| `dismissed` | ✓ | — |
+| `fixed` | ✓ | — |
+| `reintroduced` | ✓ | — |
+| `reopened` | ✓ | — |
+
+**Notes:**
+- `dependabot_alert` supersedes the older `repository_vulnerability_alert` event, which
+  is closing down.  New integrations should subscribe to `dependabot_alert` instead.
 
 ---
 
