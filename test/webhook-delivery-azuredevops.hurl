@@ -206,7 +206,7 @@ HTTP 200
 
 POST http://{{host}}/webhooks/azuredevops
 Content-Type: application/json
-file,fixtures/webhooks/azuredevops/git.push-push.json;
+file,fixtures/webhooks/azuredevops/git.push.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
