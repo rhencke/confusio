@@ -16,13 +16,8 @@
 #    source file is hand-maintained and committed; the derived file is
 #    gitignored.
 #
-#    Currently generated (source → derived):
-#      <backend>/create.json → <backend>/delete.json
-#
-#    Backends covered: gitea, gitbucket, gitlab, pagure, azuredevops,
-#    bitbucket_datacenter.  (Bitbucket Cloud is omitted — the create/delete
-#    payloads have structurally different shapes, not just field value
-#    changes.)
+#    Table format: backend|src_file|dst_file|jq-filter
+#    The filter is applied to <backend>/<src_file> → <backend>/<dst_file>.
 #
 # Usage:
 #   scripts/gen-webhook-fixtures.sh [test_dir]
@@ -40,37 +35,90 @@ if [ ! -d "$FIXTURES/gitea" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 1. Within-backend variants: derive delete.json from create.json
+# 1. Within-backend variants
 #
-# Run this BEFORE the cross-backend alias step so that gitea/delete.json
-# exists when forgejo is generated from gitea.
+# Run this BEFORE the cross-backend alias step so that all generated gitea/
+# files exist when forgejo is derived from gitea.
 #
-# Table format: backend|jq-filter
-# The filter is applied to <backend>/create.json → <backend>/delete.json.
+# Table format: backend|src_file|dst_file|jq-filter
+# The filter is applied to <backend>/<src_file> → <backend>/<dst_file>.
 # ---------------------------------------------------------------------------
-while IFS='|' read -r backend filter; do
-  src="$FIXTURES/$backend/create.json"
-  dst="$FIXTURES/$backend/delete.json"
-  if [ ! -f "$src" ]; then
-    echo "WARNING: source not found, skipping: $src" >&2
+while IFS='|' read -r backend src dst filter; do
+  srcpath="$FIXTURES/$backend/$src"
+  dstpath="$FIXTURES/$backend/$dst"
+  if [ ! -f "$srcpath" ]; then
+    echo "WARNING: source not found, skipping: $srcpath" >&2
     continue
   fi
-  jq "$filter" "$src" > "$dst"
-  echo "gen-webhook-fixtures: $backend/delete.json (from create.json)"
+  jq "$filter" "$srcpath" > "$dstpath"
+  echo "gen-webhook-fixtures: $backend/$dst (from $src)"
 done <<'VARIANTS'
-gitea|.ref = "old-branch"
-gitbucket|.ref = "stale-branch"
-gitlab|.before = "95790bf891e76fee5db5ef17d2523a6f6e048239" | .after = "0000000000000000000000000000000000000000" | .ref = "refs/heads/stale-branch" | .checkout_sha = null
-pagure|.msg.branch = "refs/heads/stale-branch" | .msg.start_commit = "95790bf891e76fee5db5ef17d2523a6f6e048239" | .msg.end_commit = "0000000000000000000000000000000000000000"
-azuredevops|.resource.refUpdates[0].name = "refs/heads/stale-branch" | .resource.refUpdates[0].oldObjectId = "95790bf891e76fee5db5ef17d2523a6f6e048239" | .resource.refUpdates[0].newObjectId = "0000000000000000000000000000000000000000" | .resource.pushId = 3 | .createdDate = "2024-01-15T12:00:00Z"
-bitbucket_datacenter|.changes[0].ref.id = "refs/heads/stale-branch" | .changes[0].ref.displayId = "stale-branch" | .changes[0].refId = "refs/heads/stale-branch" | .changes[0].fromHash = "95790bf891e76fee5db5ef17d2523a6f6e048239" | .changes[0].toHash = "0000000000000000000000000000000000000000" | .changes[0].type = "DELETE"
+gitea|create.json|delete.json|.ref = "old-branch"
+gitbucket|create.json|delete.json|.ref = "stale-branch"
+gitlab|create.json|delete.json|.before = "95790bf891e76fee5db5ef17d2523a6f6e048239" | .after = "0000000000000000000000000000000000000000" | .ref = "refs/heads/stale-branch" | .checkout_sha = null
+pagure|create.json|delete.json|.msg.branch = "refs/heads/stale-branch" | .msg.start_commit = "95790bf891e76fee5db5ef17d2523a6f6e048239" | .msg.end_commit = "0000000000000000000000000000000000000000"
+azuredevops|create.json|delete.json|.resource.refUpdates[0].name = "refs/heads/stale-branch" | .resource.refUpdates[0].oldObjectId = "95790bf891e76fee5db5ef17d2523a6f6e048239" | .resource.refUpdates[0].newObjectId = "0000000000000000000000000000000000000000" | .resource.pushId = 3 | .createdDate = "2024-01-15T12:00:00Z"
+bitbucket_datacenter|create.json|delete.json|.changes[0].ref.id = "refs/heads/stale-branch" | .changes[0].ref.displayId = "stale-branch" | .changes[0].refId = "refs/heads/stale-branch" | .changes[0].fromHash = "95790bf891e76fee5db5ef17d2523a6f6e048239" | .changes[0].toHash = "0000000000000000000000000000000000000000" | .changes[0].type = "DELETE"
+gitea|issues-opened.json|issues-closed.json|.action = "closed" | .issue.state = "closed" | .issue.updated = "2024-01-15T10:02:00Z" | .issue.closed = "2024-01-15T10:02:00Z" | .sender.login = "octocat"
+gitea|issues-opened.json|issues-reopened.json|.action = "reopened" | .issue.updated = "2024-01-15T10:03:00Z" | .sender.login = "octocat"
+gitea|issues-opened.json|issues-assigned.json|.action = "assigned" | .issue.body = null | .issue.assignees = [{"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}] | .issue.updated = "2024-01-15T10:03:00Z" | .assignee = {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
+gitea|issues-opened.json|issues-edited.json|.action = "edited" | .issue.title = "Bug report (edited)" | .issue.body = "Updated description" | .issue.updated = "2024-01-15T10:01:00Z" | .changes = {"title": {"from": "Bug report"}, "body": {"from": "Something is broken"}}
+gitea|issues-opened.json|issues-labeled.json|.action = "labeled" | .issue.body = null | .issue.labels = [{"id": 5, "name": "bug", "color": "#d73a4a", "url": ""}] | .issue.updated = "2024-01-15T10:01:00Z" | .label = {"id": 5, "name": "bug", "color": "#d73a4a", "url": ""}
+gitea|issues-opened.json|issues-unlabeled.json|.action = "unlabeled" | .issue.body = null | .issue.updated = "2024-01-15T10:02:00Z" | .label = {"id": 5, "name": "bug", "color": "#d73a4a", "url": ""}
+gitea|issues-opened.json|issues-unassigned.json|.action = "unassigned" | .issue.body = null | .issue.updated = "2024-01-15T10:04:00Z" | .assignee = {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
+gitea|milestone-created.json|milestone-closed.json|.action = "closed" | .milestone.state = "closed" | .milestone.closed_issues = 5 | .milestone.updated_at = "2024-06-01T10:00:00Z" | .milestone.closed_at = "2024-06-01T10:00:00Z" | .sender.login = "octocat"
+gitea|milestone-created.json|milestone-deleted.json|.action = "deleted" | .milestone.description = null | .milestone.due_on = null
+gitea|milestone-created.json|milestone-edited.json|.action = "edited" | .milestone.title = "v2.1" | .milestone.description = "Version 2.1 release" | .milestone.due_on = "2024-07-01T00:00:00Z" | .milestone.updated_at = "2024-01-16T10:00:00Z" | .changes = {"title": {"from": "v2.0"}}
+gitea|milestone-created.json|milestone-reopened.json|.action = "reopened" | .milestone.open_issues = 2 | .milestone.closed_issues = 3 | .milestone.due_on = "2024-09-01T00:00:00Z" | .milestone.updated_at = "2024-07-01T10:00:00Z" | .sender.login = "octocat"
+gitea|label-created.json|label-deleted.json|.action = "deleted"
+gitea|label-created.json|label-edited.json|.action = "edited" | .label.color = "#0075ca" | .changes = {"color": {"from": "#a2eeef"}}
+gitea|issue_comment-created.json|issue_comment-deleted.json|.action = "deleted"
+gitea|issue_comment-created.json|issue_comment-edited.json|.action = "edited" | .comment.body = "Confirmed, I can reproduce this. (edited)" | .comment.updated = "2024-01-15T11:05:00Z" | .changes = {"body": {"from": "Confirmed, I can reproduce this."}}
+gitea|pull_request_review_comment-created.json|pull_request_review_comment-deleted.json|.action = "deleted" | .pull_request.updated = "2024-01-15T11:20:00Z"
+gitea|pull_request_review_comment-created.json|pull_request_review_comment-edited.json|.action = "edited" | .comment.body = "Please simplify this. (edited)" | .comment.updated_at = "2024-01-15T11:10:00Z" | .changes = {"body": {"from": "Please simplify this."}} | .pull_request.updated = "2024-01-15T11:10:00Z"
+gitea|workflow_run-requested.json|workflow_run-in_progress.json|.action = "in_progress" | .workflow_run.status = "in_progress" | .workflow_run.updated_at = "2024-01-15T11:01:00Z"
+gitbucket|issues-opened.json|issues-closed.json|.action = "closed" | .issue.state = "closed" | .issue.updated_at = "2024-01-15T11:00:00Z" | .issue.closed_at = "2024-01-15T11:00:00Z" | .sender.id = 2 | .sender.login = "bob"
+gitbucket|issues-opened.json|issues-edited.json|.action = "edited" | .issue.title = "Bug report (updated)" | .issue.body = "Something is broken \u2014 updated description" | .issue.updated_at = "2024-01-15T10:30:00Z"
+gitbucket|issues-opened.json|issues-reopened.json|.action = "reopened" | .issue.updated_at = "2024-01-15T12:00:00Z" | .sender.id = 2 | .sender.login = "bob"
+gitbucket|issues-opened.json|issues-assigned.json|.action = "assigned" | .issue.assignees = [{"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}] | .issue.updated_at = "2024-01-15T10:10:00Z" | .assignee = {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
+gitbucket|issues-opened.json|issues-labeled.json|.action = "labeled" | .issue.labels = [{"id": 5, "name": "bug", "color": "d73a4a"}] | .issue.updated_at = "2024-01-15T10:05:00Z" | .label = {"id": 5, "name": "bug", "color": "d73a4a"} | .sender.id = 2 | .sender.login = "bob"
+gitbucket|issues-opened.json|issues-unlabeled.json|.action = "unlabeled" | .issue.updated_at = "2024-01-15T10:07:00Z" | .label = {"id": 5, "name": "bug", "color": "d73a4a"} | .sender.id = 2 | .sender.login = "bob"
+gitbucket|milestone-created.json|milestone-closed.json|.action = "closed" | .milestone.state = "closed" | .milestone.closed_issues = 5 | .milestone.updated_at = "2024-02-28T12:00:00Z" | .milestone.closed_at = "2024-02-28T12:00:00Z" | .sender.id = 2 | .sender.login = "bob"
+gitbucket|milestone-created.json|milestone-edited.json|.action = "edited" | .milestone.title = "v1.0 Final" | .milestone.description = "First stable release (updated)" | .milestone.open_issues = 2 | .milestone.closed_issues = 3 | .milestone.due_on = "2024-03-15T00:00:00Z" | .milestone.updated_at = "2024-01-20T09:00:00Z"
+gitbucket|label-created.json|label-deleted.json|.action = "deleted" | .label.color = "0075ca"
+gitbucket|label-created.json|label-edited.json|.action = "edited" | .label.color = "0075ca" | .changes = {"color": {"from": "a2eeef"}, "name": {"from": "enhancement"}}
+gitbucket|issue_comment-created.json|issue_comment-deleted.json|.action = "deleted" | .issue.updated_at = "2024-01-15T10:25:00Z"
+gitbucket|issue_comment-created.json|issue_comment-edited.json|.action = "edited" | .issue.updated_at = "2024-01-15T10:20:00Z" | .comment.body = "I can reproduce this too. (edited)" | .comment.updated_at = "2024-01-15T10:20:00Z"
+gitbucket|pull_request_review-submitted.json|pull_request_review-dismissed.json|.action = "dismissed" | .review.state = "DISMISSED" | .review.body = "Review dismissed." | .pull_request.updated_at = "2024-01-15T14:00:00Z" | .sender.id = 1 | .sender.login = "alice"
+gitlab|issues-opened.json|issues-closed.json|.object_attributes.state = "closed" | .object_attributes.action = "close" | .object_attributes.updated_at = "2024-01-15T10:01:00Z" | .object_attributes.closed_at = "2024-01-15T10:01:00Z"
+gitlab|issues-opened.json|issues-edited.json|.object_attributes.title = "Found a bug (updated)" | .object_attributes.description = "Something broke, with more details." | .object_attributes.action = "update" | .object_attributes.updated_at = "2024-01-15T10:03:00Z"
+gitlab|issues-opened.json|issues-reopened.json|.object_attributes.action = "reopen" | .object_attributes.updated_at = "2024-01-15T10:02:00Z"
+gitlab|label-created.json|label-edited.json|.object_attributes.title = "bug (renamed)" | .object_attributes.action = "update" | .object_attributes.updated_at = "2024-01-15T12:01:00Z"
+gitlab|milestone-created.json|milestone-closed.json|.object_attributes.state = "closed" | .object_attributes.action = "close" | .object_attributes.updated_at = "2024-01-15T13:01:00Z" | .object_attributes.closed_at = "2024-01-15T13:01:00Z"
+gitlab|milestone-created.json|milestone-opened.json|.object_attributes.action = "reopen" | .object_attributes.updated_at = "2024-01-15T13:02:00Z"
+gitlab|milestone-created.json|milestone-edited.json|.object_attributes.title = "v1.0 (updated)" | .object_attributes.description = "First major release" | .object_attributes.action = "update" | .object_attributes.due_date = "2024-04-01" | .object_attributes.updated_at = "2024-01-15T13:03:00Z"
+gitlab|issue_comment-created.json|issue_comment-deleted.json|.object_attributes.note = "This comment was deleted." | .object_attributes.action = "destroy" | .object_attributes.updated_at = "2024-01-15T11:02:00Z"
+gitlab|issue_comment-created.json|issue_comment-edited.json|.object_attributes.note = "This is an edited comment." | .object_attributes.action = "update" | .object_attributes.updated_at = "2024-01-15T11:01:00Z"
+gitlab|pull_request_review-submitted.json|pull_request_review-dismissed.json|.object_attributes.action = "unapproved" | .object_attributes.updated_at = "2024-01-15T15:01:00Z"
+gitlab|workflow_run-requested.json|workflow_run-in_progress.json|.object_attributes.status = "running" | .object_attributes.started_at = "2024-01-15T16:01:00Z"
+gitlab|workflow_run-requested.json|workflow_run-completed.json|.object_attributes.status = "success" | .object_attributes.started_at = "2024-01-15T16:01:00Z" | .object_attributes.finished_at = "2024-01-15T16:05:00Z"
+gitlab|workflow_job-queued.json|workflow_job-in_progress.json|.build_status = "running" | .build_started_at = "2024-01-15T16:01:30Z"
+gitlab|workflow_job-queued.json|workflow_job-completed.json|.build_status = "success" | .build_started_at = "2024-01-15T16:01:30Z" | .build_finished_at = "2024-01-15T16:03:00Z"
+bitbucket|issues-opened.json|issues-closed.json|.issue.state = "resolved" | .issue.updated_on = "2024-01-15T12:00:00+00:00" | .changes = {"status": {"old": "open", "new": "resolved"}}
+bitbucket|issues-opened.json|issues-edited.json|.issue.title = "Found a bug (updated)" | .issue.updated_on = "2024-01-15T11:00:00+00:00" | .changes = {}
+bitbucket|issues-opened.json|issues-reopened.json|.issue.updated_on = "2024-01-15T13:00:00+00:00" | .changes = {"status": {"old": "resolved", "new": "open"}}
+bitbucket|status-created-success.json|status-updated-pending.json|.commit_status.description = "Build in progress." | .commit_status.state = "INPROGRESS" | .commit_status.url = "https://ci.example.com/build/43" | .commit_status.updated_on = "2024-01-15T10:10:00+00:00"
+bitbucket_datacenter|status-created-success.json|status-updated-pending.json|.buildStatus.state = "INPROGRESS" | .buildStatus.url = "https://ci.example.com/build/43" | .buildStatus.description = "Build in progress." | .buildStatus.updatedDate = 1705313400000
+gerrit|comment-added-approved.json|comment-added-changes_requested.json|.change.updated = "2024-01-15T11:30:00Z" | .comment = "This needs more work. -2" | .approvals[0].value = "-2"
+harness|pipeline_execution_started.json|pipeline_execution_success.json|.eventType = "pipeline_execution_success" | .endTs = 1705313400000
+harness|stage_execution_started.json|stage_execution_success.json|.eventType = "stage_execution_success" | .endTs = 1705313300000
 VARIANTS
 
 # ---------------------------------------------------------------------------
 # 2. Cross-backend aliases: derive forgejo/ from gitea/
 #
-# Must run AFTER step 1 so that gitea/delete.json (generated above) is
-# present and gets copied into forgejo/ as well.
+# Must run AFTER step 1 so that all generated gitea/ files exist and get
+# copied into forgejo/ as well.
 # ---------------------------------------------------------------------------
 for backend in forgejo; do
   out_dir="$FIXTURES/$backend"
