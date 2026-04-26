@@ -97,6 +97,7 @@ gitbucket|issue_comment-created.json|issue_comment-edited.json|.action = "edited
 gitbucket|pull_request_review-submitted.json|pull_request_review-dismissed.json|.action = "dismissed" | .review.state = "DISMISSED" | .review.body = "Review dismissed." | .pull_request.updated_at = "2024-01-15T14:00:00Z" | .sender.id = 1 | .sender.login = "alice"
 gitbucket|release-published.json|release-edited.json|.action = "edited" | .release.name = "Release 1.0.0 (edited)" | .release.body = "First release (edited)" | .changes = {}
 gitbucket|release-published.json|release-deleted.json|.action = "deleted"
+gitbucket|repository-created.json|repository-deleted.json|.action = "deleted"
 gitlab|issues-opened.json|issues-closed.json|.object_attributes.state = "closed" | .object_attributes.action = "close" | .object_attributes.updated_at = "2024-01-15T10:01:00Z" | .object_attributes.closed_at = "2024-01-15T10:01:00Z"
 gitlab|issues-opened.json|issues-edited.json|.object_attributes.title = "Found a bug (updated)" | .object_attributes.description = "Something broke, with more details." | .object_attributes.action = "update" | .object_attributes.updated_at = "2024-01-15T10:03:00Z"
 gitlab|issues-opened.json|issues-reopened.json|.object_attributes.action = "reopen" | .object_attributes.updated_at = "2024-01-15T10:02:00Z"
