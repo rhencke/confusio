@@ -3156,10 +3156,12 @@ there is no mapping target.
 | GitHub event | Emitted from GitHub backend | Emitted from other backends |
 |---|---|---|
 | `security_advisory` | ✓ pass-through | ✗ |
+| `repository_advisory` | ✓ pass-through | ✗ |
 | `code_scanning_alert` | ✓ pass-through | ✗ |
 | `secret_scanning_alert` | ✓ pass-through | ✗ |
 | `secret_scanning_alert_location` | ✓ pass-through | ✗ |
 | `dependabot_alert` | ✓ pass-through | ✗ |
+| `repository_vulnerability_alert` | ✓ pass-through | ✗ |
 | `branch_protection_rule` | ✓ pass-through | ✗ |
 | `branch_protection_configuration` | ✓ pass-through | ✗ |
 
@@ -3300,6 +3302,58 @@ Triggered when a Dependabot alert is created, dismissed, fixed, or reassigned.
 **Notes:**
 - `dependabot_alert` supersedes the older `repository_vulnerability_alert` event, which
   is closing down.  New integrations should subscribe to `dependabot_alert` instead.
+
+#### `repository_advisory`
+
+Triggered when a repository security advisory is published or reported.
+
+| GitHub field | github | All others |
+|---|---|---|
+| `action` | ✓ | — |
+| `enterprise` | ✓ | — |
+| `installation` | ✓ | — |
+| `organization` | ✓ | — |
+| `repository` | ✓ | — |
+| `repository_advisory` | ✓ | — |
+| `sender` | ✓ | — |
+
+**Supported actions:**
+
+| Action | github | All others |
+|--------|--------|------------|
+| `published` | ✓ | — |
+| `reported` | ✓ | — |
+
+#### `repository_vulnerability_alert`
+
+Triggered when a repository vulnerability alert is created, dismissed, reopened, or
+resolved.  This event is the deprecated predecessor to `dependabot_alert`; confusio
+normalises incoming `repository_vulnerability_alert` events to the `dependabot_alert`
+event family with translated action names.
+
+| GitHub field | github | All others |
+|---|---|---|
+| `action` | ✓ | — |
+| `alert` | ✓ | — |
+| `enterprise` | ✓ | — |
+| `installation` | ✓ | — |
+| `organization` | ✓ | — |
+| `repository` | ✓ | — |
+| `sender` | ✓ | — |
+
+**Supported actions (emitted as `dependabot_alert`):**
+
+| Wire action | Emitted action |
+|-------------|----------------|
+| `create` | `created` |
+| `dismiss` | `dismissed` |
+| `reopen` | `reopened` |
+| `resolve` | `fixed` |
+
+**Notes:**
+- `repository_vulnerability_alert` is deprecated.  Prefer `dependabot_alert` for new
+  integrations.  confusio translates the legacy wire actions to `dependabot_alert`
+  action names so subscribers to `dependabot_alert` receive both event streams.
 
 #### `branch_protection_rule`
 
