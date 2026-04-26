@@ -2883,4 +2883,34 @@ b:webhook("repository_vulnerability_alert", function(payload)
   })
 end)
 
+-- member: repository collaborator added, removed, or edited.
+-- GitBucket sends X-GitHub-Event: member with GitHub-compatible payload.
+-- Actions are already GitHub-compatible; pass through as-is.
+local GB_MEMBER_ACTIONS = {
+  added = "added",
+  edited = "edited",
+  removed = "removed",
+}
+
+b:webhook("member", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_MEMBER_ACTIONS[raw_action]
+  local data = {
+    action = action or "unknown",
+    member = payload.member or {},
+    changes = payload.changes or {},
+    repository = payload.repository or {},
+    sender = payload.sender or {},
+  }
+  return make_internal_event({
+    event = "member",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = data,
+    timestamp = "",
+  })
+end)
+
 b:build()

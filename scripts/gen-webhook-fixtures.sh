@@ -109,6 +109,7 @@ gitbucket|secret_scanning_alert-created.json|secret_scanning_alert-resolved.json
 gitbucket|security_advisory-published.json|security_advisory-withdrawn.json|.action = "withdrawn" | .security_advisory.withdrawn_at = "2024-01-16T12:00:00Z" | .security_advisory.updated_at = "2024-01-16T12:00:00Z"
 gitbucket|repository_advisory-published.json|repository_advisory-reported.json|.action = "reported" | .repository_advisory.state = "reported" | .repository_advisory.updated_at = "2024-01-16T11:00:00Z"
 gitbucket|repository_vulnerability_alert-create.json|repository_vulnerability_alert-dismiss.json|.action = "dismiss" | .alert.dismisser = {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""} | .alert.dismiss_reason = "tolerable_risk" | .alert.dismissed_at = "2024-01-16T10:00:00Z" | .sender.id = 2 | .sender.login = "bob"
+gitbucket|member-added.json|member-removed.json|.action = "removed" | .sender.id = 2 | .sender.login = "bob"
 gitlab|issues-opened.json|issues-closed.json|.object_attributes.state = "closed" | .object_attributes.action = "close" | .object_attributes.updated_at = "2024-01-15T10:01:00Z" | .object_attributes.closed_at = "2024-01-15T10:01:00Z"
 gitlab|issues-opened.json|issues-edited.json|.object_attributes.title = "Found a bug (updated)" | .object_attributes.description = "Something broke, with more details." | .object_attributes.action = "update" | .object_attributes.updated_at = "2024-01-15T10:03:00Z"
 gitlab|issues-opened.json|issues-reopened.json|.object_attributes.action = "reopen" | .object_attributes.updated_at = "2024-01-15T10:02:00Z"

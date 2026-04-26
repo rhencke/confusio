@@ -98,6 +98,7 @@ test/fixtures/webhooks/gitbucket/secret_scanning_alert-resolved.json
 test/fixtures/webhooks/gitbucket/security_advisory-withdrawn.json
 test/fixtures/webhooks/gitbucket/repository_advisory-reported.json
 test/fixtures/webhooks/gitbucket/repository_vulnerability_alert-dismiss.json
+test/fixtures/webhooks/gitbucket/member-removed.json
 test/fixtures/webhooks/gerrit/comment-added-changes_requested.json
 test/fixtures/webhooks/harness/pipeline_execution_success.json
 test/fixtures/webhooks/harness/stage_execution_success.json
