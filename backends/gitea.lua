@@ -7695,6 +7695,27 @@ b:webhook("repository", function(payload)
   })
 end)
 
+-- gollum: wiki page created or edited.
+-- Gitea sends X-Gitea-Event: gollum with GitHub-compatible payload.
+-- The pages[] array carries the per-page action; there is no top-level action.
+b:webhook("gollum", function(payload)
+  local pages = payload.pages or {}
+  local first_action = (pages[1] or {}).action or "edited"
+  local data = {
+    pages = pages,
+    repository = translate_repo(payload.repository or {}),
+    sender = translate_user(payload.sender or {}),
+  }
+  return make_internal_event({
+    event = "gollum",
+    action = first_action,
+    provider = "gitea",
+    raw = payload,
+    data = data,
+    timestamp = "",
+  })
+end)
+
 b:capability("repos", repos)
 b:capability("users", users)
 b:capability("orgs", orgs)

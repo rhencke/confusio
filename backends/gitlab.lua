@@ -7064,6 +7064,41 @@ b:webhook("System Hook", function(payload)
   })
 end)
 
+-- gollum: wiki page created or edited.
+-- GitLab sends X-Gitlab-Event: Wiki Page Hook with object_kind = "wiki_page".
+-- GitLab actions: "create" → "created", "update" → "edited".
+local GL_WIKI_ACTIONS = { create = "created", update = "edited" }
+
+b:webhook("Wiki Page Hook", function(payload)
+  local oa = payload.object_attributes or {}
+  local raw_action = oa.action or "update"
+  local action = GL_WIKI_ACTIONS[raw_action] or "edited"
+  local user = payload.user or {}
+  local project = payload.project or {}
+  -- Build a GitHub-style page object from GitLab's wiki page hook fields.
+  local page = {
+    page_name = oa.slug or oa.title or "",
+    title = oa.title or "",
+    summary = oa.message or nil,
+    action = action,
+    sha = oa.version_id or "",
+    html_url = oa.url or "",
+  }
+  local data = {
+    pages = { page },
+    repository = translate_gl_repo(project),
+    sender = translate_gl_user(user),
+  }
+  return make_internal_event({
+    event = "gollum",
+    action = action,
+    provider = config.backend,
+    raw = payload,
+    data = data,
+    timestamp = "",
+  })
+end)
+
 b:capability("repos", repos)
 b:capability("users", users)
 b:capability("orgs", orgs)

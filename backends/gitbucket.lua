@@ -2601,6 +2601,27 @@ b:webhook("fork", function(payload)
   })
 end)
 
+-- gollum: wiki page created or edited.
+-- GitBucket sends X-GitHub-Event: gollum with GitHub-compatible payload.
+-- The pages[] array carries the per-page action; there is no top-level action.
+b:webhook("gollum", function(payload)
+  local pages = payload.pages or {}
+  local first_action = (pages[1] or {}).action or "edited"
+  local data = {
+    pages = pages,
+    repository = payload.repository or {},
+    sender = payload.sender or {},
+  }
+  return make_internal_event({
+    event = "gollum",
+    action = first_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = data,
+    timestamp = "",
+  })
+end)
+
 -- repository: lifecycle events.  GitBucket emits GitHub-compatible repository
 -- payloads for created and deleted actions in newer versions; pass through as-is.
 -- Rename/transfer/visibility actions are not emitted by GitBucket.

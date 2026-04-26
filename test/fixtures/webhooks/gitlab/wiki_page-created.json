@@ -1,0 +1,39 @@
+{
+  "object_kind": "wiki_page",
+  "user": {
+    "id": 1,
+    "name": "Alice Smith",
+    "username": "alice",
+    "avatar_url": ""
+  },
+  "project": {
+    "id": 100,
+    "name": "hello-world",
+    "path": "hello-world",
+    "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "avatar_url": null,
+    "git_ssh_url": "",
+    "git_http_url": "",
+    "namespace": "octocat",
+    "visibility_level": 20,
+    "default_branch": "main"
+  },
+  "wiki": {
+    "web_url": "http://localhost/octocat/hello-world/-/wikis",
+    "git_ssh_url": "",
+    "git_http_url": "",
+    "path_with_namespace": "octocat/hello-world.wiki",
+    "default_branch": "main"
+  },
+  "object_attributes": {
+    "title": "Home",
+    "content": "Welcome to the wiki",
+    "format": "markdown",
+    "message": "Initial wiki page",
+    "slug": "home",
+    "url": "http://localhost/octocat/hello-world/-/wikis/home",
+    "action": "create",
+    "version_id": "91ea1bd42aa2ba166b86e8aefe049e9837b5e1c3"
+  }
+}
