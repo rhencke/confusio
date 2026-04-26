@@ -491,6 +491,105 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 
+# ── repo:refs_changed (UPDATE) → push / push ─────────────────────────────────
+
+POST http://{{host}}/webhooks/bitbucket_datacenter
+Content-Type: application/json
+X-Event-Key: repo:refs_changed
+{
+  "actor": {
+    "name": "bob", "id": 2, "slug": "bob",
+    "displayName": "Bob Jones", "emailAddress": "bob@example.com",
+    "links": {"self": [{"href": ""}]}
+  },
+  "repository": {
+    "slug": "hello-world", "id": 10, "name": "hello-world",
+    "description": "My first repo", "public": true,
+    "project": {"key": "OCTOCAT", "id": 1, "name": "octocat", "type": "NORMAL",
+      "links": {"self": [{"href": "http://localhost/projects/OCTOCAT"}]}},
+    "links": {"self": [{"href": "http://localhost/projects/OCTOCAT/repos/hello-world/browse"}]}
+  },
+  "changes": [
+    {
+      "ref": {"id": "refs/heads/main", "displayId": "main", "type": "BRANCH"},
+      "refId": "refs/heads/main",
+      "fromHash": "6dcb09b5b57875f334f61aebed695e2e4193db5e",
+      "toHash": "f1d2d2f924e986ac86fdf7b36c94bcdf32beec15",
+      "type": "UPDATE"
+    }
+  ]
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── repo:refs_changed (ADD) → create / create ─────────────────────────────────
+
+POST http://{{host}}/webhooks/bitbucket_datacenter
+Content-Type: application/json
+X-Event-Key: repo:refs_changed
+{
+  "actor": {
+    "name": "bob", "id": 2, "slug": "bob",
+    "displayName": "Bob Jones", "emailAddress": "bob@example.com",
+    "links": {"self": [{"href": ""}]}
+  },
+  "repository": {
+    "slug": "hello-world", "id": 10, "name": "hello-world",
+    "description": "My first repo", "public": true,
+    "project": {"key": "OCTOCAT", "id": 1, "name": "octocat", "type": "NORMAL",
+      "links": {"self": [{"href": "http://localhost/projects/OCTOCAT"}]}},
+    "links": {"self": [{"href": "http://localhost/projects/OCTOCAT/repos/hello-world/browse"}]}
+  },
+  "changes": [
+    {
+      "ref": {"id": "refs/heads/feature-branch", "displayId": "feature-branch", "type": "BRANCH"},
+      "refId": "refs/heads/feature-branch",
+      "fromHash": "0000000000000000000000000000000000000000",
+      "toHash": "da1560886d4f094c3e6c9ef40349f7d38b5d27d0",
+      "type": "ADD"
+    }
+  ]
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── repo:refs_changed (DELETE) → delete / delete ──────────────────────────────
+
+POST http://{{host}}/webhooks/bitbucket_datacenter
+Content-Type: application/json
+X-Event-Key: repo:refs_changed
+{
+  "actor": {
+    "name": "bob", "id": 2, "slug": "bob",
+    "displayName": "Bob Jones", "emailAddress": "bob@example.com",
+    "links": {"self": [{"href": ""}]}
+  },
+  "repository": {
+    "slug": "hello-world", "id": 10, "name": "hello-world",
+    "description": "My first repo", "public": true,
+    "project": {"key": "OCTOCAT", "id": 1, "name": "octocat", "type": "NORMAL",
+      "links": {"self": [{"href": "http://localhost/projects/OCTOCAT"}]}},
+    "links": {"self": [{"href": "http://localhost/projects/OCTOCAT/repos/hello-world/browse"}]}
+  },
+  "changes": [
+    {
+      "ref": {"id": "refs/heads/stale-branch", "displayId": "stale-branch", "type": "BRANCH"},
+      "refId": "refs/heads/stale-branch",
+      "fromHash": "95790bf891e76fee5db5ef17d2523a6f6e048239",
+      "toHash": "0000000000000000000000000000000000000000",
+      "type": "DELETE"
+    }
+  ]
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
 # ── build:status_created → status / success ───────────────────────────────────
 
 POST http://{{host}}/webhooks/bitbucket_datacenter

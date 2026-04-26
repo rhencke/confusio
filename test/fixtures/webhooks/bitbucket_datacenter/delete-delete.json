@@ -1,0 +1,40 @@
+{
+  "actor": {
+    "name": "bob",
+    "slug": "bob",
+    "id": 2,
+    "displayName": "Bob Jones",
+    "emailAddress": "bob@example.com",
+    "links": {"self": [{"href": "http://localhost/users/bob"}]}
+  },
+  "repository": {
+    "slug": "hello-world",
+    "id": 10,
+    "name": "hello-world",
+    "description": "My first repo",
+    "public": true,
+    "project": {
+      "key": "OCTOCAT",
+      "id": 1,
+      "name": "octocat",
+      "type": "NORMAL",
+      "links": {"self": [{"href": "http://localhost/projects/OCTOCAT"}]}
+    },
+    "links": {
+      "self": [{"href": "http://localhost/projects/OCTOCAT/repos/hello-world/browse"}]
+    }
+  },
+  "changes": [
+    {
+      "ref": {
+        "id": "refs/heads/stale-branch",
+        "displayId": "stale-branch",
+        "type": "BRANCH"
+      },
+      "refId": "refs/heads/stale-branch",
+      "fromHash": "95790bf891e76fee5db5ef17d2523a6f6e048239",
+      "toHash": "0000000000000000000000000000000000000000",
+      "type": "DELETE"
+    }
+  ]
+}
