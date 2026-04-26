@@ -89,7 +89,7 @@ HTTP 200
 POST http://{{host}}/webhooks/bitbucket_datacenter
 Content-Type: application/json
 X-Event-Key: repo:refs_changed
-file,fixtures/webhooks/bitbucket_datacenter/push-push.json;
+file,fixtures/webhooks/bitbucket_datacenter/push.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"

@@ -137,7 +137,7 @@ HTTP 200
 POST http://{{host}}/webhooks/bitbucket
 Content-Type: application/json
 X-Event-Key: repo:push
-file,fixtures/webhooks/bitbucket/push-push.json;
+file,fixtures/webhooks/bitbucket/push.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"

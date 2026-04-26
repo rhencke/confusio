@@ -137,7 +137,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: push
-file,fixtures/webhooks/gitea/push-push.json;
+file,fixtures/webhooks/gitea/push.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -161,7 +161,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: fork
-file,fixtures/webhooks/gitea/fork-fork.json;
+file,fixtures/webhooks/gitea/fork.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"

@@ -137,7 +137,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitlab
 Content-Type: application/json
 X-Gitlab-Event: Push Hook
-file,fixtures/webhooks/gitlab/push-push.json;
+file,fixtures/webhooks/gitlab/push.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"

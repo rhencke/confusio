@@ -227,7 +227,7 @@ HTTP 200
 
 POST http://{{host}}/webhooks/azuredevops
 Content-Type: application/json
-file,fixtures/webhooks/azuredevops/create-create.json;
+file,fixtures/webhooks/azuredevops/create.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -248,7 +248,7 @@ HTTP 200
 
 POST http://{{host}}/webhooks/azuredevops
 Content-Type: application/json
-file,fixtures/webhooks/azuredevops/delete-delete.json;
+file,fixtures/webhooks/azuredevops/delete.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"

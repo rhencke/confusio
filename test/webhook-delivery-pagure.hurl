@@ -215,7 +215,7 @@ HTTP 200
 POST http://{{host}}/webhooks/pagure
 Content-Type: application/json
 X-Pagure-Event: git.receive
-file,fixtures/webhooks/pagure/create-create.json;
+file,fixtures/webhooks/pagure/create.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -237,7 +237,7 @@ HTTP 200
 POST http://{{host}}/webhooks/pagure
 Content-Type: application/json
 X-Pagure-Event: git.receive
-file,fixtures/webhooks/pagure/delete-delete.json;
+file,fixtures/webhooks/pagure/delete.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -259,7 +259,7 @@ HTTP 200
 POST http://{{host}}/webhooks/pagure
 Content-Type: application/json
 X-Pagure-Event: project.forked
-file,fixtures/webhooks/pagure/fork-fork.json;
+file,fixtures/webhooks/pagure/fork.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"

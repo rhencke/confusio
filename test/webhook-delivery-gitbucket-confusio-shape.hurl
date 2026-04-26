@@ -133,7 +133,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitbucket
 Content-Type: application/json
 X-GitHub-Event: push
-file,fixtures/webhooks/gitbucket/push-push.json;
+file,fixtures/webhooks/gitbucket/push.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"

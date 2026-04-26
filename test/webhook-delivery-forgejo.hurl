@@ -1075,7 +1075,7 @@ HTTP 200
 POST http://{{host}}/webhooks/forgejo
 Content-Type: application/json
 X-Gitea-Event: push
-file,fixtures/webhooks/forgejo/push-push.json;
+file,fixtures/webhooks/forgejo/push.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -1097,7 +1097,7 @@ HTTP 200
 POST http://{{host}}/webhooks/forgejo
 Content-Type: application/json
 X-Gitea-Event: create
-file,fixtures/webhooks/forgejo/create-create.json;
+file,fixtures/webhooks/forgejo/create.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -1119,7 +1119,7 @@ HTTP 200
 POST http://{{host}}/webhooks/forgejo
 Content-Type: application/json
 X-Gitea-Event: delete
-file,fixtures/webhooks/forgejo/delete-delete.json;
+file,fixtures/webhooks/forgejo/delete.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -1141,7 +1141,7 @@ HTTP 200
 POST http://{{host}}/webhooks/forgejo
 Content-Type: application/json
 X-Gitea-Event: fork
-file,fixtures/webhooks/forgejo/fork-fork.json;
+file,fixtures/webhooks/forgejo/fork.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"

@@ -523,7 +523,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitbucket
 Content-Type: application/json
 X-GitHub-Event: push
-file,fixtures/webhooks/gitbucket/push-push.json;
+file,fixtures/webhooks/gitbucket/push.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -545,7 +545,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitbucket
 Content-Type: application/json
 X-GitHub-Event: create
-file,fixtures/webhooks/gitbucket/create-create.json;
+file,fixtures/webhooks/gitbucket/create.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -567,7 +567,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitbucket
 Content-Type: application/json
 X-GitHub-Event: delete
-file,fixtures/webhooks/gitbucket/delete-delete.json;
+file,fixtures/webhooks/gitbucket/delete.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -589,7 +589,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitbucket
 Content-Type: application/json
 X-GitHub-Event: fork
-file,fixtures/webhooks/gitbucket/fork-fork.json;
+file,fixtures/webhooks/gitbucket/fork.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
