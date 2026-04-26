@@ -1,0 +1,40 @@
+{
+  "ref": "refs/heads/main",
+  "before": "0000000000000000000000000000000000000000",
+  "after": "abc123def456abc123def456abc123def456abc123",
+  "created": false,
+  "deleted": false,
+  "forced": false,
+  "compare": "http://localhost/octocat/hello-world/compare/0000000000000000000000000000000000000000...abc123def456abc123def456abc123def456abc123",
+  "commits": [
+    {
+      "id": "abc123def456abc123def456abc123def456abc123",
+      "message": "Fix login bug",
+      "timestamp": "2024-01-15T10:00:00Z",
+      "url": "http://localhost/octocat/hello-world/commit/abc123def456abc123def456abc123def456abc123",
+      "author": {"name": "Alice", "email": "alice@example.com", "username": "alice"},
+      "committer": {"name": "Alice", "email": "alice@example.com", "username": "alice"},
+      "added": [], "removed": [], "modified": ["README.md"]
+    }
+  ],
+  "head_commit": {
+    "id": "abc123def456abc123def456abc123def456abc123",
+    "message": "Fix login bug",
+    "timestamp": "2024-01-15T10:00:00Z",
+    "url": "http://localhost/octocat/hello-world/commit/abc123def456abc123def456abc123def456abc123",
+    "author": {"name": "Alice", "email": "alice@example.com", "username": "alice"},
+    "committer": {"name": "Alice", "email": "alice@example.com", "username": "alice"},
+    "added": [], "removed": [], "modified": ["README.md"]
+  },
+  "pusher": {"name": "alice", "email": "alice@example.com"},
+  "repository": {
+    "id": 1, "node_id": "", "name": "hello-world",
+    "full_name": "octocat/hello-world", "private": false,
+    "owner": {"login": "octocat", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"},
+    "html_url": "http://localhost/octocat/hello-world",
+    "description": "", "fork": false, "url": "",
+    "clone_url": "", "homepage": "", "default_branch": "main",
+    "visibility": "public"
+  },
+  "sender": {"login": "alice", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"}
+}

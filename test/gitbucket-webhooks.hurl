@@ -781,3 +781,197 @@ X-GitHub-Event: pull_request_review
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
+
+# ── push: branch push with commits → 200 ─────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: push
+{
+  "ref": "refs/heads/main",
+  "before": "abc123def456abc123def456abc123def456abc1",
+  "after":  "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+  "created": false,
+  "deleted": false,
+  "forced":  false,
+  "compare": "http://localhost/octocat/hello-world/compare/abc123...deadbeef",
+  "commits": [
+    {
+      "id": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "message": "Fix bug",
+      "timestamp": "2024-01-15T10:00:00Z",
+      "url": "http://localhost/octocat/hello-world/commit/deadbeef",
+      "author":    {"name": "Alice", "email": "alice@example.com", "username": "alice"},
+      "committer": {"name": "Alice", "email": "alice@example.com", "username": "alice"},
+      "added": [], "removed": [], "modified": ["README.md"]
+    }
+  ],
+  "head_commit": {
+    "id": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    "message": "Fix bug",
+    "timestamp": "2024-01-15T10:00:00Z",
+    "url": "http://localhost/octocat/hello-world/commit/deadbeef",
+    "author":    {"name": "Alice", "email": "alice@example.com", "username": "alice"},
+    "committer": {"name": "Alice", "email": "alice@example.com", "username": "alice"},
+    "added": [], "removed": [], "modified": ["README.md"]
+  },
+  "pusher": {"name": "alice", "email": "alice@example.com"},
+  "repository": {
+    "id": 1, "node_id": "", "name": "hello-world",
+    "full_name": "octocat/hello-world", "private": false,
+    "owner": {"login": "octocat", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"},
+    "html_url": "http://localhost/octocat/hello-world",
+    "description": "", "fork": false, "url": "",
+    "clone_url": "", "homepage": "", "default_branch": "main",
+    "visibility": "public"
+  },
+  "sender": {"login": "alice", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── push: branch deletion (after = zero SHA, deleted = true) → 200 ───────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: push
+{
+  "ref": "refs/heads/stale-branch",
+  "before": "abc123def456abc123def456abc123def456abc1",
+  "after":  "0000000000000000000000000000000000000000",
+  "created": false,
+  "deleted": true,
+  "forced":  false,
+  "compare": "",
+  "commits": [],
+  "head_commit": null,
+  "pusher": {"name": "alice", "email": "alice@example.com"},
+  "repository": {
+    "id": 1, "node_id": "", "name": "hello-world",
+    "full_name": "octocat/hello-world", "private": false,
+    "owner": {"login": "octocat", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"},
+    "html_url": "http://localhost/octocat/hello-world",
+    "description": "", "fork": false, "url": "",
+    "clone_url": "", "homepage": "", "default_branch": "main",
+    "visibility": "public"
+  },
+  "sender": {"login": "alice", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── create: branch created → 200 ─────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: create
+{
+  "ref": "feature-branch",
+  "ref_type": "branch",
+  "master_branch": "main",
+  "description": "A friendly repo",
+  "pusher_type": "user",
+  "repository": {
+    "id": 1, "node_id": "", "name": "hello-world",
+    "full_name": "octocat/hello-world", "private": false,
+    "owner": {"login": "octocat", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"},
+    "html_url": "http://localhost/octocat/hello-world",
+    "description": "A friendly repo", "fork": false, "url": "",
+    "clone_url": "", "homepage": "", "default_branch": "main",
+    "visibility": "public"
+  },
+  "sender": {"login": "bob", "id": 2, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── create: tag created → 200 ────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: create
+{
+  "ref": "v2.0.0",
+  "ref_type": "tag",
+  "master_branch": "main",
+  "description": "A friendly repo",
+  "pusher_type": "user",
+  "repository": {
+    "id": 1, "node_id": "", "name": "hello-world",
+    "full_name": "octocat/hello-world", "private": false,
+    "owner": {"login": "octocat", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"},
+    "html_url": "http://localhost/octocat/hello-world",
+    "description": "A friendly repo", "fork": false, "url": "",
+    "clone_url": "", "homepage": "", "default_branch": "main",
+    "visibility": "public"
+  },
+  "sender": {"login": "alice", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── delete: branch deleted → 200 ─────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: delete
+{
+  "ref": "stale-branch",
+  "ref_type": "branch",
+  "master_branch": "main",
+  "description": "A friendly repo",
+  "pusher_type": "user",
+  "repository": {
+    "id": 1, "node_id": "", "name": "hello-world",
+    "full_name": "octocat/hello-world", "private": false,
+    "owner": {"login": "octocat", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"},
+    "html_url": "http://localhost/octocat/hello-world",
+    "description": "A friendly repo", "fork": false, "url": "",
+    "clone_url": "", "homepage": "", "default_branch": "main",
+    "visibility": "public"
+  },
+  "sender": {"login": "bob", "id": 2, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── fork: repository forked → 200 ─────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: fork
+{
+  "forkee": {
+    "id": 2, "node_id": "", "name": "hello-world",
+    "full_name": "bob/hello-world", "private": false,
+    "owner": {"login": "bob", "id": 2, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"},
+    "html_url": "http://localhost/bob/hello-world",
+    "description": "A friendly repo", "fork": true, "url": "",
+    "clone_url": "", "homepage": "", "default_branch": "main",
+    "visibility": "public"
+  },
+  "repository": {
+    "id": 1, "node_id": "", "name": "hello-world",
+    "full_name": "octocat/hello-world", "private": false,
+    "owner": {"login": "octocat", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"},
+    "html_url": "http://localhost/octocat/hello-world",
+    "description": "A friendly repo", "fork": false, "url": "",
+    "clone_url": "", "homepage": "", "default_branch": "main",
+    "visibility": "public"
+  },
+  "sender": {"login": "bob", "id": 2, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"

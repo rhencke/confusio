@@ -2480,4 +2480,89 @@ b:webhook("pull_request_review", function(payload)
   })
 end)
 
+-- push: commits pushed to a branch or tag.  GitBucket emits GitHub-compatible
+-- push payloads, so the data is passed through with minimal normalization.
+-- Key difference from Gitea: the compare URL is in `compare` (not
+-- `compare_url`), and `pusher` has `name`/`email` fields, not `login`.
+b:webhook("push", function(payload)
+  return make_internal_event({
+    event = "push",
+    action = "push",
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      ref = payload.ref or "",
+      before = payload.before or "",
+      after = payload.after or "",
+      created = payload.created or false,
+      deleted = payload.deleted or false,
+      forced = payload.forced or false,
+      compare = payload.compare or "",
+      commits = payload.commits or {},
+      head_commit = payload.head_commit,
+      pusher = payload.pusher or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.head_commit or {}).timestamp or "",
+  })
+end)
+
+-- create: branch or tag created.  GitHub-compatible payload; pass through as-is.
+b:webhook("create", function(payload)
+  return make_internal_event({
+    event = "create",
+    action = "create",
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      ref = payload.ref or "",
+      ref_type = payload.ref_type or "branch",
+      master_branch = payload.master_branch or "",
+      description = payload.description,
+      pusher_type = payload.pusher_type or "user",
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = "",
+  })
+end)
+
+-- delete: branch or tag deleted.  Same shape as create.
+b:webhook("delete", function(payload)
+  return make_internal_event({
+    event = "delete",
+    action = "delete",
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      ref = payload.ref or "",
+      ref_type = payload.ref_type or "branch",
+      master_branch = payload.master_branch or "",
+      description = payload.description,
+      pusher_type = payload.pusher_type or "user",
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = "",
+  })
+end)
+
+-- fork: repository forked.  GitHub-compatible payload; forkee and repository
+-- are passed through as-is.
+b:webhook("fork", function(payload)
+  return make_internal_event({
+    event = "fork",
+    action = "fork",
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      forkee = payload.forkee or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = "",
+  })
+end)
+
 b:build()
