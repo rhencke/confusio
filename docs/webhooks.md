@@ -3160,6 +3160,8 @@ there is no mapping target.
 | `secret_scanning_alert` | ✓ pass-through | ✗ |
 | `secret_scanning_alert_location` | ✓ pass-through | ✗ |
 | `dependabot_alert` | ✓ pass-through | ✗ |
+| `branch_protection_rule` | ✓ pass-through | ✗ |
+| `branch_protection_configuration` | ✓ pass-through | ✗ |
 
 Because these events are exclusively emitted from the GitHub backend, the field tables
 below use a two-column format: `github` (native pass-through, all fields `✓`) and
@@ -3298,6 +3300,56 @@ Triggered when a Dependabot alert is created, dismissed, fixed, or reassigned.
 **Notes:**
 - `dependabot_alert` supersedes the older `repository_vulnerability_alert` event, which
   is closing down.  New integrations should subscribe to `dependabot_alert` instead.
+
+#### `branch_protection_rule`
+
+Triggered when a branch protection rule is created, edited, or deleted.
+
+| GitHub field | github | All others |
+|---|---|---|
+| `action` | ✓ | — |
+| `changes` | ✓ | — |
+| `enterprise` | ✓ | — |
+| `installation` | ✓ | — |
+| `organization` | ✓ | — |
+| `repository` | ✓ | — |
+| `rule` | ✓ | — |
+| `sender` | ✓ | — |
+
+**Supported actions:**
+
+| Action | github | All others |
+|--------|--------|------------|
+| `created` | ✓ | — |
+| `deleted` | ✓ | — |
+| `edited` | ✓ | — |
+
+**Notes:**
+- `rule`: present for all actions.  Includes the full branch protection rule object with
+  settings such as `admin_enforced`, `required_approving_review_count`,
+  `required_status_checks`, and enforcement levels for various checks.
+- `changes`: present only for `edited` action.  Each key in `changes` has a `from` field
+  recording the previous value.  Keys match the corresponding fields in `rule`.
+
+#### `branch_protection_configuration`
+
+Triggered when branch protection is enabled or disabled for a repository.
+
+| GitHub field | github | All others |
+|---|---|---|
+| `action` | ✓ | — |
+| `enterprise` | ✓ | — |
+| `installation` | ✓ | — |
+| `organization` | ✓ | — |
+| `repository` | ✓ | — |
+| `sender` | ✓ | — |
+
+**Supported actions:**
+
+| Action | github | All others |
+|--------|--------|------------|
+| `disabled` | ✓ | — |
+| `enabled` | ✓ | — |
 
 ---
 
