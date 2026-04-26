@@ -79,10 +79,24 @@ for _, name in ipairs(cli_backends) do
   for i, h in ipairs(handlers) do
     handler_parts[i] = EncodeJson(h)
   end
+
+  local wh_events = {}
+  for event in pairs(app.backend.webhooks) do -- luacheck: globals app
+    wh_events[#wh_events + 1] = event
+  end
+  table.sort(wh_events)
+
+  local wh_parts = {}
+  for i, ev in ipairs(wh_events) do
+    wh_parts[i] = EncodeJson(ev)
+  end
+
   backend_parts[#backend_parts + 1] = EncodeJson(name)
-    .. ":["
+    .. ':{"rest":['
     .. table.concat(handler_parts, ",")
-    .. "]"
+    .. '],"webhooks":['
+    .. table.concat(wh_parts, ",")
+    .. "]}"
 end
 
 io.write('{"endpoints":[\n')

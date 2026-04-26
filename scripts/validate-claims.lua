@@ -43,7 +43,7 @@ local csv_path = (arg and arg[1]) or "site/compatibility.csv" -- luacheck: globa
 -- Read dump-claims JSON from stdin.
 local data = DecodeJson(io.read("*a"))
 local endpoints = data.endpoints
-local backends = data.backends
+local backends = data.backends -- backends[name] = { rest = [...], webhooks = [...] }
 
 -- Parse a single CSV line into fields, handling RFC 4180 quoting.
 local function parse_csv_line(line)
@@ -102,20 +102,38 @@ for _, h in ipairs(headers) do
   end
 end
 
--- Build a lookup from "METHOD /path" → handler name.
-local handler_for = {}
+-- Build a lookup from "METHOD /path" → { handler, is_webhook_event, webhook_event }.
+-- For webhook event rows, webhook_event is the event type extracted from the path
+-- (e.g. "issues" from "issues/opened") — this is the key in app.backend.webhooks.
+local ep_info = {}
 for _, e in ipairs(endpoints) do
-  handler_for[e.method .. " " .. e.path] = e.handler
+  local key = e.method .. " " .. e.path
+  local webhook_event = nil
+  if e.is_webhook_event then
+    -- path is "event/action" (e.g. "issues/opened"); extract event type
+    webhook_event = e.path:match("^([^/]+)/")
+  end
+  ep_info[key] =
+    { handler = e.handler, is_webhook_event = e.is_webhook_event, webhook_event = webhook_event }
 end
 
--- Build a set of handlers per provider for O(1) lookup.
+-- Build O(1) lookup sets per provider.
+-- impl_set[name][handler]      true if app.backend.rest has this handler
+-- wh_set[name][event]          true if app.backend.webhooks has this event handler
 local impl_set = {}
-for name, handlers in pairs(backends) do
-  local s = {}
-  for _, h in ipairs(handlers) do
-    s[h] = true
+local wh_set = {}
+for name, info in pairs(backends) do
+  local rs = {}
+  for _, h in ipairs(info.rest or {}) do
+    rs[h] = true
   end
-  impl_set[name] = s
+  impl_set[name] = rs
+
+  local ws = {}
+  for _, ev in ipairs(info.webhooks or {}) do
+    ws[ev] = true
+  end
+  wh_set[name] = ws
 end
 
 local errors = {}
@@ -127,28 +145,56 @@ for li = 2, #lines do
       row[h] = fields[fi] or ""
     end
     local ep = row.endpoint
-    local handler = handler_for[ep]
-    if handler then
+    local info = ep_info[ep]
+    if info then
       for _, provider in ipairs(csv_providers) do
         if backends[provider] then
           local claim = row[provider] or "n"
-          local has_handler = impl_set[provider][handler] == true
-          if claim == "y" and not has_handler and not CONFUSIO_NATIVE[handler] then
-            errors[#errors + 1] = "ERROR: "
-              .. provider
-              .. " claims 'y' for "
-              .. ep
-              .. " but app.backend.rest has no handler '"
-              .. handler
-              .. "'"
-          elseif claim == "n" and has_handler then
-            errors[#errors + 1] = "ERROR: "
-              .. provider
-              .. " claims 'n' for "
-              .. ep
-              .. " but app.backend.rest defines handler '"
-              .. handler
-              .. "'"
+          if info.is_webhook_event then
+            -- Webhook event rows: validate against app.backend.webhooks[event_type].
+            -- A 'y' claim requires the backend to have a webhook handler for this event type.
+            -- A 'n' claim requires the backend NOT to have one.
+            -- '~*' claims are not validated (partial/best-effort support).
+            local event_type = info.webhook_event
+            local has_wh = event_type ~= nil and wh_set[provider][event_type] == true
+            if claim == "y" and not has_wh then
+              errors[#errors + 1] = "ERROR: "
+                .. provider
+                .. " claims 'y' for "
+                .. ep
+                .. " but app.backend.webhooks has no handler for event '"
+                .. (event_type or "?")
+                .. "'"
+            elseif claim == "n" and has_wh then
+              errors[#errors + 1] = "ERROR: "
+                .. provider
+                .. " claims 'n' for "
+                .. ep
+                .. " but app.backend.webhooks defines a handler for event '"
+                .. (event_type or "?")
+                .. "'"
+            end
+          else
+            -- REST endpoint rows: validate against app.backend.rest[handler].
+            local handler = info.handler
+            local has_handler = impl_set[provider][handler] == true
+            if claim == "y" and not has_handler and not CONFUSIO_NATIVE[handler] then
+              errors[#errors + 1] = "ERROR: "
+                .. provider
+                .. " claims 'y' for "
+                .. ep
+                .. " but app.backend.rest has no handler '"
+                .. handler
+                .. "'"
+            elseif claim == "n" and has_handler then
+              errors[#errors + 1] = "ERROR: "
+                .. provider
+                .. " claims 'n' for "
+                .. ep
+                .. " but app.backend.rest defines handler '"
+                .. handler
+                .. "'"
+            end
           end
         end
       end
