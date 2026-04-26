@@ -1223,6 +1223,90 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 
+# ── Release Hook: create → published ──────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Release Hook
+{
+  "object_kind": "release",
+  "id": 1,
+  "created_at": "2024-01-15T10:00:00Z",
+  "description": "First release",
+  "name": "Release 1.0.0",
+  "released_at": "2024-01-15T10:00:00Z",
+  "tag": "v1.0.0",
+  "url": "http://localhost/octocat/hello-world/-/releases/v1.0.0",
+  "action": "create",
+  "project": {
+    "id": 10, "name": "hello-world", "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "visibility_level": 20, "default_branch": "main"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Release Hook: update → edited ─────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Release Hook
+{
+  "object_kind": "release",
+  "id": 1,
+  "created_at": "2024-01-15T10:00:00Z",
+  "description": "First release (updated)",
+  "name": "Release 1.0.0",
+  "released_at": "2024-01-15T10:00:00Z",
+  "tag": "v1.0.0",
+  "url": "http://localhost/octocat/hello-world/-/releases/v1.0.0",
+  "action": "update",
+  "project": {
+    "id": 10, "name": "hello-world", "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "visibility_level": 20, "default_branch": "main"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Release Hook: delete → deleted ────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Release Hook
+{
+  "object_kind": "release",
+  "id": 1,
+  "created_at": "2024-01-15T10:00:00Z",
+  "description": "First release",
+  "name": "Release 1.0.0",
+  "released_at": "2024-01-15T10:00:00Z",
+  "tag": "v1.0.0",
+  "url": "http://localhost/octocat/hello-world/-/releases/v1.0.0",
+  "action": "delete",
+  "project": {
+    "id": 10, "name": "hello-world", "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "visibility_level": 20, "default_branch": "main"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
 # ── Tag Push Hook: tag push with commit → 200 (push event) ───────────────────
 
 POST http://{{host}}/webhooks/gitlab
