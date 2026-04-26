@@ -6875,6 +6875,102 @@ b:webhook("Tag Push Hook", function(payload)
   })
 end)
 
+-- GL_DEPLOYMENT_STATE: map GitLab deployment status to GitHub deployment_status state.
+local GL_DEPLOYMENT_STATE = {
+  running = "in_progress",
+  success = "success",
+  failed = "failure",
+  canceled = "inactive",
+  cancelled = "inactive", -- defensive alternate spelling
+  blocked = "waiting",
+}
+
+-- translate_gl_webhook_deployment: build a GitHub-shaped deployment object from a
+-- GitLab Deployment Hook payload.  Used in both deployment and deployment_status events.
+local function translate_gl_webhook_deployment(payload)
+  return {
+    id = payload.deployment_id or 0,
+    node_id = "",
+    sha = payload.short_sha or "",
+    ref = payload.ref or "",
+    task = "deploy",
+    environment = payload.environment or "",
+    original_environment = "",
+    description = nil,
+    payload = {},
+    creator = translate_gl_user(payload.user),
+    created_at = payload.status_changed_at or "",
+    updated_at = payload.status_changed_at or "",
+    statuses_url = "",
+    repository_url = "",
+    production_environment = false,
+    transient_environment = false,
+  }
+end
+
+-- Deployment Hook: maps GitLab deployment lifecycle events to GitHub deployment
+-- and deployment_status events.  GitLab fires one event per status transition.
+--
+-- Mapping:
+--   running                           → deployment (created) — deployment initiated
+--   success / failed / canceled / blocked → deployment_status (created) — status update
+b:webhook("Deployment Hook", function(payload)
+  local gl_status = payload.status or ""
+  local project = payload.project or {}
+  local repository = translate_gl_webhook_project(project)
+  local sender = translate_gl_user(payload.user)
+  local deployment = translate_gl_webhook_deployment(payload)
+  local timestamp = payload.status_changed_at or ""
+
+  if gl_status == "running" then
+    -- Emit GitHub deployment (created) event for the initial deployment trigger.
+    return make_internal_event({
+      event = "deployment",
+      action = "created",
+      provider = config.backend,
+      raw = payload,
+      data = {
+        action = "created",
+        deployment = deployment,
+        repository = repository,
+        sender = sender,
+      },
+      timestamp = timestamp,
+    })
+  end
+
+  -- All other status transitions map to deployment_status (created).
+  local state = GL_DEPLOYMENT_STATE[gl_status] or "error"
+  local deployment_status = {
+    id = 0,
+    node_id = "",
+    state = state,
+    description = "",
+    environment = payload.environment or "",
+    environment_url = "",
+    log_url = payload.deployable_url or "",
+    target_url = "",
+    deployment_url = "",
+    creator = sender,
+    created_at = timestamp,
+    updated_at = timestamp,
+  }
+  return make_internal_event({
+    event = "deployment_status",
+    action = "created",
+    provider = config.backend,
+    raw = payload,
+    data = {
+      action = "created",
+      deployment_status = deployment_status,
+      deployment = deployment,
+      repository = repository,
+      sender = sender,
+    },
+    timestamp = timestamp,
+  })
+end)
+
 b:capability("repos", repos)
 b:capability("users", users)
 b:capability("orgs", orgs)
