@@ -80,6 +80,7 @@ gitea|workflow_run-requested.json|workflow_run-in_progress.json|.action = "in_pr
 gitea|release-published.json|release-edited.json|.action = "edited" | .release.name = "Release 1.0.0 (updated)" | .release.body = "Updated notes"
 gitea|release-published.json|release-deleted.json|.action = "deleted"
 gitea|deploy_key-created.json|deploy_key-deleted.json|.action = "deleted"
+gitea|member-added.json|member-removed.json|.action = "deleted"
 gitea|gollum-created.json|gollum-edited.json|.pages[0].action = "edited"
 gitea|repository-created.json|repository-deleted.json|.action = "deleted"
 gitea|repository-created.json|repository-renamed.json|.action = "renamed" | .repository.name = "hello-universe" | .repository.full_name = "octocat/hello-universe" | .changes = {"name": {"from": "hello-world"}}

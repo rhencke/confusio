@@ -199,3 +199,27 @@ jsonpath "$[0].confusio_source" == "gitea"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+
+# ── member: added — confusio shape ───────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: collaborator
+file,fixtures/webhooks/gitea/member-added.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "member"
+jsonpath "$[0].confusio_source" == "gitea"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""
