@@ -2189,6 +2189,101 @@ local ADO_BUILD_RESULT_TO_CONCLUSION = {
   partiallySucceeded = "failure",
 }
 
+-- git.push: fires when commits are pushed to a Git repository, including
+-- branch/tag creation (oldObjectId = zero SHA) and deletion (newObjectId = zero SHA).
+-- Azure DevOps does not emit separate create/delete webhook events; confusio
+-- derives the GitHub event type from the before/after SHA patterns.
+b:webhook("git.push", function(payload)
+  local resource = payload.resource or {}
+  local repo = resource.repository or {}
+  local ref_updates = resource.refUpdates or {}
+  local update = ref_updates[1] or {}
+  local pushed_by = resource.pushedBy or {}
+
+  local ZERO_SHA = "0000000000000000000000000000000000000000"
+  local ref_name_full = update.name or ""
+  local before = update.oldObjectId or ZERO_SHA
+  local after = update.newObjectId or ZERO_SHA
+
+  local sender = ado_user(pushed_by)
+  local repository = translate_ado_repo(repo)
+  -- Derive ref_type from ref path; short name strips the refs/heads/ or refs/tags/ prefix.
+  local ref_type = ref_name_full:match("^refs/tags/") and "tag" or "branch"
+  local ref_short = ref_name_full:match("^refs/[^/]+/(.+)") or ref_name_full
+
+  if before == ZERO_SHA then
+    -- Branch or tag created — emit GitHub create event.
+    return make_internal_event({
+      event = "create",
+      action = "create",
+      provider = "azuredevops",
+      raw = payload,
+      data = {
+        ref = ref_short,
+        ref_type = ref_type,
+        master_branch = repository.default_branch or "",
+        description = repository.description,
+        pusher_type = "user",
+        repository = repository,
+        sender = sender,
+      },
+      timestamp = payload.createdDate or "",
+    })
+  end
+
+  if after == ZERO_SHA then
+    -- Branch or tag deleted — emit GitHub delete event.
+    return make_internal_event({
+      event = "delete",
+      action = "delete",
+      provider = "azuredevops",
+      raw = payload,
+      data = {
+        ref = ref_short,
+        ref_type = ref_type,
+        master_branch = repository.default_branch or "",
+        description = repository.description,
+        pusher_type = "user",
+        repository = repository,
+        sender = sender,
+      },
+      timestamp = payload.createdDate or "",
+    })
+  end
+
+  -- Regular push — emit GitHub push event.
+  local push_commits = {}
+  for _, c in ipairs(resource.commits or {}) do
+    push_commits[#push_commits + 1] = translate_ado_commit(c)
+  end
+  local head_commit = #push_commits > 0 and push_commits[1] or nil
+  return make_internal_event({
+    event = "push",
+    action = "push",
+    provider = "azuredevops",
+    raw = payload,
+    data = {
+      ref = ref_name_full,
+      before = before,
+      after = after,
+      created = false,
+      deleted = false,
+      forced = false,
+      compare = "",
+      commits = push_commits,
+      head_commit = head_commit,
+      pusher = {
+        name = pushed_by.displayName or pushed_by.uniqueName or "",
+        email = pushed_by.uniqueName or "",
+      },
+      repository = repository,
+      sender = sender,
+    },
+    timestamp = payload.createdDate or "",
+  })
+end)
+
+-- build.complete: fires when a Classic or YAML pipeline build finishes.
 b:webhook("build.complete", function(payload)
   local resource = payload.resource or {}
   local definition = resource.definition or {}
