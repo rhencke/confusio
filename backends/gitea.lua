@@ -7745,6 +7745,24 @@ b:webhook("gollum", function(payload)
   })
 end)
 
+-- security_and_analysis: repository code-security settings were toggled.
+-- Unlike most webhook events there is no `action` field; confusio uses the
+-- sentinel action "changed" for all deliveries.
+b:webhook("security_and_analysis", function(payload)
+  return make_internal_event({
+    event = "security_and_analysis",
+    action = "changed",
+    provider = "gitea",
+    raw = payload,
+    data = {
+      changes = payload.changes or {},
+      repository = translate_repo(payload.repository or {}),
+      sender = translate_user(payload.sender or {}),
+    },
+    timestamp = "",
+  })
+end)
+
 b:capability("repos", repos)
 b:capability("users", users)
 b:capability("orgs", orgs)
