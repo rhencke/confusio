@@ -146,6 +146,7 @@ gitlab|repository-created.json|repository-privatized.json|.event_name = "project
 gitlab|member-added.json|member-removed.json|.action = "removed"
 gitlab|organization-created.json|organization-deleted.json|.event_name = "group_destroy"
 gitlab|organization-created.json|organization-renamed.json|.event_name = "group_rename" | .path = "engineering-renamed" | .full_path = "engineering-renamed" | .old_path = "engineering" | .old_full_path = "engineering"
+gitlab|membership-added.json|membership-removed.json|.event_name = "user_remove_from_group"
 VARIANTS
 
 # ---------------------------------------------------------------------------

@@ -6971,10 +6971,10 @@ b:webhook("Deployment Hook", function(payload)
   })
 end)
 
--- System Hook: repository and group (organization) lifecycle events.
+-- System Hook: repository, group (organization), and group member (membership) events.
 -- GitLab sends X-Gitlab-Event: System Hook with event_name in the body.
--- Non-repository / non-group event_names (user_create, key_add, etc.) return
--- an error so the receiver responds with 422 rather than silently accepting them.
+-- Non-repository / non-group / non-membership event_names (user_create, key_add, etc.)
+-- return an error so the receiver responds with 422 rather than silently accepting them.
 local GL_SYSTEM_HOOK_REPOSITORY_ACTIONS = {
   project_create = "created",
   project_destroy = "deleted",
@@ -6990,6 +6990,15 @@ local GL_SYSTEM_HOOK_GROUP_ACTIONS = {
   group_create = "created",
   group_destroy = "deleted",
   group_rename = "renamed",
+}
+
+-- Group member event_names that map to GitHub's membership event.
+-- user_add_to_group → "added"; user_remove_from_group → "removed".
+-- user_update_for_group (role change) has no clean GitHub equivalent and is
+-- left in the unhandled fallthrough.
+local GL_SYSTEM_HOOK_MEMBERSHIP_ACTIONS = {
+  user_add_to_group = "added",
+  user_remove_from_group = "removed",
 }
 
 -- Build a minimal repository object from a GitLab system hook payload.
@@ -7118,6 +7127,75 @@ b:webhook("System Hook", function(payload)
     return make_internal_event({
       event = "organization",
       action = org_action,
+      provider = config.backend,
+      raw = payload,
+      data = data,
+      timestamp = payload.updated_at or payload.created_at or "",
+    })
+  end
+
+  -- ── Group member / membership events ──────────────────────────────────────
+  -- user_add_to_group / user_remove_from_group → GitHub membership event.
+  -- System hook payloads carry: group_id, group_name, group_path, user_id,
+  -- user_username, user_name, group_access.  GitLab has no sub-team concept;
+  -- the group itself is used as the team stub and as the organization.
+  local membership_action = GL_SYSTEM_HOOK_MEMBERSHIP_ACTIONS[event_name]
+
+  if membership_action then
+    local org = {
+      login = payload.group_path or "",
+      id = payload.group_id or 0,
+      node_id = "",
+      description = "",
+      url = "",
+      html_url = "",
+      avatar_url = "",
+      type = "Organization",
+    }
+    local member = {
+      login = payload.user_username or "",
+      id = payload.user_id or 0,
+      node_id = "",
+      avatar_url = "",
+      html_url = "",
+      type = "User",
+      site_admin = false,
+    }
+    -- GitLab groups have no sub-teams; expose a minimal team stub so consumers
+    -- receive a structurally valid membership payload.
+    local team = {
+      id = payload.group_id or 0,
+      node_id = "",
+      name = payload.group_name or "",
+      slug = payload.group_path or "",
+      description = "",
+      privacy = "closed",
+      permission = "pull",
+      url = "",
+      html_url = "",
+      members_url = "",
+      repositories_url = "",
+    }
+    local sender = {
+      login = "",
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      html_url = "",
+      type = "User",
+      site_admin = false,
+    }
+    local data = {
+      action = membership_action,
+      scope = "team",
+      member = member,
+      team = team,
+      organization = org,
+      sender = sender,
+    }
+    return make_internal_event({
+      event = "membership",
+      action = membership_action,
       provider = config.backend,
       raw = payload,
       data = data,
