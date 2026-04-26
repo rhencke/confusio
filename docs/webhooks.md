@@ -3088,6 +3088,21 @@ The following GitHub event families have no cross-forge mapping today:
 When the originating backend is GitHub, these events pass through verbatim.  For all other
 backends they are silently dropped.
 
+### Repository automation events
+
+The following GitHub repository-management events have no cross-forge mapping today:
+
+| GitHub event | Status | Reason |
+|---|---|---|
+| `repository_dispatch` | ✗ | Triggered by a client `POST /repos/{owner}/{repo}/dispatches` API call. This is a GitHub-only mechanism for custom event triggers; no other forge exposes an equivalent webhook payload. |
+| `repository_ruleset` | ✗ | Triggered when a repository ruleset is created, edited, or deleted. Rulesets are a GitHub-specific branch/tag protection feature; no other backend exposes an equivalent webhook event. |
+| `repository_import` | ✗ | Triggered when a repository source import finishes. GitHub's import service is not exposed by any backend confusio supports. |
+
+When the originating backend is GitHub, these events pass through verbatim.  For all other
+backends they are silently dropped — there is no mapping target.
+
+---
+
 ## Delivery Semantics
 
 Every accepted inbound event is written to a durable outbox before any delivery
