@@ -33,6 +33,8 @@ test/fixtures/webhooks/gitea/workflow_run-in_progress.json
 test/fixtures/webhooks/gitea/release-edited.json
 test/fixtures/webhooks/gitea/release-deleted.json
 test/fixtures/webhooks/gitea/release-prereleased.json
+test/fixtures/webhooks/gitea/repository-deleted.json
+test/fixtures/webhooks/gitea/repository-renamed.json
 test/fixtures/webhooks/gitbucket/delete.json
 test/fixtures/webhooks/gitbucket/issues-closed.json
 test/fixtures/webhooks/gitbucket/issues-edited.json

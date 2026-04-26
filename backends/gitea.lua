@@ -7668,6 +7668,33 @@ b:webhook("fork", function(payload)
   })
 end)
 
+-- repository: lifecycle events (created, deleted, renamed).
+-- Gitea sends X-Gitea-Event: repository.  For "renamed", Gitea includes a
+-- changes.name.from field; we map that to GitHub's changes.repository.name.from
+-- shape in the normalized data.
+b:webhook("repository", function(payload)
+  local action = payload.action or "unknown"
+  local data = {
+    action = action,
+    repository = translate_repo(payload.repository or {}),
+    sender = translate_user(payload.sender or {}),
+  }
+  if action == "renamed" then
+    local old_name = ((payload.changes or {}).name or {}).from
+    data.changes = {
+      repository = { name = { from = old_name } },
+    }
+  end
+  return make_internal_event({
+    event = "repository",
+    action = action,
+    provider = "gitea",
+    raw = payload,
+    data = data,
+    timestamp = "",
+  })
+end)
+
 b:capability("repos", repos)
 b:capability("users", users)
 b:capability("orgs", orgs)
