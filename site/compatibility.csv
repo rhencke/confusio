@@ -463,6 +463,9 @@ GET /users/{username}/received_events,~empty list,~empty list,~empty list,~empty
 GET /users/{username}/received_events/public,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
 GET /users/{username}/starred,~empty list,~empty list,~empty list,y,~empty list,y,~empty list,~empty list,~empty list,y,~empty list,y,~empty list,~empty list,~empty list,y,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
 GET /users/{username}/subscriptions,~empty list,~empty list,~empty list,y,~empty list,y,~empty list,~empty list,~empty list,y,~empty list,y,~empty list,~empty list,~empty list,y,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
+webhook create/create,y,y,y,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
+webhook delete/delete,y,y,y,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
+webhook fork/fork,n,y,n,y,n,y,n,n,y,y,n,y,n,n,n,y,n,y,n,n,n,n,n,n
 webhook issues/opened,y,y,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
 webhook issues/closed,y,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
 webhook issues/edited,y,y,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
@@ -502,6 +505,7 @@ webhook pull_request_review/dismissed,y,y,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,
 webhook pull_request_review_comment/created,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook pull_request_review_comment/edited,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook pull_request_review_comment/deleted,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook push/push,y,y,y,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
 webhook status/pending,n,y,y,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook status/success,n,y,y,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook status/failure,n,y,y,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
