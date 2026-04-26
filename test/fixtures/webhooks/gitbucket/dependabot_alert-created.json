@@ -1,0 +1,47 @@
+{
+  "action": "created",
+  "alert": {
+    "number": 1,
+    "state": "open",
+    "dependency": {
+      "package": {"ecosystem": "npm", "name": "lodash"},
+      "manifest_path": "package-lock.json",
+      "scope": "runtime"
+    },
+    "security_advisory": {
+      "ghsa_id": "GHSA-xx99-1234-5678",
+      "cve_id": "CVE-2021-23337",
+      "summary": "Prototype Pollution in lodash",
+      "severity": "high",
+      "identifiers": [{"type": "GHSA", "value": "GHSA-xx99-1234-5678"}],
+      "references": [],
+      "vulnerabilities": [],
+      "published_at": "2021-02-15T00:00:00Z",
+      "updated_at": "2021-02-15T00:00:00Z",
+      "withdrawn_at": null
+    },
+    "security_vulnerability": {
+      "package": {"ecosystem": "npm", "name": "lodash"},
+      "severity": "high",
+      "vulnerable_version_range": "< 4.17.21",
+      "first_patched_version": {"identifier": "4.17.21"}
+    },
+    "url": "http://localhost/api/v3/repos/octocat/hello-world/dependabot/alerts/1",
+    "html_url": "http://localhost/octocat/hello-world/security/dependabot/1",
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T10:00:00Z",
+    "dismissed_at": null,
+    "dismissed_by": null,
+    "dismissed_reason": null,
+    "dismissed_comment": null,
+    "fixed_at": null,
+    "auto_dismissed_at": null
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}

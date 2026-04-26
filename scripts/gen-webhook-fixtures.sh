@@ -102,6 +102,8 @@ gitbucket|gollum-created.json|gollum-edited.json|.pages[0].action = "edited"
 gitbucket|release-published.json|release-edited.json|.action = "edited" | .release.name = "Release 1.0.0 (edited)" | .release.body = "First release (edited)" | .changes = {}
 gitbucket|release-published.json|release-deleted.json|.action = "deleted"
 gitbucket|repository-created.json|repository-deleted.json|.action = "deleted"
+gitbucket|code_scanning_alert-created.json|code_scanning_alert-fixed.json|.action = "fixed" | .alert.state = "fixed" | .alert.updated_at = "2024-01-16T08:00:00Z"
+gitbucket|dependabot_alert-created.json|dependabot_alert-dismissed.json|.action = "dismissed" | .alert.state = "dismissed" | .alert.dismissed_at = "2024-01-16T10:00:00Z" | .alert.dismissed_reason = "tolerable_risk" | .alert.dismissed_comment = "Risk accepted." | .alert.updated_at = "2024-01-16T10:00:00Z" | .sender.id = 2 | .sender.login = "bob"
 gitlab|issues-opened.json|issues-closed.json|.object_attributes.state = "closed" | .object_attributes.action = "close" | .object_attributes.updated_at = "2024-01-15T10:01:00Z" | .object_attributes.closed_at = "2024-01-15T10:01:00Z"
 gitlab|issues-opened.json|issues-edited.json|.object_attributes.title = "Found a bug (updated)" | .object_attributes.description = "Something broke, with more details." | .object_attributes.action = "update" | .object_attributes.updated_at = "2024-01-15T10:03:00Z"
 gitlab|issues-opened.json|issues-reopened.json|.object_attributes.action = "reopen" | .object_attributes.updated_at = "2024-01-15T10:02:00Z"

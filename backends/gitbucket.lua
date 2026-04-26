@@ -2680,4 +2680,68 @@ b:webhook("public", function(payload)
   })
 end)
 
+-- code_scanning_alert: a code scanning alert was created, fixed, or closed.
+-- GitBucket mirrors the GitHub event format; action names are identity-mapped.
+local GB_CODE_SCANNING_ALERT_ACTIONS = {
+  appeared_in_branch = "appeared_in_branch",
+  closed_by_user = "closed_by_user",
+  created = "created",
+  fixed = "fixed",
+  reopened = "reopened",
+  reopened_by_user = "reopened_by_user",
+  updated_assignment = "updated_assignment",
+}
+
+b:webhook("code_scanning_alert", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_CODE_SCANNING_ALERT_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "code_scanning_alert",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      alert = payload.alert or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.alert or {}).updated_at or "",
+  })
+end)
+
+-- dependabot_alert: a Dependabot alert was created, dismissed, fixed, or
+-- reassigned.  GitBucket mirrors the GitHub event format; action names are
+-- identity-mapped.
+local GB_DEPENDABOT_ALERT_ACTIONS = {
+  assignees_changed = "assignees_changed",
+  auto_dismissed = "auto_dismissed",
+  auto_reopened = "auto_reopened",
+  created = "created",
+  dismissed = "dismissed",
+  fixed = "fixed",
+  reintroduced = "reintroduced",
+  reopened = "reopened",
+}
+
+b:webhook("dependabot_alert", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_DEPENDABOT_ALERT_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "dependabot_alert",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      alert = payload.alert or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.alert or {}).updated_at or "",
+  })
+end)
+
 b:build()

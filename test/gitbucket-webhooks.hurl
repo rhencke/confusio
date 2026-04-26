@@ -1063,3 +1063,237 @@ X-GitHub-Event: fork
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
+
+# ── code_scanning_alert: created → 200 ────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: code_scanning_alert
+{
+  "action": "created",
+  "alert": {
+    "number": 1, "state": "open",
+    "dismissed_by": null, "dismissed_at": null, "dismissed_reason": null,
+    "rule": {"id": "js/path-injection", "severity": "error", "description": "Path injection"},
+    "tool": {"name": "CodeQL", "version": "2.9.0"},
+    "most_recent_instance": {
+      "ref": "refs/heads/main", "state": "open",
+      "commit_sha": "abc123def456abc123def456abc123def456abc1",
+      "message": {"text": "User input flows to path construction."},
+      "location": {"path": "src/server.js", "start_line": 42, "end_line": 42}
+    },
+    "html_url": "http://localhost/octocat/hello-world/security/code-scanning/1",
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── code_scanning_alert: fixed → 200 ──────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: code_scanning_alert
+{
+  "action": "fixed",
+  "alert": {
+    "number": 1, "state": "fixed",
+    "dismissed_by": null, "dismissed_at": null, "dismissed_reason": null,
+    "rule": {"id": "js/path-injection", "severity": "error", "description": "Path injection"},
+    "tool": {"name": "CodeQL", "version": "2.9.0"},
+    "most_recent_instance": {
+      "ref": "refs/heads/main", "state": "fixed",
+      "commit_sha": "def456abc123def456abc123def456abc123def4",
+      "message": {"text": "User input flows to path construction."},
+      "location": {"path": "src/server.js", "start_line": 42, "end_line": 42}
+    },
+    "html_url": "http://localhost/octocat/hello-world/security/code-scanning/1",
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-16T08:00:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── code_scanning_alert: unknown action → 200 + X-Confusio-Raw-Action ─────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: code_scanning_alert
+{
+  "action": "auto_closed",
+  "alert": {
+    "number": 2, "state": "closed",
+    "dismissed_by": null, "dismissed_at": null, "dismissed_reason": null,
+    "rule": {"id": "js/path-injection", "severity": "error", "description": "Path injection"},
+    "tool": {"name": "CodeQL", "version": "2.9.0"},
+    "html_url": "http://localhost/octocat/hello-world/security/code-scanning/2",
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T11:00:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+header "X-Confusio-Raw-Action" == "auto_closed"
+
+# ── dependabot_alert: created → 200 ───────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: dependabot_alert
+{
+  "action": "created",
+  "alert": {
+    "number": 1, "state": "open",
+    "dependency": {
+      "package": {"ecosystem": "npm", "name": "lodash"},
+      "manifest_path": "package-lock.json", "scope": "runtime"
+    },
+    "security_advisory": {
+      "ghsa_id": "GHSA-xx99-1234-5678", "cve_id": "CVE-2021-23337",
+      "summary": "Prototype Pollution in lodash", "severity": "high",
+      "identifiers": [{"type": "GHSA", "value": "GHSA-xx99-1234-5678"}],
+      "references": [], "vulnerabilities": [],
+      "published_at": "2021-02-15T00:00:00Z", "updated_at": "2021-02-15T00:00:00Z",
+      "withdrawn_at": null
+    },
+    "security_vulnerability": {
+      "package": {"ecosystem": "npm", "name": "lodash"},
+      "severity": "high", "vulnerable_version_range": "< 4.17.21",
+      "first_patched_version": {"identifier": "4.17.21"}
+    },
+    "url": "http://localhost/api/v3/repos/octocat/hello-world/dependabot/alerts/1",
+    "html_url": "http://localhost/octocat/hello-world/security/dependabot/1",
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z",
+    "dismissed_at": null, "dismissed_by": null, "dismissed_reason": null,
+    "dismissed_comment": null, "fixed_at": null, "auto_dismissed_at": null
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── dependabot_alert: dismissed → 200 ─────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: dependabot_alert
+{
+  "action": "dismissed",
+  "alert": {
+    "number": 1, "state": "dismissed",
+    "dependency": {
+      "package": {"ecosystem": "npm", "name": "lodash"},
+      "manifest_path": "package-lock.json", "scope": "runtime"
+    },
+    "security_advisory": {
+      "ghsa_id": "GHSA-xx99-1234-5678", "cve_id": "CVE-2021-23337",
+      "summary": "Prototype Pollution in lodash", "severity": "high",
+      "identifiers": [{"type": "GHSA", "value": "GHSA-xx99-1234-5678"}],
+      "references": [], "vulnerabilities": [],
+      "published_at": "2021-02-15T00:00:00Z", "updated_at": "2021-02-15T00:00:00Z",
+      "withdrawn_at": null
+    },
+    "security_vulnerability": {
+      "package": {"ecosystem": "npm", "name": "lodash"},
+      "severity": "high", "vulnerable_version_range": "< 4.17.21",
+      "first_patched_version": {"identifier": "4.17.21"}
+    },
+    "url": "http://localhost/api/v3/repos/octocat/hello-world/dependabot/alerts/1",
+    "html_url": "http://localhost/octocat/hello-world/security/dependabot/1",
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-16T10:00:00Z",
+    "dismissed_at": "2024-01-16T10:00:00Z",
+    "dismissed_by": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""},
+    "dismissed_reason": "tolerable_risk", "dismissed_comment": "Risk accepted.",
+    "fixed_at": null, "auto_dismissed_at": null
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── dependabot_alert: unknown action → 200 + X-Confusio-Raw-Action ────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: dependabot_alert
+{
+  "action": "scope_changed",
+  "alert": {
+    "number": 1, "state": "open",
+    "dependency": {
+      "package": {"ecosystem": "npm", "name": "lodash"},
+      "manifest_path": "package-lock.json", "scope": "development"
+    },
+    "security_advisory": {
+      "ghsa_id": "GHSA-xx99-1234-5678", "cve_id": "CVE-2021-23337",
+      "summary": "Prototype Pollution in lodash", "severity": "high",
+      "identifiers": [], "references": [], "vulnerabilities": [],
+      "published_at": "2021-02-15T00:00:00Z", "updated_at": "2021-02-15T00:00:00Z",
+      "withdrawn_at": null
+    },
+    "security_vulnerability": {
+      "package": {"ecosystem": "npm", "name": "lodash"},
+      "severity": "high", "vulnerable_version_range": "< 4.17.21",
+      "first_patched_version": {"identifier": "4.17.21"}
+    },
+    "url": "http://localhost/api/v3/repos/octocat/hello-world/dependabot/alerts/1",
+    "html_url": "http://localhost/octocat/hello-world/security/dependabot/1",
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:30:00Z",
+    "dismissed_at": null, "dismissed_by": null, "dismissed_reason": null,
+    "dismissed_comment": null, "fixed_at": null, "auto_dismissed_at": null
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+header "X-Confusio-Raw-Action" == "scope_changed"
