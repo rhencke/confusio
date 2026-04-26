@@ -78,6 +78,7 @@ test/fixtures/webhooks/gitlab/repository-renamed.json
 test/fixtures/webhooks/gitlab/repository-transferred.json
 test/fixtures/webhooks/gitlab/repository-publicized.json
 test/fixtures/webhooks/gitlab/repository-privatized.json
+test/fixtures/webhooks/gitlab/member-removed.json
 test/fixtures/webhooks/bitbucket/issues-closed.json
 test/fixtures/webhooks/bitbucket/issues-edited.json
 test/fixtures/webhooks/bitbucket/issues-reopened.json

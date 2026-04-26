@@ -7099,6 +7099,74 @@ b:webhook("Wiki Page Hook", function(payload)
   })
 end)
 
+-- member: repository collaborator added or removed.
+-- GitLab sends X-Gitlab-Event: Member Hook with action "added" or "removed".
+-- User fields are at the top level (user_id, user_username, etc.); project
+-- fields use the project_* prefix rather than a nested project object.
+-- GitLab normalizes to type="User" (member's actual role is in access_level,
+-- not surfaced in the GitHub member.type field).
+b:webhook("Member Hook", function(payload)
+  local action = payload.action or ""
+  local pns = payload.project_path_with_namespace or ""
+  local slash = pns:find("/", 1, true)
+  local owner_login = slash and pns:sub(1, slash - 1) or pns
+  local repo_name = slash and pns:sub(slash + 1) or (payload.project_name or pns)
+  local repository = {
+    id = payload.project_id or 0,
+    node_id = "",
+    name = repo_name,
+    full_name = pns,
+    private = true, -- visibility not included in Member Hook payload
+    owner = {
+      login = owner_login,
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      url = "",
+      html_url = "",
+      type = "User",
+    },
+    html_url = payload.project_url or "",
+    description = "",
+    fork = false,
+    url = payload.project_url or "",
+    default_branch = "",
+    visibility = "private",
+  }
+  local member = {
+    login = payload.user_username or "",
+    id = payload.user_id or 0,
+    node_id = "",
+    avatar_url = payload.user_avatar or "",
+    html_url = "",
+    type = "User",
+    site_admin = false,
+  }
+  local data = {
+    action = action,
+    member = member,
+    changes = {},
+    repository = repository,
+    sender = {
+      login = "",
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      html_url = "",
+      type = "User",
+      site_admin = false,
+    },
+  }
+  return make_internal_event({
+    event = "member",
+    action = action,
+    provider = config.backend,
+    raw = payload,
+    data = data,
+    timestamp = payload.updated_at or payload.created_at or "",
+  })
+end)
+
 b:capability("repos", repos)
 b:capability("users", users)
 b:capability("orgs", orgs)

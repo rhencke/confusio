@@ -142,6 +142,7 @@ gitlab|repository-created.json|repository-renamed.json|.event_name = "project_re
 gitlab|repository-created.json|repository-transferred.json|.event_name = "project_transfer" | .path_with_namespace = "newowner/hello-world" | .old_path_with_namespace = "octocat/hello-world"
 gitlab|repository-created.json|repository-publicized.json|.event_name = "project_update" | .project_visibility = "public"
 gitlab|repository-created.json|repository-privatized.json|.event_name = "project_update" | .project_visibility = "private"
+gitlab|member-added.json|member-removed.json|.action = "removed"
 VARIANTS
 
 # ---------------------------------------------------------------------------
