@@ -908,6 +908,9 @@ action availability.
 | `pull_request_review_comment` | Comment on a PR review diff | `created`, `edited`, `deleted` |
 | `release` | Release lifecycle | `published`, `edited`, `deleted`, `prereleased` |
 | `repository` | Repository lifecycle | `created`, `deleted`, `renamed`, `transferred`, `publicized`, `privatized` |
+| `gollum` | Wiki page created or edited | _(no top-level action — action is per-page in `pages[]`)_ |
+| `deploy_key` | SSH deploy key added or removed | `created`, `deleted` |
+| `public` | Private repository made public | _(no action field)_ |
 | `member` | Collaborator added or removed | `added`, `removed`, `edited` |
 | `milestone` | Milestone lifecycle | `created`, `closed`, `opened`, `edited`, `deleted` |
 | `label` | Label lifecycle | `created`, `edited`, `deleted` |
@@ -2238,6 +2241,94 @@ Triggered on repository lifecycle events (created, deleted, renamed, etc.).
   rename notifications via the service hook but without a structured `changes` payload.
 - Backends not listed (sourcehut, pagure, kallithea, etc.) do not emit repository
   lifecycle events.  Confusio cannot generate `repository` events from these backends.
+
+---
+
+### `gollum`
+
+Triggered when a wiki page is created or edited.
+
+There is no top-level `action` field on the event.  The `pages[]` array carries one entry per
+modified wiki page; each entry has its own `action` field (`"created"` or `"edited"`).  Confusio
+surfaces the first page's action as the internal routing action for filtering purposes.
+
+| GitHub field | gitea-family | gogs | gitlab | bitbucket | bitbucket-dc | github | gitbucket | azuredevops | All others |
+|---|---|---|---|---|---|---|---|---|---|
+| `pages[]` | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `pages[].page_name` | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `pages[].title` | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `pages[].summary` | ✓ | ✗ | ~ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `pages[].action` | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `pages[].sha` | ✓ | ✗ | ~ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `pages[].html_url` | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `repository` | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `sender` | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ |
+
+**Supported actions by backend:**
+
+| Action (per page) | gitea-family | gogs | gitlab | bitbucket | bitbucket-dc | github | gitbucket | azuredevops |
+|---|---|---|---|---|---|---|---|---|
+| `created` | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `edited` | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ |
+
+**Notes:**
+- GitLab sends wiki events via `X-Gitlab-Event: Wiki Page Hook` with `object_kind = "wiki_page"`.
+  The `object_attributes.action` values are `"create"` and `"update"`, mapped to `"created"` and
+  `"edited"` respectively.
+- `pages[].summary`: Gitea passes this through as-is (often `null`); GitLab maps
+  `object_attributes.message` (the commit message) into `summary`.
+- `pages[].sha`: Gitea provides the commit SHA directly; GitLab maps `object_attributes.version_id`.
+- Gogs, Bitbucket, Bitbucket DC, and Azure DevOps do not emit wiki webhook events.
+
+---
+
+### `deploy_key`
+
+Triggered when an SSH deploy key is added to or removed from a repository.
+
+| GitHub field | gitea-family | gogs | gitlab | bitbucket | bitbucket-dc | github | gitbucket | azuredevops | All others |
+|---|---|---|---|---|---|---|---|---|---|
+| `action` | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `key.id` | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `key.key` | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `key.url` | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `key.title` | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `key.verified` | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `key.created_at` | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `key.read_only` | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `repository` | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `sender` | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ |
+
+**Supported actions by backend:**
+
+| Action | gitea-family | gogs | gitlab | bitbucket | bitbucket-dc | github | gitbucket | azuredevops |
+|---|---|---|---|---|---|---|---|---|
+| `created` | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `deleted` | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✗ |
+
+**Notes:**
+- GitLab, Bitbucket, Bitbucket DC, Gogs, and Azure DevOps do not emit deploy key webhook events.
+- Gitea sends deploy key events via `X-Gitea-Event: deploy_key`.
+- GitBucket sends them via `X-GitHub-Event: deploy_key` with GitHub-compatible payload.
+
+---
+
+### `public`
+
+Triggered when a private repository is made public.  There is no `action` field on this event;
+the event itself signals the visibility change.  Confusio synthesizes `action = "publicized"` for
+internal routing and filtering purposes.
+
+| GitHub field | gitea-family | gogs | gitlab | bitbucket | bitbucket-dc | github | gitbucket | azuredevops | All others |
+|---|---|---|---|---|---|---|---|---|---|
+| `repository` | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `sender` | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ |
+
+**Notes:**
+- Gitea-family backends use the `repository` event with `action = "publicized"` instead of a
+  standalone `public` event.  Confusio emits `repository/publicized` from Gitea, not `public`.
+- GitLab, Bitbucket, Bitbucket DC, Gogs, and Azure DevOps do not emit a `public` event.
+- GitBucket sends this event via `X-GitHub-Event: public` with GitHub-compatible payload.
 
 ---
 
