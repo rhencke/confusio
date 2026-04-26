@@ -6591,6 +6591,235 @@ b:webhook("Job Hook", function(payload)
   })
 end)
 
+-- Zero SHA — GitLab uses this for the `before` field when a ref is created,
+-- and for the `after` field when a ref is deleted.
+local GL_ZERO_SHA = "0000000000000000000000000000000000000000"
+
+-- Translate a push-event commit object (different from the REST API commit
+-- shape: no committer field; author is {name, email}).
+local function translate_gl_push_commit(c)
+  if not c then
+    return {}
+  end
+  local author = c.author or {}
+  return {
+    id = c.id or "",
+    message = c.message or "",
+    timestamp = c.timestamp or "",
+    url = c.url or "",
+    author = {
+      name = author.name or "",
+      email = author.email or "",
+      username = "",
+    },
+    committer = {
+      name = author.name or "",
+      email = author.email or "",
+      username = "",
+    },
+    added = c.added or {},
+    removed = c.removed or {},
+    modified = c.modified or {},
+  }
+end
+
+-- Build a GitHub-style sender table from the top-level push payload user
+-- fields.  Push Hook payloads do not have a nested `user` object — user info
+-- sits directly at the root as user_id / user_username / user_name /
+-- user_avatar.
+local function gl_push_sender(payload)
+  return {
+    login = payload.user_username or "",
+    id = payload.user_id or 0,
+    node_id = "",
+    avatar_url = payload.user_avatar or "",
+    html_url = "",
+    type = "User",
+    site_admin = false,
+  }
+end
+
+-- Push Hook: branch push — also handles branch creation (before = zero SHA)
+-- and branch deletion (after = zero SHA) by routing them to the appropriate
+-- GitHub event type.  GitLab has no separate create/delete webhook event for
+-- branches; all three operations arrive via Push Hook.
+b:webhook("Push Hook", function(payload)
+  local before = payload.before or ""
+  local after = payload.after or ""
+  local project = payload.project or {}
+  local sender = gl_push_sender(payload)
+  local repository = translate_gl_webhook_project(project)
+
+  if before == GL_ZERO_SHA then
+    -- Branch created — emit GitHub create event.
+    local raw_ref = payload.ref or ""
+    local ref = raw_ref:match("^refs/heads/(.+)$") or raw_ref
+    return make_internal_event({
+      event = "create",
+      action = "create",
+      provider = config.backend,
+      raw = payload,
+      data = {
+        ref = ref,
+        ref_type = "branch",
+        master_branch = project.default_branch or "",
+        description = project.description,
+        pusher_type = "user",
+        repository = repository,
+        sender = sender,
+      },
+      timestamp = "",
+    })
+  end
+
+  if after == GL_ZERO_SHA then
+    -- Branch deleted — emit GitHub delete event.
+    local raw_ref = payload.ref or ""
+    local ref = raw_ref:match("^refs/heads/(.+)$") or raw_ref
+    return make_internal_event({
+      event = "delete",
+      action = "delete",
+      provider = config.backend,
+      raw = payload,
+      data = {
+        ref = ref,
+        ref_type = "branch",
+        master_branch = project.default_branch or "",
+        description = project.description,
+        pusher_type = "user",
+        repository = repository,
+        sender = sender,
+      },
+      timestamp = "",
+    })
+  end
+
+  -- Regular branch push — emit GitHub push event.
+  local commits = {}
+  for _, c in ipairs(payload.commits or {}) do
+    commits[#commits + 1] = translate_gl_push_commit(c)
+  end
+  local head_commit = #commits > 0 and commits[#commits] or nil
+  local web_url = project.web_url or project.homepage or ""
+  local compare = (before ~= "" and after ~= "")
+      and (web_url .. "/compare/" .. before .. "..." .. after)
+    or ""
+  return make_internal_event({
+    event = "push",
+    action = "push",
+    provider = config.backend,
+    raw = payload,
+    data = {
+      ref = payload.ref or "",
+      before = before,
+      after = after,
+      created = false,
+      deleted = false,
+      forced = false,
+      compare = compare,
+      commits = commits,
+      head_commit = head_commit,
+      pusher = {
+        name = payload.user_name or "",
+        email = payload.user_email or "",
+      },
+      repository = repository,
+      sender = sender,
+    },
+    timestamp = head_commit and head_commit.timestamp or "",
+  })
+end)
+
+-- Tag Push Hook: tag push — same routing logic as Push Hook (creation,
+-- deletion, and regular push) but for tag refs.  GitLab fires this event
+-- type exclusively for tag operations.
+b:webhook("Tag Push Hook", function(payload)
+  local before = payload.before or ""
+  local after = payload.after or ""
+  local project = payload.project or {}
+  local sender = gl_push_sender(payload)
+  local repository = translate_gl_webhook_project(project)
+
+  if before == GL_ZERO_SHA then
+    -- Tag created — emit GitHub create event.
+    local raw_ref = payload.ref or ""
+    local ref = raw_ref:match("^refs/tags/(.+)$") or raw_ref
+    return make_internal_event({
+      event = "create",
+      action = "create",
+      provider = config.backend,
+      raw = payload,
+      data = {
+        ref = ref,
+        ref_type = "tag",
+        master_branch = project.default_branch or "",
+        description = project.description,
+        pusher_type = "user",
+        repository = repository,
+        sender = sender,
+      },
+      timestamp = "",
+    })
+  end
+
+  if after == GL_ZERO_SHA then
+    -- Tag deleted — emit GitHub delete event.
+    local raw_ref = payload.ref or ""
+    local ref = raw_ref:match("^refs/tags/(.+)$") or raw_ref
+    return make_internal_event({
+      event = "delete",
+      action = "delete",
+      provider = config.backend,
+      raw = payload,
+      data = {
+        ref = ref,
+        ref_type = "tag",
+        master_branch = project.default_branch or "",
+        description = project.description,
+        pusher_type = "user",
+        repository = repository,
+        sender = sender,
+      },
+      timestamp = "",
+    })
+  end
+
+  -- Regular tag push — emit GitHub push event.
+  local commits = {}
+  for _, c in ipairs(payload.commits or {}) do
+    commits[#commits + 1] = translate_gl_push_commit(c)
+  end
+  local head_commit = #commits > 0 and commits[#commits] or nil
+  local web_url = project.web_url or project.homepage or ""
+  local compare = (before ~= "" and after ~= "")
+      and (web_url .. "/compare/" .. before .. "..." .. after)
+    or ""
+  return make_internal_event({
+    event = "push",
+    action = "push",
+    provider = config.backend,
+    raw = payload,
+    data = {
+      ref = payload.ref or "",
+      before = before,
+      after = after,
+      created = false,
+      deleted = false,
+      forced = false,
+      compare = compare,
+      commits = commits,
+      head_commit = head_commit,
+      pusher = {
+        name = payload.user_name or "",
+        email = payload.user_email or "",
+      },
+      repository = repository,
+      sender = sender,
+    },
+    timestamp = head_commit and head_commit.timestamp or "",
+  })
+end)
+
 b:capability("repos", repos)
 b:capability("users", users)
 b:capability("orgs", orgs)
