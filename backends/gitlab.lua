@@ -6214,6 +6214,33 @@ local GL_MILESTONE_ACTIONS = {
   close = "closed",
   reopen = "opened", -- GitHub calls this "opened" (re-open a closed milestone)
 }
+local GL_RELEASE_ACTIONS = {
+  create = "published",
+  update = "edited",
+  delete = "deleted",
+}
+
+-- translate_gl_webhook_release: normalise a GitLab Release Hook payload into
+-- a GitHub-shaped release object.  GitLab places release fields at the top
+-- level of the payload (not under object_attributes like most other events).
+-- GitLab uses "tag" instead of "tag_name"; url instead of html_url; and
+-- "released_at" instead of "published_at".
+local function translate_gl_webhook_release(payload)
+  return {
+    id = payload.id,
+    tag_name = payload.tag or "",
+    name = payload.name,
+    body = payload.description,
+    draft = false,
+    prerelease = false,
+    html_url = payload.url or "",
+    tarball_url = nil,
+    zipball_url = nil,
+    author = nil, -- GitLab Release Hook does not include the triggering user
+    created_at = payload.created_at or "",
+    published_at = payload.released_at or payload.created_at,
+  }
+end
 
 -- issues: opened, closed, reopened, edited.
 -- Registered for X-Gitlab-Event: Issues Hook
@@ -6339,6 +6366,34 @@ b:webhook("Milestone Hook", function(payload)
       repository = translate_gl_webhook_project(payload.project),
       sender = translate_gl_user(payload.user),
     },
+  })
+end)
+
+-- release: published (create), edited (update), deleted.
+-- GitLab places release fields at the top level of the payload; there is no
+-- object_attributes wrapper.  GitLab does not include the triggering user.
+-- Registered for X-Gitlab-Event: Release Hook
+b:webhook("Release Hook", function(payload)
+  local raw_action = payload.action or ""
+  local action = GL_RELEASE_ACTIONS[raw_action] or "unknown"
+  local rel = translate_gl_webhook_release(payload)
+  local data = {
+    action = action,
+    release = rel,
+    repository = translate_gl_webhook_project(payload.project),
+    sender = nil, -- GitLab Release Hook does not carry a user field
+  }
+  if action == "edited" then
+    data.changes = {}
+  end
+  return make_internal_event({
+    event = "release",
+    action = action,
+    raw_action = action == "unknown" and raw_action or nil,
+    provider = config.backend,
+    timestamp = rel.published_at or rel.created_at or "",
+    raw = payload,
+    data = data,
   })
 end)
 

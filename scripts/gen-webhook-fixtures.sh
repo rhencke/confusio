@@ -77,6 +77,9 @@ gitea|issue_comment-created.json|issue_comment-edited.json|.action = "edited" | 
 gitea|pull_request_review_comment-created.json|pull_request_review_comment-deleted.json|.action = "deleted" | .pull_request.updated = "2024-01-15T11:20:00Z"
 gitea|pull_request_review_comment-created.json|pull_request_review_comment-edited.json|.action = "edited" | .comment.body = "Please simplify this. (edited)" | .comment.updated_at = "2024-01-15T11:10:00Z" | .changes = {"body": {"from": "Please simplify this."}} | .pull_request.updated = "2024-01-15T11:10:00Z"
 gitea|workflow_run-requested.json|workflow_run-in_progress.json|.action = "in_progress" | .workflow_run.status = "in_progress" | .workflow_run.updated_at = "2024-01-15T11:01:00Z"
+gitea|release-published.json|release-edited.json|.action = "edited" | .release.name = "Release 1.0.0 (updated)" | .release.body = "Updated notes"
+gitea|release-published.json|release-deleted.json|.action = "deleted"
+gitea|release-published.json|release-prereleased.json|.action = "prereleased" | .release.id = 2 | .release.tag_name = "v2.0.0-rc.1" | .release.name = "Release 2.0.0 RC 1" | .release.body = "Release candidate" | .release.prerelease = true | .release.html_url = "http://localhost/octocat/hello-world/releases/tag/v2.0.0-rc.1" | .release.tarball_url = "http://localhost/octocat/hello-world/archive/v2.0.0-rc.1.tar.gz" | .release.zipball_url = "http://localhost/octocat/hello-world/archive/v2.0.0-rc.1.zip" | .release.created_at = "2024-02-01T10:00:00Z" | .release.published_at = "2024-02-01T10:00:00Z"
 gitbucket|issues-opened.json|issues-closed.json|.action = "closed" | .issue.state = "closed" | .issue.updated_at = "2024-01-15T11:00:00Z" | .issue.closed_at = "2024-01-15T11:00:00Z" | .sender.id = 2 | .sender.login = "bob"
 gitbucket|issues-opened.json|issues-edited.json|.action = "edited" | .issue.title = "Bug report (updated)" | .issue.body = "Something is broken \u2014 updated description" | .issue.updated_at = "2024-01-15T10:30:00Z"
 gitbucket|issues-opened.json|issues-reopened.json|.action = "reopened" | .issue.updated_at = "2024-01-15T12:00:00Z" | .sender.id = 2 | .sender.login = "bob"
@@ -90,6 +93,8 @@ gitbucket|label-created.json|label-edited.json|.action = "edited" | .label.color
 gitbucket|issue_comment-created.json|issue_comment-deleted.json|.action = "deleted" | .issue.updated_at = "2024-01-15T10:25:00Z"
 gitbucket|issue_comment-created.json|issue_comment-edited.json|.action = "edited" | .issue.updated_at = "2024-01-15T10:20:00Z" | .comment.body = "I can reproduce this too. (edited)" | .comment.updated_at = "2024-01-15T10:20:00Z"
 gitbucket|pull_request_review-submitted.json|pull_request_review-dismissed.json|.action = "dismissed" | .review.state = "DISMISSED" | .review.body = "Review dismissed." | .pull_request.updated_at = "2024-01-15T14:00:00Z" | .sender.id = 1 | .sender.login = "alice"
+gitbucket|release-published.json|release-edited.json|.action = "edited" | .release.name = "Release 1.0.0 (edited)" | .release.body = "First release (edited)" | .changes = {}
+gitbucket|release-published.json|release-deleted.json|.action = "deleted"
 gitlab|issues-opened.json|issues-closed.json|.object_attributes.state = "closed" | .object_attributes.action = "close" | .object_attributes.updated_at = "2024-01-15T10:01:00Z" | .object_attributes.closed_at = "2024-01-15T10:01:00Z"
 gitlab|issues-opened.json|issues-edited.json|.object_attributes.title = "Found a bug (updated)" | .object_attributes.description = "Something broke, with more details." | .object_attributes.action = "update" | .object_attributes.updated_at = "2024-01-15T10:03:00Z"
 gitlab|issues-opened.json|issues-reopened.json|.object_attributes.action = "reopen" | .object_attributes.updated_at = "2024-01-15T10:02:00Z"
@@ -104,6 +109,8 @@ gitlab|workflow_run-requested.json|workflow_run-in_progress.json|.object_attribu
 gitlab|workflow_run-requested.json|workflow_run-completed.json|.object_attributes.status = "success" | .object_attributes.started_at = "2024-01-15T16:01:00Z" | .object_attributes.finished_at = "2024-01-15T16:05:00Z"
 gitlab|workflow_job-queued.json|workflow_job-in_progress.json|.build_status = "running" | .build_started_at = "2024-01-15T16:01:30Z"
 gitlab|workflow_job-queued.json|workflow_job-completed.json|.build_status = "success" | .build_started_at = "2024-01-15T16:01:30Z" | .build_finished_at = "2024-01-15T16:03:00Z"
+gitlab|release-published.json|release-edited.json|.action = "update" | .description = "First release (updated)"
+gitlab|release-published.json|release-deleted.json|.action = "delete"
 bitbucket|issues-opened.json|issues-closed.json|.issue.state = "resolved" | .issue.updated_on = "2024-01-15T12:00:00+00:00" | .changes = {"status": {"old": "open", "new": "resolved"}}
 bitbucket|issues-opened.json|issues-edited.json|.issue.title = "Found a bug (updated)" | .issue.updated_on = "2024-01-15T11:00:00+00:00" | .changes = {}
 bitbucket|issues-opened.json|issues-reopened.json|.issue.updated_on = "2024-01-15T13:00:00+00:00" | .changes = {"status": {"old": "resolved", "new": "open"}}

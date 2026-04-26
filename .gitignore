@@ -30,6 +30,9 @@ test/fixtures/webhooks/gitea/issue_comment-edited.json
 test/fixtures/webhooks/gitea/pull_request_review_comment-deleted.json
 test/fixtures/webhooks/gitea/pull_request_review_comment-edited.json
 test/fixtures/webhooks/gitea/workflow_run-in_progress.json
+test/fixtures/webhooks/gitea/release-edited.json
+test/fixtures/webhooks/gitea/release-deleted.json
+test/fixtures/webhooks/gitea/release-prereleased.json
 test/fixtures/webhooks/gitbucket/delete.json
 test/fixtures/webhooks/gitbucket/issues-closed.json
 test/fixtures/webhooks/gitbucket/issues-edited.json
@@ -44,6 +47,8 @@ test/fixtures/webhooks/gitbucket/label-edited.json
 test/fixtures/webhooks/gitbucket/issue_comment-deleted.json
 test/fixtures/webhooks/gitbucket/issue_comment-edited.json
 test/fixtures/webhooks/gitbucket/pull_request_review-dismissed.json
+test/fixtures/webhooks/gitbucket/release-edited.json
+test/fixtures/webhooks/gitbucket/release-deleted.json
 test/fixtures/webhooks/gitlab/delete.json
 test/fixtures/webhooks/gitlab/issues-closed.json
 test/fixtures/webhooks/gitlab/issues-edited.json
@@ -55,6 +60,8 @@ test/fixtures/webhooks/gitlab/milestone-edited.json
 test/fixtures/webhooks/gitlab/issue_comment-deleted.json
 test/fixtures/webhooks/gitlab/issue_comment-edited.json
 test/fixtures/webhooks/gitlab/pull_request_review-dismissed.json
+test/fixtures/webhooks/gitlab/release-edited.json
+test/fixtures/webhooks/gitlab/release-deleted.json
 test/fixtures/webhooks/gitlab/workflow_run-in_progress.json
 test/fixtures/webhooks/gitlab/workflow_run-completed.json
 test/fixtures/webhooks/gitlab/workflow_job-in_progress.json

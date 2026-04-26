@@ -945,6 +945,94 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 
+# ── release: published → 200 ─────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: release
+{
+  "action": "published",
+  "release": {
+    "id": 1, "tag_name": "v1.0.0", "name": "Release 1.0.0", "body": "First release",
+    "draft": false, "prerelease": false,
+    "html_url": "http://localhost/octocat/hello-world/releases/tag/v1.0.0",
+    "tarball_url": "http://localhost/octocat/hello-world/archive/v1.0.0.tar.gz",
+    "zipball_url": "http://localhost/octocat/hello-world/archive/v1.0.0.zip",
+    "author": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""},
+    "created_at": "2024-01-15T10:00:00Z", "published_at": "2024-01-15T10:00:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── release: edited → 200 ─────────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: release
+{
+  "action": "edited",
+  "release": {
+    "id": 1, "tag_name": "v1.0.0", "name": "Release 1.0.0 (edited)", "body": "First release (edited)",
+    "draft": false, "prerelease": false,
+    "html_url": "http://localhost/octocat/hello-world/releases/tag/v1.0.0",
+    "tarball_url": "http://localhost/octocat/hello-world/archive/v1.0.0.tar.gz",
+    "zipball_url": "http://localhost/octocat/hello-world/archive/v1.0.0.zip",
+    "author": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""},
+    "created_at": "2024-01-15T10:00:00Z", "published_at": "2024-01-15T10:00:00Z"
+  },
+  "changes": {},
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── release: deleted → 200 ────────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: release
+{
+  "action": "deleted",
+  "release": {
+    "id": 1, "tag_name": "v1.0.0", "name": "Release 1.0.0", "body": "First release",
+    "draft": false, "prerelease": false,
+    "html_url": "http://localhost/octocat/hello-world/releases/tag/v1.0.0",
+    "tarball_url": "http://localhost/octocat/hello-world/archive/v1.0.0.tar.gz",
+    "zipball_url": "http://localhost/octocat/hello-world/archive/v1.0.0.zip",
+    "author": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""},
+    "created_at": "2024-01-15T10:00:00Z", "published_at": "2024-01-15T10:00:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
 # ── fork: repository forked → 200 ─────────────────────────────────────────────
 
 POST http://{{host}}/webhooks/gitbucket
