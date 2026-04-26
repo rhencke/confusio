@@ -1,0 +1,31 @@
+{
+  "topic": "pagure.git.receive",
+  "msg": {
+    "agent": "bob",
+    "repo": {
+      "id": 100,
+      "name": "hello-world",
+      "namespace": "octocat",
+      "fullname": "octocat/hello-world",
+      "url_path": "octocat/hello-world",
+      "full_url": "http://localhost/octocat/hello-world",
+      "description": "My first repo",
+      "default_branch": "main",
+      "private": false,
+      "user": {"name": "octocat", "url_path": "user/octocat"}
+    },
+    "branch": "refs/heads/main",
+    "start_commit": "6dcb09b5b57875f334f61aebed695e2e4193db5e",
+    "end_commit": "f1d2d2f924e986ac86fdf7b36c94bcdf32beec15",
+    "forced": false,
+    "total_commits": 1,
+    "commits": [
+      {
+        "id": "f1d2d2f924e986ac86fdf7b36c94bcdf32beec15",
+        "message": "Update readme",
+        "author": {"name": "Bob Jones", "email": "bob@example.com"},
+        "date_utc": "2024-01-15T10:00:00Z"
+      }
+    ]
+  }
+}

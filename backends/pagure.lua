@@ -1201,4 +1201,111 @@ b:webhook("pull-request.closed", function(payload)
   })
 end)
 
+-- git.receive: fires for all branch/tag ref updates (push, create, delete).
+-- Pagure does not emit discrete create/delete events; confusio splits them by
+-- inspecting start_commit / end_commit for all-zero SHA patterns.
+-- msg fields: agent, repo (project), branch (full ref), start_commit (before),
+-- end_commit (after), forced, total_commits, commits (array)
+local PAGURE_ZERO_SHA = "0000000000000000000000000000000000000000"
+b:webhook("git.receive", function(payload)
+  local msg = payload.msg or {}
+  local repo = msg.repo or msg.project or {}
+  local actor = msg.agent or ""
+  local sender = pagure_agent_user(actor)
+  local repository = translate_pagure_repo(repo)
+  local branch = msg.branch or ""
+  local before = msg.start_commit or PAGURE_ZERO_SHA
+  local after = msg.end_commit or PAGURE_ZERO_SHA
+
+  -- Derive ref_type from branch path; short name strips prefix.
+  local ref_type = branch:match("^refs/tags/") and "tag" or "branch"
+  local ref_short = branch:match("^refs/[^/]+/(.+)") or branch
+
+  if before == PAGURE_ZERO_SHA then
+    -- Branch or tag created — emit GitHub create event.
+    return make_internal_event({
+      event = "create",
+      action = "create",
+      provider = "pagure",
+      raw = payload,
+      data = {
+        ref = ref_short,
+        ref_type = ref_type,
+        master_branch = repository.default_branch or "",
+        description = repository.description,
+        pusher_type = "user",
+        repository = repository,
+        sender = sender,
+      },
+      timestamp = "",
+    })
+  end
+
+  if after == PAGURE_ZERO_SHA then
+    -- Branch or tag deleted — emit GitHub delete event.
+    return make_internal_event({
+      event = "delete",
+      action = "delete",
+      provider = "pagure",
+      raw = payload,
+      data = {
+        ref = ref_short,
+        ref_type = ref_type,
+        master_branch = repository.default_branch or "",
+        description = repository.description,
+        pusher_type = "user",
+        repository = repository,
+        sender = sender,
+      },
+      timestamp = "",
+    })
+  end
+
+  -- Regular push — emit GitHub push event.
+  local push_commits = {}
+  for _, c in ipairs(msg.commits or {}) do
+    push_commits[#push_commits + 1] = translate_pagure_commit(c)
+  end
+  local head_commit = #push_commits > 0 and push_commits[1] or nil
+  return make_internal_event({
+    event = "push",
+    action = "push",
+    provider = "pagure",
+    raw = payload,
+    data = {
+      ref = branch,
+      before = before,
+      after = after,
+      created = false,
+      deleted = false,
+      forced = msg.forced or false,
+      compare = "",
+      commits = push_commits,
+      head_commit = head_commit,
+      pusher = { name = actor, email = "" },
+      repository = repository,
+      sender = sender,
+    },
+    timestamp = ((msg.commits or {})[1] or {}).date_utc or "",
+  })
+end)
+
+-- project.forked: fires when a user forks a repository.
+-- msg fields: agent, project (the upstream), fork (the new fork)
+b:webhook("project.forked", function(payload)
+  local msg = payload.msg or {}
+  return make_internal_event({
+    event = "fork",
+    action = "fork",
+    provider = "pagure",
+    raw = payload,
+    data = {
+      forkee = translate_pagure_repo(msg.fork or {}),
+      repository = translate_pagure_repo(msg.project or {}),
+      sender = pagure_agent_user(msg.agent),
+    },
+    timestamp = "",
+  })
+end)
+
 b:build()

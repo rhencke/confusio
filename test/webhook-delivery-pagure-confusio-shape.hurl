@@ -99,3 +99,27 @@ jsonpath "$[0].confusio_source" == "pagure"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+
+# ── git.receive (push) → push — confusio shape ───────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/pagure
+Content-Type: application/json
+X-Pagure-Event: git.receive
+file,fixtures/webhooks/pagure/git.receive-push.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "push"
+jsonpath "$[0].confusio_source" == "pagure"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""
