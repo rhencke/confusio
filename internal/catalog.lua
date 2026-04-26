@@ -3061,6 +3061,10 @@ local webhook_event_sections = {
 
       -- security_and_analysis
       { "webhook security_and_analysis/changed", "wh_security_and_analysis_changed" },
+
+      -- star
+      { "webhook star/created", "wh_star_created" },
+      { "webhook star/deleted", "wh_star_deleted" },
     },
   },
 }
