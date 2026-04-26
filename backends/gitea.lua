@@ -7763,6 +7763,39 @@ b:webhook("security_and_analysis", function(payload)
   })
 end)
 
+-- member: repository collaborator added or removed.
+-- Gitea sends X-Gitea-Event: collaborator with action "added" or "deleted".
+-- GitHub's member event uses "added" and "removed"; map "deleted" → "removed".
+local GITEA_MEMBER_ACTIONS = { added = "added", deleted = "removed" }
+b:webhook("collaborator", function(payload)
+  local raw_action = payload.action or ""
+  local action = GITEA_MEMBER_ACTIONS[raw_action] or raw_action
+  local user = payload.member or {}
+  local data = {
+    action = action,
+    member = {
+      login = user.login or "",
+      id = user.id or 0,
+      node_id = "",
+      avatar_url = user.avatar_url or "",
+      html_url = user.html_url or "",
+      type = "User",
+      site_admin = user.is_admin or false,
+    },
+    changes = {},
+    repository = translate_repo(payload.repository or {}),
+    sender = translate_user(payload.sender or {}),
+  }
+  return make_internal_event({
+    event = "member",
+    action = action,
+    provider = "gitea",
+    raw = payload,
+    data = data,
+    timestamp = "",
+  })
+end)
+
 b:capability("repos", repos)
 b:capability("users", users)
 b:capability("orgs", orgs)

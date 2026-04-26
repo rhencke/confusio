@@ -80,6 +80,7 @@ gitea|workflow_run-requested.json|workflow_run-in_progress.json|.action = "in_pr
 gitea|release-published.json|release-edited.json|.action = "edited" | .release.name = "Release 1.0.0 (updated)" | .release.body = "Updated notes"
 gitea|release-published.json|release-deleted.json|.action = "deleted"
 gitea|deploy_key-created.json|deploy_key-deleted.json|.action = "deleted"
+gitea|member-added.json|member-removed.json|.action = "deleted"
 gitea|gollum-created.json|gollum-edited.json|.pages[0].action = "edited"
 gitea|repository-created.json|repository-deleted.json|.action = "deleted"
 gitea|repository-created.json|repository-renamed.json|.action = "renamed" | .repository.name = "hello-universe" | .repository.full_name = "octocat/hello-universe" | .changes = {"name": {"from": "hello-world"}}
@@ -108,6 +109,10 @@ gitbucket|secret_scanning_alert-created.json|secret_scanning_alert-resolved.json
 gitbucket|security_advisory-published.json|security_advisory-withdrawn.json|.action = "withdrawn" | .security_advisory.withdrawn_at = "2024-01-16T12:00:00Z" | .security_advisory.updated_at = "2024-01-16T12:00:00Z"
 gitbucket|repository_advisory-published.json|repository_advisory-reported.json|.action = "reported" | .repository_advisory.state = "reported" | .repository_advisory.updated_at = "2024-01-16T11:00:00Z"
 gitbucket|repository_vulnerability_alert-create.json|repository_vulnerability_alert-dismiss.json|.action = "dismiss" | .alert.dismisser = {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""} | .alert.dismiss_reason = "tolerable_risk" | .alert.dismissed_at = "2024-01-16T10:00:00Z" | .sender.id = 2 | .sender.login = "bob"
+gitbucket|member-added.json|member-removed.json|.action = "removed" | .sender.id = 2 | .sender.login = "bob"
+gitbucket|organization-member_added.json|organization-member_removed.json|.action = "member_removed" | .sender.id = 2 | .sender.login = "bob"
+gitbucket|membership-added.json|membership-removed.json|.action = "removed" | .sender.id = 2 | .sender.login = "bob"
+gitbucket|team-created.json|team-deleted.json|.action = "deleted" | .sender.id = 2 | .sender.login = "bob"
 gitlab|issues-opened.json|issues-closed.json|.object_attributes.state = "closed" | .object_attributes.action = "close" | .object_attributes.updated_at = "2024-01-15T10:01:00Z" | .object_attributes.closed_at = "2024-01-15T10:01:00Z"
 gitlab|issues-opened.json|issues-edited.json|.object_attributes.title = "Found a bug (updated)" | .object_attributes.description = "Something broke, with more details." | .object_attributes.action = "update" | .object_attributes.updated_at = "2024-01-15T10:03:00Z"
 gitlab|issues-opened.json|issues-reopened.json|.object_attributes.action = "reopen" | .object_attributes.updated_at = "2024-01-15T10:02:00Z"
@@ -141,6 +146,10 @@ gitlab|repository-created.json|repository-renamed.json|.event_name = "project_re
 gitlab|repository-created.json|repository-transferred.json|.event_name = "project_transfer" | .path_with_namespace = "newowner/hello-world" | .old_path_with_namespace = "octocat/hello-world"
 gitlab|repository-created.json|repository-publicized.json|.event_name = "project_update" | .project_visibility = "public"
 gitlab|repository-created.json|repository-privatized.json|.event_name = "project_update" | .project_visibility = "private"
+gitlab|member-added.json|member-removed.json|.action = "removed"
+gitlab|organization-created.json|organization-deleted.json|.event_name = "group_destroy"
+gitlab|organization-created.json|organization-renamed.json|.event_name = "group_rename" | .path = "engineering-renamed" | .full_path = "engineering-renamed" | .old_path = "engineering" | .old_full_path = "engineering"
+gitlab|membership-added.json|membership-removed.json|.event_name = "user_remove_from_group"
 VARIANTS
 
 # ---------------------------------------------------------------------------

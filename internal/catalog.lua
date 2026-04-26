@@ -2894,6 +2894,15 @@ local webhook_event_sections = {
       { "webhook label/edited", "wh_label_edited" },
       { "webhook label/deleted", "wh_label_deleted" },
 
+      -- member
+      { "webhook member/added", "wh_member_added" },
+      { "webhook member/removed", "wh_member_removed" },
+      { "webhook member/edited", "wh_member_edited" },
+
+      -- membership
+      { "webhook membership/added", "wh_membership_added" },
+      { "webhook membership/removed", "wh_membership_removed" },
+
       -- merge_group
       { "webhook merge_group/checks_requested", "wh_merge_group_checks_requested" },
       { "webhook merge_group/destroyed", "wh_merge_group_destroyed" },
@@ -2905,6 +2914,14 @@ local webhook_event_sections = {
       { "webhook milestone/edited", "wh_milestone_edited" },
       { "webhook milestone/deleted", "wh_milestone_deleted" },
       { "webhook milestone/reopened", "wh_milestone_reopened" },
+
+      -- organization
+      { "webhook organization/created", "wh_organization_created" },
+      { "webhook organization/deleted", "wh_organization_deleted" },
+      { "webhook organization/renamed", "wh_organization_renamed" },
+      { "webhook organization/member_added", "wh_organization_member_added" },
+      { "webhook organization/member_invited", "wh_organization_member_invited" },
+      { "webhook organization/member_removed", "wh_organization_member_removed" },
 
       -- pull_request
       { "webhook pull_request/opened", "wh_pull_request_opened" },
@@ -2936,6 +2953,16 @@ local webhook_event_sections = {
       { "webhook status/pending", "wh_status_pending" },
       { "webhook status/success", "wh_status_success" },
       { "webhook status/failure", "wh_status_failure" },
+
+      -- team
+      { "webhook team/created", "wh_team_created" },
+      { "webhook team/deleted", "wh_team_deleted" },
+      { "webhook team/edited", "wh_team_edited" },
+      { "webhook team/added_to_repository", "wh_team_added_to_repository" },
+      { "webhook team/removed_from_repository", "wh_team_removed_from_repository" },
+
+      -- team_add
+      { "webhook team_add/team_add", "wh_team_add_team_add" },
 
       -- workflow_run
       { "webhook workflow_run/requested", "wh_workflow_run_requested" },

@@ -6971,16 +6971,34 @@ b:webhook("Deployment Hook", function(payload)
   })
 end)
 
--- System Hook: repository lifecycle events (project_create, project_destroy,
--- project_rename, project_transfer, project_update for publicized/privatized).
+-- System Hook: repository, group (organization), and group member (membership) events.
 -- GitLab sends X-Gitlab-Event: System Hook with event_name in the body.
--- Non-repository event_names (user_create, key_add, etc.) return an error so
--- the receiver responds with 422 rather than silently accepting them.
+-- Non-repository / non-group / non-membership event_names (user_create, key_add, etc.)
+-- return an error so the receiver responds with 422 rather than silently accepting them.
 local GL_SYSTEM_HOOK_REPOSITORY_ACTIONS = {
   project_create = "created",
   project_destroy = "deleted",
   project_rename = "renamed",
   project_transfer = "transferred",
+}
+
+-- Group lifecycle event_names that map to GitHub's organization event.
+-- group_create → "created"; group_destroy → "deleted"; group_rename → "renamed".
+-- GitHub's organization event does not officially include "created", but confusio
+-- emits it as a best-effort mapping for consumers that want to track org creation.
+local GL_SYSTEM_HOOK_GROUP_ACTIONS = {
+  group_create = "created",
+  group_destroy = "deleted",
+  group_rename = "renamed",
+}
+
+-- Group member event_names that map to GitHub's membership event.
+-- user_add_to_group → "added"; user_remove_from_group → "removed".
+-- user_update_for_group (role change) has no clean GitHub equivalent and is
+-- left in the unhandled fallthrough.
+local GL_SYSTEM_HOOK_MEMBERSHIP_ACTIONS = {
+  user_add_to_group = "added",
+  user_remove_from_group = "removed",
 }
 
 -- Build a minimal repository object from a GitLab system hook payload.
@@ -7017,51 +7035,175 @@ end
 
 b:webhook("System Hook", function(payload)
   local event_name = payload.event_name or ""
-  local action = GL_SYSTEM_HOOK_REPOSITORY_ACTIONS[event_name]
+
+  -- ── Repository / project events ────────────────────────────────────────────
+  local repo_action = GL_SYSTEM_HOOK_REPOSITORY_ACTIONS[event_name]
 
   -- project_update: infer publicized/privatized from new visibility field.
   -- GitLab does not include the old visibility in the payload, so we map
   -- based on the new state: "public" → publicized, anything else → privatized.
-  if not action and event_name == "project_update" then
+  if not repo_action and event_name == "project_update" then
     local vis = payload.project_visibility or ""
-    action = vis == "public" and "publicized" or "privatized"
+    repo_action = vis == "public" and "publicized" or "privatized"
   end
 
-  if not action then
-    return nil, "Unhandled system hook event: " .. event_name
-  end
-
-  local repository = translate_gl_system_hook_repo(payload)
-  local sender = translate_gl_user({
-    name = payload.owner_name or "",
-    username = payload.owner_name or "",
-    avatar_url = "",
-  })
-  local data = {
-    action = action,
-    repository = repository,
-    sender = sender,
-  }
-
-  -- For renamed and transferred, include changes.repository.name.from sourced
-  -- from old_path_with_namespace.
-  if action == "renamed" then
-    local old_pns = payload.old_path_with_namespace or ""
-    local old_slash = old_pns:find("/", 1, true)
-    local old_name = old_slash and old_pns:sub(old_slash + 1) or old_pns
-    data.changes = {
-      repository = { name = { from = old_name } },
+  if repo_action then
+    local repository = translate_gl_system_hook_repo(payload)
+    local sender = translate_gl_user({
+      name = payload.owner_name or "",
+      username = payload.owner_name or "",
+      avatar_url = "",
+    })
+    local data = {
+      action = repo_action,
+      repository = repository,
+      sender = sender,
     }
+
+    -- For renamed and transferred, include changes.repository.name.from sourced
+    -- from old_path_with_namespace.
+    if repo_action == "renamed" then
+      local old_pns = payload.old_path_with_namespace or ""
+      local old_slash = old_pns:find("/", 1, true)
+      local old_name = old_slash and old_pns:sub(old_slash + 1) or old_pns
+      data.changes = {
+        repository = { name = { from = old_name } },
+      }
+    end
+
+    return make_internal_event({
+      event = "repository",
+      action = repo_action,
+      provider = config.backend,
+      raw = payload,
+      data = data,
+      timestamp = payload.updated_at or payload.created_at or "",
+    })
   end
 
-  return make_internal_event({
-    event = "repository",
-    action = action,
-    provider = config.backend,
-    raw = payload,
-    data = data,
-    timestamp = payload.updated_at or payload.created_at or "",
-  })
+  -- ── Group / organization events ────────────────────────────────────────────
+  -- System hook group payloads carry: group_id, name, path, full_path,
+  -- and for group_rename: old_path, old_full_path.  There is no owner field.
+  local org_action = GL_SYSTEM_HOOK_GROUP_ACTIONS[event_name]
+
+  if org_action then
+    local org = {
+      login = payload.path or payload.full_path or "",
+      id = payload.group_id or 0,
+      node_id = "",
+      description = "",
+      url = "",
+      html_url = "",
+      avatar_url = "",
+      public_repos = 0,
+      public_gists = 0,
+      followers = 0,
+      following = 0,
+      created_at = payload.created_at or "",
+      type = "Organization",
+    }
+    local sender = {
+      login = "",
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      html_url = "",
+      type = "User",
+      site_admin = false,
+    }
+    local data = {
+      action = org_action,
+      organization = org,
+      sender = sender,
+    }
+
+    -- For renamed, include changes.login.from = old_path.
+    if org_action == "renamed" then
+      data.changes = {
+        login = { from = payload.old_path or "" },
+      }
+    end
+
+    return make_internal_event({
+      event = "organization",
+      action = org_action,
+      provider = config.backend,
+      raw = payload,
+      data = data,
+      timestamp = payload.updated_at or payload.created_at or "",
+    })
+  end
+
+  -- ── Group member / membership events ──────────────────────────────────────
+  -- user_add_to_group / user_remove_from_group → GitHub membership event.
+  -- System hook payloads carry: group_id, group_name, group_path, user_id,
+  -- user_username, user_name, group_access.  GitLab has no sub-team concept;
+  -- the group itself is used as the team stub and as the organization.
+  local membership_action = GL_SYSTEM_HOOK_MEMBERSHIP_ACTIONS[event_name]
+
+  if membership_action then
+    local org = {
+      login = payload.group_path or "",
+      id = payload.group_id or 0,
+      node_id = "",
+      description = "",
+      url = "",
+      html_url = "",
+      avatar_url = "",
+      type = "Organization",
+    }
+    local member = {
+      login = payload.user_username or "",
+      id = payload.user_id or 0,
+      node_id = "",
+      avatar_url = "",
+      html_url = "",
+      type = "User",
+      site_admin = false,
+    }
+    -- GitLab groups have no sub-teams; expose a minimal team stub so consumers
+    -- receive a structurally valid membership payload.
+    local team = {
+      id = payload.group_id or 0,
+      node_id = "",
+      name = payload.group_name or "",
+      slug = payload.group_path or "",
+      description = "",
+      privacy = "closed",
+      permission = "pull",
+      url = "",
+      html_url = "",
+      members_url = "",
+      repositories_url = "",
+    }
+    local sender = {
+      login = "",
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      html_url = "",
+      type = "User",
+      site_admin = false,
+    }
+    local data = {
+      action = membership_action,
+      scope = "team",
+      member = member,
+      team = team,
+      organization = org,
+      sender = sender,
+    }
+    return make_internal_event({
+      event = "membership",
+      action = membership_action,
+      provider = config.backend,
+      raw = payload,
+      data = data,
+      timestamp = payload.updated_at or payload.created_at or "",
+    })
+  end
+
+  return nil, "Unhandled system hook event: " .. event_name
 end)
 
 -- gollum: wiki page created or edited.
@@ -7096,6 +7238,74 @@ b:webhook("Wiki Page Hook", function(payload)
     raw = payload,
     data = data,
     timestamp = "",
+  })
+end)
+
+-- member: repository collaborator added or removed.
+-- GitLab sends X-Gitlab-Event: Member Hook with action "added" or "removed".
+-- User fields are at the top level (user_id, user_username, etc.); project
+-- fields use the project_* prefix rather than a nested project object.
+-- GitLab normalizes to type="User" (member's actual role is in access_level,
+-- not surfaced in the GitHub member.type field).
+b:webhook("Member Hook", function(payload)
+  local action = payload.action or ""
+  local pns = payload.project_path_with_namespace or ""
+  local slash = pns:find("/", 1, true)
+  local owner_login = slash and pns:sub(1, slash - 1) or pns
+  local repo_name = slash and pns:sub(slash + 1) or (payload.project_name or pns)
+  local repository = {
+    id = payload.project_id or 0,
+    node_id = "",
+    name = repo_name,
+    full_name = pns,
+    private = true, -- visibility not included in Member Hook payload
+    owner = {
+      login = owner_login,
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      url = "",
+      html_url = "",
+      type = "User",
+    },
+    html_url = payload.project_url or "",
+    description = "",
+    fork = false,
+    url = payload.project_url or "",
+    default_branch = "",
+    visibility = "private",
+  }
+  local member = {
+    login = payload.user_username or "",
+    id = payload.user_id or 0,
+    node_id = "",
+    avatar_url = payload.user_avatar or "",
+    html_url = "",
+    type = "User",
+    site_admin = false,
+  }
+  local data = {
+    action = action,
+    member = member,
+    changes = {},
+    repository = repository,
+    sender = {
+      login = "",
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      html_url = "",
+      type = "User",
+      site_admin = false,
+    },
+  }
+  return make_internal_event({
+    event = "member",
+    action = action,
+    provider = config.backend,
+    raw = payload,
+    data = data,
+    timestamp = payload.updated_at or payload.created_at or "",
   })
 end)
 

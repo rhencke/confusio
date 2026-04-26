@@ -1,0 +1,16 @@
+{
+  "object_kind": "member",
+  "user_id": 2,
+  "user_name": "Bob Smith",
+  "user_username": "bob",
+  "user_email": "",
+  "user_avatar": "",
+  "access_level": "Developer",
+  "project_id": 10,
+  "project_name": "hello-world",
+  "project_path": "hello-world",
+  "project_path_with_namespace": "octocat/hello-world",
+  "project_url": "http://localhost/octocat/hello-world",
+  "expires_at": null,
+  "action": "added"
+}

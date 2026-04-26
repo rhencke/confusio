@@ -480,6 +480,11 @@ webhook issue_comment/deleted,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook label/created,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook label/edited,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook label/deleted,n,n,n,y,n,y,n,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook member/added,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook member/removed,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook member/edited,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook membership/added,n,n,n,n,n,n,n,n,y,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook membership/removed,n,n,n,n,n,n,n,n,y,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook merge_group/checks_requested,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook merge_group/destroyed,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook milestone/created,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
@@ -488,6 +493,12 @@ webhook milestone/opened,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook milestone/edited,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook milestone/deleted,n,n,n,y,n,y,n,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook milestone/reopened,~reopen emits opened,n,n,~reopen emits opened,n,~reopen emits opened,n,n,~reopen emits opened,~reopen emits opened,n,~reopen emits opened,n,n,n,~reopen emits opened,n,n,n,n,n,n,n,n
+webhook organization/created,n,n,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook organization/deleted,n,n,n,n,n,n,n,n,y,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook organization/renamed,n,n,n,n,n,n,n,n,y,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook organization/member_added,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook organization/member_invited,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook organization/member_removed,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook pull_request/opened,y,y,y,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
 webhook pull_request/closed,y,y,y,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
 webhook pull_request/reopened,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
@@ -509,6 +520,12 @@ webhook push/push,y,y,y,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
 webhook status/pending,n,y,y,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook status/success,n,y,y,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook status/failure,n,y,y,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
+webhook team/created,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook team/deleted,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook team/edited,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook team/added_to_repository,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook team/removed_from_repository,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook team_add/team_add,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook workflow_run/requested,n,n,n,y,n,y,n,n,n,y,y,y,y,n,n,y,n,n,n,n,n,n,n,n
 webhook workflow_run/in_progress,n,n,n,y,n,y,n,n,n,y,y,y,y,n,n,y,n,n,n,n,n,n,n,n
 webhook workflow_run/completed,y,n,n,y,n,y,n,n,n,y,y,y,y,n,n,y,n,n,n,n,n,n,n,n
