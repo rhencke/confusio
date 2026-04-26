@@ -2548,6 +2548,42 @@ b:webhook("delete", function(payload)
   })
 end)
 
+-- release: published, edited, deleted, prereleased.  GitBucket emits
+-- GitHub-compatible release payloads; fields are passed through as-is.
+local GB_RELEASE_ACTIONS = {
+  created = "created",
+  published = "published",
+  edited = "edited",
+  deleted = "deleted",
+  prereleased = "prereleased",
+  released = "released",
+  unpublished = "unpublished",
+}
+
+b:webhook("release", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_RELEASE_ACTIONS[raw_action]
+  local rel = payload.release or {}
+  local data = {
+    action = action or "unknown",
+    release = rel,
+    repository = payload.repository or {},
+    sender = payload.sender or {},
+  }
+  if action == "edited" then
+    data.changes = payload.changes or {}
+  end
+  return make_internal_event({
+    event = "release",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = data,
+    timestamp = rel.published_at or rel.created_at or "",
+  })
+end)
+
 -- fork: repository forked.  GitHub-compatible payload; forkee and repository
 -- are passed through as-is.
 b:webhook("fork", function(payload)
