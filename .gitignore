@@ -102,6 +102,9 @@ test/fixtures/webhooks/gitbucket/security_advisory-withdrawn.json
 test/fixtures/webhooks/gitbucket/repository_advisory-reported.json
 test/fixtures/webhooks/gitbucket/repository_vulnerability_alert-dismiss.json
 test/fixtures/webhooks/gitbucket/member-removed.json
+test/fixtures/webhooks/gitbucket/organization-member_removed.json
+test/fixtures/webhooks/gitbucket/membership-removed.json
+test/fixtures/webhooks/gitbucket/team-deleted.json
 test/fixtures/webhooks/gerrit/comment-added-changes_requested.json
 test/fixtures/webhooks/harness/pipeline_execution_success.json
 test/fixtures/webhooks/harness/stage_execution_success.json

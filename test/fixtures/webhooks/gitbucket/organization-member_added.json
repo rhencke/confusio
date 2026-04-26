@@ -1,0 +1,9 @@
+{
+  "action": "member_added",
+  "membership": {
+    "url": "", "state": "active", "role": "member", "organization_url": "",
+    "user": {"id": 2, "login": "bob", "avatar_url": "", "html_url": "http://localhost/bob"}
+  },
+  "organization": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": "http://localhost/octocat"},
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": "http://localhost/octocat"}
+}

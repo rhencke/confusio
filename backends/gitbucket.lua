@@ -2913,4 +2913,119 @@ b:webhook("member", function(payload)
   })
 end)
 
+-- organization: org-level membership and lifecycle events.
+-- GitBucket sends X-GitHub-Event: organization with GitHub-compatible payload.
+-- member_added/member_invited/member_removed carry a nested membership object.
+local GB_ORGANIZATION_ACTIONS = {
+  deleted = "deleted",
+  member_added = "member_added",
+  member_invited = "member_invited",
+  member_removed = "member_removed",
+  renamed = "renamed",
+}
+
+b:webhook("organization", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_ORGANIZATION_ACTIONS[raw_action]
+  local data = {
+    action = action or "unknown",
+    organization = payload.organization or {},
+    sender = payload.sender or {},
+  }
+  if payload.membership then
+    data.membership = payload.membership
+  end
+  return make_internal_event({
+    event = "organization",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = data,
+    timestamp = "",
+  })
+end)
+
+-- membership: team membership changes (member added or removed from a team).
+-- GitBucket sends X-GitHub-Event: membership with GitHub-compatible payload.
+local GB_MEMBERSHIP_ACTIONS = {
+  added = "added",
+  removed = "removed",
+}
+
+b:webhook("membership", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_MEMBERSHIP_ACTIONS[raw_action]
+  local data = {
+    action = action or "unknown",
+    scope = payload.scope or "team",
+    member = payload.member or {},
+    team = payload.team or {},
+    organization = payload.organization or {},
+    sender = payload.sender or {},
+  }
+  return make_internal_event({
+    event = "membership",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = data,
+    timestamp = "",
+  })
+end)
+
+-- team: team lifecycle and repository assignment events.
+-- GitBucket sends X-GitHub-Event: team with GitHub-compatible payload.
+-- Repository is present for added_to_repository, removed_from_repository, and edited.
+local GB_TEAM_ACTIONS = {
+  added_to_repository = "added_to_repository",
+  created = "created",
+  deleted = "deleted",
+  edited = "edited",
+  removed_from_repository = "removed_from_repository",
+}
+
+b:webhook("team", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_TEAM_ACTIONS[raw_action]
+  local data = {
+    action = action or "unknown",
+    team = payload.team or {},
+    organization = payload.organization or {},
+    sender = payload.sender or {},
+  }
+  if payload.repository then
+    data.repository = payload.repository
+  end
+  return make_internal_event({
+    event = "team",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = data,
+    timestamp = "",
+  })
+end)
+
+-- team_add: a team was granted access to a repository.
+-- GitBucket sends X-GitHub-Event: team_add with GitHub-compatible payload.
+-- There is no action field; the event itself is the action.
+b:webhook("team_add", function(payload)
+  return make_internal_event({
+    event = "team_add",
+    action = "team_add",
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      team = payload.team or {},
+      repository = payload.repository or {},
+      organization = payload.organization or {},
+      sender = payload.sender or {},
+    },
+    timestamp = "",
+  })
+end)
+
 b:build()

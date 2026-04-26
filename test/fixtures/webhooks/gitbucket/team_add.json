@@ -1,0 +1,11 @@
+{
+  "team": {"id": 5, "name": "core", "slug": "core", "description": "", "privacy": "closed", "permission": "pull"},
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": "http://localhost/octocat"}
+  },
+  "organization": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": "http://localhost/octocat"},
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": "http://localhost/octocat"}
+}

@@ -1,0 +1,6 @@
+{
+  "action": "created",
+  "team": {"id": 5, "name": "core", "slug": "core", "description": "", "privacy": "closed", "permission": "pull"},
+  "organization": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": "http://localhost/octocat"},
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": "http://localhost/octocat"}
+}
