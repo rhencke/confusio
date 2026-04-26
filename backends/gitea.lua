@@ -7820,6 +7820,29 @@ b:webhook("star", function(payload)
   })
 end)
 
+-- watch: a user started watching (subscribing to) this repository.
+-- Gitea sends X-Gitea-Event: watch with action "started".  GitHub's watch
+-- event also only has "started".
+local WATCH_ACTIONS = { started = "started" }
+b:webhook("watch", function(payload)
+  local raw_action = payload.action or ""
+  local action = WATCH_ACTIONS[raw_action]
+  local data = {
+    action = action or "unknown",
+    repository = translate_repo(payload.repository or {}),
+    sender = translate_user(payload.sender or {}),
+  }
+  return make_internal_event({
+    event = "watch",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitea",
+    raw = payload,
+    data = data,
+    timestamp = "",
+  })
+end)
+
 b:capability("repos", repos)
 b:capability("users", users)
 b:capability("orgs", orgs)

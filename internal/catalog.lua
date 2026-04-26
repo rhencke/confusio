@@ -3065,6 +3065,9 @@ local webhook_event_sections = {
       -- star
       { "webhook star/created", "wh_star_created" },
       { "webhook star/deleted", "wh_star_deleted" },
+
+      -- watch
+      { "webhook watch/started", "wh_watch_started" },
     },
   },
 }

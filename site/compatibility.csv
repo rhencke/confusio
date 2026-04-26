@@ -574,3 +574,4 @@ webhook repository_vulnerability_alert/resolve,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n
 webhook security_and_analysis/changed,n,n,n,n,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook star/created,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook star/deleted,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook watch/started,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
