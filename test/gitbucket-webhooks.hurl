@@ -2200,3 +2200,146 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 header "X-Confusio-Raw-Action" == "resolved"
+
+# ── discussion: created → 200 ─────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: discussion
+{
+  "action": "created",
+  "discussion": {
+    "id": 1, "node_id": "D_kgDOBQ8MAA", "number": 1,
+    "title": "How do I configure X?",
+    "body": "I'm trying to configure X but can't figure it out.",
+    "html_url": "http://localhost/octocat/hello-world/discussions/1",
+    "state": "open", "state_reason": null, "locked": false, "comments": 0,
+    "author_association": "OWNER", "category": null,
+    "reactions": {"url": "", "total_count": 0, "+1": 0, "-1": 0, "laugh": 0, "hooray": 0, "confused": 0, "heart": 0, "rocket": 0, "eyes": 0},
+    "answer_html_url": null, "answer_chosen_at": null, "answer_chosen_by": null,
+    "user": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""},
+    "labels": [],
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── discussion: labeled → 200 + label forwarded ───────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: discussion
+{
+  "action": "labeled",
+  "discussion": {
+    "id": 1, "node_id": "D_kgDOBQ8MAA", "number": 1,
+    "title": "How do I configure X?",
+    "body": "I'm trying to configure X but can't figure it out.",
+    "html_url": "http://localhost/octocat/hello-world/discussions/1",
+    "state": "open", "state_reason": null, "locked": false, "comments": 0,
+    "author_association": "OWNER", "category": null,
+    "reactions": {"url": "", "total_count": 0, "+1": 0, "-1": 0, "laugh": 0, "hooray": 0, "confused": 0, "heart": 0, "rocket": 0, "eyes": 0},
+    "answer_html_url": null, "answer_chosen_at": null, "answer_chosen_by": null,
+    "user": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""},
+    "labels": [{"id": 1, "node_id": "LA_kwDOBQ8MAA", "name": "question", "color": "e4e669", "default": false, "description": ""}],
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "label": {"id": 1, "node_id": "LA_kwDOBQ8MAA", "name": "question", "color": "e4e669", "default": false, "description": ""},
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── discussion: unknown action "transferred" → 200 (known action) ─────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: discussion
+{
+  "action": "transferred",
+  "discussion": {
+    "id": 1, "node_id": "D_kgDOBQ8MAA", "number": 1,
+    "title": "How do I configure X?",
+    "body": "I'm trying to configure X but can't figure it out.",
+    "html_url": "http://localhost/octocat/hello-world/discussions/1",
+    "state": "open", "state_reason": null, "locked": false, "comments": 0,
+    "author_association": "OWNER", "category": null,
+    "reactions": {"url": "", "total_count": 0, "+1": 0, "-1": 0, "laugh": 0, "hooray": 0, "confused": 0, "heart": 0, "rocket": 0, "eyes": 0},
+    "answer_html_url": null, "answer_chosen_at": null, "answer_chosen_by": null,
+    "user": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""},
+    "labels": [],
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── discussion_comment: created → 200 ────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: discussion_comment
+{
+  "action": "created",
+  "comment": {
+    "id": 42, "node_id": "DC_kwDOBQ8MAN4AAjdh",
+    "html_url": "http://localhost/octocat/hello-world/discussions/1#discussioncomment-42",
+    "body": "Try setting the X option in the config.",
+    "discussion_id": 1, "parent_id": null, "child_comment_count": 0,
+    "author_association": "NONE",
+    "reactions": {"url": "", "total_count": 0, "+1": 0, "-1": 0, "laugh": 0, "hooray": 0, "confused": 0, "heart": 0, "rocket": 0, "eyes": 0},
+    "user": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""},
+    "created_at": "2024-01-15T10:05:00Z", "updated_at": "2024-01-15T10:05:00Z"
+  },
+  "discussion": {
+    "id": 1, "node_id": "D_kgDOBQ8MAA", "number": 1,
+    "title": "How do I configure X?",
+    "body": "I'm trying to configure X but can't figure it out.",
+    "html_url": "http://localhost/octocat/hello-world/discussions/1",
+    "state": "open", "state_reason": null, "locked": false, "comments": 1,
+    "author_association": "OWNER", "category": null,
+    "reactions": {"url": "", "total_count": 0, "+1": 0, "-1": 0, "laugh": 0, "hooray": 0, "confused": 0, "heart": 0, "rocket": 0, "eyes": 0},
+    "answer_html_url": null, "answer_chosen_at": null, "answer_chosen_by": null,
+    "user": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""},
+    "labels": [],
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:05:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"

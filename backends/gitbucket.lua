@@ -3164,6 +3164,72 @@ b:webhook("projects_v2_item", function(payload)
   })
 end)
 
+-- discussion: GitBucket emits GitHub-compatible discussion payloads.
+local GB_DISCUSSION_ACTIONS = {
+  answered = "answered",
+  category_changed = "category_changed",
+  closed = "closed",
+  created = "created",
+  deleted = "deleted",
+  edited = "edited",
+  labeled = "labeled",
+  locked = "locked",
+  pinned = "pinned",
+  reopened = "reopened",
+  transferred = "transferred",
+  unanswered = "unanswered",
+  unlabeled = "unlabeled",
+  unlocked = "unlocked",
+  unpinned = "unpinned",
+}
+local GB_DISCUSSION_COMMENT_ACTIONS = {
+  created = "created",
+  deleted = "deleted",
+  edited = "edited",
+}
+b:webhook("discussion", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_DISCUSSION_ACTIONS[raw_action]
+  local data = {
+    action = action or "unknown",
+    discussion = payload.discussion or {},
+    repository = payload.repository or {},
+    sender = payload.sender or {},
+  }
+  if action == "labeled" or action == "unlabeled" then
+    data.label = payload.label
+  end
+  return make_internal_event({
+    event = "discussion",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = data,
+    timestamp = (payload.discussion or {}).updated_at or "",
+  })
+end)
+
+b:webhook("discussion_comment", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_DISCUSSION_COMMENT_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "discussion_comment",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      comment = payload.comment or {},
+      discussion = payload.discussion or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.comment or {}).updated_at or "",
+  })
+end)
+
 -- projects_v2_status_update: GitBucket emits GitHub-compatible projects v2 status update payloads.
 local GB_PROJECTS_V2_STATUS_UPDATE_ACTIONS = {
   created = "created",
