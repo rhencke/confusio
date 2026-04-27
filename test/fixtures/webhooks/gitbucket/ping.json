@@ -1,0 +1,24 @@
+{
+  "zen": "Responsive is better than fast.",
+  "hook_id": 1,
+  "hook": {
+    "type": "Repository",
+    "id": 1,
+    "name": "web",
+    "active": true,
+    "events": ["push", "pull_request"],
+    "config": {"content_type": "json", "url": "http://example.com/hook", "insecure_ssl": "0"},
+    "updated_at": "2024-01-15T10:00:00Z",
+    "created_at": "2024-01-15T10:00:00Z"
+  },
+  "repository": {
+    "id": 1, "node_id": "", "name": "hello-world",
+    "full_name": "octocat/hello-world", "private": false,
+    "owner": {"login": "octocat", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"},
+    "html_url": "http://localhost/octocat/hello-world",
+    "description": "A friendly repo", "fork": false, "url": "",
+    "clone_url": "", "homepage": "", "default_branch": "main",
+    "visibility": "public"
+  },
+  "sender": {"login": "octocat", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"}
+}

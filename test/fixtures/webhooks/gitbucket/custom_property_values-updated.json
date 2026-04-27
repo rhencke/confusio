@@ -1,0 +1,27 @@
+{
+  "action": "updated",
+  "new_property_values": [
+    {"property_name": "environment", "value": "production"}
+  ],
+  "old_property_values": [
+    {"property_name": "environment", "value": "staging"}
+  ],
+  "repository": {
+    "id": 1, "node_id": "", "name": "hello-world",
+    "full_name": "octocat/hello-world", "private": false,
+    "owner": {"login": "octocat", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"},
+    "html_url": "http://localhost/octocat/hello-world",
+    "description": "A friendly repo", "fork": false, "url": "",
+    "clone_url": "", "homepage": "", "default_branch": "main",
+    "visibility": "public"
+  },
+  "organization": {
+    "login": "my-org",
+    "id": 1,
+    "node_id": "",
+    "url": "",
+    "avatar_url": "",
+    "html_url": "http://localhost/my-org"
+  },
+  "sender": {"login": "octocat", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"}
+}
