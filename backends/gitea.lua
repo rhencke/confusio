@@ -148,6 +148,79 @@ local function translate_gitea_issue_comment(c)
   }
 end
 
+-- Stub reactions object used when Gitea's payload does not include reaction data.
+local STUB_REACTIONS = {
+  url = "",
+  total_count = 0,
+  ["+1"] = 0,
+  ["-1"] = 0,
+  laugh = 0,
+  confused = 0,
+  heart = 0,
+  hooray = 0,
+  eyes = 0,
+  rocket = 0,
+}
+
+-- Map a Gitea discussion object to the GitHub discussion shape.
+-- Gitea discussions are similar to issues but are a separate resource type.
+-- Fields not available from Gitea (category, author_association, reactions,
+-- answer_*) are stubbed with appropriate zero/null values.
+local function translate_gitea_discussion(d)
+  if not d then
+    return {}
+  end
+  local labels = {}
+  for _, l in ipairs(d.labels or {}) do
+    labels[#labels + 1] = translate_gitea_label(l)
+  end
+  return {
+    id = d.id,
+    node_id = "",
+    number = d.number,
+    title = d.title,
+    body = d.body,
+    html_url = d.html_url or "",
+    state = d.state or "open",
+    state_reason = nil,
+    locked = d.locked or false,
+    comments = d.comments or 0,
+    author_association = "NONE",
+    category = nil,
+    labels = labels,
+    reactions = STUB_REACTIONS,
+    answer_html_url = nil,
+    answer_chosen_at = nil,
+    answer_chosen_by = nil,
+    user = translate_user(d.user),
+    created_at = d.created or "",
+    updated_at = d.updated or "",
+  }
+end
+
+-- Map a Gitea discussion comment object to the GitHub discussion comment shape.
+-- Fields not available from Gitea (parent_id, child_comment_count,
+-- author_association, reactions) are stubbed.
+local function translate_gitea_discussion_comment(c)
+  if not c then
+    return {}
+  end
+  return {
+    id = c.id,
+    node_id = "",
+    html_url = c.html_url or "",
+    body = c.body,
+    discussion_id = c.discussion_id or 0,
+    parent_id = nil,
+    child_comment_count = 0,
+    author_association = "NONE",
+    reactions = STUB_REACTIONS,
+    user = translate_user(c.user),
+    created_at = c.created or "",
+    updated_at = c.updated or "",
+  }
+end
+
 local function translate_gitea_labels(labels)
   return translate_list(translate_gitea_label, labels)
 end
@@ -7095,6 +7168,20 @@ local PULL_REQUEST_ACTIONS = {
   review_requested = "review_requested",
   review_request_removed = "review_request_removed",
 }
+local DISCUSSION_ACTIONS = {
+  created = "created",
+  edited = "edited",
+  deleted = "deleted",
+  closed = "closed",
+  reopened = "reopened",
+  labeled = "labeled",
+  unlabeled = "unlabeled",
+}
+local DISCUSSION_COMMENT_ACTIONS = {
+  created = "created",
+  edited = "edited",
+  deleted = "deleted",
+}
 
 b:webhook("issues", function(payload)
   local raw_action = payload.action or ""
@@ -7134,6 +7221,51 @@ b:webhook("issue_comment", function(payload)
       action = action or "unknown",
       issue = translate_gitea_issue(payload.issue or {}),
       comment = translate_gitea_issue_comment(payload.comment or {}),
+      repository = translate_repo(payload.repository or {}),
+      sender = translate_user(payload.sender or {}),
+    },
+    timestamp = (payload.comment or {}).updated or "",
+  })
+end)
+
+b:webhook("discussion", function(payload)
+  local raw_action = payload.action or ""
+  local action = DISCUSSION_ACTIONS[raw_action]
+  local data = {
+    action = action or "unknown",
+    discussion = translate_gitea_discussion(payload.discussion or {}),
+    repository = translate_repo(payload.repository or {}),
+    sender = translate_user(payload.sender or {}),
+  }
+  if
+    DISCUSSION_ACTIONS[raw_action] == "labeled" or DISCUSSION_ACTIONS[raw_action] == "unlabeled"
+  then
+    data.label = translate_gitea_label(payload.label)
+  end
+  return make_internal_event({
+    event = "discussion",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitea",
+    raw = payload,
+    data = data,
+    timestamp = (payload.discussion or {}).updated or "",
+  })
+end)
+
+b:webhook("discussion_comment", function(payload)
+  local raw_action = payload.action or ""
+  local action = DISCUSSION_COMMENT_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "discussion_comment",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitea",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      discussion = translate_gitea_discussion(payload.discussion or {}),
+      comment = translate_gitea_discussion_comment(payload.comment or {}),
       repository = translate_repo(payload.repository or {}),
       sender = translate_user(payload.sender or {}),
     },

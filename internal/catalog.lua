@@ -2871,6 +2871,28 @@ local webhook_event_sections = {
       -- delete
       { "webhook delete/delete", "wh_delete_delete" },
 
+      -- discussion
+      { "webhook discussion/answered", "wh_discussion_answered" },
+      { "webhook discussion/category_changed", "wh_discussion_category_changed" },
+      { "webhook discussion/closed", "wh_discussion_closed" },
+      { "webhook discussion/created", "wh_discussion_created" },
+      { "webhook discussion/deleted", "wh_discussion_deleted" },
+      { "webhook discussion/edited", "wh_discussion_edited" },
+      { "webhook discussion/labeled", "wh_discussion_labeled" },
+      { "webhook discussion/locked", "wh_discussion_locked" },
+      { "webhook discussion/pinned", "wh_discussion_pinned" },
+      { "webhook discussion/reopened", "wh_discussion_reopened" },
+      { "webhook discussion/transferred", "wh_discussion_transferred" },
+      { "webhook discussion/unanswered", "wh_discussion_unanswered" },
+      { "webhook discussion/unlabeled", "wh_discussion_unlabeled" },
+      { "webhook discussion/unlocked", "wh_discussion_unlocked" },
+      { "webhook discussion/unpinned", "wh_discussion_unpinned" },
+
+      -- discussion_comment
+      { "webhook discussion_comment/created", "wh_discussion_comment_created" },
+      { "webhook discussion_comment/deleted", "wh_discussion_comment_deleted" },
+      { "webhook discussion_comment/edited", "wh_discussion_comment_edited" },
+
       -- fork
       { "webhook fork/fork", "wh_fork_fork" },
 
