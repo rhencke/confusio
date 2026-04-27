@@ -22,20 +22,18 @@ local function read_secret_file(path)
     error("webhook secret file not found: " .. path .. " (" .. tostring(stat_err) .. ")")
   end
   if st:uid() ~= unix.geteuid() then
-    error(string.format(
-      "webhook secret file %s must be owned by uid %d (got %d)",
-      path,
-      unix.geteuid(),
-      st:uid()
-    ))
+    error(
+      string.format(
+        "webhook secret file %s must be owned by uid %d (got %d)",
+        path,
+        unix.geteuid(),
+        st:uid()
+      )
+    )
   end
   local perm = st:mode() & 0x1FF -- lower 9 bits: rwxrwxrwx
   if perm ~= 0x180 then -- 0x180 = 0600 octal: owner rw, no group/other
-    error(string.format(
-      "webhook secret file %s must have permissions 0600 (got %04o)",
-      path,
-      perm
-    ))
+    error(string.format("webhook secret file %s must have permissions 0600 (got %04o)", path, perm))
   end
   local f = assert(io.open(path, "r"))
   local secret = f:read("*a")
@@ -129,6 +127,7 @@ dofile("/zip/internal/signing.lua")
 dofile("/zip/internal/fanout.lua")
 dofile("/zip/internal/deliver.lua")
 dofile("/zip/internal/webhooks.lua")
+dofile("/zip/internal/startup.lua")
 
 app.route_match = route_match
 app.path_known = path_known
@@ -139,5 +138,11 @@ app.webhook_receiver = make_webhook_receiver(app)
 if config.webhook_target then
   fanout_register_target(config.webhook_target)
 end
+
+-- Synthesize installation lifecycle events for GitHub-App-aware consumers.
+-- Fires installation.created and installation_repositories.added to all registered
+-- targets when a backend is configured.  When no targets are registered,
+-- fanout_dispatch returns 0 immediately without attempting delivery.
+synthesize_startup_events(config.backend, config.base_url)
 
 OnHttpRequest = make_dispatcher(app)

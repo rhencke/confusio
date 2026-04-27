@@ -8,9 +8,18 @@
 #   {{target}} — mock delivery target (port 18082, started with -u)
 #
 # Flow:
-#   1. Reset the delivery target log (fresh state)
-#   2. POST a Gitea issues event to confusio → expect 200
-#   3. Query the delivery target → expect exactly one forwarded delivery
+#   1. Warm up — wait for confusio to start listening (startup events dispatched by then)
+#   2. Reset the delivery target log (fresh state; startup events already cleared)
+#   3. POST a Gitea issues event to confusio → expect 200
+#   4. Query the delivery target → expect exactly one forwarded delivery
+
+# ── warm up: wait until confusio is ready ─────────────────────────────────────
+# synthesize_startup_events fires during .init.lua (before confusio listens).
+# Once this GET succeeds, all startup events have already landed in the delivery
+# target, so the /reset below reliably clears them before the test event is sent.
+
+GET http://{{host}}/
+HTTP *
 
 # ── reset: clear the delivery log ─────────────────────────────────────────────
 

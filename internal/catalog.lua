@@ -3147,6 +3147,51 @@ local webhook_event_sections = {
       { "webhook projects_v2_status_update/created", "wh_projects_v2_status_update_created" },
       { "webhook projects_v2_status_update/deleted", "wh_projects_v2_status_update_deleted" },
       { "webhook projects_v2_status_update/edited", "wh_projects_v2_status_update_edited" },
+
+      -- installation (GitHub App lifecycle; synthesized from backend config on startup)
+      { "webhook installation/created", "wh_installation_created" },
+      { "webhook installation/deleted", "wh_installation_deleted" },
+      {
+        "webhook installation/new_permissions_accepted",
+        "wh_installation_new_permissions_accepted",
+      },
+      { "webhook installation/suspend", "wh_installation_suspend" },
+      { "webhook installation/unsuspend", "wh_installation_unsuspend" },
+
+      -- installation_repositories (repos added/removed from an installation)
+      { "webhook installation_repositories/added", "wh_installation_repositories_added" },
+      { "webhook installation_repositories/removed", "wh_installation_repositories_removed" },
+
+      -- installation_target (installation target renamed)
+      { "webhook installation_target/renamed", "wh_installation_target_renamed" },
+
+      -- github_app_authorization (GitHub App authorization revoked)
+      { "webhook github_app_authorization/revoked", "wh_github_app_authorization_revoked" },
+
+      -- personal_access_token_request (fine-grained PAT request lifecycle; GitHub Enterprise)
+      {
+        "webhook personal_access_token_request/approved",
+        "wh_personal_access_token_request_approved",
+      },
+      {
+        "webhook personal_access_token_request/cancelled",
+        "wh_personal_access_token_request_cancelled",
+      },
+      {
+        "webhook personal_access_token_request/created",
+        "wh_personal_access_token_request_created",
+      },
+      { "webhook personal_access_token_request/denied", "wh_personal_access_token_request_denied" },
+
+      -- marketplace_purchase (GitHub Marketplace lifecycle; GitHub.com-only)
+      { "webhook marketplace_purchase/cancelled", "wh_marketplace_purchase_cancelled" },
+      { "webhook marketplace_purchase/changed", "wh_marketplace_purchase_changed" },
+      { "webhook marketplace_purchase/pending_change", "wh_marketplace_purchase_pending_change" },
+      {
+        "webhook marketplace_purchase/pending_change_cancelled",
+        "wh_marketplace_purchase_pending_change_cancelled",
+      },
+      { "webhook marketplace_purchase/purchased", "wh_marketplace_purchase_purchased" },
     },
   },
 }
