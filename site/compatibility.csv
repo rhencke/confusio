@@ -465,6 +465,24 @@ GET /users/{username}/starred,~empty list,~empty list,~empty list,y,~empty list,
 GET /users/{username}/subscriptions,~empty list,~empty list,~empty list,y,~empty list,y,~empty list,~empty list,~empty list,y,~empty list,y,~empty list,~empty list,~empty list,y,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
 webhook create/create,y,y,y,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
 webhook delete/delete,y,y,y,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
+webhook discussion/answered,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook discussion/category_changed,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook discussion/closed,n,n,n,y,n,y,n,n,y,y,n,n,n,n,n,y,n,n,n,n,n,n,n,n
+webhook discussion/created,n,n,n,y,n,y,n,n,y,y,n,n,n,n,n,y,n,n,n,n,n,n,n,n
+webhook discussion/deleted,n,n,n,y,n,y,n,n,y,y,n,n,n,n,n,y,n,n,n,n,n,n,n,n
+webhook discussion/edited,n,n,n,y,n,y,n,n,y,y,n,n,n,n,n,y,n,n,n,n,n,n,n,n
+webhook discussion/labeled,n,n,n,y,n,y,n,n,y,y,n,n,n,n,n,y,n,n,n,n,n,n,n,n
+webhook discussion/locked,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook discussion/pinned,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook discussion/reopened,n,n,n,y,n,y,n,n,y,y,n,n,n,n,n,y,n,n,n,n,n,n,n,n
+webhook discussion/transferred,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook discussion/unanswered,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook discussion/unlabeled,n,n,n,y,n,y,n,n,y,y,n,n,n,n,n,y,n,n,n,n,n,n,n,n
+webhook discussion/unlocked,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook discussion/unpinned,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook discussion_comment/created,n,n,n,y,n,y,n,n,y,y,n,n,n,n,n,y,n,n,n,n,n,n,n,n
+webhook discussion_comment/deleted,n,n,n,y,n,y,n,n,y,y,n,n,n,n,n,y,n,n,n,n,n,n,n,n
+webhook discussion_comment/edited,n,n,n,y,n,y,n,n,y,y,n,n,n,n,n,y,n,n,n,n,n,n,n,n
 webhook fork/fork,n,y,n,y,n,y,n,n,y,y,n,y,n,n,n,y,n,y,n,n,n,n,n,n
 webhook issues/opened,y,y,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
 webhook issues/closed,y,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
