@@ -517,6 +517,8 @@ webhook organization/renamed,n,n,n,n,n,n,n,n,y,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook organization/member_added,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook organization/member_invited,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook organization/member_removed,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook package/published,n,n,n,y,n,y,n,n,y,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook package/updated,n,n,n,y,n,y,n,n,y,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook pull_request/opened,y,y,y,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
 webhook pull_request/closed,y,y,y,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
 webhook pull_request/reopened,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
@@ -535,6 +537,8 @@ webhook pull_request_review_comment/created,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,
 webhook pull_request_review_comment/edited,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook pull_request_review_comment/deleted,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook push/push,y,y,y,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
+webhook registry_package/published,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook registry_package/updated,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook status/pending,n,y,y,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook status/success,n,y,y,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook status/failure,n,y,y,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n

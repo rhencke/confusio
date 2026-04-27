@@ -3255,4 +3255,48 @@ b:webhook("projects_v2_status_update", function(payload)
   })
 end)
 
+-- package: GitBucket emits GitHub-compatible package payloads.
+local GB_PACKAGE_ACTIONS = { published = "published", updated = "updated" }
+b:webhook("package", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_PACKAGE_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "package",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      package = payload.package or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.package or {}).updated_at or (payload.package or {}).created_at or "",
+  })
+end)
+
+-- registry_package: GitBucket emits GitHub-compatible registry_package payloads.
+local GB_REGISTRY_PACKAGE_ACTIONS = { published = "published", updated = "updated" }
+b:webhook("registry_package", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_REGISTRY_PACKAGE_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "registry_package",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      registry_package = payload.registry_package or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.registry_package or {}).updated_at
+      or (payload.registry_package or {}).created_at
+      or "",
+  })
+end)
+
 b:build()

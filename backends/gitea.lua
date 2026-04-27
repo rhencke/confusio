@@ -7975,6 +7975,62 @@ b:webhook("watch", function(payload)
   })
 end)
 
+-- package: a package version was created (published) or deleted from the
+-- registry.  Gitea sends X-Gitea-Event: package with action "created" or
+-- "deleted".  The payload carries the package as a flat object with a
+-- version string; there is no nested version ID.
+-- Action mapping: "created" → "published", "deleted" → "deleted".
+-- Note: "deleted" is not a GitHub package action; it is preserved in
+-- confusio output so consumers can detect removals from Gitea backends.
+local PACKAGE_ACTIONS = { created = "published", deleted = "deleted" }
+local function translate_gitea_webhook_package(p)
+  p = p or {}
+  local created = p.created_at or ""
+  return {
+    id = p.id,
+    name = p.name or "",
+    namespace = (p.owner and p.owner.login) or "",
+    ecosystem = p.type or "",
+    package_type = p.type or "",
+    html_url = p.html_url or "",
+    created_at = created,
+    updated_at = created,
+    owner = translate_user(p.owner or {}),
+    description = nil,
+    package_version = {
+      id = nil,
+      name = p.version or "",
+      html_url = p.html_url or "",
+      created_at = created,
+      metadata = {},
+      package_files = {},
+      installation_command = "",
+    },
+    registry = nil,
+  }
+end
+
+b:webhook("package", function(payload)
+  local raw_action = payload.action or ""
+  local action = PACKAGE_ACTIONS[raw_action]
+  local pkg = translate_gitea_webhook_package(payload.package)
+  local data = {
+    action = action or "unknown",
+    package = pkg,
+    repository = payload.repository and translate_repo(payload.repository) or nil,
+    sender = translate_user(payload.sender or {}),
+  }
+  return make_internal_event({
+    event = "package",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitea",
+    raw = payload,
+    data = data,
+    timestamp = pkg.created_at,
+  })
+end)
+
 b:capability("repos", repos)
 b:capability("users", users)
 b:capability("orgs", orgs)

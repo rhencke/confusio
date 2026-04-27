@@ -2945,6 +2945,10 @@ local webhook_event_sections = {
       { "webhook organization/member_invited", "wh_organization_member_invited" },
       { "webhook organization/member_removed", "wh_organization_member_removed" },
 
+      -- package
+      { "webhook package/published", "wh_package_published" },
+      { "webhook package/updated", "wh_package_updated" },
+
       -- pull_request
       { "webhook pull_request/opened", "wh_pull_request_opened" },
       { "webhook pull_request/closed", "wh_pull_request_closed" },
@@ -2970,6 +2974,10 @@ local webhook_event_sections = {
 
       -- push
       { "webhook push/push", "wh_push_push" },
+
+      -- registry_package (legacy GitHub event; forwarded by GitBucket)
+      { "webhook registry_package/published", "wh_registry_package_published" },
+      { "webhook registry_package/updated", "wh_registry_package_updated" },
 
       -- status
       { "webhook status/pending", "wh_status_pending" },

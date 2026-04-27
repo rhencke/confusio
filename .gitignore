@@ -47,6 +47,7 @@ test/fixtures/webhooks/gitea/discussion-labeled.json
 test/fixtures/webhooks/gitea/discussion-unlabeled.json
 test/fixtures/webhooks/gitea/discussion_comment-deleted.json
 test/fixtures/webhooks/gitea/discussion_comment-edited.json
+test/fixtures/webhooks/gitea/package-deleted.json
 test/fixtures/webhooks/gitbucket/delete.json
 test/fixtures/webhooks/gitbucket/issues-closed.json
 test/fixtures/webhooks/gitbucket/issues-edited.json
@@ -146,6 +147,8 @@ test/fixtures/webhooks/gitbucket/discussion-labeled.json
 test/fixtures/webhooks/gitbucket/discussion-unlabeled.json
 test/fixtures/webhooks/gitbucket/discussion_comment-edited.json
 test/fixtures/webhooks/gitbucket/discussion_comment-deleted.json
+test/fixtures/webhooks/gitbucket/package-updated.json
+test/fixtures/webhooks/gitbucket/registry_package-updated.json
 test/fixtures/webhooks/gerrit/comment-added-changes_requested.json
 test/fixtures/webhooks/harness/pipeline_execution_success.json
 test/fixtures/webhooks/harness/stage_execution_success.json
