@@ -1,0 +1,17 @@
+{
+  "action": "created",
+  "projects_v2_status_update": {
+    "id": 1,
+    "node_id": "PVTSU_lADOBQ8MAM4AAjdh",
+    "project_node_id": "PVT_kwDOBQ8MAM4AAjdh",
+    "creator": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": "http://localhost/octocat"},
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T10:00:00Z",
+    "start_date": null,
+    "target_date": null,
+    "status": "ON_TRACK",
+    "body": "Everything is on track."
+  },
+  "organization": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": "http://localhost/octocat"},
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": "http://localhost/octocat"}
+}

@@ -1,0 +1,16 @@
+{
+  "action": "created",
+  "projects_v2_item": {
+    "id": 1,
+    "node_id": "PVTI_lADOBQ8MAM4AAjdhzgBjfV8",
+    "project_node_id": "PVT_kwDOBQ8MAM4AAjdh",
+    "content_node_id": "I_kwDOBQ8MAM4AAjdh",
+    "content_type": "Issue",
+    "creator": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": "http://localhost/octocat"},
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T10:00:00Z",
+    "archived_at": null
+  },
+  "organization": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": "http://localhost/octocat"},
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": "http://localhost/octocat"}
+}

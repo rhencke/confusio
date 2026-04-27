@@ -507,3 +507,75 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+
+# ── projects_v2: created — confusio shape ────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: projects_v2
+file,fixtures/webhooks/gitbucket/projects_v2-created.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "projects_v2"
+jsonpath "$[0].confusio_source" == "gitbucket"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""
+
+# ── projects_v2_item: created — confusio shape ───────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: projects_v2_item
+file,fixtures/webhooks/gitbucket/projects_v2_item-created.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "projects_v2_item"
+jsonpath "$[0].confusio_source" == "gitbucket"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""
+
+# ── projects_v2_status_update: created — confusio shape ──────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: projects_v2_status_update
+file,fixtures/webhooks/gitbucket/projects_v2_status_update-created.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "projects_v2_status_update"
+jsonpath "$[0].confusio_source" == "gitbucket"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""

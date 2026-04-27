@@ -3096,6 +3096,27 @@ local webhook_event_sections = {
       { "webhook project_column/deleted", "wh_project_column_deleted" },
       { "webhook project_column/edited", "wh_project_column_edited" },
       { "webhook project_column/moved", "wh_project_column_moved" },
+
+      -- projects_v2 (projects v2)
+      { "webhook projects_v2/closed", "wh_projects_v2_closed" },
+      { "webhook projects_v2/created", "wh_projects_v2_created" },
+      { "webhook projects_v2/deleted", "wh_projects_v2_deleted" },
+      { "webhook projects_v2/edited", "wh_projects_v2_edited" },
+      { "webhook projects_v2/reopened", "wh_projects_v2_reopened" },
+
+      -- projects_v2_item (projects v2 items)
+      { "webhook projects_v2_item/archived", "wh_projects_v2_item_archived" },
+      { "webhook projects_v2_item/converted", "wh_projects_v2_item_converted" },
+      { "webhook projects_v2_item/created", "wh_projects_v2_item_created" },
+      { "webhook projects_v2_item/deleted", "wh_projects_v2_item_deleted" },
+      { "webhook projects_v2_item/edited", "wh_projects_v2_item_edited" },
+      { "webhook projects_v2_item/reordered", "wh_projects_v2_item_reordered" },
+      { "webhook projects_v2_item/restored", "wh_projects_v2_item_restored" },
+
+      -- projects_v2_status_update (projects v2 status updates)
+      { "webhook projects_v2_status_update/created", "wh_projects_v2_status_update_created" },
+      { "webhook projects_v2_status_update/deleted", "wh_projects_v2_status_update_deleted" },
+      { "webhook projects_v2_status_update/edited", "wh_projects_v2_status_update_edited" },
     },
   },
 }

@@ -2002,3 +2002,201 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 header "X-Confusio-Raw-Action" == "archived"
+
+# ── projects_v2: created → 200 ────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: projects_v2
+{
+  "action": "created",
+  "projects_v2": {
+    "id": 1, "node_id": "PVT_kwDOBQ8MAM4AAjdh",
+    "title": "My V2 Project", "number": 1, "status": "open",
+    "public": true, "closed_at": null,
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "organization": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── projects_v2: closed → 200 ─────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: projects_v2
+{
+  "action": "closed",
+  "projects_v2": {
+    "id": 1, "node_id": "PVT_kwDOBQ8MAM4AAjdh",
+    "title": "My V2 Project", "number": 1, "status": "closed",
+    "public": true, "closed_at": "2024-01-15T11:00:00Z",
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T11:00:00Z"
+  },
+  "organization": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── projects_v2: unknown action → 200 + X-Confusio-Raw-Action sidecar ────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: projects_v2
+{
+  "action": "pinned",
+  "projects_v2": {
+    "id": 1, "node_id": "PVT_kwDOBQ8MAM4AAjdh",
+    "title": "My V2 Project", "number": 1, "status": "open",
+    "public": true, "closed_at": null,
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "organization": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+header "X-Confusio-Raw-Action" == "pinned"
+
+# ── projects_v2_item: created → 200 ───────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: projects_v2_item
+{
+  "action": "created",
+  "projects_v2_item": {
+    "id": 1, "node_id": "PVTI_lADOBQ8MAM4AAjdhzgBjfV8",
+    "project_node_id": "PVT_kwDOBQ8MAM4AAjdh",
+    "content_node_id": "I_kwDOBQ8MAM4AAjdh", "content_type": "Issue",
+    "archived_at": null,
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "organization": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── projects_v2_item: archived → 200 ──────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: projects_v2_item
+{
+  "action": "archived",
+  "projects_v2_item": {
+    "id": 1, "node_id": "PVTI_lADOBQ8MAM4AAjdhzgBjfV8",
+    "project_node_id": "PVT_kwDOBQ8MAM4AAjdh",
+    "content_node_id": "I_kwDOBQ8MAM4AAjdh", "content_type": "Issue",
+    "archived_at": "2024-01-15T10:10:00Z",
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:10:00Z"
+  },
+  "organization": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── projects_v2_item: unknown action → 200 + X-Confusio-Raw-Action sidecar ───
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: projects_v2_item
+{
+  "action": "locked",
+  "projects_v2_item": {
+    "id": 1, "node_id": "PVTI_lADOBQ8MAM4AAjdhzgBjfV8",
+    "project_node_id": "PVT_kwDOBQ8MAM4AAjdh",
+    "content_node_id": "I_kwDOBQ8MAM4AAjdh", "content_type": "Issue",
+    "archived_at": null,
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "organization": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+header "X-Confusio-Raw-Action" == "locked"
+
+# ── projects_v2_status_update: created → 200 ──────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: projects_v2_status_update
+{
+  "action": "created",
+  "projects_v2_status_update": {
+    "id": 1, "node_id": "PVTSU_lADOBQ8MAM4AAjdh",
+    "project_node_id": "PVT_kwDOBQ8MAM4AAjdh",
+    "status": "ON_TRACK", "body": "Everything is on track.",
+    "start_date": null, "target_date": null,
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "organization": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── projects_v2_status_update: edited → 200 ───────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: projects_v2_status_update
+{
+  "action": "edited",
+  "projects_v2_status_update": {
+    "id": 1, "node_id": "PVTSU_lADOBQ8MAM4AAjdh",
+    "project_node_id": "PVT_kwDOBQ8MAM4AAjdh",
+    "status": "AT_RISK", "body": "Some items are at risk.",
+    "start_date": null, "target_date": null,
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:30:00Z"
+  },
+  "organization": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── projects_v2_status_update: unknown action → 200 + X-Confusio-Raw-Action ──
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: projects_v2_status_update
+{
+  "action": "resolved",
+  "projects_v2_status_update": {
+    "id": 1, "node_id": "PVTSU_lADOBQ8MAM4AAjdh",
+    "project_node_id": "PVT_kwDOBQ8MAM4AAjdh",
+    "status": "COMPLETE", "body": "All done.",
+    "start_date": null, "target_date": null,
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "organization": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+header "X-Confusio-Raw-Action" == "resolved"
