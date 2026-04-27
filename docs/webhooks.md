@@ -928,6 +928,8 @@ action availability.
 | `star` | Repository starred or unstarred | `created`, `deleted` |
 | `watch` | User started watching repository | `started` |
 | `sponsorship` | GitHub Sponsors lifecycle | `created`, `cancelled`, `edited`, `tier_changed`, `pending_cancellation`, `pending_tier_change` |
+| `discussion` | Discussion thread lifecycle | `created`, `edited`, `deleted`, `closed`, `reopened`, `answered`, `unanswered`, `labeled`, `unlabeled`, `locked`, `unlocked`, `pinned`, `unpinned`, `category_changed`, `transferred` |
+| `discussion_comment` | Comment on a discussion thread | `created`, `edited`, `deleted` |
 
 Events not in this table are not currently emitted by confusio in GitHub-emulation
 shape.  Backends that produce event types with no GitHub equivalent are dropped or
@@ -1560,6 +1562,100 @@ The `repository` object carries the full repository schema for all actions.  For
   "changes":    { "repository": { "name": { "from": "old-name" } } },
   "repository": { ... },
   "sender":     { ... }
+}
+```
+
+#### `discussion`
+
+```json
+{
+  "action":     "created",
+  "discussion": {
+    "id":               1,
+    "node_id":          "<string>",
+    "number":           1,
+    "title":            "<string>",
+    "body":             "<string>",
+    "html_url":         "<url>",
+    "state":            "open",
+    "state_reason":     null,
+    "locked":           false,
+    "active_lock_reason": null,
+    "comments":         0,
+    "author_association": "OWNER",
+    "answer_html_url":  null,
+    "answer_chosen_at": null,
+    "answer_chosen_by": null,
+    "category": {
+      "id":           1,
+      "name":         "<string>",
+      "slug":         "<string>",
+      "description":  "<string>",
+      "emoji":        ":<name>:",
+      "is_answerable": false,
+      "repository_id": 1,
+      "created_at":   "<iso8601>",
+      "updated_at":   "<iso8601>"
+    },
+    "user":        { "id": 1, "login": "<string>", ... },
+    "labels":      [],
+    "reactions":   { "url": "<url>", "total_count": 0, "+1": 0, "-1": 0, "laugh": 0, "confused": 0, "heart": 0, "hooray": 0, "eyes": 0, "rocket": 0 },
+    "created_at":  "<iso8601>",
+    "updated_at":  "<iso8601>"
+  },
+  "repository": { ... },
+  "sender":     { ... }
+}
+```
+
+Additional fields present for specific actions:
+
+| Action | Extra field | Description |
+|--------|-------------|-------------|
+| `edited` | `changes.title.from` | Previous title (if title changed) |
+| `edited` | `changes.body.from` | Previous body (if body changed) |
+| `labeled` | `label` | The label that was applied |
+| `unlabeled` | `label` | The label that was removed |
+| `transferred` | `changes.new_repository` | The repository the discussion was transferred to |
+| `category_changed` | `changes.category.from` | The previous discussion category |
+| `answered` | `answer` | The comment that was marked as the answer |
+| `unanswered` | `old_answer` | The comment that had previously been the answer |
+
+#### `discussion_comment`
+
+```json
+{
+  "action":     "created",
+  "comment": {
+    "id":                 1,
+    "node_id":            "<string>",
+    "html_url":           "<url>",
+    "body":               "<string>",
+    "discussion_id":      1,
+    "parent_id":          null,
+    "child_comment_count": 0,
+    "author_association": "OWNER",
+    "created_at":         "<iso8601>",
+    "updated_at":         "<iso8601>",
+    "user":               { "id": 1, "login": "<string>", ... },
+    "reactions":          { "url": "<url>", "total_count": 0, "+1": 0, "-1": 0, "laugh": 0, "confused": 0, "heart": 0, "hooray": 0, "eyes": 0, "rocket": 0 }
+  },
+  "discussion": { ... },
+  "repository": { ... },
+  "sender":     { ... }
+}
+```
+
+For the `"edited"` action, a `changes` object is also present:
+
+```json
+{
+  "action":  "edited",
+  "changes": { "body": { "from": "<previous body>" } },
+  "comment": { ... },
+  "discussion": { ... },
+  "repository": { ... },
+  "sender":  { ... }
 }
 ```
 
@@ -3727,6 +3823,121 @@ Triggered when branch protection is enabled or disabled for a repository.
 |--------|--------|------------|
 | `disabled` | ✓ | — |
 | `enabled` | ✓ | — |
+
+---
+
+### `discussion`
+
+Triggered on discussion thread lifecycle events.  GitHub Discussions are
+forum-style threads attached to a repository.  Most forge backends do not have
+a direct equivalent; coverage is limited to backends that expose a native
+discussion webhook surface.
+
+#### Discussion object fields
+
+| GitHub field | gitea-family | gitlab | github | gitbucket | All others |
+|---|---|---|---|---|---|
+| `discussion.id` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `discussion.node_id` | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `discussion.number` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `discussion.title` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `discussion.body` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `discussion.html_url` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `discussion.state` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `discussion.state_reason` | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `discussion.locked` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `discussion.comments` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `discussion.author_association` | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `discussion.category` | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `discussion.labels` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `discussion.reactions` | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `discussion.answer_html_url` | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `discussion.answer_chosen_at` | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `discussion.answer_chosen_by` | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `discussion.user` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `discussion.created_at` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `discussion.updated_at` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `repository` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `sender` | ✓ | ✗ | ✓ | ✓ | ✗ |
+
+#### Supported actions by backend
+
+| Action | gitea-family | gitlab | github | gitbucket | All others |
+|--------|---|---|---|---|---|
+| `created` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `edited` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `deleted` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `closed` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `reopened` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `answered` | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `unanswered` | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `labeled` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `unlabeled` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `locked` | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `unlocked` | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `pinned` | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `unpinned` | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `category_changed` | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `transferred` | ✗ | ✗ | ✓ | ✓ | ✗ |
+
+**Notes:**
+- `discussion.category`: GitHub Discussions have a category concept (Q&A, Announcements,
+  etc.).  Gitea discussions do not have categories; confusio emits `null` for the
+  `category` field when translating from Gitea.
+- `discussion.author_association`, `discussion.reactions`, `discussion.answer_*`:
+  Gitea's discussion webhook payload does not expose these fields; confusio stubs them
+  with the appropriate zero values (`"NONE"`, zeroed reactions object, `null`).
+- `discussion.state_reason`: only populated by GitHub; confusio stubs `null` for all
+  other backends.
+- GitLab does not have a repository-level discussions feature equivalent to GitHub
+  Discussions.  GitLab note threads on issues and MRs are already mapped to the
+  `issue_comment` and `pull_request_review_comment` event families.
+- `answered` / `unanswered` / `locked` / `unlocked` / `pinned` / `unpinned` /
+  `category_changed` / `transferred`: Gitea's discussion webhook does not emit events
+  for these lifecycle transitions; only `github` and `gitbucket` support them.
+
+---
+
+### `discussion_comment`
+
+Triggered when a comment is created, edited, or deleted on a discussion thread.
+
+#### Comment object fields
+
+| GitHub field | gitea-family | gitlab | github | gitbucket | All others |
+|---|---|---|---|---|---|
+| `comment.id` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `comment.node_id` | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `comment.html_url` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `comment.body` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `comment.discussion_id` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `comment.parent_id` | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `comment.child_comment_count` | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `comment.author_association` | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `comment.reactions` | ✗ | ✗ | ✓ | ✓ | ✗ |
+| `comment.user` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `comment.created_at` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `comment.updated_at` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `discussion` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `repository` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `sender` | ✓ | ✗ | ✓ | ✓ | ✗ |
+
+#### Supported actions by backend
+
+| Action | gitea-family | gitlab | github | gitbucket | All others |
+|--------|---|---|---|---|---|
+| `created` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `edited` | ✓ | ✗ | ✓ | ✓ | ✗ |
+| `deleted` | ✓ | ✗ | ✓ | ✓ | ✗ |
+
+**Notes:**
+- `comment.parent_id`: Gitea discussion comments do not expose a parent ID for threaded
+  replies; confusio stubs `null`.
+- `comment.child_comment_count`, `comment.author_association`, `comment.reactions`:
+  not available from Gitea; confusio stubs with zero values.
+- GitLab note threads on issues and MRs are mapped to `issue_comment` /
+  `pull_request_review_comment`, not `discussion_comment`.  GitLab has no standalone
+  Discussions surface equivalent to GitHub Discussions.
 
 ---
 
