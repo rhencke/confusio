@@ -39,6 +39,14 @@ test/fixtures/webhooks/gitea/deploy_key-deleted.json
 test/fixtures/webhooks/gitea/gollum-edited.json
 test/fixtures/webhooks/gitea/repository-deleted.json
 test/fixtures/webhooks/gitea/repository-renamed.json
+test/fixtures/webhooks/gitea/discussion-edited.json
+test/fixtures/webhooks/gitea/discussion-deleted.json
+test/fixtures/webhooks/gitea/discussion-closed.json
+test/fixtures/webhooks/gitea/discussion-reopened.json
+test/fixtures/webhooks/gitea/discussion-labeled.json
+test/fixtures/webhooks/gitea/discussion-unlabeled.json
+test/fixtures/webhooks/gitea/discussion_comment-deleted.json
+test/fixtures/webhooks/gitea/discussion_comment-edited.json
 test/fixtures/webhooks/gitbucket/delete.json
 test/fixtures/webhooks/gitbucket/issues-closed.json
 test/fixtures/webhooks/gitbucket/issues-edited.json

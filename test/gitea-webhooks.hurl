@@ -1548,3 +1548,126 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 header "X-Confusio-Raw-Action" == "stopped"
+
+# ── discussion: created → 200 ────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: discussion
+{
+  "action": "created",
+  "discussion": {
+    "id": 1, "number": 1, "title": "How do I configure X?",
+    "body": "I'm trying to configure X but can't figure it out.",
+    "state": "open", "html_url": "http://localhost/octocat/hello-world/issues/1",
+    "locked": false, "comments": 0,
+    "user": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""},
+    "labels": [],
+    "created": "2024-01-15T10:00:00Z", "updated": "2024-01-15T10:00:00Z", "closed": null
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── discussion: labeled → 200 (label field forwarded) ────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: discussion
+{
+  "action": "labeled",
+  "discussion": {
+    "id": 1, "number": 1, "title": "How do I configure X?", "body": null,
+    "state": "open", "html_url": "http://localhost/octocat/hello-world/issues/1",
+    "locked": false, "comments": 0,
+    "user": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""},
+    "labels": [{"id": 5, "name": "question", "color": "#d876e3", "url": ""}],
+    "created": "2024-01-15T10:00:00Z", "updated": "2024-01-15T10:01:00Z", "closed": null
+  },
+  "label": {"id": 5, "name": "question", "color": "#d876e3", "url": ""},
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── discussion: unknown action → 200 + X-Confusio-Raw-Action sidecar ─────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: discussion
+{
+  "action": "pinned",
+  "discussion": {
+    "id": 1, "number": 1, "title": "How do I configure X?", "body": null,
+    "state": "open", "html_url": "http://localhost/octocat/hello-world/issues/1",
+    "locked": false, "comments": 0,
+    "user": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""},
+    "labels": [],
+    "created": "2024-01-15T10:00:00Z", "updated": "2024-01-15T10:00:00Z", "closed": null
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+header "X-Confusio-Raw-Action" == "pinned"
+
+# ── discussion_comment: created → 200 ────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: discussion_comment
+{
+  "action": "created",
+  "discussion": {
+    "id": 1, "number": 1, "title": "How do I configure X?",
+    "body": "I'm trying to configure X but can't figure it out.",
+    "state": "open", "html_url": "http://localhost/octocat/hello-world/issues/1",
+    "locked": false, "comments": 1,
+    "user": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""},
+    "labels": [],
+    "created": "2024-01-15T10:00:00Z", "updated": "2024-01-15T10:05:00Z", "closed": null
+  },
+  "comment": {
+    "id": 42, "discussion_id": 1,
+    "body": "Try setting the X option in the config.",
+    "html_url": "http://localhost/octocat/hello-world/issues/1#issuecomment-42",
+    "user": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""},
+    "created": "2024-01-15T10:05:00Z", "updated": "2024-01-15T10:05:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"

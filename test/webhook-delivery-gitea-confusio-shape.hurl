@@ -223,3 +223,27 @@ jsonpath "$[0].confusio_source" == "gitea"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+
+# ── discussion: created — confusio shape ──────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: discussion
+file,fixtures/webhooks/gitea/discussion-created.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "discussion"
+jsonpath "$[0].confusio_source" == "gitea"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""
