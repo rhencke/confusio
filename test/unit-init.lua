@@ -80,6 +80,14 @@ end
 DecodeBase64 = function(s)
   return s
 end
+-- Stub Fetch: records outbound calls so startup synthesis (synthesize_startup_events)
+-- and deliver_fire tests do not make real network requests.  Returns a 200 response.
+-- Individual tests that need more control save/restore Fetch locally.
+local _fetch_calls = {}
+Fetch = function(url, opts) -- luacheck: globals Fetch _fetch_calls
+  _fetch_calls[#_fetch_calls + 1] = { url = url, opts = opts }
+  return 200, {}, "{}"
+end
 -- luacheck: pop
 
 -- Prevent backend file loading (config.backend will be "" anyway, but be safe).
@@ -3340,6 +3348,125 @@ end
 -- persistence, retry scheduler, or circuit breaker.  See CLAUDE.md.
 
 -- (end of webhook fire-and-record tests)
+
+-- ============================================================
+-- synthesize_startup_events (internal/startup.lua)
+-- ============================================================
+
+do
+  -- luacheck: globals synthesize_startup_events fanout_dispatch
+
+  -- Stub fanout_dispatch to capture dispatch calls without real delivery.
+  local _se_calls = {}
+  local _real_fanout_dispatch = fanout_dispatch
+  fanout_dispatch = function(backend, event_type, payload) -- luacheck: globals fanout_dispatch
+    _se_calls[#_se_calls + 1] = {
+      backend = backend,
+      event_type = event_type,
+      payload = payload,
+    }
+    return 0
+  end
+
+  -- No-op when backend is "" (no backend configured).
+  _se_calls = {}
+  synthesize_startup_events("", "https://example.com")
+  eq(#_se_calls, 0, "synthesize_startup_events: empty backend → no dispatch calls")
+
+  -- Two events dispatched when backend is non-empty.
+  _se_calls = {}
+  synthesize_startup_events("testbackend", "https://git.example.com")
+  eq(#_se_calls, 2, "synthesize_startup_events: two events dispatched for non-empty backend")
+
+  -- First event: installation.created
+  eq(_se_calls[1].backend, "testbackend", "synthesize_startup_events: event 1 backend")
+  eq(
+    _se_calls[1].event_type,
+    "installation",
+    "synthesize_startup_events: event 1 type is installation"
+  )
+  eq(
+    _se_calls[1].payload.action,
+    "created",
+    "synthesize_startup_events: installation action is 'created'"
+  )
+  ok(
+    type(_se_calls[1].payload.installation) == "table",
+    "synthesize_startup_events: installation field is a table"
+  )
+  eq(
+    _se_calls[1].payload.installation.app_slug,
+    "confusio",
+    "synthesize_startup_events: installation.app_slug is 'confusio'"
+  )
+  eq(
+    _se_calls[1].payload.installation.account.login,
+    "testbackend",
+    "synthesize_startup_events: installation.account.login is backend name"
+  )
+  eq(
+    _se_calls[1].payload.installation.account.url,
+    "https://git.example.com",
+    "synthesize_startup_events: installation.account.url is base_url"
+  )
+  eq(
+    _se_calls[1].payload.installation.repository_selection,
+    "all",
+    "synthesize_startup_events: installation.repository_selection is 'all'"
+  )
+  ok(
+    type(_se_calls[1].payload.sender) == "table",
+    "synthesize_startup_events: sender field is a table"
+  )
+  eq(
+    _se_calls[1].payload.sender.login,
+    "confusio",
+    "synthesize_startup_events: sender.login is 'confusio'"
+  )
+
+  -- Second event: installation_repositories.added
+  eq(
+    _se_calls[2].event_type,
+    "installation_repositories",
+    "synthesize_startup_events: event 2 type is installation_repositories"
+  )
+  eq(
+    _se_calls[2].payload.action,
+    "added",
+    "synthesize_startup_events: installation_repositories action is 'added'"
+  )
+  eq(
+    _se_calls[2].payload.repository_selection,
+    "all",
+    "synthesize_startup_events: installation_repositories.repository_selection is 'all'"
+  )
+  ok(
+    type(_se_calls[2].payload.repositories_added) == "table",
+    "synthesize_startup_events: repositories_added is a table"
+  )
+  ok(
+    type(_se_calls[2].payload.repositories_removed) == "table",
+    "synthesize_startup_events: repositories_removed is a table"
+  )
+
+  -- Both events share the same installation object (same content at minimum).
+  eq(
+    _se_calls[1].payload.installation.app_slug,
+    _se_calls[2].payload.installation.app_slug,
+    "synthesize_startup_events: both events share same installation object"
+  )
+
+  -- created_at / updated_at are ISO 8601 strings.
+  local inst = _se_calls[1].payload.installation
+  ok(
+    type(inst.created_at) == "string" and inst.created_at:match("^%d%d%d%d%-%d%d%-%d%dT"),
+    "synthesize_startup_events: installation.created_at is ISO 8601 string"
+  )
+  eq(inst.created_at, inst.updated_at, "synthesize_startup_events: created_at == updated_at")
+
+  -- Restore fanout_dispatch.
+  fanout_dispatch = _real_fanout_dispatch -- luacheck: globals fanout_dispatch
+end
 
 -- ============================================================
 -- Summary

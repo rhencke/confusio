@@ -111,6 +111,8 @@ globals = {
   "fanout_register_target",
   -- Outbound HTTP delivery: internal/deliver.lua
   "deliver_fire",
+  -- Startup event synthesis: internal/startup.lua
+  "synthesize_startup_events",
   "get_client_mutation_id",
   "estimate_query_cost",
   -- GraphQL translators: internal/graphql_translators.lua
