@@ -155,6 +155,8 @@ gitbucket|discussion-created.json|discussion-labeled.json|.action = "labeled" | 
 gitbucket|discussion-created.json|discussion-unlabeled.json|.action = "unlabeled" | .discussion.labels = [] | .label = {"id": 1, "node_id": "LA_kwDOBQ8MAA", "name": "question", "color": "e4e669", "default": false, "description": ""}
 gitbucket|discussion_comment-created.json|discussion_comment-edited.json|.action = "edited" | .comment.body = "Try setting the X option in the config. (edited)" | .comment.updated_at = "2024-01-15T10:10:00Z"
 gitbucket|discussion_comment-created.json|discussion_comment-deleted.json|.action = "deleted"
+gitbucket|package-published.json|package-updated.json|.action = "updated" | .package.updated_at = "2024-01-15T10:30:00Z" | .package.package_version.updated_at = "2024-01-15T10:30:00Z"
+gitbucket|registry_package-published.json|registry_package-updated.json|.action = "updated" | .registry_package.updated_at = "2024-01-15T10:30:00Z" | .registry_package.package_version.updated_at = "2024-01-15T10:30:00Z"
 gitlab|issues-opened.json|issues-closed.json|.object_attributes.state = "closed" | .object_attributes.action = "close" | .object_attributes.updated_at = "2024-01-15T10:01:00Z" | .object_attributes.closed_at = "2024-01-15T10:01:00Z"
 gitlab|issues-opened.json|issues-edited.json|.object_attributes.title = "Found a bug (updated)" | .object_attributes.description = "Something broke, with more details." | .object_attributes.action = "update" | .object_attributes.updated_at = "2024-01-15T10:03:00Z"
 gitlab|issues-opened.json|issues-reopened.json|.object_attributes.action = "reopen" | .object_attributes.updated_at = "2024-01-15T10:02:00Z"
