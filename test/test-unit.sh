@@ -64,6 +64,14 @@ run_delivery_phase() {
   start_isolated sh "$MOCK_GITEA_BIN" -p "$MOCK_PORT"; MOCK_PID=$!
   start_confusio "$tmpdir" "$@"; PID=$!
   trap "kill $PID 2>/dev/null || true; kill $MOCK_PID 2>/dev/null || true; kill $TARGET_PID 2>/dev/null || true; rm -rf $tmpdir" EXIT
+  # Wait until confusio is listening before running hurl.
+  # synthesize_startup_events fires during .init.lua — before the server accepts
+  # connections — so once we can TCP-connect, all startup events have already landed
+  # in the delivery target.  The hurl file's opening /reset can then safely clear them.
+  local i=0
+  while ! (: >/dev/tcp/localhost/$CONFUSIO_PORT) 2>/dev/null; do
+    sleep 0.05; i=$((i+1)); [ $i -lt 100 ] || { echo "confusio did not start in time" >&2; exit 1; }
+  done
   $HURL --retry 10 --retry-interval 200 --connect-timeout 1 --max-time 5 \
     --variable "host=localhost:$CONFUSIO_PORT" \
     --variable "target=localhost:$DELIVERY_TARGET_PORT" \
