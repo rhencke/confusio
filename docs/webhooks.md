@@ -3941,6 +3941,113 @@ Triggered when a comment is created, edited, or deleted on a discussion thread.
 
 ---
 
+### `package`
+
+Triggered on package registry lifecycle events.  Fires when a package version is
+published or (for some backends) deleted from the registry.
+
+#### Top-level fields
+
+| GitHub field | gitea-family | github | All others |
+|---|---|---|---|
+| `action` | ✓ | ✓ | — |
+| `package` | ✓ | ✓ | — |
+| `repository` | ~ | ✓ | — |
+| `sender` | ✓ | ✓ | — |
+
+#### Package object fields
+
+| GitHub field | gitea-family | github | All others |
+|---|---|---|---|
+| `package.id` | ✓ | ✓ | — |
+| `package.name` | ✓ | ✓ | — |
+| `package.namespace` | ~ | ✓ | — |
+| `package.ecosystem` | ✓ | ✓ | — |
+| `package.package_type` | ✓ | ✓ | — |
+| `package.html_url` | ✓ | ✓ | — |
+| `package.created_at` | ~ | ✓ | — |
+| `package.updated_at` | ~ | ✓ | — |
+| `package.owner` | ✓ | ✓ | — |
+| `package.description` | ✗ | ✓ | — |
+| `package.package_version.id` | ✓ | ✓ | — |
+| `package.package_version.name` | ✓ | ✓ | — |
+| `package.package_version.html_url` | ✓ | ✓ | — |
+| `package.package_version.created_at` | ✓ | ✓ | — |
+| `package.package_version.metadata` | ✗ | ✓ | — |
+| `package.package_version.package_files` | ✗ | ✓ | — |
+| `package.package_version.installation_command` | ✗ | ✓ | — |
+| `package.registry` | ✗ | ✓ | — |
+
+#### Supported actions by backend
+
+| Action | gitea-family | github | All others |
+|--------|---|---|---|
+| `published` | ✓ | ✓ | — |
+| `updated` | ✗ | ✓ | — |
+| `deleted` | ✓ | ✗ | — |
+
+**Notes:**
+- `package.namespace`: Gitea does not expose a `namespace` field in the package webhook
+  payload.  Confusio synthesizes it from the owner login (e.g. `"octocat"`).  GitHub
+  populates this as `"owner/package-name"` for repository-scoped packages.
+- `package.created_at` / `package.updated_at`: Gitea's package webhook payload does not
+  carry a package-level timestamp.  Confusio derives both fields from the version's
+  `created_at`; `updated_at` will equal `created_at`.
+- `package.description`: Not present in Gitea package webhook payloads; confusio emits
+  `null`.
+- `package.package_version.metadata`, `package.package_version.package_files`,
+  `package.package_version.installation_command`: Gitea's package webhook does not include
+  these rich version fields.  Confusio emits empty stubs (`[]`, `""`) to satisfy the
+  schema contract.
+- `package.registry`: Gitea does not expose registry-level metadata in webhook payloads;
+  confusio emits `null`.
+- `repository`: Gitea package webhooks include a `repository` field only when the package
+  is linked to a repository.  Confusio emits `null` when the field is absent.
+- Action mapping: Gitea fires `action: "created"` when a new version is published (mapped
+  to `published`) and `action: "deleted"` when a version is removed.  GitHub fires
+  `published` and `updated`; there is no `deleted` action on the GitHub side.  Gitea
+  `deleted` events surface with `action: "deleted"` in confusio output — this action is
+  not part of the GitHub `package` schema but is preserved so consumers can detect
+  removals from Gitea-family backends.
+- Forgejo and Codeberg inherit Gitea's `package` webhook handler.  Gogs and NotaBug strip
+  all package-related handlers; no `package` events will be delivered from those backends.
+- Backends not listed (GitLab, Bitbucket, Azure DevOps, etc.) do not emit package
+  registry lifecycle webhook events.
+
+---
+
+### `registry_package`
+
+Legacy GitHub Packages webhook event name, superseded by `package` (above).
+GitHub still fires `registry_package` for Container Registry activity on some
+repository types alongside the newer `package` event.
+
+**This event has no cross-forge mapping.**  Confusio only emits it when the
+originating backend is GitHub itself (pass-through).  For all other backends this
+event is absent — use `package` instead.
+
+| GitHub field | github | All others |
+|---|---|---|
+| `action` | ✓ | — |
+| `registry_package` | ✓ | — |
+| `repository` | ✓ | — |
+| `sender` | ✓ | — |
+
+#### Supported actions by backend
+
+| Action | github | All others |
+|--------|--------|-----------|
+| `published` | ✓ | — |
+| `updated` | ✓ | — |
+
+**Notes:**
+- `registry_package` is the older event key used before GitHub renamed the field to
+  `package`.  The object schema is nearly identical to `package.*`.
+- New consumers should subscribe to `package` rather than `registry_package`.
+- No self-hosted forge (Gitea, GitLab, Bitbucket, etc.) sends `registry_package` events.
+
+---
+
 ### Org events
 
 The org-category events in the GitHub-emulation output are `member`, `membership`,
