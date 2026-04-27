@@ -1,0 +1,11 @@
+{
+  "action": "created",
+  "package": {
+    "id": 1, "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": "http://localhost/octocat"},
+    "repository": null, "creator": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": "http://localhost/octocat"},
+    "type": "npm", "name": "my-lib", "version": "1.0.0",
+    "created_at": "2024-01-15T10:00:00Z",
+    "html_url": "http://localhost/octocat/-/packages/npm/my-lib/1.0.0"
+  },
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": "http://localhost/octocat"}
+}
