@@ -3299,4 +3299,107 @@ b:webhook("registry_package", function(payload)
   })
 end)
 
+-- ping: webhook registration acknowledgment (no action field).
+-- GitBucket mirrors the GitHub event format; fields pass through verbatim.
+b:webhook("ping", function(payload)
+  return make_internal_event({
+    event = "ping",
+    action = "ping",
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      zen = payload.zen or "",
+      hook_id = payload.hook_id,
+      hook = payload.hook or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = "",
+  })
+end)
+
+-- meta: webhook lifecycle event (fired when the hook itself is deleted).
+-- GitBucket mirrors the GitHub event format; action is always "deleted".
+b:webhook("meta", function(payload)
+  return make_internal_event({
+    event = "meta",
+    action = "deleted",
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = "deleted",
+      hook_id = payload.hook_id,
+      hook = payload.hook or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = "",
+  })
+end)
+
+-- page_build: GitHub Pages build triggered (no action field).
+-- GitBucket mirrors the GitHub event format; fields pass through verbatim.
+b:webhook("page_build", function(payload)
+  return make_internal_event({
+    event = "page_build",
+    action = "page_build",
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      id = payload.id,
+      build = payload.build or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.build or {}).created_at or "",
+  })
+end)
+
+-- custom_property: org-level custom property lifecycle.
+-- GitBucket mirrors the GitHub Enterprise event format; action names are identity-mapped.
+local GB_CUSTOM_PROPERTY_ACTIONS = {
+  created = "created",
+  deleted = "deleted",
+  updated = "updated",
+}
+
+b:webhook("custom_property", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_CUSTOM_PROPERTY_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "custom_property",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      definition = payload.definition or {},
+      organization = payload.organization or {},
+      sender = payload.sender or {},
+    },
+    timestamp = "",
+  })
+end)
+
+-- custom_property_values: repo-level custom property values updated.
+-- GitBucket mirrors the GitHub Enterprise event format; action is always "updated".
+b:webhook("custom_property_values", function(payload)
+  return make_internal_event({
+    event = "custom_property_values",
+    action = "updated",
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = "updated",
+      new_property_values = payload.new_property_values or {},
+      old_property_values = payload.old_property_values or {},
+      repository = payload.repository or {},
+      organization = payload.organization or {},
+      sender = payload.sender or {},
+    },
+    timestamp = "",
+  })
+end)
+
 b:build()
