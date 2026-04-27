@@ -2868,6 +2868,14 @@ local webhook_event_sections = {
       -- create
       { "webhook create/create", "wh_create_create" },
 
+      -- custom_property (org-level custom property lifecycle; GitHub Enterprise + GitBucket only)
+      { "webhook custom_property/created", "wh_custom_property_created" },
+      { "webhook custom_property/deleted", "wh_custom_property_deleted" },
+      { "webhook custom_property/updated", "wh_custom_property_updated" },
+
+      -- custom_property_values (repo-level custom property values; GitHub Enterprise + GitBucket only)
+      { "webhook custom_property_values/updated", "wh_custom_property_values_updated" },
+
       -- delete
       { "webhook delete/delete", "wh_delete_delete" },
 
@@ -2929,6 +2937,9 @@ local webhook_event_sections = {
       { "webhook merge_group/checks_requested", "wh_merge_group_checks_requested" },
       { "webhook merge_group/destroyed", "wh_merge_group_destroyed" },
 
+      -- meta (webhook lifecycle; GitHub + GitBucket only — fires when the hook is deleted)
+      { "webhook meta/deleted", "wh_meta_deleted" },
+
       -- milestone
       { "webhook milestone/created", "wh_milestone_created" },
       { "webhook milestone/closed", "wh_milestone_closed" },
@@ -2948,6 +2959,12 @@ local webhook_event_sections = {
       -- package
       { "webhook package/published", "wh_package_published" },
       { "webhook package/updated", "wh_package_updated" },
+
+      -- page_build (GitHub Pages build; GitHub + GitBucket only — no action field)
+      { "webhook page_build/page_build", "wh_page_build_page_build" },
+
+      -- ping (webhook registration acknowledgment; gitea-family + GitBucket — no action field)
+      { "webhook ping/ping", "wh_ping_ping" },
 
       -- pull_request
       { "webhook pull_request/opened", "wh_pull_request_opened" },
