@@ -1305,3 +1305,311 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "team_add"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+
+# ── project: created ──────────────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: project
+file,fixtures/webhooks/gitbucket/project-created.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "project"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
+# ── project: closed ───────────────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: project
+file,fixtures/webhooks/gitbucket/project-closed.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "project"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
+# ── project: reopened ─────────────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: project
+file,fixtures/webhooks/gitbucket/project-reopened.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "project"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
+# ── project: edited ───────────────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: project
+file,fixtures/webhooks/gitbucket/project-edited.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "project"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
+# ── project: deleted ──────────────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: project
+file,fixtures/webhooks/gitbucket/project-deleted.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "project"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
+# ── project_card: created ─────────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: project_card
+file,fixtures/webhooks/gitbucket/project_card-created.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "project_card"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
+# ── project_card: moved ───────────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: project_card
+file,fixtures/webhooks/gitbucket/project_card-moved.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "project_card"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
+# ── project_card: converted ───────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: project_card
+file,fixtures/webhooks/gitbucket/project_card-converted.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "project_card"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
+# ── project_card: edited ──────────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: project_card
+file,fixtures/webhooks/gitbucket/project_card-edited.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "project_card"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
+# ── project_card: deleted ─────────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: project_card
+file,fixtures/webhooks/gitbucket/project_card-deleted.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "project_card"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
+# ── project_column: created ───────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: project_column
+file,fixtures/webhooks/gitbucket/project_column-created.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "project_column"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
+# ── project_column: edited ────────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: project_column
+file,fixtures/webhooks/gitbucket/project_column-edited.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "project_column"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
+# ── project_column: moved ─────────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: project_column
+file,fixtures/webhooks/gitbucket/project_column-moved.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "project_column"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
+# ── project_column: deleted ───────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: project_column
+file,fixtures/webhooks/gitbucket/project_column-deleted.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "project_column"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"

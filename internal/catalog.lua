@@ -3076,6 +3076,26 @@ local webhook_event_sections = {
       { "webhook sponsorship/pending_cancellation", "wh_sponsorship_pending_cancellation" },
       { "webhook sponsorship/pending_tier_change", "wh_sponsorship_pending_tier_change" },
       { "webhook sponsorship/tier_changed", "wh_sponsorship_tier_changed" },
+
+      -- project (classic v1 projects)
+      { "webhook project/closed", "wh_project_closed" },
+      { "webhook project/created", "wh_project_created" },
+      { "webhook project/deleted", "wh_project_deleted" },
+      { "webhook project/edited", "wh_project_edited" },
+      { "webhook project/reopened", "wh_project_reopened" },
+
+      -- project_card (classic v1 project cards)
+      { "webhook project_card/converted", "wh_project_card_converted" },
+      { "webhook project_card/created", "wh_project_card_created" },
+      { "webhook project_card/deleted", "wh_project_card_deleted" },
+      { "webhook project_card/edited", "wh_project_card_edited" },
+      { "webhook project_card/moved", "wh_project_card_moved" },
+
+      -- project_column (classic v1 project columns)
+      { "webhook project_column/created", "wh_project_column_created" },
+      { "webhook project_column/deleted", "wh_project_column_deleted" },
+      { "webhook project_column/edited", "wh_project_column_edited" },
+      { "webhook project_column/moved", "wh_project_column_moved" },
     },
   },
 }

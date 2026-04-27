@@ -581,3 +581,17 @@ webhook sponsorship/edited,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook sponsorship/pending_cancellation,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook sponsorship/pending_tier_change,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook sponsorship/tier_changed,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook project/closed,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook project/created,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook project/deleted,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook project/edited,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook project/reopened,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook project_card/converted,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook project_card/created,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook project_card/deleted,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook project_card/edited,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook project_card/moved,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook project_column/created,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook project_column/deleted,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook project_column/edited,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
+webhook project_column/moved,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
