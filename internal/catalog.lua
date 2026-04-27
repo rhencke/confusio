@@ -3061,6 +3061,21 @@ local webhook_event_sections = {
 
       -- security_and_analysis
       { "webhook security_and_analysis/changed", "wh_security_and_analysis_changed" },
+
+      -- star
+      { "webhook star/created", "wh_star_created" },
+      { "webhook star/deleted", "wh_star_deleted" },
+
+      -- watch
+      { "webhook watch/started", "wh_watch_started" },
+
+      -- sponsorship (GitHub.com-only; no self-hosted forge equivalent)
+      { "webhook sponsorship/cancelled", "wh_sponsorship_cancelled" },
+      { "webhook sponsorship/created", "wh_sponsorship_created" },
+      { "webhook sponsorship/edited", "wh_sponsorship_edited" },
+      { "webhook sponsorship/pending_cancellation", "wh_sponsorship_pending_cancellation" },
+      { "webhook sponsorship/pending_tier_change", "wh_sponsorship_pending_tier_change" },
+      { "webhook sponsorship/tier_changed", "wh_sponsorship_tier_changed" },
     },
   },
 }

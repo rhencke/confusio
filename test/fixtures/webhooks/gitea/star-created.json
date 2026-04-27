@@ -1,0 +1,11 @@
+{
+  "action": "created",
+  "starred_at": "2024-01-15T10:00:00Z",
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main", "description": "My first repo",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": "http://localhost/octocat"}
+  },
+  "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": "http://localhost/bob"}
+}
