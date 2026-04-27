@@ -1738,3 +1738,465 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 header "X-Confusio-Raw-Action" == "auto_dismissed"
+
+# ── project: created → 200 ────────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: project
+{
+  "action": "created",
+  "project": {
+    "owner_url": "http://localhost/octocat",
+    "url": "http://localhost/octocat/hello-world/projects/1",
+    "html_url": "http://localhost/octocat/hello-world/projects/1",
+    "columns_url": "http://localhost/octocat/hello-world/projects/1/columns",
+    "id": 1, "node_id": "MDc6UHJvamVjdDE=",
+    "name": "My Project", "body": "A test project", "number": 1, "state": "open",
+    "creator": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── project: closed → 200 ─────────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: project
+{
+  "action": "closed",
+  "project": {
+    "owner_url": "http://localhost/octocat",
+    "url": "http://localhost/octocat/hello-world/projects/1",
+    "html_url": "http://localhost/octocat/hello-world/projects/1",
+    "columns_url": "http://localhost/octocat/hello-world/projects/1/columns",
+    "id": 1, "node_id": "MDc6UHJvamVjdDE=",
+    "name": "My Project", "body": "A test project", "number": 1, "state": "closed",
+    "creator": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T11:00:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── project: unknown action → 200 + X-Confusio-Raw-Action sidecar ────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: project
+{
+  "action": "archived",
+  "project": {
+    "owner_url": "http://localhost/octocat",
+    "url": "http://localhost/octocat/hello-world/projects/1",
+    "html_url": "http://localhost/octocat/hello-world/projects/1",
+    "columns_url": "http://localhost/octocat/hello-world/projects/1/columns",
+    "id": 1, "node_id": "MDc6UHJvamVjdDE=",
+    "name": "My Project", "body": "A test project", "number": 1, "state": "open",
+    "creator": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+header "X-Confusio-Raw-Action" == "archived"
+
+# ── project_card: created → 200 ───────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: project_card
+{
+  "action": "created",
+  "project_card": {
+    "url": "http://localhost/projects/columns/cards/1",
+    "project_url": "http://localhost/octocat/hello-world/projects/1",
+    "column_url": "http://localhost/projects/columns/1",
+    "column_id": 1, "id": 1, "node_id": "MDExOlByb2plY3RDYXJkMQ==",
+    "note": "Draft card note", "archived": false,
+    "creator": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── project_card: moved → 200 ─────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: project_card
+{
+  "action": "moved",
+  "project_card": {
+    "url": "http://localhost/projects/columns/cards/1",
+    "project_url": "http://localhost/octocat/hello-world/projects/1",
+    "column_url": "http://localhost/projects/columns/2",
+    "column_id": 2, "id": 1, "node_id": "MDExOlByb2plY3RDYXJkMQ==",
+    "note": "Draft card note", "archived": false,
+    "creator": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:10:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── project_card: unknown action → 200 + X-Confusio-Raw-Action sidecar ───────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: project_card
+{
+  "action": "pinned",
+  "project_card": {
+    "url": "http://localhost/projects/columns/cards/1",
+    "project_url": "http://localhost/octocat/hello-world/projects/1",
+    "column_url": "http://localhost/projects/columns/1",
+    "column_id": 1, "id": 1, "node_id": "MDExOlByb2plY3RDYXJkMQ==",
+    "note": "Draft card note", "archived": false,
+    "creator": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+header "X-Confusio-Raw-Action" == "pinned"
+
+# ── project_column: created → 200 ─────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: project_column
+{
+  "action": "created",
+  "project_column": {
+    "url": "http://localhost/projects/columns/1",
+    "project_url": "http://localhost/octocat/hello-world/projects/1",
+    "cards_url": "http://localhost/projects/columns/1/cards",
+    "id": 1, "node_id": "MDEzOlByb2plY3RDb2x1bW4x",
+    "name": "To Do", "after_id": null,
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── project_column: edited → 200 ──────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: project_column
+{
+  "action": "edited",
+  "project_column": {
+    "url": "http://localhost/projects/columns/1",
+    "project_url": "http://localhost/octocat/hello-world/projects/1",
+    "cards_url": "http://localhost/projects/columns/1/cards",
+    "id": 1, "node_id": "MDEzOlByb2plY3RDb2x1bW4x",
+    "name": "In Progress", "after_id": null,
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:30:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── project_column: unknown action → 200 + X-Confusio-Raw-Action sidecar ─────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: project_column
+{
+  "action": "archived",
+  "project_column": {
+    "url": "http://localhost/projects/columns/1",
+    "project_url": "http://localhost/octocat/hello-world/projects/1",
+    "cards_url": "http://localhost/projects/columns/1/cards",
+    "id": 1, "node_id": "MDEzOlByb2plY3RDb2x1bW4x",
+    "name": "To Do", "after_id": null,
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+header "X-Confusio-Raw-Action" == "archived"
+
+# ── projects_v2: created → 200 ────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: projects_v2
+{
+  "action": "created",
+  "projects_v2": {
+    "id": 1, "node_id": "PVT_kwDOBQ8MAM4AAjdh",
+    "title": "My V2 Project", "number": 1, "status": "open",
+    "public": true, "closed_at": null,
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "organization": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── projects_v2: closed → 200 ─────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: projects_v2
+{
+  "action": "closed",
+  "projects_v2": {
+    "id": 1, "node_id": "PVT_kwDOBQ8MAM4AAjdh",
+    "title": "My V2 Project", "number": 1, "status": "closed",
+    "public": true, "closed_at": "2024-01-15T11:00:00Z",
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T11:00:00Z"
+  },
+  "organization": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── projects_v2: unknown action → 200 + X-Confusio-Raw-Action sidecar ────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: projects_v2
+{
+  "action": "pinned",
+  "projects_v2": {
+    "id": 1, "node_id": "PVT_kwDOBQ8MAM4AAjdh",
+    "title": "My V2 Project", "number": 1, "status": "open",
+    "public": true, "closed_at": null,
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "organization": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+header "X-Confusio-Raw-Action" == "pinned"
+
+# ── projects_v2_item: created → 200 ───────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: projects_v2_item
+{
+  "action": "created",
+  "projects_v2_item": {
+    "id": 1, "node_id": "PVTI_lADOBQ8MAM4AAjdhzgBjfV8",
+    "project_node_id": "PVT_kwDOBQ8MAM4AAjdh",
+    "content_node_id": "I_kwDOBQ8MAM4AAjdh", "content_type": "Issue",
+    "archived_at": null,
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "organization": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── projects_v2_item: archived → 200 ──────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: projects_v2_item
+{
+  "action": "archived",
+  "projects_v2_item": {
+    "id": 1, "node_id": "PVTI_lADOBQ8MAM4AAjdhzgBjfV8",
+    "project_node_id": "PVT_kwDOBQ8MAM4AAjdh",
+    "content_node_id": "I_kwDOBQ8MAM4AAjdh", "content_type": "Issue",
+    "archived_at": "2024-01-15T10:10:00Z",
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:10:00Z"
+  },
+  "organization": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── projects_v2_item: unknown action → 200 + X-Confusio-Raw-Action sidecar ───
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: projects_v2_item
+{
+  "action": "locked",
+  "projects_v2_item": {
+    "id": 1, "node_id": "PVTI_lADOBQ8MAM4AAjdhzgBjfV8",
+    "project_node_id": "PVT_kwDOBQ8MAM4AAjdh",
+    "content_node_id": "I_kwDOBQ8MAM4AAjdh", "content_type": "Issue",
+    "archived_at": null,
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "organization": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+header "X-Confusio-Raw-Action" == "locked"
+
+# ── projects_v2_status_update: created → 200 ──────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: projects_v2_status_update
+{
+  "action": "created",
+  "projects_v2_status_update": {
+    "id": 1, "node_id": "PVTSU_lADOBQ8MAM4AAjdh",
+    "project_node_id": "PVT_kwDOBQ8MAM4AAjdh",
+    "status": "ON_TRACK", "body": "Everything is on track.",
+    "start_date": null, "target_date": null,
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "organization": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── projects_v2_status_update: edited → 200 ───────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: projects_v2_status_update
+{
+  "action": "edited",
+  "projects_v2_status_update": {
+    "id": 1, "node_id": "PVTSU_lADOBQ8MAM4AAjdh",
+    "project_node_id": "PVT_kwDOBQ8MAM4AAjdh",
+    "status": "AT_RISK", "body": "Some items are at risk.",
+    "start_date": null, "target_date": null,
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:30:00Z"
+  },
+  "organization": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── projects_v2_status_update: unknown action → 200 + X-Confusio-Raw-Action ──
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: projects_v2_status_update
+{
+  "action": "resolved",
+  "projects_v2_status_update": {
+    "id": 1, "node_id": "PVTSU_lADOBQ8MAM4AAjdh",
+    "project_node_id": "PVT_kwDOBQ8MAM4AAjdh",
+    "status": "COMPLETE", "body": "All done.",
+    "start_date": null, "target_date": null,
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "organization": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""},
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+header "X-Confusio-Raw-Action" == "resolved"

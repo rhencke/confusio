@@ -3028,4 +3028,165 @@ b:webhook("team_add", function(payload)
   })
 end)
 
+-- project: GitBucket emits GitHub-compatible classic project event payloads.
+local GB_PROJECT_ACTIONS = {
+  closed = "closed",
+  created = "created",
+  deleted = "deleted",
+  edited = "edited",
+  reopened = "reopened",
+}
+b:webhook("project", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_PROJECT_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "project",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      project = payload.project or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.project or {}).updated_at or "",
+  })
+end)
+
+-- project_card: GitBucket emits GitHub-compatible classic project card event payloads.
+local GB_PROJECT_CARD_ACTIONS = {
+  converted = "converted",
+  created = "created",
+  deleted = "deleted",
+  edited = "edited",
+  moved = "moved",
+}
+b:webhook("project_card", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_PROJECT_CARD_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "project_card",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      project_card = payload.project_card or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.project_card or {}).updated_at or "",
+  })
+end)
+
+-- project_column: GitBucket emits GitHub-compatible classic project column event payloads.
+local GB_PROJECT_COLUMN_ACTIONS = {
+  created = "created",
+  deleted = "deleted",
+  edited = "edited",
+  moved = "moved",
+}
+b:webhook("project_column", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_PROJECT_COLUMN_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "project_column",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      project_column = payload.project_column or {},
+      repository = payload.repository or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.project_column or {}).updated_at or "",
+  })
+end)
+
+-- projects_v2: GitBucket emits GitHub-compatible projects v2 event payloads.
+local GB_PROJECTS_V2_ACTIONS = {
+  closed = "closed",
+  created = "created",
+  deleted = "deleted",
+  edited = "edited",
+  reopened = "reopened",
+}
+b:webhook("projects_v2", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_PROJECTS_V2_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "projects_v2",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      projects_v2 = payload.projects_v2 or {},
+      organization = payload.organization or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.projects_v2 or {}).updated_at or "",
+  })
+end)
+
+-- projects_v2_item: GitBucket emits GitHub-compatible projects v2 item event payloads.
+local GB_PROJECTS_V2_ITEM_ACTIONS = {
+  archived = "archived",
+  converted = "converted",
+  created = "created",
+  deleted = "deleted",
+  edited = "edited",
+  reordered = "reordered",
+  restored = "restored",
+}
+b:webhook("projects_v2_item", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_PROJECTS_V2_ITEM_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "projects_v2_item",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      projects_v2_item = payload.projects_v2_item or {},
+      organization = payload.organization or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.projects_v2_item or {}).updated_at or "",
+  })
+end)
+
+-- projects_v2_status_update: GitBucket emits GitHub-compatible projects v2 status update payloads.
+local GB_PROJECTS_V2_STATUS_UPDATE_ACTIONS = {
+  created = "created",
+  deleted = "deleted",
+  edited = "edited",
+}
+b:webhook("projects_v2_status_update", function(payload)
+  local raw_action = payload.action or ""
+  local action = GB_PROJECTS_V2_STATUS_UPDATE_ACTIONS[raw_action]
+  return make_internal_event({
+    event = "projects_v2_status_update",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "gitbucket",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      projects_v2_status_update = payload.projects_v2_status_update or {},
+      organization = payload.organization or {},
+      sender = payload.sender or {},
+    },
+    timestamp = (payload.projects_v2_status_update or {}).updated_at or "",
+  })
+end)
+
 b:build()
