@@ -267,3 +267,20 @@ run_delivery_phase test/webhook-delivery-forgejo-confusio-shape.hurl \
   -- forgejo "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
+
+# Phase 27: Startup event synthesis — github shape.
+# Verifies that confusio synthesizes installation.created and
+# installation_repositories.added before accepting connections, and delivers
+# both to the configured outbound target.  No /reset is called — the hurl file
+# queries the delivery log directly to see the two startup events.
+run_delivery_phase test/webhook-delivery-startup.hurl \
+  -- gitea "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 28: Startup event synthesis — confusio shape.
+# Same as Phase 27 but with webhook_target_shape=confusio; verifies
+# X-Confusio-* headers are used and X-GitHub-Event is absent.
+run_delivery_phase test/webhook-delivery-startup-confusio-shape.hurl \
+  -- gitea "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+  "webhook_target_shape=confusio"
