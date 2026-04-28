@@ -31,6 +31,12 @@ jsonpath "$[0].confusio_source" == "bitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.id" isString
+jsonpath "$[0].body_json.type" == "issue.opened"
+jsonpath "$[0].body_json.actor.login" == "octocat"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.action" == "opened"
+jsonpath "$[0].body_json.payload.issue.number" == 1
 
 # ── issue_comment: created — confusio shape ───────────────────────────────────
 
@@ -55,6 +61,9 @@ jsonpath "$[0].confusio_source" == "bitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "issue.comment.created"
+jsonpath "$[0].body_json.actor.login" == "octocat"
+jsonpath "$[0].body_json.payload.comment.id" == 101
 
 # ── pull_request: opened — confusio shape ─────────────────────────────────────
 
@@ -79,6 +88,9 @@ jsonpath "$[0].confusio_source" == "bitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "pull_request.opened"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.pull_request.number" == 1
 
 # ── pull_request_review: submitted (approved) — confusio shape ────────────────
 
@@ -103,6 +115,9 @@ jsonpath "$[0].confusio_source" == "bitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "pull_request.review.submitted"
+jsonpath "$[0].body_json.actor.login" == "reviewer"
+jsonpath "$[0].body_json.payload.review.state" == "APPROVED"
 
 # ── status: success — confusio shape ──────────────────────────────────────────
 
@@ -127,6 +142,10 @@ jsonpath "$[0].confusio_source" == "bitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "status.success"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:05:00+00:00"
+jsonpath "$[0].body_json.payload.sha" == "abc1234567890abcdef1234567890abcdef12345"
+jsonpath "$[0].body_json.payload.context" == "my-ci/build"
 
 # ── push: push — confusio shape ───────────────────────────────────────────────
 
@@ -151,3 +170,7 @@ jsonpath "$[0].confusio_source" == "bitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "push"
+jsonpath "$[0].body_json.actor.login" == "alice"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.after" == "da1560886d4f094c3e6c9ef40349f7d38b5d27d0"
