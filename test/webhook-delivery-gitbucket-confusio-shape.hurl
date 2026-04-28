@@ -27,6 +27,13 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.id" isString
+jsonpath "$[0].body_json.type" == "issue.opened"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:00:00Z"
+jsonpath "$[0].body_json.actor.login" == "alice"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.action" == "opened"
+jsonpath "$[0].body_json.payload.issue.number" == 1
 
 # ── issue_comment: created — confusio shape ───────────────────────────────────
 
@@ -51,6 +58,9 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "issue.comment.created"
+jsonpath "$[0].body_json.actor.login" == "bob"
+jsonpath "$[0].body_json.payload.comment.id" == 200
 
 # ── pull_request: opened — confusio shape ─────────────────────────────────────
 
@@ -75,6 +85,9 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "pull_request.opened"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.pull_request.number" == 5
 
 # ── pull_request_review: submitted — confusio shape ───────────────────────────
 
@@ -99,6 +112,8 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "pull_request.review.submitted"
+jsonpath "$[0].body_json.payload.review.state" == "APPROVED"
 
 # ── milestone: created — confusio shape ───────────────────────────────────────
 
@@ -123,6 +138,8 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "milestone.created"
+jsonpath "$[0].body_json.payload.milestone.title" == "v1.0"
 
 # ── push: push — confusio shape ──────────────────────────────────────────────
 
@@ -147,6 +164,11 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "push"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:00:00Z"
+jsonpath "$[0].body_json.actor.login" == "alice"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.after" == "abc123def456abc123def456abc123def456abc123"
 
 # ── release: published — confusio shape ──────────────────────────────────────
 
@@ -171,6 +193,10 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "release.published"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:00:00Z"
+jsonpath "$[0].body_json.actor.login" == "alice"
+jsonpath "$[0].body_json.payload.release.tag_name" == "v1.0.0"
 
 # ── code_scanning_alert: created — confusio shape ─────────────────────────────
 
@@ -195,6 +221,8 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "code_scanning_alert.created"
+jsonpath "$[0].body_json.payload.alert.number" == 1
 
 # ── secret_scanning_alert: created — confusio shape ───────────────────────────
 
@@ -219,6 +247,8 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "secret_scanning_alert.created"
+jsonpath "$[0].body_json.payload.alert.number" == 1
 
 # ── secret_scanning_alert_location: created — confusio shape ──────────────────
 
@@ -243,6 +273,8 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "secret_scanning_alert.location.created"
+jsonpath "$[0].body_json.payload.location.details.path" == "src/config.js"
 
 # ── security_advisory: published — confusio shape ─────────────────────────────
 
@@ -267,6 +299,8 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "security_advisory.published"
+jsonpath "$[0].body_json.payload.security_advisory.ghsa_id" == "GHSA-xx99-1234-5678"
 
 # ── repository_advisory: published — confusio shape ───────────────────────────
 
@@ -291,6 +325,8 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "repository.advisory.published"
+jsonpath "$[0].body_json.payload.repository_advisory.ghsa_id" == "GHSA-yy88-4321-8765"
 
 # ── repository_vulnerability_alert: create — confusio shape ───────────────────
 
@@ -315,6 +351,8 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "dependabot_alert.created"
+jsonpath "$[0].body_json.payload.alert.id" == 1
 
 # ── member: added — confusio shape ────────────────────────────────────────────
 
@@ -339,6 +377,9 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "member.added"
+jsonpath "$[0].body_json.actor.login" == "octocat"
+jsonpath "$[0].body_json.payload.member.login" == "bob"
 
 # ── organization: member_added — confusio shape ───────────────────────────────
 
@@ -363,6 +404,9 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "organization.member_added"
+jsonpath "$[0].body_json.actor.login" == "octocat"
+jsonpath "$[0].body_json.payload.organization.login" == "octocat"
 
 # ── membership: added — confusio shape ────────────────────────────────────────
 
@@ -387,6 +431,9 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "membership.added"
+jsonpath "$[0].body_json.payload.member.login" == "bob"
+jsonpath "$[0].body_json.payload.team.name" == "core"
 
 # ── team: created — confusio shape ────────────────────────────────────────────
 
@@ -411,6 +458,8 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "team.created"
+jsonpath "$[0].body_json.payload.team.name" == "core"
 
 # ── team_add — confusio shape ─────────────────────────────────────────────────
 
@@ -435,6 +484,9 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "team.add"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.team.name" == "core"
 
 # ── project: created — confusio shape ────────────────────────────────────────
 
@@ -459,6 +511,8 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "project.created"
+jsonpath "$[0].body_json.payload.project.name" == "My Project"
 
 # ── project_card: created — confusio shape ────────────────────────────────────
 
@@ -483,6 +537,8 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "project.card.created"
+jsonpath "$[0].body_json.payload.project_card.id" == 1
 
 # ── project_column: created — confusio shape ──────────────────────────────────
 
@@ -507,6 +563,8 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "project.column.created"
+jsonpath "$[0].body_json.payload.project_column.name" == "To Do"
 
 # ── projects_v2: created — confusio shape ────────────────────────────────────
 
@@ -531,6 +589,8 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "projects_v2.created"
+jsonpath "$[0].body_json.payload.projects_v2.title" == "My V2 Project"
 
 # ── projects_v2_item: created — confusio shape ───────────────────────────────
 
@@ -555,6 +615,8 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "projects_v2.item.created"
+jsonpath "$[0].body_json.payload.projects_v2_item.id" == 1
 
 # ── projects_v2_status_update: created — confusio shape ──────────────────────
 
@@ -579,6 +641,8 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "projects_v2.status_update.created"
+jsonpath "$[0].body_json.payload.projects_v2_status_update.id" == 1
 
 # ── discussion: created — confusio shape ─────────────────────────────────────
 
@@ -603,6 +667,8 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "discussion.created"
+jsonpath "$[0].body_json.payload.discussion.title" == "How do I configure X?"
 
 # ── package: published — confusio shape ──────────────────────────────────────
 
@@ -627,3 +693,5 @@ jsonpath "$[0].confusio_source" == "gitbucket"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "package.published"
+jsonpath "$[0].body_json.payload.package.name" == "my-lib"

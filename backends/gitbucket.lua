@@ -3402,4 +3402,92 @@ b:webhook("custom_property_values", function(payload)
   })
 end)
 
+local GB_ACTIONLESS_NORMALIZED_EVENTS = {
+  create = true,
+  delete = true,
+  fork = true,
+  gollum = true,
+  page_build = true,
+  ping = true,
+  public = true,
+  push = true,
+  team_add = true,
+}
+
+local GB_NORMALIZED_WEBHOOK_EVENTS = {
+  "issues",
+  "issue_comment",
+  "label",
+  "milestone",
+  "pull_request",
+  "pull_request_review",
+  "push",
+  "create",
+  "delete",
+  "release",
+  "fork",
+  "deploy_key",
+  "gollum",
+  "repository",
+  "public",
+  "code_scanning_alert",
+  "dependabot_alert",
+  "secret_scanning_alert",
+  "secret_scanning_alert_location",
+  "security_advisory",
+  "repository_advisory",
+  "member",
+  "organization",
+  "membership",
+  "team",
+  "team_add",
+  "project",
+  "project_card",
+  "project_column",
+  "projects_v2",
+  "projects_v2_item",
+  "discussion",
+  "discussion_comment",
+  "projects_v2_status_update",
+  "package",
+  "registry_package",
+  "ping",
+  "meta",
+  "page_build",
+  "custom_property",
+  "custom_property_values",
+}
+
+local function gitbucket_normalized_payload_without_envelope_fields(data)
+  local payload = {}
+  for k, v in pairs(data or {}) do
+    if k ~= "sender" and k ~= "repository" then
+      payload[k] = v
+    end
+  end
+  return payload
+end
+
+local function translate_gitbucket_normalized_webhook(internal_event, fields)
+  local data = internal_event.data or {}
+  fields = fields or {}
+  return make_normalized_webhook_envelope(internal_event, {
+    id = fields.id,
+    type = fields.type
+      or (
+        GB_ACTIONLESS_NORMALIZED_EVENTS[internal_event.event]
+          and normalized_webhook_event_type(internal_event.event, "")
+        or normalized_webhook_event_type(internal_event.event, internal_event.action)
+      ),
+    occurred_at = fields.occurred_at,
+    actor = fields.actor or data.sender,
+    repository = fields.repository or data.repository,
+    payload = fields.payload or gitbucket_normalized_payload_without_envelope_fields(data),
+  })
+end
+
+for _, event in ipairs(GB_NORMALIZED_WEBHOOK_EVENTS) do
+  b:webhook_translator(event, translate_gitbucket_normalized_webhook)
+end
+
 b:build()
