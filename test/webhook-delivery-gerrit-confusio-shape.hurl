@@ -26,6 +26,12 @@ jsonpath "$[0].confusio_source" == "gerrit"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.id" isString
+jsonpath "$[0].body_json.type" == "pull_request.review.submitted"
+jsonpath "$[0].body_json.occurred_at" == "1705312800"
+jsonpath "$[0].body_json.actor.login" == "bob"
+jsonpath "$[0].body_json.repository.full_name" == "myorg/my-repo"
+jsonpath "$[0].body_json.payload.review.state" == "APPROVED"
 
 # ── comment-added (changes_requested) → pull_request_review — confusio shape ──
 
@@ -49,6 +55,9 @@ jsonpath "$[0].confusio_source" == "gerrit"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "pull_request.review.submitted"
+jsonpath "$[0].body_json.actor.login" == "bob"
+jsonpath "$[0].body_json.payload.review.state" == "CHANGES_REQUESTED"
 
 # ── comment-added (no vote) → pull_request_review — confusio shape ────────────
 
@@ -72,3 +81,7 @@ jsonpath "$[0].confusio_source" == "gerrit"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "pull_request.review.submitted"
+jsonpath "$[0].body_json.occurred_at" == "1705316400"
+jsonpath "$[0].body_json.actor.login" == "charlie"
+jsonpath "$[0].body_json.payload.review.state" == "COMMENTED"

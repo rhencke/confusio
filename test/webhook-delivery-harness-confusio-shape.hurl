@@ -26,6 +26,13 @@ jsonpath "$[0].confusio_source" == "harness"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.id" isString
+jsonpath "$[0].body_json.type" == "workflow.run.in_progress"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:00:00Z"
+jsonpath "$[0].body_json.actor.login" == "alice"
+jsonpath "$[0].body_json.repository.full_name" == "myorg/my-repo"
+jsonpath "$[0].body_json.payload.workflow_run.status" == "in_progress"
+jsonpath "$[0].body_json.payload.workflow_run.head_sha" == "abc123def456"
 
 # ── pipeline_execution_success → workflow_run: completed — confusio shape ─────
 
@@ -49,6 +56,10 @@ jsonpath "$[0].confusio_source" == "harness"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "workflow.run.completed"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:10:00Z"
+jsonpath "$[0].body_json.actor.login" == "alice"
+jsonpath "$[0].body_json.payload.workflow_run.conclusion" == "success"
 
 # ── stage_execution_started → workflow_job: in_progress — confusio shape ──────
 
@@ -72,6 +83,11 @@ jsonpath "$[0].confusio_source" == "harness"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "workflow.job.in_progress"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:01:40Z"
+jsonpath "$[0].body_json.actor.login" == "alice"
+jsonpath "$[0].body_json.payload.workflow_job.name" == "Build Stage"
+jsonpath "$[0].body_json.payload.workflow_job.status" == "in_progress"
 
 # ── stage_execution_success → workflow_job: completed — confusio shape ────────
 
@@ -95,3 +111,7 @@ jsonpath "$[0].confusio_source" == "harness"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "workflow.job.completed"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:08:20Z"
+jsonpath "$[0].body_json.actor.login" == "alice"
+jsonpath "$[0].body_json.payload.workflow_job.conclusion" == "success"
