@@ -2273,3 +2273,113 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "registry_package"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+
+# ── ping: ping ────────────────────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: ping
+file,fixtures/webhooks/gitbucket/ping.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "ping"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
+# ── meta: deleted ─────────────────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: meta
+file,fixtures/webhooks/gitbucket/meta.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "meta"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
+# ── page_build: page_build ────────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: page_build
+file,fixtures/webhooks/gitbucket/page_build.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "page_build"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
+# ── custom_property: created ──────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: custom_property
+file,fixtures/webhooks/gitbucket/custom_property-created.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "custom_property"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
+# ── custom_property_values: updated ──────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: custom_property_values
+file,fixtures/webhooks/gitbucket/custom_property_values-updated.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "custom_property_values"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"

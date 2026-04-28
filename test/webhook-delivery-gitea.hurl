@@ -1767,3 +1767,25 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "package"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+
+# ── ping: ping ────────────────────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: ping
+file,fixtures/webhooks/gitea/ping.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "ping"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"

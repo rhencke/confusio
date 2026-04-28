@@ -1,0 +1,23 @@
+{
+  "zen": "Gitea",
+  "hook_id": 1,
+  "hook": {
+    "id": 1,
+    "type": "gitea",
+    "config": {
+      "content_type": "json",
+      "url": "http://example.com/hook"
+    },
+    "events": ["push", "issues"],
+    "active": true,
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main", "description": "My first repo",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": "http://localhost/octocat"}
+  },
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": "http://localhost/octocat"}
+}

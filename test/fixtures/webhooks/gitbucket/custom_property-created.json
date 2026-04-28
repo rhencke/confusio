@@ -1,0 +1,21 @@
+{
+  "action": "created",
+  "definition": {
+    "property_name": "environment",
+    "value_type": "single_select",
+    "required": false,
+    "default_value": null,
+    "description": "Deployment environment type",
+    "allowed_values": ["production", "staging", "development"],
+    "values_editable_by": "org_actors"
+  },
+  "organization": {
+    "login": "my-org",
+    "id": 1,
+    "node_id": "",
+    "url": "",
+    "avatar_url": "",
+    "html_url": "http://localhost/my-org"
+  },
+  "sender": {"login": "octocat", "id": 1, "node_id": "", "avatar_url": "", "url": "", "html_url": "", "type": "User"}
+}

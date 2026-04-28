@@ -157,6 +157,8 @@ gitbucket|discussion_comment-created.json|discussion_comment-edited.json|.action
 gitbucket|discussion_comment-created.json|discussion_comment-deleted.json|.action = "deleted"
 gitbucket|package-published.json|package-updated.json|.action = "updated" | .package.updated_at = "2024-01-15T10:30:00Z" | .package.package_version.updated_at = "2024-01-15T10:30:00Z"
 gitbucket|registry_package-published.json|registry_package-updated.json|.action = "updated" | .registry_package.updated_at = "2024-01-15T10:30:00Z" | .registry_package.package_version.updated_at = "2024-01-15T10:30:00Z"
+gitbucket|custom_property-created.json|custom_property-deleted.json|.action = "deleted" | .definition.description = null | .definition.default_value = null | .definition.allowed_values = null | .definition.values_editable_by = null
+gitbucket|custom_property-created.json|custom_property-updated.json|.action = "updated" | .definition.description = "Deployment environment type (updated)" | .definition.default_value = "staging" | .changes = {"definition": {"from": {"description": "Deployment environment type", "default_value": null}}}
 gitlab|issues-opened.json|issues-closed.json|.object_attributes.state = "closed" | .object_attributes.action = "close" | .object_attributes.updated_at = "2024-01-15T10:01:00Z" | .object_attributes.closed_at = "2024-01-15T10:01:00Z"
 gitlab|issues-opened.json|issues-edited.json|.object_attributes.title = "Found a bug (updated)" | .object_attributes.description = "Something broke, with more details." | .object_attributes.action = "update" | .object_attributes.updated_at = "2024-01-15T10:03:00Z"
 gitlab|issues-opened.json|issues-reopened.json|.object_attributes.action = "reopen" | .object_attributes.updated_at = "2024-01-15T10:02:00Z"

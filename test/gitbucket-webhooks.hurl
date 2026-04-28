@@ -2343,3 +2343,80 @@ X-GitHub-Event: discussion_comment
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
+
+# ── ping: ping ────────────────────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: ping
+file,fixtures/webhooks/gitbucket/ping.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── meta: deleted ─────────────────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: meta
+file,fixtures/webhooks/gitbucket/meta.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── page_build: page_build ────────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: page_build
+file,fixtures/webhooks/gitbucket/page_build.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── custom_property: created ──────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: custom_property
+file,fixtures/webhooks/gitbucket/custom_property-created.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── custom_property: deleted ──────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: custom_property
+file,fixtures/webhooks/gitbucket/custom_property-deleted.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── custom_property: updated ──────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: custom_property
+file,fixtures/webhooks/gitbucket/custom_property-updated.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── custom_property_values: updated ──────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: custom_property_values
+file,fixtures/webhooks/gitbucket/custom_property_values-updated.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"

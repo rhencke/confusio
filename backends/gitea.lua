@@ -8031,6 +8031,26 @@ b:webhook("package", function(payload)
   })
 end)
 
+-- ping: sent by Gitea when a webhook is first created or tested.
+-- Gitea sends X-Gitea-Event: ping with zen, hook_id, hook, repository, sender.
+-- There is no action field; the event is forwarded as-is.
+b:webhook("ping", function(payload)
+  return make_internal_event({
+    event = "ping",
+    action = "ping",
+    provider = "gitea",
+    raw = payload,
+    data = {
+      zen = payload.zen or "Gitea",
+      hook_id = payload.hook_id,
+      hook = payload.hook or {},
+      repository = translate_repo(payload.repository or {}),
+      sender = translate_user(payload.sender or {}),
+    },
+    timestamp = "",
+  })
+end)
+
 b:capability("repos", repos)
 b:capability("users", users)
 b:capability("orgs", orgs)

@@ -1671,3 +1671,14 @@ X-Gitea-Event: discussion_comment
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
+
+# ── ping: ping ────────────────────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: ping
+file,fixtures/webhooks/gitea/ping.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
