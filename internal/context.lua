@@ -20,6 +20,10 @@
 --                             (e.g. "push", "issues"); set by b:build() via make_backend_builder.
 --                             The receiver pipeline calls backend.webhooks[event](raw_payload)
 --                             to normalise a forge event into confusio's internal event model.
+--     backend.webhook_translators — normalized outbound translator registry; keyed by
+--                             internal event name. Confusio-shape delivery calls these
+--                             with (internal_event, fields) and falls back to the shared
+--                             envelope factory when no event-specific translator exists.
 --   webhook_receiver  — webhook receive pipeline; function(); installed by .init.lua after
 --                       make_webhook_receiver(app) is called.  Handles POST /webhooks/{backend}:
 --                       signature verification, event dispatch, and response.  nil until wired.
@@ -33,6 +37,7 @@ function make_app(cfg) -- luacheck: globals make_app
       graphql = {},
       capabilities = {},
       webhooks = {},
+      webhook_translators = {},
     },
     allow_anonymous = true,
   }

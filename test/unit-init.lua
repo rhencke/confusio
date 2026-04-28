@@ -1803,6 +1803,7 @@ ok(type(app.backend.rest) == "table", "app.backend.rest: is a table")
 ok(type(app.backend.graphql) == "table", "app.backend.graphql: is a table")
 ok(type(app.backend.capabilities) == "table", "app.backend.capabilities: is a table")
 ok(type(app.backend.webhooks) == "table", "app.backend.webhooks: is a table")
+ok(type(app.backend.webhook_translators) == "table", "app.backend.webhook_translators: is a table")
 ok(type(app.allow_anonymous) == "boolean", "app.allow_anonymous: is a boolean")
 ok(app.allow_anonymous == true, "app.allow_anonymous: default true (no backend loaded)")
 ok(type(app.route_match) == "function", "app.route_match: bound router lookup installed on app")
@@ -1821,6 +1822,10 @@ do
   ok(type(test_app.backend.graphql) == "table", "make_app: backend.graphql is a table")
   ok(type(test_app.backend.capabilities) == "table", "make_app: backend.capabilities is a table")
   ok(type(test_app.backend.webhooks) == "table", "make_app: backend.webhooks is a table")
+  ok(
+    type(test_app.backend.webhook_translators) == "table",
+    "make_app: backend.webhook_translators is a table"
+  )
   ok(test_app.allow_anonymous == true, "make_app: allow_anonymous defaults to true")
   ok(test_app ~= app, "make_app: returns a new independent table each call")
 end
@@ -1833,6 +1838,7 @@ do
   local saved_rest = app.backend.rest
   local saved_capabilities = app.backend.capabilities
   local saved_webhooks = app.backend.webhooks
+  local saved_webhook_translators = app.backend.webhook_translators
   local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
   local saved_anon = app.allow_anonymous
 
@@ -1840,6 +1846,7 @@ do
     app.backend.rest = saved_rest
     app.backend.capabilities = saved_capabilities
     app.backend.webhooks = saved_webhooks
+    app.backend.webhook_translators = saved_webhook_translators
     graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
     app.allow_anonymous = saved_anon
   end
@@ -1852,6 +1859,10 @@ do
   ok(type(b.capability) == "function", "make_backend_builder: has capability method")
   ok(type(b.webhook) == "function", "make_backend_builder: has webhook method")
   ok(
+    type(b.webhook_translator) == "function",
+    "make_backend_builder: has webhook_translator method"
+  )
+  ok(
     type(b.set_allow_anonymous) == "function",
     "make_backend_builder: has set_allow_anonymous method"
   )
@@ -1863,13 +1874,18 @@ do
   ok(b2:graphql("Query.foo", function() end) == b2, "builder:graphql: returns self")
   ok(b2:capability("repos", {}) == b2, "builder:capability: returns self")
   ok(b2:webhook("push", function() end) == b2, "builder:webhook: returns self")
+  ok(
+    b2:webhook_translator("push", function() end) == b2,
+    "builder:webhook_translator: returns self"
+  )
   ok(b2:set_allow_anonymous(true) == b2, "builder:set_allow_anonymous: returns self")
 
   -- build() populates app.backend.rest, graphql_resolvers, app.backend.capabilities,
-  -- and app.backend.webhooks
+  -- app.backend.webhooks, and app.backend.webhook_translators
   app.backend.rest = {}
   app.backend.capabilities = {}
   app.backend.webhooks = {}
+  app.backend.webhook_translators = {}
   graphql_resolvers = {} -- luacheck: globals graphql_resolvers
   app.allow_anonymous = true
 
@@ -1877,11 +1893,13 @@ do
   local gql_fn = function() end
   local cap_repos = { get = function() end, list = function() end }
   local push_fn = function() end
+  local push_translator_fn = function() end
   local b3 = make_backend_builder()
   b3:rest("get_repo", get_fn)
   b3:graphql("Query.viewer", gql_fn)
   b3:capability("repos", cap_repos)
   b3:webhook("push", push_fn)
+  b3:webhook_translator("push", push_translator_fn)
   b3:set_allow_anonymous(false)
   b3:build()
 
@@ -1889,6 +1907,11 @@ do
   eq(graphql_resolvers["Query.viewer"], gql_fn, "builder:build: registers GraphQL resolver") -- luacheck: globals graphql_resolvers
   eq(app.backend.capabilities["repos"], cap_repos, "builder:build: registers capability module")
   eq(app.backend.webhooks["push"], push_fn, "builder:build: registers webhook event handler")
+  eq(
+    app.backend.webhook_translators["push"],
+    push_translator_fn,
+    "builder:build: registers normalized webhook translator"
+  )
   eq(app.allow_anonymous, false, "builder:build: sets allow_anonymous")
 
   -- build() without set_allow_anonymous leaves allow_anonymous unchanged
@@ -3189,15 +3212,41 @@ do
   eq(decoded_gb.ref, "refs/heads/main", "fanout_body github: payload fields forwarded")
   ok(decoded_gb.source == nil, "fanout_body github: no envelope wrapper")
 
-  -- "confusio" shape: body is {source, event, payload} envelope.
+  -- "confusio" shape: body is the normalized event envelope.
   local cb = fanout_body("gitea", "push", payload, "confusio")
   ok(type(cb) == "string", "fanout_body confusio: returns a string")
   local decoded_cb = DecodeJson(cb)
   ok(type(decoded_cb) == "table", "fanout_body confusio: body is valid JSON")
-  eq(decoded_cb.source, "gitea", "fanout_body confusio: source is backend name")
-  eq(decoded_cb.event, "push", "fanout_body confusio: event is event_type")
+  eq(decoded_cb.type, "push", "fanout_body confusio: type is normalized event type")
+  ok(type(decoded_cb.id) == "string", "fanout_body confusio: id is present")
   ok(type(decoded_cb.payload) == "table", "fanout_body confusio: payload is a table")
   eq(decoded_cb.payload.ref, "refs/heads/main", "fanout_body confusio: payload fields preserved")
+
+  local internal = make_internal_event({ -- luacheck: globals make_internal_event
+    event = "issues",
+    action = "opened",
+    provider = "gitea",
+    raw = payload,
+    data = {
+      payload = { normalized = true },
+    },
+  })
+  local tb = fanout_body("gitea", "issues", payload, "confusio", internal, {
+    issues = function(ev, fields)
+      return {
+        id = fields.id,
+        type = "custom." .. ev.event,
+        payload = ev.data.payload,
+      }
+    end,
+  }, { id = "delivery-123" })
+  local decoded_tb = DecodeJson(tb)
+  eq(decoded_tb.id, "delivery-123", "fanout_body confusio translator: receives delivery id")
+  eq(decoded_tb.type, "custom.issues", "fanout_body confusio translator: event translator used")
+  ok(
+    decoded_tb.payload.normalized == true,
+    "fanout_body confusio translator: normalized payload used"
+  )
 
   -- Unknown shape falls back to "github" behaviour.
   local ub = fanout_body("gitea", "push", payload, "unknown")
@@ -3366,6 +3415,13 @@ do
     _df_last_opts.headers["X-GitHub-Event"] == nil,
     "deliver_fire confusio shape: no X-GitHub-Event header"
   )
+  local confusio_body = DecodeJson(_df_last_opts.body)
+  eq(
+    confusio_body.id,
+    _df_last_opts.headers["X-Confusio-Delivery"],
+    "deliver_fire confusio shape: body id matches delivery header"
+  )
+  eq(confusio_body.type, "push", "deliver_fire confusio shape: body type is normalized event")
 
   -- deliver_fire: secret present → backend-native signature header included.
   local target_signed = {
