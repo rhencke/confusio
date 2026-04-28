@@ -2864,6 +2864,14 @@ end
 -- ============================================================
 
 ok(type(make_internal_event) == "function", "make_internal_event: exported as global function")
+ok(
+  type(normalized_webhook_event_type) == "function",
+  "normalized_webhook_event_type: exported as global function"
+)
+ok(
+  type(make_normalized_webhook_envelope) == "function",
+  "make_normalized_webhook_envelope: exported as global function"
+)
 
 do
   -- All required fields present → table with correct keys.
@@ -2910,6 +2918,110 @@ do
   eq(ev4.timestamp, "", "make_internal_event: missing timestamp defaults to ''")
   eq(type(ev4.raw), "table", "make_internal_event: missing raw defaults to {}")
   eq(type(ev4.data), "table", "make_internal_event: missing data defaults to {}")
+end
+
+-- ============================================================
+-- normalized webhook event model core
+-- ============================================================
+
+do
+  eq(
+    normalized_webhook_event_type("issues", "opened"),
+    "issue.opened",
+    "normalized_webhook_event_type: issues action maps to issue namespace"
+  )
+  eq(
+    normalized_webhook_event_type("issue_comment", "created"),
+    "issue.comment.created",
+    "normalized_webhook_event_type: issue_comment action maps to dotted namespace"
+  )
+  eq(
+    normalized_webhook_event_type("pull_request_review", "submitted"),
+    "pull_request.review.submitted",
+    "normalized_webhook_event_type: pull_request_review maps to review namespace"
+  )
+  eq(
+    normalized_webhook_event_type("push", ""),
+    "push",
+    "normalized_webhook_event_type: empty action returns event namespace"
+  )
+  eq(
+    normalized_webhook_event_type("custom_backend_event", "created"),
+    "custom_backend_event.created",
+    "normalized_webhook_event_type: unknown event preserves backend event key"
+  )
+
+  local internal = make_internal_event({
+    event = "issue_comment",
+    action = "created",
+    provider = "gitea",
+    timestamp = "2026-04-28T10:11:12Z",
+    raw = {
+      sender = { login = "octocat" },
+      repository = { full_name = "octo/repo" },
+    },
+    data = {
+      payload = { comment = { id = 10, body = "nice" } },
+    },
+  })
+  local env = make_normalized_webhook_envelope(internal, { id = "delivery-1" })
+  eq(env.id, "delivery-1", "make_normalized_webhook_envelope: explicit id preserved")
+  eq(
+    env.type,
+    "issue.comment.created",
+    "make_normalized_webhook_envelope: type derived from event and action"
+  )
+  eq(
+    env.occurred_at,
+    "2026-04-28T10:11:12Z",
+    "make_normalized_webhook_envelope: timestamp preserved"
+  )
+  eq(env.actor.login, "octocat", "make_normalized_webhook_envelope: actor falls back to raw sender")
+  eq(
+    env.repository.full_name,
+    "octo/repo",
+    "make_normalized_webhook_envelope: repository falls back to raw repository"
+  )
+  eq(
+    env.payload.comment.id,
+    10,
+    "make_normalized_webhook_envelope: payload uses normalized data payload"
+  )
+
+  local override = make_normalized_webhook_envelope(internal, {
+    id = "delivery-2",
+    type = "issue.comment.custom",
+    occurred_at = "2026-04-28T12:00:00Z",
+    actor = { login = "override" },
+    repository = { full_name = "override/repo" },
+    payload = { ok = true },
+  })
+  eq(override.type, "issue.comment.custom", "make_normalized_webhook_envelope: type override")
+  eq(
+    override.occurred_at,
+    "2026-04-28T12:00:00Z",
+    "make_normalized_webhook_envelope: occurred_at override"
+  )
+  eq(override.actor.login, "override", "make_normalized_webhook_envelope: actor override")
+  eq(
+    override.repository.full_name,
+    "override/repo",
+    "make_normalized_webhook_envelope: repository override"
+  )
+  ok(override.payload.ok == true, "make_normalized_webhook_envelope: payload override")
+
+  local generated = make_normalized_webhook_envelope(make_internal_event({
+    event = "push",
+    provider = "gitea",
+    raw = {},
+    data = {},
+  }))
+  eq(#generated.id, 36, "make_normalized_webhook_envelope: generated id is UUID length")
+  ok(
+    generated.occurred_at:match("^%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%dZ$") ~= nil,
+    "make_normalized_webhook_envelope: empty timestamp falls back to current ISO time"
+  )
+  eq(generated.type, "push", "make_normalized_webhook_envelope: action-less event type")
 end
 
 -- ============================================================
