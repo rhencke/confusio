@@ -31,6 +31,13 @@ jsonpath "$[0].confusio_source" == "gitea"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.id" isString
+jsonpath "$[0].body_json.type" == "issue.opened"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:00:00Z"
+jsonpath "$[0].body_json.actor.login" == "alice"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.action" == "opened"
+jsonpath "$[0].body_json.payload.issue.number" == 1
 
 # ── issue_comment: created — confusio shape ───────────────────────────────────
 
@@ -55,6 +62,9 @@ jsonpath "$[0].confusio_source" == "gitea"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "issue.comment.created"
+jsonpath "$[0].body_json.actor.login" == "bob"
+jsonpath "$[0].body_json.payload.comment.id" == 42
 
 # ── pull_request: opened — confusio shape ─────────────────────────────────────
 
@@ -79,6 +89,9 @@ jsonpath "$[0].confusio_source" == "gitea"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "pull_request.opened"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.pull_request.number" == 7
 
 # ── workflow_run: completed — confusio shape ──────────────────────────────────
 
@@ -103,6 +116,8 @@ jsonpath "$[0].confusio_source" == "gitea"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "workflow.run.completed"
+jsonpath "$[0].body_json.payload.workflow_run.conclusion" == "success"
 
 # ── status: success — confusio shape ──────────────────────────────────────────
 
@@ -127,6 +142,8 @@ jsonpath "$[0].confusio_source" == "gitea"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "status.success"
+jsonpath "$[0].body_json.payload.sha" == "abc123def456abc123def456abc123def456abc123"
 
 # ── push: push — confusio shape ──────────────────────────────────────────────
 
@@ -151,6 +168,11 @@ jsonpath "$[0].confusio_source" == "gitea"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "push"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:00:00Z"
+jsonpath "$[0].body_json.actor.login" == "alice"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.after" == "abc123def456abc123def456abc123def456abc123"
 
 # ── fork: fork — confusio shape ───────────────────────────────────────────────
 
@@ -175,6 +197,8 @@ jsonpath "$[0].confusio_source" == "gitea"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "fork"
+jsonpath "$[0].body_json.payload.forkee.full_name" == "bob/hello-world"
 
 # ── release: published — confusio shape ──────────────────────────────────────
 
@@ -199,6 +223,10 @@ jsonpath "$[0].confusio_source" == "gitea"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "release.published"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:00:00Z"
+jsonpath "$[0].body_json.actor.login" == "alice"
+jsonpath "$[0].body_json.payload.release.tag_name" == "v1.0.0"
 
 # ── member: added — confusio shape ───────────────────────────────────────────
 
@@ -223,6 +251,8 @@ jsonpath "$[0].confusio_source" == "gitea"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "member.added"
+jsonpath "$[0].body_json.payload.member.login" == "bob"
 
 # ── discussion: created — confusio shape ──────────────────────────────────────
 
@@ -247,6 +277,8 @@ jsonpath "$[0].confusio_source" == "gitea"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "discussion.created"
+jsonpath "$[0].body_json.payload.discussion.title" == "How do I configure X?"
 # ── package: published — confusio shape ───────────────────────────────────────
 
 POST http://{{target}}/reset
@@ -270,3 +302,5 @@ jsonpath "$[0].confusio_source" == "gitea"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "package.published"
+jsonpath "$[0].body_json.payload.package.name" == "my-lib"

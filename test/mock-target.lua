@@ -39,6 +39,7 @@ function OnHttpRequest()
   -- default "github" shape, or X-Confusio-* headers for the "confusio" shape.
   if method == "POST" then
     local body = GetBody() -- luacheck: globals GetBody
+    local ok_body, body_json = pcall(DecodeJson, body or "") -- luacheck: globals DecodeJson
     local entry = {
       path = path,
       user_agent = GetHeader("User-Agent") or "", -- luacheck: globals GetHeader
@@ -50,6 +51,7 @@ function OnHttpRequest()
       hub_signature_256 = GetHeader("X-Hub-Signature-256") or "",
       hub_signature = GetHeader("X-Hub-Signature") or "",
       body = body or "",
+      body_json = ok_body and body_json or nil,
     }
     deliveries[#deliveries + 1] = entry
     SetHeader("Content-Type", "application/json")

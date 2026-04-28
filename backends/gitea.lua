@@ -8051,6 +8051,77 @@ b:webhook("ping", function(payload)
   })
 end)
 
+local GITEA_ACTIONLESS_NORMALIZED_EVENTS = {
+  create = true,
+  delete = true,
+  fork = true,
+  gollum = true,
+  ping = true,
+  push = true,
+}
+
+local GITEA_NORMALIZED_WEBHOOK_EVENTS = {
+  "issues",
+  "issue_comment",
+  "discussion",
+  "discussion_comment",
+  "label",
+  "milestone",
+  "pull_request",
+  "merge_group",
+  "pull_request_review",
+  "pull_request_review_comment",
+  "workflow_run",
+  "workflow_job",
+  "status",
+  "push",
+  "create",
+  "delete",
+  "release",
+  "fork",
+  "repository",
+  "deploy_key",
+  "gollum",
+  "security_and_analysis",
+  "member",
+  "star",
+  "watch",
+  "package",
+  "ping",
+}
+
+local function normalized_payload_without_envelope_fields(data)
+  local payload = {}
+  for k, v in pairs(data or {}) do
+    if k ~= "sender" and k ~= "repository" then
+      payload[k] = v
+    end
+  end
+  return payload
+end
+
+local function translate_gitea_normalized_webhook(internal_event, fields)
+  local data = internal_event.data or {}
+  fields = fields or {}
+  return make_normalized_webhook_envelope(internal_event, {
+    id = fields.id,
+    type = fields.type
+      or (
+        GITEA_ACTIONLESS_NORMALIZED_EVENTS[internal_event.event]
+          and normalized_webhook_event_type(internal_event.event, "")
+        or normalized_webhook_event_type(internal_event.event, internal_event.action)
+      ),
+    occurred_at = fields.occurred_at,
+    actor = fields.actor or data.sender,
+    repository = fields.repository or data.repository,
+    payload = fields.payload or normalized_payload_without_envelope_fields(data),
+  })
+end
+
+for _, event in ipairs(GITEA_NORMALIZED_WEBHOOK_EVENTS) do
+  b:webhook_translator(event, translate_gitea_normalized_webhook)
+end
+
 b:capability("repos", repos)
 b:capability("users", users)
 b:capability("orgs", orgs)
