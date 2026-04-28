@@ -31,6 +31,13 @@ jsonpath "$[0].confusio_source" == "gitlab"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.id" isString
+jsonpath "$[0].body_json.type" == "issue.opened"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:00:00Z"
+jsonpath "$[0].body_json.actor.login" == "octocat"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.action" == "opened"
+jsonpath "$[0].body_json.payload.issue.number" == 1
 
 # ── issue_comment: created — confusio shape ───────────────────────────────────
 
@@ -55,6 +62,10 @@ jsonpath "$[0].confusio_source" == "gitlab"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "issue.comment.created"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T11:00:00Z"
+jsonpath "$[0].body_json.actor.login" == "octocat"
+jsonpath "$[0].body_json.payload.comment.id" == 101
 
 # ── pull_request: opened — confusio shape ─────────────────────────────────────
 
@@ -79,6 +90,10 @@ jsonpath "$[0].confusio_source" == "gitlab"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "pull_request.opened"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T14:00:00Z"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.pull_request.number" == 1
 
 # ── workflow_run: completed — confusio shape ──────────────────────────────────
 
@@ -103,6 +118,10 @@ jsonpath "$[0].confusio_source" == "gitlab"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "workflow.run.completed"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T16:05:00Z"
+jsonpath "$[0].body_json.payload.workflow_run.conclusion" == "success"
+jsonpath "$[0].body_json.payload.workflow_run.head_sha" == "abc123"
 
 # ── workflow_job: completed — confusio shape ──────────────────────────────────
 
@@ -127,6 +146,10 @@ jsonpath "$[0].confusio_source" == "gitlab"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "workflow.job.completed"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T16:03:00Z"
+jsonpath "$[0].body_json.payload.workflow_job.name" == "test"
+jsonpath "$[0].body_json.payload.workflow_job.conclusion" == "success"
 
 # ── push: push — confusio shape ──────────────────────────────────────────────
 
@@ -151,6 +174,11 @@ jsonpath "$[0].confusio_source" == "gitlab"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "push"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:00:00+00:00"
+jsonpath "$[0].body_json.actor.login" == "alice"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.after" == "da1560886d4f094c3e6c9ef40349f7d38b5d27d0"
 
 # ── release: published — confusio shape ──────────────────────────────────────
 
@@ -175,6 +203,10 @@ jsonpath "$[0].confusio_source" == "gitlab"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "release.published"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:00:00Z"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.release.tag_name" == "v1.0.0"
 
 # ── deployment: created — confusio shape ─────────────────────────────────────
 
@@ -199,6 +231,10 @@ jsonpath "$[0].confusio_source" == "gitlab"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "deployment.created"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T16:00:00Z"
+jsonpath "$[0].body_json.payload.deployment.id" == 15
+jsonpath "$[0].body_json.payload.deployment.environment" == "production"
 
 # ── member: added — confusio shape ───────────────────────────────────────────
 
@@ -223,6 +259,9 @@ jsonpath "$[0].confusio_source" == "gitlab"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "member.added"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.member.login" == "bob"
 
 # ── organization: created — confusio shape ────────────────────────────────────
 
@@ -247,6 +286,9 @@ jsonpath "$[0].confusio_source" == "gitlab"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "organization.created"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:00:00.000Z"
+jsonpath "$[0].body_json.payload.organization.login" == "engineering"
 
 # ── membership: added — confusio shape ────────────────────────────────────────
 
@@ -271,3 +313,7 @@ jsonpath "$[0].confusio_source" == "gitlab"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "membership.added"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:00:00Z"
+jsonpath "$[0].body_json.payload.member.login" == "bob"
+jsonpath "$[0].body_json.payload.team.name" == "Engineering"
