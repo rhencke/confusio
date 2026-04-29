@@ -3466,6 +3466,36 @@ do
     "deliver_fire with secret: X-Gitea-Signature header present for gitea backend"
   )
 
+  -- deliver_fire: delivery_log_path appends a structured JSON line.
+  local delivery_log_path = os.tmpname()
+  os.remove(delivery_log_path)
+  local target_logged = {
+    name = "logged-target",
+    url = "https://df-logged.example.com/hook",
+    shape = "github",
+    secret = "",
+    delivery_log_path = delivery_log_path,
+  }
+  _df_mock_status = 202
+  deliver_fire(target_logged, "gitea", "push", { ref = "refs/heads/main" })
+  local log_f = assert(io.open(delivery_log_path, "r"))
+  local log_line = log_f:read("*l")
+  log_f:close()
+  os.remove(delivery_log_path)
+  local log_entry = DecodeJson(log_line)
+  eq(log_entry.target_name, "logged-target", "deliver_fire log: target name recorded")
+  eq(log_entry.event_type, "push", "deliver_fire log: event type recorded")
+  eq(
+    log_entry.delivery_id,
+    _df_last_opts.headers["X-GitHub-Delivery"],
+    "deliver_fire log: delivery id recorded"
+  )
+  eq(log_entry.backend, "gitea", "deliver_fire log: backend recorded")
+  eq(log_entry.status_code, 202, "deliver_fire log: status code recorded")
+  ok(type(log_entry.timestamp) == "string", "deliver_fire log: timestamp recorded")
+  ok(type(log_entry.latency_ms) == "number", "deliver_fire log: latency recorded")
+  ok(log_entry.error == nil, "deliver_fire log: success has no error field")
+
   -- deliver_fire: outcome logging — Log is called with kLogWarn on failure
   -- and kLogVerbose on success.
   local _log_calls = {}

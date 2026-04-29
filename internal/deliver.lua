@@ -38,6 +38,44 @@ local function _deliver_headers(backend, event_type, delivery_id, shape, body, s
   return headers
 end
 
+local function append_delivery_attempt_log(
+  target,
+  backend,
+  event_type,
+  delivery_id,
+  http_status,
+  duration_ms,
+  err
+)
+  local path = target.delivery_log_path or ""
+  if path == "" then
+    return
+  end
+
+  local record = {
+    timestamp = now_iso8601(), -- luacheck: globals now_iso8601
+    target_name = target.name or "default",
+    event_type = event_type,
+    delivery_id = delivery_id,
+    backend = backend,
+    status_code = http_status,
+    latency_ms = duration_ms,
+    error = err,
+  }
+  local line = EncodeJson(record) .. "\n" -- luacheck: globals EncodeJson
+  local ok_append, append_err = pcall(function()
+    local f = assert(io.open(path, "a"))
+    f:write(line)
+    f:close()
+  end)
+  if not ok_append then
+    Log( -- luacheck: globals Log kLogWarn
+      kLogWarn,
+      string.format("deliver: log_path=%s error=%s", path, tostring(append_err))
+    )
+  end
+end
+
 -- deliver_fire: performs one HTTP POST delivery to target.url.
 -- Logs the outcome (status, duration, error) and returns immediately.
 -- No retry, no circuit breaker.
@@ -68,6 +106,7 @@ function deliver_fire(target, backend, event_type, payload, internal_event, tran
 
   if not pcall_ok then
     local err = tostring(result)
+    append_delivery_attempt_log(target, backend, event_type, delivery_id, nil, duration_ms, err)
     Log( -- luacheck: globals Log kLogWarn
       kLogWarn,
       string.format(
@@ -83,6 +122,15 @@ function deliver_fire(target, backend, event_type, payload, internal_event, tran
 
   local http_status = result
   local ok = http_status >= 200 and http_status < 300
+  append_delivery_attempt_log(
+    target,
+    backend,
+    event_type,
+    delivery_id,
+    http_status,
+    duration_ms,
+    nil
+  )
   Log(
     ok and kLogVerbose or kLogWarn, -- luacheck: globals kLogVerbose
     string.format(
