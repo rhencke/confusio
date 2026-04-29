@@ -9,7 +9,6 @@
 --   url               (string)  — destination endpoint
 --   shape             (string)  — "github" (default) or "confusio"
 --   secret            (string)  — optional HMAC signing secret
---   delivery_log_path (string)  — structured delivery-attempt log path
 --
 -- Globals exported:
 --   deliver_fire(target, backend, event_type, payload[, internal_event, translators]) → ok, http_status_or_nil, error_or_nil
@@ -38,7 +37,7 @@ local function _deliver_headers(backend, event_type, delivery_id, shape, body, s
   return headers
 end
 
-local function append_delivery_attempt_log(
+local function delivery_log_line(
   target,
   backend,
   event_type,
@@ -47,33 +46,21 @@ local function append_delivery_attempt_log(
   duration_ms,
   err
 )
-  local path = target.delivery_log_path or ""
-  if path == "" then
-    return
+  local status = http_status or 0
+  local line = string.format(
+    'deliver: "POST %s HTTP/1.1" %03d %dms target=%s backend=%s event=%s delivery=%s',
+    target.url or "",
+    status,
+    duration_ms,
+    target.name or "default",
+    backend,
+    event_type,
+    delivery_id
+  )
+  if err ~= nil then
+    line = line .. " error=" .. tostring(err)
   end
-
-  local record = {
-    timestamp = now_iso8601(), -- luacheck: globals now_iso8601
-    target_name = target.name or "default",
-    event_type = event_type,
-    delivery_id = delivery_id,
-    backend = backend,
-    status_code = http_status,
-    latency_ms = duration_ms,
-    error = err,
-  }
-  local line = EncodeJson(record) .. "\n" -- luacheck: globals EncodeJson
-  local ok_append, append_err = pcall(function()
-    local f = assert(io.open(path, "a"))
-    f:write(line)
-    f:close()
-  end)
-  if not ok_append then
-    Log( -- luacheck: globals Log kLogWarn
-      kLogWarn,
-      string.format("deliver: log_path=%s error=%s", path, tostring(append_err))
-    )
-  end
+  return line
 end
 
 -- deliver_fire: performs one HTTP POST delivery to target.url.
@@ -106,40 +93,18 @@ function deliver_fire(target, backend, event_type, payload, internal_event, tran
 
   if not pcall_ok then
     local err = tostring(result)
-    append_delivery_attempt_log(target, backend, event_type, delivery_id, nil, duration_ms, err)
     Log( -- luacheck: globals Log kLogWarn
       kLogWarn,
-      string.format(
-        "deliver: url=%s event=%s duration=%dms error=%s",
-        target.url,
-        event_type,
-        duration_ms,
-        err
-      )
+      delivery_log_line(target, backend, event_type, delivery_id, nil, duration_ms, err)
     )
     return false, nil, err
   end
 
   local http_status = result
   local ok = http_status >= 200 and http_status < 300
-  append_delivery_attempt_log(
-    target,
-    backend,
-    event_type,
-    delivery_id,
-    http_status,
-    duration_ms,
-    nil
-  )
   Log(
     ok and kLogVerbose or kLogWarn, -- luacheck: globals kLogVerbose
-    string.format(
-      "deliver: url=%s event=%s status=%d duration=%dms",
-      target.url,
-      event_type,
-      http_status,
-      duration_ms
-    )
+    delivery_log_line(target, backend, event_type, delivery_id, http_status, duration_ms, nil)
   )
   return ok, http_status, nil
 end

@@ -15,7 +15,7 @@
 --   fanout_dispatch(backend, event_type, payload[, internal_event, translators]) — fire to all matching targets
 
 -- _fanout_targets: in-memory list of registered outbound targets.
--- Each entry is a table: { name, url, events, shape, secret, delivery_log_path }
+-- Each entry is a table: { name, url, events, shape, secret }
 local _fanout_targets = {}
 
 -- fanout_event_matches: returns true when event_type is covered by the target's
@@ -73,8 +73,7 @@ end
 -- fanout_register_target: adds a static outbound target to the registry.
 -- target must be a table with at least a non-empty url field.
 -- Optional fields: name (string; default "default"), events (array; default {"*"}),
--- shape (string; default "github"), secret (string; used for HMAC signing),
--- delivery_log_path (string; structured delivery-attempt log path).
+-- shape (string; default "github"), secret (string; used for HMAC signing).
 function fanout_register_target(target) -- luacheck: globals fanout_register_target
   if type(target) ~= "table" or type(target.url) ~= "string" or target.url == "" then
     return
@@ -85,7 +84,6 @@ function fanout_register_target(target) -- luacheck: globals fanout_register_tar
     events = target.events or { "*" },
     shape = target.shape or "github",
     secret = target.secret or "",
-    delivery_log_path = target.delivery_log_path or "",
   }
   _fanout_targets[#_fanout_targets + 1] = entry
 end
