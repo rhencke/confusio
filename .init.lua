@@ -56,6 +56,10 @@ end
 --   webhook_delivery_log_path=PATH   — structured delivery-attempt log path
 local positional_keys = { "backend", "base_url" }
 local pos_idx = 1
+local function webhook_target_config()
+  config.webhook_target = config.webhook_target or {}
+  return config.webhook_target
+end
 for _, a in ipairs(arg or {}) do
   local kv_key, kv_val = a:match("^([^=]+)=(.*)$")
   if kv_key then
@@ -64,24 +68,19 @@ for _, a in ipairs(arg or {}) do
     if wh_backend then
       config.webhook_secrets[wh_backend] = read_secret_file(kv_val)
     elseif kv_key == "webhook_target" then
-      config.webhook_target = config.webhook_target or {}
-      config.webhook_target.url = kv_val
+      webhook_target_config().url = kv_val
     elseif kv_key == "webhook_target_name" then
-      config.webhook_target = config.webhook_target or {}
-      config.webhook_target.name = kv_val
+      webhook_target_config().name = kv_val
     elseif kv_key == "webhook_target_events" then
-      config.webhook_target = config.webhook_target or {}
       local events = {}
       for e in kv_val:gmatch("[^,]+") do
         events[#events + 1] = e
       end
-      config.webhook_target.events = events
+      webhook_target_config().events = events
     elseif kv_key == "webhook_target_shape" then
-      config.webhook_target = config.webhook_target or {}
-      config.webhook_target.shape = kv_val
+      webhook_target_config().shape = kv_val
     elseif kv_key == "webhook_target_secret_file" then
-      config.webhook_target = config.webhook_target or {}
-      config.webhook_target.secret = read_secret_file(kv_val)
+      webhook_target_config().secret = read_secret_file(kv_val)
     elseif kv_key == "webhook_delivery_log_path" then
       config.webhook_delivery_log_path = kv_val
     end
