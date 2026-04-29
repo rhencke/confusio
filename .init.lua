@@ -4,6 +4,7 @@
 config = {
   backend = "",
   base_url = "",
+  webhook_delivery_log_path = "webhook-deliveries.log",
   -- webhook_secrets: table mapping backend name → inbound signing secret.
   -- Populated by webhook_secret_file_BACKEND=/path SCRIPTARGS.
   -- Absent entry (or empty string) → trust-the-network for that backend.
@@ -48,9 +49,11 @@ end
 -- Key=value pairs (any arg containing "=") configure webhook options:
 --   webhook_secret_file_BACKEND=/path — path to 0600 file with inbound signing secret
 --   webhook_target=URL                — outbound delivery target URL
+--   webhook_target_name=NAME          — logical outbound target name (default: default)
 --   webhook_target_events=A,B,C      — comma-separated event filter (default: *)
 --   webhook_target_shape=SHAPE       — delivery shape: "github" (default) or "confusio"
 --   webhook_target_secret_file=/path — path to 0600 file with outbound HMAC signing secret
+--   webhook_delivery_log_path=PATH   — structured delivery-attempt log path
 local positional_keys = { "backend", "base_url" }
 local pos_idx = 1
 for _, a in ipairs(arg or {}) do
@@ -63,6 +66,9 @@ for _, a in ipairs(arg or {}) do
     elseif kv_key == "webhook_target" then
       config.webhook_target = config.webhook_target or {}
       config.webhook_target.url = kv_val
+    elseif kv_key == "webhook_target_name" then
+      config.webhook_target = config.webhook_target or {}
+      config.webhook_target.name = kv_val
     elseif kv_key == "webhook_target_events" then
       config.webhook_target = config.webhook_target or {}
       local events = {}
@@ -76,6 +82,8 @@ for _, a in ipairs(arg or {}) do
     elseif kv_key == "webhook_target_secret_file" then
       config.webhook_target = config.webhook_target or {}
       config.webhook_target.secret = read_secret_file(kv_val)
+    elseif kv_key == "webhook_delivery_log_path" then
+      config.webhook_delivery_log_path = kv_val
     end
   elseif positional_keys[pos_idx] then
     config[positional_keys[pos_idx]] = a
@@ -136,6 +144,7 @@ app.webhook_receiver = make_webhook_receiver(app)
 -- Register the single outbound target declared via webhook_target=URL at startup.
 -- Silently ignored if missing or malformed (missing url, wrong type).
 if config.webhook_target then
+  config.webhook_target.delivery_log_path = config.webhook_delivery_log_path
   fanout_register_target(config.webhook_target)
 end
 

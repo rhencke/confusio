@@ -5,9 +5,11 @@
 -- (HTTP status or error) and the function returns immediately.
 --
 -- target is a table with fields:
---   url    (string)  — destination endpoint
---   shape  (string)  — "github" (default) or "confusio"
---   secret (string)  — optional HMAC signing secret
+--   name              (string)  — logical target name
+--   url               (string)  — destination endpoint
+--   shape             (string)  — "github" (default) or "confusio"
+--   secret            (string)  — optional HMAC signing secret
+--   delivery_log_path (string)  — structured delivery-attempt log path
 --
 -- Globals exported:
 --   deliver_fire(target, backend, event_type, payload[, internal_event, translators]) → ok, http_status_or_nil, error_or_nil

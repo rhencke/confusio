@@ -200,16 +200,20 @@ end
 --   positional: backend name (backend file load is suppressed by the dofile stub)
 --   webhook_secret_file_BACKEND: path to 0600 file with inbound signing secret
 --   webhook_target=URL: outbound delivery target
+--   webhook_target_name=wt-coverage: logical outbound target name
 --   webhook_target_events=push,pull_request: event filter
 --   webhook_target_shape=github: delivery shape
 --   webhook_target_secret_file: path to 0600 file with outbound HMAC signing secret
+--   webhook_delivery_log_path=/tmp/wt-deliveries.log: structured attempt log path
 arg = { -- luacheck: globals arg
   "testbackend",
   "webhook_secret_file_gitea=" .. _ws_secret_file,
   "webhook_target=https://hook.example.com/wt-coverage",
+  "webhook_target_name=wt-coverage",
   "webhook_target_events=push,pull_request",
   "webhook_target_shape=github",
   "webhook_target_secret_file=" .. _wt_secret_file,
+  "webhook_delivery_log_path=/tmp/wt-deliveries.log",
 }
 
 -- Load the module under test.
@@ -240,6 +244,10 @@ assert(
   "webhook_target CLI arg: url mismatch: " .. tostring((config.webhook_target or {}).url)
 )
 assert(
+  config.webhook_target.name == "wt-coverage",
+  "webhook_target_name CLI arg: name mismatch: " .. tostring((config.webhook_target or {}).name)
+)
+assert(
   type(config.webhook_target.events) == "table",
   "webhook_target_events CLI arg: events should be a table after load"
 )
@@ -256,11 +264,20 @@ assert(
   "webhook_target_secret_file CLI arg: secret mismatch: "
     .. tostring((config.webhook_target or {}).secret)
 )
+assert(
+  config.webhook_delivery_log_path == "/tmp/wt-deliveries.log",
+  "webhook_delivery_log_path CLI arg: path mismatch: " .. tostring(config.webhook_delivery_log_path)
+)
+assert(
+  config.webhook_target.delivery_log_path == "/tmp/wt-deliveries.log",
+  "webhook target delivery log path should inherit configured path"
+)
 
 -- Clear coverage-only state so later tests see a clean config.
 -- (config and app.config reference the same table.)
 config.webhook_secrets = {}
 config.webhook_target = nil
+config.webhook_delivery_log_path = "webhook-deliveries.log"
 
 -- Restore dofile so later tests that call it work normally.
 dofile = _real_dofile -- luacheck: globals dofile
@@ -3291,7 +3308,12 @@ local fd0 = fanout_dispatch("gitea", "create", { ref = "refs/tags/v1.0" })
 eq(fd0, 0, "fanout_dispatch no matching targets: returns 0 for unsubscribed event")
 
 -- Register a wildcard target and verify dispatch calls deliver_fire.
-fanout_register_target({ url = "https://fd-test.example.com/hook", events = { "*" } })
+fanout_register_target({
+  url = "https://fd-test.example.com/hook",
+  name = "fd-wildcard",
+  events = { "*" },
+  delivery_log_path = "/tmp/fd-deliveries.log",
+})
 
 _fd_calls = {}
 local fd1 = fanout_dispatch("gitea", "create", { ref = "refs/tags/v1.0" })
@@ -3300,6 +3322,12 @@ ok(#_fd_calls == 1, "fanout_dispatch wildcard: deliver_fire called once")
 eq(_fd_calls[1].backend, "gitea", "fanout_dispatch wildcard: backend passed to deliver_fire")
 eq(_fd_calls[1].event_type, "create", "fanout_dispatch wildcard: event_type passed")
 eq(_fd_calls[1].tgt.url, "https://fd-test.example.com/hook", "fanout_dispatch wildcard: target url")
+eq(_fd_calls[1].tgt.name, "fd-wildcard", "fanout_dispatch wildcard: target name")
+eq(
+  _fd_calls[1].tgt.delivery_log_path,
+  "/tmp/fd-deliveries.log",
+  "fanout_dispatch wildcard: target delivery log path"
+)
 
 -- fanout_dispatch with non-matching event type for an issues-only target.
 fanout_register_target({ url = "https://filtered.example.com/hook", events = { "issues" } })
@@ -3312,11 +3340,13 @@ eq(
   "https://fd-test.example.com/hook",
   "fanout_dispatch filtered: correct target fired"
 )
+eq(_fd_calls[1].tgt.name, "fd-wildcard", "fanout_dispatch filtered: preserves named target")
 
 -- Matching event type delivers to both wildcard and issues targets.
 _fd_calls = {}
 local fd3 = fanout_dispatch("gitea", "issues", { action = "opened" })
 eq(fd3, 2, "fanout_dispatch match: wildcard and issues targets both match issues event")
+eq(_fd_calls[2].tgt.name, "default", "fanout_dispatch default: unnamed target defaults to default")
 
 deliver_fire = _real_deliver_fire -- luacheck: globals deliver_fire
 
