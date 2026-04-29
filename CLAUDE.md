@@ -101,9 +101,11 @@ Config is supplied as SCRIPTARGS after `--`.  Positional args set the backend an
 | SCRIPTARGS (positional) | `sh ./confusio.com -- <backend> [base_url]` |
 | SCRIPTARGS (inbound secret file) | `webhook_secret_file_BACKEND=/path` — path to 0600 file containing inbound signing secret |
 | SCRIPTARGS (outbound target) | `webhook_target=URL` — outbound delivery target URL |
+| SCRIPTARGS (target name) | `webhook_target_name=NAME` — logical outbound target name in delivery logs (default: `default`) |
 | SCRIPTARGS (target events) | `webhook_target_events=push,pull_request` — comma-separated filter (default: *) |
 | SCRIPTARGS (target shape) | `webhook_target_shape=confusio` — `github` (default) or `confusio` |
 | SCRIPTARGS (target secret file) | `webhook_target_secret_file=/path` — path to 0600 file containing outbound HMAC signing secret |
+| SCRIPTARGS (delivery log path) | `webhook_delivery_log_path=/path` — JSON Lines delivery-attempt log path (default: `webhook-deliveries.log`) |
 | Defaults | hardcoded in `.init.lua` |
 
 ## GitHub API reference
@@ -687,11 +689,13 @@ When a webhook event arrives from a forge backend, confusio can forward it to a 
 
 **Configuration:**
 - **`webhook_target=URL` SCRIPTARG** — URL of the single outbound target.  Optional; when absent, no deliveries are made.  Example: `sh ./confusio.com -- gitea webhook_target=https://hook.example.com`.
+- **`webhook_target_name=NAME`** — logical name for the configured outbound target in structured delivery logs (default: `default`).
 - **`webhook_target_events=A,B`** — comma-separated event filter (default: `*` = all events).
 - **`webhook_target_shape=github|confusio`** — delivery body shape (default: `github`).
 - **`webhook_target_secret_file=/path`** — path to a 0600-permission file containing the HMAC signing secret for the outbound target.
+- **`webhook_delivery_log_path=/path`** — JSON Lines delivery-attempt log path (default: `webhook-deliveries.log`).  Each attempted delivery appends one record with target name, backend, event type, delivery ID, latency, HTTP status when available, and error text when delivery fails before an HTTP response.
 - **`webhook_secret_file_BACKEND=/path`** provides per-backend inbound signing secrets (see above).
 
-**Dispatch flow:** After the webhook receiver validates an inbound event, `fanout_dispatch(backend, event_type, payload, internal_event, app.backend.webhook_translators)` fires `deliver_fire` for each registered target whose event subscription matches.  The default `github` shape forwards the raw payload; `confusio` shape uses `app.backend.webhook_translators[event_type]` when present and falls back to `make_normalized_webhook_envelope`.  `deliver_fire` makes one HTTP POST with optional HMAC signing and logs the outcome (HTTP status or error message) at `kLogWarn` on failure or `kLogVerbose` on success.  Returns `(ok, http_status_or_nil, error_or_nil)`.  The caller does not inspect the return values — the result is purely for log visibility.
+**Dispatch flow:** After the webhook receiver validates an inbound event, `fanout_dispatch(backend, event_type, payload, internal_event, app.backend.webhook_translators)` fires `deliver_fire` for each registered target whose event subscription matches.  The default `github` shape forwards the raw payload; `confusio` shape uses `app.backend.webhook_translators[event_type]` when present and falls back to `make_normalized_webhook_envelope`.  `deliver_fire` makes one HTTP POST with optional HMAC signing, writes a best-effort structured JSONL delivery-attempt record when a log path is configured, and logs the outcome (HTTP status or error message) at `kLogWarn` on failure or `kLogVerbose` on success.  Returns `(ok, http_status_or_nil, error_or_nil)`.  The caller does not inspect the return values — the result is purely for log visibility.
 
 - **Outbound signing mirrors the active backend's inbound scheme.** The `sign_for_backend` function in `internal/signing.lua` maps backend names to their native signature headers using the same schemes documented in `verify_signature` in `internal/webhooks.lua`.  The two must stay in sync when new backends are added.
