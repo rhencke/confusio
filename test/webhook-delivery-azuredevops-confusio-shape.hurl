@@ -26,6 +26,12 @@ jsonpath "$[0].confusio_source" == "azuredevops"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.id" isString
+jsonpath "$[0].body_json.type" == "issue.opened"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:00:00Z"
+jsonpath "$[0].body_json.actor.login" == "alice@example.com"
+jsonpath "$[0].body_json.payload.action" == "opened"
+jsonpath "$[0].body_json.payload.issue.number" == 1
 
 # ── workitem.commented → issue_comment: created — confusio shape ──────────────
 
@@ -49,6 +55,11 @@ jsonpath "$[0].confusio_source" == "azuredevops"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "issue.comment.created"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T12:00:00Z"
+jsonpath "$[0].body_json.actor.login" == "bob@example.com"
+jsonpath "$[0].body_json.payload.issue.number" == 1
+jsonpath "$[0].body_json.payload.comment.body" == "This is a comment on the work item"
 
 # ── git.pullrequest.created → pull_request: opened — confusio shape ──────────
 
@@ -72,6 +83,11 @@ jsonpath "$[0].confusio_source" == "azuredevops"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "pull_request.opened"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:00:00Z"
+jsonpath "$[0].body_json.actor.login" == "alice@example.com"
+jsonpath "$[0].body_json.repository.full_name" == "myproject/my-repo"
+jsonpath "$[0].body_json.payload.pull_request.number" == 42
 
 # ── git.pullrequest.reviewervote → pull_request_review — confusio shape ───────
 
@@ -95,6 +111,11 @@ jsonpath "$[0].confusio_source" == "azuredevops"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "pull_request.review.submitted"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T11:00:00Z"
+jsonpath "$[0].body_json.actor.login" == "bob@example.com"
+jsonpath "$[0].body_json.repository.full_name" == "myproject/my-repo"
+jsonpath "$[0].body_json.payload.review.state" == "APPROVED"
 
 # ── build.complete → workflow_run — confusio shape ────────────────────────────
 
@@ -118,6 +139,11 @@ jsonpath "$[0].confusio_source" == "azuredevops"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "workflow.run.completed"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:10:00Z"
+jsonpath "$[0].body_json.payload.workflow_run.name" == "CI Pipeline"
+jsonpath "$[0].body_json.payload.workflow_run.conclusion" == "success"
+jsonpath "$[0].body_json.payload.workflow_run.head_sha" == "abc123def456"
 
 # ── git.push → push — confusio shape ─────────────────────────────────────────
 
@@ -141,3 +167,8 @@ jsonpath "$[0].confusio_source" == "azuredevops"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "push"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:00:00Z"
+jsonpath "$[0].body_json.actor.login" == "bob@example.com"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.after" == "f1d2d2f924e986ac86fdf7b36c94bcdf32beec15"

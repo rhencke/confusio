@@ -485,7 +485,13 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
     -- event type.  Delivery is fire-and-record: each POST is attempted
     -- synchronously, the outcome is logged, and confusio responds immediately.
     -- No retry, no persistence.
-    fanout_dispatch(backend, internal_event.event, payload) -- luacheck: globals fanout_dispatch
+    fanout_dispatch(
+      backend,
+      internal_event.event,
+      payload,
+      internal_event,
+      a.backend.webhook_translators
+    ) -- luacheck: globals fanout_dispatch
 
     -- When the action was not recognized, surface it in a sidecar header so
     -- operators can identify unrecognized event variants without breaking delivery.

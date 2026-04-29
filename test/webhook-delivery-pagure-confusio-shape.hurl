@@ -27,6 +27,12 @@ jsonpath "$[0].confusio_source" == "pagure"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.id" isString
+jsonpath "$[0].body_json.type" == "issue.opened"
+jsonpath "$[0].body_json.occurred_at" == "1705312800"
+jsonpath "$[0].body_json.actor.login" == "alice"
+jsonpath "$[0].body_json.repository.full_name" == "myorg/my-repo"
+jsonpath "$[0].body_json.payload.issue.number" == 1
 
 # ── issue.comment.added → issue_comment: created — confusio shape ─────────────
 
@@ -51,6 +57,11 @@ jsonpath "$[0].confusio_source" == "pagure"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "issue.comment.created"
+jsonpath "$[0].body_json.occurred_at" == "1705316400"
+jsonpath "$[0].body_json.actor.login" == "bob"
+jsonpath "$[0].body_json.payload.comment.id" == 100
+jsonpath "$[0].body_json.payload.comment.body" == "I can reproduce this too."
 
 # ── pull-request.new → pull_request: opened — confusio shape ─────────────────
 
@@ -75,6 +86,11 @@ jsonpath "$[0].confusio_source" == "pagure"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "pull_request.opened"
+jsonpath "$[0].body_json.occurred_at" == "1705312800"
+jsonpath "$[0].body_json.actor.login" == "alice"
+jsonpath "$[0].body_json.repository.full_name" == "myorg/my-repo"
+jsonpath "$[0].body_json.payload.pull_request.number" == 5
 
 # ── pull-request.closed → pull_request: closed — confusio shape ───────────────
 
@@ -99,6 +115,10 @@ jsonpath "$[0].confusio_source" == "pagure"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "pull_request.closed"
+jsonpath "$[0].body_json.occurred_at" == "1705323600"
+jsonpath "$[0].body_json.actor.login" == "bob"
+jsonpath "$[0].body_json.payload.pull_request.state" == "closed"
 
 # ── git.receive (push) → push — confusio shape ───────────────────────────────
 
@@ -123,3 +143,8 @@ jsonpath "$[0].confusio_source" == "pagure"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "push"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:00:00Z"
+jsonpath "$[0].body_json.actor.login" == "bob"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.after" == "f1d2d2f924e986ac86fdf7b36c94bcdf32beec15"

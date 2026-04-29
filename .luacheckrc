@@ -98,6 +98,8 @@ globals = {
   "make_webhook_receiver",
   -- Webhook event mapping: internal/webhook_event.lua
   "make_internal_event",
+  "normalized_webhook_event_type",
+  "make_normalized_webhook_envelope",
   -- UUID and timestamp utilities: internal/util.lua
   "make_uuid",
   "iso8601",

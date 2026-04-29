@@ -31,6 +31,12 @@ jsonpath "$[0].confusio_source" == "bitbucket_datacenter"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.id" isString
+jsonpath "$[0].body_json.type" == "pull_request.opened"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:00:00Z"
+jsonpath "$[0].body_json.actor.login" == "octocat"
+jsonpath "$[0].body_json.repository.full_name" == "OCTO/hello-world"
+jsonpath "$[0].body_json.payload.pull_request.number" == 1
 
 # ── pull_request_review: submitted (approved) — confusio shape ────────────────
 
@@ -55,6 +61,9 @@ jsonpath "$[0].confusio_source" == "bitbucket_datacenter"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "pull_request.review.submitted"
+jsonpath "$[0].body_json.actor.login" == "reviewer"
+jsonpath "$[0].body_json.payload.review.state" == "APPROVED"
 
 # ── status: success — confusio shape ──────────────────────────────────────────
 
@@ -79,6 +88,11 @@ jsonpath "$[0].confusio_source" == "bitbucket_datacenter"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "status.success"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:05:00Z"
+jsonpath "$[0].body_json.repository.full_name" == "OCTO/hello-world"
+jsonpath "$[0].body_json.payload.sha" == "abc1234567890abcdef1234567890abcdef12345"
+jsonpath "$[0].body_json.payload.context" == "my-ci/build"
 
 # ── push: push — confusio shape ───────────────────────────────────────────────
 
@@ -103,3 +117,7 @@ jsonpath "$[0].confusio_source" == "bitbucket_datacenter"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "push"
+jsonpath "$[0].body_json.actor.login" == "bob"
+jsonpath "$[0].body_json.repository.full_name" == "OCTOCAT/hello-world"
+jsonpath "$[0].body_json.payload.after" == "f1d2d2f924e986ac86fdf7b36c94bcdf32beec15"

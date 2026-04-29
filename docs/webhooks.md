@@ -30,23 +30,25 @@ selects per-target which shape to emit.
   requests are rejected before any payload parsing occurs.
 - **Multi-target fan-out** — A single inbound event can be delivered to multiple
   consumers, each with independent shape selection and event-type filtering.
-- **Durable at-least-once delivery** — Events survive process restarts; failed
-  deliveries are retried with exponential backoff.
+- **Fire-and-record delivery** — Matching targets are POSTed synchronously during the
+  inbound request.  Delivery outcomes are logged, but no retry or persistence layer is
+  currently implemented.
 
 ### Non-Goals
 
 - **Webhook registration** — Confusio does not create or delete webhooks on forges.
   Forge administrators register the confusio receiver URL manually in forge settings.
   There is no API for managing forge-side webhook subscriptions.
-- **Exactly-once delivery** — The outbox guarantees at-least-once.  Consumers must
-  be idempotent with respect to duplicate deliveries.
-- **Synchronous passthrough** — Ingest is decoupled from delivery.  The inbound HTTP
-  response (`200` / `202`) is returned before all targets have been notified.
+- **Exactly-once delivery** — Consumers should still treat webhook delivery as
+  potentially duplicate, especially when the originating forge retries an inbound
+  request.
+- **Durable replay** — Confusio currently logs delivery outcomes but does not persist
+  an outbox, retry failed targets, or expose a replay API.
 - **Full GitHub webhook management API** — Ping events, webhook secret rotation
   endpoints, and GitHub's `/repos/{owner}/{repo}/hooks` REST surface are out of
   scope.  Confusio is a receiver, not a webhook management proxy.
-- **Event deduplication across replays** — Replay re-delivers events from the outbox
-  in order.  Deduplication (e.g., idempotency keys) is the consumer's responsibility.
+- **Event deduplication** — Deduplication (e.g., idempotency keys) is the consumer's
+  responsibility.
 
 ## Architecture
 
@@ -54,12 +56,12 @@ selects per-target which shape to emit.
 Forge                          Confusio                          Consumer(s)
 ─────                          ────────                          ─────────────
 Gitea   ──▶ /webhooks/gitea  ─┐
-Forgejo ──▶ /webhooks/forgejo ─┤  verify  normalize  write        ┌─▶ target A  (GitHub shape)
-GitLab  ──▶ /webhooks/gitlab  ─┼──▶ sig ──▶  both  ──▶ outbox ───├─▶ target B  (confusio shape)
-GitHub  ──▶ /webhooks/github  ─┤          shapes    fan-out       └─▶ target C  (filtered subset)
-...     ──▶ ...               ─┘          stored    (async)
+Forgejo ──▶ /webhooks/forgejo ─┤  verify  normalize  choose       ┌─▶ target A  (GitHub shape)
+GitLab  ──▶ /webhooks/gitlab  ─┼──▶ sig ──▶ event ──▶ shape ─────├─▶ target B  (confusio shape)
+GitHub  ──▶ /webhooks/github  ─┤                  fan-out         └─▶ target C  (filtered subset)
+...     ──▶ ...               ─┘                  (sync)
 
-Operator ──▶ /webhooks/targets ──▶ target registry  (admin: create / update / delete)
+Operator ──▶ SCRIPTARGS webhook_target=... ──▶ static target registry
 ```
 
 ### Processing stages
@@ -75,23 +77,15 @@ Operator ──▶ /webhooks/targets ──▶ target registry  (admin: create /
    representation.  This is the canonical intermediate form; both output shapes are
    derived from it.
 
-4. **Translate** — The internal event is converted into **both** output shapes
-   simultaneously and the results are stored in the outbox event record:
-   - `github_payload`: GitHub emulation applies field-level mappings to produce a
-     byte-compatible GitHub webhook payload.  See
-     [GitHub-Emulation Contract](#github-emulation-contract).
-   - `confusio_payload`: Confusio normalized wraps the internal event in the confusio
+4. **Translate** — Delivery shape is selected per target:
+   - `github`: GitHub emulation re-encodes the provider-compatible webhook payload.
+     See [GitHub-Emulation Contract](#github-emulation-contract).
+   - `confusio`: Confusio normalized wraps the internal event in the normalized
      envelope.  See [Normalized Confusio Event Model](#normalized-confusio-event-model).
 
-   Pre-translating both shapes at ingest means retries and replays re-send the original
-   payload without re-processing the forge request.  Per-target shape selection happens
-   at delivery time by reading the appropriate stored variant.
-
-5. **Dispatch** — The translated payloads are placed in the durable outbox and delivered
-   asynchronously to all matching targets, each receiving the shape and applying the
-   filter configured on its registration.  Filters, retries, and replay are described in
-   [Delivery Semantics](#delivery-semantics) and
-   [Multi-Target Dispatch and Configuration](#multi-target-dispatch-and-configuration).
+5. **Dispatch** — The translated payload is delivered synchronously to all matching
+   configured targets.  Delivery is fire-and-record: each matching target receives one
+   POST attempt, the outcome is logged, and the inbound request then receives `200 OK`.
 
 ### Backend-agnostic internal model
 
@@ -1919,7 +1913,8 @@ schema works regardless of whether the originating forge is Gitea, GitLab, or So
 ### Design goals
 
 - **Stable across forge versions** — field names and structure do not change when a
-  forge adds or renames its native fields.  Forge-specific details live in `raw`.
+  forge adds or renames its native fields.  Backend-specific details remain inside
+  the event-family payload.
 - **Consistent with the internal event model** — the envelope is a thin wrapper around
   the internal representation defined in [Backend-agnostic internal model](#backend-agnostic-internal-model).
 - **Orthogonal to the GitHub-emulation shape** — no GitHub-specific legacy (e.g.
@@ -1934,36 +1929,36 @@ Confusio sends the following HTTP headers with every confusio-normalized deliver
 | Header | Value | Notes |
 |--------|-------|-------|
 | `X-Confusio-Event` | confusio event family name (e.g. `issues`, `push`) | Always present |
-| `X-Confusio-Action` | action within the event family (e.g. `opened`) | Present when the event has an action; absent for action-less events |
 | `X-Confusio-Delivery` | UUID v4, unique per delivery attempt | Always present |
-| `X-Confusio-Provider` | originating backend identifier (e.g. `gitea`, `gitlab`) | Always present |
-| `X-Confusio-Signature-256` | `sha256=<lowercase hex>` | HMAC-SHA256 of body using target's secret; omitted if no secret configured |
+| `X-Confusio-Source` | originating backend identifier (e.g. `gitea`, `gitlab`) | Always present |
+| Provider-native signature header(s) | Backend-specific | Present when the outbound target has a secret; produced by the same signing helper used for GitHub-emulation deliveries |
 | `Content-Type` | `application/json` | Always `application/json` |
-| `User-Agent` | `Confusio-Hookshot/<version>` | Same as GitHub-emulation deliveries |
+| `User-Agent` | `confusio/1.0` | Same as GitHub-emulation deliveries |
 
-**Signature computation:** `X-Confusio-Signature-256` is computed over the raw
-delivery body bytes using the consumer target's configured secret.  The format
-`sha256=<hex>` mirrors the GitHub `X-Hub-Signature-256` convention so consumers can
-reuse the same HMAC verification code path.
+**Signature computation:** Outbound signing is selected from the source backend, not
+from the delivery shape.  For example, a `gitea` source signs with `X-Gitea-Signature`,
+`gitlab` signs with `X-Gitlab-Token`, and `gitbucket` signs with `X-Hub-Signature`
+using the GitBucket SHA-1 format.  If no target secret is configured, no signature
+header is emitted.
 
-**Action-less events:** `push`, `create`, `delete`, `fork`, `status`, and `ping` carry
-no action field — the event type alone identifies the operation.  For these,
-`X-Confusio-Action` is omitted from the delivery headers.
+**Action handling:** The action is represented in the JSON body through the dotted
+`type` field, not as a separate header.  Action-less events such as `push`, `create`,
+`delete`, and `fork` use the event family name alone as `type`.
 
 ### Namespace
 
-All confusio event family names are lower-snake-case strings in the `confusio.`
-namespace when used in subscription filters and configuration, but the header value
-carries only the short name without the prefix:
+Confusio uses two related names for each normalized delivery:
 
-```
-X-Confusio-Event: issues       ← short name in header
-subscription filter: confusio.issues   ← full name in config
-```
+- The **event family** is the internal canonical key and the value of
+  `X-Confusio-Event`, such as `issues`, `issue_comment`, `pull_request`, or `push`.
+- The body **type** is the stable dotted event namespace, such as `issue.opened`,
+  `issue.comment.created`, `pull_request.opened`, or `push`.
 
-The canonical event family names match the GitHub event name set defined in
-[Supported event names](#supported-event-names).  This alignment means the same event
-taxonomy is used across both output shapes, simplifying mixed deployments.
+The event-family names match the GitHub event name set defined in
+[Supported event names](#supported-event-names).  The dotted type is derived by
+mapping the family to a normalized base name and appending the action when one exists.
+For example, `issues` maps to `issue`, `issue_comment` maps to `issue.comment`, and
+`pull_request_review` maps to `pull_request.review`.
 
 ### Envelope schema
 
@@ -1971,51 +1966,50 @@ Every confusio-normalized delivery body follows this structure:
 
 ```json
 {
-  "confusio": "1.0",
   "id":        "<uuid>",
-  "event":     "<event-family>",
-  "action":    "<action or null>",
-  "provider":  "<backend>",
-  "timestamp": "<iso8601>",
-  "data":      { ... },
-  "raw":       { ... }
+  "type":      "<normalized dotted type>",
+  "occurred_at": "<iso8601>",
+  "actor":     { ... },
+  "repository": { ... },
+  "payload":   { ... }
 }
 ```
 
-| Field | Type | R/O | Description |
-|-------|------|-----|-------------|
-| `confusio` | string | R | Envelope schema version; currently `"1.0"` |
-| `id` | string (UUID v4) | R | Unique delivery ID; same value as `X-Confusio-Delivery` header |
-| `event` | string | R | Event family name (e.g. `"issues"`, `"push"`) |
-| `action` | string or null | R | Action within the event family; `null` for action-less events |
-| `provider` | string | R | Originating backend (e.g. `"gitea"`, `"gitlab"`) |
-| `timestamp` | string (ISO 8601) | R | Event timestamp — forge-supplied if available, otherwise confusio ingest time |
-| `data` | object | R | Normalized field bag; schema is event-family-specific (see below) |
-| `raw` | object | R | Original decoded payload from the forge, unmodified |
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string (UUID v4) | Unique outbound delivery ID; same value as `X-Confusio-Delivery` |
+| `type` | string | Dotted normalized event type, for example `issue.opened` or `workflow.run.completed` |
+| `occurred_at` | string | Event timestamp from the forge when available, otherwise the current confusio time |
+| `actor` | object | Actor that triggered the event; usually from normalized `sender` data |
+| `repository` | object | Repository associated with the event, or `{}` when the event has none |
+| `payload` | object | Event-family-specific normalized payload |
 
-The `confusio` version field allows consumers to guard against future schema changes:
+The delivery source and event family are intentionally kept in headers rather than
+duplicated in the body.  Consumers that route only by event family can use
+`X-Confusio-Event`; consumers that need action-level routing should use `body.type`.
 
-```json
-if (body.confusio !== "1.0") { /* handle unknown version */ }
-```
+### The `payload` object
 
-### The `data` object
+The `payload` object contains the normalized event payload.  Its schema is
+event-family-specific and generally mirrors the provider-agnostic `data` bag produced
+by the inbound webhook normalizer.  Backend translators remove envelope-level fields
+such as `sender` and `repository` from the payload when those values are already
+promoted to `actor` and `repository`.
 
-The `data` object contains the normalized event payload.  Its schema mirrors the
-GitHub-emulation output shape with the following differences:
+Common examples:
 
-- **No GitHub-specific IDs** — integer IDs that are meaningful only to GitHub are
-  replaced with the forge's native identifier.  Both `id` (forge-native) and
-  `number` (human-visible reference) are included where available.
-- **No `node_id`** — GitHub's GraphQL node ID is not present; confusio does not
-  synthesize a GraphQL node ID for the confusio-normalized shape.
-- **`source_url` instead of `html_url`** — the forge's own web URL for the resource
-  (issue page, PR page, etc.) is in `source_url`.  This makes it clear the URL points
-  to the originating forge, not to GitHub.
-- **Timestamps always ISO 8601** — all timestamp fields use ISO 8601 format in UTC.
-  Fields that are absent from the forge response are `null`, not omitted.
+| Event family | Example `type` | Payload fields |
+|--------------|----------------|----------------|
+| `issues` | `issue.opened` | `issue`, plus event-specific fields when available |
+| `issue_comment` | `issue.comment.created` | `issue`, `comment` |
+| `pull_request` | `pull_request.opened` | `pull_request` |
+| `pull_request_review` | `pull_request.review.submitted` | `pull_request`, `review` |
+| `workflow_run` | `workflow.run.completed` | `workflow_run` |
+| `workflow_job` | `workflow.job.completed` | `workflow_job` |
+| `push` | `push` | `ref`, `before`, `after`, `commits`, `head_commit`, and related push fields |
 
-The `data` object for each event family is documented in [Field-Level Mapping Tables](#field-level-mapping-tables).
+The field-level source coverage is documented in
+[Field-Level Mapping Tables](#field-level-mapping-tables).
 
 ### Concrete delivery example
 
@@ -2026,17 +2020,16 @@ POST /hooks/confusio-normalized HTTP/1.1
 Host: consumer.example.com
 Content-Type: application/json
 X-Confusio-Event: issues
-X-Confusio-Action: opened
 X-Confusio-Delivery: 72d3162e-cc78-11e3-81ab-4c9367dc0958
-X-Confusio-Provider: gitea
-X-Confusio-Signature-256: sha256=a3b9f12c8d7e4f01bc6234567890abcd1234ef567890abcd1234ef567890abcd
-User-Agent: Confusio-Hookshot/1.0
-Content-Length: 712
+X-Confusio-Source: gitea
+X-Gitea-Signature: a3b9f12c8d7e4f01bc6234567890abcd1234ef567890abcd1234ef567890abcd
+User-Agent: confusio/1.0
+Content-Length: 431
 
 { ... envelope body ... }
 ```
 
-A delivery for an action-less event (no `X-Confusio-Action` header):
+A delivery for an action-less event:
 
 ```http
 POST /hooks/confusio-normalized HTTP/1.1
@@ -2044,9 +2037,9 @@ Host: consumer.example.com
 Content-Type: application/json
 X-Confusio-Event: push
 X-Confusio-Delivery: 83e4273f-dd89-22f4-92bc-5d0478ed1069
-X-Confusio-Provider: gitlab
-X-Confusio-Signature-256: sha256=b4c0g23d9e8f5g12cd7345678901bcde2345fg678901bcde2345fg678901bcde
-User-Agent: Confusio-Hookshot/1.0
+X-Confusio-Source: gitlab
+X-Gitlab-Token: <target-secret>
+User-Agent: confusio/1.0
 Content-Length: 891
 
 { ... envelope body ... }
@@ -2058,104 +2051,106 @@ A `issues:opened` event originating from Gitea:
 
 ```json
 {
-  "confusio":  "1.0",
-  "id":        "72d3162e-cc78-11e3-81ab-4c9367dc0958",
-  "event":     "issues",
-  "action":    "opened",
-  "provider":  "gitea",
-  "timestamp": "2024-01-15T10:00:00Z",
-  "data": {
-    "issue": {
-      "id":         1,
-      "number":     42,
-      "title":      "Found a bug",
-      "body":       "Something broke.",
-      "state":      "open",
-      "source_url": "https://gitea.com/alice/myrepo/issues/42",
-      "author": {
-        "id":         1,
-        "login":      "alice",
-        "source_url": "https://gitea.com/alice"
-      },
-      "labels":     [],
-      "assignees":  [],
-      "milestone":  null,
-      "created_at": "2024-01-15T10:00:00Z",
-      "updated_at": "2024-01-15T10:00:00Z",
-      "closed_at":  null
-    },
-    "repository": {
-      "id":           100,
-      "name":         "myrepo",
-      "full_name":    "alice/myrepo",
-      "private":      false,
-      "source_url":   "https://gitea.com/alice/myrepo",
-      "description":  null,
-      "fork":         false,
-      "default_branch": "main",
-      "owner": {
-        "id":    1,
-        "login": "alice"
-      },
-      "created_at": "2023-01-01T00:00:00Z",
-      "updated_at": "2024-01-15T10:00:00Z",
-      "pushed_at":  "2024-01-15T10:00:00Z"
-    },
-    "sender": {
-      "id":         1,
-      "login":      "alice",
-      "source_url": "https://gitea.com/alice"
-    }
+  "id": "72d3162e-cc78-11e3-81ab-4c9367dc0958",
+  "type": "issue.opened",
+  "occurred_at": "2024-01-15T10:00:00Z",
+  "actor": {
+    "id": 1,
+    "login": "alice",
+    "source_url": "https://gitea.com/alice"
   },
-  "raw": {
-    "action": "opened",
+  "repository": {
+    "id": 100,
+    "name": "myrepo",
+    "full_name": "alice/myrepo",
+    "private": false,
+    "source_url": "https://gitea.com/alice/myrepo",
+    "description": null,
+    "fork": false,
+    "default_branch": "main",
+    "owner": {
+      "id": 1,
+      "login": "alice"
+    },
+    "created_at": "2023-01-01T00:00:00Z",
+    "updated_at": "2024-01-15T10:00:00Z",
+    "pushed_at": "2024-01-15T10:00:00Z"
+  },
+  "payload": {
     "issue": {
       "id": 1,
       "number": 42,
-      "title": "Found a bug"
+      "title": "Found a bug",
+      "body": "Something broke.",
+      "state": "open",
+      "source_url": "https://gitea.com/alice/myrepo/issues/42",
+      "author": {
+        "id": 1,
+        "login": "alice",
+        "source_url": "https://gitea.com/alice"
+      },
+      "labels": [],
+      "assignees": [],
+      "milestone": null,
+      "created_at": "2024-01-15T10:00:00Z",
+      "updated_at": "2024-01-15T10:00:00Z",
+      "closed_at": null
     }
   }
 }
 ```
 
-The `raw` object truncated for readability; it contains the complete original forge payload.
+### Translator contract
 
-### `X-Confusio-Signature-256` verification
+Backend files register confusio-shape translators with
+`b:webhook_translator(event, fn)`.  The event key is the internal event family name.
+The function is called as:
 
-Consumer verification follows the same pattern as GitHub's `X-Hub-Signature-256`:
-
-```
-secret        = configured consumer target secret (UTF-8 bytes)
-body          = raw delivery body bytes
-expected      = "sha256=" ++ HMAC-SHA256(secret, body) as lowercase hex
-received      = value of X-Confusio-Signature-256
-
-accept if constant_time_equal(expected, received)
+```lua
+translator(internal_event, fields) -> envelope_table
 ```
 
-Verification command (for testing):
-```sh
-printf '<body>' | openssl dgst -sha256 -hmac '<secret>'
-# prepend "sha256=" to the output and compare to X-Confusio-Signature-256
-```
+`internal_event` is the table returned by the backend's inbound webhook normalizer.
+`fields` carries delivery-time overrides, currently including the outbound delivery
+`id`.  Translators should call `make_normalized_webhook_envelope(internal_event,
+fields)` and override only the fields whose source data needs backend-specific
+handling.
 
-### Version negotiation
+The shared envelope helper applies these defaults:
 
-The `confusio` field in the envelope is the envelope schema version.  Confusio
-increments this on breaking changes.  The current version is `"1.0"`.
+| Envelope field | Default source |
+|----------------|----------------|
+| `id` | `fields.id`, otherwise a generated UUID |
+| `type` | `normalized_webhook_event_type(internal_event.event, internal_event.action)` |
+| `occurred_at` | `fields.occurred_at`, then `internal_event.timestamp`, then current confusio time |
+| `actor` | `fields.actor`, then `data.actor`, `data.sender`, `raw.sender`, then `{}` |
+| `repository` | `fields.repository`, then `data.repository`, `raw.repository`, then `{}` |
+| `payload` | `fields.payload`, then `data.payload`, then the full `data` bag |
 
-| Version | Status | Notes |
-|---------|--------|-------|
-| `1.0` | Current | Initial release |
+Provider translators normally use the helper but remove envelope-level values from
+`payload` so `actor` and `repository` are not duplicated.  They may also normalize
+action-less events by forcing an empty action when deriving `type`.
 
-Additive changes (new optional fields in `data`) do not increment the version.
-Breaking changes (renamed/removed fields, changed types) increment the minor or major
-version string.  Consumers should treat unknown fields as ignorable.
+### Fallback behavior
 
-### Actor schema in `data`
+If no backend translator is registered for an event, or the registered translator does
+not return a table, confusio falls back to `make_normalized_webhook_envelope` with the
+internal event.  This means a target configured with `webhook_target_shape=confusio`
+still receives a valid envelope even while a backend has partial translator coverage.
 
-User/actor objects inside `data` use a confusio-specific schema that differs from the
-GitHub-emulation shape:
+The fallback is intentionally conservative:
+
+- It preserves the canonical event family through `X-Confusio-Event`.
+- It derives the dotted body `type` from the internal event and action.
+- It keeps the full normalized `data` bag as `payload` when no provider-specific
+  payload pruning exists.
+- It falls back to the original raw `sender` and `repository` objects when the
+  normalized data bag does not provide promoted envelope fields.
+
+### Actor schema
+
+The top-level `actor` object and user/actor objects inside `payload` use a
+confusio-specific schema that differs from the GitHub-emulation shape:
 
 **Confusio-normalized actor:**
 ```json
@@ -2194,25 +2189,6 @@ creator field is `user` (which is ambiguous — it could refer to anyone).  Conf
 uses `author` for the resource creator and `sender` for the actor who triggered the
 webhook event.  These may be different people (e.g. someone else closes your issue).
 
-### `raw` field behaviour
-
-The `raw` field always contains the original JSON payload decoded from the forge
-request body, exactly as received.  No field renaming, translation, or filtering is
-applied.
-
-**Edge cases:**
-
-| Situation | `raw` value |
-|-----------|-------------|
-| Normal delivery | Decoded JSON object from forge body |
-| Forge sends empty body | `{}` (empty object) |
-| Forge sends a JSON array (unusual) | The decoded array |
-| Forge body cannot be decoded as JSON | `null`; confusio logs a warning |
-
-When `raw` is `null`, the `data` object is also `{}` and the event type is
-`"unknown"`.  The delivery is still queued so consumers can inspect the original bytes
-via the replay API.
-
 ### Consistency with GitHub-emulation contract
 
 The following table maps each confusio-normalized header to its GitHub-emulation
@@ -2222,25 +2198,27 @@ verification code with a simple header-name substitution.
 | Confusio-normalized header | GitHub-emulation equivalent | Same value? |
 |---------------------------|----------------------------|-------------|
 | `X-Confusio-Event` | `X-GitHub-Event` | Yes — same event family names |
-| `X-Confusio-Action` | _(in body only)_ | Confusio promotes action to a header; GitHub keeps it in `action` field |
 | `X-Confusio-Delivery` | `X-GitHub-Delivery` | Yes — both are UUID v4 |
-| `X-Confusio-Provider` | _(absent)_ | No GitHub equivalent |
-| `X-Confusio-Signature-256` | `X-Hub-Signature-256` | Same format (`sha256=<hex>`), different secret |
-| _(absent)_ | `X-Hub-Signature` | Confusio does not emit a SHA-1 fallback header |
+| `X-Confusio-Source` | _(absent)_ | No GitHub equivalent |
+| Provider-native signature header(s) | Provider-native signature header(s) | Same signing helper, using the target secret |
 | `Content-Type` | `Content-Type` | Same |
-| `User-Agent` | `User-Agent` | Same (`Confusio-Hookshot/<version>`) |
+| `User-Agent` | `User-Agent` | Same (`confusio/1.0`) |
 
 **Key differences to call out to consumer authors:**
 
-1. `X-Confusio-Action` is a header in the confusio shape; in GitHub-emulation the
-   action is only in the JSON body's `action` field.
-2. `X-Confusio-Provider` has no GitHub equivalent; use it to route events by source
+1. The action is encoded in the confusio body `type`; GitHub-emulation keeps it in the
+   JSON body's `action` field.
+2. `X-Confusio-Source` has no GitHub equivalent; use it to route events by source
    forge without inspecting the body.
-3. There is no SHA-1 fallback header (`X-Hub-Signature`) in the confusio shape.
-   Consumers must use `X-Confusio-Signature-256`.
-4. `source_url` in `data` objects corresponds to `html_url` in the GitHub-emulation
-   shape — same URL, different key name.
-5. `author` in `data` corresponds to `user` in the GitHub-emulation issue/PR objects.
+3. The confusio body is an envelope with `id`, `type`, `occurred_at`, `actor`,
+   `repository`, and `payload`; GitHub-emulation forwards GitHub-compatible webhook
+   payloads.
+4. Provider-native signature headers are reused for both shapes.  Consumers should
+   verify the header scheme associated with `X-Confusio-Source`.
+5. `source_url` in normalized payload objects corresponds to `html_url` in the
+   GitHub-emulation shape — same URL, different key name.
+6. `author` in normalized payload objects corresponds to `user` in the
+   GitHub-emulation issue/PR objects.
 
 ## Field-Level Mapping Tables
 
@@ -4399,11 +4377,15 @@ Marketplace listing.
 
 ## Delivery Semantics
 
-Every accepted inbound event is written to a durable outbox before any delivery
-attempt begins.  The outbox guarantees at-least-once delivery: if confusio crashes or
-is restarted between ingest and delivery, surviving events are retried on restart.
+The current delivery path is fire-and-record.  After an inbound webhook is verified and
+normalized, confusio walks the in-memory target registry and performs one synchronous
+HTTP POST to each target whose event filter matches.  The result of each POST is logged;
+failed deliveries are not retried and no delivery state is persisted.
 
-### Guarantee: at-least-once
+The durable outbox, replay, pause/resume, retry-budget, and circuit-breaker sections
+below describe planned behavior rather than the currently implemented runtime.
+
+### Planned guarantee: at-least-once
 
 Confusio guarantees that each event will be delivered **at least once** to each
 matching target.  It does **not** guarantee exactly-once delivery.  Consumers must
@@ -4423,7 +4405,7 @@ delivery ID generated when the event first arrived.  This ID is stable across re
 for the same delivery attempt.  Each _replay_ generates a fresh UUID so consumers can
 distinguish original deliveries from explicit re-sends by comparing IDs.
 
-### Durable outbox
+### Planned durable outbox
 
 The outbox is a filesystem directory tree persisted to disk before any HTTP delivery
 attempt.  On startup confusio scans the outbox for pending and in-flight deliveries and
@@ -4729,7 +4711,7 @@ body).  It is not separately configurable in the current design.
 
 ---
 
-## Replay API
+## Planned Replay API
 
 The replay API allows operators and consumers to inspect the delivery history of any
 event in the retention window and to trigger additional delivery attempts.
@@ -5061,6 +5043,24 @@ per-target state for this target).
 | `github_payload` or `confusio_payload` too large to store | Payloads larger than 25 MiB are truncated at 25 MiB with a `"_truncated": true` sentinel field added at the top level |
 
 ## Multi-Target Dispatch and Configuration
+
+Current configuration is static and supplied at startup through SCRIPTARGS:
+
+```sh
+sh ./confusio.com -p 8080 -- gitea \
+  webhook_target=https://example.com/webhook \
+  webhook_target_events=push,pull_request \
+  webhook_target_shape=confusio \
+  webhook_target_secret_file=/run/secrets/webhook-target
+```
+
+Only one target is registered from CLI configuration today.  `webhook_target_events`
+defaults to `*`, `webhook_target_shape` defaults to `github`, and the target secret is
+optional.  Delivery to matching targets is synchronous and fire-and-record, as described
+in [Delivery Semantics](#delivery-semantics).
+
+The persistent target resource and admin API sections below describe planned behavior
+rather than the currently implemented runtime.
 
 Confusio delivers each inbound event to every matching **target** — an HTTP endpoint
 registered by an operator.  Targets are independent: each has its own event-type filter,

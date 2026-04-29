@@ -31,6 +31,10 @@ jsonpath "$[0].confusio_source" == "forgejo"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "issue.opened"
+jsonpath "$[0].body_json.actor.login" == "alice"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.issue.number" == 1
 
 # ── issue_comment: created — confusio shape ───────────────────────────────────
 
@@ -55,6 +59,7 @@ jsonpath "$[0].confusio_source" == "forgejo"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "issue.comment.created"
 
 # ── pull_request: opened — confusio shape ─────────────────────────────────────
 
@@ -79,6 +84,7 @@ jsonpath "$[0].confusio_source" == "forgejo"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "pull_request.opened"
 
 # ── workflow_run: completed — confusio shape ──────────────────────────────────
 
@@ -103,6 +109,7 @@ jsonpath "$[0].confusio_source" == "forgejo"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "workflow.run.completed"
 
 # ── status: success — confusio shape ──────────────────────────────────────────
 
@@ -127,6 +134,7 @@ jsonpath "$[0].confusio_source" == "forgejo"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "status.success"
 
 # ── release: published — confusio shape ──────────────────────────────────────
 
@@ -151,3 +159,4 @@ jsonpath "$[0].confusio_source" == "forgejo"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "release.published"

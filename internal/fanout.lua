@@ -7,12 +7,12 @@
 --
 -- "Shape" controls how the request body is serialised for the target:
 --   "github"   — re-encodes the raw inbound payload unchanged (GitHub-emulation)
---   "confusio" — wraps the payload in a metadata envelope {source, event, payload}
+--   "confusio" — emits the normalized event envelope
 --
 -- Globals exported:
---   fanout_body(backend, event_type, payload, shape) → body string
+--   fanout_body(backend, event_type, payload, shape[, internal_event, translators, fields]) → body string
 --   fanout_register_target(target)                   — register a static outbound target
---   fanout_dispatch(backend, event_type, payload)    — fire to all matching targets
+--   fanout_dispatch(backend, event_type, payload[, internal_event, translators]) — fire to all matching targets
 
 -- _fanout_targets: in-memory list of registered outbound targets.
 -- Each entry is a table: { url, events, shape, secret }
@@ -29,20 +29,45 @@ local function fanout_event_matches(event_type, events)
   return false
 end
 
+local function fallback_internal_event(backend, event_type, payload)
+  return make_internal_event({ -- luacheck: globals make_internal_event
+    event = event_type,
+    action = "",
+    provider = backend,
+    raw = payload,
+    data = {
+      payload = payload,
+    },
+  })
+end
+
+local function normalized_body(backend, event_type, payload, internal_event, translators, fields)
+  internal_event = internal_event or fallback_internal_event(backend, event_type, payload)
+  fields = fields or {}
+  local translator = nil
+  if type(translators) == "table" then
+    translator = translators[event_type] or translators["*"]
+  end
+  local envelope = nil
+  if type(translator) == "function" then
+    envelope = translator(internal_event, fields)
+  end
+  if type(envelope) ~= "table" then
+    envelope = make_normalized_webhook_envelope(internal_event, fields) -- luacheck: globals make_normalized_webhook_envelope
+  end
+  return EncodeJson(envelope) -- luacheck: globals EncodeJson
+end
+
 -- fanout_body: serialises the event for the given delivery shape.
 --   "github"   — re-encodes the raw inbound payload (fields forwarded as-is)
---   "confusio" — wraps in {source, event, payload} envelope
+--   "confusio" — emits the normalized event envelope
 -- Any unknown shape value falls back to "github" behaviour.
-function fanout_body(backend, event_type, payload, shape) -- luacheck: globals fanout_body
+function fanout_body(backend, event_type, payload, shape, internal_event, translators, fields) -- luacheck: globals fanout_body
   if shape == "confusio" then
-    return EncodeJson({ -- luacheck: globals EncodeJson
-      source = backend,
-      event = event_type,
-      payload = payload,
-    })
+    return normalized_body(backend, event_type, payload, internal_event, translators, fields)
   end
   -- "github" (default): forward the raw inbound payload unchanged.
-  return EncodeJson(payload)
+  return EncodeJson(payload) -- luacheck: globals EncodeJson
 end
 
 -- fanout_register_target: adds a static outbound target to the registry.
@@ -65,11 +90,11 @@ end
 -- fanout_dispatch: fires the inbound event to all matching registered targets.
 -- Delivery is fire-and-record: deliver_fire() is called for each matching target.
 -- Returns the number of targets that matched (regardless of delivery success).
-function fanout_dispatch(backend, event_type, payload) -- luacheck: globals fanout_dispatch deliver_fire
+function fanout_dispatch(backend, event_type, payload, internal_event, translators) -- luacheck: globals fanout_dispatch deliver_fire
   local count = 0
   for _, target in ipairs(_fanout_targets) do
     if fanout_event_matches(event_type, target.events) then
-      deliver_fire(target, backend, event_type, payload)
+      deliver_fire(target, backend, event_type, payload, internal_event, translators)
       count = count + 1
     end
   end
