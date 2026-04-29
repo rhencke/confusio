@@ -3496,6 +3496,49 @@ do
   ok(type(log_entry.latency_ms) == "number", "deliver_fire log: latency recorded")
   ok(log_entry.error == nil, "deliver_fire log: success has no error field")
 
+  -- deliver_fire: HTTP failures are recorded with status and no error string.
+  delivery_log_path = os.tmpname()
+  os.remove(delivery_log_path)
+  target_logged.delivery_log_path = delivery_log_path
+  _df_mock_status = 503
+  deliver_fire(target_logged, "gitea", "push", { ref = "refs/heads/main" })
+  log_f = assert(io.open(delivery_log_path, "r"))
+  log_line = log_f:read("*l")
+  log_f:close()
+  os.remove(delivery_log_path)
+  log_entry = DecodeJson(log_line)
+  eq(log_entry.status_code, 503, "deliver_fire log: HTTP failure status recorded")
+  ok(log_entry.error == nil, "deliver_fire log: HTTP failure has no error field")
+  eq(
+    log_entry.delivery_id,
+    _df_last_opts.headers["X-GitHub-Delivery"],
+    "deliver_fire log: HTTP failure delivery id recorded"
+  )
+
+  -- deliver_fire: network failures are recorded with an error and no status.
+  delivery_log_path = os.tmpname()
+  os.remove(delivery_log_path)
+  target_logged.delivery_log_path = delivery_log_path
+  _df_mock_status = 200
+  _df_mock_error = "connection refused"
+  deliver_fire(target_logged, "gitea", "push", { ref = "refs/heads/main" })
+  log_f = assert(io.open(delivery_log_path, "r"))
+  log_line = log_f:read("*l")
+  log_f:close()
+  os.remove(delivery_log_path)
+  log_entry = DecodeJson(log_line)
+  ok(log_entry.status_code == nil, "deliver_fire log: network failure has no status")
+  ok(
+    log_entry.error:find("connection refused", 1, true) ~= nil,
+    "deliver_fire log: network failure error recorded"
+  )
+  eq(
+    log_entry.delivery_id,
+    _df_last_opts.headers["X-GitHub-Delivery"],
+    "deliver_fire log: network failure delivery id recorded"
+  )
+  _df_mock_error = nil
+
   -- deliver_fire: outcome logging — Log is called with kLogWarn on failure
   -- and kLogVerbose on success.
   local _log_calls = {}
