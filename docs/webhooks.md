@@ -31,7 +31,7 @@ selects per-target which shape to emit.
 - **Multi-target fan-out** — A single inbound event can be delivered to multiple
   consumers, each with independent shape selection and event-type filtering.
 - **Fire-and-record delivery** — Matching targets are POSTed synchronously during the
-  inbound request.  Every attempted delivery appends a structured log record, but no
+  inbound request.  Every attempted delivery is logged, but no
   retry, outbox, replay, or delivery-inspection layer is currently implemented.
 
 ### Non-Goals
@@ -4378,14 +4378,14 @@ Marketplace listing.
 
 The current delivery path is fire-and-record.  After an inbound webhook is verified and
 normalized, confusio walks the in-memory target registry and performs one synchronous
-HTTP POST to each target whose event filter matches.  The result of each POST is appended
-to the configured JSON Lines delivery log.  Failed deliveries are terminal for that
-attempt: confusio does not retry, persist delivery state, or expose a replay API.
+HTTP POST to each target whose event filter matches.  The result of each POST is logged.
+Failed deliveries are terminal for that attempt: confusio does not retry, persist
+delivery state, or expose a replay API.
 
 ### Current guarantee: try once, log all
 
 Each matching target receives one delivery attempt during the inbound request.  The
-attempt record includes the target name, event type, backend, delivery ID, latency,
+log line includes the target name, event type, backend, delivery ID, latency,
 HTTP status when a response is received, and error text when delivery fails before a
 response.  Logging is best-effort observability; the inbound response does not imply
 that downstream consumers processed the event, and consumers that miss an event must
@@ -5062,15 +5062,13 @@ sh ./confusio.com -p 8080 -- gitea \
   webhook_target_name=primary \
   webhook_target_events=push,pull_request \
   webhook_target_shape=confusio \
-  webhook_target_secret_file=/run/secrets/webhook-target \
-  webhook_delivery_log_path=/var/log/confusio/webhook-deliveries.log
+  webhook_target_secret_file=/run/secrets/webhook-target
 ```
 
 Only one target is registered from CLI configuration today.  `webhook_target_name`
 defaults to `default`, `webhook_target_events` defaults to `*`,
-`webhook_target_shape` defaults to `github`, `webhook_delivery_log_path` defaults to
-`webhook-deliveries.log`, and the target secret is optional.  Delivery to matching
-targets is synchronous and fire-and-record, as described in
+`webhook_target_shape` defaults to `github`, and the target secret is optional.
+Delivery to matching targets is synchronous and fire-and-record, as described in
 [Delivery Semantics](#delivery-semantics).
 
 The persistent target resource and admin API sections below describe planned behavior
