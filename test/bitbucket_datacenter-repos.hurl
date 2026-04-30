@@ -149,6 +149,49 @@ HTTP 200
 header "Content-Type" == "application/json; charset=utf-8"
 jsonpath "$.url" isString
 
+# POST /repos/{owner}/{repo}/hooks
+POST http://{{host}}/repos/octocat/hello-world/hooks
+Content-Type: application/json
+```json
+{
+  "name": "web",
+  "config": {"url": "https://example.com/new-hook"},
+  "events": ["push", "pull_request"],
+  "active": true
+}
+```
+
+HTTP 201
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$.id" isInteger
+jsonpath "$.config.url" isString
+jsonpath "$.active" isBoolean
+
+# PATCH /repos/{owner}/{repo}/hooks/{hook_id}
+PATCH http://{{host}}/repos/octocat/hello-world/hooks/1
+Content-Type: application/json
+```json
+{
+  "name": "web",
+  "config": {"url": "https://example.com/updated-hook"},
+  "events": ["push", "pull_request"],
+  "active": true
+}
+```
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$.id" isInteger
+jsonpath "$.config.url" isString
+jsonpath "$.active" isBoolean
+
+# DELETE /repos/{owner}/{repo}/hooks/{hook_id}
+DELETE http://{{host}}/repos/octocat/hello-world/hooks/1
+
+HTTP 204
+
 # GET /users/{username}/repos — via ~username personal project
 GET http://{{host}}/users/octocat/repos
 
