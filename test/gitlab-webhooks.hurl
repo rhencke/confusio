@@ -1439,7 +1439,7 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 
-# ── Tag Push Hook: tag push with commit → 200 (push event) ───────────────────
+# ── Tag Push Hook: before = zero SHA → 200 (create event, tag created) ───────
 
 POST http://{{host}}/webhooks/gitlab
 Content-Type: application/json
@@ -1474,6 +1474,116 @@ X-Gitlab-Event: Tag Push Hook
     "url": "git@localhost:octocat/hello-world.git",
     "description": "My first repo",
     "homepage": "http://localhost/octocat/hello-world"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Tag Push Hook: after = zero SHA → 200 (delete event, tag deleted) ─────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Tag Push Hook
+{
+  "object_kind": "tag_push",
+  "event_name": "tag_push",
+  "before": "da1560886d4f094c3e6c9ef40349f7d38b5d27d0",
+  "after":  "0000000000000000000000000000000000000000",
+  "ref": "refs/tags/v0.9.0",
+  "checkout_sha": null,
+  "user_id": 4,
+  "user_name": "Alice Smith",
+  "user_username": "alice",
+  "user_email": "alice@example.com",
+  "user_avatar": "",
+  "project_id": 15,
+  "project": {
+    "id": 15, "name": "hello-world", "description": "My first repo",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "namespace": "octocat", "visibility_level": 20,
+    "path_with_namespace": "octocat/hello-world",
+    "default_branch": "main",
+    "homepage": "http://localhost/octocat/hello-world"
+  },
+  "commits": [],
+  "total_commits_count": 0,
+  "repository": {
+    "name": "hello-world",
+    "url": "git@localhost:octocat/hello-world.git",
+    "description": "My first repo",
+    "homepage": "http://localhost/octocat/hello-world"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Wiki Page Hook: create → gollum page created ──────────────────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Wiki Page Hook
+{
+  "object_kind": "wiki_page",
+  "user": {
+    "id": 4, "name": "Alice Smith", "username": "alice",
+    "avatar_url": "", "web_url": "http://localhost/alice"
+  },
+  "project": {
+    "id": 15, "name": "hello-world", "description": "My first repo",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "namespace": "octocat", "visibility_level": 20,
+    "path_with_namespace": "octocat/hello-world",
+    "default_branch": "main"
+  },
+  "object_attributes": {
+    "title": "Home",
+    "slug": "home",
+    "url": "http://localhost/octocat/hello-world/-/wikis/home",
+    "version_id": "abc123",
+    "message": "Create Home",
+    "action": "create"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Wiki Page Hook: update → gollum page edited ───────────────────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Wiki Page Hook
+{
+  "object_kind": "wiki_page",
+  "user": {
+    "id": 4, "name": "Alice Smith", "username": "alice",
+    "avatar_url": "", "web_url": "http://localhost/alice"
+  },
+  "project": {
+    "id": 15, "name": "hello-world", "description": "My first repo",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "namespace": "octocat", "visibility_level": 20,
+    "path_with_namespace": "octocat/hello-world",
+    "default_branch": "main"
+  },
+  "object_attributes": {
+    "title": "Home",
+    "slug": "home",
+    "url": "http://localhost/octocat/hello-world/-/wikis/home",
+    "version_id": "def456",
+    "message": "Update Home",
+    "action": "update"
   }
 }
 

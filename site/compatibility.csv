@@ -489,6 +489,8 @@ webhook discussion_comment/created,n,n,n,y,n,y,n,n,y,y,n,n,n,n,n,y,n,n,n,n,n,n,n
 webhook discussion_comment/deleted,n,n,n,y,n,y,n,n,y,y,n,n,n,n,n,y,n,n,n,n,n,n,n,n
 webhook discussion_comment/edited,n,n,n,y,n,y,n,n,y,y,n,n,n,n,n,y,n,n,n,n,n,n,n,n
 webhook fork/fork,n,y,n,y,n,y,n,n,y,y,n,y,n,n,n,y,n,y,n,n,n,n,n,n
+webhook gollum/created,n,n,n,y,n,y,n,n,y,y,y,n,n,n,n,y,n,n,n,n,n,n,n,n
+webhook gollum/edited,n,n,n,y,n,y,n,n,y,y,y,n,n,n,n,y,n,n,n,n,n,n,n,n
 webhook issues/opened,y,y,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
 webhook issues/closed,y,y,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n
 webhook issues/edited,y,y,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,y,n,n,n,n,n,n

@@ -2907,6 +2907,10 @@ local webhook_event_sections = {
       -- fork
       { "webhook fork/fork", "wh_fork_fork" },
 
+      -- gollum
+      { "webhook gollum/created", "wh_gollum_created" },
+      { "webhook gollum/edited", "wh_gollum_edited" },
+
       -- issues
       { "webhook issues/opened", "wh_issues_opened" },
       { "webhook issues/closed", "wh_issues_closed" },
