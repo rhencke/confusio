@@ -3008,6 +3008,7 @@ local webhook_event_sections = {
       -- repository
       { "webhook repository/created", "wh_repository_created" },
       { "webhook repository/deleted", "wh_repository_deleted" },
+      { "webhook repository/edited", "wh_repository_edited" },
       { "webhook repository/renamed", "wh_repository_renamed" },
       { "webhook repository/transferred", "wh_repository_transferred" },
       { "webhook repository/publicized", "wh_repository_publicized" },
