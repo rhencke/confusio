@@ -2666,6 +2666,36 @@ b:webhook("pullrequest:changes_request_removed", function(payload)
   return bb_review_event(payload, "changes_request", "dismissed", "DISMISSED")
 end)
 
+local function bb_pr_comment_event(payload, action)
+  local comment = payload.comment or {}
+  return make_internal_event({
+    event = "pull_request_review_comment",
+    action = action,
+    provider = "bitbucket",
+    raw = payload,
+    data = {
+      action = action,
+      comment = translate_bb_pr_comment(comment),
+      pull_request = translate_bb_pull(payload.pullrequest or {}),
+      repository = translate_bb_repo(payload.repository or {}),
+      sender = translate_bb_user(payload.actor or {}),
+    },
+    timestamp = comment.updated_on or comment.created_on or "",
+  })
+end
+
+b:webhook("pullrequest:comment_created", function(payload)
+  return bb_pr_comment_event(payload, "created")
+end)
+
+b:webhook("pullrequest:comment_updated", function(payload)
+  return bb_pr_comment_event(payload, "edited")
+end)
+
+b:webhook("pullrequest:comment_deleted", function(payload)
+  return bb_pr_comment_event(payload, "deleted")
+end)
+
 -- Commit status events: repo:commit_status_created, repo:commit_status_updated.
 -- Bitbucket Cloud emits these when an external CI system posts a build result
 -- against a commit.  Both event types carry the same payload shape and map to
@@ -2868,6 +2898,7 @@ local BB_NORMALIZED_WEBHOOK_EVENTS = {
   "commit_comment",
   "pull_request",
   "pull_request_review",
+  "pull_request_review_comment",
   "status",
   "push",
   "create",
