@@ -1,0 +1,23 @@
+{
+  "type": "batch-ref-updated",
+  "eventCreatedOn": 1705379400,
+  "submitter": {
+    "name": "Eve",
+    "email": "eve@example.com",
+    "username": "eve"
+  },
+  "refUpdates": [
+    {
+      "project": "myorg/my-repo",
+      "refName": "refs/heads/release",
+      "oldRev": "5555555555555555555555555555555555555555",
+      "newRev": "6666666666666666666666666666666666666666"
+    },
+    {
+      "project": "myorg/my-repo",
+      "refName": "refs/heads/docs",
+      "oldRev": "7777777777777777777777777777777777777777",
+      "newRev": "8888888888888888888888888888888888888888"
+    }
+  ]
+}

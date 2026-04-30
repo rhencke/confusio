@@ -171,6 +171,113 @@ jsonpath "$[0].body_json.payload.review.user.login" == "nina"
 jsonpath "$[0].body_json.payload.review.state" == "DISMISSED"
 jsonpath "$[0].body_json.payload.approvals[0].type" == "Code-Review"
 
+# ── ref-updated → push — confusio shape ────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/ref-updated-push.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "push"
+jsonpath "$[0].confusio_source" == "gerrit"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "push"
+jsonpath "$[0].body_json.occurred_at" == "1705368600"
+jsonpath "$[0].body_json.actor.login" == "bob"
+jsonpath "$[0].body_json.repository.full_name" == "myorg/my-repo"
+jsonpath "$[0].body_json.payload.ref" == "refs/heads/main"
+jsonpath "$[0].body_json.payload.before" == "1111111111111111111111111111111111111111"
+jsonpath "$[0].body_json.payload.after" == "2222222222222222222222222222222222222222"
+
+# ── ref-updated → create — confusio shape ──────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/ref-updated-create.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "create"
+jsonpath "$[0].confusio_source" == "gerrit"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].body_json.type" == "create"
+jsonpath "$[0].body_json.occurred_at" == "1705372200"
+jsonpath "$[0].body_json.actor.login" == "cara"
+jsonpath "$[0].body_json.payload.ref" == "feature/ref-map"
+jsonpath "$[0].body_json.payload.ref_type" == "branch"
+
+# ── ref-updated → delete — confusio shape ──────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/ref-updated-delete.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "delete"
+jsonpath "$[0].confusio_source" == "gerrit"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].body_json.type" == "delete"
+jsonpath "$[0].body_json.occurred_at" == "1705375800"
+jsonpath "$[0].body_json.actor.login" == "dana"
+jsonpath "$[0].body_json.payload.ref" == "v1.0.0"
+jsonpath "$[0].body_json.payload.ref_type" == "tag"
+
+# ── batch-ref-updated → push — confusio shape ──────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/batch-ref-updated.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "push"
+jsonpath "$[0].confusio_source" == "gerrit"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].body_json.type" == "push"
+jsonpath "$[0].body_json.occurred_at" == "1705379400"
+jsonpath "$[0].body_json.actor.login" == "eve"
+jsonpath "$[0].body_json.payload.ref" == "refs/heads/release"
+jsonpath "$[0].body_json.payload.ref_updates[1].refName" == "refs/heads/docs"
+
 # ── patchset-created (first patch set) → pull_request.opened — confusio shape
 
 POST http://{{target}}/reset

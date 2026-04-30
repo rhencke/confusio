@@ -96,6 +96,91 @@ jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].body_json.type" == "vote-deleted"
 
+# ── ref-updated → push ──────────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/ref-updated-push.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "push"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.type" == "ref-updated"
+
+# ── ref-updated → create ────────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/ref-updated-create.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "create"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.refUpdate.refName" == "refs/heads/feature/ref-map"
+
+# ── ref-updated → delete ────────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/ref-updated-delete.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "delete"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.refUpdate.refName" == "refs/tags/v1.0.0"
+
+# ── batch-ref-updated → push ────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/batch-ref-updated.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "push"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.refUpdates[0].refName" == "refs/heads/release"
+
 # ── patchset-created (first patch set) → pull_request: opened ───────────────
 
 POST http://{{target}}/reset

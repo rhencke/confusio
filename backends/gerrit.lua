@@ -383,6 +383,28 @@ local function gerrit_event_timestamp(payload)
   return (payload.change or {}).updated or ""
 end
 
+local ZERO_SHA = "0000000000000000000000000000000000000000"
+
+local function gerrit_ref_update_project(refUpdate)
+  return (refUpdate or {}).project or ""
+end
+
+local function gerrit_ref_name(refUpdate)
+  return (refUpdate or {}).refName or ""
+end
+
+local function gerrit_short_ref(ref)
+  return (ref or ""):match("^refs/[^/]+/(.+)") or (ref or "")
+end
+
+local function gerrit_ref_type(ref)
+  return (ref or ""):match("^refs/tags/") and "tag" or "branch"
+end
+
+local function translate_gerrit_ref_repo(refUpdate)
+  return translate_gerrit_repo({ name = gerrit_ref_update_project(refUpdate) })
+end
+
 local function translate_gerrit_pull_request(change, patchSet, opts)
   change = change or {}
   patchSet = patchSet or {}
@@ -532,6 +554,83 @@ local function gerrit_reviewer_event(payload, action)
   })
 end
 
+local function gerrit_ref_update_event(payload, refUpdate)
+  payload = payload or {}
+  refUpdate = refUpdate or payload.refUpdate or {}
+  local before = refUpdate.oldRev or ZERO_SHA
+  local after = refUpdate.newRev or ZERO_SHA
+  local ref = gerrit_ref_name(refUpdate)
+  local repo = translate_gerrit_ref_repo(refUpdate)
+  local sender = translate_gerrit_user(payload.submitter)
+  local timestamp = gerrit_event_timestamp(payload)
+  local ref_type = gerrit_ref_type(ref)
+  local ref_short = gerrit_short_ref(ref)
+
+  if before == ZERO_SHA then
+    return make_internal_event({
+      event = "create",
+      action = "create",
+      provider = "gerrit",
+      raw = payload,
+      data = {
+        ref = ref_short,
+        ref_type = ref_type,
+        master_branch = repo.default_branch or "",
+        description = repo.description,
+        pusher_type = "user",
+        repository = repo,
+        sender = sender,
+      },
+      timestamp = timestamp,
+    })
+  end
+
+  if after == ZERO_SHA then
+    return make_internal_event({
+      event = "delete",
+      action = "delete",
+      provider = "gerrit",
+      raw = payload,
+      data = {
+        ref = ref_short,
+        ref_type = ref_type,
+        master_branch = repo.default_branch or "",
+        description = repo.description,
+        pusher_type = "user",
+        repository = repo,
+        sender = sender,
+      },
+      timestamp = timestamp,
+    })
+  end
+
+  return make_internal_event({
+    event = "push",
+    action = "push",
+    provider = "gerrit",
+    raw = payload,
+    data = {
+      ref = ref,
+      before = before,
+      after = after,
+      created = false,
+      deleted = false,
+      forced = false,
+      compare = "",
+      commits = {},
+      head_commit = nil,
+      pusher = {
+        name = (payload.submitter or {}).name or (payload.submitter or {}).username or "",
+        email = (payload.submitter or {}).email or "",
+      },
+      repository = repo,
+      sender = sender,
+      ref_updates = payload.refUpdates,
+    },
+    timestamp = timestamp,
+  })
+end
+
 local function gerrit_topic_changed_event(payload)
   payload = payload or {}
   return gerrit_pull_request_event(payload, "edited", {
@@ -668,9 +767,18 @@ b:webhook("comment-added", function(payload)
   })
 end)
 
+local GERRIT_ACTIONLESS_NORMALIZED_EVENTS = {
+  create = true,
+  delete = true,
+  push = true,
+}
+
 local GERRIT_NORMALIZED_WEBHOOK_EVENTS = {
+  "create",
+  "delete",
   "pull_request",
   "pull_request_review",
+  "push",
 }
 
 b:webhook("patchset-created", function(payload)
@@ -708,6 +816,14 @@ end)
 
 b:webhook("vote-deleted", gerrit_vote_deleted_event)
 
+b:webhook("ref-updated", function(payload)
+  return gerrit_ref_update_event(payload, (payload or {}).refUpdate)
+end)
+
+b:webhook("batch-ref-updated", function(payload)
+  return gerrit_ref_update_event(payload, ((payload or {}).refUpdates or {})[1])
+end)
+
 b:webhook("topic-changed", gerrit_topic_changed_event)
 
 b:webhook("hashtags-changed", gerrit_hashtags_changed_event)
@@ -734,7 +850,11 @@ local function translate_gerrit_normalized_webhook(internal_event, fields)
   return make_normalized_webhook_envelope(internal_event, {
     id = fields.id,
     type = fields.type
-      or normalized_webhook_event_type(internal_event.event, internal_event.action),
+      or (
+        GERRIT_ACTIONLESS_NORMALIZED_EVENTS[internal_event.event]
+          and normalized_webhook_event_type(internal_event.event, "")
+        or normalized_webhook_event_type(internal_event.event, internal_event.action)
+      ),
     occurred_at = fields.occurred_at,
     actor = fields.actor or data.sender,
     repository = fields.repository or data.repository,

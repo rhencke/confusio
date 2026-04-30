@@ -1,0 +1,15 @@
+{
+  "type": "ref-updated",
+  "eventCreatedOn": 1705375800,
+  "submitter": {
+    "name": "Dana",
+    "email": "dana@example.com",
+    "username": "dana"
+  },
+  "refUpdate": {
+    "project": "myorg/my-repo",
+    "refName": "refs/tags/v1.0.0",
+    "oldRev": "4444444444444444444444444444444444444444",
+    "newRev": "0000000000000000000000000000000000000000"
+  }
+}
