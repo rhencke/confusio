@@ -4,11 +4,11 @@
 # Trust-the-network mode (no webhook_secret_BACKEND CLI arg): signature headers omitted.
 # All paths return 200 when a registered handler succeeds.
 
-# ── Issues Hook: opened → 200 ─────────────────────────────────────────────────
+# ── Issue Hook: opened → 200 ──────────────────────────────────────────────────
 
 POST http://{{host}}/webhooks/gitlab
 Content-Type: application/json
-X-Gitlab-Event: Issues Hook
+X-Gitlab-Event: Issue Hook
 {
   "object_kind": "issue",
   "user": {
@@ -276,6 +276,7 @@ Content-Type: application/json
 X-Gitlab-Event: Milestone Hook
 {
   "object_kind": "milestone",
+  "action": "create",
   "user": {
     "id": 1, "name": "The Octocat", "username": "octocat",
     "avatar_url": "", "web_url": "http://localhost/octocat"
@@ -294,7 +295,6 @@ X-Gitlab-Event: Milestone Hook
     "title": "v2.0",
     "description": "Second major release",
     "state": "active",
-    "action": "create",
     "due_date": "2024-06-01",
     "created_at": "2024-01-15T10:00:00Z",
     "updated_at": "2024-01-15T10:00:00Z",

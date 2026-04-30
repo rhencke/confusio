@@ -6006,7 +6006,7 @@ end)
 
 -- ─── Inbound webhook event handlers ─────────────────────────────────────────
 --
--- GitLab uses X-Gitlab-Event with values like "Issues Hook", "Note Hook".
+-- GitLab uses X-Gitlab-Event with values like "Issue Hook", "Note Hook".
 -- Event data lives in payload.object_attributes; the project uses a simpler
 -- format than the REST API (namespace is a string, not a nested object).
 
@@ -6243,8 +6243,9 @@ local function translate_gl_webhook_release(payload)
 end
 
 -- issues: opened, closed, reopened, edited.
--- Registered for X-Gitlab-Event: Issues Hook
-b:webhook("Issues Hook", function(payload)
+-- Registered for X-Gitlab-Event: Issue Hook.
+-- Older fixtures and some integrations use "Issues Hook"; accept both spellings.
+local function gitlab_issue_hook(payload)
   local oa = payload.object_attributes or {}
   local raw_action = oa.action or ""
   local action = GL_ISSUES_ACTIONS[raw_action] or "unknown"
@@ -6262,7 +6263,10 @@ b:webhook("Issues Hook", function(payload)
       sender = translate_gl_user(payload.user),
     },
   })
-end)
+end
+
+b:webhook("Issue Hook", gitlab_issue_hook)
+b:webhook("Issues Hook", gitlab_issue_hook)
 
 -- issue_comment: created, edited, deleted.
 -- Registered for X-Gitlab-Event: Note Hook (covers notes on issues and MRs).
@@ -6335,7 +6339,7 @@ end)
 -- Registered for X-Gitlab-Event: Milestone Hook
 b:webhook("Milestone Hook", function(payload)
   local oa = payload.object_attributes or {}
-  local raw_action = oa.action or ""
+  local raw_action = oa.action or payload.action or ""
   local action = GL_MILESTONE_ACTIONS[raw_action] or "unknown"
   local milestone = {
     id = oa.id,
