@@ -112,11 +112,25 @@ function OnHttpRequest()
     )
 
   -- Webhooks ----------------------------------------------------------------
+  elseif path == rb .. "/webhooks/1" and GetMethod() == "DELETE" then
+    SetStatus(200, "OK")
+  elseif path == rb .. "/webhooks/1" and GetMethod() == "PUT" then
+    SetStatus(200, "OK")
+    json(
+      '{"id":1,"name":"web","url":"https://example.com/updated-hook",'
+        .. '"events":["repo:refs_changed","pr:opened"],"active":true}'
+    )
   elseif path == rb .. "/webhooks/1" then
     SetStatus(200, "OK")
     json(
       '{"id":1,"name":"web","url":"https://example.com/hook",'
         .. '"events":["repo:refs_changed"],"active":true}'
+    )
+  elseif path == rb .. "/webhooks" and GetMethod() == "POST" then
+    SetStatus(200, "OK")
+    json(
+      '{"id":2,"name":"web","url":"https://example.com/new-hook",'
+        .. '"events":["repo:refs_changed","pr:opened"],"active":true}'
     )
   elseif path == rb .. "/webhooks" then
     SetStatus(200, "OK")
