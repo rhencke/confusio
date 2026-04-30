@@ -1,6 +1,6 @@
 # GitLab webhook normalizer tests.
 #
-# Exercises the five event families registered in backends/gitlab.lua.
+# Exercises GitLab event families registered in backends/gitlab.lua.
 # Trust-the-network mode (no webhook_secret_BACKEND CLI arg): signature headers omitted.
 # All paths return 200 when a registered handler succeeds.
 
@@ -43,6 +43,149 @@ X-Gitlab-Event: Issue Hook
   "labels": [],
   "assignees": [],
   "milestone": null
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Vulnerability Hook: dependency scanning finding → dependabot_alert ────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Vulnerability Hook
+{
+  "object_kind": "vulnerability",
+  "user": {
+    "id": 4, "name": "Alice Smith", "username": "alice",
+    "avatar_url": "", "web_url": "http://localhost/alice"
+  },
+  "project": {
+    "id": 15, "name": "hello-world", "description": "My first repo",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "namespace": "octocat", "visibility_level": 20,
+    "path_with_namespace": "octocat/hello-world",
+    "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 700,
+    "uuid": "vuln-700",
+    "title": "CVE in rack",
+    "description": "Dependency finding",
+    "state": "confirmed",
+    "severity": "high",
+    "report_type": "dependency_scanning",
+    "scanner_external_id": "gemnasium",
+    "created_at": "2024-01-15T12:00:00Z",
+    "updated_at": "2024-01-15T12:00:00Z",
+    "location": {
+      "dependency": {
+        "package_manager": "bundler",
+        "package_name": "rack",
+        "version": "2.2.3"
+      }
+    }
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Vulnerability Hook: secret finding dismissed → secret_scanning_alert ──────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Vulnerability Hook
+{
+  "object_kind": "vulnerability",
+  "user": {
+    "id": 4, "name": "Alice Smith", "username": "alice",
+    "avatar_url": "", "web_url": "http://localhost/alice"
+  },
+  "project": {
+    "id": 15, "name": "hello-world", "description": "My first repo",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "namespace": "octocat", "visibility_level": 20,
+    "path_with_namespace": "octocat/hello-world",
+    "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 701,
+    "uuid": "vuln-701",
+    "title": "Leaked token",
+    "description": "Secret finding",
+    "state": "dismissed",
+    "severity": "critical",
+    "report_type": "secret_detection",
+    "dismissed_at": "2024-01-15T12:05:00Z",
+    "created_at": "2024-01-15T12:00:00Z",
+    "updated_at": "2024-01-15T12:05:00Z"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Resource Access Token Hook: expiring token → PAT request created ──────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Resource Access Token Hook
+{
+  "object_kind": "access_token",
+  "event_name": "expiring_access_token",
+  "project": {
+    "id": 15, "name": "hello-world", "description": "My first repo",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "namespace": "octocat", "visibility_level": 20,
+    "path_with_namespace": "octocat/hello-world",
+    "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 800,
+    "name": "build-token",
+    "expires_at": "2024-02-01",
+    "last_used_at": "2024-01-15T12:00:00Z",
+    "active": true,
+    "scopes": ["read_repository"]
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Resource Deploy Token Hook: expiring deploy token → PAT request created ───
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Resource Deploy Token Hook
+{
+  "object_kind": "deploy_token",
+  "event_name": "expiring_deploy_token",
+  "group": {
+    "id": 30,
+    "name": "Octocat",
+    "path": "octocat",
+    "full_path": "octocat",
+    "web_url": "http://localhost/groups/octocat"
+  },
+  "object_attributes": {
+    "id": 801,
+    "name": "deploy-token",
+    "expires_at": "2024-02-01",
+    "last_used_at": "2024-01-15T12:00:00Z",
+    "active": true,
+    "scopes": ["read_registry"]
+  }
 }
 
 HTTP 200
@@ -116,6 +259,40 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 header "X-Confusio-Raw-Action" == "confidential"
+
+# ── Issue Hook: work item opened → issues/opened ─────────────────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Issue Hook
+{
+  "object_kind": "work_item",
+  "event_type": "work_item",
+  "user": {
+    "id": 1, "name": "The Octocat", "username": "octocat",
+    "avatar_url": "", "web_url": "http://localhost/octocat"
+  },
+  "project": {
+    "id": 10, "name": "hello-world",
+    "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "visibility_level": 20, "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 2, "iid": 2, "title": "Plan task",
+    "description": "Track the work item.", "state": "opened", "action": "open",
+    "type": "Task",
+    "url": "http://localhost/octocat/hello-world/-/work_items/2",
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "labels": [], "assignees": [], "milestone": null
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
 
 # ── Note Hook: created (on issue) → 200 ──────────────────────────────────────
 

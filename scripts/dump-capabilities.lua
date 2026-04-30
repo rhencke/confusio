@@ -46,7 +46,8 @@ local backend_parts = {}
 
 for _, name in ipairs(cli_backends) do
   config = { backend = name, base_url = "" } -- luacheck: globals config
-  app.backend = { rest = {}, graphql = {}, capabilities = {}, webhooks = {} } -- luacheck: globals app
+  app.backend =
+    { rest = {}, graphql = {}, capabilities = {}, webhooks = {}, webhook_translators = {} } -- luacheck: globals app
   graphql_resolvers = app.backend.graphql -- luacheck: globals graphql_resolvers
   Fetch = noop_fetch -- luacheck: globals Fetch
   dofile("/zip/backends/" .. name .. ".lua")

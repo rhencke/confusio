@@ -7036,6 +7036,199 @@ b:webhook("Deployment Hook", function(payload)
   })
 end)
 
+local GL_VULNERABILITY_RESOLVED_STATES = {
+  resolved = true,
+  fixed = true,
+}
+
+local GL_VULNERABILITY_DISMISSED_STATES = {
+  dismissed = true,
+}
+
+local GL_VULNERABILITY_ACTIVE_STATES = {
+  confirmed = true,
+  detected = true,
+  needs_triage = true,
+  active = true,
+}
+
+local function gl_vulnerability_previous_state(payload)
+  local changes = payload.changes or {}
+  local state_change = changes.state or changes.status or {}
+  return state_change.previous or state_change.from or state_change.old or ""
+end
+
+local function gl_vulnerability_event(oa)
+  local report_type = (oa.report_type or ""):lower()
+  local scanner_id = (oa.scanner_external_id or ""):lower()
+  local scanner = oa.scanner or {}
+  local scanner_name = (scanner.name or scanner.external_id or ""):lower()
+  local category = report_type .. " " .. scanner_id .. " " .. scanner_name
+
+  if category:find("secret", 1, true) then
+    return "secret_scanning_alert"
+  end
+  if
+    category:find("dependency", 1, true)
+    or category:find("container", 1, true)
+    or category:find("gemnasium", 1, true)
+  then
+    return "dependabot_alert"
+  end
+  return "code_scanning_alert"
+end
+
+local function gl_vulnerability_action(event, oa, payload)
+  local state = (oa.state or oa.status or ""):lower()
+  local previous_state = gl_vulnerability_previous_state(payload):lower()
+
+  if GL_VULNERABILITY_DISMISSED_STATES[state] or oa.dismissed_at then
+    if event == "secret_scanning_alert" then
+      return "resolved"
+    elseif event == "code_scanning_alert" then
+      return "closed_by_user"
+    end
+    return "dismissed"
+  end
+
+  if GL_VULNERABILITY_RESOLVED_STATES[state] or oa.resolved_at then
+    if event == "secret_scanning_alert" then
+      return "resolved"
+    end
+    return "fixed"
+  end
+
+  if
+    GL_VULNERABILITY_ACTIVE_STATES[state]
+    and (
+      GL_VULNERABILITY_DISMISSED_STATES[previous_state]
+      or GL_VULNERABILITY_RESOLVED_STATES[previous_state]
+    )
+  then
+    return "reopened"
+  end
+
+  return "created"
+end
+
+local function translate_gl_vulnerability_alert(oa)
+  local location = oa.location or {}
+  return {
+    number = oa.id or 0,
+    id = oa.id,
+    node_id = "",
+    state = oa.state or oa.status or "",
+    html_url = oa.url or oa.web_url or "",
+    created_at = oa.created_at,
+    updated_at = oa.updated_at,
+    fixed_at = oa.resolved_at,
+    dismissed_at = oa.dismissed_at,
+    security_vulnerability = {
+      package = location.dependency and {
+        ecosystem = location.dependency.package_manager or "",
+        name = location.dependency.package_name or "",
+      } or nil,
+      vulnerable_version_range = location.dependency and location.dependency.version or "",
+      severity = oa.severity or "",
+      advisory = {
+        ghsa_id = "",
+        cve_id = "",
+        identifiers = oa.identifiers or {},
+        summary = oa.title or oa.name or "",
+        description = oa.description or "",
+      },
+    },
+    rule = {
+      id = oa.uuid or oa.id or "",
+      name = oa.title or oa.name or "",
+      description = oa.description or "",
+      severity = oa.severity or "",
+    },
+    tool = {
+      name = (oa.scanner and oa.scanner.name) or oa.scanner_external_id or "",
+      guid = oa.scanner_external_id or "",
+    },
+    secret_type = oa.report_type == "secret_detection" and (oa.title or oa.name or "") or nil,
+    secret_type_display_name = oa.report_type == "secret_detection" and (oa.title or oa.name or "")
+      or nil,
+    location = location,
+  }
+end
+
+-- Vulnerability Hook: GitLab security findings map to the closest GitHub
+-- security alert family based on report_type/scanner metadata.
+b:webhook("Vulnerability Hook", function(payload)
+  local oa = payload.object_attributes or {}
+  local event = gl_vulnerability_event(oa)
+  local action = gl_vulnerability_action(event, oa, payload)
+  local alert = translate_gl_vulnerability_alert(oa)
+  return make_internal_event({
+    event = event,
+    action = action,
+    provider = config.backend,
+    raw = payload,
+    data = {
+      action = action,
+      alert = alert,
+      repository = translate_gl_webhook_project(payload.project),
+      sender = translate_gl_user(payload.user),
+    },
+    timestamp = oa.updated_at or oa.created_at or "",
+  })
+end)
+
+local function translate_gl_resource_token(payload)
+  local oa = payload.object_attributes or {}
+  return {
+    id = oa.id,
+    node_id = "",
+    token_name = oa.name or payload.name or "",
+    token_type = payload.object_kind or "",
+    expires_at = oa.expires_at or payload.expires_at,
+    last_used_at = oa.last_used_at or payload.last_used_at,
+    active = oa.active,
+    scopes = oa.scopes or {},
+  }
+end
+
+local function translate_gl_resource_token_owner(payload)
+  local group = payload.group or {}
+  return {
+    login = group.path or group.full_path or group.name or "",
+    id = group.id or 0,
+    node_id = "",
+    description = group.description or "",
+    url = group.web_url or "",
+    html_url = group.web_url or "",
+    avatar_url = group.avatar_url or "",
+    type = "Organization",
+  }
+end
+
+-- Resource Access/Deploy Token Hooks: GitLab emits expiry notifications for
+-- project and group tokens. GitHub's closest normalized security-token event
+-- is personal_access_token_request/created.
+local function gitlab_resource_token_hook(payload)
+  local token = translate_gl_resource_token(payload)
+  return make_internal_event({
+    event = "personal_access_token_request",
+    action = "created",
+    provider = config.backend,
+    raw = payload,
+    data = {
+      action = "created",
+      personal_access_token_request = token,
+      repository = translate_gl_webhook_project(payload.project),
+      organization = translate_gl_resource_token_owner(payload),
+      sender = translate_gl_user(payload.user),
+    },
+    timestamp = token.expires_at or "",
+  })
+end
+
+b:webhook("Resource Access Token Hook", gitlab_resource_token_hook)
+b:webhook("Resource Deploy Token Hook", gitlab_resource_token_hook)
+
 -- System Hook: repository, group (organization), and group member (membership) events.
 -- GitLab sends X-Gitlab-Event: System Hook with event_name in the body.
 -- Non-repository / non-group / non-membership event_names (user_create, key_add, etc.)
@@ -7434,6 +7627,10 @@ local GL_NORMALIZED_WEBHOOK_EVENTS = {
   "push",
   "deployment",
   "deployment_status",
+  "code_scanning_alert",
+  "dependabot_alert",
+  "personal_access_token_request",
+  "secret_scanning_alert",
   "repository",
   "organization",
   "membership",
