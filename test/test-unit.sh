@@ -290,7 +290,20 @@ run_delivery_phase test/webhook-delivery-forgejo-confusio-shape.hurl \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
 
-# Phase 27: Startup event synthesis — github shape.
+# Phase 27: Codeberg fixture-based delivery tests — every event × action triple.
+# Codeberg uses X-Gitea-Event header (API-compatible with Gitea/Forgejo).
+run_delivery_phase test/webhook-delivery-codeberg.hurl \
+  -- codeberg "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 28: Codeberg delivery with "confusio" shape — spot-checks X-Confusio-* headers.
+# Verifies X-Confusio-Source is "codeberg" and X-GitHub-Event is absent.
+run_delivery_phase test/webhook-delivery-codeberg-confusio-shape.hurl \
+  -- codeberg "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+  "webhook_target_shape=confusio"
+
+# Phase 29: Startup event synthesis — github shape.
 # Verifies that confusio synthesizes installation.created and
 # installation_repositories.added before accepting connections, and delivers
 # both to the configured outbound target.  No /reset is called — the hurl file
@@ -299,8 +312,8 @@ run_delivery_phase test/webhook-delivery-startup.hurl \
   -- gitea "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
-# Phase 28: Startup event synthesis — confusio shape.
-# Same as Phase 27 but with webhook_target_shape=confusio; verifies
+# Phase 30: Startup event synthesis — confusio shape.
+# Same as Phase 29 but with webhook_target_shape=confusio; verifies
 # X-Confusio-* headers are used and X-GitHub-Event is absent.
 run_delivery_phase test/webhook-delivery-startup-confusio-shape.hurl \
   -- gitea "http://127.0.0.1:$MOCK_PORT" \
