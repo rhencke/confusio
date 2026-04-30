@@ -140,6 +140,154 @@ jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].body_json.type" == "change-restored"
 
+# ── topic-changed → pull_request: edited ────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/topic-changed.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.type" == "topic-changed"
+
+# ── hashtags-changed (added) → pull_request: labeled ────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/hashtags-changed-added.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.added[0]" == "docs"
+
+# ── hashtags-changed (removed) → pull_request: unlabeled ────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/hashtags-changed-removed.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.removed[0]" == "checkout"
+
+# ── wip-state-changed → pull_request: edited ────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/wip-state-changed.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.change.wip" == true
+
+# ── private-state-changed → pull_request: edited ────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/private-state-changed.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.change.private" == true
+
+# ── assignee-changed (assigned) → pull_request: assigned ────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/assignee-changed-assigned.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.assignee.username" == "dana"
+
+# ── assignee-changed (unassigned) → pull_request: unassigned ────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/assignee-changed-unassigned.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.oldAssignee.username" == "dana"
+
 # ── comment-added (changes_requested) → pull_request_review: submitted/CHANGES_REQUESTED
 
 POST http://{{target}}/reset

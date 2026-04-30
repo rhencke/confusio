@@ -1,0 +1,29 @@
+{
+  "type": "wip-state-changed",
+  "eventCreatedOn": 1705343400,
+  "change": {
+    "_number": 1003,
+    "project": "myorg/my-repo",
+    "branch": "main",
+    "subject": "Document checkout flow",
+    "status": "NEW",
+    "wip": true,
+    "owner": {
+      "name": "Alice",
+      "email": "alice@example.com",
+      "username": "alice"
+    },
+    "created": "2024-01-15T12:00:00Z",
+    "updated": "2024-01-15T16:30:00Z"
+  },
+  "patchSet": {
+    "number": 2,
+    "revision": "555eee666fff",
+    "createdOn": 1705318200
+  },
+  "changer": {
+    "name": "Alice",
+    "email": "alice@example.com",
+    "username": "alice"
+  }
+}

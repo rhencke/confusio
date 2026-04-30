@@ -435,9 +435,31 @@ local function gerrit_change_actor(payload)
     or payload.submitter
     or payload.abandoner
     or payload.restorer
+    or payload.changer
+    or payload.editor
     or payload.author
     or (payload.change or {}).owner
     or {}
+end
+
+local function translate_gerrit_label(name)
+  return {
+    id = 0,
+    node_id = "",
+    url = "",
+    name = name or "",
+    color = "",
+    description = "",
+    default = false,
+  }
+end
+
+local function translate_gerrit_hashtags(hashtags)
+  local labels = {}
+  for _, hashtag in ipairs(hashtags or {}) do
+    labels[#labels + 1] = translate_gerrit_label(hashtag)
+  end
+  return labels
 end
 
 local function gerrit_pull_request_event(payload, action, opts)
@@ -461,6 +483,21 @@ local function gerrit_pull_request_event(payload, action, opts)
   if payload.reason then
     data.reason = payload.reason
   end
+  if opts.changes then
+    data.changes = opts.changes
+  end
+  if opts.label then
+    data.label = opts.label
+  end
+  if opts.assignee then
+    data.assignee = opts.assignee
+  end
+  if opts.assignee ~= nil then
+    data.pull_request.assignee = opts.assignee
+  end
+  if opts.labels then
+    data.pull_request.labels = opts.labels
+  end
   return make_internal_event({
     event = "pull_request",
     action = action,
@@ -468,6 +505,73 @@ local function gerrit_pull_request_event(payload, action, opts)
     raw = payload,
     data = data,
     timestamp = timestamp,
+  })
+end
+
+local function gerrit_topic_changed_event(payload)
+  payload = payload or {}
+  return gerrit_pull_request_event(payload, "edited", {
+    changes = {
+      topic = {
+        from = payload.oldTopic or "",
+        to = (payload.change or {}).topic or "",
+      },
+    },
+  })
+end
+
+local function gerrit_hashtags_changed_event(payload)
+  payload = payload or {}
+  local added = payload.added or {}
+  local removed = payload.removed or {}
+  local action = #added > 0 and "labeled" or (#removed > 0 and "unlabeled" or "edited")
+  local label_name = (#added > 0 and added[1]) or (#removed > 0 and removed[1]) or nil
+  return gerrit_pull_request_event(payload, action, {
+    label = label_name and translate_gerrit_label(label_name) or nil,
+    labels = translate_gerrit_hashtags(payload.hashtags),
+    changes = {
+      labels = {
+        added = translate_gerrit_hashtags(added),
+        removed = translate_gerrit_hashtags(removed),
+      },
+    },
+  })
+end
+
+local function gerrit_wip_state_changed_event(payload)
+  payload = payload or {}
+  return gerrit_pull_request_event(payload, "edited", {
+    changes = {
+      draft = {
+        to = (payload.change or {}).wip or false,
+      },
+    },
+  })
+end
+
+local function gerrit_private_state_changed_event(payload)
+  payload = payload or {}
+  return gerrit_pull_request_event(payload, "edited", {
+    changes = {
+      private = {
+        to = (payload.change or {}).private or false,
+      },
+    },
+  })
+end
+
+local function gerrit_assignee_changed_event(payload)
+  payload = payload or {}
+  local assignee = payload.assignee and translate_gerrit_user(payload.assignee) or nil
+  local action = assignee and "assigned" or "unassigned"
+  return gerrit_pull_request_event(payload, action, {
+    assignee = assignee,
+    changes = {
+      assignee = {
+        from = payload.oldAssignee and translate_gerrit_user(payload.oldAssignee) or nil,
+        to = assignee,
+      },
+    },
   })
 end
 
@@ -536,6 +640,16 @@ end)
 b:webhook("change-restored", function(payload)
   return gerrit_pull_request_event(payload, "reopened")
 end)
+
+b:webhook("topic-changed", gerrit_topic_changed_event)
+
+b:webhook("hashtags-changed", gerrit_hashtags_changed_event)
+
+b:webhook("wip-state-changed", gerrit_wip_state_changed_event)
+
+b:webhook("private-state-changed", gerrit_private_state_changed_event)
+
+b:webhook("assignee-changed", gerrit_assignee_changed_event)
 
 local function gerrit_normalized_payload_without_envelope_fields(data)
   local payload = {}
