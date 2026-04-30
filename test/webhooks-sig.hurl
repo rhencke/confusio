@@ -98,6 +98,15 @@ HTTP 401
 [Asserts]
 jsonpath "$.message" == "Signature verification failed"
 
+# Missing token header → 401
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
 # ── bitbucket: X-Hub-Signature, HMAC-SHA256, sha256= prefix ──────────────────
 
 # Valid signature → passes verification (422)
