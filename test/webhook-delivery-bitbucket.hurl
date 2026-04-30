@@ -539,6 +539,50 @@ jsonpath "$[0].github_event" == "repository"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 
+# ── workflow_run: completed ──────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: pipeline:span_created
+file,fixtures/webhooks/bitbucket/workflow_run-completed.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "workflow_run"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
+# ── workflow_job: completed ──────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: pipeline:span_created
+file,fixtures/webhooks/bitbucket/workflow_job-completed.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "workflow_job"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
 # ── repository: deleted ───────────────────────────────────────────────────────
 
 POST http://{{target}}/reset

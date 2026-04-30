@@ -193,6 +193,10 @@ local function github_state_to_bb(state)
   return GITHUB_TO_BB_STATE[state] or "FAILED"
 end
 
+local function bb_lower(value)
+  return tostring(value or ""):lower()
+end
+
 local function translate_bb_status(s)
   return {
     state = bb_state_to_github(s.state),
@@ -2696,6 +2700,277 @@ b:webhook("pullrequest:comment_deleted", function(payload)
   return bb_pr_comment_event(payload, "deleted")
 end)
 
+local function bb_otel_attr_value(value)
+  value = value or {}
+  if value.stringValue ~= nil then
+    return value.stringValue
+  elseif value.intValue ~= nil then
+    return tonumber(value.intValue) or value.intValue
+  elseif value.doubleValue ~= nil then
+    return tonumber(value.doubleValue) or value.doubleValue
+  elseif value.boolValue ~= nil then
+    return value.boolValue
+  end
+  return nil
+end
+
+local function bb_otel_attrs(span)
+  local attrs = {}
+  for _, attr in ipairs((span or {}).attributes or {}) do
+    if attr.key then
+      attrs[attr.key] = bb_otel_attr_value(attr.value)
+    end
+  end
+  return attrs
+end
+
+local function bb_otel_spans(payload)
+  local spans = {}
+  for _, resource_span in ipairs((payload or {}).resourceSpans or {}) do
+    for _, scope_span in ipairs(resource_span.scopeSpans or {}) do
+      for _, span in ipairs(scope_span.spans or {}) do
+        spans[#spans + 1] = span
+      end
+    end
+  end
+  return spans
+end
+
+local function bb_otel_span_time(ns)
+  if ns == nil or ns == "" then
+    return ""
+  end
+  ns = tostring(ns)
+  local seconds = nil
+  if #ns >= 10 then
+    seconds = tonumber(ns:sub(1, #ns - 9))
+  else
+    seconds = math.floor(tonumber(ns) or 0)
+  end
+  if not seconds or seconds <= 0 then
+    return ""
+  end
+  return os.date("!%Y-%m-%dT%H:%M:%SZ", seconds)
+end
+
+local function bb_first_nonempty(first, second)
+  if first ~= nil and first ~= "" then
+    return first
+  end
+  return second or ""
+end
+
+local function bb_otel_repo(attrs, payload)
+  if payload.repository then
+    return translate_bb_repo(payload.repository)
+  end
+  local full_name = attrs["pipeline.repository.full_name"] or attrs["repository.full_name"] or ""
+  local owner_login, repo_name = full_name:match("^([^/]+)/(.+)$")
+  repo_name = repo_name or full_name
+  local owner = {
+    login = owner_login or "",
+    id = 0,
+    node_id = "",
+    avatar_url = "",
+    html_url = "",
+    type = "User",
+  }
+  return {
+    id = 0,
+    node_id = attrs["pipeline.repository.uuid"] or "",
+    name = repo_name or "",
+    full_name = full_name,
+    private = false,
+    owner = owner,
+    html_url = "",
+    description = "",
+    fork = false,
+    url = "",
+    default_branch = attrs["pipeline.target.ref_name"] or "",
+  }
+end
+
+local function bb_otel_sender(payload)
+  return translate_bb_user(payload.actor or {})
+end
+
+local function bb_pipeline_result_to_conclusion(result)
+  result = bb_lower(result)
+  if
+    result == "successful"
+    or result == "success"
+    or result == "complete"
+    or result == "completed"
+  then
+    return "success"
+  elseif result == "failed" or result == "failure" or result == "error" then
+    return "failure"
+  elseif result == "stopped" or result == "cancelled" or result == "canceled" then
+    return "cancelled"
+  elseif result == "skipped" then
+    return "skipped"
+  end
+  return nil
+end
+
+local function bb_pipeline_action_status(state, result)
+  local conclusion = bb_pipeline_result_to_conclusion(result)
+  local state_l = bb_lower(state)
+  if conclusion or state_l == "complete" or state_l == "completed" then
+    return "completed", "completed", conclusion or "success"
+  elseif state_l == "running" or state_l == "building" or state_l == "in_progress" then
+    return "in_progress", "in_progress", nil
+  end
+  return "requested", "queued", nil
+end
+
+local function bb_otel_find_span(payload, names)
+  for _, span in ipairs(bb_otel_spans(payload)) do
+    if names[span.name or ""] then
+      return span, bb_otel_attrs(span)
+    end
+  end
+  return nil, nil
+end
+
+local function bb_otel_workflow_run_event(payload)
+  local span, attrs = bb_otel_find_span(payload, { ["bbc.pipeline_run"] = true })
+  if not span then
+    return nil
+  end
+  local action, status, conclusion = bb_pipeline_action_status(
+    attrs["pipeline.state.name"],
+    attrs["pipeline.state.result.name"] or attrs["pipeline_run.state.result.name"]
+  )
+  local sender = bb_otel_sender(payload)
+  local workflow_name = attrs["pipeline.name"] or "Bitbucket Pipelines"
+  local workflow_run = {
+    id = attrs["pipeline_run.uuid"] or span.spanId or "",
+    node_id = span.spanId or "",
+    name = workflow_name,
+    head_branch = attrs["pipeline.target.ref_name"] or "",
+    head_sha = attrs["pipeline.target.commit.hash"] or attrs["commit.hash"] or "",
+    run_number = attrs["pipeline_run.run_number"] or attrs["pipeline.build_number"] or 0,
+    event = bb_lower(attrs["pipeline.trigger.name"]) ~= "" and bb_lower(
+      attrs["pipeline.trigger.name"]
+    ) or "push",
+    display_title = attrs["pipeline.name"] or workflow_name,
+    status = status,
+    conclusion = conclusion,
+    workflow_id = attrs["pipeline.uuid"] or "",
+    url = attrs["pipeline_run.url"] or "",
+    html_url = attrs["pipeline_run.url"] or "",
+    pull_requests = {},
+    created_at = bb_otel_span_time(span.startTimeUnixNano),
+    updated_at = bb_otel_span_time(span.endTimeUnixNano),
+    run_attempt = 1,
+    referenced_workflows = {},
+    actor = sender,
+    triggering_actor = sender,
+  }
+  local workflow = {
+    id = attrs["pipeline.uuid"] or "",
+    name = workflow_name,
+    path = "bitbucket-pipelines.yml",
+    state = "active",
+    url = "",
+    html_url = "",
+    badge_url = "",
+    created_at = "",
+    updated_at = "",
+  }
+  return make_internal_event({
+    event = "workflow_run",
+    action = action,
+    provider = "bitbucket",
+    raw = payload,
+    data = {
+      action = action,
+      workflow_run = workflow_run,
+      workflow = workflow,
+      repository = bb_otel_repo(attrs, payload),
+      sender = sender,
+    },
+    timestamp = bb_first_nonempty(
+      bb_otel_span_time(span.endTimeUnixNano),
+      bb_otel_span_time(span.startTimeUnixNano)
+    ),
+  })
+end
+
+local BB_PIPELINE_JOB_SPANS = {
+  ["bbc.step"] = true,
+  ["bbc.pipeline_step"] = true,
+  ["bbc.command"] = true,
+  ["bbc.step.command"] = true,
+  ["bbc.pipeline_container"] = true,
+  ["bbc.pipeline_log"] = true,
+}
+
+local function bb_otel_workflow_job_event(payload)
+  local span, attrs = bb_otel_find_span(payload, BB_PIPELINE_JOB_SPANS)
+  if not span then
+    return nil
+  end
+  local raw_result = attrs["step.state.result.name"] or attrs["command.state.result.name"]
+  local raw_state = attrs["step.state.name"] or attrs["command.state.name"]
+  local action, status, conclusion = bb_pipeline_action_status(raw_state, raw_result)
+  local name = attrs["step.step_name"]
+    or attrs["step.name"]
+    or attrs["command.command"]
+    or attrs["container.name"]
+    or span.name
+    or ""
+  local job = {
+    id = attrs["step.uuid"] or attrs["command.command_id"] or span.spanId or "",
+    run_id = attrs["pipeline_run.uuid"] or "",
+    run_url = attrs["pipeline_run.url"] or "",
+    run_attempt = 1,
+    node_id = span.spanId or "",
+    head_sha = attrs["pipeline.target.commit.hash"] or attrs["commit.hash"] or "",
+    url = attrs["step.url"] or attrs["pipeline_run.url"] or "",
+    html_url = attrs["step.url"] or attrs["pipeline_run.url"] or "",
+    status = status,
+    conclusion = conclusion,
+    started_at = bb_otel_span_time(span.startTimeUnixNano),
+    completed_at = status == "completed" and bb_otel_span_time(span.endTimeUnixNano) or nil,
+    name = name,
+    steps = {},
+    check_run_url = "",
+    labels = attrs["step.instance_type"] and { attrs["step.instance_type"] } or {},
+    runner_id = nil,
+    runner_name = nil,
+    runner_group_id = nil,
+    runner_group_name = nil,
+    workflow_name = attrs["pipeline.name"] or "Bitbucket Pipelines",
+    head_branch = attrs["pipeline.target.ref_name"] or "",
+  }
+  return make_internal_event({
+    event = "workflow_job",
+    action = action,
+    provider = "bitbucket",
+    raw = payload,
+    data = {
+      action = action,
+      workflow_job = job,
+      repository = bb_otel_repo(attrs, payload),
+      sender = bb_otel_sender(payload),
+    },
+    timestamp = bb_first_nonempty(
+      bb_otel_span_time(span.endTimeUnixNano),
+      bb_otel_span_time(span.startTimeUnixNano)
+    ),
+  })
+end
+
+b:webhook("pipeline:span_created", function(payload)
+  local event = bb_otel_workflow_run_event(payload) or bb_otel_workflow_job_event(payload)
+  if not event then
+    return nil, "No Bitbucket pipeline span found"
+  end
+  return event
+end)
+
 -- Commit status events: repo:commit_status_created, repo:commit_status_updated.
 -- Bitbucket Cloud emits these when an external CI system posts a build result
 -- against a commit.  Both event types carry the same payload shape and map to
@@ -2900,6 +3175,8 @@ local BB_NORMALIZED_WEBHOOK_EVENTS = {
   "pull_request_review",
   "pull_request_review_comment",
   "status",
+  "workflow_run",
+  "workflow_job",
   "push",
   "create",
   "delete",

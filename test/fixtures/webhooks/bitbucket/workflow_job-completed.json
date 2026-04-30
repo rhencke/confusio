@@ -1,0 +1,67 @@
+{
+  "actor": {
+    "nickname": "pipeline-bot",
+    "display_name": "Pipeline Bot",
+    "account_id": "bot-123",
+    "links": {
+      "avatar": { "href": "" },
+      "html": { "href": "https://bitbucket.org/pipeline-bot/" }
+    }
+  },
+  "repository": {
+    "uuid": "{8b737de0-1147-4652-a87e-76f339601ac9}",
+    "full_name": "octocat/hello-world",
+    "name": "hello-world",
+    "slug": "hello-world",
+    "is_private": false,
+    "owner": {
+      "nickname": "octocat",
+      "display_name": "The Octocat",
+      "account_id": "xyz789",
+      "type": "user",
+      "links": {
+        "avatar": { "href": "" },
+        "html": { "href": "https://bitbucket.org/octocat/" }
+      }
+    },
+    "links": {
+      "html": { "href": "https://bitbucket.org/octocat/hello-world" }
+    }
+  },
+  "resourceSpans": [
+    {
+      "scopeSpans": [
+        {
+          "spans": [
+            {
+              "name": "bbc.step",
+              "traceId": "1440f32947088a5248a9a3d7cb3c1d00",
+              "spanId": "9bf07c362ad5eeaf",
+              "parentSpanId": "375f9c6ebe07c9b6",
+              "startTimeUnixNano": "1705312860000000000",
+              "endTimeUnixNano": "1705313040000000000",
+              "attributes": [
+                { "key": "pipeline.name", "value": { "stringValue": "CI" } },
+                { "key": "pipeline.uuid", "value": { "stringValue": "{9857dad3-12cb-401b-aa0f-67d5636d5faa}" } },
+                { "key": "pipeline_run.uuid", "value": { "stringValue": "{6a03c559-c4d3-4563-9794-eb19708d3a0a}" } },
+                { "key": "pipeline_run.url", "value": { "stringValue": "https://bitbucket.org/octocat/hello-world/pipelines/results/42" } },
+                { "key": "step.uuid", "value": { "stringValue": "{0757e985-453a-47c7-8398-ab129f965faf}" } },
+                { "key": "step.step_name", "value": { "stringValue": "Integration Tests" } },
+                { "key": "step.instance_type", "value": { "stringValue": "MEMORY" } },
+                { "key": "step.state.name", "value": { "stringValue": "COMPLETE" } },
+                { "key": "step.state.result.name", "value": { "stringValue": "SUCCESSFUL" } },
+                { "key": "pipeline.target.ref_type", "value": { "stringValue": "BRANCH" } },
+                { "key": "pipeline.target.ref_name", "value": { "stringValue": "main" } },
+                { "key": "pipeline.target.commit.hash", "value": { "stringValue": "abc123def456" } },
+                { "key": "pipeline.repository.full_name", "value": { "stringValue": "octocat/hello-world" } },
+                { "key": "pipeline.repository.uuid", "value": { "stringValue": "{8b737de0-1147-4652-a87e-76f339601ac9}" } }
+              ],
+              "events": [],
+              "kind": 1
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

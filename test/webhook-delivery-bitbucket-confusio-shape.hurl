@@ -264,3 +264,63 @@ jsonpath "$[0].body_json.type" == "push"
 jsonpath "$[0].body_json.actor.login" == "alice"
 jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
 jsonpath "$[0].body_json.payload.after" == "da1560886d4f094c3e6c9ef40349f7d38b5d27d0"
+
+# ── workflow_run: completed — confusio shape ─────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: pipeline:span_created
+file,fixtures/webhooks/bitbucket/workflow_run-completed.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "workflow_run"
+jsonpath "$[0].confusio_source" == "bitbucket"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "workflow.run.completed"
+jsonpath "$[0].body_json.actor.login" == "pipeline-bot"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.workflow_run.name" == "CI"
+jsonpath "$[0].body_json.payload.workflow_run.status" == "completed"
+jsonpath "$[0].body_json.payload.workflow_run.conclusion" == "success"
+
+# ── workflow_job: completed — confusio shape ─────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: pipeline:span_created
+file,fixtures/webhooks/bitbucket/workflow_job-completed.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "workflow_job"
+jsonpath "$[0].confusio_source" == "bitbucket"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "workflow.job.completed"
+jsonpath "$[0].body_json.actor.login" == "pipeline-bot"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.workflow_job.name" == "Integration Tests"
+jsonpath "$[0].body_json.payload.workflow_job.status" == "completed"
+jsonpath "$[0].body_json.payload.workflow_job.conclusion" == "success"

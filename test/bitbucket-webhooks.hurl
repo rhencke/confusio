@@ -50,6 +50,28 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 
+# ── pipeline:span_created → workflow_run / completed ─────────────────────────
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: pipeline:span_created
+file,fixtures/webhooks/bitbucket/workflow_run-completed.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── pipeline:span_created → workflow_job / completed ─────────────────────────
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: pipeline:span_created
+file,fixtures/webhooks/bitbucket/workflow_job-completed.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
 # ── issue:updated (status: open → resolved) → issues / closed ────────────────
 
 POST http://{{host}}/webhooks/bitbucket
