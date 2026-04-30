@@ -405,6 +405,13 @@ local function translate_gerrit_ref_repo(refUpdate)
   return translate_gerrit_repo({ name = gerrit_ref_update_project(refUpdate) })
 end
 
+local function translate_gerrit_project_repo(payload)
+  payload = payload or {}
+  local head = gerrit_short_ref(payload.newHead or payload.headName or payload.projectHead)
+  local opts = head ~= "" and { default_branch = head } or nil
+  return translate_gerrit_repo({ name = payload.projectName }, nil, nil, opts)
+end
+
 local function translate_gerrit_pull_request(change, patchSet, opts)
   change = change or {}
   patchSet = patchSet or {}
@@ -631,6 +638,70 @@ local function gerrit_ref_update_event(payload, refUpdate)
   })
 end
 
+local function gerrit_project_created_event(payload)
+  payload = payload or {}
+  local head = payload.headName or payload.projectHead or ""
+  local repository = translate_gerrit_project_repo(payload)
+  local sender = translate_gerrit_user(payload.submitter or payload.creator or payload.createdBy)
+  return make_internal_event({
+    event = "repository",
+    action = "created",
+    provider = "gerrit",
+    raw = payload,
+    data = {
+      action = "created",
+      repository = repository,
+      sender = sender,
+      project_head = head,
+    },
+    timestamp = gerrit_event_timestamp(payload),
+  })
+end
+
+local function gerrit_project_deleted_event(payload)
+  payload = payload or {}
+  local repository = translate_gerrit_project_repo(payload)
+  local sender = translate_gerrit_user(payload.submitter or payload.deleter or payload.deletedBy)
+  return make_internal_event({
+    event = "repository",
+    action = "deleted",
+    provider = "gerrit",
+    raw = payload,
+    data = {
+      action = "deleted",
+      repository = repository,
+      sender = sender,
+    },
+    timestamp = gerrit_event_timestamp(payload),
+  })
+end
+
+local function gerrit_project_head_updated_event(payload)
+  payload = payload or {}
+  local repository = translate_gerrit_project_repo(payload)
+  local sender = translate_gerrit_user(payload.submitter or payload.updater or payload.updatedBy)
+  return make_internal_event({
+    event = "repository",
+    action = "edited",
+    provider = "gerrit",
+    raw = payload,
+    data = {
+      action = "edited",
+      repository = repository,
+      sender = sender,
+      changes = {
+        repository = {
+          default_branch = {
+            from = gerrit_short_ref(payload.oldHead),
+          },
+        },
+      },
+      project_head = payload.newHead or "",
+    },
+    timestamp = gerrit_event_timestamp(payload),
+  })
+end
+
 local function gerrit_topic_changed_event(payload)
   payload = payload or {}
   return gerrit_pull_request_event(payload, "edited", {
@@ -779,6 +850,7 @@ local GERRIT_NORMALIZED_WEBHOOK_EVENTS = {
   "pull_request",
   "pull_request_review",
   "push",
+  "repository",
 }
 
 b:webhook("patchset-created", function(payload)
@@ -823,6 +895,12 @@ end)
 b:webhook("batch-ref-updated", function(payload)
   return gerrit_ref_update_event(payload, ((payload or {}).refUpdates or {})[1])
 end)
+
+b:webhook("project-created", gerrit_project_created_event)
+
+b:webhook("project-deleted", gerrit_project_deleted_event)
+
+b:webhook("project-head-updated", gerrit_project_head_updated_event)
 
 b:webhook("topic-changed", gerrit_topic_changed_event)
 

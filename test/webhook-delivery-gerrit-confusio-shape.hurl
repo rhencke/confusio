@@ -278,6 +278,86 @@ jsonpath "$[0].body_json.actor.login" == "eve"
 jsonpath "$[0].body_json.payload.ref" == "refs/heads/release"
 jsonpath "$[0].body_json.payload.ref_updates[1].refName" == "refs/heads/docs"
 
+# ── project-created → repository.created — confusio shape ──────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/project-created.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "repository"
+jsonpath "$[0].confusio_source" == "gerrit"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].body_json.type" == "repository.created"
+jsonpath "$[0].body_json.occurred_at" == "1705383000"
+jsonpath "$[0].body_json.repository.full_name" == "myorg/new-repo"
+jsonpath "$[0].body_json.repository.default_branch" == "main"
+jsonpath "$[0].body_json.payload.action" == "created"
+jsonpath "$[0].body_json.payload.project_head" == "refs/heads/main"
+
+# ── project-deleted → repository.deleted — confusio shape ──────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/project-deleted.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "repository"
+jsonpath "$[0].confusio_source" == "gerrit"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].body_json.type" == "repository.deleted"
+jsonpath "$[0].body_json.occurred_at" == "1705384800"
+jsonpath "$[0].body_json.repository.full_name" == "myorg/old-repo"
+jsonpath "$[0].body_json.payload.action" == "deleted"
+
+# ── project-head-updated → repository.edited — confusio shape ──────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/project-head-updated.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "repository"
+jsonpath "$[0].confusio_source" == "gerrit"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].body_json.type" == "repository.edited"
+jsonpath "$[0].body_json.occurred_at" == "1705386600"
+jsonpath "$[0].body_json.repository.full_name" == "myorg/my-repo"
+jsonpath "$[0].body_json.repository.default_branch" == "main"
+jsonpath "$[0].body_json.payload.action" == "edited"
+jsonpath "$[0].body_json.payload.changes.repository.default_branch.from" == "master"
+jsonpath "$[0].body_json.payload.project_head" == "refs/heads/main"
+
 # ── patchset-created (first patch set) → pull_request.opened — confusio shape
 
 POST http://{{target}}/reset

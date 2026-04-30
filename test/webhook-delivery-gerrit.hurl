@@ -181,6 +181,73 @@ jsonpath "$[0].github_event" == "push"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].body_json.refUpdates[0].refName" == "refs/heads/release"
 
+# ── project-created → repository: created ──────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/project-created.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "repository"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.type" == "project-created"
+jsonpath "$[0].body_json.projectName" == "myorg/new-repo"
+
+# ── project-deleted → repository: deleted ──────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/project-deleted.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "repository"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.type" == "project-deleted"
+jsonpath "$[0].body_json.projectName" == "myorg/old-repo"
+
+# ── project-head-updated → repository: edited ──────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/project-head-updated.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "repository"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.type" == "project-head-updated"
+jsonpath "$[0].body_json.oldHead" == "refs/heads/master"
+jsonpath "$[0].body_json.newHead" == "refs/heads/main"
+
 # ── patchset-created (first patch set) → pull_request: opened ───────────────
 
 POST http://{{target}}/reset
