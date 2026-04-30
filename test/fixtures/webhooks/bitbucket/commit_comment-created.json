@@ -1,0 +1,45 @@
+{
+  "actor": {
+    "account_id": "1",
+    "nickname": "octocat",
+    "display_name": "The Octocat",
+    "links": {"avatar": {"href": ""}, "html": {"href": "https://bitbucket.org/octocat"}}
+  },
+  "comment": {
+    "id": 303,
+    "content": {"raw": "Nit: this should use the shared helper."},
+    "created_on": "2024-01-15T10:40:00+00:00",
+    "updated_on": "2024-01-15T10:40:00+00:00",
+    "user": {
+      "account_id": "1",
+      "nickname": "octocat",
+      "display_name": "The Octocat",
+      "links": {"avatar": {"href": ""}, "html": {"href": "https://bitbucket.org/octocat"}}
+    },
+    "inline": {
+      "path": "src/main.lua",
+      "to": 42
+    },
+    "links": {
+      "html": {
+        "href": "https://bitbucket.org/octocat/hello-world/commits/abc1234567890abcdef1234567890abcdef12345#comment-303"
+      },
+      "code": {
+        "href": "https://bitbucket.org/octocat/hello-world/src/abc1234567890abcdef1234567890abcdef12345/src/main.lua#lines-42"
+      }
+    }
+  },
+  "repository": {
+    "full_name": "octocat/hello-world",
+    "name": "hello-world",
+    "slug": "hello-world",
+    "is_private": false,
+    "owner": {
+      "account_id": "1",
+      "nickname": "octocat",
+      "display_name": "The Octocat",
+      "links": {"avatar": {"href": ""}, "html": {"href": "https://bitbucket.org/octocat"}}
+    },
+    "links": {"html": {"href": "https://bitbucket.org/octocat/hello-world"}}
+  }
+}

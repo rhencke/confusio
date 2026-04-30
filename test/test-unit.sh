@@ -30,6 +30,20 @@ start_confusio() {
   fi
 }
 
+wait_port() {
+  local name="$1"
+  local port="$2"
+  local i=0
+  while ! (: >/dev/tcp/localhost/"$port") 2>/dev/null; do
+    sleep 0.05
+    i=$((i + 1))
+    [ $i -lt 100 ] || {
+      echo "$name did not start in time" >&2
+      exit 1
+    }
+  done
+}
+
 run_hurl() {
   $HURL --retry 10 --retry-interval 200 --connect-timeout 1 --max-time 5 \
     --variable host=localhost:$CONFUSIO_PORT "$1"
@@ -68,11 +82,14 @@ run_delivery_phase() {
   # synthesize_startup_events fires during .init.lua — before the server accepts
   # connections — so once we can TCP-connect, all startup events have already landed
   # in the delivery target.  The hurl file's opening /reset can then safely clear them.
-  local i=0
-  while ! (: >/dev/tcp/localhost/$CONFUSIO_PORT) 2>/dev/null; do
-    sleep 0.05; i=$((i+1)); [ $i -lt 100 ] || { echo "confusio did not start in time" >&2; exit 1; }
-  done
-  $HURL --retry 10 --retry-interval 200 --connect-timeout 1 --max-time 5 \
+  wait_port "mock target" "$DELIVERY_TARGET_PORT"
+  wait_port "mock gitea" "$MOCK_PORT"
+  wait_port "confusio" "$CONFUSIO_PORT"
+  # Do not pass --retry here: these hurl files contain non-idempotent webhook POSTs.
+  # Retrying a POST after a transient assertion/transport failure records duplicate
+  # deliveries in the mock target and turns the next count assertion into a false
+  # failure.
+  $HURL --connect-timeout 1 --max-time 5 \
     --variable "host=localhost:$CONFUSIO_PORT" \
     --variable "target=localhost:$DELIVERY_TARGET_PORT" \
     "$hurl_file"

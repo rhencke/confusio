@@ -196,7 +196,7 @@ minimum set; request no more than this.
 |---------|---------------|
 | `gitea` / `forgejo` / family | `read:repository`, `read:user`, `read:organization`, `read:issue`, `write:repository` (for mutation endpoints), `write:issue` |
 | `gitlab` | `read_api` for read-only; `api` for mutation endpoints |
-| `bitbucket` | App password: `Repositories: Read/Write`, `Issues: Read/Write`, `Pull requests: Read/Write`, `Account: Read` |
+| `bitbucket` | App password: `Repositories: Read/Write`, `Issues: Read/Write`, `Pull requests: Read/Write`, `Pipelines: Read`, `Account: Read` |
 | `azuredevops` | PAT scopes: `Code (Read & Write)`, `Work Items (Read & Write)`, `Project and Team (Read)`, `Build (Read)`, `Release (Read)`, `Advanced Security (Read)` |
 | `harness` | Account-level PAT with `core_project_viewer` + `code_repo_viewer` minimum |
 | `sourcehut` | `REPOSITORIES`, `PROFILE` (read-only until paid account) |
@@ -883,8 +883,14 @@ Backends: `gitlab`, `bitbucket`
 
 Both have well-documented APIs, high uptime, and mature free tiers.  GitLab's API is close
 enough to GitHub's that the generator should produce good assertions with minimal overrides.
+Bitbucket coverage should exercise repository lifecycle, issues, commit comments, pull-request
+comments/reviews/change requests, commit statuses, and `pipeline:span_created` OTLP spans.
+Pipeline-span runs require Bitbucket Pipelines to be enabled on the fixture repository and a
+minimal `bitbucket-pipelines.yml` so step/command/container/log spans are observable.
 
-**Exit criteria**: both backends pass two consecutive weekly runs.
+**Exit criteria**: both backends pass two consecutive weekly runs, including Bitbucket
+webhook delivery assertions for the supported repository, PR/comment/review, status, and
+pipeline-span event families.
 
 ### Phase 3 — Remaining Tier 1 SaaS
 

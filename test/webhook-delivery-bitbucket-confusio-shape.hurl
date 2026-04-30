@@ -65,6 +65,37 @@ jsonpath "$[0].body_json.type" == "issue.comment.created"
 jsonpath "$[0].body_json.actor.login" == "octocat"
 jsonpath "$[0].body_json.payload.comment.id" == 101
 
+# ── commit_comment: created — confusio shape ─────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: repo:commit_comment_created
+file,fixtures/webhooks/bitbucket/commit_comment-created.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "commit_comment"
+jsonpath "$[0].confusio_source" == "bitbucket"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "commit_comment.created"
+jsonpath "$[0].body_json.actor.login" == "octocat"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.comment.id" == 303
+jsonpath "$[0].body_json.payload.comment.commit_id" == "abc1234567890abcdef1234567890abcdef12345"
+jsonpath "$[0].body_json.payload.comment.path" == "src/main.lua"
+jsonpath "$[0].body_json.payload.comment.line" == 42
+
 # ── pull_request: opened — confusio shape ─────────────────────────────────────
 
 POST http://{{target}}/reset
@@ -118,6 +149,65 @@ jsonpath "$[0].github_event" == ""
 jsonpath "$[0].body_json.type" == "pull_request.review.submitted"
 jsonpath "$[0].body_json.actor.login" == "reviewer"
 jsonpath "$[0].body_json.payload.review.state" == "APPROVED"
+
+# ── pull_request_review: submitted (changes requested) — confusio shape ──────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: pullrequest:changes_request_created
+file,fixtures/webhooks/bitbucket/pull_request_review-submitted-changes_requested.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "pull_request_review"
+jsonpath "$[0].confusio_source" == "bitbucket"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "pull_request.review.submitted"
+jsonpath "$[0].body_json.actor.login" == "reviewer"
+jsonpath "$[0].body_json.payload.review.state" == "CHANGES_REQUESTED"
+jsonpath "$[0].body_json.payload.review.submitted_at" == "2024-01-15T11:15:00+00:00"
+
+# ── pull_request_review_comment: created — confusio shape ────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: pullrequest:comment_created
+file,fixtures/webhooks/bitbucket/pull_request_review_comment-created.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "pull_request_review_comment"
+jsonpath "$[0].confusio_source" == "bitbucket"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "pull_request.review_comment.created"
+jsonpath "$[0].body_json.actor.login" == "reviewer"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.comment.id" == 401
+jsonpath "$[0].body_json.payload.comment.path" == "src/main.lua"
+jsonpath "$[0].body_json.payload.comment.position" == 42
+jsonpath "$[0].body_json.payload.pull_request.number" == 1
 
 # ── status: success — confusio shape ──────────────────────────────────────────
 
@@ -174,3 +264,63 @@ jsonpath "$[0].body_json.type" == "push"
 jsonpath "$[0].body_json.actor.login" == "alice"
 jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
 jsonpath "$[0].body_json.payload.after" == "da1560886d4f094c3e6c9ef40349f7d38b5d27d0"
+
+# ── workflow_run: completed — confusio shape ─────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: pipeline:span_created
+file,fixtures/webhooks/bitbucket/workflow_run-completed.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "workflow_run"
+jsonpath "$[0].confusio_source" == "bitbucket"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "workflow.run.completed"
+jsonpath "$[0].body_json.actor.login" == "pipeline-bot"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.workflow_run.name" == "CI"
+jsonpath "$[0].body_json.payload.workflow_run.status" == "completed"
+jsonpath "$[0].body_json.payload.workflow_run.conclusion" == "success"
+
+# ── workflow_job: completed — confusio shape ─────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: pipeline:span_created
+file,fixtures/webhooks/bitbucket/workflow_job-completed.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "workflow_job"
+jsonpath "$[0].confusio_source" == "bitbucket"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "workflow.job.completed"
+jsonpath "$[0].body_json.actor.login" == "pipeline-bot"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.workflow_job.name" == "Integration Tests"
+jsonpath "$[0].body_json.payload.workflow_job.status" == "completed"
+jsonpath "$[0].body_json.payload.workflow_job.conclusion" == "success"

@@ -123,6 +123,7 @@ end
 -- "pr:opened", "pipeline_execution_started") instead of these names cannot be
 -- validated at the event-type level — only at the "has any handlers" level.
 local GITHUB_EVENT_TYPES = {
+  commit_comment = true,
   issues = true,
   issue_comment = true,
   label = true,
@@ -131,6 +132,7 @@ local GITHUB_EVENT_TYPES = {
   pull_request = true,
   pull_request_review = true,
   pull_request_review_comment = true,
+  repository = true,
   status = true,
   workflow_run = true,
   workflow_job = true,
