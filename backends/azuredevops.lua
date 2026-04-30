@@ -2460,6 +2460,114 @@ local function ado_deployment_review_handler(action)
   end
 end
 
+local function ado_advsec_repo_parts(resource)
+  resource = resource or {}
+  local url = resource.repositoryUrl or ""
+  local project, repo = url:match("dev%.azure%.com/[^/]+/([^/]+)/_git/([^/?#]+)")
+  if not project then
+    project, repo = url:match("[^/]+%.visualstudio%.com/([^/]+)/_git/([^/?#]+)")
+  end
+  project = project or "azuredevops"
+  repo = repo or "advanced-security"
+  return project, repo
+end
+
+local function ado_advsec_repository(resource)
+  local project, repo = ado_advsec_repo_parts(resource)
+  return ado_project_repo({ name = project }, repo)
+end
+
+local function ado_advsec_sender(resource)
+  resource = resource or {}
+  local dismissal = resource.dismissal or {}
+  return ado_user(
+    dismissal.stateChangedByIdentity
+      or dismissal.stateChangedBy
+      or resource.modifiedBy
+      or resource.createdBy
+  )
+end
+
+local ADO_ADVSEC_EVENT_BY_TYPE = {
+  code = "code_scanning_alert",
+  dependency = "dependabot_alert",
+  secret = "secret_scanning_alert",
+}
+
+local ADO_ADVSEC_TRANSLATOR_BY_EVENT = {
+  code_scanning_alert = translate_ado_alert,
+  dependabot_alert = translate_ado_dependency_alert,
+  secret_scanning_alert = translate_ado_secret_alert,
+}
+
+local function ado_advsec_event(resource)
+  local alert_type = (resource.alertType or ""):lower()
+  return ADO_ADVSEC_EVENT_BY_TYPE[alert_type] or "code_scanning_alert"
+end
+
+local function ado_advsec_state_action(event, resource)
+  local state = (resource.state or ""):lower()
+  if event == "code_scanning_alert" then
+    if state == "fixed" then
+      return "fixed"
+    elseif state == "dismissed" then
+      return "closed_by_user"
+    elseif state == "active" then
+      return "reopened"
+    end
+  elseif event == "dependabot_alert" then
+    if state == "fixed" then
+      return "fixed"
+    elseif state == "dismissed" then
+      return "dismissed"
+    elseif state == "active" then
+      return "reopened"
+    end
+  elseif event == "secret_scanning_alert" then
+    if state == "fixed" or state == "dismissed" then
+      return "resolved"
+    elseif state == "active" then
+      return "reopened"
+    end
+  end
+  return "unknown"
+end
+
+local ADO_ADVSEC_UPDATED_ACTION_BY_EVENT = {
+  code_scanning_alert = "updated_assignment",
+  dependabot_alert = "assignees_changed",
+  secret_scanning_alert = "validated",
+}
+
+local function ado_advsec_handler(action_kind)
+  return function(payload)
+    local resource = payload.resource or {}
+    local event = ado_advsec_event(resource)
+    local action = action_kind
+    if action_kind == "state_changed" then
+      action = ado_advsec_state_action(event, resource)
+    elseif action_kind == "updated" then
+      action = ADO_ADVSEC_UPDATED_ACTION_BY_EVENT[event] or "unknown"
+    end
+    local translator = ADO_ADVSEC_TRANSLATOR_BY_EVENT[event] or translate_ado_alert
+    local data = {
+      action = action,
+      alert = translator(resource),
+      repository = ado_advsec_repository(resource),
+      sender = ado_advsec_sender(resource),
+    }
+    return make_internal_event({
+      event = event,
+      action = action,
+      raw_action = action == "unknown" and action_kind or nil,
+      provider = "azuredevops",
+      raw = payload,
+      data = data,
+      timestamp = resource.lastSeenDate or resource.firstSeenDate or payload.createdDate or "",
+    })
+  end
+end
+
 -- git.push: fires when commits are pushed to a Git repository, including
 -- branch/tag creation (oldObjectId = zero SHA) and deletion (newObjectId = zero SHA).
 -- Azure DevOps does not emit separate create/delete webhook events; confusio
@@ -2612,6 +2720,10 @@ b:webhook("ms.azure-devops-release.deployment-approval-completed-event", functio
   return ado_deployment_review_handler(action)(payload)
 end)
 
+b:webhook("ms.vss-alerts.alert-created-event", ado_advsec_handler("created"))
+b:webhook("ms.vss-alerts.alert-state-changed-event", ado_advsec_handler("state_changed"))
+b:webhook("ms.vss-alerts.alert-updated-event", ado_advsec_handler("updated"))
+
 b:webhook("build.complete", function(payload)
   local resource = payload.resource or {}
   local definition = resource.definition or {}
@@ -2690,6 +2802,9 @@ local ADO_NORMALIZED_WEBHOOK_EVENTS = {
   "deployment",
   "deployment_status",
   "deployment_review",
+  "code_scanning_alert",
+  "dependabot_alert",
+  "secret_scanning_alert",
 }
 
 local function ado_normalized_payload_without_envelope_fields(data)

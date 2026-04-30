@@ -1,0 +1,48 @@
+{
+  "id": "evt-advsec-1",
+  "eventType": "ms.vss-alerts.alert-created-event",
+  "publisherId": "advsec",
+  "message": {
+    "text": "New alert is created",
+    "html": "New alert is created",
+    "markdown": "New alert is created"
+  },
+  "detailedMessage": {
+    "text": "New alert is created\r\n\r\n- Alert status: Created\r\n"
+  },
+  "resource": {
+    "alertId": 101,
+    "severity": "critical",
+    "title": "Path injection",
+    "repositoryUrl": "https://dev.azure.com/octocat/SecurityProject/_git/hello-world",
+    "gitRef": "refs/heads/main",
+    "alertType": "code",
+    "firstSeenDate": "2024-01-15T10:00:00Z",
+    "lastSeenDate": "2024-01-15T10:00:00Z",
+    "fixedDate": null,
+    "introducedDate": "2024-01-14T09:00:00Z",
+    "state": "active",
+    "rule": {
+      "id": "js/path-injection",
+      "name": "Path injection",
+      "description": "User input flows to path construction."
+    },
+    "physicalLocations": [
+      {
+        "physicalLocation": {
+          "artifactLocation": {
+            "uri": "src/server.js"
+          }
+        },
+        "region": {
+          "startLine": 42,
+          "endLine": 42,
+          "startColumn": 12,
+          "endColumn": 30
+        }
+      }
+    ]
+  },
+  "resourceVersion": "1.0",
+  "createdDate": "2024-01-15T10:00:00Z"
+}

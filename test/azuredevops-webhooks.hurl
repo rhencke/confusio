@@ -735,3 +735,33 @@ Content-Type: application/json
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
+
+# ── Advanced Security code alert created → code_scanning_alert / created ─────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/advsec-code-alert-created.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Advanced Security dependency alert state changed → dependabot_alert ──────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/advsec-dependency-alert-state-changed.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Advanced Security secret alert updated → secret_scanning_alert ───────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/advsec-secret-alert-updated.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"

@@ -268,3 +268,75 @@ jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].github_event" == ""
 jsonpath "$[0].body_json.type" == "deployment.review.approved"
 jsonpath "$[0].body_json.payload.approver.login" == "alice@example.com"
+
+# ── Advanced Security code alert created → code_scanning_alert — confusio shape
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/advsec-code-alert-created.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "code_scanning_alert"
+jsonpath "$[0].confusio_source" == "azuredevops"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "code_scanning_alert.created"
+jsonpath "$[0].body_json.payload.alert.number" == 101
+
+# ── Advanced Security dependency state changed → dependabot_alert — confusio shape
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/advsec-dependency-alert-state-changed.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "dependabot_alert"
+jsonpath "$[0].confusio_source" == "azuredevops"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "dependabot_alert.dismissed"
+jsonpath "$[0].body_json.payload.alert.dependency.package.name" == "lodash"
+
+# ── Advanced Security secret alert updated → secret_scanning_alert — confusio shape
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/advsec-secret-alert-updated.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "secret_scanning_alert"
+jsonpath "$[0].confusio_source" == "azuredevops"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "secret_scanning_alert.validated"
+jsonpath "$[0].body_json.payload.alert.secret_type" == "github_personal_access_token"

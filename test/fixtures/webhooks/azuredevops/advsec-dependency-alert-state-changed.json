@@ -1,0 +1,44 @@
+{
+  "id": "evt-advsec-2",
+  "eventType": "ms.vss-alerts.alert-state-changed-event",
+  "publisherId": "advsec",
+  "message": {
+    "text": "Alert's state is changed",
+    "html": "Alert's state is changed",
+    "markdown": "Alert's state is changed"
+  },
+  "detailedMessage": {
+    "text": "Alert's state is changed\r\n\r\n- Alert status: State Changed\r\n"
+  },
+  "resource": {
+    "alertId": 202,
+    "severity": "high",
+    "title": "Prototype Pollution in lodash",
+    "repositoryUrl": "https://dev.azure.com/octocat/SecurityProject/_git/hello-world",
+    "gitRef": "refs/heads/main",
+    "alertType": "dependency",
+    "firstSeenDate": "2024-01-15T11:00:00Z",
+    "lastSeenDate": "2024-01-16T11:00:00Z",
+    "fixedDate": null,
+    "dismissedDate": "2024-01-16T11:00:00Z",
+    "state": "dismissed",
+    "cve": "CVE-2021-23337",
+    "dependency": {
+      "componentName": "lodash",
+      "componentVersion": "4.17.20",
+      "packageManager": "npm"
+    },
+    "dismissal": {
+      "dismissalId": 1,
+      "message": "Risk accepted.",
+      "stateChangedBy": "alice@example.com",
+      "stateChangedByIdentity": {
+        "displayName": "Alice Example",
+        "uniqueName": "alice@example.com"
+      },
+      "dismissalType": "wontFix"
+    }
+  },
+  "resourceVersion": "1.0",
+  "createdDate": "2024-01-16T11:00:00Z"
+}
