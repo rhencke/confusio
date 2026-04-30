@@ -14,17 +14,23 @@ local proxy_handler = _t.proxy_handler
 
 local project_id = owner_repo_id
 
--- Map a Gerrit project object to GitHub format.
-local function translate_gerrit_repo(r, owner, repo_name)
-  if not r then
-    return {}
-  end
-  local full = r.name or (owner and (owner .. "/" .. (repo_name or "")) or "")
+local function gerrit_project_parts(full, owner, repo_name)
+  full = full or (owner and (owner .. "/" .. (repo_name or "")) or "")
   local o, n = full:match("^(.+)/([^/]+)$")
   if not o then
     o = ""
     n = full
   end
+  return full, o, n
+end
+
+-- Map a Gerrit project object to GitHub format.
+local function translate_gerrit_repo(r, owner, repo_name, opts)
+  if not r then
+    return {}
+  end
+  opts = opts or {}
+  local full, o, n = gerrit_project_parts(r.name, owner, repo_name)
   return {
     id = 0,
     node_id = "",
@@ -56,7 +62,7 @@ local function translate_gerrit_repo(r, owner, repo_name)
     archived = r.state == "READ_ONLY",
     disabled = r.state == "HIDDEN",
     open_issues_count = 0,
-    default_branch = "main",
+    default_branch = opts.default_branch or "main",
     visibility = "public",
     forks = 0,
     open_issues = 0,
@@ -361,56 +367,15 @@ local function gerrit_approval_state(approvals)
   return state
 end
 
-local function translate_gerrit_change(change, patchSet)
+local function gerrit_patchset_timestamp(patchSet)
+  return (patchSet or {}).createdOn and tostring((patchSet or {}).createdOn) or ""
+end
+
+local function translate_gerrit_pull_request(change, patchSet)
   change = change or {}
   patchSet = patchSet or {}
   local full = change.project or ""
-  local o, n = full:match("^(.+)/([^/]+)$")
-  if not o then
-    o = ""
-    n = full
-  end
-  local repo = {
-    id = 0,
-    node_id = "",
-    name = n,
-    full_name = full,
-    private = false,
-    owner = {
-      login = o,
-      id = 0,
-      node_id = "",
-      avatar_url = "",
-      url = "",
-      html_url = "",
-      type = "User",
-    },
-    html_url = config.base_url .. "/admin/repos/" .. full,
-    description = nil,
-    fork = false,
-    url = "",
-    clone_url = "",
-    homepage = "",
-    size = 0,
-    stargazers_count = 0,
-    watchers_count = 0,
-    language = nil,
-    has_issues = false,
-    has_wiki = false,
-    forks_count = 0,
-    archived = false,
-    disabled = false,
-    open_issues_count = 0,
-    default_branch = change.branch or "main",
-    visibility = "public",
-    forks = 0,
-    open_issues = 0,
-    watchers = 0,
-    created_at = nil,
-    updated_at = nil,
-    pushed_at = nil,
-  }
-  local pr = {
+  return {
     id = change._number or 0,
     node_id = "",
     number = change._number or 0,
@@ -435,26 +400,40 @@ local function translate_gerrit_change(change, patchSet)
     updated_at = change.updated or "",
     closed_at = nil,
   }
+end
+
+local function translate_gerrit_change(change, patchSet)
+  change = change or {}
+  local repo = translate_gerrit_repo(
+    { name = change.project },
+    nil,
+    nil,
+    { default_branch = change.branch or "main" }
+  )
+  local pr = translate_gerrit_pull_request(change, patchSet)
   return pr, repo
 end
 
-b:webhook("comment-added", function(payload)
-  local approvals = payload.approvals or {}
-  local state = gerrit_approval_state(approvals)
+local function translate_gerrit_review(payload, state)
+  payload = payload or {}
   local author = payload.author or {}
-  local pr, repo = translate_gerrit_change(payload.change, payload.patchSet)
-  local review = {
+  return {
     id = 0,
     node_id = "",
     user = translate_gerrit_user(author),
     body = payload.comment or "",
     state = state,
-    submitted_at = (payload.patchSet or {}).createdOn and tostring(
-      (payload.patchSet or {}).createdOn
-    ) or "",
+    submitted_at = gerrit_patchset_timestamp(payload.patchSet),
     html_url = "",
     pull_request_url = "",
   }
+end
+
+b:webhook("comment-added", function(payload)
+  local state = gerrit_approval_state(payload.approvals)
+  local author = payload.author or {}
+  local pr, repo = translate_gerrit_change(payload.change, payload.patchSet)
+  local review = translate_gerrit_review(payload, state)
   return make_internal_event({
     event = "pull_request_review",
     action = "submitted",
