@@ -145,7 +145,7 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 
-# ── workitem.commented → issue_comment / created ──────────────────────────────
+# ── workitem.deleted → issues / closed ───────────────────────────────────────
 
 POST http://{{host}}/webhooks/azuredevops
 Content-Type: application/json
@@ -153,6 +153,66 @@ Content-Type: application/json
   "subscriptionId": "sub-1",
   "notificationId": 5,
   "id": "evt-5",
+  "eventType": "workitem.deleted",
+  "resource": {
+    "id": 1,
+    "rev": 5,
+    "workItemType": "Issue",
+    "fields": {
+      "System.Title": "Found a bug",
+      "System.State": "Removed",
+      "System.Description": "Something broke.",
+      "System.CreatedDate": "2024-01-15T10:00:00Z",
+      "System.ChangedDate": "2024-01-15T10:20:00Z",
+      "System.CreatedBy": "Alice",
+      "System.ChangedBy": "Alice"
+    }
+  },
+  "createdDate": "2024-01-15T10:20:00Z"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── workitem.restored → issues / reopened ────────────────────────────────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+{
+  "subscriptionId": "sub-1",
+  "notificationId": 6,
+  "id": "evt-6",
+  "eventType": "workitem.restored",
+  "resource": {
+    "id": 1,
+    "rev": 6,
+    "workItemType": "Issue",
+    "fields": {
+      "System.Title": "Found a bug",
+      "System.State": "Active",
+      "System.Description": "Something broke.",
+      "System.CreatedDate": "2024-01-15T10:00:00Z",
+      "System.ChangedDate": "2024-01-15T10:25:00Z",
+      "System.CreatedBy": "Alice",
+      "System.ChangedBy": "Alice"
+    }
+  },
+  "createdDate": "2024-01-15T10:25:00Z"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── workitem.commented → issue_comment / created ──────────────────────────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+{
+  "subscriptionId": "sub-1",
+  "notificationId": 7,
+  "id": "evt-7",
   "eventType": "workitem.commented",
   "resource": {
     "id": 42,
@@ -174,8 +234,8 @@ POST http://{{host}}/webhooks/azuredevops
 Content-Type: application/json
 {
   "subscriptionId": "sub-1",
-  "notificationId": 6,
-  "id": "evt-6",
+  "notificationId": 8,
+  "id": "evt-8",
   "eventType": "git.pullrequest.created",
   "resource": {
     "pullRequestId": 42,
@@ -204,8 +264,8 @@ POST http://{{host}}/webhooks/azuredevops
 Content-Type: application/json
 {
   "subscriptionId": "sub-1",
-  "notificationId": 7,
-  "id": "evt-7",
+  "notificationId": 9,
+  "id": "evt-9",
   "eventType": "git.pullrequest.updated",
   "resource": {
     "pullRequestId": 42,

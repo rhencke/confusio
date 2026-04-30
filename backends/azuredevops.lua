@@ -133,10 +133,18 @@ end
 
 local function ado_state_to_github(state)
   local s = (state or ""):lower()
-  if s == "closed" or s == "resolved" or s == "done" or s == "inactive" then
+  if s == "closed" or s == "resolved" or s == "done" or s == "inactive" or s == "removed" then
     return "closed"
   end
   return "open"
+end
+
+local function ado_identity_login(u)
+  if type(u) == "string" then
+    return u
+  end
+  u = u or {}
+  return u.uniqueName or u.displayName or ""
 end
 
 local function translate_ado_workitem(w)
@@ -154,7 +162,7 @@ local function translate_ado_workitem(w)
     body = fields["System.Description"] or "",
     state = ado_state_to_github(fields["System.State"]),
     user = {
-      login = created_by.uniqueName or created_by.displayName or "",
+      login = ado_identity_login(created_by),
       id = 0,
       node_id = "",
       avatar_url = "",
@@ -1935,6 +1943,8 @@ end)
 --
 -- Relevant event types:
 --   workitem.created          → issues / opened
+--   workitem.deleted          → issues / closed
+--   workitem.restored         → issues / reopened
 --   workitem.updated          → issues / edited | closed | reopened  (derived from state diff)
 --   workitem.commented        → issue_comment / created
 --   git.pullrequest.created   → pull_request / opened
@@ -1952,9 +1962,8 @@ end)
 
 -- Helper: build a sender user table from an ADO user field object.
 local function ado_user(u)
-  u = u or {}
   return {
-    login = u.uniqueName or u.displayName or "",
+    login = ado_identity_login(u),
     id = 0,
     node_id = "",
     avatar_url = "",
@@ -2063,6 +2072,29 @@ b:webhook("workitem.updated", function(payload)
     timestamp = rev_fields["System.ChangedDate"] or "",
   })
 end)
+
+local function ado_workitem_lifecycle_handler(action)
+  return function(payload)
+    local resource = payload.resource or {}
+    local fields = resource.fields or {}
+    return make_internal_event({
+      event = "issues",
+      action = action,
+      provider = "azuredevops",
+      raw = payload,
+      data = {
+        action = action,
+        issue = translate_ado_workitem(resource),
+        repository = {},
+        sender = ado_user(fields["System.ChangedBy"] or fields["System.CreatedBy"]),
+      },
+      timestamp = fields["System.ChangedDate"] or payload.createdDate or "",
+    })
+  end
+end
+
+b:webhook("workitem.deleted", ado_workitem_lifecycle_handler("closed"))
+b:webhook("workitem.restored", ado_workitem_lifecycle_handler("reopened"))
 
 b:webhook("workitem.commented", function(payload)
   local resource = payload.resource or {}
