@@ -1,0 +1,38 @@
+{
+  "event": "post-receive",
+  "repository": {
+    "name": "octocat/hello-world.git",
+    "description": "My first repository",
+    "HEAD": "refs/heads/main",
+    "defaultBranch": "main",
+    "lastChange": "2024-01-15T10:00:00Z",
+    "hasCommits": true
+  },
+  "user": {
+    "name": "bob",
+    "displayName": "Bob Jones",
+    "emailAddress": "bob@example.com",
+    "disabled": false
+  },
+  "url": "http://localhost",
+  "commands": [
+    {
+      "refName": "refs/heads/main",
+      "oldId": "6dcb09b5b57875f334f61aebed695e2e4193db5e",
+      "newId": "f1d2d2f924e986ac86fdf7b36c94bcdf32beec15",
+      "type": "UPDATE",
+      "result": "OK",
+      "commits": [
+        {
+          "id": "f1d2d2f924e986ac86fdf7b36c94bcdf32beec15",
+          "message": "Update readme",
+          "author": {
+            "name": "Bob Jones",
+            "email": "bob@example.com"
+          },
+          "timestamp": "2024-01-15T10:00:00Z"
+        }
+      ]
+    }
+  ]
+}
