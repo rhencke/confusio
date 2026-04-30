@@ -516,7 +516,7 @@ webhook milestone/closed,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook milestone/opened,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook milestone/edited,n,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook milestone/deleted,n,n,n,y,n,y,n,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
-webhook milestone/reopened,~reopen emits opened,n,n,n,n,~reopen emits opened,n,n,~reopen emits opened,~reopen emits opened,n,~reopen emits opened,n,n,n,~reopen emits opened,n,n,n,n,n,n,n,n
+webhook milestone/reopened,~reopen emits opened,n,n,n,n,~reopen emits opened,n,n,n,~reopen emits opened,n,~reopen emits opened,n,n,n,~reopen emits opened,n,n,n,n,n,n,n,n
 webhook organization/created,n,n,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook organization/deleted,n,n,n,n,n,n,n,n,y,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook organization/renamed,n,n,n,n,n,n,n,n,y,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n
