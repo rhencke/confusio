@@ -184,8 +184,10 @@ gerrit|comment-added-approved.json|comment-added-changes_requested.json|.change.
 harness|pipeline_execution_started.json|pipeline_execution_success.json|.eventType = "pipeline_execution_success" | .endTs = 1705313400000
 harness|stage_execution_started.json|stage_execution_success.json|.eventType = "stage_execution_success" | .endTs = 1705313300000
 gitlab|deployment_status-created-success.json|deployment_status-created-failed.json|.status = "failed" | .status_changed_at = "2024-01-15T16:06:00Z"
-azuredevops|repository-created.json|repository-deleted.json|.eventType = "git.repository.deleted"
-azuredevops|repository-created.json|repository-renamed.json|.eventType = "git.repository.renamed" | .resource.name = "hello-universe"
+azuredevops|repository-created.json|repository-deleted.json|.eventType = "git.repo.deleted"
+azuredevops|repository-created.json|repository-renamed.json|.eventType = "git.repo.renamed" | .resource.name = "hello-universe"
+azuredevops|workitem.created.json|workitem.deleted.json|.eventType = "workitem.deleted" | .resource.fields["System.State"] = "Removed" | .resource.fields["System.ChangedBy"] = {"uniqueName": "bob@example.com", "displayName": "Bob"} | .resource.fields["System.ChangedDate"] = "2024-01-15T11:30:00Z" | .createdDate = "2024-01-15T11:30:00Z"
+azuredevops|workitem.created.json|workitem.restored.json|.eventType = "workitem.restored" | .resource.fields["System.State"] = "Active" | .resource.fields["System.ChangedBy"] = {"uniqueName": "bob@example.com", "displayName": "Bob"} | .resource.fields["System.ChangedDate"] = "2024-01-15T11:45:00Z" | .createdDate = "2024-01-15T11:45:00Z"
 gitlab|wiki_page-created.json|wiki_page-edited.json|.object_attributes.action = "update"
 gitlab|repository-created.json|repository-deleted.json|.event_name = "project_destroy"
 gitlab|repository-created.json|repository-renamed.json|.event_name = "project_rename" | .name = "hello-universe" | .path = "hello-universe" | .path_with_namespace = "octocat/hello-universe" | .old_path_with_namespace = "octocat/hello-world"

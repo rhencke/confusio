@@ -2992,6 +2992,12 @@ local webhook_event_sections = {
       -- push
       { "webhook push/push", "wh_push_push" },
 
+      -- release
+      { "webhook release/published", "wh_release_published" },
+      { "webhook release/edited", "wh_release_edited" },
+      { "webhook release/deleted", "wh_release_deleted" },
+      { "webhook release/prereleased", "wh_release_prereleased" },
+
       -- registry_package (legacy GitHub event; forwarded by GitBucket)
       { "webhook registry_package/published", "wh_registry_package_published" },
       { "webhook registry_package/updated", "wh_registry_package_updated" },

@@ -102,6 +102,8 @@ test/fixtures/webhooks/pagure/delete.json
 test/fixtures/webhooks/azuredevops/delete.json
 test/fixtures/webhooks/azuredevops/repository-deleted.json
 test/fixtures/webhooks/azuredevops/repository-renamed.json
+test/fixtures/webhooks/azuredevops/workitem.deleted.json
+test/fixtures/webhooks/azuredevops/workitem.restored.json
 test/fixtures/webhooks/gitbucket/deploy_key-deleted.json
 test/fixtures/webhooks/gitbucket/gollum-edited.json
 test/fixtures/webhooks/gitbucket/repository-deleted.json

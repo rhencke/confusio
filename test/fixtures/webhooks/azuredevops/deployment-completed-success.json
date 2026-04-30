@@ -1,0 +1,31 @@
+{
+  "id": "evt-deployment-completed",
+  "eventType": "ms.azure-devops-release.deployment-completed-event",
+  "publisherId": "rm",
+  "message": {"text": "Deployment of release Release-1 on environment Production Succeeded."},
+  "resource": {
+    "deployment": {
+      "id": 11,
+      "status": "succeeded",
+      "completedOn": "2024-01-15T14:10:00Z",
+      "release": {
+        "id": 1,
+        "name": "Release-1",
+        "createdOn": "2024-01-15T13:00:00Z",
+        "releaseDefinition": {"id": 7, "name": "Fabrikam.CD"},
+        "project": {"id": "proj-id-001", "name": "octocat"},
+        "_links": {
+          "web": {
+            "href": "https://dev.azure.com/octocat/Fabrikam/_release?releaseId=1"
+          }
+        }
+      },
+      "environment": {
+        "id": 5,
+        "name": "Production",
+        "owner": {"displayName": "Alice", "uniqueName": "alice@example.com"}
+      }
+    }
+  },
+  "createdDate": "2024-01-15T14:10:00Z"
+}

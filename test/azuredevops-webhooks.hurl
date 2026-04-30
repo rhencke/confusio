@@ -34,6 +34,86 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 
+# ── release created → release / published ────────────────────────────────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/release-created.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── release abandoned → release / deleted ────────────────────────────────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/release-abandoned.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── deployment started → deployment / created ────────────────────────────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/deployment-started.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── deployment completed (success) → deployment_status / created ─────────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/deployment-completed-success.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── deployment completed (rejected) → deployment_status / created ────────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/deployment-completed-rejected.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── deployment approval pending → deployment_review / requested ──────────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/deployment-approval-pending.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── deployment approval completed (approved) → deployment_review / approved ──
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/deployment-approval-completed-approved.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── deployment approval completed (rejected) → deployment_review / rejected ──
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/deployment-approval-completed-rejected.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
 # ── workitem.updated (state: Active → Resolved) → issues / closed ─────────────
 
 POST http://{{host}}/webhooks/azuredevops
@@ -145,7 +225,7 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 
-# ── workitem.commented → issue_comment / created ──────────────────────────────
+# ── workitem.deleted → issues / closed ───────────────────────────────────────
 
 POST http://{{host}}/webhooks/azuredevops
 Content-Type: application/json
@@ -153,6 +233,66 @@ Content-Type: application/json
   "subscriptionId": "sub-1",
   "notificationId": 5,
   "id": "evt-5",
+  "eventType": "workitem.deleted",
+  "resource": {
+    "id": 1,
+    "rev": 5,
+    "workItemType": "Issue",
+    "fields": {
+      "System.Title": "Found a bug",
+      "System.State": "Removed",
+      "System.Description": "Something broke.",
+      "System.CreatedDate": "2024-01-15T10:00:00Z",
+      "System.ChangedDate": "2024-01-15T10:20:00Z",
+      "System.CreatedBy": "Alice",
+      "System.ChangedBy": "Alice"
+    }
+  },
+  "createdDate": "2024-01-15T10:20:00Z"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── workitem.restored → issues / reopened ────────────────────────────────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+{
+  "subscriptionId": "sub-1",
+  "notificationId": 6,
+  "id": "evt-6",
+  "eventType": "workitem.restored",
+  "resource": {
+    "id": 1,
+    "rev": 6,
+    "workItemType": "Issue",
+    "fields": {
+      "System.Title": "Found a bug",
+      "System.State": "Active",
+      "System.Description": "Something broke.",
+      "System.CreatedDate": "2024-01-15T10:00:00Z",
+      "System.ChangedDate": "2024-01-15T10:25:00Z",
+      "System.CreatedBy": "Alice",
+      "System.ChangedBy": "Alice"
+    }
+  },
+  "createdDate": "2024-01-15T10:25:00Z"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── workitem.commented → issue_comment / created ──────────────────────────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+{
+  "subscriptionId": "sub-1",
+  "notificationId": 7,
+  "id": "evt-7",
   "eventType": "workitem.commented",
   "resource": {
     "id": 42,
@@ -174,8 +314,8 @@ POST http://{{host}}/webhooks/azuredevops
 Content-Type: application/json
 {
   "subscriptionId": "sub-1",
-  "notificationId": 6,
-  "id": "evt-6",
+  "notificationId": 8,
+  "id": "evt-8",
   "eventType": "git.pullrequest.created",
   "resource": {
     "pullRequestId": 42,
@@ -204,8 +344,8 @@ POST http://{{host}}/webhooks/azuredevops
 Content-Type: application/json
 {
   "subscriptionId": "sub-1",
-  "notificationId": 7,
-  "id": "evt-7",
+  "notificationId": 9,
+  "id": "evt-9",
   "eventType": "git.pullrequest.updated",
   "resource": {
     "pullRequestId": 42,
@@ -591,6 +731,36 @@ Content-Type: application/json
   },
   "createdDate": "2024-01-15T12:02:00Z"
 }
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Advanced Security code alert created → code_scanning_alert / created ─────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/advsec-code-alert-created.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Advanced Security dependency alert state changed → dependabot_alert ──────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/advsec-dependency-alert-state-changed.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Advanced Security secret alert updated → secret_scanning_alert ───────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/advsec-secret-alert-updated.json;
 
 HTTP 200
 [Asserts]

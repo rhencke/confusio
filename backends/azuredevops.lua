@@ -133,10 +133,18 @@ end
 
 local function ado_state_to_github(state)
   local s = (state or ""):lower()
-  if s == "closed" or s == "resolved" or s == "done" or s == "inactive" then
+  if s == "closed" or s == "resolved" or s == "done" or s == "inactive" or s == "removed" then
     return "closed"
   end
   return "open"
+end
+
+local function ado_identity_login(u)
+  if type(u) == "string" then
+    return u
+  end
+  u = u or {}
+  return u.uniqueName or u.displayName or ""
 end
 
 local function translate_ado_workitem(w)
@@ -154,7 +162,7 @@ local function translate_ado_workitem(w)
     body = fields["System.Description"] or "",
     state = ado_state_to_github(fields["System.State"]),
     user = {
-      login = created_by.uniqueName or created_by.displayName or "",
+      login = ado_identity_login(created_by),
       id = 0,
       node_id = "",
       avatar_url = "",
@@ -1935,6 +1943,8 @@ end)
 --
 -- Relevant event types:
 --   workitem.created          → issues / opened
+--   workitem.deleted          → issues / closed
+--   workitem.restored         → issues / reopened
 --   workitem.updated          → issues / edited | closed | reopened  (derived from state diff)
 --   workitem.commented        → issue_comment / created
 --   git.pullrequest.created   → pull_request / opened
@@ -1952,9 +1962,8 @@ end)
 
 -- Helper: build a sender user table from an ADO user field object.
 local function ado_user(u)
-  u = u or {}
   return {
-    login = u.uniqueName or u.displayName or "",
+    login = ado_identity_login(u),
     id = 0,
     node_id = "",
     avatar_url = "",
@@ -2063,6 +2072,29 @@ b:webhook("workitem.updated", function(payload)
     timestamp = rev_fields["System.ChangedDate"] or "",
   })
 end)
+
+local function ado_workitem_lifecycle_handler(action)
+  return function(payload)
+    local resource = payload.resource or {}
+    local fields = resource.fields or {}
+    return make_internal_event({
+      event = "issues",
+      action = action,
+      provider = "azuredevops",
+      raw = payload,
+      data = {
+        action = action,
+        issue = translate_ado_workitem(resource),
+        repository = {},
+        sender = ado_user(fields["System.ChangedBy"] or fields["System.CreatedBy"]),
+      },
+      timestamp = fields["System.ChangedDate"] or payload.createdDate or "",
+    })
+  end
+end
+
+b:webhook("workitem.deleted", ado_workitem_lifecycle_handler("closed"))
+b:webhook("workitem.restored", ado_workitem_lifecycle_handler("reopened"))
 
 b:webhook("workitem.commented", function(payload)
   local resource = payload.resource or {}
@@ -2189,6 +2221,353 @@ local ADO_BUILD_RESULT_TO_CONCLUSION = {
   partiallySucceeded = "failure",
 }
 
+local function ado_project_repo(project, name)
+  project = project or {}
+  name = name or project.name or ""
+  return translate_ado_repo({
+    id = "",
+    name = name,
+    remoteUrl = "",
+    defaultBranch = "refs/heads/main",
+    isPrivate = false,
+    project = project,
+  })
+end
+
+local function ado_release_web_url(release)
+  release = release or {}
+  return ((release._links or {}).web or {}).href or release.url or ""
+end
+
+local function ado_release_project(release, resource)
+  release = release or {}
+  resource = resource or {}
+  local definition = release.releaseDefinition or {}
+  return release.project
+    or definition.project
+    or definition.projectReference
+    or resource.project
+    or {}
+end
+
+local function translate_ado_release(release, resource)
+  release = release or {}
+  resource = resource or {}
+  local definition = release.releaseDefinition or {}
+  local created_by = release.createdBy or release.modifiedBy or {}
+  return {
+    id = release.id or 0,
+    tag_name = release.name or "",
+    name = release.name,
+    body = (resource.message or {}).text or (resource.detailedMessage or {}).text or "",
+    draft = false,
+    prerelease = false,
+    html_url = ado_release_web_url(release),
+    tarball_url = nil,
+    zipball_url = nil,
+    author = ado_user(created_by),
+    created_at = release.createdOn or resource.createdDate or "",
+    published_at = release.createdOn or resource.createdDate or "",
+    target_commitish = definition.name or "",
+  }
+end
+
+local function ado_release_repository(release, resource)
+  release = release or {}
+  local definition = release.releaseDefinition or {}
+  local project = ado_release_project(release, resource)
+  return ado_project_repo(project, definition.name or release.name or "")
+end
+
+local function ado_release_sender(release, resource)
+  release = release or {}
+  resource = resource or {}
+  return ado_user(release.modifiedBy or release.createdBy or resource.requestedBy)
+end
+
+local function ado_release_event_handler(action)
+  return function(payload)
+    local resource = payload.resource or {}
+    local release = resource.release or resource
+    local data = {
+      action = action,
+      release = translate_ado_release(release, resource),
+      repository = ado_release_repository(release, resource),
+      sender = ado_release_sender(release, resource),
+    }
+    return make_internal_event({
+      event = "release",
+      action = action,
+      provider = "azuredevops",
+      raw = payload,
+      data = data,
+      timestamp = release.modifiedOn or release.createdOn or payload.createdDate or "",
+    })
+  end
+end
+
+local ADO_DEPLOYMENT_STATUS_STATE = {
+  queued = "queued",
+  inProgress = "in_progress",
+  inprogress = "in_progress",
+  succeeded = "success",
+  partiallySucceeded = "failure",
+  failed = "failure",
+  rejected = "failure",
+  canceled = "inactive",
+  cancelled = "inactive",
+}
+
+local function ado_deployment_parts(resource)
+  resource = resource or {}
+  local deployment = resource.deployment or {}
+  local release = deployment.release or resource.release or {}
+  local environment = deployment.environment or resource.environment or {}
+  return deployment, release, environment
+end
+
+local function ado_deployment_url(release, environment)
+  release = release or {}
+  environment = environment or {}
+  local release_url = ado_release_web_url(release)
+  if release_url ~= "" then
+    return release_url
+  end
+  return ((environment._links or {}).web or {}).href or environment.url or ""
+end
+
+local function translate_ado_deployment(resource)
+  local deployment, release, environment = ado_deployment_parts(resource)
+  local owner = environment.owner or release.createdBy or release.modifiedBy or {}
+  local timestamp = deployment.startedOn
+    or environment.modifiedOn
+    or release.modifiedOn
+    or release.createdOn
+    or ""
+  return {
+    id = deployment.id or environment.id or 0,
+    node_id = "",
+    sha = "",
+    ref = release.name or "",
+    task = "deploy",
+    environment = environment.name or "",
+    original_environment = "",
+    description = (resource.message or {}).text or "",
+    payload = {},
+    creator = ado_user(owner),
+    created_at = timestamp,
+    updated_at = deployment.completedOn or environment.modifiedOn or timestamp,
+    statuses_url = "",
+    repository_url = "",
+    production_environment = false,
+    transient_environment = false,
+  }
+end
+
+local function ado_deployment_status(resource, state)
+  local deployment, _release, environment = ado_deployment_parts(resource)
+  local timestamp = deployment.completedOn
+    or deployment.startedOn
+    or environment.modifiedOn
+    or environment.scheduledDeploymentTime
+    or ""
+  return {
+    id = deployment.id or 0,
+    node_id = "",
+    state = state,
+    description = (resource.detailedMessage or {}).text or (resource.message or {}).text or "",
+    environment = environment.name or "",
+    environment_url = "",
+    log_url = "",
+    target_url = "",
+    deployment_url = ado_deployment_url(_release, environment),
+    creator = ado_user(environment.owner or _release.modifiedBy or _release.createdBy),
+    created_at = timestamp,
+    updated_at = timestamp,
+  }
+end
+
+local function ado_deployment_repository(resource)
+  local _, release, environment = ado_deployment_parts(resource)
+  local definition = release.releaseDefinition or {}
+  local project = ado_release_project(release, resource)
+  return ado_project_repo(project, definition.name or environment.name or release.name or "")
+end
+
+local function ado_deployment_sender(resource)
+  local _, release, environment = ado_deployment_parts(resource)
+  return ado_user(environment.owner or release.modifiedBy or release.createdBy)
+end
+
+local function ado_deployment_status_handler(payload)
+  local resource = payload.resource or {}
+  local deployment = (resource.deployment or {})
+  local state = ADO_DEPLOYMENT_STATUS_STATE[deployment.status or ""] or "error"
+  return make_internal_event({
+    event = "deployment_status",
+    action = "created",
+    provider = "azuredevops",
+    raw = payload,
+    data = {
+      action = "created",
+      deployment_status = ado_deployment_status(resource, state),
+      deployment = translate_ado_deployment(resource),
+      repository = ado_deployment_repository(resource),
+      sender = ado_deployment_sender(resource),
+    },
+    timestamp = deployment.completedOn or payload.createdDate or "",
+  })
+end
+
+local function ado_approval_reviewers(approval)
+  approval = approval or {}
+  local approver = approval.approver
+  if not approver then
+    return {}
+  end
+  return {
+    { type = "User", reviewer = ado_user(approver) },
+  }
+end
+
+local function ado_deployment_review_handler(action)
+  return function(payload)
+    local resource = payload.resource or {}
+    local approval = resource.approval or {}
+    local release = resource.release or approval.release or {}
+    local environment = resource.environment or approval.releaseEnvironment or {}
+    local repository = ado_release_repository(release, resource)
+    local sender = ado_user(approval.approver)
+    local data = {
+      action = action,
+      approver = action ~= "requested" and sender or nil,
+      comment = approval.comments,
+      since = approval.createdOn or payload.createdDate or "",
+      environment = environment.name or "",
+      reviewers = ado_approval_reviewers(approval),
+      workflow_run = nil,
+      repository = repository,
+      sender = sender,
+    }
+    return make_internal_event({
+      event = "deployment_review",
+      action = action,
+      provider = "azuredevops",
+      raw = payload,
+      data = data,
+      timestamp = approval.modifiedOn or approval.createdOn or payload.createdDate or "",
+    })
+  end
+end
+
+local function ado_advsec_repo_parts(resource)
+  resource = resource or {}
+  local url = resource.repositoryUrl or ""
+  local project, repo = url:match("dev%.azure%.com/[^/]+/([^/]+)/_git/([^/?#]+)")
+  if not project then
+    project, repo = url:match("[^/]+%.visualstudio%.com/([^/]+)/_git/([^/?#]+)")
+  end
+  project = project or "azuredevops"
+  repo = repo or "advanced-security"
+  return project, repo
+end
+
+local function ado_advsec_repository(resource)
+  local project, repo = ado_advsec_repo_parts(resource)
+  return ado_project_repo({ name = project }, repo)
+end
+
+local function ado_advsec_sender(resource)
+  resource = resource or {}
+  local dismissal = resource.dismissal or {}
+  return ado_user(
+    dismissal.stateChangedByIdentity
+      or dismissal.stateChangedBy
+      or resource.modifiedBy
+      or resource.createdBy
+  )
+end
+
+local ADO_ADVSEC_EVENT_BY_TYPE = {
+  code = "code_scanning_alert",
+  dependency = "dependabot_alert",
+  secret = "secret_scanning_alert",
+}
+
+local ADO_ADVSEC_TRANSLATOR_BY_EVENT = {
+  code_scanning_alert = translate_ado_alert,
+  dependabot_alert = translate_ado_dependency_alert,
+  secret_scanning_alert = translate_ado_secret_alert,
+}
+
+local function ado_advsec_event(resource)
+  local alert_type = (resource.alertType or ""):lower()
+  return ADO_ADVSEC_EVENT_BY_TYPE[alert_type] or "code_scanning_alert"
+end
+
+local function ado_advsec_state_action(event, resource)
+  local state = (resource.state or ""):lower()
+  if event == "code_scanning_alert" then
+    if state == "fixed" then
+      return "fixed"
+    elseif state == "dismissed" then
+      return "closed_by_user"
+    elseif state == "active" then
+      return "reopened"
+    end
+  elseif event == "dependabot_alert" then
+    if state == "fixed" then
+      return "fixed"
+    elseif state == "dismissed" then
+      return "dismissed"
+    elseif state == "active" then
+      return "reopened"
+    end
+  elseif event == "secret_scanning_alert" then
+    if state == "fixed" or state == "dismissed" then
+      return "resolved"
+    elseif state == "active" then
+      return "reopened"
+    end
+  end
+  return "unknown"
+end
+
+local ADO_ADVSEC_UPDATED_ACTION_BY_EVENT = {
+  code_scanning_alert = "updated_assignment",
+  dependabot_alert = "assignees_changed",
+  secret_scanning_alert = "validated",
+}
+
+local function ado_advsec_handler(action_kind)
+  return function(payload)
+    local resource = payload.resource or {}
+    local event = ado_advsec_event(resource)
+    local action = action_kind
+    if action_kind == "state_changed" then
+      action = ado_advsec_state_action(event, resource)
+    elseif action_kind == "updated" then
+      action = ADO_ADVSEC_UPDATED_ACTION_BY_EVENT[event] or "unknown"
+    end
+    local translator = ADO_ADVSEC_TRANSLATOR_BY_EVENT[event] or translate_ado_alert
+    local data = {
+      action = action,
+      alert = translator(resource),
+      repository = ado_advsec_repository(resource),
+      sender = ado_advsec_sender(resource),
+    }
+    return make_internal_event({
+      event = event,
+      action = action,
+      raw_action = action == "unknown" and action_kind or nil,
+      provider = "azuredevops",
+      raw = payload,
+      data = data,
+      timestamp = resource.lastSeenDate or resource.firstSeenDate or payload.createdDate or "",
+    })
+  end
+end
+
 -- git.push: fires when commits are pushed to a Git repository, including
 -- branch/tag creation (oldObjectId = zero SHA) and deletion (newObjectId = zero SHA).
 -- Azure DevOps does not emit separate create/delete webhook events; confusio
@@ -2284,7 +2663,7 @@ end)
 
 -- build.complete: fires when a Classic or YAML pipeline build finishes.
 -- repository lifecycle: created, deleted, renamed.
--- ADO event types: git.repository.created, git.repository.deleted, git.repository.renamed.
+-- ADO event types: git.repo.created, git.repo.deleted, git.repo.renamed.
 -- For renamed events ADO does not include the old name in the payload, so
 -- data.changes is omitted.  Mapped as ~ (partial) in the compatibility matrix.
 local function ado_repo_lifecycle_handler(action)
@@ -2306,9 +2685,44 @@ local function ado_repo_lifecycle_handler(action)
   end
 end
 
-b:webhook("git.repository.created", ado_repo_lifecycle_handler("created"))
-b:webhook("git.repository.deleted", ado_repo_lifecycle_handler("deleted"))
-b:webhook("git.repository.renamed", ado_repo_lifecycle_handler("renamed"))
+b:webhook("git.repo.created", ado_repo_lifecycle_handler("created"))
+b:webhook("git.repo.deleted", ado_repo_lifecycle_handler("deleted"))
+b:webhook("git.repo.renamed", ado_repo_lifecycle_handler("renamed"))
+
+b:webhook("ms.azure-devops-release.release-created-event", ado_release_event_handler("published"))
+b:webhook("ms.azure-devops-release.release-abandoned-event", ado_release_event_handler("deleted"))
+
+b:webhook("ms.azure-devops-release.deployment-started-event", function(payload)
+  local resource = payload.resource or {}
+  return make_internal_event({
+    event = "deployment",
+    action = "created",
+    provider = "azuredevops",
+    raw = payload,
+    data = {
+      action = "created",
+      deployment = translate_ado_deployment(resource),
+      repository = ado_deployment_repository(resource),
+      sender = ado_deployment_sender(resource),
+    },
+    timestamp = payload.createdDate or "",
+  })
+end)
+
+b:webhook("ms.azure-devops-release.deployment-completed-event", ado_deployment_status_handler)
+b:webhook(
+  "ms.azure-devops-release.deployment-approval-pending-event",
+  ado_deployment_review_handler("requested")
+)
+b:webhook("ms.azure-devops-release.deployment-approval-completed-event", function(payload)
+  local approval = ((payload.resource or {}).approval or {})
+  local action = approval.status == "rejected" and "rejected" or "approved"
+  return ado_deployment_review_handler(action)(payload)
+end)
+
+b:webhook("ms.vss-alerts.alert-created-event", ado_advsec_handler("created"))
+b:webhook("ms.vss-alerts.alert-state-changed-event", ado_advsec_handler("state_changed"))
+b:webhook("ms.vss-alerts.alert-updated-event", ado_advsec_handler("updated"))
 
 b:webhook("build.complete", function(payload)
   local resource = payload.resource or {}
@@ -2384,6 +2798,13 @@ local ADO_NORMALIZED_WEBHOOK_EVENTS = {
   "create",
   "delete",
   "repository",
+  "release",
+  "deployment",
+  "deployment_status",
+  "deployment_review",
+  "code_scanning_alert",
+  "dependabot_alert",
+  "secret_scanning_alert",
 }
 
 local function ado_normalized_payload_without_envelope_fields(data)

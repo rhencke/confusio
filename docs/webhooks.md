@@ -124,7 +124,7 @@ receiver implementation, and a brief note on the signature scheme used.  The
 
 | Backend | Endpoint | Default forge URL | API family | Signature scheme |
 |---------|----------|------------------|------------|-----------------|
-| `azuredevops` | `POST /webhooks/azuredevops` | `https://dev.azure.com` | azuredevops | Basic auth (username + shared secret in request body) |
+| `azuredevops` | `POST /webhooks/azuredevops` | `https://dev.azure.com` | azuredevops | Basic auth in `Authorization` header |
 | `bitbucket` | `POST /webhooks/bitbucket` | `https://bitbucket.org` | bitbucket | `X-Hub-Signature` HMAC-SHA256 |
 | `bitbucket_datacenter` | `POST /webhooks/bitbucket_datacenter` | _(self-hosted)_ | bitbucket_datacenter | `X-Hub-Signature` HMAC-SHA256 |
 | `codeberg` | `POST /webhooks/codeberg` | `https://codeberg.org` | gitea | `X-Gitea-Signature` HMAC-SHA256 |
@@ -161,7 +161,7 @@ delivered.  Confusio maps these to its canonical internal event family names.
 | github | `X-GitHub-Event` | `issues`, `push`, `pull_request` |
 | bitbucket | `X-Event-Key` | `repo:push`, `pullrequest:created` |
 | bitbucket_datacenter | `X-Event-Key` | `repo:refs_changed`, `pr:opened` |
-| azuredevops | _(body field)_ | `git.push`, `git.pullrequest.created` |
+| azuredevops | _(body field)_ | `git.push`, `git.pullrequest.created`, `build.complete`, `ms.vss-alerts.alert-created-event` |
 | codecommit | _(SNS `Message.detail-type`)_ | `CodeCommit Repository State Change` |
 | pagure | `X-Pagure-Event` | `issue`, `pull-request`, `git` |
 | sourcehut | _(body field `event`)_ | `push`, `patchset:created` |
@@ -716,7 +716,8 @@ authentication is available, network-level access controls are strongly recommen
 
 Azure DevOps service hooks use HTTP Basic authentication.  The username and password
 are configured in the service hook settings; confusio verifies the `Authorization`
-header.
+header against the exact `username:password` credential stored in the backend secret
+file.
 
 ```
 Header:    Authorization
@@ -724,19 +725,30 @@ Format:    Basic <base64(username:password)>
 ```
 
 ```
-configured_user     = configured username (may be empty string)
-configured_password = configured shared secret / password
+configured_secret = configured "username:password" string
 received_header     = value of Authorization header
 
 decoded = base64_decode(received_header after stripping "Basic ")
-[received_user, received_password] = split(decoded, ":", limit=2)
 
-accept if constant_time_equal(configured_user, received_user)
-       AND constant_time_equal(configured_password, received_password)
+accept if constant_time_equal(configured_secret, decoded)
 ```
 
 **Configuration:** Set in Azure DevOps service hook settings under "Basic authentication"
 → "Username" and "Password".
+
+**Implemented service hook families:** Confusio maps Azure DevOps Git, pull request,
+work item, build, release/deployment, and Advanced Security service hooks into the
+closest GitHub webhook families:
+
+| Azure DevOps event family | GitHub event family |
+|---------------------------|---------------------|
+| `git.push` | `push`, `create`, `delete` |
+| `git.repo.*` | `repository` |
+| `git.pullrequest.*` | `pull_request`, `pull_request_review` |
+| `workitem.*` | `issues`, `issue_comment` |
+| `build.complete` | `workflow_run` |
+| `ms.azure-devops-release.*` | `release`, `deployment`, `deployment_status`, `deployment_review` |
+| `ms.vss-alerts.*` | `code_scanning_alert`, `dependabot_alert`, `secret_scanning_alert` |
 
 ---
 
@@ -2904,29 +2916,29 @@ Triggered on release lifecycle events.
 
 #### Release object fields
 
-| GitHub field | gitea-family | gitlab | github | gitbucket | All others |
-|---|---|---|---|---|---|
-| `release.id` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `release.tag_name` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `release.name` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `release.body` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `release.draft` | ✓ | ✗ | ✓ | ✓ | ✗ |
-| `release.prerelease` | ✓ | ~ | ✓ | ✓ | ✗ |
-| `release.html_url` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `release.tarball_url` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `release.zipball_url` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `release.author` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `release.created_at` | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `release.published_at` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| GitHub field | gitea-family | gitlab | github | gitbucket | azuredevops | All others |
+|---|---|---|---|---|---|---|
+| `release.id` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `release.tag_name` | ✓ | ✓ | ✓ | ✓ | ~ | ✗ |
+| `release.name` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `release.body` | ✓ | ✓ | ✓ | ✓ | ~ | ✗ |
+| `release.draft` | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ |
+| `release.prerelease` | ✓ | ~ | ✓ | ✓ | ✗ | ✗ |
+| `release.html_url` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `release.tarball_url` | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ |
+| `release.zipball_url` | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ |
+| `release.author` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `release.created_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `release.published_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
 
 #### Supported actions
 
-| Action | gitea-family | gitlab | github | gitbucket |
-|--------|---|---|---|---|
-| `published` | ✓ | ✓ | ✓ | ✓ |
-| `edited` | ✓ | ✓ | ✓ | ✗ |
-| `deleted` | ✓ | ✓ | ✓ | ✓ |
-| `prereleased` | ✓ | ~ | ✓ | ✗ |
+| Action | gitea-family | gitlab | github | gitbucket | azuredevops |
+|--------|---|---|---|---|---|
+| `published` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `edited` | ✓ | ✓ | ✓ | ✗ | ✗ |
+| `deleted` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `prereleased` | ✓ | ~ | ✓ | ✗ | ✗ |
 
 **Notes:**
 - `release.draft`: GitLab has no concept of draft releases; the field is emitted as `false`.
@@ -2942,7 +2954,10 @@ Triggered on release lifecycle events.
   versions do not fire release events at all; later versions fire `published` and `deleted`
   only.  Gogs is grouped under "All others" (`✗`) in the table above; operators should
   verify their Gogs version supports release webhooks before relying on this event.
-- Backends not listed (Bitbucket, Azure DevOps, etc.) do not emit release lifecycle events.
+- **Azure DevOps**: Release-created service hooks map to `published`; release-abandoned
+  service hooks map to `deleted`.  Azure DevOps releases are not Git tags, so
+  `tag_name` is the release name and archive URLs are unavailable.
+- Backends not listed (Bitbucket, etc.) do not emit release lifecycle events.
 
 ---
 
@@ -3249,29 +3264,29 @@ deployment to a named environment — distinct from the status updates that foll
 
 #### Deployment object fields
 
-| GitHub field | github | gitlab | All others |
-|---|---|---|---|
-| `deployment.id` | ✓ | ✓ | ✗ |
-| `deployment.sha` | ✓ | ~ | ✗ |
-| `deployment.ref` | ✓ | ✓ | ✗ |
-| `deployment.task` | ✓ | ✗ | ✗ |
-| `deployment.environment` | ✓ | ✓ | ✗ |
-| `deployment.original_environment` | ✓ | ✗ | ✗ |
-| `deployment.description` | ✓ | ✗ | ✗ |
-| `deployment.payload` | ✓ | ✗ | ✗ |
-| `deployment.creator` | ✓ | ✓ | ✗ |
-| `deployment.created_at` | ✓ | ~ | ✗ |
-| `deployment.updated_at` | ✓ | ~ | ✗ |
-| `deployment.statuses_url` | ✓ | ✗ | ✗ |
-| `deployment.repository_url` | ✓ | ✗ | ✗ |
-| `deployment.production_environment` | ✓ | ✗ | ✗ |
-| `deployment.transient_environment` | ✓ | ✗ | ✗ |
+| GitHub field | github | gitlab | azuredevops | All others |
+|---|---|---|---|---|
+| `deployment.id` | ✓ | ✓ | ✓ | ✗ |
+| `deployment.sha` | ✓ | ~ | ✗ | ✗ |
+| `deployment.ref` | ✓ | ✓ | ~ | ✗ |
+| `deployment.task` | ✓ | ✗ | ✗ | ✗ |
+| `deployment.environment` | ✓ | ✓ | ✓ | ✗ |
+| `deployment.original_environment` | ✓ | ✗ | ✗ | ✗ |
+| `deployment.description` | ✓ | ✗ | ~ | ✗ |
+| `deployment.payload` | ✓ | ✗ | ✗ | ✗ |
+| `deployment.creator` | ✓ | ✓ | ✓ | ✗ |
+| `deployment.created_at` | ✓ | ~ | ✓ | ✗ |
+| `deployment.updated_at` | ✓ | ~ | ✓ | ✗ |
+| `deployment.statuses_url` | ✓ | ✗ | ✗ | ✗ |
+| `deployment.repository_url` | ✓ | ✗ | ✗ | ✗ |
+| `deployment.production_environment` | ✓ | ✗ | ✗ | ✗ |
+| `deployment.transient_environment` | ✓ | ✗ | ✗ | ✗ |
 
 #### Supported actions
 
-| Action | github | gitlab |
-|--------|--------|--------|
-| `created` | ✓ | ✓ |
+| Action | github | gitlab | azuredevops |
+|--------|--------|-------------|
+| `created` | ✓ | ✓ | ✓ |
 
 **Notes:**
 - **GitLab**: GitLab fires a single "Deployment events" webhook per status transition.
@@ -3291,8 +3306,11 @@ deployment to a named environment — distinct from the status updates that foll
   confusio emits `""`.
 - `workflow` / `workflow_run`: present in GitHub pass-through when the deployment was
   triggered by GitHub Actions; always `null` in confusio-translated output.
-- Backends not listed (Gitea-family, Bitbucket, Azure DevOps, etc.) do not emit
-  deployment lifecycle events.  Gitea explicitly has no deployment webhook equivalent.
+- **Azure DevOps**: Release deployment-started service hooks map to `deployment`
+  (`created`).  The release name is used as `ref`, and Azure DevOps does not expose a
+  commit SHA or GitHub-style deployment URLs in this payload.
+- Backends not listed (Gitea-family, Bitbucket, etc.) do not emit deployment lifecycle
+  events.  Gitea explicitly has no deployment webhook equivalent.
 
 ---
 
@@ -3302,26 +3320,26 @@ Triggered when the status of a deployment changes.
 
 #### Deployment status object fields
 
-| GitHub field | github | gitlab | All others |
-|---|---|---|---|
-| `deployment_status.id` | ✓ | ✗ | ✗ |
-| `deployment_status.state` | ✓ | ~ | ✗ |
-| `deployment_status.description` | ✓ | ✗ | ✗ |
-| `deployment_status.environment` | ✓ | ✓ | ✗ |
-| `deployment_status.environment_url` | ✓ | ✗ | ✗ |
-| `deployment_status.log_url` | ✓ | ~ | ✗ |
-| `deployment_status.target_url` | ✓ | ✗ | ✗ |
-| `deployment_status.deployment_url` | ✓ | ✗ | ✗ |
-| `deployment_status.creator` | ✓ | ✓ | ✗ |
-| `deployment_status.created_at` | ✓ | ~ | ✗ |
-| `deployment_status.updated_at` | ✓ | ~ | ✗ |
-| `deployment` (full object) | ✓ | ~ | ✗ |
+| GitHub field | github | gitlab | azuredevops | All others |
+|---|---|---|---|---|
+| `deployment_status.id` | ✓ | ✗ | ✓ | ✗ |
+| `deployment_status.state` | ✓ | ~ | ✓ | ✗ |
+| `deployment_status.description` | ✓ | ✗ | ✓ | ✗ |
+| `deployment_status.environment` | ✓ | ✓ | ✓ | ✗ |
+| `deployment_status.environment_url` | ✓ | ✗ | ✗ | ✗ |
+| `deployment_status.log_url` | ✓ | ~ | ✗ | ✗ |
+| `deployment_status.target_url` | ✓ | ✗ | ✗ | ✗ |
+| `deployment_status.deployment_url` | ✓ | ✗ | ✓ | ✗ |
+| `deployment_status.creator` | ✓ | ✓ | ✓ | ✗ |
+| `deployment_status.created_at` | ✓ | ~ | ✓ | ✗ |
+| `deployment_status.updated_at` | ✓ | ~ | ✓ | ✗ |
+| `deployment` (full object) | ✓ | ~ | ~ | ✗ |
 
 #### Supported actions
 
-| Action | github | gitlab |
-|--------|--------|--------|
-| `created` | ✓ | ✓ |
+| Action | github | gitlab | azuredevops |
+|--------|--------|-------------|
+| `created` | ✓ | ✓ | ✓ |
 
 **`state` mapping from GitLab:**
 
@@ -3348,6 +3366,10 @@ Triggered when the status of a deployment changes.
   both timestamps.
 - `deployment` (embedded): reconstructed from GitLab fields — same fidelity as the
   `deployment` event object (see `deployment` section Notes above).
+- **Azure DevOps**: Release deployment-completed service hooks map to
+  `deployment_status` (`created`).  ADO states are mapped to GitHub deployment states:
+  `succeeded` → `success`, `failed`/`rejected`/`partiallySucceeded` → `failure`,
+  `canceled` → `inactive`, and `inProgress` → `in_progress`.
 - Backends not listed do not emit deployment status events.
 
 ---
@@ -3357,27 +3379,27 @@ Triggered when the status of a deployment changes.
 Triggered when a deployment pending a required review is approved, rejected, or first
 requested.  This event is specific to GitHub's environment protection rules.
 
-| GitHub field | github | All others |
-|---|---|---|
-| `approver` | ✓ | — |
-| `comment` | ✓ | — |
-| `since` | ✓ | — |
-| `environment` | ✓ | — |
-| `reviewers` | ✓ | — |
-| `workflow_run` | ✓ | — |
+| GitHub field | github | azuredevops | All others |
+|---|---|---|---|
+| `approver` | ✓ | ✓ | — |
+| `comment` | ✓ | ✓ | — |
+| `since` | ✓ | ✓ | — |
+| `environment` | ✓ | ✓ | — |
+| `reviewers` | ✓ | ✓ | — |
+| `workflow_run` | ✓ | ✗ | — |
 
 #### Supported actions
 
-| Action | github | All others |
-|--------|--------|------------|
-| `approved` | ✓ | — |
-| `rejected` | ✓ | — |
-| `requested` | ✓ | — |
+| Action | github | azuredevops | All others |
+|--------|--------|-------------|------------|
+| `approved` | ✓ | ✓ | — |
+| `rejected` | ✓ | ✓ | — |
+| `requested` | ✓ | ✓ | — |
 
 **Notes:**
-- `deployment_review` is a GitHub Actions-specific event with no cross-forge equivalent.
-  No non-GitHub backend emits review-gated deployment events; confusio marks all
-  non-GitHub backends as `—` (not applicable).
+- `deployment_review` is a GitHub Actions-specific event, but Azure DevOps release
+  approvals have a close equivalent.  Confusio maps approval-pending service hooks to
+  `requested` and approval-completed hooks to `approved` or `rejected`.
 - When the originating backend is GitHub, the event passes through verbatim.
 
 ---
@@ -3668,13 +3690,14 @@ surfaced via the `status` event (see above).
 |---|---|---|
 | `check_run` | ✓ pass-through | ✗ |
 | `check_suite` | ✓ pass-through | ✗ |
-| `workflow_run` | ✓ pass-through | ✗ |
+| `workflow_run` | ✓ pass-through | Azure DevOps `build.complete`; GitLab/Gitea-family workflow events |
 | `workflow_job` | ✓ pass-through | ✗ |
-| `deployment_review` | ✓ pass-through | ✗ |
+| `deployment_review` | ✓ pass-through | Azure DevOps release approval events |
 | `deployment_protection_rule` | ✓ pass-through | ✗ |
 
-`deployment_review` and `deployment_protection_rule` are GitHub Actions-specific events tied
-to GitHub's required-reviewer enforcement model.  No other forge has an equivalent concept.
+`deployment_protection_rule` is a GitHub Actions-specific integration event with no
+cross-forge equivalent.  `deployment_review` is GitHub-native, but Azure DevOps release
+approvals are close enough to map into the same event family.
 
 The `deployment` and `deployment_status` events have cross-forge mapping targets and are
 documented as full event families below (see [`deployment`](#deployment-1) and
@@ -3689,30 +3712,26 @@ beyond what `status` can express.
 
 ### Security events
 
-GitHub's security event families are GitHub-specific and have no cross-forge equivalents
-in any backend confusio currently supports.  When the originating backend is GitHub itself,
-these events pass through verbatim.  For all other backends they are silently dropped —
-there is no mapping target.
+GitHub's security event families are mostly GitHub-specific.  Confusio passes them
+through from GitHub-compatible sources and maps Azure DevOps Advanced Security alert
+service hooks into the closest GitHub alert families where ADO exposes equivalent data.
 
-| GitHub event | Emitted from GitHub backend | Emitted from other backends |
+| GitHub event | GitHub-compatible pass-through | Azure DevOps |
 |---|---|---|
-| `security_advisory` | ✓ pass-through | ✗ |
-| `repository_advisory` | ✓ pass-through | ✗ |
-| `code_scanning_alert` | ✓ pass-through | ✗ |
-| `secret_scanning_alert` | ✓ pass-through | ✗ |
-| `secret_scanning_alert_location` | ✓ pass-through | ✗ |
-| `dependabot_alert` | ✓ pass-through | ✗ |
-| `repository_vulnerability_alert` | ✓ pass-through | ✗ |
-| `branch_protection_rule` | ✓ pass-through | ✗ |
-| `branch_protection_configuration` | ✓ pass-through | ✗ |
+| `security_advisory` | ✓ | ✗ |
+| `repository_advisory` | ✓ | ✗ |
+| `code_scanning_alert` | ✓ | ✓ |
+| `secret_scanning_alert` | ✓ | ✓ |
+| `secret_scanning_alert_location` | ✓ | ✗ |
+| `dependabot_alert` | ✓ | ✓ |
+| `repository_vulnerability_alert` | ✓ | ✗ |
+| `branch_protection_rule` | ✓ | ✗ |
+| `branch_protection_configuration` | ✓ | ✗ |
 
-Because these events are exclusively emitted from the GitHub backend, the field tables
-below use a two-column format: `github` (native pass-through, all fields `✓`) and
-`All others` (not applicable, all fields `—`).
-
-Future work may introduce confusio-normalized `security_finding` or `advisory` event
-families for backends that expose vulnerability or secret-scanning data through their own
-APIs (e.g. GitLab's security findings, Gitea's audit log).
+Azure DevOps uses the `ms.vss-alerts.*` service-hook family for Advanced Security.
+Confusio derives the GitHub event family from `resource.alertType`: `code` maps to
+`code_scanning_alert`, `dependency` maps to `dependabot_alert`, and `secret` maps to
+`secret_scanning_alert`.
 
 #### `security_advisory`
 
@@ -3740,54 +3759,54 @@ Triggered when a GitHub security advisory is published, updated, or withdrawn.
 
 Triggered when a code scanning alert is created, closed, fixed, or reassigned.
 
-| GitHub field | github | All others |
-|---|---|---|
-| `action` | ✓ | — |
-| `alert` | ✓ | — |
-| `enterprise` | ✓ | — |
-| `installation` | ✓ | — |
-| `organization` | ✓ | — |
-| `repository` | ✓ | — |
-| `sender` | ✓ | — |
+| GitHub field | github | azuredevops | All others |
+|---|---|---|---|
+| `action` | ✓ | ✓ | — |
+| `alert` | ✓ | ~ | — |
+| `enterprise` | ✓ | ✗ | — |
+| `installation` | ✓ | ✗ | — |
+| `organization` | ✓ | ✗ | — |
+| `repository` | ✓ | ✓ | — |
+| `sender` | ✓ | ~ | — |
 
 **Supported actions:**
 
-| Action | github | All others |
-|--------|--------|------------|
-| `appeared_in_branch` | ✓ | — |
-| `closed_by_user` | ✓ | — |
-| `created` | ✓ | — |
-| `fixed` | ✓ | — |
-| `reopened` | ✓ | — |
-| `reopened_by_user` | ✓ | — |
-| `updated_assignment` | ✓ | — |
+| Action | github | azuredevops | All others |
+|--------|--------|-------------|------------|
+| `appeared_in_branch` | ✓ | ✗ | — |
+| `closed_by_user` | ✓ | ✓ | — |
+| `created` | ✓ | ✓ | — |
+| `fixed` | ✓ | ✓ | — |
+| `reopened` | ✓ | ✓ | — |
+| `reopened_by_user` | ✓ | ✗ | — |
+| `updated_assignment` | ✓ | ✓ | — |
 
 #### `secret_scanning_alert`
 
 Triggered when a secret scanning alert is created, resolved, validated, or assigned.
 
-| GitHub field | github | All others |
-|---|---|---|
-| `action` | ✓ | — |
-| `alert` | ✓ | — |
-| `assignee` | ✓ | — |
-| `enterprise` | ✓ | — |
-| `installation` | ✓ | — |
-| `organization` | ✓ | — |
-| `repository` | ✓ | — |
-| `sender` | ✓ | — |
+| GitHub field | github | azuredevops | All others |
+|---|---|---|---|
+| `action` | ✓ | ✓ | — |
+| `alert` | ✓ | ~ | — |
+| `assignee` | ✓ | ✗ | — |
+| `enterprise` | ✓ | ✗ | — |
+| `installation` | ✓ | ✗ | — |
+| `organization` | ✓ | ✗ | — |
+| `repository` | ✓ | ✓ | — |
+| `sender` | ✓ | ~ | — |
 
 **Supported actions:**
 
-| Action | github | All others |
-|--------|--------|------------|
-| `assigned` | ✓ | — |
-| `created` | ✓ | — |
-| `publicly_leaked` | ✓ | — |
-| `reopened` | ✓ | — |
-| `resolved` | ✓ | — |
-| `unassigned` | ✓ | — |
-| `validated` | ✓ | — |
+| Action | github | azuredevops | All others |
+|--------|--------|-------------|------------|
+| `assigned` | ✓ | ✗ | — |
+| `created` | ✓ | ✓ | — |
+| `publicly_leaked` | ✓ | ✗ | — |
+| `reopened` | ✓ | ✓ | — |
+| `resolved` | ✓ | ✓ | — |
+| `unassigned` | ✓ | ✗ | — |
+| `validated` | ✓ | ✓ | — |
 
 **Notes:**
 - `assignee`: present only for `assigned` and `unassigned` actions; `null` for all others.
@@ -3817,28 +3836,28 @@ Subscribe to this event alongside `secret_scanning_alert` to receive location-le
 
 Triggered when a Dependabot alert is created, dismissed, fixed, or reassigned.
 
-| GitHub field | github | All others |
-|---|---|---|
-| `action` | ✓ | — |
-| `alert` | ✓ | — |
-| `enterprise` | ✓ | — |
-| `installation` | ✓ | — |
-| `organization` | ✓ | — |
-| `repository` | ✓ | — |
-| `sender` | ✓ | — |
+| GitHub field | github | azuredevops | All others |
+|---|---|---|---|
+| `action` | ✓ | ✓ | — |
+| `alert` | ✓ | ~ | — |
+| `enterprise` | ✓ | ✗ | — |
+| `installation` | ✓ | ✗ | — |
+| `organization` | ✓ | ✗ | — |
+| `repository` | ✓ | ✓ | — |
+| `sender` | ✓ | ~ | — |
 
 **Supported actions:**
 
-| Action | github | All others |
-|--------|--------|------------|
-| `assignees_changed` | ✓ | — |
-| `auto_dismissed` | ✓ | — |
-| `auto_reopened` | ✓ | — |
-| `created` | ✓ | — |
-| `dismissed` | ✓ | — |
-| `fixed` | ✓ | — |
-| `reintroduced` | ✓ | — |
-| `reopened` | ✓ | — |
+| Action | github | azuredevops | All others |
+|--------|--------|-------------|------------|
+| `assignees_changed` | ✓ | ✓ | — |
+| `auto_dismissed` | ✓ | ✗ | — |
+| `auto_reopened` | ✓ | ✗ | — |
+| `created` | ✓ | ✓ | — |
+| `dismissed` | ✓ | ✓ | — |
+| `fixed` | ✓ | ✓ | — |
+| `reintroduced` | ✓ | ✗ | — |
+| `reopened` | ✓ | ✓ | — |
 
 **Notes:**
 - `dependabot_alert` supersedes the older `repository_vulnerability_alert` event, which
