@@ -63,7 +63,7 @@ value is `y` or starts with `~`.  Concretely:
 | pagure | 24 | 73 |
 | sourcehut | 19 | 68 |
 | harness | 17 | 72 |
-| gitblit | 13 | 73 |
+| gitblit | 16 | 74 |
 | radicle | 11 | 73 |
 | gerrit | 10 | 73 |
 | phabricator | 9 | 72 |
@@ -927,6 +927,12 @@ events for `repo:refs_changed`, `pr:*`, `pr:reviewer:*`, `build:status_*`, and r
 lifecycle where the installed version exposes them.  If the evaluation license is missing or
 expired, the run should be recorded as a license/setup skip; the mock-backed unit coverage
 remains authoritative until a licensed container is reachable.
+
+Gitblit real-world webhook coverage should run against the `gitblit/gitblit` container,
+configure the post-receive hook with `X-Gitblit-Token`, and drive one branch update, one
+branch creation, and one branch deletion against the fixture repository.  Those three
+post-receive commands are the supported Gitblit webhook surface and should assert both
+GitHub-shaped delivery headers and confusio-shaped normalized event bodies.
 
 **Exit criteria**: all Docker backends produce a result (pass or classified failure) for two
 consecutive weekly runs without the bootstrap script hanging or erroring.
