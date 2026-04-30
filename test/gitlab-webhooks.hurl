@@ -1220,6 +1220,146 @@ HTTP 200
 jsonpath "$.message" == "accepted"
 header "X-Confusio-Raw-Action" == "stale"
 
+# ── Project Hook: project_create → repository created ────────────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Project Hook
+{
+  "event_name": "project_create",
+  "created_at": "2024-10-07T10:43:48Z",
+  "updated_at": "2024-10-07T10:43:48Z",
+  "name": "hello-world",
+  "path": "hello-world",
+  "path_with_namespace": "octocat/hello-world",
+  "project_id": 22,
+  "project_namespace_id": 32,
+  "owners": [{"name": "Alice Smith", "email": "alice@example.com"}],
+  "project_visibility": "private"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Project Hook: project_destroy → repository deleted ───────────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Project Hook
+{
+  "event_name": "project_destroy",
+  "created_at": "2024-10-07T10:43:48Z",
+  "updated_at": "2024-10-07T10:43:48Z",
+  "name": "hello-world",
+  "path": "hello-world",
+  "path_with_namespace": "octocat/hello-world",
+  "project_id": 22,
+  "project_namespace_id": 32,
+  "owners": [{"name": "Alice Smith", "email": "alice@example.com"}],
+  "project_visibility": "private"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Subgroup Hook: subgroup_create → organization created ────────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Subgroup Hook
+{
+  "event_name": "subgroup_create",
+  "created_at": "2021-01-20T09:40:12Z",
+  "updated_at": "2021-01-20T09:40:12Z",
+  "name": "subgroup1",
+  "path": "subgroup1",
+  "full_path": "group1/subgroup1",
+  "group_id": 10,
+  "parent_group_id": 7,
+  "parent_name": "group1",
+  "parent_path": "group1",
+  "parent_full_path": "group1"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Subgroup Hook: subgroup_destroy → organization deleted ───────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Subgroup Hook
+{
+  "event_name": "subgroup_destroy",
+  "created_at": "2021-01-20T09:40:12Z",
+  "updated_at": "2021-01-20T09:40:12Z",
+  "name": "subgroup1",
+  "path": "subgroup1",
+  "full_path": "group1/subgroup1",
+  "group_id": 10,
+  "parent_group_id": 7,
+  "parent_name": "group1",
+  "parent_path": "group1",
+  "parent_full_path": "group1"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Member Hook: user_add_to_group → membership added ────────────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Member Hook
+{
+  "created_at": "2020-12-11T04:57:22Z",
+  "updated_at": "2020-12-11T04:57:22Z",
+  "group_name": "Engineering",
+  "group_path": "engineering",
+  "group_id": 100,
+  "user_username": "bob",
+  "user_name": "Bob Smith",
+  "user_email": "bob@example.com",
+  "user_id": 64,
+  "group_access": "Guest",
+  "group_plan": null,
+  "expires_at": "2020-12-14T00:00:00Z",
+  "event_name": "user_add_to_group"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Member Hook: user_update_for_team → member edited ────────────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Member Hook
+{
+  "created_at": "2012-07-21T07:30:56Z",
+  "updated_at": "2012-07-21T07:38:22Z",
+  "event_name": "user_update_for_team",
+  "access_level": "Maintainer",
+  "project_id": 74,
+  "project_name": "hello-world",
+  "project_path": "hello-world",
+  "project_path_with_namespace": "octocat/hello-world",
+  "project_visibility": "private",
+  "user_email": "bob@example.com",
+  "user_name": "Bob Smith",
+  "user_username": "bob",
+  "user_id": 64
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
 # ── Push Hook: branch push with commits → 200 (push event) ───────────────────
 
 POST http://{{host}}/webhooks/gitlab

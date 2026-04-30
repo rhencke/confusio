@@ -7055,6 +7055,8 @@ local GL_SYSTEM_HOOK_GROUP_ACTIONS = {
   group_create = "created",
   group_destroy = "deleted",
   group_rename = "renamed",
+  subgroup_create = "created",
+  subgroup_destroy = "deleted",
 }
 
 -- Group member event_names that map to GitHub's membership event.
@@ -7064,6 +7066,15 @@ local GL_SYSTEM_HOOK_GROUP_ACTIONS = {
 local GL_SYSTEM_HOOK_MEMBERSHIP_ACTIONS = {
   user_add_to_group = "added",
   user_remove_from_group = "removed",
+}
+
+-- Project member event_names that map to GitHub's member event.
+-- These arrive as System Hook events and, for group webhooks, Member Hook
+-- events with event_name instead of action.
+local GL_SYSTEM_HOOK_MEMBER_ACTIONS = {
+  user_add_to_team = "added",
+  user_remove_from_team = "removed",
+  user_update_for_team = "edited",
 }
 
 -- Build a minimal repository object from a GitLab system hook payload.
@@ -7098,7 +7109,131 @@ local function translate_gl_system_hook_repo(p)
   }
 end
 
-b:webhook("System Hook", function(payload)
+local function translate_gl_group_membership_event(payload, membership_action)
+  local org = {
+    login = payload.group_path or "",
+    id = payload.group_id or 0,
+    node_id = "",
+    description = "",
+    url = "",
+    html_url = "",
+    avatar_url = "",
+    type = "Organization",
+  }
+  local member = {
+    login = payload.user_username or "",
+    id = payload.user_id or 0,
+    node_id = "",
+    avatar_url = "",
+    html_url = "",
+    type = "User",
+    site_admin = false,
+  }
+  -- GitLab groups have no sub-teams; expose a minimal team stub so consumers
+  -- receive a structurally valid membership payload.
+  local team = {
+    id = payload.group_id or 0,
+    node_id = "",
+    name = payload.group_name or "",
+    slug = payload.group_path or "",
+    description = "",
+    privacy = "closed",
+    permission = "pull",
+    url = "",
+    html_url = "",
+    members_url = "",
+    repositories_url = "",
+  }
+  local sender = {
+    login = "",
+    id = 0,
+    node_id = "",
+    avatar_url = "",
+    html_url = "",
+    type = "User",
+    site_admin = false,
+  }
+  local data = {
+    action = membership_action,
+    scope = "team",
+    member = member,
+    team = team,
+    organization = org,
+    sender = sender,
+  }
+  return make_internal_event({
+    event = "membership",
+    action = membership_action,
+    provider = config.backend,
+    raw = payload,
+    data = data,
+    timestamp = payload.updated_at or payload.created_at or "",
+  })
+end
+
+local function translate_gl_project_member_event(payload, action)
+  local pns = payload.project_path_with_namespace or ""
+  local slash = pns:find("/", 1, true)
+  local owner_login = slash and pns:sub(1, slash - 1) or pns
+  local repo_name = slash and pns:sub(slash + 1) or (payload.project_name or pns)
+  local visibility = payload.project_visibility or "private"
+  local repository = {
+    id = payload.project_id or 0,
+    node_id = "",
+    name = repo_name,
+    full_name = pns,
+    private = visibility ~= "public",
+    owner = {
+      login = owner_login,
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      url = "",
+      html_url = "",
+      type = "User",
+    },
+    html_url = payload.project_url or "",
+    description = "",
+    fork = false,
+    url = payload.project_url or "",
+    default_branch = "",
+    visibility = visibility,
+  }
+  local member = {
+    login = payload.user_username or "",
+    id = payload.user_id or 0,
+    node_id = "",
+    avatar_url = payload.user_avatar or "",
+    html_url = "",
+    type = "User",
+    site_admin = false,
+  }
+  local data = {
+    action = action,
+    member = member,
+    changes = payload.changes or {},
+    repository = repository,
+    sender = {
+      login = "",
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      html_url = "",
+      type = "User",
+      site_admin = false,
+    },
+  }
+  return make_internal_event({
+    event = "member",
+    action = action,
+    provider = config.backend,
+    raw = payload,
+    data = data,
+    timestamp = payload.updated_at or payload.created_at or "",
+  })
+end
+
+local function translate_gl_system_event(payload)
   local event_name = payload.event_name or ""
 
   -- ── Repository / project events ────────────────────────────────────────────
@@ -7207,69 +7342,22 @@ b:webhook("System Hook", function(payload)
   local membership_action = GL_SYSTEM_HOOK_MEMBERSHIP_ACTIONS[event_name]
 
   if membership_action then
-    local org = {
-      login = payload.group_path or "",
-      id = payload.group_id or 0,
-      node_id = "",
-      description = "",
-      url = "",
-      html_url = "",
-      avatar_url = "",
-      type = "Organization",
-    }
-    local member = {
-      login = payload.user_username or "",
-      id = payload.user_id or 0,
-      node_id = "",
-      avatar_url = "",
-      html_url = "",
-      type = "User",
-      site_admin = false,
-    }
-    -- GitLab groups have no sub-teams; expose a minimal team stub so consumers
-    -- receive a structurally valid membership payload.
-    local team = {
-      id = payload.group_id or 0,
-      node_id = "",
-      name = payload.group_name or "",
-      slug = payload.group_path or "",
-      description = "",
-      privacy = "closed",
-      permission = "pull",
-      url = "",
-      html_url = "",
-      members_url = "",
-      repositories_url = "",
-    }
-    local sender = {
-      login = "",
-      id = 0,
-      node_id = "",
-      avatar_url = "",
-      html_url = "",
-      type = "User",
-      site_admin = false,
-    }
-    local data = {
-      action = membership_action,
-      scope = "team",
-      member = member,
-      team = team,
-      organization = org,
-      sender = sender,
-    }
-    return make_internal_event({
-      event = "membership",
-      action = membership_action,
-      provider = config.backend,
-      raw = payload,
-      data = data,
-      timestamp = payload.updated_at or payload.created_at or "",
-    })
+    return translate_gl_group_membership_event(payload, membership_action)
+  end
+
+  -- ── Project member / member events ────────────────────────────────────────
+  local member_action = GL_SYSTEM_HOOK_MEMBER_ACTIONS[event_name]
+
+  if member_action then
+    return translate_gl_project_member_event(payload, member_action)
   end
 
   return nil, "Unhandled system hook event: " .. event_name
-end)
+end
+
+b:webhook("System Hook", translate_gl_system_event)
+b:webhook("Project Hook", translate_gl_system_event)
+b:webhook("Subgroup Hook", translate_gl_system_event)
 
 -- gollum: wiki page created or edited.
 -- GitLab sends X-Gitlab-Event: Wiki Page Hook with object_kind = "wiki_page".
@@ -7313,65 +7401,14 @@ end)
 -- GitLab normalizes to type="User" (member's actual role is in access_level,
 -- not surfaced in the GitHub member.type field).
 b:webhook("Member Hook", function(payload)
-  local action = payload.action or ""
-  local pns = payload.project_path_with_namespace or ""
-  local slash = pns:find("/", 1, true)
-  local owner_login = slash and pns:sub(1, slash - 1) or pns
-  local repo_name = slash and pns:sub(slash + 1) or (payload.project_name or pns)
-  local repository = {
-    id = payload.project_id or 0,
-    node_id = "",
-    name = repo_name,
-    full_name = pns,
-    private = true, -- visibility not included in Member Hook payload
-    owner = {
-      login = owner_login,
-      id = 0,
-      node_id = "",
-      avatar_url = "",
-      url = "",
-      html_url = "",
-      type = "User",
-    },
-    html_url = payload.project_url or "",
-    description = "",
-    fork = false,
-    url = payload.project_url or "",
-    default_branch = "",
-    visibility = "private",
-  }
-  local member = {
-    login = payload.user_username or "",
-    id = payload.user_id or 0,
-    node_id = "",
-    avatar_url = payload.user_avatar or "",
-    html_url = "",
-    type = "User",
-    site_admin = false,
-  }
-  local data = {
-    action = action,
-    member = member,
-    changes = {},
-    repository = repository,
-    sender = {
-      login = "",
-      id = 0,
-      node_id = "",
-      avatar_url = "",
-      html_url = "",
-      type = "User",
-      site_admin = false,
-    },
-  }
-  return make_internal_event({
-    event = "member",
-    action = action,
-    provider = config.backend,
-    raw = payload,
-    data = data,
-    timestamp = payload.updated_at or payload.created_at or "",
-  })
+  local event_name = payload.event_name or ""
+  local membership_action = GL_SYSTEM_HOOK_MEMBERSHIP_ACTIONS[event_name]
+  if membership_action then
+    return translate_gl_group_membership_event(payload, membership_action)
+  end
+
+  local action = GL_SYSTEM_HOOK_MEMBER_ACTIONS[event_name] or payload.action or ""
+  return translate_gl_project_member_event(payload, action)
 end)
 
 local GL_ACTIONLESS_NORMALIZED_EVENTS = {
