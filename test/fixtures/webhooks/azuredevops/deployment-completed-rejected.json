@@ -1,0 +1,26 @@
+{
+  "id": "evt-deployment-rejected",
+  "eventType": "ms.azure-devops-release.deployment-completed-event",
+  "publisherId": "rm",
+  "message": {"text": "Deployment of release Release-1 on environment Production Rejected."},
+  "resource": {
+    "deployment": {
+      "id": 12,
+      "status": "rejected",
+      "completedOn": "2024-01-15T14:20:00Z",
+      "release": {
+        "id": 1,
+        "name": "Release-1",
+        "createdOn": "2024-01-15T13:00:00Z",
+        "releaseDefinition": {"id": 7, "name": "Fabrikam.CD"},
+        "project": {"id": "proj-id-001", "name": "octocat"}
+      },
+      "environment": {
+        "id": 5,
+        "name": "Production",
+        "owner": {"displayName": "Bob", "uniqueName": "bob@example.com"}
+      }
+    }
+  },
+  "createdDate": "2024-01-15T14:20:00Z"
+}

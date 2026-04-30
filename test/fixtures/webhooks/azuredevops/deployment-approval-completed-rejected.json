@@ -1,0 +1,25 @@
+{
+  "id": "evt-approval-rejected",
+  "eventType": "ms.azure-devops-release.deployment-approval-completed-event",
+  "publisherId": "rm",
+  "message": {"text": "Pre Deployment approval for release Release-1 on environment Production Rejected."},
+  "resource": {
+    "approval": {
+      "id": 22,
+      "approvalType": "preDeploy",
+      "status": "rejected",
+      "createdOn": "2024-01-15T13:55:00Z",
+      "modifiedOn": "2024-01-15T14:05:00Z",
+      "comments": "Needs a fix",
+      "approver": {"displayName": "Bob", "uniqueName": "bob@example.com"}
+    },
+    "environment": {"id": 5, "name": "Production"},
+    "release": {
+      "id": 1,
+      "name": "Release-1",
+      "releaseDefinition": {"id": 7, "name": "Fabrikam.CD"},
+      "project": {"id": "proj-id-001", "name": "octocat"}
+    }
+  },
+  "createdDate": "2024-01-15T14:05:00Z"
+}

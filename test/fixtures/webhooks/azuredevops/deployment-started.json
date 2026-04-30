@@ -1,0 +1,34 @@
+{
+  "id": "evt-deployment-started",
+  "eventType": "ms.azure-devops-release.deployment-started-event",
+  "publisherId": "rm",
+  "message": {"text": "Deployment of release Release-1 to stage Production started."},
+  "resource": {
+    "environment": {
+      "id": 5,
+      "name": "Production",
+      "status": "queued",
+      "modifiedOn": "2024-01-15T14:00:00Z",
+      "owner": {"displayName": "Alice", "uniqueName": "alice@example.com"},
+      "release": {
+        "id": 1,
+        "name": "Release-1",
+        "_links": {
+          "web": {
+            "href": "https://dev.azure.com/octocat/Fabrikam/_release?releaseId=1"
+          }
+        }
+      }
+    },
+    "release": {
+      "id": 1,
+      "name": "Release-1",
+      "createdOn": "2024-01-15T13:00:00Z",
+      "modifiedOn": "2024-01-15T14:00:00Z",
+      "releaseDefinition": {"id": 7, "name": "Fabrikam.CD"},
+      "project": {"id": "proj-id-001", "name": "octocat"}
+    },
+    "project": {"id": "proj-id-001", "name": "octocat"}
+  },
+  "createdDate": "2024-01-15T14:00:00Z"
+}

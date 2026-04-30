@@ -172,3 +172,99 @@ jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:00:00Z"
 jsonpath "$[0].body_json.actor.login" == "bob@example.com"
 jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
 jsonpath "$[0].body_json.payload.after" == "f1d2d2f924e986ac86fdf7b36c94bcdf32beec15"
+
+# ── release created → release — confusio shape ───────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/release-created.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "release"
+jsonpath "$[0].confusio_source" == "azuredevops"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "release.published"
+jsonpath "$[0].body_json.payload.release.name" == "Release-1"
+
+# ── deployment started → deployment — confusio shape ─────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/deployment-started.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "deployment"
+jsonpath "$[0].confusio_source" == "azuredevops"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "deployment.created"
+jsonpath "$[0].body_json.payload.deployment.environment" == "Production"
+
+# ── deployment completed → deployment_status — confusio shape ────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/deployment-completed-success.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "deployment_status"
+jsonpath "$[0].confusio_source" == "azuredevops"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "deployment.status.created"
+jsonpath "$[0].body_json.payload.deployment_status.state" == "success"
+
+# ── deployment approval completed → deployment_review — confusio shape ───────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/deployment-approval-completed-approved.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "deployment_review"
+jsonpath "$[0].confusio_source" == "azuredevops"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "deployment.review.approved"
+jsonpath "$[0].body_json.payload.approver.login" == "alice@example.com"

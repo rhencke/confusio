@@ -1,0 +1,25 @@
+{
+  "id": "evt-approval-pending",
+  "eventType": "ms.azure-devops-release.deployment-approval-pending-event",
+  "publisherId": "rm",
+  "message": {"text": "Pre deployment approval pending for release Release-1 on environment Production."},
+  "resource": {
+    "approval": {
+      "id": 21,
+      "approvalType": "preDeploy",
+      "status": "pending",
+      "createdOn": "2024-01-15T13:55:00Z",
+      "modifiedOn": "2024-01-15T13:55:00Z",
+      "comments": "",
+      "approver": {"displayName": "Alice", "uniqueName": "alice@example.com"}
+    },
+    "environment": {"id": 5, "name": "Production"},
+    "release": {
+      "id": 1,
+      "name": "Release-1",
+      "releaseDefinition": {"id": 7, "name": "Fabrikam.CD"},
+      "project": {"id": "proj-id-001", "name": "octocat"}
+    }
+  },
+  "createdDate": "2024-01-15T13:55:00Z"
+}

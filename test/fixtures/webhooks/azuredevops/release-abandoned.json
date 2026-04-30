@@ -1,0 +1,24 @@
+{
+  "id": "evt-release-abandoned",
+  "eventType": "ms.azure-devops-release.release-abandoned-event",
+  "publisherId": "rm",
+  "message": {"text": "Release Release-1 abandoned."},
+  "resource": {
+    "release": {
+      "id": 1,
+      "name": "Release-1",
+      "status": "abandoned",
+      "createdOn": "2024-01-15T13:00:00Z",
+      "modifiedOn": "2024-01-15T13:30:00Z",
+      "modifiedBy": {"displayName": "Bob", "uniqueName": "bob@example.com"},
+      "releaseDefinition": {"id": 7, "name": "Fabrikam.CD"},
+      "project": {"id": "proj-id-001", "name": "octocat"},
+      "_links": {
+        "web": {
+          "href": "https://dev.azure.com/octocat/Fabrikam/_release?releaseId=1"
+        }
+      }
+    }
+  },
+  "createdDate": "2024-01-15T13:30:00Z"
+}

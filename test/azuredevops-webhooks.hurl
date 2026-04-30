@@ -34,6 +34,86 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 
+# ── release created → release / published ────────────────────────────────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/release-created.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── release abandoned → release / deleted ────────────────────────────────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/release-abandoned.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── deployment started → deployment / created ────────────────────────────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/deployment-started.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── deployment completed (success) → deployment_status / created ─────────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/deployment-completed-success.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── deployment completed (rejected) → deployment_status / created ────────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/deployment-completed-rejected.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── deployment approval pending → deployment_review / requested ──────────────
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/deployment-approval-pending.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── deployment approval completed (approved) → deployment_review / approved ──
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/deployment-approval-completed-approved.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── deployment approval completed (rejected) → deployment_review / rejected ──
+
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+file,fixtures/webhooks/azuredevops/deployment-approval-completed-rejected.json;
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
 # ── workitem.updated (state: Active → Resolved) → issues / closed ─────────────
 
 POST http://{{host}}/webhooks/azuredevops
