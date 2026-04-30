@@ -234,6 +234,11 @@ rhodecode, tuleap) generate ephemeral admin credentials at container boot; no GH
 are needed for them.  The bootstrap credentials are written into the test job's environment
 by the setup script (see *Setup and teardown automation*).
 
+`bitbucket_datacenter` is the Tier 2 exception: the container can boot without persistent
+provider credentials, but Atlassian requires a Data Center license before repository and
+webhook flows are usable.  If `REAL_WORLD_BITBUCKET_DC_LICENSE` is absent, the job should
+skip with a classified `missing-secret` result instead of reporting endpoint regressions.
+
 ### Token lifetime and rotation
 
 - **Prefer non-expiring tokens** where the provider allows.  Expiring tokens fail silently
@@ -912,6 +917,13 @@ Start with simpler bootstrap (gitbucket, onedev) then work toward the more compl
 (kallithea, tuleap, bitbucket_datacenter).  Phabricator/Phorge is lowest priority given
 Phabricator's archived upstream status.
 
+Bitbucket Datacenter real-world coverage should create a project and repository inside the
+ephemeral container, configure a webhook with an `X-Hub-Signature` secret, and drive native
+events for `repo:refs_changed`, `pr:*`, `pr:reviewer:*`, `build:status_*`, and repository
+lifecycle where the installed version exposes them.  If the evaluation license is missing or
+expired, the run should be recorded as a license/setup skip; the mock-backed unit coverage
+remains authoritative until a licensed container is reachable.
+
 **Exit criteria**: all Docker backends produce a result (pass or classified failure) for two
 consecutive weekly runs without the bootstrap script hanging or erroring.
 
@@ -935,7 +947,7 @@ consecutive weekly runs without the bootstrap script hanging or erroring.
 | Rate limiting by provider | Low (weekly cadence, 1 req/s) | Low — job skips for the week | `429` classification; weekly cadence is conservative |
 | Generator produces wrong assertions for `~` endpoints | Medium (initially) | Low — false positive failures | Override layer; conservative initial assertions; tighten iteratively |
 | Docker image tag changes break bootstrap | Medium | Medium — Tier 2 job fails at bootstrap | Pin image tags in workflow; schedule quarterly tag updates |
-| Bitbucket Datacenter evaluation license expires | High (30-day trial) | Medium — DC job fails | Investigate free developer license or community edition; note in bootstrap script |
+| Bitbucket Datacenter evaluation license expires | High (30-day trial) | Medium — DC job skips or fails before provider assertions | Classify as `license-expired`, open a rotation reminder issue, and keep mock-backed webhook coverage as the active signal until a fresh license is installed |
 | Generator or reporter script has a bug | Low | Low — entire run produces no results | Phase 0 validation against gitea before enabling other backends |
 | GHA secrets sprawl (16+ secrets) | Low | Low — maintainability concern | Document all secrets in `test/real-world/SECRETS.md`; consistent naming |
 
