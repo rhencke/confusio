@@ -141,6 +141,110 @@ jsonpath "$[0].github_event" == ""
 jsonpath "$[0].body_json.type" == "milestone.created"
 jsonpath "$[0].body_json.payload.milestone.title" == "v1.0"
 
+# ── custom_property: created — confusio shape ─────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: custom_property
+file,fixtures/webhooks/gitbucket/custom_property-created.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "custom_property"
+jsonpath "$[0].confusio_source" == "gitbucket"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "custom_property.created"
+jsonpath "$[0].body_json.payload.definition.property_name" == "environment"
+
+# ── custom_property: deleted — confusio shape ─────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: custom_property
+file,fixtures/webhooks/gitbucket/custom_property-deleted.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "custom_property"
+jsonpath "$[0].confusio_source" == "gitbucket"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "custom_property.deleted"
+jsonpath "$[0].body_json.payload.definition.property_name" == "environment"
+
+# ── custom_property: updated — confusio shape ─────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: custom_property
+file,fixtures/webhooks/gitbucket/custom_property-updated.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "custom_property"
+jsonpath "$[0].confusio_source" == "gitbucket"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "custom_property.updated"
+jsonpath "$[0].body_json.payload.definition.default_value" == "staging"
+
+# ── custom_property_values: updated — confusio shape ──────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitbucket
+Content-Type: application/json
+X-GitHub-Event: custom_property_values
+file,fixtures/webhooks/gitbucket/custom_property_values-updated.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "custom_property_values"
+jsonpath "$[0].confusio_source" == "gitbucket"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "custom_property_values.updated"
+jsonpath "$[0].body_json.payload.new_property_values[0].property_name" == "environment"
+
 # ── push: push — confusio shape ──────────────────────────────────────────────
 
 POST http://{{target}}/reset
