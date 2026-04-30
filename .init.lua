@@ -48,11 +48,16 @@ end
 -- Key=value pairs (any arg containing "=") configure webhook options:
 --   webhook_secret_file_BACKEND=/path — path to 0600 file with inbound signing secret
 --   webhook_target=URL                — outbound delivery target URL
+--   webhook_target_name=NAME          — logical outbound target name (default: default)
 --   webhook_target_events=A,B,C      — comma-separated event filter (default: *)
 --   webhook_target_shape=SHAPE       — delivery shape: "github" (default) or "confusio"
 --   webhook_target_secret_file=/path — path to 0600 file with outbound HMAC signing secret
 local positional_keys = { "backend", "base_url" }
 local pos_idx = 1
+local function webhook_target_config()
+  config.webhook_target = config.webhook_target or {}
+  return config.webhook_target
+end
 for _, a in ipairs(arg or {}) do
   local kv_key, kv_val = a:match("^([^=]+)=(.*)$")
   if kv_key then
@@ -61,21 +66,19 @@ for _, a in ipairs(arg or {}) do
     if wh_backend then
       config.webhook_secrets[wh_backend] = read_secret_file(kv_val)
     elseif kv_key == "webhook_target" then
-      config.webhook_target = config.webhook_target or {}
-      config.webhook_target.url = kv_val
+      webhook_target_config().url = kv_val
+    elseif kv_key == "webhook_target_name" then
+      webhook_target_config().name = kv_val
     elseif kv_key == "webhook_target_events" then
-      config.webhook_target = config.webhook_target or {}
       local events = {}
       for e in kv_val:gmatch("[^,]+") do
         events[#events + 1] = e
       end
-      config.webhook_target.events = events
+      webhook_target_config().events = events
     elseif kv_key == "webhook_target_shape" then
-      config.webhook_target = config.webhook_target or {}
-      config.webhook_target.shape = kv_val
+      webhook_target_config().shape = kv_val
     elseif kv_key == "webhook_target_secret_file" then
-      config.webhook_target = config.webhook_target or {}
-      config.webhook_target.secret = read_secret_file(kv_val)
+      webhook_target_config().secret = read_secret_file(kv_val)
     end
   elseif positional_keys[pos_idx] then
     config[positional_keys[pos_idx]] = a

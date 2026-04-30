@@ -31,8 +31,8 @@ selects per-target which shape to emit.
 - **Multi-target fan-out** — A single inbound event can be delivered to multiple
   consumers, each with independent shape selection and event-type filtering.
 - **Fire-and-record delivery** — Matching targets are POSTed synchronously during the
-  inbound request.  Delivery outcomes are logged, but no retry or persistence layer is
-  currently implemented.
+  inbound request.  Every attempted delivery is logged, but no
+  retry, outbox, replay, or delivery-inspection layer is currently implemented.
 
 ### Non-Goals
 
@@ -183,8 +183,7 @@ Confusio reads the following from every inbound webhook request:
 
 | Code | Meaning |
 |------|---------|
-| `200 OK` | Payload accepted, queued for delivery |
-| `202 Accepted` | Payload accepted asynchronously (used when the outbox is non-blocking) |
+| `200 OK` | Payload accepted; matching targets received their one synchronous delivery attempt |
 | `400 Bad Request` | Malformed payload or unsupported `Content-Type` |
 | `401 Unauthorized` | Signature verification failed |
 | `404 Not Found` | Unknown backend name in path |
@@ -4379,17 +4378,28 @@ Marketplace listing.
 
 The current delivery path is fire-and-record.  After an inbound webhook is verified and
 normalized, confusio walks the in-memory target registry and performs one synchronous
-HTTP POST to each target whose event filter matches.  The result of each POST is logged;
-failed deliveries are not retried and no delivery state is persisted.
+HTTP POST to each target whose event filter matches.  The result of each POST is logged.
+Failed deliveries are terminal for that attempt: confusio does not retry, persist
+delivery state, or expose a replay API.
+
+### Current guarantee: try once, log all
+
+Each matching target receives one delivery attempt during the inbound request.  The
+log line includes the target name, event type, backend, delivery ID, latency,
+HTTP status when a response is received, and error text when delivery fails before a
+response.  Logging is best-effort observability; the inbound response does not imply
+that downstream consumers processed the event, and consumers that miss an event must
+reconcile from the upstream forge API.
 
 The durable outbox, replay, pause/resume, retry-budget, and circuit-breaker sections
 below describe planned behavior rather than the currently implemented runtime.
 
-### Planned guarantee: at-least-once
+### Deferred durable delivery design
 
-Confusio guarantees that each event will be delivered **at least once** to each
-matching target.  It does **not** guarantee exactly-once delivery.  Consumers must
-be idempotent with respect to duplicate deliveries.
+The possible future durable-delivery design would guarantee that each event is delivered
+**at least once** to each matching target.  It would **not** guarantee exactly-once
+delivery.  Consumers would still need to be idempotent with respect to duplicate
+deliveries.
 
 Duplicate deliveries arise in two scenarios:
 
@@ -5049,15 +5059,17 @@ Current configuration is static and supplied at startup through SCRIPTARGS:
 ```sh
 sh ./confusio.com -p 8080 -- gitea \
   webhook_target=https://example.com/webhook \
+  webhook_target_name=primary \
   webhook_target_events=push,pull_request \
   webhook_target_shape=confusio \
   webhook_target_secret_file=/run/secrets/webhook-target
 ```
 
-Only one target is registered from CLI configuration today.  `webhook_target_events`
-defaults to `*`, `webhook_target_shape` defaults to `github`, and the target secret is
-optional.  Delivery to matching targets is synchronous and fire-and-record, as described
-in [Delivery Semantics](#delivery-semantics).
+Only one target is registered from CLI configuration today.  `webhook_target_name`
+defaults to `default`, `webhook_target_events` defaults to `*`,
+`webhook_target_shape` defaults to `github`, and the target secret is optional.
+Delivery to matching targets is synchronous and fire-and-record, as described in
+[Delivery Semantics](#delivery-semantics).
 
 The persistent target resource and admin API sections below describe planned behavior
 rather than the currently implemented runtime.
@@ -5197,8 +5209,8 @@ any content encoding).  The secret is the HMAC key.
 
 ### Fan-out dispatch logic
 
-When confusio successfully ingests and verifies an inbound event, it performs a
-synchronous fan-out pass before returning the HTTP response to the forge.
+In the deferred durable-delivery design, confusio would perform a fan-out pass before
+returning the HTTP response to the forge.
 
 **Fan-out steps:**
 

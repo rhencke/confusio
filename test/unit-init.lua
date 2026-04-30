@@ -200,6 +200,7 @@ end
 --   positional: backend name (backend file load is suppressed by the dofile stub)
 --   webhook_secret_file_BACKEND: path to 0600 file with inbound signing secret
 --   webhook_target=URL: outbound delivery target
+--   webhook_target_name=wt-coverage: logical outbound target name
 --   webhook_target_events=push,pull_request: event filter
 --   webhook_target_shape=github: delivery shape
 --   webhook_target_secret_file: path to 0600 file with outbound HMAC signing secret
@@ -207,6 +208,7 @@ arg = { -- luacheck: globals arg
   "testbackend",
   "webhook_secret_file_gitea=" .. _ws_secret_file,
   "webhook_target=https://hook.example.com/wt-coverage",
+  "webhook_target_name=wt-coverage",
   "webhook_target_events=push,pull_request",
   "webhook_target_shape=github",
   "webhook_target_secret_file=" .. _wt_secret_file,
@@ -238,6 +240,10 @@ assert(
 assert(
   config.webhook_target.url == "https://hook.example.com/wt-coverage",
   "webhook_target CLI arg: url mismatch: " .. tostring((config.webhook_target or {}).url)
+)
+assert(
+  config.webhook_target.name == "wt-coverage",
+  "webhook_target_name CLI arg: name mismatch: " .. tostring((config.webhook_target or {}).name)
 )
 assert(
   type(config.webhook_target.events) == "table",
@@ -3291,7 +3297,11 @@ local fd0 = fanout_dispatch("gitea", "create", { ref = "refs/tags/v1.0" })
 eq(fd0, 0, "fanout_dispatch no matching targets: returns 0 for unsubscribed event")
 
 -- Register a wildcard target and verify dispatch calls deliver_fire.
-fanout_register_target({ url = "https://fd-test.example.com/hook", events = { "*" } })
+fanout_register_target({
+  url = "https://fd-test.example.com/hook",
+  name = "fd-wildcard",
+  events = { "*" },
+})
 
 _fd_calls = {}
 local fd1 = fanout_dispatch("gitea", "create", { ref = "refs/tags/v1.0" })
@@ -3300,6 +3310,7 @@ ok(#_fd_calls == 1, "fanout_dispatch wildcard: deliver_fire called once")
 eq(_fd_calls[1].backend, "gitea", "fanout_dispatch wildcard: backend passed to deliver_fire")
 eq(_fd_calls[1].event_type, "create", "fanout_dispatch wildcard: event_type passed")
 eq(_fd_calls[1].tgt.url, "https://fd-test.example.com/hook", "fanout_dispatch wildcard: target url")
+eq(_fd_calls[1].tgt.name, "fd-wildcard", "fanout_dispatch wildcard: target name")
 
 -- fanout_dispatch with non-matching event type for an issues-only target.
 fanout_register_target({ url = "https://filtered.example.com/hook", events = { "issues" } })
@@ -3312,11 +3323,13 @@ eq(
   "https://fd-test.example.com/hook",
   "fanout_dispatch filtered: correct target fired"
 )
+eq(_fd_calls[1].tgt.name, "fd-wildcard", "fanout_dispatch filtered: preserves named target")
 
 -- Matching event type delivers to both wildcard and issues targets.
 _fd_calls = {}
 local fd3 = fanout_dispatch("gitea", "issues", { action = "opened" })
 eq(fd3, 2, "fanout_dispatch match: wildcard and issues targets both match issues event")
+eq(_fd_calls[2].tgt.name, "default", "fanout_dispatch default: unnamed target defaults to default")
 
 deliver_fire = _real_deliver_fire -- luacheck: globals deliver_fire
 
@@ -3436,40 +3449,67 @@ do
     "deliver_fire with secret: X-Gitea-Signature header present for gitea backend"
   )
 
-  -- deliver_fire: outcome logging — Log is called with kLogWarn on failure
-  -- and kLogVerbose on success.
+  -- deliver_fire: delivery attempts are logged in Redbean-style request form.
+  local target_logged = {
+    name = "logged-target",
+    url = "https://df-logged.example.com/hook",
+    shape = "github",
+    secret = "",
+  }
   local _log_calls = {}
   local _real_Log = Log
   Log = function(level, msg) -- luacheck: globals Log
     _log_calls[#_log_calls + 1] = { level = level, msg = msg }
   end
 
-  -- Successful delivery: Log called at kLogVerbose with status in message.
-  _df_mock_status = 200
+  _df_mock_status = 202
   _log_calls = {}
-  deliver_fire(target_github, "gitea", "push", { ref = "refs/heads/main" })
+  deliver_fire(target_logged, "gitea", "push", { ref = "refs/heads/main" })
   ok(#_log_calls == 1, "deliver_fire success: Log called once")
   eq(_log_calls[1].level, kLogVerbose, "deliver_fire success: logged at kLogVerbose") -- luacheck: globals kLogVerbose
-  ok(_log_calls[1].msg:find("status=200") ~= nil, "deliver_fire success: log contains status=200")
-  ok(_log_calls[1].msg:find("url=") ~= nil, "deliver_fire success: log contains url=")
-  ok(_log_calls[1].msg:find("event=push") ~= nil, "deliver_fire success: log contains event=push")
+  ok(
+    _log_calls[1].msg:find('"POST https://df%-logged%.example%.com/hook HTTP/1%.1" 202') ~= nil,
+    "deliver_fire success: log uses Redbean-style request format"
+  )
+  ok(_log_calls[1].msg:find("target=logged%-target") ~= nil, "deliver_fire success: target logged")
+  ok(_log_calls[1].msg:find("backend=gitea") ~= nil, "deliver_fire success: backend logged")
+  ok(_log_calls[1].msg:find("event=push") ~= nil, "deliver_fire success: event logged")
+  ok(
+    _log_calls[1].msg:find("delivery=" .. _df_last_opts.headers["X-GitHub-Delivery"], 1, true)
+      ~= nil,
+    "deliver_fire success: delivery id logged"
+  )
+  ok(_log_calls[1].msg:find("ms") ~= nil, "deliver_fire success: duration logged")
+  ok(_log_calls[1].msg:find("error=") == nil, "deliver_fire success: no error logged")
 
-  -- HTTP error delivery: Log called at kLogWarn.
+  -- deliver_fire: HTTP failures are logged with status and no error string.
   _df_mock_status = 503
   _log_calls = {}
-  deliver_fire(target_github, "gitea", "push", { ref = "refs/heads/main" })
+  deliver_fire(target_logged, "gitea", "push", { ref = "refs/heads/main" })
   ok(#_log_calls == 1, "deliver_fire 503: Log called once")
   eq(_log_calls[1].level, kLogWarn, "deliver_fire 503: logged at kLogWarn") -- luacheck: globals kLogWarn
-  ok(_log_calls[1].msg:find("status=503") ~= nil, "deliver_fire 503: log contains status=503")
+  ok(
+    _log_calls[1].msg:find('"POST https://df%-logged%.example%.com/hook HTTP/1%.1" 503') ~= nil,
+    "deliver_fire 503: log contains request and status"
+  )
+  ok(_log_calls[1].msg:find("error=") == nil, "deliver_fire 503: no error logged")
 
-  -- Network error: Log called at kLogWarn with error in message.
+  -- deliver_fire: network failures are logged with an error and no status.
   _df_mock_status = 200
   _df_mock_error = "connection refused"
   _log_calls = {}
-  deliver_fire(target_github, "gitea", "push", { ref = "refs/heads/main" })
+  deliver_fire(target_logged, "gitea", "push", { ref = "refs/heads/main" })
   ok(#_log_calls == 1, "deliver_fire network error: Log called once")
   eq(_log_calls[1].level, kLogWarn, "deliver_fire network error: logged at kLogWarn")
+  ok(
+    _log_calls[1].msg:find('"POST https://df%-logged%.example%.com/hook HTTP/1%.1" 000') ~= nil,
+    "deliver_fire network error: log uses zero status"
+  )
   ok(_log_calls[1].msg:find("error=") ~= nil, "deliver_fire network error: log contains error=")
+  ok(
+    _log_calls[1].msg:find("connection refused", 1, true) ~= nil,
+    "deliver_fire network error: error text logged"
+  )
   _df_mock_error = nil
 
   -- Restore Log and Fetch.
