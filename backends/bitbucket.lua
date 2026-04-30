@@ -423,6 +423,44 @@ local function translate_bb_issue_comment(c)
   }
 end
 
+local function bb_commit_comment_sha(c)
+  local links = c.links or {}
+  local function extract(href)
+    if href then
+      local sha = href:match("/commits/([0-9a-fA-F]+)")
+        or href:match("/commit/([0-9a-fA-F]+)")
+        or href:match("[?&]at=([0-9a-fA-F]+)")
+      return sha
+    end
+    return nil
+  end
+  return extract((links.commit or {}).href)
+    or extract((links.code or {}).href)
+    or extract((links.html or {}).href)
+    or extract((links.self or {}).href)
+    or ""
+end
+
+local function translate_bb_commit_comment(c)
+  if not c then
+    return {}
+  end
+  local content = (c.content or {}).raw or ""
+  local inline = c.inline or {}
+  return {
+    id = c.id or 0,
+    body = content,
+    commit_id = c.commit_id or bb_commit_comment_sha(c),
+    path = inline.path,
+    position = inline.to or inline.from,
+    line = inline.to or inline.from,
+    user = translate_bb_user(c.user or c.author),
+    html_url = (c.links and c.links.html and c.links.html.href) or "",
+    created_at = c.created_on or "",
+    updated_at = c.updated_on or c.created_on or "",
+  }
+end
+
 -- Translate a Bitbucket milestone to GitHub format.
 -- Bitbucket milestone: { id, name, resource_uri }
 local function translate_bb_milestone(m)
@@ -2518,6 +2556,24 @@ b:webhook("issue:comment_created", function(payload)
   })
 end)
 
+-- repo:commit_comment_created: commit comment created.
+-- Bitbucket Cloud sends only created events for commit comments.
+b:webhook("repo:commit_comment_created", function(payload)
+  return make_internal_event({
+    event = "commit_comment",
+    action = "created",
+    provider = "bitbucket",
+    raw = payload,
+    data = {
+      action = "created",
+      comment = translate_bb_commit_comment(payload.comment or {}),
+      repository = translate_bb_repo(payload.repository or {}),
+      sender = translate_bb_user(payload.actor or {}),
+    },
+    timestamp = (payload.comment or {}).created_on or "",
+  })
+end)
+
 -- pull_request: opened, synchronize, closed.
 -- Registered for X-Event-Key: pullrequest:created, :updated, :fulfilled, :rejected.
 -- Bitbucket Cloud does not expose separate events for edited or reopen; all
@@ -2803,6 +2859,7 @@ local BB_ACTIONLESS_NORMALIZED_EVENTS = {
 local BB_NORMALIZED_WEBHOOK_EVENTS = {
   "issues",
   "issue_comment",
+  "commit_comment",
   "pull_request",
   "pull_request_review",
   "status",

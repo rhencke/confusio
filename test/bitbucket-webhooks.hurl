@@ -251,6 +251,51 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 
+# ── repo:commit_comment_created → commit_comment / created ───────────────────
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: repo:commit_comment_created
+{
+  "actor": {
+    "nickname": "bob",
+    "display_name": "Bob",
+    "account_id": "def456",
+    "links": {"avatar": {"href": ""}, "html": {"href": ""}}
+  },
+  "comment": {
+    "id": 303,
+    "content": {"raw": "Nit: this should use the shared helper."},
+    "created_on": "2024-01-15T10:40:00Z",
+    "updated_on": "2024-01-15T10:40:00Z",
+    "user": {
+      "nickname": "bob", "display_name": "Bob", "account_id": "def456",
+      "links": {"avatar": {"href": ""}, "html": {"href": ""}}
+    },
+    "inline": {"path": "src/main.lua", "to": 42},
+    "links": {
+      "html": {
+        "href": "https://bitbucket.org/octocat/hello-world/commits/abc1234567890abcdef1234567890abcdef12345#comment-303"
+      }
+    }
+  },
+  "repository": {
+    "full_name": "octocat/hello-world",
+    "name": "hello-world",
+    "slug": "hello-world",
+    "is_private": false,
+    "owner": {
+      "nickname": "octocat", "display_name": "The Octocat", "account_id": "xyz789",
+      "type": "user", "links": {"avatar": {"href": ""}, "html": {"href": ""}}
+    },
+    "links": {"html": {"href": "https://bitbucket.org/octocat/hello-world"}}
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
 # ── pullrequest:created → pull_request / opened ──────────────────────────────
 
 POST http://{{host}}/webhooks/bitbucket

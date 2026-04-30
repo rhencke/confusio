@@ -121,6 +121,28 @@ jsonpath "$[0].github_event" == "issue_comment"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 
+# ── commit_comment: created ──────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: repo:commit_comment_created
+file,fixtures/webhooks/bitbucket/commit_comment-created.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "commit_comment"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
 # ── pull_request: opened ──────────────────────────────────────────────────────
 
 POST http://{{target}}/reset
