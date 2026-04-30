@@ -241,13 +241,24 @@ run_delivery_phase test/webhook-delivery-gerrit-confusio-shape.hurl \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
 
-# Phase 19: GitBucket fixture-based delivery tests — every event × action triple.
+# Phase 19: Gitblit fixture-based delivery tests — post-receive ref commands.
+run_delivery_phase test/webhook-delivery-gitblit.hurl \
+  -- gitblit "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 20: Gitblit delivery with "confusio" shape — spot-checks normalized ref events.
+run_delivery_phase test/webhook-delivery-gitblit-confusio-shape.hurl \
+  -- gitblit "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+  "webhook_target_shape=confusio"
+
+# Phase 21: GitBucket fixture-based delivery tests — every event × action triple.
 # GitBucket uses X-GitHub-Event header (GitHub-compatible format).
 run_delivery_phase test/webhook-delivery-gitbucket.hurl \
   -- gitbucket "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
-# Phase 20: GitBucket delivery with "confusio" shape — spot-checks X-Confusio-* headers.
+# Phase 22: GitBucket delivery with "confusio" shape — spot-checks X-Confusio-* headers.
 # Verifies X-Confusio-Source is "gitbucket" and X-GitHub-Event is absent.
 run_delivery_phase test/webhook-delivery-gitbucket-confusio-shape.hurl \
   -- gitbucket "http://127.0.0.1:$MOCK_PORT" \

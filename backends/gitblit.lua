@@ -95,6 +95,47 @@ local function translate_user(u)
   }
 end
 
+local ZERO_SHA = "0000000000000000000000000000000000000000"
+
+local function ref_name(ref)
+  return (ref or ""):match("^refs/heads/(.+)$")
+    or (ref or ""):match("^refs/tags/(.+)$")
+    or (ref or "")
+end
+
+local function ref_type(ref)
+  if (ref or ""):match("^refs/tags/") then
+    return "tag"
+  end
+  return "branch"
+end
+
+local function translate_push_commit(c)
+  if not c then
+    return {}
+  end
+  local author = c.author or {}
+  return {
+    id = c.id or "",
+    message = c.message or "",
+    timestamp = c.timestamp or "",
+    url = c.url or "",
+    author = {
+      name = author.name or "",
+      email = author.email or "",
+      username = "",
+    },
+    committer = {
+      name = author.name or "",
+      email = author.email or "",
+      username = "",
+    },
+    added = c.added or {},
+    removed = c.removed or {},
+    modified = c.modified or {},
+  }
+end
+
 -- Return all repos from LIST_REPOSITORIES whose name starts with prefix.
 local function list_repos_by_prefix(prefix)
   local ok, status, _, body = fetch_rpc("LIST_REPOSITORIES")
@@ -243,5 +284,127 @@ b:rest("search_users", function()
   end
   respond_json(200, { total_count = #items, incomplete_results = false, items = items })
 end)
+
+-- Gitblit post-receive webhooks carry one or more ref update commands in the
+-- body.  Confusio normalizes the first successful command into the matching
+-- GitHub ref event family: create, delete, or push.
+b:webhook("post-receive", function(payload)
+  local command = nil
+  for _, c in ipairs(payload.commands or {}) do
+    if not command and (c.result == nil or c.result == "OK") then
+      command = c
+    end
+  end
+  if not command then
+    return nil, "No successful Gitblit ref command"
+  end
+
+  local repo = translate_repo(payload.repository or {})
+  local sender = translate_user(payload.user or {})
+  local before = command.oldId or ""
+  local after = command.newId or ""
+  local raw_ref = command.refName or ""
+  local kind = ref_type(raw_ref)
+  local name = ref_name(raw_ref)
+  local command_type = command.type or ""
+
+  if command_type == "CREATE" or before == ZERO_SHA then
+    return make_internal_event({
+      event = "create",
+      action = "create",
+      provider = "gitblit",
+      raw = payload,
+      data = {
+        ref = name,
+        ref_type = kind,
+        master_branch = (payload.repository or {}).defaultBranch or "",
+        description = (payload.repository or {}).description,
+        pusher_type = "user",
+        repository = repo,
+        sender = sender,
+      },
+      timestamp = (payload.repository or {}).lastChange or "",
+    })
+  end
+
+  if command_type == "DELETE" or after == ZERO_SHA then
+    return make_internal_event({
+      event = "delete",
+      action = "delete",
+      provider = "gitblit",
+      raw = payload,
+      data = {
+        ref = name,
+        ref_type = kind,
+        master_branch = (payload.repository or {}).defaultBranch or "",
+        description = (payload.repository or {}).description,
+        pusher_type = "user",
+        repository = repo,
+        sender = sender,
+      },
+      timestamp = (payload.repository or {}).lastChange or "",
+    })
+  end
+
+  local commits = {}
+  for _, c in ipairs(command.commits or {}) do
+    commits[#commits + 1] = translate_push_commit(c)
+  end
+  local head_commit = #commits > 0 and commits[#commits] or nil
+  local user = payload.user or {}
+  return make_internal_event({
+    event = "push",
+    action = "push",
+    provider = "gitblit",
+    raw = payload,
+    data = {
+      ref = raw_ref,
+      before = before,
+      after = after,
+      created = false,
+      deleted = false,
+      forced = false,
+      compare = "",
+      commits = commits,
+      head_commit = head_commit,
+      pusher = {
+        name = user.displayName or user.name or "",
+        email = user.emailAddress or "",
+      },
+      repository = repo,
+      sender = sender,
+    },
+    timestamp = head_commit and head_commit.timestamp
+      or (payload.repository or {}).lastChange
+      or "",
+  })
+end)
+
+local function normalized_payload_without_envelope_fields(data)
+  local payload = {}
+  for k, v in pairs(data or {}) do
+    if k ~= "sender" and k ~= "repository" then
+      payload[k] = v
+    end
+  end
+  return payload
+end
+
+local function translate_gitblit_normalized_webhook(internal_event, fields)
+  local data = internal_event.data or {}
+  fields = fields or {}
+  return make_normalized_webhook_envelope(internal_event, {
+    id = fields.id,
+    type = fields.type or normalized_webhook_event_type(internal_event.event, ""),
+    occurred_at = fields.occurred_at,
+    actor = fields.actor or data.sender,
+    repository = fields.repository or data.repository,
+    payload = fields.payload or normalized_payload_without_envelope_fields(data),
+  })
+end
+
+for _, event in ipairs({ "push", "create", "delete" }) do
+  b:webhook_translator(event, translate_gitblit_normalized_webhook)
+end
 
 b:build()

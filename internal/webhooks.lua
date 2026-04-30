@@ -465,12 +465,15 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
     -- Determine canonical event name.
     -- For header-based backends: read the event-type header.
     -- For body-based backends:   the event type is embedded in the payload.
-    --   Azure DevOps uses payload.eventType (e.g. "workitem.created", "git.repo.created").
+    --   Azure DevOps and Harness use payload.eventType.
+    --   Gitblit uses payload.event (e.g. "post-receive").
     --   Gerrit uses payload.type (e.g. "comment-added").
     local ev = event_header(backend)
     if ev == nil and type(payload) == "table" then
       if payload.eventType then
         ev = payload.eventType
+      elseif backend == "gitblit" and payload.event then
+        ev = payload.event
       elseif backend == "gerrit" and payload.type then
         ev = payload.type
       end
