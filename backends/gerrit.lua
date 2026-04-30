@@ -437,6 +437,8 @@ local function gerrit_change_actor(payload)
     or payload.restorer
     or payload.changer
     or payload.editor
+    or payload.adder
+    or payload.remover
     or payload.author
     or (payload.change or {}).owner
     or {}
@@ -495,6 +497,12 @@ local function gerrit_pull_request_event(payload, action, opts)
   if opts.assignee ~= nil then
     data.pull_request.assignee = opts.assignee
   end
+  if opts.requested_reviewer then
+    data.requested_reviewer = opts.requested_reviewer
+  end
+  if opts.requested_reviewers then
+    data.pull_request.requested_reviewers = opts.requested_reviewers
+  end
   if opts.labels then
     data.pull_request.labels = opts.labels
   end
@@ -505,6 +513,22 @@ local function gerrit_pull_request_event(payload, action, opts)
     raw = payload,
     data = data,
     timestamp = timestamp,
+  })
+end
+
+local function gerrit_reviewer_event(payload, action)
+  payload = payload or {}
+  local reviewer = translate_gerrit_user(payload.reviewer)
+  return gerrit_pull_request_event(payload, action, {
+    requested_reviewer = reviewer,
+    requested_reviewers = action == "review_requested" and { reviewer } or {},
+    changes = {
+      reviewer = {
+        from = action == "review_request_removed" and reviewer or nil,
+        to = action == "review_requested" and reviewer or nil,
+      },
+      approvals = payload.approvals,
+    },
   })
 end
 
@@ -590,6 +614,39 @@ local function translate_gerrit_review(payload, state)
   }
 end
 
+local function gerrit_vote_deleted_event(payload)
+  payload = payload or {}
+  local reviewer = payload.reviewer or {}
+  local remover = payload.remover or {}
+  local pr, repo = translate_gerrit_change(payload.change, payload.patchSet)
+  local review = {
+    id = 0,
+    node_id = "",
+    user = translate_gerrit_user(reviewer),
+    body = payload.comment or "",
+    state = "DISMISSED",
+    submitted_at = gerrit_event_timestamp(payload),
+    html_url = "",
+    pull_request_url = "",
+  }
+  return make_internal_event({
+    event = "pull_request_review",
+    action = "dismissed",
+    provider = "gerrit",
+    raw = payload,
+    data = {
+      action = "dismissed",
+      review = review,
+      pull_request = pr,
+      repository = repo,
+      sender = translate_gerrit_user(remover),
+      reviewer = translate_gerrit_user(reviewer),
+      approvals = payload.approvals or {},
+    },
+    timestamp = review.submitted_at,
+  })
+end
+
 b:webhook("comment-added", function(payload)
   local state = gerrit_approval_state(payload.approvals)
   local author = payload.author or {}
@@ -640,6 +697,16 @@ end)
 b:webhook("change-restored", function(payload)
   return gerrit_pull_request_event(payload, "reopened")
 end)
+
+b:webhook("reviewer-added", function(payload)
+  return gerrit_reviewer_event(payload, "review_requested")
+end)
+
+b:webhook("reviewer-deleted", function(payload)
+  return gerrit_reviewer_event(payload, "review_request_removed")
+end)
+
+b:webhook("vote-deleted", gerrit_vote_deleted_event)
 
 b:webhook("topic-changed", gerrit_topic_changed_event)
 

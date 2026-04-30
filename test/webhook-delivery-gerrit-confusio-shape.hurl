@@ -2,7 +2,7 @@
 #
 # When webhook_target_shape=confusio, the outbound delivery uses X-Confusio-* headers
 # instead of X-GitHub-* headers.  This file verifies Gerrit pull_request_review
-# and pull_request lifecycle events in confusio shape.
+# and pull_request events in confusio shape.
 
 # ── comment-added (approved) → pull_request_review — confusio shape ───────────
 
@@ -85,6 +85,91 @@ jsonpath "$[0].body_json.type" == "pull_request.review.submitted"
 jsonpath "$[0].body_json.occurred_at" == "1705316400"
 jsonpath "$[0].body_json.actor.login" == "charlie"
 jsonpath "$[0].body_json.payload.review.state" == "COMMENTED"
+
+# ── reviewer-added → pull_request.review_requested — confusio shape ─────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/reviewer-added.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "pull_request"
+jsonpath "$[0].confusio_source" == "gerrit"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "pull_request.review_requested"
+jsonpath "$[0].body_json.occurred_at" == "1705357800"
+jsonpath "$[0].body_json.actor.login" == "bob"
+jsonpath "$[0].body_json.payload.action" == "review_requested"
+jsonpath "$[0].body_json.payload.requested_reviewer.login" == "nina"
+
+# ── reviewer-deleted → pull_request.review_request_removed — confusio shape ─
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/reviewer-deleted.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "pull_request"
+jsonpath "$[0].confusio_source" == "gerrit"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "pull_request.review_request_removed"
+jsonpath "$[0].body_json.occurred_at" == "1705361400"
+jsonpath "$[0].body_json.actor.login" == "bob"
+jsonpath "$[0].body_json.payload.action" == "review_request_removed"
+jsonpath "$[0].body_json.payload.requested_reviewer.login" == "nina"
+jsonpath "$[0].body_json.payload.changes.reviewer.from.login" == "nina"
+
+# ── vote-deleted → pull_request_review.dismissed — confusio shape ──────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/vote-deleted.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "pull_request_review"
+jsonpath "$[0].confusio_source" == "gerrit"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "pull_request.review.dismissed"
+jsonpath "$[0].body_json.occurred_at" == "1705365000"
+jsonpath "$[0].body_json.actor.login" == "bob"
+jsonpath "$[0].body_json.payload.action" == "dismissed"
+jsonpath "$[0].body_json.payload.review.user.login" == "nina"
+jsonpath "$[0].body_json.payload.review.state" == "DISMISSED"
+jsonpath "$[0].body_json.payload.approvals[0].type" == "Code-Review"
 
 # ── patchset-created (first patch set) → pull_request.opened — confusio shape
 

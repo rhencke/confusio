@@ -1,0 +1,42 @@
+{
+  "type": "vote-deleted",
+  "eventCreatedOn": 1705365000,
+  "change": {
+    "_number": 1004,
+    "project": "myorg/my-repo",
+    "branch": "main",
+    "subject": "Tune checkout validations",
+    "status": "NEW",
+    "wip": false,
+    "owner": {
+      "name": "Alice",
+      "email": "alice@example.com",
+      "username": "alice"
+    },
+    "created": "2024-01-15T20:00:00Z",
+    "updated": "2024-01-15T22:30:00Z"
+  },
+  "patchSet": {
+    "number": 1,
+    "revision": "777aaa888bbb",
+    "createdOn": 1705356000
+  },
+  "reviewer": {
+    "name": "Nina",
+    "email": "nina@example.com",
+    "username": "nina"
+  },
+  "remover": {
+    "name": "Bob",
+    "email": "bob@example.com",
+    "username": "bob"
+  },
+  "comment": "Removing stale +1",
+  "approvals": [
+    {
+      "type": "Code-Review",
+      "value": "+1",
+      "oldValue": "0"
+    }
+  ]
+}
