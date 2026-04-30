@@ -55,7 +55,7 @@ value is `y` or starts with `~`.  Concretely:
 | gitbucket | 93 | 66 |
 | bitbucket | 55 | 71 |
 | bitbucket_datacenter | 39 | 78 |
-| azuredevops | 31 | 67 |
+| azuredevops | 80 | 79 |
 | onedev | 21 | 72 |
 | pagure | 24 | 73 |
 | sourcehut | 19 | 68 |
@@ -194,7 +194,7 @@ minimum set; request no more than this.
 | `gitea` / `forgejo` / family | `read:repository`, `read:user`, `read:organization`, `read:issue`, `write:repository` (for mutation endpoints), `write:issue` |
 | `gitlab` | `read_api` for read-only; `api` for mutation endpoints |
 | `bitbucket` | App password: `Repositories: Read/Write`, `Issues: Read/Write`, `Pull requests: Read/Write`, `Account: Read` |
-| `azuredevops` | PAT scopes: `Code (Read & Write)`, `Work Items (Read & Write)`, `Project and Team (Read)` |
+| `azuredevops` | PAT scopes: `Code (Read & Write)`, `Work Items (Read & Write)`, `Project and Team (Read)`, `Build (Read)`, `Release (Read)`, `Advanced Security (Read)` |
 | `harness` | Account-level PAT with `core_project_viewer` + `code_repo_viewer` minimum |
 | `sourcehut` | `REPOSITORIES`, `PROFILE` (read-only until paid account) |
 | `pagure` | Default token scopes: `pull_request`, `issue_comment`, `create_branch` |
