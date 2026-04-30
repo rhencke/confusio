@@ -155,6 +155,9 @@ dump-endpoints: $(REDBEAN_BIN) $(DUMP_ENDPOINTS_SCRIPT) $(INIT_SRCS)
 validate-csv: $(REDBEAN_BIN) $(DUMP_ENDPOINTS_SCRIPT) $(INIT_SRCS)
 	$(REDBEAN) $(DUMP_ENDPOINTS_SCRIPT) | python3 scripts/validate-csv.py site/compatibility.csv
 
+validate-webhook-docs: $(REDBEAN_BIN) $(DUMP_ENDPOINTS_SCRIPT) $(INIT_SRCS) site/compatibility.csv docs/webhooks.md scripts/gen-matrix.py
+	$(REDBEAN) $(DUMP_ENDPOINTS_SCRIPT) | python3 scripts/gen-matrix.py --check-webhook-docs - site/compatibility.csv docs/webhooks.md
+
 validate-tests: $(REDBEAN_BIN) $(DUMP_ENDPOINTS_SCRIPT) $(INIT_SRCS)
 	$(REDBEAN) $(DUMP_ENDPOINTS_SCRIPT) | python3 scripts/validate-tests.py $(BACKENDS)
 
@@ -217,7 +220,7 @@ site: $(REDBEAN_BIN) $(DUMP_ENDPOINTS_SCRIPT) $(INIT_SRCS)
 	$(REDBEAN) $(DUMP_ENDPOINTS_SCRIPT) | \
 	  python3 scripts/gen-matrix.py - site/compatibility.csv site/index.html _site/index.html
 
-test: test-unit test-integration test-format test-lint validate-csv validate-tests validate-providers validate-claims validate-schema validate-builders validate-capabilities validate-fixtures
+test: test-unit test-integration test-format test-lint validate-csv validate-tests validate-providers validate-claims validate-schema validate-builders validate-capabilities validate-fixtures validate-webhook-docs
 
 # Pure-Lua unit tests (no HTTP server needed): .init.lua functions + GraphQL subsystem
 test-unit-functions: $(REDBEAN_BIN) $(INIT_SRCS) $(wildcard test/unit-*.lua)

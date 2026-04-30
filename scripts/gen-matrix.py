@@ -3,6 +3,9 @@
 
 Usage:
   python3 scripts/gen-matrix.py [catalog] [csv] [template] [output]
+  python3 scripts/gen-matrix.py --webhook-markdown [catalog] [csv]
+  python3 scripts/gen-matrix.py --update-webhook-docs [catalog] [csv] [doc]
+  python3 scripts/gen-matrix.py --check-webhook-docs [catalog] [csv] [doc]
 
   catalog  path to catalog JSON, or '-' for stdin (default: '-')
   csv      path to compatibility CSV  (default: site/compatibility.csv)
@@ -27,6 +30,9 @@ import csv
 import json
 import sys
 from pathlib import Path
+
+WEBHOOK_DOCS_START = "<!-- WEBHOOK_ACTION_SUPPORT_START -->"
+WEBHOOK_DOCS_END = "<!-- WEBHOOK_ACTION_SUPPORT_END -->"
 
 PROVIDER_NAMES = {
     "azuredevops":         "Azure DevOps",
@@ -92,6 +98,11 @@ GROUP_NAMES = {
 # Human-readable names for webhook event types (the segment before "/" in the path).
 WEBHOOK_EVENT_NAMES = {
     "commit_comment":               "Commit Comments",
+    "create":                       "Create",
+    "delete":                       "Delete",
+    "discussion":                   "Discussions",
+    "discussion_comment":           "Discussion Comments",
+    "fork":                         "Fork",
     "issues":                       "Issues",
     "issue_comment":                "Issue Comments",
     "label":                        "Labels",
@@ -108,6 +119,10 @@ WEBHOOK_EVENT_NAMES = {
 }
 
 
+def webhook_event_name(event):
+    return WEBHOOK_EVENT_NAMES.get(event, event.replace("_", " ").title())
+
+
 def make_cell(val):
     val = val.strip()
     if val == "y":
@@ -119,6 +134,39 @@ def make_cell(val):
     if explanation:
         return f'<td class="partial" title="{explanation}" tabindex="0">&#x26A0;&#xFE0F;</td>'
     return '<td class="partial">&#x26A0;&#xFE0F;</td>'
+
+
+def markdown_escape(value):
+    return value.replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ")
+
+
+def make_markdown_cell(val):
+    val = val.strip()
+    if val == "y":
+        return "✓"
+    if val == "n":
+        return "✗"
+    explanation = val[1:].strip() if val.startswith("~") else ""
+    if explanation:
+        return "~ (" + markdown_escape(explanation) + ")"
+    return "~"
+
+
+def load_catalog(catalog_arg):
+    if catalog_arg == "-":
+        return json.load(sys.stdin)
+    with open(catalog_arg) as f:
+        return json.load(f)
+
+
+def load_support(csv_path):
+    support = {}
+    with open(csv_path, newline="") as f:
+        reader = csv.DictReader(f)
+        providers = [h for h in reader.fieldnames if h != "endpoint"]
+        for row in reader:
+            support[row["endpoint"]] = {p: row.get(p, "n") for p in providers}
+    return support, providers
 
 
 def generate_table(catalog, support, providers):
@@ -185,7 +233,7 @@ def generate_webhook_table(catalog, support, providers):
             event, action = path, ""
 
         if event != current_event:
-            section = WEBHOOK_EVENT_NAMES.get(event, event)
+            section = webhook_event_name(event)
             tbody_rows.append(
                 f'        <tr><td colspan="{num_cols}" class="section-hdr">{section}</td></tr>'
             )
@@ -204,25 +252,85 @@ def generate_webhook_table(catalog, support, providers):
     return f"    <table>\n{thead}\n{tbody}\n    </table>"
 
 
+def generate_webhook_markdown_table(catalog, support, providers):
+    """Generate the Markdown webhook action support matrix used in docs/webhooks.md."""
+    headers = ["Event", "Action"] + [PROVIDER_NAMES.get(p, p) for p in providers]
+    lines = [
+        "| " + " | ".join(headers) + " |",
+        "|" + "|".join(["---"] * len(headers)) + "|",
+    ]
+
+    current_event = None
+    for entry in catalog:
+        if not entry.get("is_webhook_event"):
+            continue
+        path = entry["path"]
+        if "/" in path:
+            event, action = path.split("/", 1)
+        else:
+            event, action = path, ""
+
+        event_cell = ""
+        if event != current_event:
+            event_cell = webhook_event_name(event)
+            current_event = event
+
+        csv_key = entry["method"] + " " + path
+        row = support.get(csv_key, {})
+        cells = [event_cell, "`" + markdown_escape(action or path) + "`"]
+        for p in providers:
+            cells.append(make_markdown_cell(row.get(p, "n")))
+        lines.append("| " + " | ".join(cells) + " |")
+
+    return "\n".join(lines) + "\n"
+
+
+def replace_webhook_docs_matrix(doc_text, matrix):
+    start = doc_text.find(WEBHOOK_DOCS_START)
+    end = doc_text.find(WEBHOOK_DOCS_END)
+    if start == -1 or end == -1 or end < start:
+        raise SystemExit("webhook docs markers not found")
+    end += len(WEBHOOK_DOCS_END)
+    replacement = WEBHOOK_DOCS_START + "\n" + matrix.rstrip() + "\n" + WEBHOOK_DOCS_END
+    return doc_text[:start] + replacement + doc_text[end:]
+
+
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] in {
+        "--webhook-markdown",
+        "--update-webhook-docs",
+        "--check-webhook-docs",
+    }:
+        command = sys.argv[1]
+        catalog_arg = sys.argv[2] if len(sys.argv) > 2 else "-"
+        csv_path = Path(sys.argv[3]) if len(sys.argv) > 3 else Path("site/compatibility.csv")
+        doc_path = Path(sys.argv[4]) if len(sys.argv) > 4 else Path("docs/webhooks.md")
+
+        catalog = load_catalog(catalog_arg)
+        support, providers = load_support(csv_path)
+        matrix = generate_webhook_markdown_table(catalog, support, providers)
+
+        if command == "--webhook-markdown":
+            sys.stdout.write(matrix)
+            return
+
+        doc_text = doc_path.read_text()
+        updated = replace_webhook_docs_matrix(doc_text, matrix)
+        if command == "--check-webhook-docs":
+            if updated != doc_text:
+                raise SystemExit("docs/webhooks.md webhook action support matrix is stale")
+            return
+
+        doc_path.write_text(updated)
+        return
+
     catalog_arg  = sys.argv[1] if len(sys.argv) > 1 else "-"
     csv_path     = Path(sys.argv[2]) if len(sys.argv) > 2 else Path("site/compatibility.csv")
     template_path = Path(sys.argv[3]) if len(sys.argv) > 3 else Path("site/index.html")
     output_path  = Path(sys.argv[4]) if len(sys.argv) > 4 else None
 
-    if catalog_arg == "-":
-        catalog = json.load(sys.stdin)
-    else:
-        with open(catalog_arg) as f:
-            catalog = json.load(f)
-
-    # Load support values: keyed by "METHOD /path" → {provider: value}
-    support = {}
-    with open(csv_path, newline="") as f:
-        reader = csv.DictReader(f)
-        providers = [h for h in reader.fieldnames if h != "endpoint"]
-        for row in reader:
-            support[row["endpoint"]] = {p: row.get(p, "n") for p in providers}
+    catalog = load_catalog(catalog_arg)
+    support, providers = load_support(csv_path)
 
     rest_table_html    = generate_table(catalog, support, providers)
     webhook_table_html = generate_webhook_table(catalog, support, providers)
