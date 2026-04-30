@@ -4,7 +4,7 @@
 # Variables injected by the test script (computed via openssl at runtime):
 #   gitea_sig   — HMAC-SHA256("{}", secret) as hex (for X-Gitea-Signature)
 #   gitlab_tok  — the shared secret verbatim (for X-Gitlab-Token)
-#   bb_sig      — "sha256=<hex>" (for X-Hub-Signature on bitbucket)
+#   bb_sig      — "sha256=<hex>" (for X-Hub-Signature on bitbucket and bitbucket_datacenter)
 #   gb_sig      — "sha1=<hex>" (for X-Hub-Signature on gitbucket)
 #   azuredevops_basic — base64("fido:webhooksecret") for Authorization: Basic
 #   confusio_sig — "sha256=<hex>, v=1, ts=<ts>" (for X-Confusio-Signature-256)
@@ -81,6 +81,37 @@ jsonpath "$.message" == "No webhook handlers registered"
 POST http://{{host}}/webhooks/bitbucket
 Content-Type: application/json
 X-Hub-Signature: sha256=deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# ── bitbucket_datacenter: X-Hub-Signature, HMAC-SHA256, sha256= prefix ───────
+
+# Valid signature → passes verification (422)
+POST http://{{host}}/webhooks/bitbucket_datacenter
+Content-Type: application/json
+X-Hub-Signature: {{bb_sig}}
+{}
+
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "No webhook handlers registered"
+
+# Bad signature → 401
+POST http://{{host}}/webhooks/bitbucket_datacenter
+Content-Type: application/json
+X-Hub-Signature: sha256=deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# Missing signature header → 401
+POST http://{{host}}/webhooks/bitbucket_datacenter
+Content-Type: application/json
 {}
 
 HTTP 401
