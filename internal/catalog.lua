@@ -2876,6 +2876,9 @@ local webhook_event_sections = {
       -- custom_property_values (repo-level custom property values; GitHub Enterprise + GitBucket only)
       { "webhook custom_property_values/updated", "wh_custom_property_values_updated" },
 
+      -- commit_comment
+      { "webhook commit_comment/created", "wh_commit_comment_created" },
+
       -- delete
       { "webhook delete/delete", "wh_delete_delete" },
 
@@ -3001,6 +3004,14 @@ local webhook_event_sections = {
       -- registry_package (legacy GitHub event; forwarded by GitBucket)
       { "webhook registry_package/published", "wh_registry_package_published" },
       { "webhook registry_package/updated", "wh_registry_package_updated" },
+
+      -- repository
+      { "webhook repository/created", "wh_repository_created" },
+      { "webhook repository/deleted", "wh_repository_deleted" },
+      { "webhook repository/renamed", "wh_repository_renamed" },
+      { "webhook repository/transferred", "wh_repository_transferred" },
+      { "webhook repository/publicized", "wh_repository_publicized" },
+      { "webhook repository/privatized", "wh_repository_privatized" },
 
       -- status
       { "webhook status/pending", "wh_status_pending" },

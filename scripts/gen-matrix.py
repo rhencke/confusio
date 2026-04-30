@@ -91,6 +91,7 @@ GROUP_NAMES = {
 
 # Human-readable names for webhook event types (the segment before "/" in the path).
 WEBHOOK_EVENT_NAMES = {
+    "commit_comment":               "Commit Comments",
     "issues":                       "Issues",
     "issue_comment":                "Issue Comments",
     "label":                        "Labels",
@@ -100,6 +101,7 @@ WEBHOOK_EVENT_NAMES = {
     "pull_request_review":          "PR Reviews",
     "pull_request_review_comment":  "PR Review Comments",
     "push":                         "Push",
+    "repository":                   "Repository",
     "status":                       "Commit Status",
     "workflow_run":                 "Workflow Run",
     "workflow_job":                 "Workflow Job",
