@@ -156,7 +156,8 @@ delivered.  Confusio maps these to its canonical internal event family names.
 
 | API family | Event-type header | Example value |
 |------------|------------------|---------------|
-| gitea (gitea, forgejo, codeberg, gogs, notabug) | `X-Gitea-Event` | `issues`, `push`, `pull_request` |
+| gitea (gitea, forgejo, codeberg, notabug) | `X-Gitea-Event` | `issues`, `push`, `pull_request` |
+| gogs | `X-Gogs-Event` | `issues`, `push`, `pull_request` |
 | gitlab | `X-Gitlab-Event` | `Issue Hook`, `Push Hook`, `Merge Request Hook` |
 | github | `X-GitHub-Event` | `issues`, `push`, `pull_request` |
 | bitbucket | `X-Event-Key` | `repo:push`, `pullrequest:created` |

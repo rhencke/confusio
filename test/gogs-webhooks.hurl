@@ -3,7 +3,7 @@
 # Gogs is API-compatible with Gitea; it inherits the same webhook handlers
 # via dofile("backends/gitea.lua").  Tests mirror gitea-webhooks.hurl but
 # POST to /webhooks/gogs (which uses X-Gogs-Signature for auth and
-# X-Gitea-Event for the event type).
+# X-Gogs-Event for the event type).
 # Trust-the-network mode (no webhook_secret_BACKEND CLI arg): signature headers omitted.
 # All paths return 200 when a registered handler succeeds.
 
@@ -11,7 +11,7 @@
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: issues
+X-Gogs-Event: issues
 {
   "action": "opened",
   "issue": {
@@ -46,7 +46,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: issues
+X-Gogs-Event: issues
 {
   "action": "label_updated",
   "issue": {
@@ -75,7 +75,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: issues
+X-Gogs-Event: issues
 {
   "action": "milestone_changed",
   "issue": {
@@ -103,7 +103,7 @@ header "X-Confusio-Raw-Action" == "milestone_changed"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: issue_comment
+X-Gogs-Event: issue_comment
 {
   "action": "created",
   "issue": {
@@ -138,7 +138,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: label
+X-Gogs-Event: label
 {
   "action": "created",
   "label": {
@@ -165,7 +165,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: label
+X-Gogs-Event: label
 {
   "action": "edited",
   "label": {
@@ -191,7 +191,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: milestone
+X-Gogs-Event: milestone
 {
   "action": "created",
   "milestone": {
@@ -223,7 +223,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: milestone
+X-Gogs-Event: milestone
 {
   "action": "deleted",
   "milestone": {
@@ -250,7 +250,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: pull_request
+X-Gogs-Event: pull_request
 {
   "action": "opened",
   "number": 7,
@@ -312,7 +312,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: pull_request
+X-Gogs-Event: pull_request
 {
   "action": "synchronize",
   "number": 7,
@@ -347,7 +347,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: pull_request
+X-Gogs-Event: pull_request
 {
   "action": "closed",
   "number": 7,
@@ -385,7 +385,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: pull_request
+X-Gogs-Event: pull_request
 {
   "action": "labeled",
   "number": 7,
@@ -422,7 +422,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: pull_request
+X-Gogs-Event: pull_request
 {
   "action": "review_requested",
   "number": 7,
@@ -459,7 +459,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: pull_request
+X-Gogs-Event: pull_request
 {
   "action": "auto_merged",
   "number": 7,
@@ -495,7 +495,7 @@ header "X-Confusio-Raw-Action" == "auto_merged"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: merge_group
+X-Gogs-Event: merge_group
 {
   "action": "checks_requested",
   "merge_group": {
@@ -529,7 +529,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: merge_group
+X-Gogs-Event: merge_group
 {
   "action": "destroyed",
   "reason": "merged",
@@ -564,7 +564,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: merge_group
+X-Gogs-Event: merge_group
 {
   "action": "destroyed",
   "reason": "dequeued",
@@ -599,7 +599,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: merge_group
+X-Gogs-Event: merge_group
 {
   "action": "queued",
   "merge_group": {
@@ -634,7 +634,7 @@ header "X-Confusio-Raw-Action" == "queued"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: pull_request_review
+X-Gogs-Event: pull_request_review
 {
   "action": "submitted",
   "review": {
@@ -675,7 +675,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: pull_request_review
+X-Gogs-Event: pull_request_review
 {
   "action": "submitted",
   "review": {
@@ -716,7 +716,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: pull_request_review
+X-Gogs-Event: pull_request_review
 {
   "action": "edited",
   "review": {
@@ -757,7 +757,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: pull_request_review
+X-Gogs-Event: pull_request_review
 {
   "action": "dismissed",
   "review": {
@@ -798,7 +798,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: pull_request_review
+X-Gogs-Event: pull_request_review
 {
   "action": "converted_to_draft",
   "review": {
@@ -840,7 +840,7 @@ header "X-Confusio-Raw-Action" == "converted_to_draft"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: workflow_run
+X-Gogs-Event: workflow_run
 {
   "action": "completed",
   "workflow_run": {
@@ -877,7 +877,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: workflow_run
+X-Gogs-Event: workflow_run
 {
   "action": "requested",
   "workflow_run": {
@@ -913,7 +913,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: workflow_run
+X-Gogs-Event: workflow_run
 {
   "action": "cancelled",
   "workflow_run": {
@@ -949,7 +949,7 @@ header "X-Confusio-Raw-Action" == "cancelled"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: workflow_job
+X-Gogs-Event: workflow_job
 {
   "action": "completed",
   "workflow_job": {
@@ -986,7 +986,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: workflow_job
+X-Gogs-Event: workflow_job
 {
   "action": "queued",
   "workflow_job": {
@@ -1015,7 +1015,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: workflow_job
+X-Gogs-Event: workflow_job
 {
   "action": "skipped",
   "workflow_job": {
@@ -1044,7 +1044,7 @@ header "X-Confusio-Raw-Action" == "skipped"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: status
+X-Gogs-Event: status
 {
   "id": 501,
   "sha": "abc123def456abc123def456abc123def456abc123",
@@ -1079,7 +1079,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: status
+X-Gogs-Event: status
 {
   "id": 502,
   "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
@@ -1114,7 +1114,7 @@ jsonpath "$.message" == "accepted"
 
 POST http://{{host}}/webhooks/gogs
 Content-Type: application/json
-X-Gitea-Event: status
+X-Gogs-Event: status
 {
   "id": 503,
   "sha": "cafebabecafebabecafebabecafebabecafebabe",

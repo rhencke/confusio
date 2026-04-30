@@ -2333,6 +2333,34 @@ do
     "webhook_receiver: registered handler succeeds → 200"
   )
 
+  -- Gogs uses its own event-type header, not X-Gitea-Event.
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/gogs",
+      headers = {
+        ["Content-Type"] = "application/json",
+        ["X-Gogs-Event"] = "push",
+      },
+      body = '{"ref":"refs/heads/main"}',
+    }),
+    200,
+    "webhook_receiver: gogs X-Gogs-Event handler succeeds → 200"
+  )
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/gogs",
+      headers = {
+        ["Content-Type"] = "application/json",
+        ["X-Gitea-Event"] = "push",
+      },
+      body = '{"ref":"refs/heads/main"}',
+    }),
+    422,
+    "webhook_receiver: gogs ignores X-Gitea-Event → 422"
+  )
+
   -- 422 when handler returns nil (normalisation failed)
   app.backend.webhooks = {
     push = function(_payload)
