@@ -6006,7 +6006,7 @@ end)
 
 -- ─── Inbound webhook event handlers ─────────────────────────────────────────
 --
--- GitLab uses X-Gitlab-Event with values like "Issues Hook", "Note Hook".
+-- GitLab uses X-Gitlab-Event with values like "Issue Hook", "Note Hook".
 -- Event data lives in payload.object_attributes; the project uses a simpler
 -- format than the REST API (namespace is a string, not a nested object).
 
@@ -6243,8 +6243,9 @@ local function translate_gl_webhook_release(payload)
 end
 
 -- issues: opened, closed, reopened, edited.
--- Registered for X-Gitlab-Event: Issues Hook
-b:webhook("Issues Hook", function(payload)
+-- Registered for X-Gitlab-Event: Issue Hook.
+-- Older fixtures and some integrations use "Issues Hook"; accept both spellings.
+local function gitlab_issue_hook(payload)
   local oa = payload.object_attributes or {}
   local raw_action = oa.action or ""
   local action = GL_ISSUES_ACTIONS[raw_action] or "unknown"
@@ -6262,16 +6263,20 @@ b:webhook("Issues Hook", function(payload)
       sender = translate_gl_user(payload.user),
     },
   })
-end)
+end
 
--- issue_comment: created, edited, deleted.
--- Registered for X-Gitlab-Event: Note Hook (covers notes on issues and MRs).
--- payload.issue is the parent issue in REST API format when noteable_type is Issue.
-b:webhook("Note Hook", function(payload)
-  local oa = payload.object_attributes or {}
+b:webhook("Issue Hook", gitlab_issue_hook)
+b:webhook("Issues Hook", gitlab_issue_hook)
+
+local function gitlab_note_action(oa)
   local raw_action = oa.action or ""
   local action = GL_NOTE_ACTIONS[raw_action] or "unknown"
-  local comment = {
+  return action, raw_action
+end
+
+local function gitlab_note_comment_from_webhook(payload)
+  local oa = payload.object_attributes or {}
+  return {
     id = oa.id,
     node_id = "",
     url = oa.url or "",
@@ -6281,6 +6286,66 @@ b:webhook("Note Hook", function(payload)
     created_at = oa.created_at,
     updated_at = oa.updated_at,
   }
+end
+
+local function gitlab_mr_note_comment_from_webhook(payload)
+  local oa = payload.object_attributes or {}
+  local pos = oa.position or payload.position or {}
+  local line = pos.new_line or pos.old_line or oa.line
+  return {
+    id = oa.id,
+    node_id = "",
+    path = pos.new_path or pos.old_path or oa.path or "",
+    position = line,
+    original_position = pos.old_line,
+    commit_id = pos.head_sha or oa.commit_id or "",
+    original_commit_id = pos.base_sha or "",
+    diff_hunk = "",
+    body = oa.note or "",
+    user = translate_gl_user(payload.user),
+    created_at = oa.created_at,
+    updated_at = oa.updated_at,
+    html_url = oa.url or "",
+    pull_request_url = payload.merge_request
+        and (payload.merge_request.web_url or payload.merge_request.url)
+      or "",
+    url = oa.url or "",
+  }
+end
+
+-- issue_comment: created, edited, deleted.
+-- pull_request_review_comment: created, edited, deleted for MR notes.
+-- Registered for X-Gitlab-Event: Note Hook (covers notes on issues and MRs).
+-- payload.issue is the parent issue in REST API format when noteable_type is Issue.
+-- payload.merge_request is the parent MR when noteable_type is MergeRequest.
+b:webhook("Note Hook", function(payload)
+  local oa = payload.object_attributes or {}
+  local action, raw_action = gitlab_note_action(oa)
+  local noteable_type = oa.noteable_type or payload.noteable_type or ""
+  if noteable_type == "MergeRequest" or payload.merge_request then
+    return make_internal_event({
+      event = "pull_request_review_comment",
+      action = action,
+      raw_action = action == "unknown" and raw_action or nil,
+      provider = config.backend,
+      timestamp = oa.updated_at or "",
+      raw = payload,
+      data = {
+        action = action,
+        comment = gitlab_mr_note_comment_from_webhook(payload),
+        pull_request = payload.merge_request and webhook_mr_from_gl({
+          object_attributes = payload.merge_request,
+          labels = payload.merge_request.labels or {},
+          assignees = payload.merge_request.assignees or {},
+          reviewers = payload.merge_request.reviewers or {},
+          user = payload.merge_request.author or payload.user,
+        }) or nil,
+        repository = translate_gl_webhook_project(payload.project),
+        sender = translate_gl_user(payload.user),
+      },
+    })
+  end
+
   return make_internal_event({
     event = "issue_comment",
     action = action,
@@ -6291,7 +6356,7 @@ b:webhook("Note Hook", function(payload)
     data = {
       action = action,
       issue = payload.issue and translate_gl_issue(payload.issue) or nil,
-      comment = comment,
+      comment = gitlab_note_comment_from_webhook(payload),
       repository = translate_gl_webhook_project(payload.project),
       sender = translate_gl_user(payload.user),
     },
@@ -6335,7 +6400,7 @@ end)
 -- Registered for X-Gitlab-Event: Milestone Hook
 b:webhook("Milestone Hook", function(payload)
   local oa = payload.object_attributes or {}
-  local raw_action = oa.action or ""
+  local raw_action = oa.action or payload.action or ""
   local action = GL_MILESTONE_ACTIONS[raw_action] or "unknown"
   local milestone = {
     id = oa.id,
@@ -6971,6 +7036,199 @@ b:webhook("Deployment Hook", function(payload)
   })
 end)
 
+local GL_VULNERABILITY_RESOLVED_STATES = {
+  resolved = true,
+  fixed = true,
+}
+
+local GL_VULNERABILITY_DISMISSED_STATES = {
+  dismissed = true,
+}
+
+local GL_VULNERABILITY_ACTIVE_STATES = {
+  confirmed = true,
+  detected = true,
+  needs_triage = true,
+  active = true,
+}
+
+local function gl_vulnerability_previous_state(payload)
+  local changes = payload.changes or {}
+  local state_change = changes.state or changes.status or {}
+  return state_change.previous or state_change.from or state_change.old or ""
+end
+
+local function gl_vulnerability_event(oa)
+  local report_type = (oa.report_type or ""):lower()
+  local scanner_id = (oa.scanner_external_id or ""):lower()
+  local scanner = oa.scanner or {}
+  local scanner_name = (scanner.name or scanner.external_id or ""):lower()
+  local category = report_type .. " " .. scanner_id .. " " .. scanner_name
+
+  if category:find("secret", 1, true) then
+    return "secret_scanning_alert"
+  end
+  if
+    category:find("dependency", 1, true)
+    or category:find("container", 1, true)
+    or category:find("gemnasium", 1, true)
+  then
+    return "dependabot_alert"
+  end
+  return "code_scanning_alert"
+end
+
+local function gl_vulnerability_action(event, oa, payload)
+  local state = (oa.state or oa.status or ""):lower()
+  local previous_state = gl_vulnerability_previous_state(payload):lower()
+
+  if GL_VULNERABILITY_DISMISSED_STATES[state] or oa.dismissed_at then
+    if event == "secret_scanning_alert" then
+      return "resolved"
+    elseif event == "code_scanning_alert" then
+      return "closed_by_user"
+    end
+    return "dismissed"
+  end
+
+  if GL_VULNERABILITY_RESOLVED_STATES[state] or oa.resolved_at then
+    if event == "secret_scanning_alert" then
+      return "resolved"
+    end
+    return "fixed"
+  end
+
+  if
+    GL_VULNERABILITY_ACTIVE_STATES[state]
+    and (
+      GL_VULNERABILITY_DISMISSED_STATES[previous_state]
+      or GL_VULNERABILITY_RESOLVED_STATES[previous_state]
+    )
+  then
+    return "reopened"
+  end
+
+  return "created"
+end
+
+local function translate_gl_vulnerability_alert(oa)
+  local location = oa.location or {}
+  return {
+    number = oa.id or 0,
+    id = oa.id,
+    node_id = "",
+    state = oa.state or oa.status or "",
+    html_url = oa.url or oa.web_url or "",
+    created_at = oa.created_at,
+    updated_at = oa.updated_at,
+    fixed_at = oa.resolved_at,
+    dismissed_at = oa.dismissed_at,
+    security_vulnerability = {
+      package = location.dependency and {
+        ecosystem = location.dependency.package_manager or "",
+        name = location.dependency.package_name or "",
+      } or nil,
+      vulnerable_version_range = location.dependency and location.dependency.version or "",
+      severity = oa.severity or "",
+      advisory = {
+        ghsa_id = "",
+        cve_id = "",
+        identifiers = oa.identifiers or {},
+        summary = oa.title or oa.name or "",
+        description = oa.description or "",
+      },
+    },
+    rule = {
+      id = oa.uuid or oa.id or "",
+      name = oa.title or oa.name or "",
+      description = oa.description or "",
+      severity = oa.severity or "",
+    },
+    tool = {
+      name = (oa.scanner and oa.scanner.name) or oa.scanner_external_id or "",
+      guid = oa.scanner_external_id or "",
+    },
+    secret_type = oa.report_type == "secret_detection" and (oa.title or oa.name or "") or nil,
+    secret_type_display_name = oa.report_type == "secret_detection" and (oa.title or oa.name or "")
+      or nil,
+    location = location,
+  }
+end
+
+-- Vulnerability Hook: GitLab security findings map to the closest GitHub
+-- security alert family based on report_type/scanner metadata.
+b:webhook("Vulnerability Hook", function(payload)
+  local oa = payload.object_attributes or {}
+  local event = gl_vulnerability_event(oa)
+  local action = gl_vulnerability_action(event, oa, payload)
+  local alert = translate_gl_vulnerability_alert(oa)
+  return make_internal_event({
+    event = event,
+    action = action,
+    provider = config.backend,
+    raw = payload,
+    data = {
+      action = action,
+      alert = alert,
+      repository = translate_gl_webhook_project(payload.project),
+      sender = translate_gl_user(payload.user),
+    },
+    timestamp = oa.updated_at or oa.created_at or "",
+  })
+end)
+
+local function translate_gl_resource_token(payload)
+  local oa = payload.object_attributes or {}
+  return {
+    id = oa.id,
+    node_id = "",
+    token_name = oa.name or payload.name or "",
+    token_type = payload.object_kind or "",
+    expires_at = oa.expires_at or payload.expires_at,
+    last_used_at = oa.last_used_at or payload.last_used_at,
+    active = oa.active,
+    scopes = oa.scopes or {},
+  }
+end
+
+local function translate_gl_resource_token_owner(payload)
+  local group = payload.group or {}
+  return {
+    login = group.path or group.full_path or group.name or "",
+    id = group.id or 0,
+    node_id = "",
+    description = group.description or "",
+    url = group.web_url or "",
+    html_url = group.web_url or "",
+    avatar_url = group.avatar_url or "",
+    type = "Organization",
+  }
+end
+
+-- Resource Access/Deploy Token Hooks: GitLab emits expiry notifications for
+-- project and group tokens. GitHub's closest normalized security-token event
+-- is personal_access_token_request/created.
+local function gitlab_resource_token_hook(payload)
+  local token = translate_gl_resource_token(payload)
+  return make_internal_event({
+    event = "personal_access_token_request",
+    action = "created",
+    provider = config.backend,
+    raw = payload,
+    data = {
+      action = "created",
+      personal_access_token_request = token,
+      repository = translate_gl_webhook_project(payload.project),
+      organization = translate_gl_resource_token_owner(payload),
+      sender = translate_gl_user(payload.user),
+    },
+    timestamp = token.expires_at or "",
+  })
+end
+
+b:webhook("Resource Access Token Hook", gitlab_resource_token_hook)
+b:webhook("Resource Deploy Token Hook", gitlab_resource_token_hook)
+
 -- System Hook: repository, group (organization), and group member (membership) events.
 -- GitLab sends X-Gitlab-Event: System Hook with event_name in the body.
 -- Non-repository / non-group / non-membership event_names (user_create, key_add, etc.)
@@ -6990,6 +7248,8 @@ local GL_SYSTEM_HOOK_GROUP_ACTIONS = {
   group_create = "created",
   group_destroy = "deleted",
   group_rename = "renamed",
+  subgroup_create = "created",
+  subgroup_destroy = "deleted",
 }
 
 -- Group member event_names that map to GitHub's membership event.
@@ -6999,6 +7259,15 @@ local GL_SYSTEM_HOOK_GROUP_ACTIONS = {
 local GL_SYSTEM_HOOK_MEMBERSHIP_ACTIONS = {
   user_add_to_group = "added",
   user_remove_from_group = "removed",
+}
+
+-- Project member event_names that map to GitHub's member event.
+-- These arrive as System Hook events and, for group webhooks, Member Hook
+-- events with event_name instead of action.
+local GL_SYSTEM_HOOK_MEMBER_ACTIONS = {
+  user_add_to_team = "added",
+  user_remove_from_team = "removed",
+  user_update_for_team = "edited",
 }
 
 -- Build a minimal repository object from a GitLab system hook payload.
@@ -7033,7 +7302,131 @@ local function translate_gl_system_hook_repo(p)
   }
 end
 
-b:webhook("System Hook", function(payload)
+local function translate_gl_group_membership_event(payload, membership_action)
+  local org = {
+    login = payload.group_path or "",
+    id = payload.group_id or 0,
+    node_id = "",
+    description = "",
+    url = "",
+    html_url = "",
+    avatar_url = "",
+    type = "Organization",
+  }
+  local member = {
+    login = payload.user_username or "",
+    id = payload.user_id or 0,
+    node_id = "",
+    avatar_url = "",
+    html_url = "",
+    type = "User",
+    site_admin = false,
+  }
+  -- GitLab groups have no sub-teams; expose a minimal team stub so consumers
+  -- receive a structurally valid membership payload.
+  local team = {
+    id = payload.group_id or 0,
+    node_id = "",
+    name = payload.group_name or "",
+    slug = payload.group_path or "",
+    description = "",
+    privacy = "closed",
+    permission = "pull",
+    url = "",
+    html_url = "",
+    members_url = "",
+    repositories_url = "",
+  }
+  local sender = {
+    login = "",
+    id = 0,
+    node_id = "",
+    avatar_url = "",
+    html_url = "",
+    type = "User",
+    site_admin = false,
+  }
+  local data = {
+    action = membership_action,
+    scope = "team",
+    member = member,
+    team = team,
+    organization = org,
+    sender = sender,
+  }
+  return make_internal_event({
+    event = "membership",
+    action = membership_action,
+    provider = config.backend,
+    raw = payload,
+    data = data,
+    timestamp = payload.updated_at or payload.created_at or "",
+  })
+end
+
+local function translate_gl_project_member_event(payload, action)
+  local pns = payload.project_path_with_namespace or ""
+  local slash = pns:find("/", 1, true)
+  local owner_login = slash and pns:sub(1, slash - 1) or pns
+  local repo_name = slash and pns:sub(slash + 1) or (payload.project_name or pns)
+  local visibility = payload.project_visibility or "private"
+  local repository = {
+    id = payload.project_id or 0,
+    node_id = "",
+    name = repo_name,
+    full_name = pns,
+    private = visibility ~= "public",
+    owner = {
+      login = owner_login,
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      url = "",
+      html_url = "",
+      type = "User",
+    },
+    html_url = payload.project_url or "",
+    description = "",
+    fork = false,
+    url = payload.project_url or "",
+    default_branch = "",
+    visibility = visibility,
+  }
+  local member = {
+    login = payload.user_username or "",
+    id = payload.user_id or 0,
+    node_id = "",
+    avatar_url = payload.user_avatar or "",
+    html_url = "",
+    type = "User",
+    site_admin = false,
+  }
+  local data = {
+    action = action,
+    member = member,
+    changes = payload.changes or {},
+    repository = repository,
+    sender = {
+      login = "",
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      html_url = "",
+      type = "User",
+      site_admin = false,
+    },
+  }
+  return make_internal_event({
+    event = "member",
+    action = action,
+    provider = config.backend,
+    raw = payload,
+    data = data,
+    timestamp = payload.updated_at or payload.created_at or "",
+  })
+end
+
+local function translate_gl_system_event(payload)
   local event_name = payload.event_name or ""
 
   -- ── Repository / project events ────────────────────────────────────────────
@@ -7142,69 +7535,22 @@ b:webhook("System Hook", function(payload)
   local membership_action = GL_SYSTEM_HOOK_MEMBERSHIP_ACTIONS[event_name]
 
   if membership_action then
-    local org = {
-      login = payload.group_path or "",
-      id = payload.group_id or 0,
-      node_id = "",
-      description = "",
-      url = "",
-      html_url = "",
-      avatar_url = "",
-      type = "Organization",
-    }
-    local member = {
-      login = payload.user_username or "",
-      id = payload.user_id or 0,
-      node_id = "",
-      avatar_url = "",
-      html_url = "",
-      type = "User",
-      site_admin = false,
-    }
-    -- GitLab groups have no sub-teams; expose a minimal team stub so consumers
-    -- receive a structurally valid membership payload.
-    local team = {
-      id = payload.group_id or 0,
-      node_id = "",
-      name = payload.group_name or "",
-      slug = payload.group_path or "",
-      description = "",
-      privacy = "closed",
-      permission = "pull",
-      url = "",
-      html_url = "",
-      members_url = "",
-      repositories_url = "",
-    }
-    local sender = {
-      login = "",
-      id = 0,
-      node_id = "",
-      avatar_url = "",
-      html_url = "",
-      type = "User",
-      site_admin = false,
-    }
-    local data = {
-      action = membership_action,
-      scope = "team",
-      member = member,
-      team = team,
-      organization = org,
-      sender = sender,
-    }
-    return make_internal_event({
-      event = "membership",
-      action = membership_action,
-      provider = config.backend,
-      raw = payload,
-      data = data,
-      timestamp = payload.updated_at or payload.created_at or "",
-    })
+    return translate_gl_group_membership_event(payload, membership_action)
+  end
+
+  -- ── Project member / member events ────────────────────────────────────────
+  local member_action = GL_SYSTEM_HOOK_MEMBER_ACTIONS[event_name]
+
+  if member_action then
+    return translate_gl_project_member_event(payload, member_action)
   end
 
   return nil, "Unhandled system hook event: " .. event_name
-end)
+end
+
+b:webhook("System Hook", translate_gl_system_event)
+b:webhook("Project Hook", translate_gl_system_event)
+b:webhook("Subgroup Hook", translate_gl_system_event)
 
 -- gollum: wiki page created or edited.
 -- GitLab sends X-Gitlab-Event: Wiki Page Hook with object_kind = "wiki_page".
@@ -7248,65 +7594,14 @@ end)
 -- GitLab normalizes to type="User" (member's actual role is in access_level,
 -- not surfaced in the GitHub member.type field).
 b:webhook("Member Hook", function(payload)
-  local action = payload.action or ""
-  local pns = payload.project_path_with_namespace or ""
-  local slash = pns:find("/", 1, true)
-  local owner_login = slash and pns:sub(1, slash - 1) or pns
-  local repo_name = slash and pns:sub(slash + 1) or (payload.project_name or pns)
-  local repository = {
-    id = payload.project_id or 0,
-    node_id = "",
-    name = repo_name,
-    full_name = pns,
-    private = true, -- visibility not included in Member Hook payload
-    owner = {
-      login = owner_login,
-      id = 0,
-      node_id = "",
-      avatar_url = "",
-      url = "",
-      html_url = "",
-      type = "User",
-    },
-    html_url = payload.project_url or "",
-    description = "",
-    fork = false,
-    url = payload.project_url or "",
-    default_branch = "",
-    visibility = "private",
-  }
-  local member = {
-    login = payload.user_username or "",
-    id = payload.user_id or 0,
-    node_id = "",
-    avatar_url = payload.user_avatar or "",
-    html_url = "",
-    type = "User",
-    site_admin = false,
-  }
-  local data = {
-    action = action,
-    member = member,
-    changes = {},
-    repository = repository,
-    sender = {
-      login = "",
-      id = 0,
-      node_id = "",
-      avatar_url = "",
-      html_url = "",
-      type = "User",
-      site_admin = false,
-    },
-  }
-  return make_internal_event({
-    event = "member",
-    action = action,
-    provider = config.backend,
-    raw = payload,
-    data = data,
-    timestamp = payload.updated_at or payload.created_at or "",
-  })
+  local event_name = payload.event_name or ""
+  local membership_action = GL_SYSTEM_HOOK_MEMBERSHIP_ACTIONS[event_name]
+  if membership_action then
+    return translate_gl_group_membership_event(payload, membership_action)
+  end
+
+  local action = GL_SYSTEM_HOOK_MEMBER_ACTIONS[event_name] or payload.action or ""
+  return translate_gl_project_member_event(payload, action)
 end)
 
 local GL_ACTIONLESS_NORMALIZED_EVENTS = {
@@ -7324,6 +7619,7 @@ local GL_NORMALIZED_WEBHOOK_EVENTS = {
   "release",
   "pull_request",
   "pull_request_review",
+  "pull_request_review_comment",
   "workflow_run",
   "workflow_job",
   "create",
@@ -7331,6 +7627,10 @@ local GL_NORMALIZED_WEBHOOK_EVENTS = {
   "push",
   "deployment",
   "deployment_status",
+  "code_scanning_alert",
+  "dependabot_alert",
+  "personal_access_token_request",
+  "secret_scanning_alert",
   "repository",
   "organization",
   "membership",

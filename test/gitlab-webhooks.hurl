@@ -1,14 +1,14 @@
 # GitLab webhook normalizer tests.
 #
-# Exercises the five event families registered in backends/gitlab.lua.
+# Exercises GitLab event families registered in backends/gitlab.lua.
 # Trust-the-network mode (no webhook_secret_BACKEND CLI arg): signature headers omitted.
 # All paths return 200 when a registered handler succeeds.
 
-# ── Issues Hook: opened → 200 ─────────────────────────────────────────────────
+# ── Issue Hook: opened → 200 ──────────────────────────────────────────────────
 
 POST http://{{host}}/webhooks/gitlab
 Content-Type: application/json
-X-Gitlab-Event: Issues Hook
+X-Gitlab-Event: Issue Hook
 {
   "object_kind": "issue",
   "user": {
@@ -43,6 +43,149 @@ X-Gitlab-Event: Issues Hook
   "labels": [],
   "assignees": [],
   "milestone": null
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Vulnerability Hook: dependency scanning finding → dependabot_alert ────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Vulnerability Hook
+{
+  "object_kind": "vulnerability",
+  "user": {
+    "id": 4, "name": "Alice Smith", "username": "alice",
+    "avatar_url": "", "web_url": "http://localhost/alice"
+  },
+  "project": {
+    "id": 15, "name": "hello-world", "description": "My first repo",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "namespace": "octocat", "visibility_level": 20,
+    "path_with_namespace": "octocat/hello-world",
+    "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 700,
+    "uuid": "vuln-700",
+    "title": "CVE in rack",
+    "description": "Dependency finding",
+    "state": "confirmed",
+    "severity": "high",
+    "report_type": "dependency_scanning",
+    "scanner_external_id": "gemnasium",
+    "created_at": "2024-01-15T12:00:00Z",
+    "updated_at": "2024-01-15T12:00:00Z",
+    "location": {
+      "dependency": {
+        "package_manager": "bundler",
+        "package_name": "rack",
+        "version": "2.2.3"
+      }
+    }
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Vulnerability Hook: secret finding dismissed → secret_scanning_alert ──────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Vulnerability Hook
+{
+  "object_kind": "vulnerability",
+  "user": {
+    "id": 4, "name": "Alice Smith", "username": "alice",
+    "avatar_url": "", "web_url": "http://localhost/alice"
+  },
+  "project": {
+    "id": 15, "name": "hello-world", "description": "My first repo",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "namespace": "octocat", "visibility_level": 20,
+    "path_with_namespace": "octocat/hello-world",
+    "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 701,
+    "uuid": "vuln-701",
+    "title": "Leaked token",
+    "description": "Secret finding",
+    "state": "dismissed",
+    "severity": "critical",
+    "report_type": "secret_detection",
+    "dismissed_at": "2024-01-15T12:05:00Z",
+    "created_at": "2024-01-15T12:00:00Z",
+    "updated_at": "2024-01-15T12:05:00Z"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Resource Access Token Hook: expiring token → PAT request created ──────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Resource Access Token Hook
+{
+  "object_kind": "access_token",
+  "event_name": "expiring_access_token",
+  "project": {
+    "id": 15, "name": "hello-world", "description": "My first repo",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "namespace": "octocat", "visibility_level": 20,
+    "path_with_namespace": "octocat/hello-world",
+    "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 800,
+    "name": "build-token",
+    "expires_at": "2024-02-01",
+    "last_used_at": "2024-01-15T12:00:00Z",
+    "active": true,
+    "scopes": ["read_repository"]
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Resource Deploy Token Hook: expiring deploy token → PAT request created ───
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Resource Deploy Token Hook
+{
+  "object_kind": "deploy_token",
+  "event_name": "expiring_deploy_token",
+  "group": {
+    "id": 30,
+    "name": "Octocat",
+    "path": "octocat",
+    "full_path": "octocat",
+    "web_url": "http://localhost/groups/octocat"
+  },
+  "object_attributes": {
+    "id": 801,
+    "name": "deploy-token",
+    "expires_at": "2024-02-01",
+    "last_used_at": "2024-01-15T12:00:00Z",
+    "active": true,
+    "scopes": ["read_registry"]
+  }
 }
 
 HTTP 200
@@ -116,6 +259,40 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 header "X-Confusio-Raw-Action" == "confidential"
+
+# ── Issue Hook: work item opened → issues/opened ─────────────────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Issue Hook
+{
+  "object_kind": "work_item",
+  "event_type": "work_item",
+  "user": {
+    "id": 1, "name": "The Octocat", "username": "octocat",
+    "avatar_url": "", "web_url": "http://localhost/octocat"
+  },
+  "project": {
+    "id": 10, "name": "hello-world",
+    "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "visibility_level": 20, "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 2, "iid": 2, "title": "Plan task",
+    "description": "Track the work item.", "state": "opened", "action": "open",
+    "type": "Task",
+    "url": "http://localhost/octocat/hello-world/-/work_items/2",
+    "created_at": "2024-01-15T10:00:00Z", "updated_at": "2024-01-15T10:00:00Z"
+  },
+  "labels": [], "assignees": [], "milestone": null
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
 
 # ── Note Hook: created (on issue) → 200 ──────────────────────────────────────
 
@@ -205,6 +382,138 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 
+# ── Note Hook: created (on merge request) → pull_request_review_comment ───────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Note Hook
+{
+  "object_kind": "note",
+  "user": {
+    "id": 3, "name": "Carol", "username": "carol",
+    "avatar_url": "", "web_url": "http://localhost/carol"
+  },
+  "project": {
+    "id": 10, "name": "hello-world",
+    "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "visibility_level": 20, "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 201, "note": "Nice change here.", "noteable_type": "MergeRequest",
+    "action": "create",
+    "url": "http://localhost/octocat/hello-world/-/merge_requests/7#note_201",
+    "created_at": "2024-01-15T12:00:00Z",
+    "updated_at": "2024-01-15T12:00:00Z",
+    "position": {
+      "new_path": "README.md", "old_path": "README.md", "new_line": 4,
+      "head_sha": "abc123", "base_sha": "def456"
+    }
+  },
+  "merge_request": {
+    "id": 500, "iid": 7, "title": "Add new feature",
+    "description": "This MR adds a new feature.", "state": "opened",
+    "source_branch": "feature-branch", "target_branch": "main",
+    "url": "http://localhost/octocat/hello-world/-/merge_requests/7",
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T12:00:00Z"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Note Hook: edited (on merge request) → pull_request_review_comment ────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Note Hook
+{
+  "object_kind": "note",
+  "user": {
+    "id": 3, "name": "Carol", "username": "carol",
+    "avatar_url": "", "web_url": "http://localhost/carol"
+  },
+  "project": {
+    "id": 10, "name": "hello-world",
+    "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "visibility_level": 20, "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 201, "note": "Nice change here, with polish.", "noteable_type": "MergeRequest",
+    "action": "update",
+    "url": "http://localhost/octocat/hello-world/-/merge_requests/7#note_201",
+    "created_at": "2024-01-15T12:00:00Z",
+    "updated_at": "2024-01-15T12:05:00Z",
+    "position": {
+      "new_path": "README.md", "old_path": "README.md", "new_line": 4,
+      "head_sha": "abc123", "base_sha": "def456"
+    }
+  },
+  "merge_request": {
+    "id": 500, "iid": 7, "title": "Add new feature",
+    "description": "This MR adds a new feature.", "state": "opened",
+    "source_branch": "feature-branch", "target_branch": "main",
+    "url": "http://localhost/octocat/hello-world/-/merge_requests/7",
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T12:05:00Z"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Note Hook: deleted (on merge request) → pull_request_review_comment ───────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Note Hook
+{
+  "object_kind": "note",
+  "user": {
+    "id": 3, "name": "Carol", "username": "carol",
+    "avatar_url": "", "web_url": "http://localhost/carol"
+  },
+  "project": {
+    "id": 10, "name": "hello-world",
+    "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "visibility_level": 20, "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 201, "note": "Nice change here, with polish.", "noteable_type": "MergeRequest",
+    "action": "destroy",
+    "url": "http://localhost/octocat/hello-world/-/merge_requests/7#note_201",
+    "created_at": "2024-01-15T12:00:00Z",
+    "updated_at": "2024-01-15T12:10:00Z",
+    "position": {
+      "new_path": "README.md", "old_path": "README.md", "new_line": 4,
+      "head_sha": "abc123", "base_sha": "def456"
+    }
+  },
+  "merge_request": {
+    "id": 500, "iid": 7, "title": "Add new feature",
+    "description": "This MR adds a new feature.", "state": "opened",
+    "source_branch": "feature-branch", "target_branch": "main",
+    "url": "http://localhost/octocat/hello-world/-/merge_requests/7",
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T12:10:00Z"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
 # ── Label Hook: created → 200 ─────────────────────────────────────────────────
 
 POST http://{{host}}/webhooks/gitlab
@@ -276,6 +585,7 @@ Content-Type: application/json
 X-Gitlab-Event: Milestone Hook
 {
   "object_kind": "milestone",
+  "action": "create",
   "user": {
     "id": 1, "name": "The Octocat", "username": "octocat",
     "avatar_url": "", "web_url": "http://localhost/octocat"
@@ -294,7 +604,6 @@ X-Gitlab-Event: Milestone Hook
     "title": "v2.0",
     "description": "Second major release",
     "state": "active",
-    "action": "create",
     "due_date": "2024-06-01",
     "created_at": "2024-01-15T10:00:00Z",
     "updated_at": "2024-01-15T10:00:00Z",
@@ -1088,6 +1397,146 @@ HTTP 200
 jsonpath "$.message" == "accepted"
 header "X-Confusio-Raw-Action" == "stale"
 
+# ── Project Hook: project_create → repository created ────────────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Project Hook
+{
+  "event_name": "project_create",
+  "created_at": "2024-10-07T10:43:48Z",
+  "updated_at": "2024-10-07T10:43:48Z",
+  "name": "hello-world",
+  "path": "hello-world",
+  "path_with_namespace": "octocat/hello-world",
+  "project_id": 22,
+  "project_namespace_id": 32,
+  "owners": [{"name": "Alice Smith", "email": "alice@example.com"}],
+  "project_visibility": "private"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Project Hook: project_destroy → repository deleted ───────────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Project Hook
+{
+  "event_name": "project_destroy",
+  "created_at": "2024-10-07T10:43:48Z",
+  "updated_at": "2024-10-07T10:43:48Z",
+  "name": "hello-world",
+  "path": "hello-world",
+  "path_with_namespace": "octocat/hello-world",
+  "project_id": 22,
+  "project_namespace_id": 32,
+  "owners": [{"name": "Alice Smith", "email": "alice@example.com"}],
+  "project_visibility": "private"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Subgroup Hook: subgroup_create → organization created ────────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Subgroup Hook
+{
+  "event_name": "subgroup_create",
+  "created_at": "2021-01-20T09:40:12Z",
+  "updated_at": "2021-01-20T09:40:12Z",
+  "name": "subgroup1",
+  "path": "subgroup1",
+  "full_path": "group1/subgroup1",
+  "group_id": 10,
+  "parent_group_id": 7,
+  "parent_name": "group1",
+  "parent_path": "group1",
+  "parent_full_path": "group1"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Subgroup Hook: subgroup_destroy → organization deleted ───────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Subgroup Hook
+{
+  "event_name": "subgroup_destroy",
+  "created_at": "2021-01-20T09:40:12Z",
+  "updated_at": "2021-01-20T09:40:12Z",
+  "name": "subgroup1",
+  "path": "subgroup1",
+  "full_path": "group1/subgroup1",
+  "group_id": 10,
+  "parent_group_id": 7,
+  "parent_name": "group1",
+  "parent_path": "group1",
+  "parent_full_path": "group1"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Member Hook: user_add_to_group → membership added ────────────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Member Hook
+{
+  "created_at": "2020-12-11T04:57:22Z",
+  "updated_at": "2020-12-11T04:57:22Z",
+  "group_name": "Engineering",
+  "group_path": "engineering",
+  "group_id": 100,
+  "user_username": "bob",
+  "user_name": "Bob Smith",
+  "user_email": "bob@example.com",
+  "user_id": 64,
+  "group_access": "Guest",
+  "group_plan": null,
+  "expires_at": "2020-12-14T00:00:00Z",
+  "event_name": "user_add_to_group"
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Member Hook: user_update_for_team → member edited ────────────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Member Hook
+{
+  "created_at": "2012-07-21T07:30:56Z",
+  "updated_at": "2012-07-21T07:38:22Z",
+  "event_name": "user_update_for_team",
+  "access_level": "Maintainer",
+  "project_id": 74,
+  "project_name": "hello-world",
+  "project_path": "hello-world",
+  "project_path_with_namespace": "octocat/hello-world",
+  "project_visibility": "private",
+  "user_email": "bob@example.com",
+  "user_name": "Bob Smith",
+  "user_username": "bob",
+  "user_id": 64
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
 # ── Push Hook: branch push with commits → 200 (push event) ───────────────────
 
 POST http://{{host}}/webhooks/gitlab
@@ -1307,7 +1756,7 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 
-# ── Tag Push Hook: tag push with commit → 200 (push event) ───────────────────
+# ── Tag Push Hook: before = zero SHA → 200 (create event, tag created) ───────
 
 POST http://{{host}}/webhooks/gitlab
 Content-Type: application/json
@@ -1342,6 +1791,116 @@ X-Gitlab-Event: Tag Push Hook
     "url": "git@localhost:octocat/hello-world.git",
     "description": "My first repo",
     "homepage": "http://localhost/octocat/hello-world"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Tag Push Hook: after = zero SHA → 200 (delete event, tag deleted) ─────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Tag Push Hook
+{
+  "object_kind": "tag_push",
+  "event_name": "tag_push",
+  "before": "da1560886d4f094c3e6c9ef40349f7d38b5d27d0",
+  "after":  "0000000000000000000000000000000000000000",
+  "ref": "refs/tags/v0.9.0",
+  "checkout_sha": null,
+  "user_id": 4,
+  "user_name": "Alice Smith",
+  "user_username": "alice",
+  "user_email": "alice@example.com",
+  "user_avatar": "",
+  "project_id": 15,
+  "project": {
+    "id": 15, "name": "hello-world", "description": "My first repo",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "namespace": "octocat", "visibility_level": 20,
+    "path_with_namespace": "octocat/hello-world",
+    "default_branch": "main",
+    "homepage": "http://localhost/octocat/hello-world"
+  },
+  "commits": [],
+  "total_commits_count": 0,
+  "repository": {
+    "name": "hello-world",
+    "url": "git@localhost:octocat/hello-world.git",
+    "description": "My first repo",
+    "homepage": "http://localhost/octocat/hello-world"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Wiki Page Hook: create → gollum page created ──────────────────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Wiki Page Hook
+{
+  "object_kind": "wiki_page",
+  "user": {
+    "id": 4, "name": "Alice Smith", "username": "alice",
+    "avatar_url": "", "web_url": "http://localhost/alice"
+  },
+  "project": {
+    "id": 15, "name": "hello-world", "description": "My first repo",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "namespace": "octocat", "visibility_level": 20,
+    "path_with_namespace": "octocat/hello-world",
+    "default_branch": "main"
+  },
+  "object_attributes": {
+    "title": "Home",
+    "slug": "home",
+    "url": "http://localhost/octocat/hello-world/-/wikis/home",
+    "version_id": "abc123",
+    "message": "Create Home",
+    "action": "create"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Wiki Page Hook: update → gollum page edited ───────────────────────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Wiki Page Hook
+{
+  "object_kind": "wiki_page",
+  "user": {
+    "id": 4, "name": "Alice Smith", "username": "alice",
+    "avatar_url": "", "web_url": "http://localhost/alice"
+  },
+  "project": {
+    "id": 15, "name": "hello-world", "description": "My first repo",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "namespace": "octocat", "visibility_level": 20,
+    "path_with_namespace": "octocat/hello-world",
+    "default_branch": "main"
+  },
+  "object_attributes": {
+    "title": "Home",
+    "slug": "home",
+    "url": "http://localhost/octocat/hello-world/-/wikis/home",
+    "version_id": "def456",
+    "message": "Update Home",
+    "action": "update"
   }
 }
 
