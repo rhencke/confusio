@@ -205,6 +205,138 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 
+# ── Note Hook: created (on merge request) → pull_request_review_comment ───────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Note Hook
+{
+  "object_kind": "note",
+  "user": {
+    "id": 3, "name": "Carol", "username": "carol",
+    "avatar_url": "", "web_url": "http://localhost/carol"
+  },
+  "project": {
+    "id": 10, "name": "hello-world",
+    "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "visibility_level": 20, "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 201, "note": "Nice change here.", "noteable_type": "MergeRequest",
+    "action": "create",
+    "url": "http://localhost/octocat/hello-world/-/merge_requests/7#note_201",
+    "created_at": "2024-01-15T12:00:00Z",
+    "updated_at": "2024-01-15T12:00:00Z",
+    "position": {
+      "new_path": "README.md", "old_path": "README.md", "new_line": 4,
+      "head_sha": "abc123", "base_sha": "def456"
+    }
+  },
+  "merge_request": {
+    "id": 500, "iid": 7, "title": "Add new feature",
+    "description": "This MR adds a new feature.", "state": "opened",
+    "source_branch": "feature-branch", "target_branch": "main",
+    "url": "http://localhost/octocat/hello-world/-/merge_requests/7",
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T12:00:00Z"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Note Hook: edited (on merge request) → pull_request_review_comment ────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Note Hook
+{
+  "object_kind": "note",
+  "user": {
+    "id": 3, "name": "Carol", "username": "carol",
+    "avatar_url": "", "web_url": "http://localhost/carol"
+  },
+  "project": {
+    "id": 10, "name": "hello-world",
+    "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "visibility_level": 20, "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 201, "note": "Nice change here, with polish.", "noteable_type": "MergeRequest",
+    "action": "update",
+    "url": "http://localhost/octocat/hello-world/-/merge_requests/7#note_201",
+    "created_at": "2024-01-15T12:00:00Z",
+    "updated_at": "2024-01-15T12:05:00Z",
+    "position": {
+      "new_path": "README.md", "old_path": "README.md", "new_line": 4,
+      "head_sha": "abc123", "base_sha": "def456"
+    }
+  },
+  "merge_request": {
+    "id": 500, "iid": 7, "title": "Add new feature",
+    "description": "This MR adds a new feature.", "state": "opened",
+    "source_branch": "feature-branch", "target_branch": "main",
+    "url": "http://localhost/octocat/hello-world/-/merge_requests/7",
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T12:05:00Z"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# ── Note Hook: deleted (on merge request) → pull_request_review_comment ───────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Note Hook
+{
+  "object_kind": "note",
+  "user": {
+    "id": 3, "name": "Carol", "username": "carol",
+    "avatar_url": "", "web_url": "http://localhost/carol"
+  },
+  "project": {
+    "id": 10, "name": "hello-world",
+    "path_with_namespace": "octocat/hello-world",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "visibility_level": 20, "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 201, "note": "Nice change here, with polish.", "noteable_type": "MergeRequest",
+    "action": "destroy",
+    "url": "http://localhost/octocat/hello-world/-/merge_requests/7#note_201",
+    "created_at": "2024-01-15T12:00:00Z",
+    "updated_at": "2024-01-15T12:10:00Z",
+    "position": {
+      "new_path": "README.md", "old_path": "README.md", "new_line": 4,
+      "head_sha": "abc123", "base_sha": "def456"
+    }
+  },
+  "merge_request": {
+    "id": 500, "iid": 7, "title": "Add new feature",
+    "description": "This MR adds a new feature.", "state": "opened",
+    "source_branch": "feature-branch", "target_branch": "main",
+    "url": "http://localhost/octocat/hello-world/-/merge_requests/7",
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T12:10:00Z"
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
 # ── Label Hook: created → 200 ─────────────────────────────────────────────────
 
 POST http://{{host}}/webhooks/gitlab

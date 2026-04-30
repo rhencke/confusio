@@ -6268,14 +6268,15 @@ end
 b:webhook("Issue Hook", gitlab_issue_hook)
 b:webhook("Issues Hook", gitlab_issue_hook)
 
--- issue_comment: created, edited, deleted.
--- Registered for X-Gitlab-Event: Note Hook (covers notes on issues and MRs).
--- payload.issue is the parent issue in REST API format when noteable_type is Issue.
-b:webhook("Note Hook", function(payload)
-  local oa = payload.object_attributes or {}
+local function gitlab_note_action(oa)
   local raw_action = oa.action or ""
   local action = GL_NOTE_ACTIONS[raw_action] or "unknown"
-  local comment = {
+  return action, raw_action
+end
+
+local function gitlab_note_comment_from_webhook(payload)
+  local oa = payload.object_attributes or {}
+  return {
     id = oa.id,
     node_id = "",
     url = oa.url or "",
@@ -6285,6 +6286,66 @@ b:webhook("Note Hook", function(payload)
     created_at = oa.created_at,
     updated_at = oa.updated_at,
   }
+end
+
+local function gitlab_mr_note_comment_from_webhook(payload)
+  local oa = payload.object_attributes or {}
+  local pos = oa.position or payload.position or {}
+  local line = pos.new_line or pos.old_line or oa.line
+  return {
+    id = oa.id,
+    node_id = "",
+    path = pos.new_path or pos.old_path or oa.path or "",
+    position = line,
+    original_position = pos.old_line,
+    commit_id = pos.head_sha or oa.commit_id or "",
+    original_commit_id = pos.base_sha or "",
+    diff_hunk = "",
+    body = oa.note or "",
+    user = translate_gl_user(payload.user),
+    created_at = oa.created_at,
+    updated_at = oa.updated_at,
+    html_url = oa.url or "",
+    pull_request_url = payload.merge_request
+        and (payload.merge_request.web_url or payload.merge_request.url)
+      or "",
+    url = oa.url or "",
+  }
+end
+
+-- issue_comment: created, edited, deleted.
+-- pull_request_review_comment: created, edited, deleted for MR notes.
+-- Registered for X-Gitlab-Event: Note Hook (covers notes on issues and MRs).
+-- payload.issue is the parent issue in REST API format when noteable_type is Issue.
+-- payload.merge_request is the parent MR when noteable_type is MergeRequest.
+b:webhook("Note Hook", function(payload)
+  local oa = payload.object_attributes or {}
+  local action, raw_action = gitlab_note_action(oa)
+  local noteable_type = oa.noteable_type or payload.noteable_type or ""
+  if noteable_type == "MergeRequest" or payload.merge_request then
+    return make_internal_event({
+      event = "pull_request_review_comment",
+      action = action,
+      raw_action = action == "unknown" and raw_action or nil,
+      provider = config.backend,
+      timestamp = oa.updated_at or "",
+      raw = payload,
+      data = {
+        action = action,
+        comment = gitlab_mr_note_comment_from_webhook(payload),
+        pull_request = payload.merge_request and webhook_mr_from_gl({
+          object_attributes = payload.merge_request,
+          labels = payload.merge_request.labels or {},
+          assignees = payload.merge_request.assignees or {},
+          reviewers = payload.merge_request.reviewers or {},
+          user = payload.merge_request.author or payload.user,
+        }) or nil,
+        repository = translate_gl_webhook_project(payload.project),
+        sender = translate_gl_user(payload.user),
+      },
+    })
+  end
+
   return make_internal_event({
     event = "issue_comment",
     action = action,
@@ -6295,7 +6356,7 @@ b:webhook("Note Hook", function(payload)
     data = {
       action = action,
       issue = payload.issue and translate_gl_issue(payload.issue) or nil,
-      comment = comment,
+      comment = gitlab_note_comment_from_webhook(payload),
       repository = translate_gl_webhook_project(payload.project),
       sender = translate_gl_user(payload.user),
     },
@@ -7328,6 +7389,7 @@ local GL_NORMALIZED_WEBHOOK_EVENTS = {
   "release",
   "pull_request",
   "pull_request_review",
+  "pull_request_review_comment",
   "workflow_run",
   "workflow_job",
   "create",
