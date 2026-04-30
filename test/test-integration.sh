@@ -5,6 +5,11 @@
 #   sh confusio.com -- gitea https://codeberg.org
 set -euo pipefail
 
+if [ "${CONFUSIO_RUN_REAL_PROVIDER_TESTS:-}" != "1" ]; then
+  echo "CONFUSIO_RUN_REAL_PROVIDER_TESTS=1 not set — skipping live provider integration tests"
+  exit 0
+fi
+
 CONFUSIO_PORT=18200
 TMPDIR_INT=$(mktemp -d)
 trap "rm -rf $TMPDIR_INT" EXIT

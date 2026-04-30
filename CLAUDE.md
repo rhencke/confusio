@@ -12,8 +12,8 @@ Built with [Redbean](https://redbean.dev): a self-contained web server + Lua int
 |---------|-------------|
 | `make -j build` | Produces `confusio.com` (app) |
 | `make -j test-unit` | Unit tests against mock backends, no network |
-| `make -j test-integration` | Integration tests against live gitea.com |
-| `make -j test` | Unit tests, integration tests, format check, and lint — all checks |
+| `make -j test-integration` | Opt-in integration tests against live gitea.com; skipped unless `CONFUSIO_RUN_REAL_PROVIDER_TESTS=1` |
+| `make -j test` | Unit tests, opt-in integration hook, format check, lint, and validations — all checks |
 | `make -j test-format` | Check StyLua formatting only (no changes — fails if any file needs reformatting) |
 | `make -j test-lint` | Run luacheck linting only |
 | `make -j validate-mock` | Run `test/validate/gitea-api-version.hurl` against both the mock and a real Gitea instance to check they agree |
@@ -63,7 +63,7 @@ scripts/
 _site/                       — generated output (gitignored; produced by `make site` or the Pages workflow)
 test/
   test-unit.sh               — unit test harness (starts confusio + mock, runs hurl)
-  test-integration.sh        — integration test harness (live gitea.com)
+  test-integration.sh        — opt-in integration test harness (live gitea.com; skipped unless CONFUSIO_RUN_REAL_PROVIDER_TESTS=1)
   test-mock-validate.sh      — validate mock response structure vs real instance
   root.hurl                  — hurl assertions for GET / (no backend)
   gitea-root.hurl            — hurl assertions for GET / (gitea backend)
@@ -71,7 +71,7 @@ test/
     gitea-api-version.hurl   — hurl assertions for /api/v1/version (used by validate-mock only)
   mock-gitea.lua             — Redbean handler for the mock Gitea server
 .github/
-  workflows/ci.yml           — CI: parallel test-unit and test-integration jobs
+  workflows/ci.yml           — CI: parallel test-unit and test-integration jobs; integration is live-provider opt-in and skips by default
   workflows/pages.yml        — GitHub Pages build: generates matrix from CSV, deploys _site/
   actions/setup/action.yml   — composite action: cache redbean.com and hurl
 vendor/
@@ -638,8 +638,9 @@ here so they stay visible without reading all 16 docs:
 - **`EncodeJson` silently drops nil-valued keys**: pass the full input table to `EncodeJson` and let nil fields disappear naturally. Do not build conditional tables with `if input.foo then body.foo = input.foo end` — just assign all fields and let nil omit them.
 - **`DELETE`-returning-204 mutations call `fetch_json` directly** (not `graphql_fetch_or_error`) because there is no JSON body to decode. Check `ok, status` manually, map error statuses to `graphql_error` calls, then re-fetch the resource with `graphql_fetch_or_error` to populate the payload. The same pattern applies to `PUT`/`DELETE` for star, unstar, and subscription mutations.
 - **Integration tests use hurl `[Captures]` + GraphQL variables** to thread node IDs through a multi-step sequence without hardcoding base64 strings. Capture the `id` field from a create step, then pass it as a `variables` object in subsequent queries (`$id: ID!`). This makes test intent clear and avoids fragile base64 literals.
-- **Self-cleaning integration tests use a fixed repo name** (`confusio-mutation-test`). If a prior failed run leaves the repo behind, delete it manually on gitea.com and re-run. The `deleteRepository` step always comes last so it cascades to all issues, comments, and labels created during the run.
-- **`GITEA_TOKEN` gates mutation integration tests**: `test/test-integration.sh` checks `[ -n "${GITEA_TOKEN:-}" ]` before invoking `test/integration-graphql-mutations.hurl`. Tests are skipped (not failed) when the token is absent, so CI stays green without the secret wired in.
+- **Live-provider integration tests are explicit opt-in**: `test/test-integration.sh` exits before contacting gitea.com unless `CONFUSIO_RUN_REAL_PROVIDER_TESTS=1` is set. Normal CI and `make test` must stay hermetic.
+- **Self-cleaning integration tests use a fixed repo name** (`confusio-mutation-test`). If a prior failed opt-in run leaves the repo behind, delete it manually on gitea.com and re-run. The `deleteRepository` step always comes last so it cascades to all issues, comments, and labels created during the run.
+- **`GITEA_TOKEN` gates mutation integration tests after live tests are enabled**: `test/test-integration.sh` checks `[ -n "${GITEA_TOKEN:-}" ]` before invoking `test/integration-graphql-mutations.hurl`. Tests are skipped (not failed) when the token is absent.
 
 ### GraphQL Phase 2b (batch, pagination, cursors, additional nodes)
 

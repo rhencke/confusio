@@ -8,11 +8,13 @@ correctly translates the responses *we wrote into the mock*.  If a provider chan
 name, drops a field, or returns a subtly different shape, the mocks keep passing and confusio
 ships broken translations.
 
-Integration tests currently cover one backend (gitea.com) against a single endpoint group.
-Every other backend ships with zero validation against a real instance.
+An opt-in integration harness exists for one backend (gitea.com) against a single endpoint
+group, but it is skipped unless explicitly enabled.  Every other backend ships with zero
+validation against a real instance.
 
-This plan describes how to extend real-world coverage to all 24 backends on a recurring
-schedule, surface regressions automatically, and keep the compatibility matrix honest.
+This plan describes how real-world coverage could extend to all 24 backends without
+making normal CI or local test runs contact live providers.  Until dedicated test
+accounts and an explicit opt-in workflow exist, these checks remain documentation only.
 
 ## Goals
 
@@ -21,7 +23,8 @@ schedule, surface regressions automatically, and keep the compatibility matrix h
 - Catch provider API changes that silently break translations.
 - Confirm that the compatibility matrix entries are accurate — `y` means it actually works,
   not "it worked once in development".
-- Run automatically on a weekly cadence via GitHub Actions.
+- Do not run from normal CI, PR checks, or `make test`; live-provider checks must require
+  an explicit opt-in environment variable or manual workflow.
 - Post a GitHub issue summarising any failures so regressions are visible without watching
   CI logs.
 
@@ -91,7 +94,7 @@ once, store the token as a GitHub Actions secret, and point confusio at the publ
 
 | Backend | Public instance | Account notes |
 |---------|----------------|---------------|
-| `gitea` | gitea.com | Free registration.  Already used by `test-integration`. |
+| `gitea` | gitea.com | Free registration.  Already used by the opt-in `test-integration` harness. |
 | `forgejo` | codeberg.org | codeberg.org runs Forgejo; same account as `codeberg`. |
 | `codeberg` | codeberg.org | Free registration; shares instance with `forgejo`. |
 | `gogs` | *(see notabug)* | No dedicated public gogs.io instance.  Use notabug. |
@@ -853,21 +856,23 @@ Before any real-world tests can run, the following must exist:
 - `scripts/gen-realworld-hurl.py` — hurl generator (reads catalog, CSV, OpenAPI spec)
 - `scripts/report-realworld.py` — result collector and issue poster
 - `test/test-realworld.sh` — per-backend test runner
-- `.github/workflows/real-world.yml` — workflow skeleton (with all backend jobs stubbed out
-  as `if: false` until each backend is ready)
+- `.github/workflows/real-world.yml` — manual workflow skeleton (with all backend jobs
+  requiring explicit opt-in until each backend is ready)
 - `test/real-world/backends.json` — per-backend base URLs and fixture variable values
 - `test/real-world/fixtures.md` — fixture inventory with `fixtures_version` front matter
 
-Phase 0 is complete when the infrastructure runs end-to-end against gitea (the one backend
-that already has integration tests) and produces a well-formed JSON result and a draft issue.
+Phase 0 is complete when the infrastructure can be run manually against gitea (the one
+backend that already has an opt-in integration harness) and produces a well-formed JSON
+result and a draft issue.
 
 ### Phase 1 — Gitea family (Tier 1)
 
 Backends: `gitea`, `forgejo`, `codeberg`, `notabug`, `gogs`
 
 These five backends share the same API family, so one setup script shape covers all of them.
-The existing `test-integration` job already validates gitea.com; Phase 1 extends that
-coverage to the full endpoint set and adds the remaining four family members.
+The existing `test-integration` harness can validate gitea.com only when explicitly enabled;
+Phase 1 extends that opt-in coverage to the full endpoint set and adds the remaining four
+family members.
 
 **Exit criteria**: all five backends pass two consecutive weekly runs without manual
 intervention.
