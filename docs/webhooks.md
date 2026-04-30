@@ -2324,6 +2324,8 @@ Webhook event/action support is generated from `internal/catalog.lua` and
 |  | `deleted` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `edited` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Fork | `fork` | ✗ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| Gollum | `created` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `edited` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Issues | `opened` | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `closed` | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `edited` | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
@@ -2340,7 +2342,7 @@ Webhook event/action support is generated from `internal/catalog.lua` and
 |  | `deleted` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Member | `added` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `removed` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-|  | `edited` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `edited` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Membership | `added` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `removed` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Merge Group | `checks_requested` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
@@ -2371,14 +2373,14 @@ Webhook event/action support is generated from `internal/catalog.lua` and
 |  | `unlabeled` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `assigned` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `unassigned` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-|  | `review_requested` | ✗ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-|  | `review_request_removed` | ✗ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `review_requested` | ✗ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `review_request_removed` | ✗ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | PR Reviews | `submitted` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-|  | `edited` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `edited` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `dismissed` | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| PR Review Comments | `created` | ✗ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-|  | `edited` | ✗ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-|  | `deleted` | ✗ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| PR Review Comments | `created` | ✗ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `edited` | ✗ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `deleted` | ✗ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Push | `push` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Release | `published` | ✓ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `edited` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
@@ -2416,25 +2418,25 @@ Webhook event/action support is generated from `internal/catalog.lua` and
 |  | `requested` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Deployment Protection Rule | `requested` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Code Scanning Alert | `appeared_in_branch` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-|  | `closed_by_user` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-|  | `created` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-|  | `fixed` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-|  | `reopened` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `closed_by_user` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `created` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `fixed` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `reopened` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `reopened_by_user` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `updated_assignment` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Dependabot Alert | `assignees_changed` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `auto_dismissed` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `auto_reopened` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-|  | `created` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-|  | `dismissed` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-|  | `fixed` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `created` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `dismissed` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `fixed` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `reintroduced` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-|  | `reopened` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `reopened` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Secret Scanning Alert | `assigned` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-|  | `created` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `created` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `publicly_leaked` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-|  | `reopened` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-|  | `resolved` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `reopened` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `resolved` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `unassigned` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `validated` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Secret Scanning Alert Location | `created` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
@@ -2497,7 +2499,7 @@ Webhook event/action support is generated from `internal/catalog.lua` and
 | Github App Authorization | `revoked` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Personal Access Token Request | `approved` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `cancelled` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-|  | `created` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `created` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `denied` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Marketplace Purchase | `cancelled` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `changed` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
@@ -3208,7 +3210,7 @@ This event is in the org/access-control category.
 | `member.login` | ✓ | ✓ | ✓ | ✓ | ✗ |
 | `member.html_url` | ✓ | ✓ | ✓ | ✓ | ✗ |
 | `member.type` | ✓ | ✓ | ~ | ~ | ✗ |
-| `changes` | ✓ | ✓ | ✗ | ✗ | ✗ |
+| `changes` | ✓ | ✓ | ✗ | ~ | ✗ |
 
 #### Supported actions
 
@@ -3218,10 +3220,12 @@ Action support for this event is generated in the [action support matrix](#gener
 - `member.type`: gitea-family always emits `"User"` (teams are not surfaced here).  GitLab
   emits the member's role (`"Reporter"`, `"Developer"`, etc.) in the `type` field; confusio
   normalizes to `"User"`.
-- `changes`: Only populated for the `edited` action on GitHub and GitBucket.  gitea-family and
-  GitLab do not include permission change details; confusio emits `changes: {}`.
-- GitLab org-level member events (project-group membership) are mapped to `member` with a
-  synthetic `repository` constructed from the project path.
+- `changes`: Only populated for the `edited` action on GitHub and GitBucket.  GitLab
+  Member Hook payloads can include changed access details for role updates; confusio
+  preserves those when present and emits `changes: {}` otherwise.  gitea-family does not
+  include permission change details and emits `changes: {}`.
+- GitLab project member events are mapped to `member` with a synthetic `repository`
+  constructed from the project path.
 - Backends not listed do not emit collaborator lifecycle events.
 
 ---
@@ -3845,24 +3849,32 @@ as workflow runs and step/command/container/log spans treated as workflow jobs.
 
 GitHub's security event families are mostly GitHub-specific.  Confusio passes them
 through from GitHub-compatible sources and maps Azure DevOps Advanced Security alert
-service hooks into the closest GitHub alert families where ADO exposes equivalent data.
+service hooks and GitLab Vulnerability Hook payloads into the closest GitHub alert
+families where those providers expose equivalent data.
 
-| GitHub event | GitHub-compatible pass-through | Azure DevOps |
-|---|---|---|
-| `security_advisory` | ✓ | ✗ |
-| `repository_advisory` | ✓ | ✗ |
-| `code_scanning_alert` | ✓ | ✓ |
-| `secret_scanning_alert` | ✓ | ✓ |
-| `secret_scanning_alert_location` | ✓ | ✗ |
-| `dependabot_alert` | ✓ | ✓ |
-| `repository_vulnerability_alert` | ✓ | ✗ |
-| `branch_protection_rule` | ✓ | ✗ |
-| `branch_protection_configuration` | ✓ | ✗ |
+| GitHub event | GitHub-compatible pass-through | Azure DevOps | GitLab |
+|---|---|---|---|
+| `security_advisory` | ✓ | ✗ | ✗ |
+| `repository_advisory` | ✓ | ✗ | ✗ |
+| `code_scanning_alert` | ✓ | ✓ | ~ |
+| `secret_scanning_alert` | ✓ | ✓ | ~ |
+| `secret_scanning_alert_location` | ✓ | ✗ | ✗ |
+| `dependabot_alert` | ✓ | ✓ | ~ |
+| `repository_vulnerability_alert` | ✓ | ✗ | ✗ |
+| `branch_protection_rule` | ✓ | ✗ | ✗ |
+| `branch_protection_configuration` | ✓ | ✗ | ✗ |
 
 Azure DevOps uses the `ms.vss-alerts.*` service-hook family for Advanced Security.
 Confusio derives the GitHub event family from `resource.alertType`: `code` maps to
 `code_scanning_alert`, `dependency` maps to `dependabot_alert`, and `secret` maps to
 `secret_scanning_alert`.
+
+GitLab uses a single Vulnerability Hook payload.  Confusio derives the alert family from
+`object_attributes.report_type` and scanner metadata: secret reports map to
+`secret_scanning_alert`, dependency or container reports map to `dependabot_alert`, and
+other reports map to `code_scanning_alert`.  GitLab security alert mappings are best-effort:
+they preserve the source vulnerability object under `alert`, but GitHub-only alert details
+such as enterprise, installation, and organization context are not available.
 
 #### `security_advisory`
 
@@ -3884,15 +3896,15 @@ Triggered when a GitHub security advisory is published, updated, or withdrawn.
 
 Triggered when a code scanning alert is created, closed, fixed, or reassigned.
 
-| GitHub field | github | azuredevops | All others |
-|---|---|---|---|
-| `action` | ✓ | ✓ | — |
-| `alert` | ✓ | ~ | — |
-| `enterprise` | ✓ | ✗ | — |
-| `installation` | ✓ | ✗ | — |
-| `organization` | ✓ | ✗ | — |
-| `repository` | ✓ | ✓ | — |
-| `sender` | ✓ | ~ | — |
+| GitHub field | github | azuredevops | gitlab | All others |
+|---|---|---|---|---|
+| `action` | ✓ | ✓ | ✓ | — |
+| `alert` | ✓ | ~ | ~ | — |
+| `enterprise` | ✓ | ✗ | ✗ | — |
+| `installation` | ✓ | ✗ | ✗ | — |
+| `organization` | ✓ | ✗ | ✗ | — |
+| `repository` | ✓ | ✓ | ✓ | — |
+| `sender` | ✓ | ~ | ~ | — |
 
 **Supported actions:** See the generated [action support matrix](#generated-action-support-matrix).
 
@@ -3900,16 +3912,16 @@ Triggered when a code scanning alert is created, closed, fixed, or reassigned.
 
 Triggered when a secret scanning alert is created, resolved, validated, or assigned.
 
-| GitHub field | github | azuredevops | All others |
-|---|---|---|---|
-| `action` | ✓ | ✓ | — |
-| `alert` | ✓ | ~ | — |
-| `assignee` | ✓ | ✗ | — |
-| `enterprise` | ✓ | ✗ | — |
-| `installation` | ✓ | ✗ | — |
-| `organization` | ✓ | ✗ | — |
-| `repository` | ✓ | ✓ | — |
-| `sender` | ✓ | ~ | — |
+| GitHub field | github | azuredevops | gitlab | All others |
+|---|---|---|---|---|
+| `action` | ✓ | ✓ | ✓ | — |
+| `alert` | ✓ | ~ | ~ | — |
+| `assignee` | ✓ | ✗ | ✗ | — |
+| `enterprise` | ✓ | ✗ | ✗ | — |
+| `installation` | ✓ | ✗ | ✗ | — |
+| `organization` | ✓ | ✗ | ✗ | — |
+| `repository` | ✓ | ✓ | ✓ | — |
+| `sender` | ✓ | ~ | ~ | — |
 
 **Supported actions:** See the generated [action support matrix](#generated-action-support-matrix).
 
@@ -3937,21 +3949,23 @@ Subscribe to this event alongside `secret_scanning_alert` to receive location-le
 
 Triggered when a Dependabot alert is created, dismissed, fixed, or reassigned.
 
-| GitHub field | github | azuredevops | All others |
-|---|---|---|---|
-| `action` | ✓ | ✓ | — |
-| `alert` | ✓ | ~ | — |
-| `enterprise` | ✓ | ✗ | — |
-| `installation` | ✓ | ✗ | — |
-| `organization` | ✓ | ✗ | — |
-| `repository` | ✓ | ✓ | — |
-| `sender` | ✓ | ~ | — |
+| GitHub field | github | azuredevops | gitlab | All others |
+|---|---|---|---|---|
+| `action` | ✓ | ✓ | ✓ | — |
+| `alert` | ✓ | ~ | ~ | — |
+| `enterprise` | ✓ | ✗ | ✗ | — |
+| `installation` | ✓ | ✗ | ✗ | — |
+| `organization` | ✓ | ✗ | ✗ | — |
+| `repository` | ✓ | ✓ | ✓ | — |
+| `sender` | ✓ | ~ | ~ | — |
 
 **Supported actions:** See the generated [action support matrix](#generated-action-support-matrix).
 
 **Notes:**
 - `dependabot_alert` supersedes the older `repository_vulnerability_alert` event, which
   is closing down.  New integrations should subscribe to `dependabot_alert` instead.
+- GitLab dependency and container scanning vulnerabilities map here because they are the
+  closest GitHub alert family for package and image dependency findings.
 
 #### `repository_advisory`
 
@@ -4265,9 +4279,9 @@ backends they are silently dropped — there is no mapping target.
 
 ### App and installation events
 
-GitHub App lifecycle events.  These events are generated by GitHub's App platform and
-have no equivalent in any self-hosted forge.  Two events are **synthesized by confusio
-at startup** when a backend is configured and a `webhook_target` is registered:
+GitHub App lifecycle events are generated by GitHub's App platform and mostly have no
+equivalent in any self-hosted forge.  Two events are **synthesized by confusio at startup**
+when a backend is configured and a `webhook_target` is registered:
 
 - **`installation/created`** — fired once at startup to signal that confusio came
   online for the configured backend.  The `installation` object has `app_slug =
@@ -4279,8 +4293,9 @@ at startup** when a backend is configured and a `webhook_target` is registered:
 
 These synthesized events give GitHub-App-aware consumers (CI runners, bots) a lifecycle
 signal that confusio has started and is ready to forward events.  All other actions in
-the `installation` and `installation_repositories` families, and all actions in the
-remaining four event families below, have no cross-forge equivalent and are never emitted.
+the `installation` and `installation_repositories` families are GitHub-platform-specific.
+GitLab resource token expiry hooks map to `personal_access_token_request/created`; the
+remaining app and marketplace event families have no cross-forge equivalent.
 
 | GitHub event | Status | Reason |
 |---|---|---|
@@ -4288,7 +4303,7 @@ remaining four event families below, have no cross-forge equivalent and are neve
 | `installation_repositories` | ~ | `added` (all repos) synthesized at startup; `removed` and individual repository events are GitHub-platform-specific. |
 | `installation_target` | ✗ | An account (user or org) that owns a GitHub App installation was renamed. No cross-forge equivalent. |
 | `github_app_authorization` | ✗ | A user revoked their authorization of a GitHub App. GitHub-specific OAuth lifecycle event. |
-| `personal_access_token_request` | ✗ | Fine-grained PAT request lifecycle (approved, cancelled, created, denied). GitHub Enterprise only; no equivalent in any forge. |
+| `personal_access_token_request` | ~ | Fine-grained PAT request lifecycle (approved, cancelled, created, denied) is GitHub Enterprise only. GitLab resource access and deploy token expiry hooks map to `created` as the closest normalized token event. |
 | `marketplace_purchase` | ✗ | GitHub Marketplace purchase lifecycle. GitHub.com-only; no self-hosted forge has a marketplace. |
 
 #### `installation`
@@ -4375,17 +4390,23 @@ Triggered when there is activity relating to a request for a fine-grained person
 access token to access organization resources.  Requires a GitHub Enterprise instance
 with the "Require approval of fine-grained personal access tokens" policy enabled.
 
-| GitHub field | github | All others |
-|---|---|---|
-| `action` | ✓ | — |
-| `personal_access_token_request` | ✓ | — |
-| `organization` | ✓ | — |
-| `installation` | ✓ | — |
-| `sender` | ✓ | — |
+| GitHub field | github | gitlab | All others |
+|---|---|---|---|
+| `action` | ✓ | ✓ | — |
+| `personal_access_token_request` | ✓ | ~ | — |
+| `organization` | ✓ | ~ | — |
+| `installation` | ✓ | ✗ | — |
+| `sender` | ✓ | ~ | — |
 
 ##### Supported actions
 
 Action support for this event is generated in the [action support matrix](#generated-action-support-matrix).
+
+**Notes:**
+- GitLab emits Resource Access Token and Resource Deploy Token hooks for expiring project
+  or group tokens.  Confusio maps both to `personal_access_token_request` with action
+  `created`; GitLab does not expose the approval lifecycle actions that GitHub Enterprise
+  emits for fine-grained PAT requests.
 
 ---
 

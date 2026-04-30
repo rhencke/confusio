@@ -890,16 +890,24 @@ intervention.
 
 Backends: `gitlab`, `bitbucket`
 
-Both have well-documented APIs, high uptime, and mature free tiers.  GitLab's API is close
-enough to GitHub's that the generator should produce good assertions with minimal overrides.
+Both have well-documented APIs, high uptime, and mature free tiers.  GitLab coverage should
+exercise native webhook delivery for issues, notes, merge requests, CI/deployment events,
+repository and group lifecycle, member changes, wiki/release/tag events, work items, and the
+security alert and resource-token hooks where the account and project features allow them.
+GitLab.com may not expose vulnerability or expiring-token hooks on every free-tier project;
+those cases should be recorded as setup skips while mock-backed fixture delivery remains the
+active signal for those source events.
+
 Bitbucket coverage should exercise repository lifecycle, issues, commit comments, pull-request
 comments/reviews/change requests, commit statuses, and `pipeline:span_created` OTLP spans.
 Pipeline-span runs require Bitbucket Pipelines to be enabled on the fixture repository and a
 minimal `bitbucket-pipelines.yml` so step/command/container/log spans are observable.
 
-**Exit criteria**: both backends pass two consecutive weekly runs, including Bitbucket
-webhook delivery assertions for the supported repository, PR/comment/review, status, and
-pipeline-span event families.
+**Exit criteria**: both backends pass two consecutive weekly runs, including GitLab webhook
+delivery assertions for the supported issue/MR/review/comment, CI/deployment,
+repository/group/member, security alert, resource token, and work-item event families, plus
+Bitbucket webhook delivery assertions for the supported repository, PR/comment/review, status,
+and pipeline-span event families.
 
 ### Phase 3 — Remaining Tier 1 SaaS
 
