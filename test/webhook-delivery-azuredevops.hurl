@@ -324,7 +324,7 @@ jsonpath "$[0].github_event" == "workflow_run"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 
-# ── git.repository.created → repository: created ─────────────────────────────
+# ── git.repo.created → repository: created ───────────────────────────────────
 
 POST http://{{target}}/reset
 {}
@@ -345,7 +345,7 @@ jsonpath "$[0].github_event" == "repository"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 
-# ── git.repository.deleted → repository: deleted ─────────────────────────────
+# ── git.repo.deleted → repository: deleted ───────────────────────────────────
 
 POST http://{{target}}/reset
 {}
@@ -366,7 +366,7 @@ jsonpath "$[0].github_event" == "repository"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 
-# ── git.repository.renamed → repository: renamed ─────────────────────────────
+# ── git.repo.renamed → repository: renamed ───────────────────────────────────
 
 POST http://{{target}}/reset
 {}

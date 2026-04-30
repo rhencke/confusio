@@ -124,7 +124,7 @@ receiver implementation, and a brief note on the signature scheme used.  The
 
 | Backend | Endpoint | Default forge URL | API family | Signature scheme |
 |---------|----------|------------------|------------|-----------------|
-| `azuredevops` | `POST /webhooks/azuredevops` | `https://dev.azure.com` | azuredevops | Basic auth (username + shared secret in request body) |
+| `azuredevops` | `POST /webhooks/azuredevops` | `https://dev.azure.com` | azuredevops | Basic auth in `Authorization` header |
 | `bitbucket` | `POST /webhooks/bitbucket` | `https://bitbucket.org` | bitbucket | `X-Hub-Signature` HMAC-SHA256 |
 | `bitbucket_datacenter` | `POST /webhooks/bitbucket_datacenter` | _(self-hosted)_ | bitbucket_datacenter | `X-Hub-Signature` HMAC-SHA256 |
 | `codeberg` | `POST /webhooks/codeberg` | `https://codeberg.org` | gitea | `X-Gitea-Signature` HMAC-SHA256 |
@@ -161,7 +161,7 @@ delivered.  Confusio maps these to its canonical internal event family names.
 | github | `X-GitHub-Event` | `issues`, `push`, `pull_request` |
 | bitbucket | `X-Event-Key` | `repo:push`, `pullrequest:created` |
 | bitbucket_datacenter | `X-Event-Key` | `repo:refs_changed`, `pr:opened` |
-| azuredevops | _(body field)_ | `git.push`, `git.pullrequest.created` |
+| azuredevops | _(body field)_ | `git.push`, `git.pullrequest.created`, `git.repo.created` |
 | codecommit | _(SNS `Message.detail-type`)_ | `CodeCommit Repository State Change` |
 | pagure | `X-Pagure-Event` | `issue`, `pull-request`, `git` |
 | sourcehut | _(body field `event`)_ | `push`, `patchset:created` |
@@ -716,7 +716,8 @@ authentication is available, network-level access controls are strongly recommen
 
 Azure DevOps service hooks use HTTP Basic authentication.  The username and password
 are configured in the service hook settings; confusio verifies the `Authorization`
-header.
+header against the exact `username:password` credential stored in the backend secret
+file.
 
 ```
 Header:    Authorization
@@ -724,15 +725,12 @@ Format:    Basic <base64(username:password)>
 ```
 
 ```
-configured_user     = configured username (may be empty string)
-configured_password = configured shared secret / password
+configured_secret = configured "username:password" string
 received_header     = value of Authorization header
 
 decoded = base64_decode(received_header after stripping "Basic ")
-[received_user, received_password] = split(decoded, ":", limit=2)
 
-accept if constant_time_equal(configured_user, received_user)
-       AND constant_time_equal(configured_password, received_password)
+accept if constant_time_equal(configured_secret, decoded)
 ```
 
 **Configuration:** Set in Azure DevOps service hook settings under "Basic authentication"

@@ -1,5 +1,5 @@
 {
-  "eventType": "git.repository.created",
+  "eventType": "git.repo.created",
   "resource": {
     "id": "repo-id-001",
     "name": "hello-world",

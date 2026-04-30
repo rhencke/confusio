@@ -6,6 +6,7 @@
 #   gitlab_tok  — the shared secret verbatim (for X-Gitlab-Token)
 #   bb_sig      — "sha256=<hex>" (for X-Hub-Signature on bitbucket)
 #   gb_sig      — "sha1=<hex>" (for X-Hub-Signature on gitbucket)
+#   azuredevops_basic — base64("fido:webhooksecret") for Authorization: Basic
 #   confusio_sig — "sha256=<hex>, v=1, ts=<ts>" (for X-Confusio-Signature-256)
 #
 # Convention: valid credential → 422 (verification passed; no handlers registered
@@ -102,6 +103,37 @@ jsonpath "$.message" == "No webhook handlers registered"
 POST http://{{host}}/webhooks/gitbucket
 Content-Type: application/json
 X-Hub-Signature: sha1=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# ── azuredevops: Authorization: Basic base64(username:password) ──────────────
+
+# Valid Basic credentials → passes verification (422)
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+Authorization: Basic {{azuredevops_basic}}
+{}
+
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "No webhook handlers registered"
+
+# Bad Basic credentials → 401
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+Authorization: Basic YmFkOmNyZWRz
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# Missing Authorization header → 401
+POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
 {}
 
 HTTP 401

@@ -2284,7 +2284,7 @@ end)
 
 -- build.complete: fires when a Classic or YAML pipeline build finishes.
 -- repository lifecycle: created, deleted, renamed.
--- ADO event types: git.repository.created, git.repository.deleted, git.repository.renamed.
+-- ADO event types: git.repo.created, git.repo.deleted, git.repo.renamed.
 -- For renamed events ADO does not include the old name in the payload, so
 -- data.changes is omitted.  Mapped as ~ (partial) in the compatibility matrix.
 local function ado_repo_lifecycle_handler(action)
@@ -2306,9 +2306,9 @@ local function ado_repo_lifecycle_handler(action)
   end
 end
 
-b:webhook("git.repository.created", ado_repo_lifecycle_handler("created"))
-b:webhook("git.repository.deleted", ado_repo_lifecycle_handler("deleted"))
-b:webhook("git.repository.renamed", ado_repo_lifecycle_handler("renamed"))
+b:webhook("git.repo.created", ado_repo_lifecycle_handler("created"))
+b:webhook("git.repo.deleted", ado_repo_lifecycle_handler("deleted"))
+b:webhook("git.repo.renamed", ado_repo_lifecycle_handler("renamed"))
 
 b:webhook("build.complete", function(payload)
   local resource = payload.resource or {}
