@@ -30,6 +30,116 @@ jsonpath "$[0].github_event" == "pull_request_review"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 
+# ── patchset-created (first patch set) → pull_request: opened ───────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/patchset-created-opened.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.type" == "patchset-created"
+
+# ── patchset-created (later patch set) → pull_request: synchronize ──────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/patchset-created-synchronize.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.patchSet.number" == 2
+
+# ── change-merged → pull_request: closed / merged ───────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/change-merged.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.type" == "change-merged"
+
+# ── change-abandoned → pull_request: closed / not merged ────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/change-abandoned.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.reason" == "Superseded by another change"
+
+# ── change-restored → pull_request: reopened ────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+file,fixtures/webhooks/gerrit/change-restored.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.type" == "change-restored"
+
 # ── comment-added (changes_requested) → pull_request_review: submitted/CHANGES_REQUESTED
 
 POST http://{{target}}/reset

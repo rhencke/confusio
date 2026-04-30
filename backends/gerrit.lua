@@ -371,9 +371,22 @@ local function gerrit_patchset_timestamp(patchSet)
   return (patchSet or {}).createdOn and tostring((patchSet or {}).createdOn) or ""
 end
 
-local function translate_gerrit_pull_request(change, patchSet)
+local function gerrit_event_timestamp(payload)
+  payload = payload or {}
+  if payload.eventCreatedOn then
+    return tostring(payload.eventCreatedOn)
+  end
+  local patch_ts = gerrit_patchset_timestamp(payload.patchSet)
+  if patch_ts ~= "" then
+    return patch_ts
+  end
+  return (payload.change or {}).updated or ""
+end
+
+local function translate_gerrit_pull_request(change, patchSet, opts)
   change = change or {}
   patchSet = patchSet or {}
+  opts = opts or {}
   local full = change.project or ""
   return {
     id = change._number or 0,
@@ -381,7 +394,7 @@ local function translate_gerrit_pull_request(change, patchSet)
     number = change._number or 0,
     title = change.subject or "",
     body = "",
-    state = "open",
+    state = opts.state or "open",
     draft = change.wip or false,
     html_url = config.base_url .. "/c/" .. full .. "/+/" .. (change._number or ""),
     url = "",
@@ -398,11 +411,13 @@ local function translate_gerrit_pull_request(change, patchSet)
     },
     created_at = change.created or "",
     updated_at = change.updated or "",
-    closed_at = nil,
+    closed_at = opts.closed_at,
+    merged = opts.merged or false,
+    merged_at = opts.merged_at,
   }
 end
 
-local function translate_gerrit_change(change, patchSet)
+local function translate_gerrit_change(change, patchSet, opts)
   change = change or {}
   local repo = translate_gerrit_repo(
     { name = change.project },
@@ -410,8 +425,50 @@ local function translate_gerrit_change(change, patchSet)
     nil,
     { default_branch = change.branch or "main" }
   )
-  local pr = translate_gerrit_pull_request(change, patchSet)
+  local pr = translate_gerrit_pull_request(change, patchSet, opts)
   return pr, repo
+end
+
+local function gerrit_change_actor(payload)
+  payload = payload or {}
+  return payload.uploader
+    or payload.submitter
+    or payload.abandoner
+    or payload.restorer
+    or payload.author
+    or (payload.change or {}).owner
+    or {}
+end
+
+local function gerrit_pull_request_event(payload, action, opts)
+  payload = payload or {}
+  opts = opts or {}
+  local timestamp = gerrit_event_timestamp(payload)
+  local actor = gerrit_change_actor(payload)
+  local pr, repo = translate_gerrit_change(payload.change, payload.patchSet, {
+    state = opts.state,
+    closed_at = opts.closed_at and timestamp or nil,
+    merged = opts.merged,
+    merged_at = opts.merged and timestamp or nil,
+  })
+  local data = {
+    action = action,
+    number = (payload.change or {})._number,
+    pull_request = pr,
+    repository = repo,
+    sender = translate_gerrit_user(actor),
+  }
+  if payload.reason then
+    data.reason = payload.reason
+  end
+  return make_internal_event({
+    event = "pull_request",
+    action = action,
+    provider = "gerrit",
+    raw = payload,
+    data = data,
+    timestamp = timestamp,
+  })
 end
 
 local function translate_gerrit_review(payload, state)
@@ -451,8 +508,34 @@ b:webhook("comment-added", function(payload)
 end)
 
 local GERRIT_NORMALIZED_WEBHOOK_EVENTS = {
+  "pull_request",
   "pull_request_review",
 }
+
+b:webhook("patchset-created", function(payload)
+  local patch_number = tonumber(((payload or {}).patchSet or {}).number) or 0
+  local action = patch_number <= 1 and "opened" or "synchronize"
+  return gerrit_pull_request_event(payload, action)
+end)
+
+b:webhook("change-merged", function(payload)
+  return gerrit_pull_request_event(payload, "closed", {
+    state = "closed",
+    closed_at = true,
+    merged = true,
+  })
+end)
+
+b:webhook("change-abandoned", function(payload)
+  return gerrit_pull_request_event(payload, "closed", {
+    state = "closed",
+    closed_at = true,
+  })
+end)
+
+b:webhook("change-restored", function(payload)
+  return gerrit_pull_request_event(payload, "reopened")
+end)
 
 local function gerrit_normalized_payload_without_envelope_fields(data)
   local payload = {}

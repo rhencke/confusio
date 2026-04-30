@@ -1,0 +1,29 @@
+{
+  "type": "patchset-created",
+  "eventCreatedOn": 1705311000,
+  "change": {
+    "_number": 1002,
+    "project": "myorg/my-repo",
+    "branch": "main",
+    "subject": "Add checkout flow",
+    "status": "NEW",
+    "wip": false,
+    "owner": {
+      "name": "Alice",
+      "email": "alice@example.com",
+      "username": "alice"
+    },
+    "created": "2024-01-15T10:30:00Z",
+    "updated": "2024-01-15T10:50:00Z"
+  },
+  "patchSet": {
+    "number": 1,
+    "revision": "111aaa222bbb",
+    "createdOn": 1705311000
+  },
+  "uploader": {
+    "name": "Alice",
+    "email": "alice@example.com",
+    "username": "alice"
+  }
+}
