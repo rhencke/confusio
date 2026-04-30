@@ -1,0 +1,30 @@
+{
+  "type": "change-abandoned",
+  "eventCreatedOn": 1705325400,
+  "change": {
+    "_number": 1003,
+    "project": "myorg/my-repo",
+    "branch": "feature",
+    "subject": "Try alternate checkout copy",
+    "status": "ABANDONED",
+    "wip": false,
+    "owner": {
+      "name": "Eve",
+      "email": "eve@example.com",
+      "username": "eve"
+    },
+    "created": "2024-01-15T11:00:00Z",
+    "updated": "2024-01-15T14:50:00Z"
+  },
+  "patchSet": {
+    "number": 1,
+    "revision": "555eee666fff",
+    "createdOn": 1705312800
+  },
+  "abandoner": {
+    "name": "Eve",
+    "email": "eve@example.com",
+    "username": "eve"
+  },
+  "reason": "Superseded by another change"
+}

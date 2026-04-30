@@ -1,0 +1,7 @@
+{
+  "type": "project-head-updated",
+  "eventCreatedOn": 1705386600,
+  "projectName": "myorg/my-repo",
+  "oldHead": "refs/heads/master",
+  "newHead": "refs/heads/main"
+}

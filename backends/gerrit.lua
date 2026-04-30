@@ -14,17 +14,23 @@ local proxy_handler = _t.proxy_handler
 
 local project_id = owner_repo_id
 
--- Map a Gerrit project object to GitHub format.
-local function translate_gerrit_repo(r, owner, repo_name)
-  if not r then
-    return {}
-  end
-  local full = r.name or (owner and (owner .. "/" .. (repo_name or "")) or "")
+local function gerrit_project_parts(full, owner, repo_name)
+  full = full or (owner and (owner .. "/" .. (repo_name or "")) or "")
   local o, n = full:match("^(.+)/([^/]+)$")
   if not o then
     o = ""
     n = full
   end
+  return full, o, n
+end
+
+-- Map a Gerrit project object to GitHub format.
+local function translate_gerrit_repo(r, owner, repo_name, opts)
+  if not r then
+    return {}
+  end
+  opts = opts or {}
+  local full, o, n = gerrit_project_parts(r.name, owner, repo_name)
   return {
     id = 0,
     node_id = "",
@@ -56,7 +62,7 @@ local function translate_gerrit_repo(r, owner, repo_name)
     archived = r.state == "READ_ONLY",
     disabled = r.state == "HIDDEN",
     open_issues_count = 0,
-    default_branch = "main",
+    default_branch = opts.default_branch or "main",
     visibility = "public",
     forks = 0,
     open_issues = 0,
@@ -361,62 +367,63 @@ local function gerrit_approval_state(approvals)
   return state
 end
 
-local function translate_gerrit_change(change, patchSet)
+local function gerrit_patchset_timestamp(patchSet)
+  return (patchSet or {}).createdOn and tostring((patchSet or {}).createdOn) or ""
+end
+
+local function gerrit_event_timestamp(payload)
+  payload = payload or {}
+  if payload.eventCreatedOn then
+    return tostring(payload.eventCreatedOn)
+  end
+  local patch_ts = gerrit_patchset_timestamp(payload.patchSet)
+  if patch_ts ~= "" then
+    return patch_ts
+  end
+  return (payload.change or {}).updated or ""
+end
+
+local ZERO_SHA = "0000000000000000000000000000000000000000"
+
+local function gerrit_ref_update_project(refUpdate)
+  return (refUpdate or {}).project or ""
+end
+
+local function gerrit_ref_name(refUpdate)
+  return (refUpdate or {}).refName or ""
+end
+
+local function gerrit_short_ref(ref)
+  return (ref or ""):match("^refs/[^/]+/(.+)") or (ref or "")
+end
+
+local function gerrit_ref_type(ref)
+  return (ref or ""):match("^refs/tags/") and "tag" or "branch"
+end
+
+local function translate_gerrit_ref_repo(refUpdate)
+  return translate_gerrit_repo({ name = gerrit_ref_update_project(refUpdate) })
+end
+
+local function translate_gerrit_project_repo(payload)
+  payload = payload or {}
+  local head = gerrit_short_ref(payload.newHead or payload.headName or payload.projectHead)
+  local opts = head ~= "" and { default_branch = head } or nil
+  return translate_gerrit_repo({ name = payload.projectName }, nil, nil, opts)
+end
+
+local function translate_gerrit_pull_request(change, patchSet, opts)
   change = change or {}
   patchSet = patchSet or {}
+  opts = opts or {}
   local full = change.project or ""
-  local o, n = full:match("^(.+)/([^/]+)$")
-  if not o then
-    o = ""
-    n = full
-  end
-  local repo = {
-    id = 0,
-    node_id = "",
-    name = n,
-    full_name = full,
-    private = false,
-    owner = {
-      login = o,
-      id = 0,
-      node_id = "",
-      avatar_url = "",
-      url = "",
-      html_url = "",
-      type = "User",
-    },
-    html_url = config.base_url .. "/admin/repos/" .. full,
-    description = nil,
-    fork = false,
-    url = "",
-    clone_url = "",
-    homepage = "",
-    size = 0,
-    stargazers_count = 0,
-    watchers_count = 0,
-    language = nil,
-    has_issues = false,
-    has_wiki = false,
-    forks_count = 0,
-    archived = false,
-    disabled = false,
-    open_issues_count = 0,
-    default_branch = change.branch or "main",
-    visibility = "public",
-    forks = 0,
-    open_issues = 0,
-    watchers = 0,
-    created_at = nil,
-    updated_at = nil,
-    pushed_at = nil,
-  }
-  local pr = {
+  return {
     id = change._number or 0,
     node_id = "",
     number = change._number or 0,
     title = change.subject or "",
     body = "",
-    state = "open",
+    state = opts.state or "open",
     draft = change.wip or false,
     html_url = config.base_url .. "/c/" .. full .. "/+/" .. (change._number or ""),
     url = "",
@@ -433,28 +440,388 @@ local function translate_gerrit_change(change, patchSet)
     },
     created_at = change.created or "",
     updated_at = change.updated or "",
-    closed_at = nil,
+    closed_at = opts.closed_at,
+    merged = opts.merged or false,
+    merged_at = opts.merged_at,
   }
+end
+
+local function translate_gerrit_change(change, patchSet, opts)
+  change = change or {}
+  local repo = translate_gerrit_repo(
+    { name = change.project },
+    nil,
+    nil,
+    { default_branch = change.branch or "main" }
+  )
+  local pr = translate_gerrit_pull_request(change, patchSet, opts)
   return pr, repo
 end
 
-b:webhook("comment-added", function(payload)
-  local approvals = payload.approvals or {}
-  local state = gerrit_approval_state(approvals)
+local function gerrit_change_actor(payload)
+  payload = payload or {}
+  return payload.uploader
+    or payload.submitter
+    or payload.abandoner
+    or payload.restorer
+    or payload.changer
+    or payload.editor
+    or payload.adder
+    or payload.remover
+    or payload.author
+    or (payload.change or {}).owner
+    or {}
+end
+
+local function translate_gerrit_label(name)
+  return {
+    id = 0,
+    node_id = "",
+    url = "",
+    name = name or "",
+    color = "",
+    description = "",
+    default = false,
+  }
+end
+
+local function translate_gerrit_hashtags(hashtags)
+  local labels = {}
+  for _, hashtag in ipairs(hashtags or {}) do
+    labels[#labels + 1] = translate_gerrit_label(hashtag)
+  end
+  return labels
+end
+
+local function gerrit_pull_request_event(payload, action, opts)
+  payload = payload or {}
+  opts = opts or {}
+  local timestamp = gerrit_event_timestamp(payload)
+  local actor = gerrit_change_actor(payload)
+  local pr, repo = translate_gerrit_change(payload.change, payload.patchSet, {
+    state = opts.state,
+    closed_at = opts.closed_at and timestamp or nil,
+    merged = opts.merged,
+    merged_at = opts.merged and timestamp or nil,
+  })
+  local data = {
+    action = action,
+    number = (payload.change or {})._number,
+    pull_request = pr,
+    repository = repo,
+    sender = translate_gerrit_user(actor),
+  }
+  if payload.reason then
+    data.reason = payload.reason
+  end
+  if opts.changes then
+    data.changes = opts.changes
+  end
+  if opts.label then
+    data.label = opts.label
+  end
+  if opts.assignee then
+    data.assignee = opts.assignee
+  end
+  if opts.assignee ~= nil then
+    data.pull_request.assignee = opts.assignee
+  end
+  if opts.requested_reviewer then
+    data.requested_reviewer = opts.requested_reviewer
+  end
+  if opts.requested_reviewers then
+    data.pull_request.requested_reviewers = opts.requested_reviewers
+  end
+  if opts.labels then
+    data.pull_request.labels = opts.labels
+  end
+  return make_internal_event({
+    event = "pull_request",
+    action = action,
+    provider = "gerrit",
+    raw = payload,
+    data = data,
+    timestamp = timestamp,
+  })
+end
+
+local function gerrit_reviewer_event(payload, action)
+  payload = payload or {}
+  local reviewer = translate_gerrit_user(payload.reviewer)
+  return gerrit_pull_request_event(payload, action, {
+    requested_reviewer = reviewer,
+    requested_reviewers = action == "review_requested" and { reviewer } or {},
+    changes = {
+      reviewer = {
+        from = action == "review_request_removed" and reviewer or nil,
+        to = action == "review_requested" and reviewer or nil,
+      },
+      approvals = payload.approvals,
+    },
+  })
+end
+
+local function gerrit_ref_update_event(payload, refUpdate)
+  payload = payload or {}
+  refUpdate = refUpdate or payload.refUpdate or {}
+  local before = refUpdate.oldRev or ZERO_SHA
+  local after = refUpdate.newRev or ZERO_SHA
+  local ref = gerrit_ref_name(refUpdate)
+  local repo = translate_gerrit_ref_repo(refUpdate)
+  local sender = translate_gerrit_user(payload.submitter)
+  local timestamp = gerrit_event_timestamp(payload)
+  local ref_type = gerrit_ref_type(ref)
+  local ref_short = gerrit_short_ref(ref)
+
+  if before == ZERO_SHA then
+    return make_internal_event({
+      event = "create",
+      action = "create",
+      provider = "gerrit",
+      raw = payload,
+      data = {
+        ref = ref_short,
+        ref_type = ref_type,
+        master_branch = repo.default_branch or "",
+        description = repo.description,
+        pusher_type = "user",
+        repository = repo,
+        sender = sender,
+      },
+      timestamp = timestamp,
+    })
+  end
+
+  if after == ZERO_SHA then
+    return make_internal_event({
+      event = "delete",
+      action = "delete",
+      provider = "gerrit",
+      raw = payload,
+      data = {
+        ref = ref_short,
+        ref_type = ref_type,
+        master_branch = repo.default_branch or "",
+        description = repo.description,
+        pusher_type = "user",
+        repository = repo,
+        sender = sender,
+      },
+      timestamp = timestamp,
+    })
+  end
+
+  return make_internal_event({
+    event = "push",
+    action = "push",
+    provider = "gerrit",
+    raw = payload,
+    data = {
+      ref = ref,
+      before = before,
+      after = after,
+      created = false,
+      deleted = false,
+      forced = false,
+      compare = "",
+      commits = {},
+      head_commit = nil,
+      pusher = {
+        name = (payload.submitter or {}).name or (payload.submitter or {}).username or "",
+        email = (payload.submitter or {}).email or "",
+      },
+      repository = repo,
+      sender = sender,
+      ref_updates = payload.refUpdates,
+    },
+    timestamp = timestamp,
+  })
+end
+
+local function gerrit_project_created_event(payload)
+  payload = payload or {}
+  local head = payload.headName or payload.projectHead or ""
+  local repository = translate_gerrit_project_repo(payload)
+  local sender = translate_gerrit_user(payload.submitter or payload.creator or payload.createdBy)
+  return make_internal_event({
+    event = "repository",
+    action = "created",
+    provider = "gerrit",
+    raw = payload,
+    data = {
+      action = "created",
+      repository = repository,
+      sender = sender,
+      project_head = head,
+    },
+    timestamp = gerrit_event_timestamp(payload),
+  })
+end
+
+local function gerrit_project_deleted_event(payload)
+  payload = payload or {}
+  local repository = translate_gerrit_project_repo(payload)
+  local sender = translate_gerrit_user(payload.submitter or payload.deleter or payload.deletedBy)
+  return make_internal_event({
+    event = "repository",
+    action = "deleted",
+    provider = "gerrit",
+    raw = payload,
+    data = {
+      action = "deleted",
+      repository = repository,
+      sender = sender,
+    },
+    timestamp = gerrit_event_timestamp(payload),
+  })
+end
+
+local function gerrit_project_head_updated_event(payload)
+  payload = payload or {}
+  local repository = translate_gerrit_project_repo(payload)
+  local sender = translate_gerrit_user(payload.submitter or payload.updater or payload.updatedBy)
+  return make_internal_event({
+    event = "repository",
+    action = "edited",
+    provider = "gerrit",
+    raw = payload,
+    data = {
+      action = "edited",
+      repository = repository,
+      sender = sender,
+      changes = {
+        repository = {
+          default_branch = {
+            from = gerrit_short_ref(payload.oldHead),
+          },
+        },
+      },
+      project_head = payload.newHead or "",
+    },
+    timestamp = gerrit_event_timestamp(payload),
+  })
+end
+
+local function gerrit_topic_changed_event(payload)
+  payload = payload or {}
+  return gerrit_pull_request_event(payload, "edited", {
+    changes = {
+      topic = {
+        from = payload.oldTopic or "",
+        to = (payload.change or {}).topic or "",
+      },
+    },
+  })
+end
+
+local function gerrit_hashtags_changed_event(payload)
+  payload = payload or {}
+  local added = payload.added or {}
+  local removed = payload.removed or {}
+  local action = #added > 0 and "labeled" or (#removed > 0 and "unlabeled" or "edited")
+  local label_name = (#added > 0 and added[1]) or (#removed > 0 and removed[1]) or nil
+  return gerrit_pull_request_event(payload, action, {
+    label = label_name and translate_gerrit_label(label_name) or nil,
+    labels = translate_gerrit_hashtags(payload.hashtags),
+    changes = {
+      labels = {
+        added = translate_gerrit_hashtags(added),
+        removed = translate_gerrit_hashtags(removed),
+      },
+    },
+  })
+end
+
+local function gerrit_wip_state_changed_event(payload)
+  payload = payload or {}
+  return gerrit_pull_request_event(payload, "edited", {
+    changes = {
+      draft = {
+        to = (payload.change or {}).wip or false,
+      },
+    },
+  })
+end
+
+local function gerrit_private_state_changed_event(payload)
+  payload = payload or {}
+  return gerrit_pull_request_event(payload, "edited", {
+    changes = {
+      private = {
+        to = (payload.change or {}).private or false,
+      },
+    },
+  })
+end
+
+local function gerrit_assignee_changed_event(payload)
+  payload = payload or {}
+  local assignee = payload.assignee and translate_gerrit_user(payload.assignee) or nil
+  local action = assignee and "assigned" or "unassigned"
+  return gerrit_pull_request_event(payload, action, {
+    assignee = assignee,
+    changes = {
+      assignee = {
+        from = payload.oldAssignee and translate_gerrit_user(payload.oldAssignee) or nil,
+        to = assignee,
+      },
+    },
+  })
+end
+
+local function translate_gerrit_review(payload, state)
+  payload = payload or {}
   local author = payload.author or {}
-  local pr, repo = translate_gerrit_change(payload.change, payload.patchSet)
-  local review = {
+  return {
     id = 0,
     node_id = "",
     user = translate_gerrit_user(author),
     body = payload.comment or "",
     state = state,
-    submitted_at = (payload.patchSet or {}).createdOn and tostring(
-      (payload.patchSet or {}).createdOn
-    ) or "",
+    submitted_at = gerrit_patchset_timestamp(payload.patchSet),
     html_url = "",
     pull_request_url = "",
   }
+end
+
+local function gerrit_vote_deleted_event(payload)
+  payload = payload or {}
+  local reviewer = payload.reviewer or {}
+  local remover = payload.remover or {}
+  local pr, repo = translate_gerrit_change(payload.change, payload.patchSet)
+  local review = {
+    id = 0,
+    node_id = "",
+    user = translate_gerrit_user(reviewer),
+    body = payload.comment or "",
+    state = "DISMISSED",
+    submitted_at = gerrit_event_timestamp(payload),
+    html_url = "",
+    pull_request_url = "",
+  }
+  return make_internal_event({
+    event = "pull_request_review",
+    action = "dismissed",
+    provider = "gerrit",
+    raw = payload,
+    data = {
+      action = "dismissed",
+      review = review,
+      pull_request = pr,
+      repository = repo,
+      sender = translate_gerrit_user(remover),
+      reviewer = translate_gerrit_user(reviewer),
+      approvals = payload.approvals or {},
+    },
+    timestamp = review.submitted_at,
+  })
+end
+
+b:webhook("comment-added", function(payload)
+  local state = gerrit_approval_state(payload.approvals)
+  local author = payload.author or {}
+  local pr, repo = translate_gerrit_change(payload.change, payload.patchSet)
+  local review = translate_gerrit_review(payload, state)
   return make_internal_event({
     event = "pull_request_review",
     action = "submitted",
@@ -471,9 +838,79 @@ b:webhook("comment-added", function(payload)
   })
 end)
 
-local GERRIT_NORMALIZED_WEBHOOK_EVENTS = {
-  "pull_request_review",
+local GERRIT_ACTIONLESS_NORMALIZED_EVENTS = {
+  create = true,
+  delete = true,
+  push = true,
 }
+
+local GERRIT_NORMALIZED_WEBHOOK_EVENTS = {
+  "create",
+  "delete",
+  "pull_request",
+  "pull_request_review",
+  "push",
+  "repository",
+}
+
+b:webhook("patchset-created", function(payload)
+  local patch_number = tonumber(((payload or {}).patchSet or {}).number) or 0
+  local action = patch_number <= 1 and "opened" or "synchronize"
+  return gerrit_pull_request_event(payload, action)
+end)
+
+b:webhook("change-merged", function(payload)
+  return gerrit_pull_request_event(payload, "closed", {
+    state = "closed",
+    closed_at = true,
+    merged = true,
+  })
+end)
+
+b:webhook("change-abandoned", function(payload)
+  return gerrit_pull_request_event(payload, "closed", {
+    state = "closed",
+    closed_at = true,
+  })
+end)
+
+b:webhook("change-restored", function(payload)
+  return gerrit_pull_request_event(payload, "reopened")
+end)
+
+b:webhook("reviewer-added", function(payload)
+  return gerrit_reviewer_event(payload, "review_requested")
+end)
+
+b:webhook("reviewer-deleted", function(payload)
+  return gerrit_reviewer_event(payload, "review_request_removed")
+end)
+
+b:webhook("vote-deleted", gerrit_vote_deleted_event)
+
+b:webhook("ref-updated", function(payload)
+  return gerrit_ref_update_event(payload, (payload or {}).refUpdate)
+end)
+
+b:webhook("batch-ref-updated", function(payload)
+  return gerrit_ref_update_event(payload, ((payload or {}).refUpdates or {})[1])
+end)
+
+b:webhook("project-created", gerrit_project_created_event)
+
+b:webhook("project-deleted", gerrit_project_deleted_event)
+
+b:webhook("project-head-updated", gerrit_project_head_updated_event)
+
+b:webhook("topic-changed", gerrit_topic_changed_event)
+
+b:webhook("hashtags-changed", gerrit_hashtags_changed_event)
+
+b:webhook("wip-state-changed", gerrit_wip_state_changed_event)
+
+b:webhook("private-state-changed", gerrit_private_state_changed_event)
+
+b:webhook("assignee-changed", gerrit_assignee_changed_event)
 
 local function gerrit_normalized_payload_without_envelope_fields(data)
   local payload = {}
@@ -491,7 +928,11 @@ local function translate_gerrit_normalized_webhook(internal_event, fields)
   return make_normalized_webhook_envelope(internal_event, {
     id = fields.id,
     type = fields.type
-      or normalized_webhook_event_type(internal_event.event, internal_event.action),
+      or (
+        GERRIT_ACTIONLESS_NORMALIZED_EVENTS[internal_event.event]
+          and normalized_webhook_event_type(internal_event.event, "")
+        or normalized_webhook_event_type(internal_event.event, internal_event.action)
+      ),
     occurred_at = fields.occurred_at,
     actor = fields.actor or data.sender,
     repository = fields.repository or data.repository,

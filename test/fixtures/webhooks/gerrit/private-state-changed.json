@@ -1,0 +1,30 @@
+{
+  "type": "private-state-changed",
+  "eventCreatedOn": 1705347000,
+  "change": {
+    "_number": 1003,
+    "project": "myorg/my-repo",
+    "branch": "main",
+    "subject": "Document checkout flow",
+    "status": "NEW",
+    "private": true,
+    "wip": false,
+    "owner": {
+      "name": "Alice",
+      "email": "alice@example.com",
+      "username": "alice"
+    },
+    "created": "2024-01-15T12:00:00Z",
+    "updated": "2024-01-15T17:30:00Z"
+  },
+  "patchSet": {
+    "number": 2,
+    "revision": "555eee666fff",
+    "createdOn": 1705318200
+  },
+  "changer": {
+    "name": "Bob",
+    "email": "bob@example.com",
+    "username": "bob"
+  }
+}

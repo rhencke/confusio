@@ -1,0 +1,30 @@
+{
+  "type": "change-restored",
+  "eventCreatedOn": 1705329000,
+  "change": {
+    "_number": 1003,
+    "project": "myorg/my-repo",
+    "branch": "feature",
+    "subject": "Try alternate checkout copy",
+    "status": "NEW",
+    "wip": false,
+    "owner": {
+      "name": "Eve",
+      "email": "eve@example.com",
+      "username": "eve"
+    },
+    "created": "2024-01-15T11:00:00Z",
+    "updated": "2024-01-15T15:50:00Z"
+  },
+  "patchSet": {
+    "number": 1,
+    "revision": "555eee666fff",
+    "createdOn": 1705312800
+  },
+  "restorer": {
+    "name": "Eve",
+    "email": "eve@example.com",
+    "username": "eve"
+  },
+  "reason": "Back in scope"
+}

@@ -1,0 +1,27 @@
+{
+  "type": "hashtags-changed",
+  "eventCreatedOn": 1705336200,
+  "change": {
+    "_number": 1003,
+    "project": "myorg/my-repo",
+    "branch": "main",
+    "subject": "Document checkout flow",
+    "status": "NEW",
+    "wip": false,
+    "owner": {
+      "name": "Alice",
+      "email": "alice@example.com",
+      "username": "alice"
+    },
+    "created": "2024-01-15T12:00:00Z",
+    "updated": "2024-01-15T14:30:00Z"
+  },
+  "editor": {
+    "name": "Cara",
+    "email": "cara@example.com",
+    "username": "cara"
+  },
+  "added": ["docs"],
+  "removed": [],
+  "hashtags": ["docs", "checkout"]
+}

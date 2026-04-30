@@ -1,0 +1,29 @@
+{
+  "type": "assignee-changed",
+  "eventCreatedOn": 1705350600,
+  "change": {
+    "_number": 1003,
+    "project": "myorg/my-repo",
+    "branch": "main",
+    "subject": "Document checkout flow",
+    "status": "NEW",
+    "wip": false,
+    "owner": {
+      "name": "Alice",
+      "email": "alice@example.com",
+      "username": "alice"
+    },
+    "created": "2024-01-15T12:00:00Z",
+    "updated": "2024-01-15T18:30:00Z"
+  },
+  "changer": {
+    "name": "Bob",
+    "email": "bob@example.com",
+    "username": "bob"
+  },
+  "assignee": {
+    "name": "Dana",
+    "email": "dana@example.com",
+    "username": "dana"
+  }
+}
