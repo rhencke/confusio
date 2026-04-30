@@ -879,6 +879,10 @@ The existing `test-integration` harness can validate gitea.com only when explici
 Phase 1 extends that opt-in coverage to the full endpoint set and adds the remaining four
 family members.
 
+Codeberg webhook live coverage should run as its own backend job against the shared
+codeberg.org account so routing and `X-Confusio-Source` remain `codeberg`.  Until that
+opt-in job exists, Codeberg webhook parity is enforced by the mock-backed delivery tests.
+
 **Exit criteria**: all five backends pass two consecutive weekly runs without manual
 intervention.
 

@@ -9,6 +9,7 @@
 #    fixture directories are produced by piping each template through jq.
 #
 #    Generated directories (relative to test_dir):
+#      fixtures/webhooks/codeberg/
 #      fixtures/webhooks/forgejo/
 #
 # 2. Within-backend variants: some fixture files are derived from a sibling
@@ -201,12 +202,12 @@ gitlab|membership-added.json|membership-removed.json|.event_name = "user_remove_
 VARIANTS
 
 # ---------------------------------------------------------------------------
-# 2. Cross-backend aliases: derive forgejo/ from gitea/
+# 2. Cross-backend aliases: derive API-compatible aliases from gitea/
 #
 # Must run AFTER step 1 so that all generated gitea/ files exist and get
-# copied into forgejo/ as well.
+# copied into alias directories as well.
 # ---------------------------------------------------------------------------
-for backend in forgejo; do
+for backend in codeberg forgejo; do
   out_dir="$FIXTURES/$backend"
   mkdir -p "$out_dir"
   for src in "$FIXTURES/gitea"/*.json; do

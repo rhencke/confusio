@@ -43,6 +43,37 @@ HTTP 401
 [Asserts]
 jsonpath "$.message" == "Signature verification failed"
 
+# ── codeberg: X-Gitea-Signature, HMAC-SHA256, no prefix ──────────────────────
+
+# Valid signature → passes verification (422 = accepted, no handlers)
+POST http://{{host}}/webhooks/codeberg
+Content-Type: application/json
+X-Gitea-Signature: {{gitea_sig}}
+{}
+
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "No webhook handlers registered"
+
+# Bad signature → 401 signature verification failed
+POST http://{{host}}/webhooks/codeberg
+Content-Type: application/json
+X-Gitea-Signature: deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# Missing signature header → 401
+POST http://{{host}}/webhooks/codeberg
+Content-Type: application/json
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
 # ── gitlab: X-Gitlab-Token, verbatim shared token ────────────────────────────
 
 # Valid token → passes verification (422)
