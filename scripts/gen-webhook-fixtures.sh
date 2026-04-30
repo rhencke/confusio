@@ -196,9 +196,18 @@ gitlab|repository-created.json|repository-transferred.json|.event_name = "projec
 gitlab|repository-created.json|repository-publicized.json|.event_name = "project_update" | .project_visibility = "public"
 gitlab|repository-created.json|repository-privatized.json|.event_name = "project_update" | .project_visibility = "private"
 gitlab|member-added.json|member-removed.json|.action = "removed"
+gitlab|member-added.json|member-edited.json|.action = "edited" | .access_level = "Maintainer" | .changes = {"access_level": {"previous": "Developer", "current": "Maintainer"}}
 gitlab|organization-created.json|organization-deleted.json|.event_name = "group_destroy"
 gitlab|organization-created.json|organization-renamed.json|.event_name = "group_rename" | .path = "engineering-renamed" | .full_path = "engineering-renamed" | .old_path = "engineering" | .old_full_path = "engineering"
 gitlab|membership-added.json|membership-removed.json|.event_name = "user_remove_from_group"
+gitlab|code_scanning_alert-created.json|code_scanning_alert-closed_by_user.json|.object_attributes.state = "dismissed" | .object_attributes.dismissed_at = "2024-01-15T12:15:00Z" | .object_attributes.updated_at = "2024-01-15T12:15:00Z"
+gitlab|code_scanning_alert-created.json|code_scanning_alert-fixed.json|.object_attributes.state = "resolved" | .object_attributes.resolved_at = "2024-01-15T12:20:00Z" | .object_attributes.updated_at = "2024-01-15T12:20:00Z"
+gitlab|code_scanning_alert-created.json|code_scanning_alert-reopened.json|.object_attributes.state = "detected" | .object_attributes.updated_at = "2024-01-15T12:25:00Z" | .changes = {"state": {"previous": "resolved", "current": "detected"}}
+gitlab|dependabot_alert-created.json|dependabot_alert-dismissed.json|.object_attributes.state = "dismissed" | .object_attributes.dismissed_at = "2024-01-15T12:05:00Z" | .object_attributes.updated_at = "2024-01-15T12:05:00Z"
+gitlab|dependabot_alert-created.json|dependabot_alert-fixed.json|.object_attributes.state = "resolved" | .object_attributes.resolved_at = "2024-01-15T12:10:00Z" | .object_attributes.updated_at = "2024-01-15T12:10:00Z"
+gitlab|dependabot_alert-created.json|dependabot_alert-reopened.json|.object_attributes.state = "confirmed" | .object_attributes.updated_at = "2024-01-15T12:15:00Z" | .changes = {"state": {"previous": "dismissed", "current": "confirmed"}}
+gitlab|secret_scanning_alert-created.json|secret_scanning_alert-resolved.json|.object_attributes.state = "dismissed" | .object_attributes.dismissed_at = "2024-01-15T12:05:00Z" | .object_attributes.updated_at = "2024-01-15T12:05:00Z"
+gitlab|secret_scanning_alert-created.json|secret_scanning_alert-reopened.json|.object_attributes.state = "detected" | .object_attributes.updated_at = "2024-01-15T12:10:00Z" | .changes = {"state": {"previous": "dismissed", "current": "detected"}}
 VARIANTS
 
 # ---------------------------------------------------------------------------

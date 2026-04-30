@@ -1,0 +1,21 @@
+{
+  "object_kind": "access_token",
+  "event_name": "expiring_access_token",
+  "project": {
+    "id": 15, "name": "hello-world", "description": "My first repo",
+    "web_url": "http://localhost/octocat/hello-world",
+    "git_ssh_url": "git@localhost:octocat/hello-world.git",
+    "git_http_url": "http://localhost/octocat/hello-world.git",
+    "namespace": "octocat", "visibility_level": 20,
+    "path_with_namespace": "octocat/hello-world",
+    "default_branch": "main"
+  },
+  "object_attributes": {
+    "id": 800,
+    "name": "build-token",
+    "expires_at": "2024-02-01",
+    "last_used_at": "2024-01-15T12:00:00Z",
+    "active": true,
+    "scopes": ["read_repository"]
+  }
+}

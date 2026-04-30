@@ -317,3 +317,86 @@ jsonpath "$[0].body_json.type" == "membership.added"
 jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:00:00Z"
 jsonpath "$[0].body_json.payload.member.login" == "bob"
 jsonpath "$[0].body_json.payload.team.name" == "Engineering"
+
+# ── code_scanning_alert: created — confusio shape ────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Vulnerability Hook
+file,fixtures/webhooks/gitlab/code_scanning_alert-created.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "code_scanning_alert"
+jsonpath "$[0].confusio_source" == "gitlab"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "code_scanning_alert.created"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T12:10:00Z"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.alert.rule.name" == "Unsafe eval"
+
+# ── personal_access_token_request: created — confusio shape ──────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Resource Access Token Hook
+file,fixtures/webhooks/gitlab/personal_access_token_request-created.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "personal_access_token_request"
+jsonpath "$[0].confusio_source" == "gitlab"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "personal_access_token_request.created"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.personal_access_token_request.token_name" == "build-token"
+
+# ── issues: opened work item — confusio shape ────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Issue Hook
+file,fixtures/webhooks/gitlab/issues-opened-work_item.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "issues"
+jsonpath "$[0].confusio_source" == "gitlab"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "issue.opened"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:00:00Z"
+jsonpath "$[0].body_json.payload.issue.number" == 2
+jsonpath "$[0].body_json.payload.issue.title" == "Plan task"
