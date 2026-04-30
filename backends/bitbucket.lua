@@ -2616,15 +2616,13 @@ b:webhook("pullrequest:rejected", function(payload)
 end)
 
 -- pull_request_review events.
--- pullrequest:approved  → submitted / APPROVED
--- pullrequest:unapproved → dismissed / DISMISSED
---
--- Bitbucket Cloud does not have a "request changes" concept; the only two
--- review verdict events are approved and its removal (unapproved).  The
--- approval object carries the reviewer and timestamp.
-local function bb_review_event(payload, action, state)
-  local approval = payload.approval or {}
-  local reviewer = approval.user or payload.actor or {}
+-- pullrequest:approved                 → submitted / APPROVED
+-- pullrequest:changes_request_created  → submitted / CHANGES_REQUESTED
+-- pullrequest:unapproved               → dismissed / DISMISSED
+-- pullrequest:changes_request_removed  → dismissed / DISMISSED
+local function bb_review_event(payload, detail_key, action, state)
+  local detail = payload[detail_key] or {}
+  local reviewer = detail.user or payload.actor or {}
   local raw_pr = payload.pullrequest or {}
   local review = {
     id = 0,
@@ -2632,7 +2630,7 @@ local function bb_review_event(payload, action, state)
     user = translate_bb_user(reviewer),
     body = "",
     state = state,
-    submitted_at = approval.date or "",
+    submitted_at = detail.date or "",
     html_url = "",
     pull_request_url = "",
   }
@@ -2648,16 +2646,24 @@ local function bb_review_event(payload, action, state)
       repository = translate_bb_repo(payload.repository or {}),
       sender = translate_bb_user(payload.actor or {}),
     },
-    timestamp = approval.date or raw_pr.updated_on or "",
+    timestamp = detail.date or raw_pr.updated_on or "",
   })
 end
 
 b:webhook("pullrequest:approved", function(payload)
-  return bb_review_event(payload, "submitted", "APPROVED")
+  return bb_review_event(payload, "approval", "submitted", "APPROVED")
+end)
+
+b:webhook("pullrequest:changes_request_created", function(payload)
+  return bb_review_event(payload, "changes_request", "submitted", "CHANGES_REQUESTED")
 end)
 
 b:webhook("pullrequest:unapproved", function(payload)
-  return bb_review_event(payload, "dismissed", "DISMISSED")
+  return bb_review_event(payload, "approval", "dismissed", "DISMISSED")
+end)
+
+b:webhook("pullrequest:changes_request_removed", function(payload)
+  return bb_review_event(payload, "changes_request", "dismissed", "DISMISSED")
 end)
 
 -- Commit status events: repo:commit_status_created, repo:commit_status_updated.

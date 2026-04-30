@@ -150,6 +150,34 @@ jsonpath "$[0].body_json.type" == "pull_request.review.submitted"
 jsonpath "$[0].body_json.actor.login" == "reviewer"
 jsonpath "$[0].body_json.payload.review.state" == "APPROVED"
 
+# ── pull_request_review: submitted (changes requested) — confusio shape ──────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: pullrequest:changes_request_created
+file,fixtures/webhooks/bitbucket/pull_request_review-submitted-changes_requested.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "pull_request_review"
+jsonpath "$[0].confusio_source" == "bitbucket"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "pull_request.review.submitted"
+jsonpath "$[0].body_json.actor.login" == "reviewer"
+jsonpath "$[0].body_json.payload.review.state" == "CHANGES_REQUESTED"
+jsonpath "$[0].body_json.payload.review.submitted_at" == "2024-01-15T11:15:00+00:00"
+
 # ── status: success — confusio shape ──────────────────────────────────────────
 
 POST http://{{target}}/reset

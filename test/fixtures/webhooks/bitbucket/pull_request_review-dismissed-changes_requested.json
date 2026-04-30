@@ -1,0 +1,32 @@
+{
+  "actor": {"account_id": "2", "nickname": "reviewer", "display_name": "The Reviewer", "links": {"avatar": {"href": ""}}},
+  "changes_request": {
+    "date": "2024-01-15T11:45:00+00:00",
+    "user": {"account_id": "2", "nickname": "reviewer", "display_name": "The Reviewer", "links": {"avatar": {"href": ""}}}
+  },
+  "pullrequest": {
+    "id": 1, "title": "Fix the bug",
+    "description": "This fixes the bug.",
+    "state": "OPEN",
+    "source": {
+      "branch": {"name": "fix-bug"},
+      "commit": {"hash": "abc123"},
+      "repository": {"full_name": "octocat/hello-world"}
+    },
+    "destination": {
+      "branch": {"name": "main"},
+      "commit": {"hash": "def456"},
+      "repository": {"full_name": "octocat/hello-world"}
+    },
+    "author": {"account_id": "1", "nickname": "octocat", "display_name": "The Octocat", "links": {"avatar": {"href": ""}}},
+    "created_on": "2024-01-15T10:00:00+00:00",
+    "updated_on": "2024-01-15T11:45:00+00:00",
+    "links": {"html": {"href": "https://bitbucket.org/octocat/hello-world/pull-requests/1"}}
+  },
+  "repository": {
+    "full_name": "octocat/hello-world", "name": "hello-world",
+    "is_private": false,
+    "owner": {"account_id": "1", "nickname": "octocat", "display_name": "The Octocat", "links": {"avatar": {"href": ""}}},
+    "links": {"html": {"href": "https://bitbucket.org/octocat/hello-world"}, "avatar": {"href": ""}}
+  }
+}

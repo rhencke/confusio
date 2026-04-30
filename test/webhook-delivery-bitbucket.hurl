@@ -253,6 +253,28 @@ jsonpath "$[0].github_event" == "pull_request_review"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 
+# ── pull_request_review: submitted (changes requested) ───────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: pullrequest:changes_request_created
+file,fixtures/webhooks/bitbucket/pull_request_review-submitted-changes_requested.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request_review"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
 # ── pull_request_review: dismissed ────────────────────────────────────────────
 
 POST http://{{target}}/reset
@@ -263,6 +285,28 @@ POST http://{{host}}/webhooks/bitbucket
 Content-Type: application/json
 X-Event-Key: pullrequest:unapproved
 file,fixtures/webhooks/bitbucket/pull_request_review-dismissed.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request_review"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
+# ── pull_request_review: dismissed (changes request removed) ─────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/bitbucket
+Content-Type: application/json
+X-Event-Key: pullrequest:changes_request_removed
+file,fixtures/webhooks/bitbucket/pull_request_review-dismissed-changes_requested.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
