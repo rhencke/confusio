@@ -2708,7 +2708,9 @@ Triggered when a review is submitted or dismissed on a pull request.
 | GitLab `unapproved` | `"dismissed"` |
 | GitLab `commented` | `"commented"` |
 | Bitbucket Cloud `approved` | `"approved"` |
+| Bitbucket Cloud `changes_request_created` | `"changes_requested"` |
 | Bitbucket Cloud `unapproved` | `"dismissed"` |
+| Bitbucket Cloud `changes_request_removed` | `"dismissed"` |
 | Bitbucket DC `APPROVED` | `"approved"` |
 | Bitbucket DC `NEEDS_WORK` | `"changes_requested"` |
 | Azure DevOps vote 10 (approved) | `"approved"` |
@@ -2735,9 +2737,12 @@ Triggered when a review is submitted or dismissed on a pull request.
   they are documented individually below.
 - GitBucket 4.32+ emits `pull_request_review` in GitHub-compatible format.
   All fields are passed through without translation.
-- Bitbucket Cloud emits `pullrequest:approved` (→ `submitted / APPROVED`) and
-  `pullrequest:unapproved` (→ `dismissed / DISMISSED`).  It has no "request changes"
-  concept; `review.id`, `review.body`, and `review.html_url` are always empty.
+- Bitbucket Cloud emits `pullrequest:approved` (→ `submitted / APPROVED`),
+  `pullrequest:changes_request_created` (→ `submitted / CHANGES_REQUESTED`),
+  `pullrequest:unapproved` (→ `dismissed / DISMISSED`), and
+  `pullrequest:changes_request_removed` (→ `dismissed / DISMISSED`).  `review.id`,
+  `review.body`, and `review.html_url` are always empty because Bitbucket Cloud's
+  approval/change-request events do not carry a review object.
 - `dismissed` action: Gitea marks a dismissed review by changing state; confusio
   synthesizes the `dismissed` action from a state transition to `dismissed`.  GitLab
   and Bitbucket Cloud support explicit dismissal.  Bitbucket Datacenter does not.
@@ -2799,44 +2804,50 @@ Triggered when a review is submitted or dismissed on a pull request.
 
 Triggered when a comment is added, edited, or deleted on a pull request review diff.
 
-| GitHub field | gitea-family | gitlab | github | All others |
-|---|---|---|---|---|
-| `comment.id` | ✓ | ✓ | ✓ | ✗ |
-| `comment.body` | ✓ | ✓ | ✓ | ✗ |
-| `comment.path` | ✓ | ✓ | ✓ | ✗ |
-| `comment.position` | ~ | ~ | ✓ | ✗ |
-| `comment.original_position` | ~ | ~ | ✓ | ✗ |
-| `comment.diff_hunk` | ✓ | ✓ | ✓ | ✗ |
-| `comment.commit_id` | ✓ | ✓ | ✓ | ✗ |
-| `comment.original_commit_id` | ~ | ~ | ✓ | ✗ |
-| `comment.pull_request_review_id` | ✓ | ✓ | ✓ | ✗ |
-| `comment.user` | ✓ | ✓ | ✓ | ✗ |
-| `comment.html_url` | ✓ | ✓ | ✓ | ✗ |
-| `comment.created_at` | ✓ | ✓ | ✓ | ✗ |
-| `comment.updated_at` | ✓ | ✓ | ✓ | ✗ |
-| `pull_request` | ✓ | ✓ | ✓ | ✗ |
+| GitHub field | gitea-family | gitlab | bitbucket | github | All others |
+|---|---|---|---|---|---|
+| `comment.id` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.body` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.path` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.position` | ~ | ~ | ~ | ✓ | ✗ |
+| `comment.original_position` | ~ | ~ | ~ | ✓ | ✗ |
+| `comment.diff_hunk` | ✓ | ✓ | ✗ | ✓ | ✗ |
+| `comment.commit_id` | ✓ | ✓ | ✗ | ✓ | ✗ |
+| `comment.original_commit_id` | ~ | ~ | ✗ | ✓ | ✗ |
+| `comment.pull_request_review_id` | ✓ | ✓ | ✗ | ✓ | ✗ |
+| `comment.user` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.html_url` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.created_at` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.updated_at` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `pull_request` | ✓ | ✓ | ✓ | ✓ | ✗ |
 
 #### Supported actions
 
-| Action | gitea-family | gitlab | github |
-|--------|---|---|---|
-| `created` | ✓ | ✓ | ✓ |
-| `edited` | ✓ | ✓ | ✓ |
-| `deleted` | ✓ | ✓ | ✓ |
+| Action | gitea-family | gitlab | bitbucket | github |
+|--------|---|---|---|---|
+| `created` | ✓ | ✓ | ✓ | ✓ |
+| `edited` | ✓ | ✓ | ✓ | ✓ |
+| `deleted` | ✓ | ✓ | ✓ | ✓ |
 
 **Notes:**
-- `comment.position`: GitHub uses a position index within the diff hunk.  Gitea and
-  GitLab use line numbers instead.  Confusio maps the line number to `position` as a
-  best-effort approximation; the value may not match GitHub's exact position encoding.
+- Bitbucket Cloud emits `pullrequest:comment_created`, `pullrequest:comment_updated`, and
+  `pullrequest:comment_deleted`.  Inline pull-request comments map to
+  `pull_request_review_comment`; top-level pull-request comments map to `issue_comment`.
+- `comment.position`: GitHub uses a position index within the diff hunk.  Gitea, GitLab,
+  and Bitbucket Cloud use line numbers instead.  Confusio maps the line number to `position`
+  as a best-effort approximation; the value may not match GitHub's exact position encoding.
   Stub: `null` when approximation is not possible.
 - `comment.original_position`: The position in the original diff before any force-pushes.
-  Gitea and GitLab provide line-number equivalents; confusio applies the same approximation
-  as `position`.  Stub: same as `position` when unavailable.
+  Gitea, GitLab, and Bitbucket Cloud provide line-number equivalents; confusio applies the
+  same approximation as `position`.  Stub: same as `position` when unavailable.
 - `comment.original_commit_id`: The commit SHA at which the comment was originally placed,
   before any subsequent force-push moved the head.  Gitea and GitLab provide this in some
   versions; confusio falls back to `commit_id` when absent.
-- `comment.pull_request_review_id`: The enclosing review's ID.  Both Gitea and GitLab
-  include this in their review comment payloads.
+- `comment.pull_request_review_id`: The enclosing review's ID.  Gitea and GitLab include
+  this in their review comment payloads.  Bitbucket Cloud comment events are not nested
+  under a review object, so the field is `null`.
+- Bitbucket Cloud does not provide GitHub-style diff hunks or commit IDs on pull-request
+  comment webhooks; those fields are emitted as `null`.
 - Most forges do not expose diff-level review comments in webhooks.  Backends not
   listed always emit `✗` for this event.
 
@@ -2887,26 +2898,29 @@ release that introduces the feature.
 
 Triggered when a comment is created directly on a commit (not a PR or review).
 
-| GitHub field | gitea-family | gogs | gitlab | github | gitbucket | All others |
-|---|---|---|---|---|---|---|
-| `comment.id` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `comment.body` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `comment.commit_id` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `comment.path` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `comment.position` | ~ | ~ | ~ | ✓ | ✓ | ✗ |
-| `comment.line` | ~ | ~ | ~ | ✓ | ✓ | ✗ |
-| `comment.user` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `comment.html_url` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `comment.created_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
-| `comment.updated_at` | ✓ | ~ | ✓ | ✓ | ✓ | ✗ |
+| GitHub field | gitea-family | gogs | gitlab | bitbucket | github | gitbucket | All others |
+|---|---|---|---|---|---|---|---|
+| `comment.id` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.body` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.commit_id` | ✓ | ✓ | ✓ | ~ | ✓ | ✓ | ✗ |
+| `comment.path` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.position` | ~ | ~ | ~ | ~ | ✓ | ✓ | ✗ |
+| `comment.line` | ~ | ~ | ~ | ~ | ✓ | ✓ | ✗ |
+| `comment.user` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.html_url` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.created_at` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `comment.updated_at` | ✓ | ~ | ✓ | ✓ | ✓ | ✓ | ✗ |
 
 **Notes:**
-- `position` and `line`: Gitea, Gogs, and GitLab use line-number references; confusio maps
-  these to `position` and `line` with a note that the encoding differs from GitHub's.
-  Stub: `null` when not available.
+- `position` and `line`: Gitea, Gogs, GitLab, and Bitbucket Cloud use line-number
+  references; confusio maps these to `position` and `line` with a note that the encoding
+  differs from GitHub's.  Stub: `null` when not available.
+- Bitbucket Cloud emits `repo:commit_comment_created`.  It does not emit commit comment
+  update/delete events; `comment.commit_id` is extracted from payload links when the SHA is
+  not present as a first-class field.
 - `comment.updated_at`: Gogs webhook payloads do not always include an update timestamp;
   confusio falls back to `created_at` when `updated_at` is absent.
-- Backends not listed (Bitbucket, Azure DevOps, etc.) do not emit commit comment events.
+- Backends not listed (Azure DevOps, etc.) do not emit commit comment events.
 
 ---
 
@@ -2967,19 +2981,19 @@ Triggered when a commit status is created or updated.  This event is in the CI/C
 it carries the result of an external CI, security scan, or deployment check against a specific
 commit SHA.
 
-| GitHub field | github | gitbucket | gitlab | gitea-family | All others |
-|---|---|---|---|---|---|
-| `id` | ✓ | ✓ | ~ | ~ | ✗ |
-| `sha` | ✓ | ✓ | ✓ | ~ | ✗ |
-| `name` | ✓ | ✓ | ~ | ~ | ✗ |
-| `state` | ✓ | ✓ | ✓ | ~ | ✗ |
-| `description` | ✓ | ✓ | ~ | ~ | ✗ |
-| `target_url` | ✓ | ✓ | ✓ | ~ | ✗ |
-| `context` | ✓ | ✓ | ~ | ~ | ✗ |
-| `created_at` | ✓ | ✓ | ✓ | ~ | ✗ |
-| `updated_at` | ✓ | ✓ | ✓ | ~ | ✗ |
-| `commit` | ✓ | ✓ | ~ | ~ | ✗ |
-| `branches` | ✓ | ✓ | ~ | ✗ | ✗ |
+| GitHub field | github | gitbucket | gitlab | bitbucket | gitea-family | All others |
+|---|---|---|---|---|---|---|
+| `id` | ✓ | ✓ | ~ | ✗ | ~ | ✗ |
+| `sha` | ✓ | ✓ | ✓ | ~ | ~ | ✗ |
+| `name` | ✓ | ✓ | ~ | ✓ | ~ | ✗ |
+| `state` | ✓ | ✓ | ✓ | ✓ | ~ | ✗ |
+| `description` | ✓ | ✓ | ~ | ✓ | ~ | ✗ |
+| `target_url` | ✓ | ✓ | ✓ | ✓ | ~ | ✗ |
+| `context` | ✓ | ✓ | ~ | ✓ | ~ | ✗ |
+| `created_at` | ✓ | ✓ | ✓ | ✓ | ~ | ✗ |
+| `updated_at` | ✓ | ✓ | ✓ | ✓ | ~ | ✗ |
+| `commit` | ✓ | ✓ | ~ | ✗ | ~ | ✗ |
+| `branches` | ✓ | ✓ | ~ | ✗ | ✗ | ✗ |
 
 **`state` mapping:**
 
@@ -2989,6 +3003,9 @@ commit SHA.
 | `failure` / `failed` | `failure` |
 | `error` / `cancelled` | `error` |
 | `pending` / `running` | `pending` |
+| Bitbucket Cloud `SUCCESSFUL` | `success` |
+| Bitbucket Cloud `FAILED` | `failure` |
+| Bitbucket Cloud `INPROGRESS` | `pending` |
 
 **Notes:**
 - **GitHub / GitBucket**: Native `status` webhook events.  All fields present verbatim.
@@ -2996,12 +3013,16 @@ commit SHA.
   synthesized as `"ci/<pipeline-name>"` or `"ci/<stage>/<job>"` for job-level events.  `name`
   is the repository full path.  `branches` is back-fetched via the REST API when the pipeline
   provides a `ref`; omitted on failure.
+- **Bitbucket Cloud**: Commit status created/updated webhooks map to `status`.  `context`
+  is the Bitbucket status key, `name` is the repository full name, and `sha` is extracted
+  from the status payload or commit link when available.  Bitbucket Cloud does not include
+  a GitHub-style `commit` object or branch list in the webhook payload.
 - **gitea-family**: Gitea does not emit a dedicated commit status webhook.  Confusio synthesizes
   `status` events from Gitea's workflow/actions events when available — the `~` symbol reflects
   that synthesis requires Gitea Actions to be enabled and does not fire for external CI that
   only sets commit statuses via the API.  `id` is the workflow run ID.  `branches` is not
   available and is emitted as `[]` (stub).
-- Backends not listed (Bitbucket, Bitbucket DC, Azure DevOps, Pagure, etc.) do not produce
+- Backends not listed (Bitbucket DC, Azure DevOps, Pagure, etc.) do not produce
   events mappable to GitHub `status`.  All fields are `✗` (stub: type-appropriate null/empty).
 
 ---
@@ -3681,17 +3702,17 @@ Confusio does not emit these events for any backend.
 
 ### CI/CD events beyond `status`
 
-The events below are GitHub-native CI/CD events.  In GitHub-emulation shape, confusio can
-only emit them when the originating backend is GitHub itself.  For all other backends, these
-event families are **not available** in the emulation output; pipeline activity is instead
-surfaced via the `status` event (see above).
+The events below are GitHub-native CI/CD events.  In GitHub-emulation shape, GitHub-originated
+events pass through unchanged; mapped events from other backends keep the GitHub event family
+but carry the source backend's webhook payload.  In confusio-normalized shape, mapped CI/CD
+events use a normalized envelope with the original payload preserved under `raw`.
 
 | GitHub event | Emitted from GitHub backend | Emitted from other backends |
 |---|---|---|
 | `check_run` | ✓ pass-through | ✗ |
 | `check_suite` | ✓ pass-through | ✗ |
-| `workflow_run` | ✓ pass-through | Azure DevOps `build.complete`; GitLab/Gitea-family workflow events |
-| `workflow_job` | ✓ pass-through | ✗ |
+| `workflow_run` | ✓ pass-through | Azure DevOps `build.complete`; GitLab/Gitea-family workflow events; Bitbucket Cloud `pipeline:span_created` pipeline-run spans |
+| `workflow_job` | ✓ pass-through | Bitbucket Cloud `pipeline:span_created` step/command/container/log spans |
 | `deployment_review` | ✓ pass-through | Azure DevOps release approval events |
 | `deployment_protection_rule` | ✓ pass-through | ✗ |
 
@@ -3704,9 +3725,9 @@ documented as full event families below (see [`deployment`](#deployment-1) and
 [`deployment_status`](#deployment_status-1)).
 
 For cross-forge CI/CD signal in confusio-normalized shape the `status` event provides a
-consistent envelope regardless of backend.  Future work may add a `pipeline_run` event
-family in the normalized model that exposes richer pipeline metadata (stages, jobs, artifacts)
-beyond what `status` can express.
+consistent commit-check envelope regardless of backend.  Bitbucket Cloud's OTLP pipeline
+spans also map to `workflow_run` and `workflow_job`, with `bbc.pipeline_run` spans treated
+as workflow runs and step/command/container/log spans treated as workflow jobs.
 
 ---
 
