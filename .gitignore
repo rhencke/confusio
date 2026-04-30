@@ -10,6 +10,7 @@ hurl
 stylua
 luacheck
 # Generated webhook fixture files (produced by scripts/gen-webhook-fixtures.sh)
+test/fixtures/webhooks/codeberg/
 test/fixtures/webhooks/forgejo/
 test/fixtures/webhooks/gitea/delete.json
 test/fixtures/webhooks/gitea/issues-closed.json
