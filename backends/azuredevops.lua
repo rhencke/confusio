@@ -2388,14 +2388,14 @@ local function ado_deployment_status(resource, state)
 end
 
 local function ado_deployment_repository(resource)
-  local _deployment, release, environment = ado_deployment_parts(resource)
+  local _, release, environment = ado_deployment_parts(resource)
   local definition = release.releaseDefinition or {}
   local project = ado_release_project(release, resource)
   return ado_project_repo(project, definition.name or environment.name or release.name or "")
 end
 
 local function ado_deployment_sender(resource)
-  local _deployment, release, environment = ado_deployment_parts(resource)
+  local _, release, environment = ado_deployment_parts(resource)
   return ado_user(environment.owner or release.modifiedBy or release.createdBy)
 end
 
