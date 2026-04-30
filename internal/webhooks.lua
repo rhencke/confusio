@@ -90,6 +90,28 @@ local function hmac_hex(alg, secret, body)
   return to_hex(GetCryptoHash(alg, body, secret)) -- luacheck: globals GetCryptoHash
 end
 
+local function verify_authorization_variant(secret, auth)
+  if not auth then
+    return false
+  end
+  if ct_equal(secret, auth) then
+    return true
+  end
+
+  local bearer = auth:match("^[Bb]earer (.+)$")
+  if bearer then
+    return ct_equal(secret, bearer)
+  end
+
+  local b64 = auth:match("^[Bb]asic (.+)$")
+  if b64 then
+    local ok_dec, decoded = pcall(DecodeBase64, b64) -- luacheck: globals DecodeBase64
+    return ok_dec and ct_equal(secret, decoded)
+  end
+
+  return false
+end
+
 -- verify_signature(backend, secret, body[, now]) authenticates the inbound request
 -- using the backend-native scheme.  Returns true on success, false on failure.
 -- When secret is nil or "" (trust-the-network mode) all requests are accepted.
@@ -229,16 +251,12 @@ local function verify_signature(backend, secret, body, now)
     end
     return ct_equal(secret, auth)
 
-  -- Gerrit: Authorization header, verbatim shared token or Basic auth
+  -- Gerrit: Authorization header, raw shared token, Bearer token, or Basic auth.
   elseif backend == "gerrit" then
     if not secret or secret == "" then
       return true
     end
-    local auth = GetHeader("Authorization")
-    if not auth then
-      return false
-    end
-    return ct_equal(secret, auth)
+    return verify_authorization_variant(secret, GetHeader("Authorization"))
 
   -- Gitblit: X-Gitblit-Token, verbatim shared token
   elseif backend == "gitblit" then

@@ -2624,16 +2624,42 @@ do
   )
   eq(with_secret("radicle", {}), 401, "verify_signature radicle: missing Authorization → 401")
 
-  -- ── Verbatim Authorization header: gerrit (same scheme as radicle)
+  -- ── Gerrit: Authorization header as raw token, Bearer token, or Basic creds
   ok(no_secret("gerrit", {}) ~= 401, "verify_signature gerrit: no secret → not 401")
   ok(
     with_secret("gerrit", { ["Authorization"] = SECRET }) ~= 401,
-    "verify_signature gerrit: valid Authorization → not 401"
+    "verify_signature gerrit: valid raw Authorization → not 401"
+  )
+  ok(
+    with_secret("gerrit", { ["Authorization"] = "Bearer " .. SECRET }) ~= 401,
+    "verify_signature gerrit: valid Bearer token → not 401"
+  )
+  ok(
+    with_secret("gerrit", { ["Authorization"] = "bearer " .. SECRET }) ~= 401,
+    "verify_signature gerrit: Bearer scheme is case-insensitive → not 401"
+  )
+  ok(
+    with_secret("gerrit", { ["Authorization"] = "Basic " .. SECRET }) ~= 401,
+    "verify_signature gerrit: valid Basic creds → not 401"
+  )
+  ok(
+    with_secret("gerrit", { ["Authorization"] = "basic " .. SECRET }) ~= 401,
+    "verify_signature gerrit: Basic scheme is case-insensitive → not 401"
   )
   eq(
     with_secret("gerrit", { ["Authorization"] = "bad" }),
     401,
-    "verify_signature gerrit: bad Authorization → 401"
+    "verify_signature gerrit: bad raw Authorization → 401"
+  )
+  eq(
+    with_secret("gerrit", { ["Authorization"] = "Bearer bad" }),
+    401,
+    "verify_signature gerrit: bad Bearer token → 401"
+  )
+  eq(
+    with_secret("gerrit", { ["Authorization"] = "Basic bad" }),
+    401,
+    "verify_signature gerrit: bad Basic creds → 401"
   )
   eq(with_secret("gerrit", {}), 401, "verify_signature gerrit: missing Authorization → 401")
 

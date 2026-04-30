@@ -7,6 +7,8 @@
 #   bb_sig      — "sha256=<hex>" (for X-Hub-Signature on bitbucket and bitbucket_datacenter)
 #   gb_sig      — "sha1=<hex>" (for X-Hub-Signature on gitbucket)
 #   azuredevops_basic — base64("fido:webhooksecret") for Authorization: Basic
+#   gerrit_tok  — the shared secret verbatim or as Bearer token (for Authorization)
+#   gerrit_basic — base64("webhooksecret") for Authorization: Basic
 #   confusio_sig — "sha256=<hex>, v=1, ts=<ts>" (for X-Confusio-Signature-256)
 #
 # Convention: valid credential → 422 (verification passed; no handlers registered
@@ -195,6 +197,57 @@ jsonpath "$.message" == "Signature verification failed"
 
 # Missing Authorization header → 401
 POST http://{{host}}/webhooks/azuredevops
+Content-Type: application/json
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# ── gerrit: Authorization raw, Bearer, or Basic shared secret ────────────────
+
+# Valid raw Authorization token → passes verification (422)
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+Authorization: {{gerrit_tok}}
+{}
+
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "No webhook handlers registered"
+
+# Valid Bearer token → passes verification (422)
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+Authorization: Bearer {{gerrit_tok}}
+{}
+
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "No webhook handlers registered"
+
+# Valid Basic credentials → passes verification (422)
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+Authorization: Basic {{gerrit_basic}}
+{}
+
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "No webhook handlers registered"
+
+# Bad Authorization token → 401
+POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+Authorization: Bearer wrongtoken
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# Missing Authorization header → 401
+POST http://{{host}}/webhooks/gerrit
 Content-Type: application/json
 {}
 
