@@ -382,15 +382,18 @@ end
 -- Callers that receive nil should pass the decoded payload to the normaliser
 -- and let the registered webhook handler extract the event family.
 local function event_header(backend)
-  -- Gitea family + gogs: X-Gitea-Event
+  -- Gitea family: X-Gitea-Event
   if
     backend == "gitea"
     or backend == "forgejo"
     or backend == "codeberg"
     or backend == "notabug"
-    or backend == "gogs"
   then
     return GetHeader("X-Gitea-Event")
+
+  -- Gogs: X-Gogs-Event
+  elseif backend == "gogs" then
+    return GetHeader("X-Gogs-Event")
 
   -- GitLab: X-Gitlab-Event
   elseif backend == "gitlab" then

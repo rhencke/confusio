@@ -7183,7 +7183,26 @@ local DISCUSSION_COMMENT_ACTIONS = {
   deleted = "deleted",
 }
 
-b:webhook("issues", function(payload)
+local GITEA_WEBHOOK_PROVIDER = config.backend == "gogs" and "gogs" or "gitea"
+local GOGS_NATIVE_WEBHOOK_EVENTS = {
+  create = true,
+  delete = true,
+  fork = true,
+  issue_comment = true,
+  issues = true,
+  pull_request = true,
+  push = true,
+  release = true,
+}
+
+local function register_gitea_webhook(event, fn)
+  if config.backend == "gogs" and not GOGS_NATIVE_WEBHOOK_EVENTS[event] then
+    return
+  end
+  b:webhook(event, fn)
+end
+
+register_gitea_webhook("issues", function(payload)
   local raw_action = payload.action or ""
   local action = ISSUES_ACTIONS[raw_action]
   local data = {
@@ -7201,21 +7220,21 @@ b:webhook("issues", function(payload)
     event = "issues",
     action = action or "unknown",
     raw_action = action and nil or raw_action,
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = data,
     timestamp = (payload.issue or {}).updated or "",
   })
 end)
 
-b:webhook("issue_comment", function(payload)
+register_gitea_webhook("issue_comment", function(payload)
   local raw_action = payload.action or ""
   local action = ISSUE_COMMENT_ACTIONS[raw_action]
   return make_internal_event({
     event = "issue_comment",
     action = action or "unknown",
     raw_action = action and nil or raw_action,
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = {
       action = action or "unknown",
@@ -7228,7 +7247,7 @@ b:webhook("issue_comment", function(payload)
   })
 end)
 
-b:webhook("discussion", function(payload)
+register_gitea_webhook("discussion", function(payload)
   local raw_action = payload.action or ""
   local action = DISCUSSION_ACTIONS[raw_action]
   local data = {
@@ -7246,21 +7265,21 @@ b:webhook("discussion", function(payload)
     event = "discussion",
     action = action or "unknown",
     raw_action = action and nil or raw_action,
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = data,
     timestamp = (payload.discussion or {}).updated or "",
   })
 end)
 
-b:webhook("discussion_comment", function(payload)
+register_gitea_webhook("discussion_comment", function(payload)
   local raw_action = payload.action or ""
   local action = DISCUSSION_COMMENT_ACTIONS[raw_action]
   return make_internal_event({
     event = "discussion_comment",
     action = action or "unknown",
     raw_action = action and nil or raw_action,
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = {
       action = action or "unknown",
@@ -7273,14 +7292,14 @@ b:webhook("discussion_comment", function(payload)
   })
 end)
 
-b:webhook("label", function(payload)
+register_gitea_webhook("label", function(payload)
   local raw_action = payload.action or ""
   local action = LABEL_ACTIONS[raw_action]
   return make_internal_event({
     event = "label",
     action = action or "unknown",
     raw_action = action and nil or raw_action,
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = {
       action = action or "unknown",
@@ -7293,14 +7312,14 @@ b:webhook("label", function(payload)
   })
 end)
 
-b:webhook("milestone", function(payload)
+register_gitea_webhook("milestone", function(payload)
   local raw_action = payload.action or ""
   local action = MILESTONE_ACTIONS[raw_action]
   return make_internal_event({
     event = "milestone",
     action = action or "unknown",
     raw_action = action and nil or raw_action,
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = {
       action = action or "unknown",
@@ -7312,7 +7331,7 @@ b:webhook("milestone", function(payload)
   })
 end)
 
-b:webhook("pull_request", function(payload)
+register_gitea_webhook("pull_request", function(payload)
   local raw_action = payload.action or ""
   local action = PULL_REQUEST_ACTIONS[raw_action]
   local raw_pr = payload.pull_request or {}
@@ -7353,7 +7372,7 @@ b:webhook("pull_request", function(payload)
     event = "pull_request",
     action = action or "unknown",
     raw_action = action and nil or raw_action,
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = data,
     timestamp = raw_pr.updated or "",
@@ -7365,7 +7384,7 @@ local MERGE_GROUP_ACTIONS = {
   destroyed = "destroyed",
 }
 
-b:webhook("merge_group", function(payload)
+register_gitea_webhook("merge_group", function(payload)
   local raw_action = payload.action or ""
   local action = MERGE_GROUP_ACTIONS[raw_action]
   local mg = payload.merge_group or {}
@@ -7390,7 +7409,7 @@ b:webhook("merge_group", function(payload)
     event = "merge_group",
     action = action or "unknown",
     raw_action = action and nil or raw_action,
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = data,
     timestamp = "",
@@ -7405,7 +7424,7 @@ local PULL_REQUEST_REVIEW_ACTIONS = {
   dismissed = "dismissed",
 }
 
-b:webhook("pull_request_review", function(payload)
+register_gitea_webhook("pull_request_review", function(payload)
   local raw_action = payload.action or ""
   local action = PULL_REQUEST_REVIEW_ACTIONS[raw_action]
   local raw_review = payload.review or {}
@@ -7423,7 +7442,7 @@ b:webhook("pull_request_review", function(payload)
     event = "pull_request_review",
     action = action or "unknown",
     raw_action = action and nil or raw_action,
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = data,
     timestamp = raw_review.submitted_at or "",
@@ -7438,7 +7457,7 @@ local PULL_REQUEST_REVIEW_COMMENT_ACTIONS = {
   deleted = "deleted",
 }
 
-b:webhook("pull_request_review_comment", function(payload)
+register_gitea_webhook("pull_request_review_comment", function(payload)
   local raw_action = payload.action or ""
   local action = PULL_REQUEST_REVIEW_COMMENT_ACTIONS[raw_action]
   local raw_comment = payload.comment or {}
@@ -7456,7 +7475,7 @@ b:webhook("pull_request_review_comment", function(payload)
     event = "pull_request_review_comment",
     action = action or "unknown",
     raw_action = action and nil or raw_action,
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = data,
     timestamp = raw_comment.updated_at or raw_comment.updated or "",
@@ -7471,7 +7490,7 @@ local WORKFLOW_RUN_ACTIONS = {
   completed = "completed",
 }
 
-b:webhook("workflow_run", function(payload)
+register_gitea_webhook("workflow_run", function(payload)
   local raw_action = payload.action or ""
   local action = WORKFLOW_RUN_ACTIONS[raw_action]
   local raw_run = payload.workflow_run or {}
@@ -7514,7 +7533,7 @@ b:webhook("workflow_run", function(payload)
     event = "workflow_run",
     action = action or "unknown",
     raw_action = action and nil or raw_action,
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = {
       action = action or "unknown",
@@ -7535,7 +7554,7 @@ local WORKFLOW_JOB_ACTIONS = {
   waiting = "waiting",
 }
 
-b:webhook("workflow_job", function(payload)
+register_gitea_webhook("workflow_job", function(payload)
   local raw_action = payload.action or ""
   local action = WORKFLOW_JOB_ACTIONS[raw_action]
   local raw_job = payload.workflow_job or {}
@@ -7561,7 +7580,7 @@ b:webhook("workflow_job", function(payload)
     event = "workflow_job",
     action = action or "unknown",
     raw_action = action and nil or raw_action,
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = {
       action = action or "unknown",
@@ -7592,7 +7611,7 @@ local function translate_gitea_status_branch(br)
   }
 end
 
-b:webhook("status", function(payload)
+register_gitea_webhook("status", function(payload)
   local state = payload.state or "pending"
   local branch_list = {}
   for _, br in ipairs(payload.branches or {}) do
@@ -7616,7 +7635,7 @@ b:webhook("status", function(payload)
   return make_internal_event({
     event = "status",
     action = state,
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = data,
     timestamp = payload.updated_at or payload.created_at or "",
@@ -7656,7 +7675,7 @@ local function translate_gitea_push_commit(c)
   }
 end
 
-b:webhook("push", function(payload)
+register_gitea_webhook("push", function(payload)
   local commits = {}
   for _, c in ipairs(payload.commits or {}) do
     commits[#commits + 1] = translate_gitea_push_commit(c)
@@ -7684,7 +7703,7 @@ b:webhook("push", function(payload)
   return make_internal_event({
     event = "push",
     action = "push",
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = data,
     timestamp = payload.head_commit and payload.head_commit.timestamp or "",
@@ -7694,7 +7713,7 @@ end)
 -- create: branch or tag created.  Gitea sends `ref_type` ("branch"/"tag") and
 -- `ref` (the name, not the full refspec).  `master_branch` and `pusher_type`
 -- are derived locally since Gitea omits them from the create payload.
-b:webhook("create", function(payload)
+register_gitea_webhook("create", function(payload)
   local repo = payload.repository or {}
   local data = {
     ref = payload.ref or "",
@@ -7708,7 +7727,7 @@ b:webhook("create", function(payload)
   return make_internal_event({
     event = "create",
     action = "create",
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = data,
     timestamp = "",
@@ -7716,7 +7735,7 @@ b:webhook("create", function(payload)
 end)
 
 -- delete: branch or tag deleted.  Same shape as create.
-b:webhook("delete", function(payload)
+register_gitea_webhook("delete", function(payload)
   local repo = payload.repository or {}
   local data = {
     ref = payload.ref or "",
@@ -7730,7 +7749,7 @@ b:webhook("delete", function(payload)
   return make_internal_event({
     event = "delete",
     action = "delete",
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = data,
     timestamp = "",
@@ -7760,7 +7779,7 @@ local function translate_gitea_webhook_release(r)
   }
 end
 
-b:webhook("release", function(payload)
+register_gitea_webhook("release", function(payload)
   local action = payload.action or "unknown"
   local rel = translate_gitea_webhook_release(payload.release)
   local data = {
@@ -7775,7 +7794,7 @@ b:webhook("release", function(payload)
   return make_internal_event({
     event = "release",
     action = action,
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = data,
     timestamp = rel.published_at or rel.created_at or "",
@@ -7784,7 +7803,7 @@ end)
 
 -- fork: repository forked.  Gitea sends `forkee` (the newly created fork) and
 -- `repository` (the upstream source).  Both are translated with translate_repo.
-b:webhook("fork", function(payload)
+register_gitea_webhook("fork", function(payload)
   local data = {
     forkee = translate_repo(payload.forkee or {}),
     repository = translate_repo(payload.repository or {}),
@@ -7793,7 +7812,7 @@ b:webhook("fork", function(payload)
   return make_internal_event({
     event = "fork",
     action = "fork",
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = data,
     timestamp = "",
@@ -7804,7 +7823,7 @@ end)
 -- Gitea sends X-Gitea-Event: repository.  For "renamed", Gitea includes a
 -- changes.name.from field; we map that to GitHub's changes.repository.name.from
 -- shape in the normalized data.
-b:webhook("repository", function(payload)
+register_gitea_webhook("repository", function(payload)
   local action = payload.action or "unknown"
   local data = {
     action = action,
@@ -7820,7 +7839,7 @@ b:webhook("repository", function(payload)
   return make_internal_event({
     event = "repository",
     action = action,
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = data,
     timestamp = "",
@@ -7829,7 +7848,7 @@ end)
 
 -- deploy_key: SSH deploy key added or removed from a repository.
 -- Gitea sends X-Gitea-Event: deploy_key with GitHub-compatible payload.
-b:webhook("deploy_key", function(payload)
+register_gitea_webhook("deploy_key", function(payload)
   local action = payload.action or "unknown"
   local key = payload.key or {}
   local data = {
@@ -7849,7 +7868,7 @@ b:webhook("deploy_key", function(payload)
   return make_internal_event({
     event = "deploy_key",
     action = action,
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = data,
     timestamp = key.created_at or "",
@@ -7859,7 +7878,7 @@ end)
 -- gollum: wiki page created or edited.
 -- Gitea sends X-Gitea-Event: gollum with GitHub-compatible payload.
 -- The pages[] array carries the per-page action; there is no top-level action.
-b:webhook("gollum", function(payload)
+register_gitea_webhook("gollum", function(payload)
   local pages = payload.pages or {}
   local first_action = (pages[1] or {}).action or "edited"
   local data = {
@@ -7870,7 +7889,7 @@ b:webhook("gollum", function(payload)
   return make_internal_event({
     event = "gollum",
     action = first_action,
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = data,
     timestamp = "",
@@ -7880,11 +7899,11 @@ end)
 -- security_and_analysis: repository code-security settings were toggled.
 -- Unlike most webhook events there is no `action` field; confusio uses the
 -- sentinel action "changed" for all deliveries.
-b:webhook("security_and_analysis", function(payload)
+register_gitea_webhook("security_and_analysis", function(payload)
   return make_internal_event({
     event = "security_and_analysis",
     action = "changed",
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = {
       changes = payload.changes or {},
@@ -7899,7 +7918,7 @@ end)
 -- Gitea sends X-Gitea-Event: collaborator with action "added" or "deleted".
 -- GitHub's member event uses "added" and "removed"; map "deleted" → "removed".
 local GITEA_MEMBER_ACTIONS = { added = "added", deleted = "removed" }
-b:webhook("collaborator", function(payload)
+register_gitea_webhook("collaborator", function(payload)
   local raw_action = payload.action or ""
   local action = GITEA_MEMBER_ACTIONS[raw_action] or raw_action
   local user = payload.member or {}
@@ -7921,7 +7940,7 @@ b:webhook("collaborator", function(payload)
   return make_internal_event({
     event = "member",
     action = action,
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = data,
     timestamp = "",
@@ -7932,7 +7951,7 @@ end)
 -- Gitea sends X-Gitea-Event: star with action "created" (starred) or "deleted"
 -- (unstarred).  Maps directly to GitHub's star event.
 local STAR_ACTIONS = { created = "created", deleted = "deleted" }
-b:webhook("star", function(payload)
+register_gitea_webhook("star", function(payload)
   local raw_action = payload.action or ""
   local action = STAR_ACTIONS[raw_action]
   local data = {
@@ -7945,7 +7964,7 @@ b:webhook("star", function(payload)
     event = "star",
     action = action or "unknown",
     raw_action = action and nil or raw_action,
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = data,
     timestamp = payload.starred_at or "",
@@ -7956,7 +7975,7 @@ end)
 -- Gitea sends X-Gitea-Event: watch with action "started".  GitHub's watch
 -- event also only has "started".
 local WATCH_ACTIONS = { started = "started" }
-b:webhook("watch", function(payload)
+register_gitea_webhook("watch", function(payload)
   local raw_action = payload.action or ""
   local action = WATCH_ACTIONS[raw_action]
   local data = {
@@ -7968,7 +7987,7 @@ b:webhook("watch", function(payload)
     event = "watch",
     action = action or "unknown",
     raw_action = action and nil or raw_action,
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = data,
     timestamp = "",
@@ -8010,7 +8029,7 @@ local function translate_gitea_webhook_package(p)
   }
 end
 
-b:webhook("package", function(payload)
+register_gitea_webhook("package", function(payload)
   local raw_action = payload.action or ""
   local action = PACKAGE_ACTIONS[raw_action]
   local pkg = translate_gitea_webhook_package(payload.package)
@@ -8024,7 +8043,7 @@ b:webhook("package", function(payload)
     event = "package",
     action = action or "unknown",
     raw_action = action and nil or raw_action,
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = data,
     timestamp = pkg.created_at,
@@ -8034,11 +8053,11 @@ end)
 -- ping: sent by Gitea when a webhook is first created or tested.
 -- Gitea sends X-Gitea-Event: ping with zen, hook_id, hook, repository, sender.
 -- There is no action field; the event is forwarded as-is.
-b:webhook("ping", function(payload)
+register_gitea_webhook("ping", function(payload)
   return make_internal_event({
     event = "ping",
     action = "ping",
-    provider = "gitea",
+    provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = {
       zen = payload.zen or "Gitea",
@@ -8090,6 +8109,17 @@ local GITEA_NORMALIZED_WEBHOOK_EVENTS = {
   "ping",
 }
 
+local GOGS_NORMALIZED_WEBHOOK_EVENTS = {
+  "issues",
+  "issue_comment",
+  "pull_request",
+  "push",
+  "create",
+  "delete",
+  "release",
+  "fork",
+}
+
 local function normalized_payload_without_envelope_fields(data)
   local payload = {}
   for k, v in pairs(data or {}) do
@@ -8118,7 +8148,9 @@ local function translate_gitea_normalized_webhook(internal_event, fields)
   })
 end
 
-for _, event in ipairs(GITEA_NORMALIZED_WEBHOOK_EVENTS) do
+local normalized_webhook_events = config.backend == "gogs" and GOGS_NORMALIZED_WEBHOOK_EVENTS
+  or GITEA_NORMALIZED_WEBHOOK_EVENTS
+for _, event in ipairs(normalized_webhook_events) do
   b:webhook_translator(event, translate_gitea_normalized_webhook)
 end
 
