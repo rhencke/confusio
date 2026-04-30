@@ -2741,7 +2741,7 @@ local function bb_otel_span_time(ns)
     return ""
   end
   ns = tostring(ns)
-  local seconds = nil
+  local seconds
   if #ns >= 10 then
     seconds = tonumber(ns:sub(1, #ns - 9))
   else
