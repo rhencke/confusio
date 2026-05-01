@@ -2214,6 +2214,275 @@ do
 end
 
 -- ============================================================
+-- Launchpad webhook handlers
+-- ============================================================
+
+do
+  local saved_rest = app.backend.rest
+  local saved_capabilities = app.backend.capabilities
+  local saved_webhooks = app.backend.webhooks
+  local saved_webhook_translators = app.backend.webhook_translators
+  local saved_base_url = config.base_url
+  local saved_backend = config.backend
+
+  app.backend.rest = {}
+  app.backend.capabilities = {}
+  app.backend.webhooks = {}
+  app.backend.webhook_translators = {}
+  config.base_url = ""
+  config.backend = "launchpad"
+  _real_dofile("backends/launchpad.lua")
+
+  local push_payload = {
+    git_repository = "/devel/~fido/confusio/+git/confusio",
+    git_repository_path = "~fido/confusio/+git/confusio",
+    ref_changes = {
+      ["refs/heads/main"] = {
+        old = { commit_sha1 = "1111111111111111111111111111111111111111" },
+        new = { commit_sha1 = "2222222222222222222222222222222222222222" },
+      },
+    },
+  }
+  local push_event = app.backend.webhooks["git:push:0.1"](push_payload)
+  eq(push_event.event, "push", "launchpad webhook: git push maps to push")
+  eq(push_event.provider, "launchpad", "launchpad webhook: git push sets provider")
+  eq(push_event.data.ref, "refs/heads/main", "launchpad webhook: git push sets ref")
+  eq(
+    push_event.data.before,
+    "1111111111111111111111111111111111111111",
+    "launchpad webhook: git push sets before SHA"
+  )
+  eq(
+    push_event.data.after,
+    "2222222222222222222222222222222222222222",
+    "launchpad webhook: git push sets after SHA"
+  )
+  eq(
+    push_event.data.repository.full_name,
+    "fido/confusio",
+    "launchpad webhook: git push sets repository"
+  )
+  local push_envelope = app.backend.webhook_translators.push(push_event)
+  eq(push_envelope.type, "push", "launchpad webhook: normalized push is actionless")
+  eq(push_envelope.repository.full_name, "fido/confusio", "launchpad webhook: push envelope repo")
+
+  local ping_event = app.backend.webhooks.ping({ ping = true })
+  eq(ping_event.event, "ping", "launchpad webhook: ping maps to ping")
+  eq(ping_event.data.zen, "Launchpad", "launchpad webhook: ping sets zen")
+  local ping_envelope = app.backend.webhook_translators.ping(ping_event)
+  eq(ping_envelope.type, "ping", "launchpad webhook: normalized ping is actionless")
+
+  local bug_payload = {
+    action = "created",
+    target = "/confusio",
+    bug = "/bugs/1234",
+    owner = "/~fido",
+  }
+  local bug_event = app.backend.webhooks["bug:0.1"](bug_payload)
+  eq(bug_event.event, "issues", "launchpad webhook: bug maps to issues")
+  eq(bug_event.action, "opened", "launchpad webhook: bug created maps to opened")
+  eq(bug_event.data.issue.number, 1234, "launchpad webhook: bug sets issue number")
+  eq(
+    bug_event.data.repository.full_name,
+    "launchpad/confusio",
+    "launchpad webhook: bug sets target repository"
+  )
+  local bug_envelope = app.backend.webhook_translators.issues(bug_event)
+  eq(bug_envelope.type, "issue.opened", "launchpad webhook: normalized bug includes action")
+
+  local bug_edit_event = app.backend.webhooks["bug:0.1"]({
+    action = "status-changed",
+    target = "/ubuntu/+source/confusio",
+    bug = "/bugs/1234",
+  })
+  eq(bug_edit_event.action, "edited", "launchpad webhook: bug field change maps to edited")
+
+  local comment_payload = {
+    action = "created",
+    target = "/confusio",
+    bug = "/bugs/1234",
+    bug_comment = "/bugs/1234/comments/5",
+    new = {
+      commenter = "/~fido",
+      content = "Woof, found the bug.",
+    },
+  }
+  local comment_event = app.backend.webhooks["bug:comment:0.1"](comment_payload)
+  eq(comment_event.event, "issue_comment", "launchpad webhook: comment maps to issue_comment")
+  eq(comment_event.action, "created", "launchpad webhook: comment created maps to created")
+  eq(comment_event.data.issue.number, 1234, "launchpad webhook: comment sets issue number")
+  eq(comment_event.data.comment.id, 5, "launchpad webhook: comment sets comment id")
+  eq(
+    comment_event.data.comment.body,
+    "Woof, found the bug.",
+    "launchpad webhook: comment sets body"
+  )
+  local comment_envelope = app.backend.webhook_translators.issue_comment(comment_event)
+  eq(
+    comment_envelope.type,
+    "issue.comment.created",
+    "launchpad webhook: normalized comment includes action"
+  )
+
+  local mp_payload = {
+    action = "created",
+    merge_proposal = "/~fido/confusio/+git/feature/+merge/42",
+    new = {
+      registrant = "/~fido",
+      commit_message = "Add the good feature",
+      description = "Please merge this branch.",
+      source_git_repository = "/~fido/confusio/+git/feature",
+      source_git_path = "~fido/confusio/+git/feature",
+      target_git_repository = "/~fido/confusio/+git/main",
+      target_git_path = "~fido/confusio/+git/main",
+      queue_status = "Needs review",
+    },
+  }
+  local mp_event = app.backend.webhooks["merge-proposal:0.1"](mp_payload)
+  eq(mp_event.event, "pull_request", "launchpad webhook: merge proposal maps to pull_request")
+  eq(mp_event.action, "opened", "launchpad webhook: merge proposal created maps to opened")
+  eq(mp_event.data.number, 42, "launchpad webhook: merge proposal sets number")
+  eq(
+    mp_event.data.pull_request.title,
+    "Add the good feature",
+    "launchpad webhook: merge proposal sets title"
+  )
+  eq(
+    mp_event.data.repository.full_name,
+    "fido/main",
+    "launchpad webhook: merge proposal sets base repository"
+  )
+  local mp_envelope = app.backend.webhook_translators.pull_request(mp_event)
+  eq(
+    mp_envelope.type,
+    "pull_request.opened",
+    "launchpad webhook: normalized merge proposal includes action"
+  )
+
+  local mp_sync_event = app.backend.webhooks["merge-proposal:0.1"]({
+    action = "modified",
+    merge_proposal = "/~fido/confusio/+git/feature/+merge/42",
+    old = { source_git_commit_sha = "1111111111111111111111111111111111111111" },
+    new = { source_git_commit_sha = "2222222222222222222222222222222222222222" },
+  })
+  eq(
+    mp_sync_event.action,
+    "synchronize",
+    "launchpad webhook: merge proposal push maps to synchronize"
+  )
+
+  local mp_closed_event = app.backend.webhooks["merge-proposal:0.1"]({
+    action = "modified",
+    merge_proposal = "/~fido/confusio/+git/feature/+merge/42",
+    old = { queue_status = "Needs review" },
+    new = { queue_status = "Merged" },
+  })
+  eq(mp_closed_event.action, "closed", "launchpad webhook: merge proposal merged maps to closed")
+
+  local ci_event = app.backend.webhooks["ci:build:0.1"]({
+    action = "created",
+    build = "/~fido/confusio/+git/main/+build/77",
+    git_repository = "/~fido/confusio/+git/main",
+    commit_sha1 = "3333333333333333333333333333333333333333",
+    status = "Needs building",
+  })
+  eq(ci_event.event, "workflow_run", "launchpad webhook: CI build maps to workflow_run")
+  eq(ci_event.action, "requested", "launchpad webhook: CI build created maps to requested")
+  eq(ci_event.data.workflow_run.id, 77, "launchpad webhook: CI build sets run id")
+  eq(
+    ci_event.data.workflow_run.head_sha,
+    "3333333333333333333333333333333333333333",
+    "launchpad webhook: CI build sets head SHA"
+  )
+  local ci_envelope = app.backend.webhook_translators.workflow_run(ci_event)
+  eq(
+    ci_envelope.type,
+    "workflow.run.requested",
+    "launchpad webhook: normalized CI build includes action"
+  )
+
+  local snap_event = app.backend.webhooks["snap:build:0.1"]({
+    action = "status-changed",
+    snap_build = "/~fido/+snap/confusio/+build/88",
+    snap = "/~fido/+snap/confusio",
+    status = "Successfully built",
+    store_upload_status = "Uploaded",
+  })
+  eq(snap_event.action, "completed", "launchpad webhook: successful snap build maps to completed")
+  eq(
+    snap_event.data.workflow_run.conclusion,
+    "success",
+    "launchpad webhook: successful snap build sets success conclusion"
+  )
+
+  local binary_build_event = app.backend.webhooks["archive:binary-build:0.1"]({
+    action = "status-changed",
+    build = "/~fido/+archive/ubuntu/ppa/+build/99",
+    archive = "/~fido/+archive/ubuntu/ppa",
+    source_package_name = "confusio",
+    status = "Failed to build",
+    buildlog = "https://launchpad.net/buildlog.txt",
+  })
+  eq(
+    binary_build_event.action,
+    "completed",
+    "launchpad webhook: failed binary build maps to completed"
+  )
+  eq(
+    binary_build_event.data.workflow_run.conclusion,
+    "failure",
+    "launchpad webhook: failed binary build sets failure conclusion"
+  )
+
+  local source_package_event = app.backend.webhooks["archive:source-package-upload:0.1"]({
+    action = "status-changed",
+    package_upload = "/~fido/+archive/ubuntu/ppa/+upload/12",
+    status = "Accepted",
+    archive = "/~fido/+archive/ubuntu/ppa",
+    package_name = "confusio",
+    package_version = "1.2.3",
+  })
+  eq(source_package_event.event, "package", "launchpad webhook: source upload maps to package")
+  eq(
+    source_package_event.action,
+    "published",
+    "launchpad webhook: accepted upload maps to published"
+  )
+  eq(
+    source_package_event.data.package.package_type,
+    "deb-source",
+    "launchpad webhook: source upload sets package type"
+  )
+  local package_envelope = app.backend.webhook_translators.package(source_package_event)
+  eq(
+    package_envelope.type,
+    "package.published",
+    "launchpad webhook: normalized package includes action"
+  )
+
+  local binary_package_event = app.backend.webhooks["archive:binary-package-upload:0.1"]({
+    action = "status-changed",
+    package_upload = "/~fido/+archive/ubuntu/ppa/+upload/13",
+    status = "Rejected",
+    archive = "/~fido/+archive/ubuntu/ppa",
+    source_package_name = "confusio",
+  })
+  eq(binary_package_event.action, "updated", "launchpad webhook: rejected upload maps to updated")
+  eq(
+    binary_package_event.data.package.package_type,
+    "deb-binary",
+    "launchpad webhook: binary upload sets package type"
+  )
+
+  app.backend.rest = saved_rest
+  app.backend.capabilities = saved_capabilities
+  app.backend.webhooks = saved_webhooks
+  app.backend.webhook_translators = saved_webhook_translators
+  config.base_url = saved_base_url
+  config.backend = saved_backend
+end
+
+-- ============================================================
 -- make_webhook_receiver
 -- ============================================================
 
@@ -2361,7 +2630,32 @@ do
     "webhook_receiver: gogs ignores X-Gitea-Event → 422"
   )
 
+  -- Launchpad uses X-Launchpad-Event-Type.
+  app.backend.webhooks = {
+    ["git:push:0.1"] = function(_payload)
+      return { event = "push" }, nil
+    end,
+  }
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/launchpad",
+      headers = {
+        ["Content-Type"] = "application/json",
+        ["X-Launchpad-Event-Type"] = "git:push:0.1",
+      },
+      body = "{}",
+    }),
+    200,
+    "webhook_receiver: launchpad X-Launchpad-Event-Type handler succeeds → 200"
+  )
+
   -- Kallithea embeds its event name in the JSON body.
+  app.backend.webhooks = {
+    push = function(_payload)
+      return { event = "push" }, nil
+    end,
+  }
   eq(
     call_webhook({
       method = "POST",
@@ -2468,7 +2762,7 @@ end
 --   (d) missing header/token → 401
 -- Pagure gets extra cases for its dual-header scheme.
 -- Kallithea gets extra cases for its body-embedded secret.
--- codecommit/sourcehut/launchpad get both trust-the-network
+-- codecommit/sourcehut get both trust-the-network
 -- and "secret configured → always 401" cases.
 -- ============================================================
 do
@@ -2567,22 +2861,20 @@ do
     eq(with_secret(be, {}), 401, "verify_signature " .. be .. ": missing X-Hub-Signature → 401")
   end
 
-  -- ── HMAC-SHA1 / sha1= prefix: gitbucket (X-Hub-Signature)
-  ok(no_secret("gitbucket", {}) ~= 401, "verify_signature gitbucket: no secret → not 401")
-  ok(
-    with_secret("gitbucket", { ["X-Hub-Signature"] = "sha1=" .. STUB_HEX }) ~= 401,
-    "verify_signature gitbucket: valid X-Hub-Signature sha1= → not 401"
-  )
-  eq(
-    with_secret("gitbucket", { ["X-Hub-Signature"] = "sha1=deadbeef" }),
-    401,
-    "verify_signature gitbucket: bad X-Hub-Signature → 401"
-  )
-  eq(
-    with_secret("gitbucket", {}),
-    401,
-    "verify_signature gitbucket: missing X-Hub-Signature → 401"
-  )
+  -- ── HMAC-SHA1 / sha1= prefix: gitbucket + launchpad (X-Hub-Signature)
+  for _, be in ipairs({ "gitbucket", "launchpad" }) do
+    ok(no_secret(be, {}) ~= 401, "verify_signature " .. be .. ": no secret → not 401")
+    ok(
+      with_secret(be, { ["X-Hub-Signature"] = "sha1=" .. STUB_HEX }) ~= 401,
+      "verify_signature " .. be .. ": valid X-Hub-Signature sha1= → not 401"
+    )
+    eq(
+      with_secret(be, { ["X-Hub-Signature"] = "sha1=deadbeef" }),
+      401,
+      "verify_signature " .. be .. ": bad X-Hub-Signature → 401"
+    )
+    eq(with_secret(be, {}), 401, "verify_signature " .. be .. ": missing X-Hub-Signature → 401")
+  end
 
   -- ── HMAC-SHA256 / no prefix: phabricator (X-Phabricator-Webhook-Signature)
   ok(no_secret("phabricator", {}) ~= 401, "verify_signature phabricator: no secret → not 401")
@@ -2854,10 +3146,10 @@ do
     "verify_signature kallithea: invalid JSON body → 401"
   )
 
-  -- ── Trust-the-network-only backends: codecommit, sourcehut, launchpad
+  -- ── Trust-the-network-only backends: codecommit, sourcehut
   -- These use asymmetric/platform-managed schemes not yet implemented.
   -- No secret → accepted; any secret configured → always rejected.
-  for _, be in ipairs({ "codecommit", "sourcehut", "launchpad" }) do
+  for _, be in ipairs({ "codecommit", "sourcehut" }) do
     ok(
       no_secret(be, {}) ~= 401,
       "verify_signature " .. be .. ": no secret (trust-the-network) → not 401"
@@ -2980,6 +3272,17 @@ do
   -- GitLab: verbatim token.
   local sfb_gl = sign_for_backend("gitlab", SECRET, BODY)
   eq(sfb_gl["X-Gitlab-Token"], SECRET, "sign_for_backend gitlab: X-Gitlab-Token is the secret")
+
+  -- HMAC-SHA1 via X-Hub-Signature.
+  for _, be in ipairs({ "gitbucket", "launchpad" }) do
+    local h = sign_for_backend(be, SECRET, BODY)
+    eq(
+      h["X-Hub-Signature"],
+      "sha1=" .. STUB_HEX,
+      "sign_for_backend " .. be .. ": X-Hub-Signature sha1= present"
+    )
+    ok(h["X-Hub-Signature-256"] == nil, "sign_for_backend " .. be .. ": no X-Hub-Signature-256")
+  end
 
   -- Default (unknown backend): GitHub-style.
   local sfb_def = sign_for_backend("unknown_backend", SECRET, BODY)

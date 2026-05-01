@@ -1,0 +1,7 @@
+{
+  "action": "created",
+  "bug": "/bugs/1234",
+  "owner": "/~fido",
+  "target": "/confusio",
+  "title": "Webhook bug"
+}

@@ -44,6 +44,20 @@ wait_port() {
   done
 }
 
+wait_http() {
+  local name="$1"
+  local port="$2"
+  local i=0
+  while ! curl -sS -o /dev/null --connect-timeout 1 --max-time 1 "http://localhost:$port/" 2>/dev/null; do
+    sleep 0.05
+    i=$((i + 1))
+    [ $i -lt 100 ] || {
+      echo "$name did not answer HTTP in time" >&2
+      exit 1
+    }
+  done
+}
+
 run_hurl() {
   $HURL --retry 10 --retry-interval 200 --connect-timeout 1 --max-time 5 \
     --variable host=localhost:$CONFUSIO_PORT "$1"
@@ -84,7 +98,7 @@ run_delivery_phase() {
   # in the delivery target.  The hurl file's opening /reset can then safely clear them.
   wait_port "mock target" "$DELIVERY_TARGET_PORT"
   wait_port "mock gitea" "$MOCK_PORT"
-  wait_port "confusio" "$CONFUSIO_PORT"
+  wait_http "confusio" "$CONFUSIO_PORT"
   # Do not pass --retry here: these hurl files contain non-idempotent webhook POSTs.
   # Retrying a POST after a transient assertion/transport failure records duplicate
   # deliveries in the mock target and turns the next count assertion into a false
@@ -116,6 +130,7 @@ WH_BODY="{}"
 GITEA_SIG=$(printf '%s' "$WH_BODY" | openssl dgst -sha256 -hmac "$WH_SECRET" | awk '{print $NF}')
 BB_SIG="sha256=${GITEA_SIG}"
 GB_SIG="sha1=$(printf '%s' "$WH_BODY" | openssl dgst -sha1 -hmac "$WH_SECRET" | awk '{print $NF}')"
+LAUNCHPAD_SIG="$GB_SIG"
 AZUREDEVOPS_SECRET="fido:$WH_SECRET"
 AZUREDEVOPS_BASIC=$(printf '%s' "$AZUREDEVOPS_SECRET" | openssl base64 -A)
 GERRIT_BASIC=$(printf '%s' "$WH_SECRET" | openssl base64 -A)
@@ -123,13 +138,13 @@ CONFUSIO_TS=$(date +%s)
 CONFUSIO_SIG="sha256=$(printf 'v1:%s:%s' "$CONFUSIO_TS" "$WH_BODY" | openssl dgst -sha256 -hmac "$WH_SECRET" | awk '{print $NF}'), v=1, ts=${CONFUSIO_TS}"
 # Write secrets to 0600-permission files — never pass raw secrets on the CLI.
 WH_SECRET_DIR=$(mktemp -d)
-for wh_backend in gitea codeberg gitlab bitbucket bitbucket_datacenter gitbucket gerrit kallithea confusio; do
+for wh_backend in gitea codeberg gitlab bitbucket bitbucket_datacenter gitbucket launchpad gerrit kallithea confusio; do
   printf '%s' "$WH_SECRET" > "$WH_SECRET_DIR/$wh_backend.secret"
   chmod 600 "$WH_SECRET_DIR/$wh_backend.secret"
 done
 printf '%s' "$AZUREDEVOPS_SECRET" > "$WH_SECRET_DIR/azuredevops.secret"
 chmod 600 "$WH_SECRET_DIR/azuredevops.secret"
-WH_CLI_ARGS="-- webhook_secret_file_gitea=$WH_SECRET_DIR/gitea.secret webhook_secret_file_codeberg=$WH_SECRET_DIR/codeberg.secret webhook_secret_file_gitlab=$WH_SECRET_DIR/gitlab.secret webhook_secret_file_bitbucket=$WH_SECRET_DIR/bitbucket.secret webhook_secret_file_bitbucket_datacenter=$WH_SECRET_DIR/bitbucket_datacenter.secret webhook_secret_file_gitbucket=$WH_SECRET_DIR/gitbucket.secret webhook_secret_file_azuredevops=$WH_SECRET_DIR/azuredevops.secret webhook_secret_file_gerrit=$WH_SECRET_DIR/gerrit.secret webhook_secret_file_kallithea=$WH_SECRET_DIR/kallithea.secret webhook_secret_file_confusio=$WH_SECRET_DIR/confusio.secret"
+WH_CLI_ARGS="-- webhook_secret_file_gitea=$WH_SECRET_DIR/gitea.secret webhook_secret_file_codeberg=$WH_SECRET_DIR/codeberg.secret webhook_secret_file_gitlab=$WH_SECRET_DIR/gitlab.secret webhook_secret_file_bitbucket=$WH_SECRET_DIR/bitbucket.secret webhook_secret_file_bitbucket_datacenter=$WH_SECRET_DIR/bitbucket_datacenter.secret webhook_secret_file_gitbucket=$WH_SECRET_DIR/gitbucket.secret webhook_secret_file_launchpad=$WH_SECRET_DIR/launchpad.secret webhook_secret_file_azuredevops=$WH_SECRET_DIR/azuredevops.secret webhook_secret_file_gerrit=$WH_SECRET_DIR/gerrit.secret webhook_secret_file_kallithea=$WH_SECRET_DIR/kallithea.secret webhook_secret_file_confusio=$WH_SECRET_DIR/confusio.secret"
 wh_dir=$(mktemp -d)
 start_confusio "$wh_dir" "$WH_CLI_ARGS"; WH_PID=$!
 trap "kill $WH_PID 2>/dev/null || true; rm -rf $wh_dir; rm -rf $WH_SECRET_DIR" EXIT
@@ -139,6 +154,7 @@ $HURL --retry 10 --retry-interval 200 --connect-timeout 1 --max-time 5 \
   --variable "gitlab_tok=$WH_SECRET" \
   --variable "bb_sig=$BB_SIG" \
   --variable "gb_sig=$GB_SIG" \
+  --variable "launchpad_sig=$LAUNCHPAD_SIG" \
   --variable "azuredevops_basic=$AZUREDEVOPS_BASIC" \
   --variable "gerrit_tok=$WH_SECRET" \
   --variable "gerrit_basic=$GERRIT_BASIC" \
@@ -341,7 +357,13 @@ run_delivery_phase test/webhook-delivery-codeberg-confusio-shape.hurl \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
 
-# Phase 35: Startup event synthesis — github shape.
+# Phase 35: Launchpad fixture-based delivery tests — every native event family.
+# Launchpad uses X-Launchpad-Event-Type to indicate the native event type.
+run_delivery_phase test/webhook-delivery-launchpad.hurl \
+  -- launchpad "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 36: Startup event synthesis — github shape.
 # Verifies that confusio synthesizes installation.created and
 # installation_repositories.added before accepting connections, and delivers
 # both to the configured outbound target.  No /reset is called — the hurl file
@@ -350,8 +372,8 @@ run_delivery_phase test/webhook-delivery-startup.hurl \
   -- gitea "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
-# Phase 36: Startup event synthesis — confusio shape.
-# Same as Phase 35 but with webhook_target_shape=confusio; verifies
+# Phase 37: Startup event synthesis — confusio shape.
+# Same as Phase 36 but with webhook_target_shape=confusio; verifies
 # X-Confusio-* headers are used and X-GitHub-Event is absent.
 run_delivery_phase test/webhook-delivery-startup-confusio-shape.hurl \
   -- gitea "http://127.0.0.1:$MOCK_PORT" \

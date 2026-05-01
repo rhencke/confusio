@@ -1,0 +1,7 @@
+{
+  "action": "status-changed",
+  "archive": "/~fido/+archive/ubuntu/ppa",
+  "package_upload": "/~fido/+archive/ubuntu/ppa/+upload/13",
+  "source_package_name": "confusio",
+  "status": "Rejected"
+}

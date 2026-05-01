@@ -1,0 +1,8 @@
+{
+  "action": "created",
+  "build": "/~fido/confusio/+git/main/+build/77",
+  "commit_sha1": "3333333333333333333333333333333333333333",
+  "git_repository": "/~fido/confusio/+git/main",
+  "git_repository_path": "~fido/confusio/+git/main",
+  "status": "Needs building"
+}

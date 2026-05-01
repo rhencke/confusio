@@ -59,6 +59,8 @@ function sign_for_backend(backend, secret, body) -- luacheck: globals sign_for_b
     return { ["X-Hub-Signature"] = "sha256=" .. hmac_hex("sha256", secret, body) }
   elseif backend == "gitbucket" then
     return { ["X-Hub-Signature"] = "sha1=" .. hmac_hex("sha1", secret, body) }
+  elseif backend == "launchpad" then
+    return { ["X-Hub-Signature"] = "sha1=" .. hmac_hex("sha1", secret, body) }
   elseif backend == "phabricator" then
     return { ["X-Phabricator-Webhook-Signature"] = hmac_hex("sha256", secret, body) }
   elseif backend == "pagure" then

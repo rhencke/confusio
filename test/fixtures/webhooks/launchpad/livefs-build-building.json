@@ -1,0 +1,6 @@
+{
+  "action": "status-changed",
+  "livefs": "/~ubuntu-cdimage/ubuntu/+livefs/noble/ubuntu",
+  "livefs_build": "/~ubuntu-cdimage/ubuntu/+livefs/noble/ubuntu/+build/87",
+  "status": "Currently building"
+}

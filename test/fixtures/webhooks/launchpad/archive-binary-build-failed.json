@@ -1,0 +1,8 @@
+{
+  "action": "status-changed",
+  "archive": "/~fido/+archive/ubuntu/ppa",
+  "build": "/~fido/+archive/ubuntu/ppa/+build/99",
+  "buildlog": "https://launchpad.net/buildlog.txt",
+  "source_package_name": "confusio",
+  "status": "Failed to build"
+}
