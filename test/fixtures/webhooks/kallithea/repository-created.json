@@ -1,0 +1,18 @@
+{
+  "event": "repository",
+  "hook": "CREATE_REPO_HOOK",
+  "action": "created",
+  "repo_id": 100,
+  "repo_name": "octocat/hello-world",
+  "repo_type": "git",
+  "description": "Example repository",
+  "private": false,
+  "created_on": "2024-01-15T09:00:00Z",
+  "enable_downloads": true,
+  "enable_statistics": true,
+  "clone_uri": null,
+  "fork_id": null,
+  "group_id": null,
+  "owner_id": 1,
+  "created_by": "alice"
+}

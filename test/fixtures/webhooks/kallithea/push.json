@@ -1,0 +1,37 @@
+{
+  "event": "push",
+  "hook": "PUSH_HOOK",
+  "config": "/srv/kallithea/kallithea.ini",
+  "scm": "git",
+  "username": "alice",
+  "ip": "192.0.2.10",
+  "action": "push",
+  "repository": "octocat/hello-world",
+  "repo_name": "octocat/hello-world",
+  "repo_type": "git",
+  "pushed_revs": [
+    "95790bf891e76fee5db5ef17d2523a6f6e048239",
+    "5a1e9f3d7c2b4a6e8f90123456789abcdef01234"
+  ],
+  "refs": [
+    {
+      "ref": "refs/heads/main",
+      "type": "heads",
+      "name": "main",
+      "old_rev": "95790bf891e76fee5db5ef17d2523a6f6e048239",
+      "new_rev": "5a1e9f3d7c2b4a6e8f90123456789abcdef01234"
+    }
+  ],
+  "commits": [
+    {
+      "id": "5a1e9f3d7c2b4a6e8f90123456789abcdef01234",
+      "message": "Update README",
+      "timestamp": "2024-01-15T10:05:00Z",
+      "author": {
+        "name": "Alice",
+        "email": "alice@example.com",
+        "username": "alice"
+      }
+    }
+  ]
+}

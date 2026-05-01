@@ -1,0 +1,25 @@
+{
+  "event": "push",
+  "hook": "PUSH_HOOK",
+  "config": "/srv/kallithea/kallithea.ini",
+  "scm": "git",
+  "username": "alice",
+  "ip": "192.0.2.10",
+  "action": "push",
+  "repository": "octocat/hello-world",
+  "repo_name": "octocat/hello-world",
+  "repo_type": "git",
+  "pushed_revs": [
+    "delete_branch=>stale-branch"
+  ],
+  "refs": [
+    {
+      "ref": "refs/heads/stale-branch",
+      "type": "heads",
+      "name": "stale-branch",
+      "old_rev": "95790bf891e76fee5db5ef17d2523a6f6e048239",
+      "new_rev": "0000000000000000000000000000000000000000"
+    }
+  ],
+  "commits": []
+}

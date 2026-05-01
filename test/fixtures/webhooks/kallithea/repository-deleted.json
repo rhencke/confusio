@@ -1,0 +1,19 @@
+{
+  "event": "repository",
+  "hook": "DELETE_REPO_HOOK",
+  "action": "deleted",
+  "repo_id": 100,
+  "repo_name": "octocat/hello-world",
+  "repo_type": "git",
+  "description": "Example repository",
+  "private": false,
+  "created_on": "2024-01-15T09:00:00Z",
+  "enable_downloads": true,
+  "enable_statistics": true,
+  "clone_uri": null,
+  "fork_id": null,
+  "group_id": null,
+  "owner_id": 1,
+  "deleted_by": "alice",
+  "deleted_on": 1705312800
+}
