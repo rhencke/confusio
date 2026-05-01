@@ -58,6 +58,8 @@ local LAUNCHPAD_NORMALIZED_WEBHOOK_EVENTS = {
   "issues",
   "issue_comment",
   "pull_request",
+  "workflow_run",
+  "package",
 }
 
 local ZERO_SHA = string.rep("0", 40)
@@ -74,6 +76,23 @@ local LAUNCHPAD_CLOSED_MERGE_PROPOSAL_STATUSES = {
   Merged = true,
   Rejected = true,
   Superseded = true,
+}
+
+local LAUNCHPAD_COMPLETED_BUILD_STATUSES = {
+  ["Build for superseded Source"] = "skipped",
+  ["Cancelled build"] = "cancelled",
+  Cancelled = "cancelled",
+  ["Failed to build"] = "failure",
+  ["Failed to upload"] = "failure",
+  ["Fully built"] = "success",
+  ["Successfully built"] = "success",
+  Superseded = "skipped",
+}
+
+local LAUNCHPAD_IN_PROGRESS_BUILD_STATUSES = {
+  ["Cancelling build"] = true,
+  ["Currently building"] = true,
+  ["Uploading build"] = true,
 }
 
 -- Extract Launchpad username from an owner/assignee link like ".../~username".
@@ -368,6 +387,183 @@ local function lp_webhook_merge_proposal_action(payload)
   return "edited"
 end
 
+local function lp_webhook_build_id(path)
+  return tonumber((path or ""):match("/%+build/(%d+)"))
+    or tonumber((path or ""):match("/build/(%d+)"))
+    or tonumber((path or ""):match("/(%d+)$"))
+end
+
+local function lp_webhook_build_subject_path(payload)
+  payload = payload or {}
+  return payload.git_repository
+    or payload.livefs
+    or payload.snap
+    or payload.ocirecipe
+    or payload.archive
+    or payload.build
+    or ""
+end
+
+local function lp_webhook_build_path(payload)
+  payload = payload or {}
+  return payload.build
+    or payload.livefs_build
+    or payload.snap_build
+    or payload.ocirecipe_build
+    or ""
+end
+
+local function lp_webhook_workflow_name(payload)
+  payload = payload or {}
+  if payload.git_repository then
+    return "Launchpad CI build"
+  end
+  if payload.livefs then
+    return "Launchpad live filesystem build"
+  end
+  if payload.snap then
+    return "Launchpad snap build"
+  end
+  if payload.ocirecipe then
+    return "Launchpad OCI recipe build"
+  end
+  if payload.archive then
+    return "Launchpad binary build"
+  end
+  return "Launchpad build"
+end
+
+local function lp_webhook_workflow_run_status(status)
+  local conclusion = LAUNCHPAD_COMPLETED_BUILD_STATUSES[status or ""]
+  if conclusion then
+    return "completed", conclusion
+  end
+  if LAUNCHPAD_IN_PROGRESS_BUILD_STATUSES[status or ""] then
+    return "in_progress", nil
+  end
+  return "queued", nil
+end
+
+local function lp_webhook_workflow_action(payload)
+  payload = payload or {}
+  if payload.action == "created" then
+    return "requested"
+  end
+  local status, _ = lp_webhook_workflow_run_status(payload.status)
+  if status == "completed" then
+    return "completed"
+  end
+  if status == "in_progress" then
+    return "in_progress"
+  end
+  return "requested"
+end
+
+local function lp_webhook_build_repository(payload)
+  payload = payload or {}
+  if payload.git_repository then
+    return lp_webhook_repository({
+      git_repository = payload.git_repository,
+      git_repository_path = payload.git_repository_path or payload.git_repository,
+    })
+  end
+  return lp_webhook_target_repository({ target = lp_webhook_build_subject_path(payload) })
+end
+
+local function lp_webhook_workflow_run(payload)
+  payload = payload or {}
+  local build_path = lp_webhook_build_path(payload)
+  local status, conclusion = lp_webhook_workflow_run_status(payload.status)
+  local workflow_name = lp_webhook_workflow_name(payload)
+  local id = lp_webhook_build_id(build_path)
+  return {
+    id = id,
+    name = workflow_name,
+    head_branch = "",
+    head_sha = payload.commit_sha1 or "",
+    run_number = id,
+    event = "launchpad",
+    display_title = workflow_name,
+    status = status,
+    conclusion = conclusion,
+    workflow_id = nil,
+    url = build_path,
+    html_url = build_path ~= "" and ("https://launchpad.net" .. build_path) or "",
+    pull_requests = {},
+    created_at = "",
+    updated_at = "",
+    run_attempt = 1,
+    referenced_workflows = {},
+    actor = lp_webhook_sender(payload),
+    triggering_actor = lp_webhook_sender(payload),
+  }
+end
+
+local function lp_webhook_workflow(payload)
+  payload = payload or {}
+  local name = lp_webhook_workflow_name(payload)
+  local subject_path = lp_webhook_build_subject_path(payload)
+  return {
+    id = nil,
+    name = name,
+    path = subject_path,
+    state = "active",
+    url = subject_path,
+    html_url = subject_path ~= "" and ("https://launchpad.net" .. subject_path) or "",
+    badge_url = "",
+    created_at = "",
+    updated_at = "",
+  }
+end
+
+local function lp_webhook_package_name(payload)
+  payload = payload or {}
+  return payload.package_name or payload.source_package_name or ""
+end
+
+local function lp_webhook_package_action(payload)
+  payload = payload or {}
+  if payload.status == "Accepted" then
+    return "published"
+  end
+  if payload.action == "status-changed" then
+    return "updated"
+  end
+  return nil
+end
+
+local function lp_webhook_package(payload, package_type)
+  payload = payload or {}
+  local name = lp_webhook_package_name(payload)
+  local archive = payload.archive or ""
+  local upload_path = payload.package_upload or ""
+  return {
+    id = lp_webhook_build_id(upload_path),
+    name = name,
+    namespace = archive,
+    ecosystem = "deb",
+    package_type = package_type,
+    html_url = upload_path ~= "" and ("https://launchpad.net" .. upload_path) or "",
+    created_at = "",
+    updated_at = "",
+    owner = lp_webhook_user("launchpad"),
+    description = nil,
+    package_version = {
+      id = nil,
+      name = payload.package_version or "",
+      html_url = "",
+      created_at = "",
+      metadata = {
+        status = payload.status or "",
+        archive = archive,
+      },
+      package_files = {},
+      installation_command = "",
+    },
+    registry = nil,
+  }
+end
+
 local function launchpad_normalized_payload_without_envelope_fields(data)
   data = data or {}
   local payload = {}
@@ -606,6 +802,59 @@ b:webhook("merge-proposal:0.1", function(payload)
     timestamp = "",
   })
 end)
+
+local function lp_webhook_workflow_run_handler(payload)
+  payload = payload or {}
+  local raw_action = payload.action or ""
+  local action = lp_webhook_workflow_action(payload)
+  return make_internal_event({
+    event = "workflow_run",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "launchpad",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      workflow_run = lp_webhook_workflow_run(payload),
+      workflow = lp_webhook_workflow(payload),
+      repository = lp_webhook_build_repository(payload),
+      sender = lp_webhook_sender(payload),
+    },
+    timestamp = "",
+  })
+end
+
+b:webhook("ci:build:0.1", lp_webhook_workflow_run_handler)
+b:webhook("livefs:build:0.1", lp_webhook_workflow_run_handler)
+b:webhook("snap:build:0.1", lp_webhook_workflow_run_handler)
+b:webhook("ocirecipe:build:0.1", lp_webhook_workflow_run_handler)
+b:webhook("archive:binary-build:0.1", lp_webhook_workflow_run_handler)
+
+local function lp_webhook_package_handler(package_type)
+  return function(payload)
+    payload = payload or {}
+    local raw_action = payload.action or ""
+    local action = lp_webhook_package_action(payload)
+    local pkg = lp_webhook_package(payload, package_type)
+    return make_internal_event({
+      event = "package",
+      action = action or "unknown",
+      raw_action = action and nil or raw_action,
+      provider = "launchpad",
+      raw = payload,
+      data = {
+        action = action or "unknown",
+        package = pkg,
+        repository = lp_webhook_target_repository({ target = payload.archive or "" }),
+        sender = lp_webhook_sender(payload),
+      },
+      timestamp = "",
+    })
+  end
+end
+
+b:webhook("archive:source-package-upload:0.1", lp_webhook_package_handler("deb-source"))
+b:webhook("archive:binary-package-upload:0.1", lp_webhook_package_handler("deb-binary"))
 
 -- Issues --------------------------------------------------------------------
 -- Launchpad: GET /devel/~{owner}/{repo}?ws.op=searchTasks

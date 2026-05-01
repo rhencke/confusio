@@ -2379,6 +2379,101 @@ do
   })
   eq(mp_closed_event.action, "closed", "launchpad webhook: merge proposal merged maps to closed")
 
+  local ci_event = app.backend.webhooks["ci:build:0.1"]({
+    action = "created",
+    build = "/~fido/confusio/+git/main/+build/77",
+    git_repository = "/~fido/confusio/+git/main",
+    commit_sha1 = "3333333333333333333333333333333333333333",
+    status = "Needs building",
+  })
+  eq(ci_event.event, "workflow_run", "launchpad webhook: CI build maps to workflow_run")
+  eq(ci_event.action, "requested", "launchpad webhook: CI build created maps to requested")
+  eq(ci_event.data.workflow_run.id, 77, "launchpad webhook: CI build sets run id")
+  eq(
+    ci_event.data.workflow_run.head_sha,
+    "3333333333333333333333333333333333333333",
+    "launchpad webhook: CI build sets head SHA"
+  )
+  local ci_envelope = app.backend.webhook_translators.workflow_run(ci_event)
+  eq(
+    ci_envelope.type,
+    "workflow.run.requested",
+    "launchpad webhook: normalized CI build includes action"
+  )
+
+  local snap_event = app.backend.webhooks["snap:build:0.1"]({
+    action = "status-changed",
+    snap_build = "/~fido/+snap/confusio/+build/88",
+    snap = "/~fido/+snap/confusio",
+    status = "Successfully built",
+    store_upload_status = "Uploaded",
+  })
+  eq(snap_event.action, "completed", "launchpad webhook: successful snap build maps to completed")
+  eq(
+    snap_event.data.workflow_run.conclusion,
+    "success",
+    "launchpad webhook: successful snap build sets success conclusion"
+  )
+
+  local binary_build_event = app.backend.webhooks["archive:binary-build:0.1"]({
+    action = "status-changed",
+    build = "/~fido/+archive/ubuntu/ppa/+build/99",
+    archive = "/~fido/+archive/ubuntu/ppa",
+    source_package_name = "confusio",
+    status = "Failed to build",
+    buildlog = "https://launchpad.net/buildlog.txt",
+  })
+  eq(
+    binary_build_event.action,
+    "completed",
+    "launchpad webhook: failed binary build maps to completed"
+  )
+  eq(
+    binary_build_event.data.workflow_run.conclusion,
+    "failure",
+    "launchpad webhook: failed binary build sets failure conclusion"
+  )
+
+  local source_package_event = app.backend.webhooks["archive:source-package-upload:0.1"]({
+    action = "status-changed",
+    package_upload = "/~fido/+archive/ubuntu/ppa/+upload/12",
+    status = "Accepted",
+    archive = "/~fido/+archive/ubuntu/ppa",
+    package_name = "confusio",
+    package_version = "1.2.3",
+  })
+  eq(source_package_event.event, "package", "launchpad webhook: source upload maps to package")
+  eq(
+    source_package_event.action,
+    "published",
+    "launchpad webhook: accepted upload maps to published"
+  )
+  eq(
+    source_package_event.data.package.package_type,
+    "deb-source",
+    "launchpad webhook: source upload sets package type"
+  )
+  local package_envelope = app.backend.webhook_translators.package(source_package_event)
+  eq(
+    package_envelope.type,
+    "package.published",
+    "launchpad webhook: normalized package includes action"
+  )
+
+  local binary_package_event = app.backend.webhooks["archive:binary-package-upload:0.1"]({
+    action = "status-changed",
+    package_upload = "/~fido/+archive/ubuntu/ppa/+upload/13",
+    status = "Rejected",
+    archive = "/~fido/+archive/ubuntu/ppa",
+    source_package_name = "confusio",
+  })
+  eq(binary_package_event.action, "updated", "launchpad webhook: rejected upload maps to updated")
+  eq(
+    binary_package_event.data.package.package_type,
+    "deb-binary",
+    "launchpad webhook: binary upload sets package type"
+  )
+
   app.backend.rest = saved_rest
   app.backend.capabilities = saved_capabilities
   app.backend.webhooks = saved_webhooks
