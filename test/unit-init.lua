@@ -2272,6 +2272,58 @@ do
   local ping_envelope = app.backend.webhook_translators.ping(ping_event)
   eq(ping_envelope.type, "ping", "launchpad webhook: normalized ping is actionless")
 
+  local bug_payload = {
+    action = "created",
+    target = "/confusio",
+    bug = "/bugs/1234",
+    owner = "/~fido",
+  }
+  local bug_event = app.backend.webhooks["bug:0.1"](bug_payload)
+  eq(bug_event.event, "issues", "launchpad webhook: bug maps to issues")
+  eq(bug_event.action, "opened", "launchpad webhook: bug created maps to opened")
+  eq(bug_event.data.issue.number, 1234, "launchpad webhook: bug sets issue number")
+  eq(
+    bug_event.data.repository.full_name,
+    "launchpad/confusio",
+    "launchpad webhook: bug sets target repository"
+  )
+  local bug_envelope = app.backend.webhook_translators.issues(bug_event)
+  eq(bug_envelope.type, "issue.opened", "launchpad webhook: normalized bug includes action")
+
+  local bug_edit_event = app.backend.webhooks["bug:0.1"]({
+    action = "status-changed",
+    target = "/ubuntu/+source/confusio",
+    bug = "/bugs/1234",
+  })
+  eq(bug_edit_event.action, "edited", "launchpad webhook: bug field change maps to edited")
+
+  local comment_payload = {
+    action = "created",
+    target = "/confusio",
+    bug = "/bugs/1234",
+    bug_comment = "/bugs/1234/comments/5",
+    new = {
+      commenter = "/~fido",
+      content = "Woof, found the bug.",
+    },
+  }
+  local comment_event = app.backend.webhooks["bug:comment:0.1"](comment_payload)
+  eq(comment_event.event, "issue_comment", "launchpad webhook: comment maps to issue_comment")
+  eq(comment_event.action, "created", "launchpad webhook: comment created maps to created")
+  eq(comment_event.data.issue.number, 1234, "launchpad webhook: comment sets issue number")
+  eq(comment_event.data.comment.id, 5, "launchpad webhook: comment sets comment id")
+  eq(
+    comment_event.data.comment.body,
+    "Woof, found the bug.",
+    "launchpad webhook: comment sets body"
+  )
+  local comment_envelope = app.backend.webhook_translators.issue_comment(comment_event)
+  eq(
+    comment_envelope.type,
+    "issue.comment.created",
+    "launchpad webhook: normalized comment includes action"
+  )
+
   app.backend.rest = saved_rest
   app.backend.capabilities = saved_capabilities
   app.backend.webhooks = saved_webhooks

@@ -55,9 +55,19 @@ local LAUNCHPAD_ACTIONLESS_NORMALIZED_EVENTS = {
 local LAUNCHPAD_NORMALIZED_WEBHOOK_EVENTS = {
   "push",
   "ping",
+  "issues",
+  "issue_comment",
 }
 
 local ZERO_SHA = string.rep("0", 40)
+
+local LAUNCHPAD_BUG_ACTIONS = {
+  created = "opened",
+}
+
+local LAUNCHPAD_BUG_COMMENT_ACTIONS = {
+  created = "created",
+}
 
 -- Extract Launchpad username from an owner/assignee link like ".../~username".
 local function lp_login(link)
@@ -72,6 +82,10 @@ local function lp_webhook_repo_name(path)
   return (path or ""):match("/%+git/(.+)$") or (path or ""):match("/([^/]+)$") or ""
 end
 
+local function lp_webhook_target_name(path)
+  return (path or ""):match("/%+source/([^/]+)$") or (path or ""):match("/([^/]+)$") or ""
+end
+
 local function lp_webhook_user(login)
   login = login or ""
   return {
@@ -83,6 +97,10 @@ local function lp_webhook_user(login)
     html_url = login ~= "" and ("https://launchpad.net/~" .. login) or "",
     type = "User",
   }
+end
+
+local function lp_webhook_user_from_path(path)
+  return lp_webhook_user(lp_login(path))
 end
 
 local function lp_webhook_repository(payload)
@@ -104,6 +122,32 @@ local function lp_webhook_repository(payload)
     git_url = path ~= "" and ("git://git.launchpad.net/" .. path) or "",
     ssh_url = path ~= "" and ("git+ssh://git.launchpad.net/" .. path) or "",
     clone_url = path ~= "" and ("https://git.launchpad.net/" .. path) or "",
+    default_branch = "",
+  }
+end
+
+local function lp_webhook_target_repository(payload)
+  payload = payload or {}
+  local path = payload.target or ""
+  local name = lp_webhook_target_name(path)
+  local owner = lp_webhook_owner_login(path)
+  if owner == "" then
+    owner = "launchpad"
+  end
+  local full_name = owner ~= "" and name ~= "" and (owner .. "/" .. name) or name
+  local html_url = path ~= "" and ("https://launchpad.net" .. path) or ""
+  return {
+    id = 0,
+    node_id = "",
+    name = name,
+    full_name = full_name,
+    private = false,
+    owner = lp_webhook_user(owner),
+    html_url = html_url,
+    url = path,
+    git_url = "",
+    ssh_url = "",
+    clone_url = "",
     default_branch = "",
   }
 end
@@ -141,6 +185,70 @@ local function lp_webhook_sender(payload)
     login = lp_webhook_owner_login(payload.git_repository_path)
   end
   return lp_webhook_user(login)
+end
+
+local function lp_webhook_bug_id(path)
+  return tonumber((path or ""):match("/bugs/(%d+)")) or 0
+end
+
+local function lp_webhook_bug(payload)
+  payload = payload or {}
+  local bug_path = payload.bug or ""
+  local bug_id = lp_webhook_bug_id(bug_path)
+  local title = payload.title or (bug_id ~= 0 and ("Bug #" .. bug_id) or "")
+  return {
+    id = bug_id,
+    node_id = "",
+    number = bug_id,
+    title = title,
+    body = "",
+    state = "open",
+    user = lp_webhook_user_from_path(payload.owner or payload.owner_link),
+    assignees = {},
+    labels = {},
+    milestone = nil,
+    created_at = "",
+    updated_at = "",
+    closed_at = nil,
+    html_url = bug_path ~= "" and ("https://bugs.launchpad.net" .. bug_path) or "",
+  }
+end
+
+local function lp_webhook_bug_comment(payload)
+  payload = payload or {}
+  local comment_path = payload.bug_comment or ""
+  local new = payload.new or {}
+  local commenter = new.commenter or payload.commenter or ""
+  return {
+    id = tonumber((comment_path or ""):match("/comments/(%d+)$")) or 0,
+    node_id = "",
+    url = comment_path,
+    body = new.content or payload.content or "",
+    user = lp_webhook_user_from_path(commenter),
+    created_at = "",
+    updated_at = "",
+    html_url = comment_path ~= "" and ("https://bugs.launchpad.net" .. comment_path) or "",
+  }
+end
+
+local function lp_webhook_bug_action(raw_action)
+  if LAUNCHPAD_BUG_ACTIONS[raw_action] then
+    return LAUNCHPAD_BUG_ACTIONS[raw_action]
+  end
+  if (raw_action or ""):match("%-changed$") then
+    return "edited"
+  end
+  return nil
+end
+
+local function lp_webhook_bug_comment_action(raw_action)
+  if LAUNCHPAD_BUG_COMMENT_ACTIONS[raw_action] then
+    return LAUNCHPAD_BUG_COMMENT_ACTIONS[raw_action]
+  end
+  if (raw_action or ""):match("%-changed$") then
+    return "edited"
+  end
+  return nil
 end
 
 local function launchpad_normalized_payload_without_envelope_fields(data)
@@ -312,6 +420,49 @@ b:webhook("ping", function(payload)
       hook = payload.hook or {},
       repository = lp_webhook_repository(payload),
       sender = lp_webhook_sender(payload),
+    },
+    timestamp = "",
+  })
+end)
+
+b:webhook("bug:0.1", function(payload)
+  payload = payload or {}
+  local raw_action = payload.action or ""
+  local action = lp_webhook_bug_action(raw_action)
+  return make_internal_event({
+    event = "issues",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "launchpad",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      issue = lp_webhook_bug(payload),
+      repository = lp_webhook_target_repository(payload),
+      sender = lp_webhook_sender(payload),
+      target = payload.target or "",
+    },
+    timestamp = "",
+  })
+end)
+
+b:webhook("bug:comment:0.1", function(payload)
+  payload = payload or {}
+  local raw_action = payload.action or ""
+  local action = lp_webhook_bug_comment_action(raw_action)
+  return make_internal_event({
+    event = "issue_comment",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "launchpad",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      issue = lp_webhook_bug(payload),
+      comment = lp_webhook_bug_comment(payload),
+      repository = lp_webhook_target_repository(payload),
+      sender = lp_webhook_sender(payload),
+      target = payload.target or "",
     },
     timestamp = "",
   })
