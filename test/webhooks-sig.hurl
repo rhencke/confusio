@@ -216,6 +216,69 @@ HTTP 401
 [Asserts]
 jsonpath "$.message" == "Signature verification failed"
 
+# ── pagure: X-Pagure-Signature-256 SHA-256, X-Pagure-Signature SHA-512 ───────
+
+# Valid SHA-256 signature → passes verification (422)
+POST http://{{host}}/webhooks/pagure
+Content-Type: application/json
+X-Pagure-Signature-256: {{pagure_sig_256}}
+{}
+
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "No webhook handlers registered"
+
+# Valid SHA-512 signature → passes verification (422)
+POST http://{{host}}/webhooks/pagure
+Content-Type: application/json
+X-Pagure-Signature: {{pagure_sig_512}}
+{}
+
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "No webhook handlers registered"
+
+# Both valid signatures → passes verification (422)
+POST http://{{host}}/webhooks/pagure
+Content-Type: application/json
+X-Pagure-Signature-256: {{pagure_sig_256}}
+X-Pagure-Signature: {{pagure_sig_512}}
+{}
+
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "No webhook handlers registered"
+
+# Bad SHA-256 signature → 401
+POST http://{{host}}/webhooks/pagure
+Content-Type: application/json
+X-Pagure-Signature-256: deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# Bad SHA-512 signature paired with valid SHA-256 → 401
+POST http://{{host}}/webhooks/pagure
+Content-Type: application/json
+X-Pagure-Signature-256: {{pagure_sig_256}}
+X-Pagure-Signature: deadbeef
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# Missing signature header → 401
+POST http://{{host}}/webhooks/pagure
+Content-Type: application/json
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
 # ── azuredevops: Authorization: Basic base64(username:password) ──────────────
 
 # Valid Basic credentials → passes verification (422)
