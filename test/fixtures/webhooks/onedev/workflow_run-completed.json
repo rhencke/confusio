@@ -1,0 +1,26 @@
+{
+  "type": "BuildFinished",
+  "date": "2024-01-15T13:00:00Z",
+  "build": {
+    "id": 900,
+    "number": 22,
+    "jobName": "ci",
+    "status": "SUCCESSFUL",
+    "commitHash": "5a1e9f3d7c2b4a6e8f90123456789abcdef01234",
+    "refName": "refs/heads/main",
+    "submitDate": "2024-01-15T12:55:00Z",
+    "finishDate": "2024-01-15T13:00:00Z",
+    "project": {
+      "id": 100,
+      "path": "octocat/hello-world",
+      "public": true,
+      "defaultBranch": "main"
+    },
+    "submitter": {
+      "id": 1,
+      "name": "alice",
+      "fullName": "Alice Example",
+      "email": "alice@example.com"
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "type": "PullRequestCodeCommentCreated",
+  "activity": "code commented",
+  "date": "2024-01-15T12:20:00Z",
+  "request": {
+    "id": 500,
+    "number": 9,
+    "title": "Add new feature",
+    "description": "This PR adds a new feature.",
+    "status": "OPEN",
+    "sourceBranch": "feature",
+    "targetBranch": "main",
+    "submitDate": "2024-01-15T12:00:00Z",
+    "targetProject": {
+      "id": 100,
+      "path": "octocat/hello-world",
+      "public": true,
+      "defaultBranch": "main"
+    },
+    "sourceProject": {
+      "id": 100,
+      "path": "octocat/hello-world",
+      "public": true,
+      "defaultBranch": "main"
+    },
+    "submitter": {
+      "id": 1,
+      "name": "alice",
+      "fullName": "Alice Example",
+      "email": "alice@example.com"
+    }
+  },
+  "comment": {
+    "id": 77,
+    "content": "Please simplify this.",
+    "date": "2024-01-15T12:20:00Z",
+    "request": {
+      "id": 500,
+      "number": 9,
+      "targetProject": {
+        "id": 100,
+        "path": "octocat/hello-world",
+        "public": true,
+        "defaultBranch": "main"
+      }
+    },
+    "mark": {
+      "path": "src/app.lua",
+      "line": 12,
+      "commitHash": "5a1e9f3d7c2b4a6e8f90123456789abcdef01234"
+    },
+    "user": {
+      "id": 2,
+      "name": "bob",
+      "fullName": "Bob Example",
+      "email": "bob@example.com"
+    }
+  }
+}
