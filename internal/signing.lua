@@ -66,7 +66,7 @@ function sign_for_backend(backend, secret, body) -- luacheck: globals sign_for_b
   elseif backend == "harness" then
     return { ["X-Harness-Token"] = secret }
   elseif backend == "onedev" then
-    return { ["Authorization"] = "Bearer " .. secret }
+    return { ["X-OneDev-Signature"] = secret }
   elseif backend == "gerrit" or backend == "radicle" then
     return { ["Authorization"] = secret }
   elseif backend == "gitblit" then

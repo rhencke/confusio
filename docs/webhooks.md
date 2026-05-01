@@ -140,7 +140,7 @@ receiver implementation, and a brief note on the signature scheme used.  The
 | `kallithea` | `POST /webhooks/kallithea` | _(self-hosted)_ | kallithea | Shared secret in request body |
 | `launchpad` | `POST /webhooks/launchpad` | `https://launchpad.net` | launchpad | `X-Hub-Signature` HMAC-SHA1 |
 | `notabug` | `POST /webhooks/notabug` | `https://notabug.org` | gitea | `X-Gogs-Signature` HMAC-SHA256 |
-| `onedev` | `POST /webhooks/onedev` | _(self-hosted)_ | onedev | Shared secret in `Authorization: Bearer` header |
+| `onedev` | `POST /webhooks/onedev` | _(self-hosted)_ | onedev | Shared secret in `X-OneDev-Signature` header |
 | `pagure` | `POST /webhooks/pagure` | `https://pagure.io` | pagure | `X-Pagure-Signature` HMAC-SHA512 + `X-Pagure-Signature-256` HMAC-SHA256 |
 | `phabricator` | `POST /webhooks/phabricator` | _(self-hosted)_ | phabricator | `X-Phabricator-Webhook-Signature` HMAC-SHA256 (Conduit key) |
 | `radicle` | `POST /webhooks/radicle` | `https://radicle.xyz` | radicle | Shared secret in `Authorization` header |
@@ -234,7 +234,7 @@ Four distinct schemes appear across the 24 backends:
 | **HMAC-SHA512** | Signature = `HMAC-SHA512(secret, body)`, hex-encoded | pagure (SHA-512 header, older instances) |
 | **HMAC-SHA1** | Signature = `HMAC-SHA1(secret, body)`, hex-encoded | gitbucket (GitHub legacy compat), launchpad |
 | **Shared token** | Secret echoed verbatim in a header; constant-time string compare | gitlab, gitblit, harness, onedev, rhodecode, sourceforge, tuleap, kallithea |
-| **Bearer / Basic** | Secret in Authorization header (Bearer or Basic form) | onedev (Bearer), azuredevops (Basic), gerrit (Basic or Bearer), radicle (raw) |
+| **Bearer / Basic** | Secret in Authorization header (Bearer or Basic form) | azuredevops (Basic), gerrit (Basic or Bearer), radicle (raw) |
 | **Asymmetric / platform** | ed25519 or platform-managed certificate signing | sourcehut, codecommit |
 
 ### Quick reference
@@ -257,7 +257,7 @@ Four distinct schemes appear across the 24 backends:
 | `kallithea` | _(body field)_ | Body-embedded token | see notes |
 | `launchpad` | `X-Hub-Signature` | HMAC-SHA1 | `sha1=<hex>` |
 | `notabug` | `X-Gogs-Signature` | HMAC-SHA256 | `<hex>` |
-| `onedev` | `Authorization` | Bearer token | `Bearer <secret>` |
+| `onedev` | `X-OneDev-Signature` | Shared token | verbatim |
 | `pagure` | `X-Pagure-Signature-256` / `X-Pagure-Signature` | HMAC-SHA256 / HMAC-SHA512 | `<hex>` |
 | `phabricator` | `X-Phabricator-Webhook-Signature` | HMAC-SHA256 | `<hex>` |
 | `radicle` | `Authorization` | Shared token | verbatim |
@@ -553,16 +553,16 @@ accept if constant_time_equal(secret, received_token)
 
 ### OneDev (onedev)
 
-OneDev sends the shared secret in a Bearer authorization header.
+OneDev sends the shared secret verbatim in the `X-OneDev-Signature` header.
 
 ```
-Header:    Authorization
-Format:    Bearer <secret>
+Header:    X-OneDev-Signature
+Format:    <secret>
 ```
 
 ```
-secret   = configured shared secret
-received = value of Authorization header, with "Bearer " prefix stripped
+secret   = configured webhook secret
+received = value of X-OneDev-Signature header
 
 accept if constant_time_equal(secret, received)
 ```

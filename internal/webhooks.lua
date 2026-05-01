@@ -274,20 +274,16 @@ local function verify_signature(backend, secret, body, now)
     end
     return ct_equal(secret, tok)
 
-  -- OneDev: Authorization: Bearer <secret>
+  -- OneDev: X-OneDev-Signature, verbatim shared token
   elseif backend == "onedev" then
     if not secret or secret == "" then
       return true
     end
-    local auth = GetHeader("Authorization")
-    if not auth then
+    local tok = GetHeader("X-OneDev-Signature")
+    if not tok then
       return false
     end
-    local bearer = auth:match("^[Bb]earer (.+)$")
-    if not bearer then
-      return false
-    end
-    return ct_equal(secret, bearer)
+    return ct_equal(secret, tok)
 
   -- Radicle: Authorization header, raw verbatim token (no Bearer/Basic prefix)
   elseif backend == "radicle" then
