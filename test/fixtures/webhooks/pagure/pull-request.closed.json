@@ -13,6 +13,7 @@
       "commit_stop": "abc123",
       "date_created": "1705312800",
       "last_updated": "1705323600",
+      "full_url": "myorg/my-repo/pull-request/5",
       "user": {"name": "alice", "fullname": "Alice Smith", "url_path": "user/alice"},
       "repo_from": {
         "name": "my-repo",

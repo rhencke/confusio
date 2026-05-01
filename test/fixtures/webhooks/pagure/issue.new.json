@@ -8,9 +8,11 @@
       "content": "Something is broken",
       "status": "Open",
       "tags": [],
+      "milestone": "v1.0",
       "assignee": null,
       "date_created": "1705312800",
       "last_updated": "1705312800",
+      "full_url": "myorg/my-repo/issue/1",
       "user": {"name": "alice", "fullname": "Alice Smith", "url_path": "user/alice"}
     },
     "project": {

@@ -60,7 +60,7 @@ value is `y` or starts with `~`.  Concretely:
 | bitbucket_datacenter | 39 | 78 |
 | azuredevops | 80 | 79 |
 | onedev | 21 | 72 |
-| pagure | 24 | 73 |
+| pagure | 40 | 76 |
 | sourcehut | 19 | 68 |
 | harness | 17 | 72 |
 | gitblit | 16 | 74 |
@@ -917,6 +917,16 @@ Backends: `azuredevops`, `harness`, `gitbucket` (Tier 2 standing in for no publi
 These are less homogeneous — each needs its own setup script and potentially more overrides.
 `sourcehut` write endpoints are deferred until a paid subscription is in place; read-only
 endpoints can be enabled immediately.
+
+Pagure live webhook coverage should configure a Pagure hook with a payload secret and drive
+native deliveries for `issue.new`, `issue.edit`, `issue.status.change`, `issue.comment.added`,
+`pull-request.new`, `pull-request.updated`, `pull-request.closed`, `git.receive`, and
+`project.forked`.  The `git.receive` cases should cover a normal push, branch or tag creation,
+and branch or tag deletion so the derived GitHub `push`, `create`, and `delete` events are all
+asserted.  Each run should check both GitHub-emulation delivery and the confusio-normalized
+shape, including `X-Pagure-Event`, `X-Confusio-Source: pagure`, and the preferred
+`X-Pagure-Signature-256` verification path with the SHA-512 fallback kept in mock-backed
+signature tests.
 
 **Exit criteria**: all enabled backends pass two consecutive weekly runs.
 
