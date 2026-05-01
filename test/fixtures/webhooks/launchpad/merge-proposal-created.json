@@ -1,0 +1,14 @@
+{
+  "action": "created",
+  "merge_proposal": "/~fido/confusio/+git/feature/+merge/42",
+  "new": {
+    "commit_message": "Add the good feature",
+    "description": "Please merge this branch.",
+    "queue_status": "Needs review",
+    "registrant": "/~fido",
+    "source_git_path": "~fido/confusio/+git/feature",
+    "source_git_repository": "/~fido/confusio/+git/feature",
+    "target_git_path": "~fido/confusio/+git/main",
+    "target_git_repository": "/~fido/confusio/+git/main"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "action": "status-changed",
+  "snap": "/~fido/+snap/confusio",
+  "snap_build": "/~fido/+snap/confusio/+build/88",
+  "status": "Successfully built",
+  "store_upload_status": "Uploaded"
+}

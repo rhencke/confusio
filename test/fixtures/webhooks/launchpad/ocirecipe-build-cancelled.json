@@ -1,0 +1,6 @@
+{
+  "action": "status-changed",
+  "ocirecipe": "/~fido/+oci/confusio",
+  "ocirecipe_build": "/~fido/+oci/confusio/+build/89",
+  "status": "Cancelled build"
+}
