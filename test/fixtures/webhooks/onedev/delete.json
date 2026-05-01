@@ -1,0 +1,19 @@
+{
+  "type": "RefUpdated",
+  "date": "2024-01-15T10:07:00Z",
+  "refName": "refs/heads/stale-branch",
+  "oldCommitId": "95790bf891e76fee5db5ef17d2523a6f6e048239",
+  "newCommitId": "0000000000000000000000000000000000000000",
+  "project": {
+    "id": 100,
+    "path": "octocat/hello-world",
+    "public": true,
+    "defaultBranch": "main"
+  },
+  "user": {
+    "id": 1,
+    "name": "alice",
+    "fullName": "Alice Example",
+    "email": "alice@example.com"
+  }
+}

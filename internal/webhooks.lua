@@ -274,20 +274,16 @@ local function verify_signature(backend, secret, body, now)
     end
     return ct_equal(secret, tok)
 
-  -- OneDev: Authorization: Bearer <secret>
+  -- OneDev: X-OneDev-Signature, verbatim shared token
   elseif backend == "onedev" then
     if not secret or secret == "" then
       return true
     end
-    local auth = GetHeader("Authorization")
-    if not auth then
+    local tok = GetHeader("X-OneDev-Signature")
+    if not tok then
       return false
     end
-    local bearer = auth:match("^[Bb]earer (.+)$")
-    if not bearer then
-      return false
-    end
-    return ct_equal(secret, bearer)
+    return ct_equal(secret, tok)
 
   -- Radicle: Authorization header, raw verbatim token (no Bearer/Basic prefix)
   elseif backend == "radicle" then
@@ -519,6 +515,7 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
     --   Azure DevOps and Harness use payload.eventType.
     --   Gitblit uses payload.event (e.g. "post-receive").
     --   Gerrit uses payload.type (e.g. "comment-added").
+    --   OneDev uses payload.type (e.g. "RefUpdated").
     --   Kallithea hook plugins embed an event/hook name in the JSON body.
     local ev = event_header(backend)
     if ev == nil and type(payload) == "table" then
@@ -526,7 +523,7 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
         ev = payload.eventType
       elseif backend == "gitblit" and payload.event then
         ev = payload.event
-      elseif backend == "gerrit" and payload.type then
+      elseif (backend == "gerrit" or backend == "onedev") and payload.type then
         ev = payload.type
       elseif backend == "kallithea" then
         ev = kallithea_body_event(payload)

@@ -1,0 +1,24 @@
+{
+  "type": "PackPublished",
+  "date": "2024-01-15T14:00:00Z",
+  "url": "http://localhost/octocat/hello-world/~packages/npm/hello-world/1.0.0",
+  "pack": {
+    "id": 300,
+    "name": "hello-world",
+    "version": "1.0.0",
+    "type": "npm",
+    "publishDate": "2024-01-15T14:00:00Z",
+    "project": {
+      "id": 100,
+      "path": "octocat/hello-world",
+      "public": true,
+      "defaultBranch": "main"
+    },
+    "user": {
+      "id": 1,
+      "name": "alice",
+      "fullName": "Alice Example",
+      "email": "alice@example.com"
+    }
+  }
+}

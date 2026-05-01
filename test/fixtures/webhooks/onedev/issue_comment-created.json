@@ -1,0 +1,37 @@
+{
+  "type": "IssueCommentCreated",
+  "activity": "commented",
+  "date": "2024-01-15T11:20:00Z",
+  "comment": {
+    "id": 42,
+    "content": "Confirmed, I can reproduce this.",
+    "date": "2024-01-15T11:20:00Z",
+    "issue": {
+      "id": 200,
+      "number": 7,
+      "title": "Bug report",
+      "description": "Something is broken",
+      "state": "Open",
+      "submitDate": "2024-01-15T10:55:00Z",
+      "updateDate": "2024-01-15T11:20:00Z",
+      "project": {
+        "id": 100,
+        "path": "octocat/hello-world",
+        "public": true,
+        "defaultBranch": "main"
+      },
+      "submitter": {
+        "id": 1,
+        "name": "alice",
+        "fullName": "Alice Example",
+        "email": "alice@example.com"
+      }
+    },
+    "user": {
+      "id": 2,
+      "name": "bob",
+      "fullName": "Bob Example",
+      "email": "bob@example.com"
+    }
+  }
+}

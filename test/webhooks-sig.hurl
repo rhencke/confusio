@@ -10,6 +10,7 @@
 #   azuredevops_basic — base64("fido:webhooksecret") for Authorization: Basic
 #   gerrit_tok  — the shared secret verbatim or as Bearer token (for Authorization)
 #   gerrit_basic — base64("webhooksecret") for Authorization: Basic
+#   onedev_tok — the shared secret verbatim (for X-OneDev-Signature)
 #   kallithea — shared secret is embedded in the request body
 #   confusio_sig — "sha256=<hex>, v=1, ts=<ts>" (for X-Confusio-Signature-256)
 #
@@ -290,6 +291,47 @@ jsonpath "$.message" == "Signature verification failed"
 
 # Missing Authorization header → 401
 POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# ── onedev: X-OneDev-Signature, verbatim shared token ────────────────────────
+
+# Valid token → passes verification (422)
+POST http://{{host}}/webhooks/onedev
+Content-Type: application/json
+X-OneDev-Signature: {{onedev_tok}}
+{}
+
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "No webhook handlers registered"
+
+# Bad token → 401
+POST http://{{host}}/webhooks/onedev
+Content-Type: application/json
+X-OneDev-Signature: wrongtoken
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# Bearer Authorization is not OneDev's native webhook signature → 401
+POST http://{{host}}/webhooks/onedev
+Content-Type: application/json
+Authorization: Bearer {{onedev_tok}}
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# Missing signature header → 401
+POST http://{{host}}/webhooks/onedev
 Content-Type: application/json
 {}
 

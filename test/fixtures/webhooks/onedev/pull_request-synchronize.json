@@ -1,0 +1,40 @@
+{
+  "type": "PullRequestChanged",
+  "activity": "added commits",
+  "date": "2024-01-15T12:10:00Z",
+  "request": {
+    "id": 500,
+    "number": 9,
+    "title": "Add new feature",
+    "description": "This PR adds a new feature.",
+    "status": "OPEN",
+    "sourceBranch": "feature",
+    "targetBranch": "main",
+    "submitDate": "2024-01-15T12:00:00Z",
+    "targetProject": {
+      "id": 100,
+      "path": "octocat/hello-world",
+      "public": true,
+      "defaultBranch": "main"
+    },
+    "sourceProject": {
+      "id": 100,
+      "path": "octocat/hello-world",
+      "public": true,
+      "defaultBranch": "main"
+    },
+    "submitter": {
+      "id": 1,
+      "name": "alice",
+      "fullName": "Alice Example",
+      "email": "alice@example.com"
+    },
+    "latestUpdate": {
+      "headCommitHash": "71ee8f3d7c2b4a6e8f90123456789abcdef01234",
+      "targetHeadCommitHash": "95790bf891e76fee5db5ef17d2523a6f6e048239"
+    },
+    "lastActivity": {
+      "date": "2024-01-15T12:10:00Z"
+    }
+  }
+}

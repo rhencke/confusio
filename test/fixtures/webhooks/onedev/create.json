@@ -1,0 +1,19 @@
+{
+  "type": "RefUpdated",
+  "date": "2024-01-15T10:06:00Z",
+  "refName": "refs/heads/feature-branch",
+  "oldCommitId": "0000000000000000000000000000000000000000",
+  "newCommitId": "5a1e9f3d7c2b4a6e8f90123456789abcdef01234",
+  "project": {
+    "id": 100,
+    "path": "octocat/hello-world",
+    "public": true,
+    "defaultBranch": "main"
+  },
+  "user": {
+    "id": 1,
+    "name": "alice",
+    "fullName": "Alice Example",
+    "email": "alice@example.com"
+  }
+}

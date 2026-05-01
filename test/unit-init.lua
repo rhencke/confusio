@@ -3036,27 +3036,23 @@ do
   )
   eq(with_secret("harness", {}), 401, "verify_signature harness: missing X-Harness-Token → 401")
 
-  -- ── Bearer token: onedev (Authorization: Bearer <secret>)
+  -- ── OneDev: X-OneDev-Signature, verbatim shared token
   ok(no_secret("onedev", {}) ~= 401, "verify_signature onedev: no secret → not 401")
   ok(
-    with_secret("onedev", { ["Authorization"] = "Bearer " .. SECRET }) ~= 401,
-    "verify_signature onedev: valid Bearer token → not 401"
-  )
-  ok(
-    with_secret("onedev", { ["Authorization"] = "bearer " .. SECRET }) ~= 401,
-    "verify_signature onedev: Bearer scheme is case-insensitive → not 401"
+    with_secret("onedev", { ["X-OneDev-Signature"] = SECRET }) ~= 401,
+    "verify_signature onedev: valid X-OneDev-Signature → not 401"
   )
   eq(
-    with_secret("onedev", { ["Authorization"] = "Bearer badtoken" }),
+    with_secret("onedev", { ["X-OneDev-Signature"] = "badtoken" }),
     401,
-    "verify_signature onedev: bad Bearer token → 401"
+    "verify_signature onedev: bad X-OneDev-Signature → 401"
   )
   eq(
-    with_secret("onedev", { ["Authorization"] = "Basic " .. SECRET }),
+    with_secret("onedev", { ["Authorization"] = "Bearer " .. SECRET }),
     401,
-    "verify_signature onedev: non-Bearer scheme → 401"
+    "verify_signature onedev: Authorization header is ignored → 401"
   )
-  eq(with_secret("onedev", {}), 401, "verify_signature onedev: missing Authorization → 401")
+  eq(with_secret("onedev", {}), 401, "verify_signature onedev: missing X-OneDev-Signature → 401")
 
   -- ── Verbatim Authorization header: radicle (raw token, no prefix)
   ok(no_secret("radicle", {}) ~= 401, "verify_signature radicle: no secret → not 401")
@@ -3374,6 +3370,15 @@ do
   -- GitLab: verbatim token.
   local sfb_gl = sign_for_backend("gitlab", SECRET, BODY)
   eq(sfb_gl["X-Gitlab-Token"], SECRET, "sign_for_backend gitlab: X-Gitlab-Token is the secret")
+
+  -- OneDev: verbatim token in X-OneDev-Signature.
+  local sfb_onedev = sign_for_backend("onedev", SECRET, BODY)
+  eq(
+    sfb_onedev["X-OneDev-Signature"],
+    SECRET,
+    "sign_for_backend onedev: X-OneDev-Signature is the secret"
+  )
+  ok(sfb_onedev["Authorization"] == nil, "sign_for_backend onedev: no Authorization header")
 
   -- HMAC-SHA1 via X-Hub-Signature.
   for _, be in ipairs({ "gitbucket", "launchpad" }) do
