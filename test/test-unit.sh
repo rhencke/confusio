@@ -44,6 +44,20 @@ wait_port() {
   done
 }
 
+wait_http() {
+  local name="$1"
+  local port="$2"
+  local i=0
+  while ! curl -sS -o /dev/null --connect-timeout 1 --max-time 1 "http://localhost:$port/" 2>/dev/null; do
+    sleep 0.05
+    i=$((i + 1))
+    [ $i -lt 100 ] || {
+      echo "$name did not answer HTTP in time" >&2
+      exit 1
+    }
+  done
+}
+
 run_hurl() {
   $HURL --retry 10 --retry-interval 200 --connect-timeout 1 --max-time 5 \
     --variable host=localhost:$CONFUSIO_PORT "$1"
@@ -84,7 +98,7 @@ run_delivery_phase() {
   # in the delivery target.  The hurl file's opening /reset can then safely clear them.
   wait_port "mock target" "$DELIVERY_TARGET_PORT"
   wait_port "mock gitea" "$MOCK_PORT"
-  wait_port "confusio" "$CONFUSIO_PORT"
+  wait_http "confusio" "$CONFUSIO_PORT"
   # Do not pass --retry here: these hurl files contain non-idempotent webhook POSTs.
   # Retrying a POST after a transient assertion/transport failure records duplicate
   # deliveries in the mock target and turns the next count assertion into a false
