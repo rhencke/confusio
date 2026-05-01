@@ -738,26 +738,114 @@ end
 local function onedev_event_repo(payload)
   payload = payload or {}
   return translate_onedev_repo(
-    payload.project or (payload.build or {}).project or (payload.pack or {}).project or {}
+    payload.project
+      or (payload.issue or {}).project
+      or ((payload.comment or {}).issue or {}).project
+      or (payload.build or {}).project
+      or (payload.pack or {}).project
+      or {}
   )
 end
 
 local function onedev_event_sender(payload)
   payload = payload or {}
   return translate_onedev_user(
-    payload.user or (payload.build or {}).submitter or (payload.pack or {}).user or {}
+    payload.user
+      or (payload.issue or {}).submitter
+      or (payload.comment or {}).user
+      or (payload.build or {}).submitter
+      or (payload.pack or {}).user
+      or {}
   )
 end
 
 local function onedev_event_timestamp(payload, fallback)
   payload = payload or {}
   return payload.date
+    or (payload.issue or {}).updateDate
+    or (payload.issue or {}).submitDate
+    or (payload.comment or {}).date
     or (payload.build or {}).statusDate
     or (payload.build or {}).finishDate
     or (payload.build or {}).submitDate
     or (payload.pack or {}).publishDate
     or fallback
     or ""
+end
+
+local function onedev_event_issue(payload)
+  payload = payload or {}
+  return translate_onedev_issue(payload.issue or ((payload.comment or {}).issue or {}))
+end
+
+local ONEDEV_ISSUE_ACTIONS = {
+  IssueOpened = "opened",
+  IssueChanged = "edited",
+}
+
+local function onedev_issue_changed_action(payload)
+  local raw_activity = payload.activity or ""
+  local change_data = ((payload.change or {}).data or {})
+  local old_state = change_data.oldState or ""
+  local new_state = change_data.newState or raw_activity:match("^changed state to '(.+)'$") or ""
+  if raw_activity == "opened" then
+    return "opened"
+  elseif raw_activity == "closed" or (new_state ~= "" and new_state ~= "Open") then
+    return "closed"
+  elseif
+    raw_activity == "reopened"
+    or (old_state ~= "" and old_state ~= "Open" and new_state == "Open")
+    or (old_state == "" and new_state == "Open")
+  then
+    return "reopened"
+  else
+    return ONEDEV_ISSUE_ACTIONS[payload.type or ""] or "unknown"
+  end
+end
+
+local function onedev_issue_webhook(payload)
+  payload = payload or {}
+  local action = onedev_issue_changed_action(payload)
+  return make_internal_event({
+    event = "issues",
+    action = action,
+    raw_action = action == "unknown" and (payload.activity or payload.type or "") or nil,
+    provider = config.backend,
+    raw = payload,
+    data = {
+      action = action,
+      issue = onedev_event_issue(payload),
+      repository = onedev_event_repo(payload),
+      sender = onedev_event_sender(payload),
+    },
+    timestamp = onedev_event_timestamp(payload),
+  })
+end
+
+local ONEDEV_ISSUE_COMMENT_ACTIONS = {
+  IssueCommentCreated = "created",
+  IssueCommentEdited = "edited",
+}
+
+local function onedev_issue_comment_webhook(payload)
+  payload = payload or {}
+  local raw_action = payload.activity or payload.type or ""
+  local action = ONEDEV_ISSUE_COMMENT_ACTIONS[payload.type or ""] or "unknown"
+  return make_internal_event({
+    event = "issue_comment",
+    action = action,
+    raw_action = action == "unknown" and raw_action or nil,
+    provider = config.backend,
+    raw = payload,
+    data = {
+      action = action,
+      issue = onedev_event_issue(payload),
+      comment = translate_onedev_issue_comment(payload.comment or {}),
+      repository = onedev_event_repo(payload),
+      sender = onedev_event_sender(payload),
+    },
+    timestamp = onedev_event_timestamp(payload),
+  })
 end
 
 local function onedev_ref_updated_webhook(payload)
@@ -960,6 +1048,10 @@ local function onedev_package_webhook(payload)
 end
 
 b:webhook("RefUpdated", onedev_ref_updated_webhook)
+b:webhook("IssueOpened", onedev_issue_webhook)
+b:webhook("IssueChanged", onedev_issue_webhook)
+b:webhook("IssueCommentCreated", onedev_issue_comment_webhook)
+b:webhook("IssueCommentEdited", onedev_issue_comment_webhook)
 
 for _, event in ipairs({
   "BuildSubmitted",
@@ -984,6 +1076,8 @@ local ONEDEV_NORMALIZED_WEBHOOK_EVENTS = {
   "create",
   "delete",
   "push",
+  "issues",
+  "issue_comment",
   "workflow_run",
   "package",
 }
