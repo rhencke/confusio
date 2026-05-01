@@ -163,6 +163,113 @@ local function translate_onedev_issue_comment(c)
   }
 end
 
+local function translate_onedev_pr_branch(project, branch, sha)
+  return {
+    label = branch or "",
+    ref = branch or "",
+    sha = sha or "",
+    repo = project and translate_onedev_repo(project) or nil,
+  }
+end
+
+local function onedev_pr_url(project, number)
+  local path = (project or {}).path or ""
+  if path == "" or not number then
+    return ""
+  end
+  return config.base_url .. "/" .. path .. "/~pulls/" .. number
+end
+
+local function translate_onedev_pull_request(pr)
+  if not pr then
+    return {}
+  end
+  local target_project = pr.targetProject or pr.project or {}
+  local source_project = pr.sourceProject or target_project
+  local latest_update = pr.latestUpdate or {}
+  local status = pr.status or "OPEN"
+  return {
+    id = pr.id or 0,
+    node_id = "",
+    number = pr.number or pr.id or 0,
+    state = status == "OPEN" and "open" or "closed",
+    locked = false,
+    title = pr.title or "",
+    body = pr.description or "",
+    user = translate_onedev_user(pr.submitter or {}),
+    head = translate_onedev_pr_branch(
+      source_project,
+      pr.sourceBranch,
+      latest_update.headCommitHash or pr.buildCommitHash or ""
+    ),
+    base = translate_onedev_pr_branch(
+      target_project,
+      pr.targetBranch,
+      latest_update.targetHeadCommitHash or pr.baseCommitHash or ""
+    ),
+    draft = false,
+    created_at = pr.submitDate or "",
+    updated_at = (pr.lastActivity or {}).date or pr.closeDate or pr.submitDate or "",
+    closed_at = pr.closeDate,
+    merged_at = status == "MERGED" and pr.closeDate or nil,
+    merge_commit_sha = (pr.mergePreview or {}).mergeCommitHash or "",
+    merged_by = nil,
+    diff_url = "",
+    patch_url = "",
+    html_url = onedev_pr_url(target_project, pr.number or pr.id),
+    url = "",
+    mergeable = nil,
+    comments = pr.commentCount or 0,
+    review_comments = 0,
+    additions = 0,
+    deletions = 0,
+    changed_files = 0,
+    labels = {},
+    assignees = {},
+    requested_reviewers = {},
+  }
+end
+
+local function translate_onedev_pr_comment(c)
+  if not c then
+    return {}
+  end
+  return {
+    id = c.id or 0,
+    node_id = "",
+    url = "",
+    body = c.content or "",
+    user = translate_onedev_user(c.user or {}),
+    created_at = c.date or "",
+    updated_at = c.date or "",
+    html_url = "",
+  }
+end
+
+local function translate_onedev_pr_review_comment(c, reply)
+  c = c or {}
+  reply = reply or {}
+  local mark = c.mark or c.compareContext or {}
+  local body_source = next(reply) and reply or c
+  return {
+    id = body_source.id or c.id or 0,
+    node_id = "",
+    path = mark.path or mark.newPath or mark.oldPath or c.path or "",
+    position = mark.line or mark.newLine or c.line,
+    original_position = mark.oldLine,
+    commit_id = mark.commitHash or mark.newCommitHash or c.commitHash or "",
+    original_commit_id = mark.oldCommitHash or "",
+    diff_hunk = "",
+    body = body_source.content or "",
+    user = translate_onedev_user(body_source.user or c.user or {}),
+    created_at = body_source.date or c.createDate or "",
+    updated_at = body_source.date or c.createDate or "",
+    html_url = "",
+    pull_request_url = "",
+    url = "",
+  }
+end
+
 -- Translate a OneDev branch object to GitHub format.
 -- OneDev: { name, commitHash }
 local function translate_onedev_branch(b)
@@ -741,6 +848,8 @@ local function onedev_event_repo(payload)
     payload.project
       or (payload.issue or {}).project
       or ((payload.comment or {}).issue or {}).project
+      or (payload.request or {}).targetProject
+      or ((payload.comment or {}).request or {}).targetProject
       or (payload.build or {}).project
       or (payload.pack or {}).project
       or {}
@@ -753,6 +862,9 @@ local function onedev_event_sender(payload)
     payload.user
       or (payload.issue or {}).submitter
       or (payload.comment or {}).user
+      or payload.assignee
+      or payload.reviewer
+      or (payload.request or {}).submitter
       or (payload.build or {}).submitter
       or (payload.pack or {}).user
       or {}
@@ -765,6 +877,9 @@ local function onedev_event_timestamp(payload, fallback)
     or (payload.issue or {}).updateDate
     or (payload.issue or {}).submitDate
     or (payload.comment or {}).date
+    or (payload.request or {}).closeDate
+    or ((payload.request or {}).lastActivity or {}).date
+    or (payload.request or {}).submitDate
     or (payload.build or {}).statusDate
     or (payload.build or {}).finishDate
     or (payload.build or {}).submitDate
@@ -776,6 +891,41 @@ end
 local function onedev_event_issue(payload)
   payload = payload or {}
   return translate_onedev_issue(payload.issue or ((payload.comment or {}).issue or {}))
+end
+
+local function onedev_event_pull_request(payload)
+  payload = payload or {}
+  return translate_onedev_pull_request(payload.request or ((payload.comment or {}).request or {}))
+end
+
+local function onedev_pull_request_issue(pr)
+  pr = pr or {}
+  local target_project = pr.targetProject or pr.project or {}
+  local status = pr.status or "OPEN"
+  local url = onedev_pr_url(target_project, pr.number or pr.id)
+  return {
+    id = pr.id or 0,
+    node_id = "",
+    number = pr.number or pr.id or 0,
+    title = pr.title or "",
+    body = pr.description or "",
+    state = status == "OPEN" and "open" or "closed",
+    user = translate_onedev_user(pr.submitter or {}),
+    assignees = {},
+    labels = {},
+    milestone = nil,
+    created_at = pr.submitDate or "",
+    updated_at = (pr.lastActivity or {}).date or pr.closeDate or pr.submitDate or "",
+    closed_at = pr.closeDate,
+    html_url = url,
+    pull_request = {
+      url = "",
+      html_url = url,
+      diff_url = "",
+      patch_url = "",
+      merged_at = status == "MERGED" and pr.closeDate or nil,
+    },
+  }
 end
 
 local ONEDEV_ISSUE_ACTIONS = {
@@ -841,6 +991,116 @@ local function onedev_issue_comment_webhook(payload)
       action = action,
       issue = onedev_event_issue(payload),
       comment = translate_onedev_issue_comment(payload.comment or {}),
+      repository = onedev_event_repo(payload),
+      sender = onedev_event_sender(payload),
+    },
+    timestamp = onedev_event_timestamp(payload),
+  })
+end
+
+local ONEDEV_PULL_REQUEST_ACTIONS = {
+  PullRequestOpened = "opened",
+  PullRequestUpdated = "synchronize",
+  PullRequestBuildCommitUpdated = "synchronize",
+  PullRequestMergePreviewUpdated = "synchronize",
+  PullRequestAssigned = "assigned",
+  PullRequestUnassigned = "unassigned",
+  PullRequestReviewRequested = "review_requested",
+  PullRequestReviewerRemoved = "review_request_removed",
+  PullRequestDeleted = "unknown",
+  PullRequestsDeleted = "unknown",
+  PullRequestTouched = "edited",
+  PullRequestCheckFailed = "edited",
+  PullRequestBuildEvent = "edited",
+}
+
+local function onedev_pull_request_changed_action(payload)
+  local raw_activity = payload.activity or ""
+  if raw_activity == "merged" or raw_activity == "discarded" then
+    return "closed"
+  elseif raw_activity == "reopened" then
+    return "reopened"
+  elseif raw_activity == "added commits" then
+    return "synchronize"
+  elseif raw_activity:match("^changed ") then
+    return "edited"
+  end
+  return ONEDEV_PULL_REQUEST_ACTIONS[payload.type or ""] or "unknown"
+end
+
+local function onedev_pull_request_webhook(payload)
+  payload = payload or {}
+  local action = onedev_pull_request_changed_action(payload)
+  local data = {
+    action = action,
+    number = (payload.request or {}).number,
+    pull_request = onedev_event_pull_request(payload),
+    repository = onedev_event_repo(payload),
+    sender = onedev_event_sender(payload),
+  }
+  if action == "assigned" or action == "unassigned" then
+    data.assignee = translate_onedev_user(payload.assignee or {})
+  elseif action == "review_requested" or action == "review_request_removed" then
+    data.requested_reviewer = translate_onedev_user(payload.reviewer or {})
+  end
+  return make_internal_event({
+    event = "pull_request",
+    action = action,
+    raw_action = action == "unknown" and (payload.activity or payload.type or "") or nil,
+    provider = config.backend,
+    raw = payload,
+    data = data,
+    timestamp = onedev_event_timestamp(payload),
+  })
+end
+
+local ONEDEV_PR_COMMENT_ACTIONS = {
+  PullRequestCommentCreated = "created",
+  PullRequestCommentEdited = "edited",
+}
+
+local function onedev_pull_request_comment_webhook(payload)
+  payload = payload or {}
+  local raw_action = payload.activity or payload.type or ""
+  local action = ONEDEV_PR_COMMENT_ACTIONS[payload.type or ""] or "unknown"
+  local request = payload.request or (payload.comment or {}).request or {}
+  return make_internal_event({
+    event = "issue_comment",
+    action = action,
+    raw_action = action == "unknown" and raw_action or nil,
+    provider = config.backend,
+    raw = payload,
+    data = {
+      action = action,
+      issue = onedev_pull_request_issue(request),
+      comment = translate_onedev_pr_comment(payload.comment or {}),
+      repository = onedev_event_repo(payload),
+      sender = onedev_event_sender(payload),
+    },
+    timestamp = onedev_event_timestamp(payload),
+  })
+end
+
+local ONEDEV_PR_REVIEW_COMMENT_ACTIONS = {
+  PullRequestCodeCommentCreated = "created",
+  PullRequestCodeCommentReplyCreated = "created",
+  PullRequestCodeCommentStatusChanged = "edited",
+}
+
+local function onedev_pull_request_review_comment_webhook(payload)
+  payload = payload or {}
+  local raw_action = payload.activity or payload.type or ""
+  local action = ONEDEV_PR_REVIEW_COMMENT_ACTIONS[payload.type or ""] or "unknown"
+  return make_internal_event({
+    event = "pull_request_review_comment",
+    action = action,
+    raw_action = action == "unknown" and raw_action or nil,
+    provider = config.backend,
+    raw = payload,
+    data = {
+      action = action,
+      comment = translate_onedev_pr_review_comment(payload.comment or {}, payload.reply or {}),
+      pull_request = onedev_event_pull_request(payload),
       repository = onedev_event_repo(payload),
       sender = onedev_event_sender(payload),
     },
@@ -1054,6 +1314,31 @@ b:webhook("IssueCommentCreated", onedev_issue_comment_webhook)
 b:webhook("IssueCommentEdited", onedev_issue_comment_webhook)
 
 for _, event in ipairs({
+  "PullRequestOpened",
+  "PullRequestChanged",
+  "PullRequestUpdated",
+  "PullRequestBuildCommitUpdated",
+  "PullRequestMergePreviewUpdated",
+  "PullRequestAssigned",
+  "PullRequestUnassigned",
+  "PullRequestReviewRequested",
+  "PullRequestReviewerRemoved",
+  "PullRequestDeleted",
+  "PullRequestsDeleted",
+  "PullRequestTouched",
+  "PullRequestCheckFailed",
+  "PullRequestBuildEvent",
+}) do
+  b:webhook(event, onedev_pull_request_webhook)
+end
+
+b:webhook("PullRequestCommentCreated", onedev_pull_request_comment_webhook)
+b:webhook("PullRequestCommentEdited", onedev_pull_request_comment_webhook)
+b:webhook("PullRequestCodeCommentCreated", onedev_pull_request_review_comment_webhook)
+b:webhook("PullRequestCodeCommentReplyCreated", onedev_pull_request_review_comment_webhook)
+b:webhook("PullRequestCodeCommentStatusChanged", onedev_pull_request_review_comment_webhook)
+
+for _, event in ipairs({
   "BuildSubmitted",
   "BuildPending",
   "BuildRunning",
@@ -1078,6 +1363,8 @@ local ONEDEV_NORMALIZED_WEBHOOK_EVENTS = {
   "push",
   "issues",
   "issue_comment",
+  "pull_request",
+  "pull_request_review_comment",
   "workflow_run",
   "package",
 }
