@@ -179,3 +179,89 @@ jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:00:00Z"
 jsonpath "$[0].body_json.actor.login" == "bob"
 jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
 jsonpath "$[0].body_json.payload.after" == "f1d2d2f924e986ac86fdf7b36c94bcdf32beec15"
+
+# ── git.receive (create) → create — confusio shape ───────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/pagure
+Content-Type: application/json
+X-Pagure-Event: git.receive
+file,fixtures/webhooks/pagure/create.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "create"
+jsonpath "$[0].confusio_source" == "pagure"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "create"
+jsonpath "$[0].body_json.actor.login" == "bob"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.ref" == "feature-branch"
+jsonpath "$[0].body_json.payload.ref_type" == "branch"
+
+# ── git.receive (delete) → delete — confusio shape ───────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/pagure
+Content-Type: application/json
+X-Pagure-Event: git.receive
+file,fixtures/webhooks/pagure/delete.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "delete"
+jsonpath "$[0].confusio_source" == "pagure"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "delete"
+jsonpath "$[0].body_json.actor.login" == "bob"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.ref" == "stale-branch"
+jsonpath "$[0].body_json.payload.ref_type" == "branch"
+
+# ── project.forked → fork — confusio shape ───────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/pagure
+Content-Type: application/json
+X-Pagure-Event: project.forked
+file,fixtures/webhooks/pagure/fork.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "fork"
+jsonpath "$[0].confusio_source" == "pagure"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "fork"
+jsonpath "$[0].body_json.actor.login" == "bob"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.payload.forkee.full_name" == "forks/bob/hello-world"
