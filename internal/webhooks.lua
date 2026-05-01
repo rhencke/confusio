@@ -223,6 +223,18 @@ local function verify_signature(backend, secret, body, now)
     end
     return ct_equal("sha1=" .. hmac_hex("sha1", secret, body), sig)
 
+  -- Launchpad: X-Hub-Signature, HMAC-SHA1, prefix "sha1="
+  -- Signature header is present only when the Launchpad webhook has a secret.
+  elseif backend == "launchpad" then
+    if not secret or secret == "" then
+      return true
+    end
+    local sig = GetHeader("X-Hub-Signature")
+    if not sig then
+      return false
+    end
+    return ct_equal("sha1=" .. hmac_hex("sha1", secret, body), sig)
+
   -- Phabricator: X-Phabricator-Webhook-Signature, HMAC-SHA256, no prefix
   elseif backend == "phabricator" then
     if not secret or secret == "" then
@@ -409,11 +421,11 @@ local function verify_signature(backend, secret, body, now)
     local basestring = "v1:" .. ts_str .. ":" .. body
     return ct_equal(hmac_hex("sha256", secret, basestring), hex)
 
-  -- CodeCommit (SNS X.509), Sourcehut (ed25519), Launchpad (OpenPGP):
+  -- CodeCommit (SNS X.509), Sourcehut (ed25519):
   -- Complex asymmetric and platform-managed schemes not yet implemented.
   -- Trust-the-network when no secret configured; reject otherwise so operators
   -- restrict access via network policy until full verification ships.
-  elseif backend == "codecommit" or backend == "sourcehut" or backend == "launchpad" then
+  elseif backend == "codecommit" or backend == "sourcehut" then
     return not secret or secret == ""
   else
     return false

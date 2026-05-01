@@ -138,7 +138,7 @@ receiver implementation, and a brief note on the signature scheme used.  The
 | `gogs` | `POST /webhooks/gogs` | `https://try.gogs.io` | gitea | `X-Gogs-Signature` HMAC-SHA256 |
 | `harness` | `POST /webhooks/harness` | `https://app.harness.io` | harness | Shared secret in `X-Harness-Token` header |
 | `kallithea` | `POST /webhooks/kallithea` | _(self-hosted)_ | kallithea | Shared secret in request body |
-| `launchpad` | `POST /webhooks/launchpad` | `https://launchpad.net` | launchpad | OpenPGP-signed payload |
+| `launchpad` | `POST /webhooks/launchpad` | `https://launchpad.net` | launchpad | `X-Hub-Signature` HMAC-SHA1 |
 | `notabug` | `POST /webhooks/notabug` | `https://notabug.org` | gitea | `X-Gitea-Signature` HMAC-SHA256 |
 | `onedev` | `POST /webhooks/onedev` | _(self-hosted)_ | onedev | Shared secret in `Authorization: Bearer` header |
 | `pagure` | `POST /webhooks/pagure` | `https://pagure.io` | pagure | `X-Pagure-Signature` HMAC-SHA512 + `X-Pagure-Signature-256` HMAC-SHA256 |
@@ -231,10 +231,10 @@ Four distinct schemes appear across the 24 backends:
 |--------|-------------|----------|
 | **HMAC-SHA256** | Signature = `HMAC-SHA256(secret, body)`, hex-encoded | gitea, forgejo, codeberg, notabug, gogs, bitbucket, bitbucket_datacenter, phabricator, pagure (SHA-256 header) |
 | **HMAC-SHA512** | Signature = `HMAC-SHA512(secret, body)`, hex-encoded | pagure (SHA-512 header, older instances) |
-| **HMAC-SHA1** | Signature = `HMAC-SHA1(secret, body)`, hex-encoded | gitbucket (GitHub legacy compat) |
+| **HMAC-SHA1** | Signature = `HMAC-SHA1(secret, body)`, hex-encoded | gitbucket (GitHub legacy compat), launchpad |
 | **Shared token** | Secret echoed verbatim in a header; constant-time string compare | gitlab, gitblit, harness, onedev, rhodecode, sourceforge, tuleap, kallithea |
 | **Bearer / Basic** | Secret in Authorization header (Bearer or Basic form) | onedev (Bearer), azuredevops (Basic), gerrit (Basic or Bearer), radicle (raw) |
-| **Asymmetric / platform** | ed25519, OpenPGP, or platform-managed certificate signing | sourcehut, launchpad, codecommit |
+| **Asymmetric / platform** | ed25519 or platform-managed certificate signing | sourcehut, codecommit |
 
 ### Quick reference
 
@@ -254,7 +254,7 @@ Four distinct schemes appear across the 24 backends:
 | `gogs` | `X-Gogs-Signature` | HMAC-SHA256 | `<hex>` |
 | `harness` | `X-Harness-Token` | Shared token | verbatim |
 | `kallithea` | _(body field)_ | Body-embedded token | see notes |
-| `launchpad` | `X-Launchpad-Signature` | OpenPGP detached | armored |
+| `launchpad` | `X-Hub-Signature` | HMAC-SHA1 | `sha1=<hex>` |
 | `notabug` | `X-Gitea-Signature` | HMAC-SHA256 | `<hex>` |
 | `onedev` | `Authorization` | Bearer token | `Bearer <secret>` |
 | `pagure` | `X-Pagure-Signature-256` / `X-Pagure-Signature` | HMAC-SHA256 / HMAC-SHA512 | `<hex>` |
@@ -821,32 +821,27 @@ key rotation, then retry once before rejecting.
 
 ### Launchpad
 
-Launchpad signs webhook payloads with an OpenPGP key.  The signature is sent in the
-`X-Launchpad-Signature` header (if present) or the body may be a cleartext-signed
-PGP message.
+Launchpad signs webhook payloads with the optional secret configured on the webhook.
+When a secret is configured, the signature is sent in the `X-Hub-Signature` header
+using the PubSubHubbub-compatible HMAC-SHA1 form.
+
+```
+Header:    X-Hub-Signature
+Format:    sha1=<lowercase hex digest>
+Algorithm: HMAC-SHA1(secret, raw body bytes)
+```
 
 **Verification steps:**
 
-1. **Fetch Launchpad's signing key**: Launchpad publishes its webhook signing key on
-   its keyserver.  The fingerprint is documented in Launchpad's developer documentation.
-
-2. **Verify OpenPGP signature**:
-
 ```
-signing_key = Launchpad's published OpenPGP public key (fetched from keyserver)
-body        = raw request body bytes
-signature   = value of X-Launchpad-Signature (detached PGP signature, armored)
+expected = "sha1=" .. hmac_sha1(secret, raw_body)
+received = value of X-Hub-Signature
 
-accept if openpgp_verify(signing_key, body, signature) == true
+accept if constant_time_equal(expected, received)
 ```
 
-**Note:** OpenPGP verification requires a PGP library.  This is the most complex
-verification scheme across all 24 backends.  The implementation should use a
-well-audited PGP library and must validate the key fingerprint against the expected
-Launchpad fingerprint before trusting the key.
-
-**No shared secret is configured** — authentication is established by Launchpad's
-published key.
+**No shared secret configured** — Launchpad omits `X-Hub-Signature`; confusio accepts
+the request in trust-the-network mode.
 
 ## GitHub-Emulation Contract
 

@@ -2468,7 +2468,7 @@ end
 --   (d) missing header/token → 401
 -- Pagure gets extra cases for its dual-header scheme.
 -- Kallithea gets extra cases for its body-embedded secret.
--- codecommit/sourcehut/launchpad get both trust-the-network
+-- codecommit/sourcehut get both trust-the-network
 -- and "secret configured → always 401" cases.
 -- ============================================================
 do
@@ -2567,22 +2567,20 @@ do
     eq(with_secret(be, {}), 401, "verify_signature " .. be .. ": missing X-Hub-Signature → 401")
   end
 
-  -- ── HMAC-SHA1 / sha1= prefix: gitbucket (X-Hub-Signature)
-  ok(no_secret("gitbucket", {}) ~= 401, "verify_signature gitbucket: no secret → not 401")
-  ok(
-    with_secret("gitbucket", { ["X-Hub-Signature"] = "sha1=" .. STUB_HEX }) ~= 401,
-    "verify_signature gitbucket: valid X-Hub-Signature sha1= → not 401"
-  )
-  eq(
-    with_secret("gitbucket", { ["X-Hub-Signature"] = "sha1=deadbeef" }),
-    401,
-    "verify_signature gitbucket: bad X-Hub-Signature → 401"
-  )
-  eq(
-    with_secret("gitbucket", {}),
-    401,
-    "verify_signature gitbucket: missing X-Hub-Signature → 401"
-  )
+  -- ── HMAC-SHA1 / sha1= prefix: gitbucket + launchpad (X-Hub-Signature)
+  for _, be in ipairs({ "gitbucket", "launchpad" }) do
+    ok(no_secret(be, {}) ~= 401, "verify_signature " .. be .. ": no secret → not 401")
+    ok(
+      with_secret(be, { ["X-Hub-Signature"] = "sha1=" .. STUB_HEX }) ~= 401,
+      "verify_signature " .. be .. ": valid X-Hub-Signature sha1= → not 401"
+    )
+    eq(
+      with_secret(be, { ["X-Hub-Signature"] = "sha1=deadbeef" }),
+      401,
+      "verify_signature " .. be .. ": bad X-Hub-Signature → 401"
+    )
+    eq(with_secret(be, {}), 401, "verify_signature " .. be .. ": missing X-Hub-Signature → 401")
+  end
 
   -- ── HMAC-SHA256 / no prefix: phabricator (X-Phabricator-Webhook-Signature)
   ok(no_secret("phabricator", {}) ~= 401, "verify_signature phabricator: no secret → not 401")
@@ -2854,10 +2852,10 @@ do
     "verify_signature kallithea: invalid JSON body → 401"
   )
 
-  -- ── Trust-the-network-only backends: codecommit, sourcehut, launchpad
+  -- ── Trust-the-network-only backends: codecommit, sourcehut
   -- These use asymmetric/platform-managed schemes not yet implemented.
   -- No secret → accepted; any secret configured → always rejected.
-  for _, be in ipairs({ "codecommit", "sourcehut", "launchpad" }) do
+  for _, be in ipairs({ "codecommit", "sourcehut" }) do
     ok(
       no_secret(be, {}) ~= 401,
       "verify_signature " .. be .. ": no secret (trust-the-network) → not 401"
@@ -2980,6 +2978,17 @@ do
   -- GitLab: verbatim token.
   local sfb_gl = sign_for_backend("gitlab", SECRET, BODY)
   eq(sfb_gl["X-Gitlab-Token"], SECRET, "sign_for_backend gitlab: X-Gitlab-Token is the secret")
+
+  -- HMAC-SHA1 via X-Hub-Signature.
+  for _, be in ipairs({ "gitbucket", "launchpad" }) do
+    local h = sign_for_backend(be, SECRET, BODY)
+    eq(
+      h["X-Hub-Signature"],
+      "sha1=" .. STUB_HEX,
+      "sign_for_backend " .. be .. ": X-Hub-Signature sha1= present"
+    )
+    ok(h["X-Hub-Signature-256"] == nil, "sign_for_backend " .. be .. ": no X-Hub-Signature-256")
+  end
 
   -- Default (unknown backend): GitHub-style.
   local sfb_def = sign_for_backend("unknown_backend", SECRET, BODY)
