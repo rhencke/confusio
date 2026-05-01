@@ -57,6 +57,7 @@ local LAUNCHPAD_NORMALIZED_WEBHOOK_EVENTS = {
   "ping",
   "issues",
   "issue_comment",
+  "pull_request",
 }
 
 local ZERO_SHA = string.rep("0", 40)
@@ -67,6 +68,12 @@ local LAUNCHPAD_BUG_ACTIONS = {
 
 local LAUNCHPAD_BUG_COMMENT_ACTIONS = {
   created = "created",
+}
+
+local LAUNCHPAD_CLOSED_MERGE_PROPOSAL_STATUSES = {
+  Merged = true,
+  Rejected = true,
+  Superseded = true,
 }
 
 -- Extract Launchpad username from an owner/assignee link like ".../~username".
@@ -184,6 +191,10 @@ local function lp_webhook_sender(payload)
   if login == "" then
     login = lp_webhook_owner_login(payload.git_repository_path)
   end
+  if login == "" then
+    local attrs = payload.new or payload.old or {}
+    login = lp_login(attrs.registrant)
+  end
   return lp_webhook_user(login)
 end
 
@@ -249,6 +260,112 @@ local function lp_webhook_bug_comment_action(raw_action)
     return "edited"
   end
   return nil
+end
+
+local function lp_webhook_merge_proposal_id(path)
+  return tonumber((path or ""):match("/%+merge/(%d+)")) or 0
+end
+
+local function lp_webhook_merge_proposal_attrs(payload)
+  payload = payload or {}
+  return payload.new or payload.old or {}
+end
+
+local function lp_webhook_merge_proposal_branch(path, api_path)
+  local repo = lp_webhook_repository({
+    git_repository = api_path or "",
+    git_repository_path = path or "",
+  })
+  return {
+    label = repo.full_name or "",
+    ref = repo.name or path or "",
+    sha = "",
+    repo = repo,
+  }
+end
+
+local function lp_webhook_merge_proposal(payload)
+  payload = payload or {}
+  local attrs = lp_webhook_merge_proposal_attrs(payload)
+  local mp_path = payload.merge_proposal or ""
+  local number = lp_webhook_merge_proposal_id(mp_path)
+  local queue_status = attrs.queue_status or attrs.status or ""
+  local state = LAUNCHPAD_CLOSED_MERGE_PROPOSAL_STATUSES[queue_status] and "closed" or "open"
+  return {
+    id = number,
+    node_id = "",
+    number = number,
+    state = state,
+    locked = false,
+    title = attrs.commit_message or ("Merge proposal #" .. number),
+    body = attrs.description or "",
+    user = lp_webhook_user_from_path(attrs.registrant),
+    head = lp_webhook_merge_proposal_branch(
+      attrs.source_git_path or attrs.source_branch,
+      attrs.source_git_repository
+    ),
+    base = lp_webhook_merge_proposal_branch(
+      attrs.target_git_path or attrs.target_branch,
+      attrs.target_git_repository
+    ),
+    draft = queue_status == "Work in progress",
+    created_at = "",
+    updated_at = "",
+    closed_at = state == "closed" and "" or nil,
+    merged_at = queue_status == "Merged" and "" or nil,
+    merge_commit_sha = "",
+    merged_by = nil,
+    diff_url = "",
+    patch_url = "",
+    html_url = mp_path ~= "" and ("https://code.launchpad.net" .. mp_path) or "",
+    url = mp_path,
+    mergeable = nil,
+    comments = nil,
+    review_comments = nil,
+    additions = nil,
+    deletions = nil,
+    changed_files = nil,
+    labels = {},
+    assignees = {},
+    requested_reviewers = {},
+  }
+end
+
+local function lp_webhook_merge_proposal_action(payload)
+  payload = payload or {}
+  local raw_action = payload.action or ""
+  if raw_action == "created" then
+    return "opened"
+  end
+  if raw_action == "deleted" then
+    return "closed"
+  end
+  if raw_action ~= "modified" then
+    return nil
+  end
+  local old = payload.old or {}
+  local new = payload.new or {}
+  local old_status = old.queue_status or old.status or ""
+  local new_status = new.queue_status or new.status or ""
+  if
+    LAUNCHPAD_CLOSED_MERGE_PROPOSAL_STATUSES[new_status]
+    and not LAUNCHPAD_CLOSED_MERGE_PROPOSAL_STATUSES[old_status]
+  then
+    return "closed"
+  end
+  if
+    LAUNCHPAD_CLOSED_MERGE_PROPOSAL_STATUSES[old_status]
+    and not LAUNCHPAD_CLOSED_MERGE_PROPOSAL_STATUSES[new_status]
+  then
+    return "reopened"
+  end
+  if
+    (old.source_git_commit_sha and old.source_git_commit_sha ~= new.source_git_commit_sha)
+    or (old.source_revision_id and old.source_revision_id ~= new.source_revision_id)
+  then
+    return "synchronize"
+  end
+  return "edited"
 end
 
 local function launchpad_normalized_payload_without_envelope_fields(data)
@@ -463,6 +580,28 @@ b:webhook("bug:comment:0.1", function(payload)
       repository = lp_webhook_target_repository(payload),
       sender = lp_webhook_sender(payload),
       target = payload.target or "",
+    },
+    timestamp = "",
+  })
+end)
+
+b:webhook("merge-proposal:0.1", function(payload)
+  payload = payload or {}
+  local raw_action = payload.action or ""
+  local action = lp_webhook_merge_proposal_action(payload)
+  local pull_request = lp_webhook_merge_proposal(payload)
+  return make_internal_event({
+    event = "pull_request",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "launchpad",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      number = pull_request.number,
+      pull_request = pull_request,
+      repository = pull_request.base.repo or {},
+      sender = lp_webhook_sender(payload),
     },
     timestamp = "",
   })

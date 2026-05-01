@@ -2324,6 +2324,61 @@ do
     "launchpad webhook: normalized comment includes action"
   )
 
+  local mp_payload = {
+    action = "created",
+    merge_proposal = "/~fido/confusio/+git/feature/+merge/42",
+    new = {
+      registrant = "/~fido",
+      commit_message = "Add the good feature",
+      description = "Please merge this branch.",
+      source_git_repository = "/~fido/confusio/+git/feature",
+      source_git_path = "~fido/confusio/+git/feature",
+      target_git_repository = "/~fido/confusio/+git/main",
+      target_git_path = "~fido/confusio/+git/main",
+      queue_status = "Needs review",
+    },
+  }
+  local mp_event = app.backend.webhooks["merge-proposal:0.1"](mp_payload)
+  eq(mp_event.event, "pull_request", "launchpad webhook: merge proposal maps to pull_request")
+  eq(mp_event.action, "opened", "launchpad webhook: merge proposal created maps to opened")
+  eq(mp_event.data.number, 42, "launchpad webhook: merge proposal sets number")
+  eq(
+    mp_event.data.pull_request.title,
+    "Add the good feature",
+    "launchpad webhook: merge proposal sets title"
+  )
+  eq(
+    mp_event.data.repository.full_name,
+    "fido/main",
+    "launchpad webhook: merge proposal sets base repository"
+  )
+  local mp_envelope = app.backend.webhook_translators.pull_request(mp_event)
+  eq(
+    mp_envelope.type,
+    "pull_request.opened",
+    "launchpad webhook: normalized merge proposal includes action"
+  )
+
+  local mp_sync_event = app.backend.webhooks["merge-proposal:0.1"]({
+    action = "modified",
+    merge_proposal = "/~fido/confusio/+git/feature/+merge/42",
+    old = { source_git_commit_sha = "1111111111111111111111111111111111111111" },
+    new = { source_git_commit_sha = "2222222222222222222222222222222222222222" },
+  })
+  eq(
+    mp_sync_event.action,
+    "synchronize",
+    "launchpad webhook: merge proposal push maps to synchronize"
+  )
+
+  local mp_closed_event = app.backend.webhooks["merge-proposal:0.1"]({
+    action = "modified",
+    merge_proposal = "/~fido/confusio/+git/feature/+merge/42",
+    old = { queue_status = "Needs review" },
+    new = { queue_status = "Merged" },
+  })
+  eq(mp_closed_event.action, "closed", "launchpad webhook: merge proposal merged maps to closed")
+
   app.backend.rest = saved_rest
   app.backend.capabilities = saved_capabilities
   app.backend.webhooks = saved_webhooks
