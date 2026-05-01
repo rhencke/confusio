@@ -163,13 +163,7 @@ end
 local function verify_signature(backend, secret, body, now)
   now = now or os.time()
   -- Gitea family: X-Gitea-Signature, HMAC-SHA256, no prefix
-  -- notabug uses the same Gitea-derived scheme.
-  if
-    backend == "gitea"
-    or backend == "forgejo"
-    or backend == "codeberg"
-    or backend == "notabug"
-  then
+  if backend == "gitea" or backend == "forgejo" or backend == "codeberg" then
     if not secret or secret == "" then
       return true
     end
@@ -179,8 +173,8 @@ local function verify_signature(backend, secret, body, now)
     end
     return ct_equal(hmac_hex("sha256", secret, body), sig)
 
-  -- Gogs: X-Gogs-Signature, HMAC-SHA256, no prefix
-  elseif backend == "gogs" then
+  -- Gogs and NotABug: X-Gogs-Signature, HMAC-SHA256, no prefix
+  elseif backend == "gogs" or backend == "notabug" then
     if not secret or secret == "" then
       return true
     end
@@ -438,16 +432,11 @@ end
 -- and let the registered webhook handler extract the event family.
 local function event_header(backend)
   -- Gitea family: X-Gitea-Event
-  if
-    backend == "gitea"
-    or backend == "forgejo"
-    or backend == "codeberg"
-    or backend == "notabug"
-  then
+  if backend == "gitea" or backend == "forgejo" or backend == "codeberg" then
     return GetHeader("X-Gitea-Event")
 
-  -- Gogs: X-Gogs-Event
-  elseif backend == "gogs" then
+  -- Gogs and NotABug: X-Gogs-Event
+  elseif backend == "gogs" or backend == "notabug" then
     return GetHeader("X-Gogs-Event")
 
   -- GitLab: X-Gitlab-Event

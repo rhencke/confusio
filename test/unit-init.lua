@@ -2602,7 +2602,7 @@ do
     "webhook_receiver: registered handler succeeds → 200"
   )
 
-  -- Gogs uses its own event-type header, not X-Gitea-Event.
+  -- Gogs-family backends use their own event-type header, not X-Gitea-Event.
   eq(
     call_webhook({
       method = "POST",
@@ -2628,6 +2628,32 @@ do
     }),
     422,
     "webhook_receiver: gogs ignores X-Gitea-Event → 422"
+  )
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/notabug",
+      headers = {
+        ["Content-Type"] = "application/json",
+        ["X-Gogs-Event"] = "push",
+      },
+      body = '{"ref":"refs/heads/main"}',
+    }),
+    200,
+    "webhook_receiver: notabug X-Gogs-Event handler succeeds → 200"
+  )
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/notabug",
+      headers = {
+        ["Content-Type"] = "application/json",
+        ["X-Gitea-Event"] = "push",
+      },
+      body = '{"ref":"refs/heads/main"}',
+    }),
+    422,
+    "webhook_receiver: notabug ignores X-Gitea-Event → 422"
   )
 
   -- Launchpad uses X-Launchpad-Event-Type.
@@ -2806,7 +2832,7 @@ do
   end
 
   -- ── HMAC-SHA256 / no prefix: gitea family (X-Gitea-Signature)
-  for _, be in ipairs({ "gitea", "forgejo", "codeberg", "notabug" }) do
+  for _, be in ipairs({ "gitea", "forgejo", "codeberg" }) do
     ok(no_secret(be, {}) ~= 401, "verify_signature " .. be .. ": no secret → not 401")
     ok(
       with_secret(be, { ["X-Gitea-Signature"] = STUB_HEX }) ~= 401,
@@ -2820,18 +2846,20 @@ do
     eq(with_secret(be, {}), 401, "verify_signature " .. be .. ": missing X-Gitea-Signature → 401")
   end
 
-  -- ── HMAC-SHA256 / no prefix: gogs (X-Gogs-Signature)
-  ok(no_secret("gogs", {}) ~= 401, "verify_signature gogs: no secret → not 401")
-  ok(
-    with_secret("gogs", { ["X-Gogs-Signature"] = STUB_HEX }) ~= 401,
-    "verify_signature gogs: valid X-Gogs-Signature → not 401"
-  )
-  eq(
-    with_secret("gogs", { ["X-Gogs-Signature"] = "deadbeef" }),
-    401,
-    "verify_signature gogs: bad X-Gogs-Signature → 401"
-  )
-  eq(with_secret("gogs", {}), 401, "verify_signature gogs: missing X-Gogs-Signature → 401")
+  -- ── HMAC-SHA256 / no prefix: Gogs family (X-Gogs-Signature)
+  for _, be in ipairs({ "gogs", "notabug" }) do
+    ok(no_secret(be, {}) ~= 401, "verify_signature " .. be .. ": no secret → not 401")
+    ok(
+      with_secret(be, { ["X-Gogs-Signature"] = STUB_HEX }) ~= 401,
+      "verify_signature " .. be .. ": valid X-Gogs-Signature → not 401"
+    )
+    eq(
+      with_secret(be, { ["X-Gogs-Signature"] = "deadbeef" }),
+      401,
+      "verify_signature " .. be .. ": bad X-Gogs-Signature → 401"
+    )
+    eq(with_secret(be, {}), 401, "verify_signature " .. be .. ": missing X-Gogs-Signature → 401")
+  end
 
   -- ── Verbatim shared token: gitlab (X-Gitlab-Token)
   ok(no_secret("gitlab", {}) ~= 401, "verify_signature gitlab: no secret → not 401")
@@ -3263,10 +3291,17 @@ do
   ok(next(sfb_empty) == nil, "sign_for_backend(nil): empty table")
 
   -- Gitea family: X-Gitea-Signature, HMAC-SHA256, no prefix.
-  for _, be in ipairs({ "gitea", "forgejo", "codeberg", "notabug" }) do
+  for _, be in ipairs({ "gitea", "forgejo", "codeberg" }) do
     local h = sign_for_backend(be, SECRET, BODY)
     ok(h["X-Gitea-Signature"] ~= nil, "sign_for_backend " .. be .. ": X-Gitea-Signature present")
     ok(h["X-Hub-Signature-256"] == nil, "sign_for_backend " .. be .. ": no X-Hub-Signature-256")
+  end
+
+  -- Gogs family: X-Gogs-Signature, HMAC-SHA256, no prefix.
+  for _, be in ipairs({ "gogs", "notabug" }) do
+    local h = sign_for_backend(be, SECRET, BODY)
+    ok(h["X-Gogs-Signature"] ~= nil, "sign_for_backend " .. be .. ": X-Gogs-Signature present")
+    ok(h["X-Gitea-Signature"] == nil, "sign_for_backend " .. be .. ": no X-Gitea-Signature")
   end
 
   -- GitLab: verbatim token.
