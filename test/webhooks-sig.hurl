@@ -7,6 +7,7 @@
 #   bb_sig      — "sha256=<hex>" (for X-Hub-Signature on bitbucket and bitbucket_datacenter)
 #   gb_sig      — "sha1=<hex>" (for X-Hub-Signature on gitbucket)
 #   launchpad_sig — "sha1=<hex>" (for X-Hub-Signature on launchpad)
+#   phabricator_sig — HMAC-SHA256("{}", secret) as hex (for X-Phabricator-Webhook-Signature)
 #   azuredevops_basic — base64("fido:webhooksecret") for Authorization: Basic
 #   gerrit_tok  — the shared secret verbatim or as Bearer token (for Authorization)
 #   gerrit_basic — base64("webhooksecret") for Authorization: Basic
@@ -209,6 +210,37 @@ jsonpath "$.message" == "Signature verification failed"
 
 # Missing signature header → 401
 POST http://{{host}}/webhooks/launchpad
+Content-Type: application/json
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# ── phabricator: X-Phabricator-Webhook-Signature, HMAC-SHA256, no prefix ────
+
+# Valid signature → passes verification (422)
+POST http://{{host}}/webhooks/phabricator
+Content-Type: application/json
+X-Phabricator-Webhook-Signature: {{phabricator_sig}}
+{}
+
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "No webhook handlers registered"
+
+# Bad signature → 401
+POST http://{{host}}/webhooks/phabricator
+Content-Type: application/json
+X-Phabricator-Webhook-Signature: deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# Missing signature header → 401
+POST http://{{host}}/webhooks/phabricator
 Content-Type: application/json
 {}
 
