@@ -56,6 +56,22 @@ local function translate_kallithea_user(payload)
   }
 end
 
+local function translate_kallithea_named_user(login, email)
+  login = login or ""
+  return {
+    login = login,
+    id = 0,
+    node_id = "",
+    avatar_url = "",
+    html_url = login ~= "" and (config.base_url .. "/_admin/users/edit/" .. login) or "",
+    type = "User",
+    site_admin = false,
+    name = login,
+    email = email or "",
+    blog = "",
+  }
+end
+
 local function translate_kallithea_repo(payload)
   local full_name = payload.repo_name or payload.repository or ""
   local owner, repo_name = split_repo_name(full_name)
@@ -102,6 +118,13 @@ local function translate_kallithea_repo(payload)
     updated_at = payload.updated_on,
     pushed_at = payload.pushed_at,
   }
+end
+
+local function timestamp_string(value)
+  if value == nil then
+    return ""
+  end
+  return tostring(value)
 end
 
 local function translate_kallithea_push_commit(c)
@@ -251,8 +274,124 @@ local function kallithea_ref_webhook(payload)
   })
 end
 
+local function kallithea_repo_lifecycle_handler(action)
+  return function(payload)
+    return make_internal_event({
+      event = "repository",
+      action = action,
+      provider = "kallithea",
+      raw = payload,
+      data = {
+        action = action,
+        repository = translate_kallithea_repo(payload),
+        sender = translate_kallithea_named_user(
+          payload.created_by or payload.deleted_by or payload.username
+        ),
+      },
+      timestamp = timestamp_string(payload.updated_on or payload.deleted_on or payload.created_on),
+    })
+  end
+end
+
+local function translate_kallithea_pr_branch(repo_name, ref)
+  return {
+    label = repo_name ~= "" and (repo_name .. ":" .. (ref or "")) or (ref or ""),
+    ref = ref or "",
+    sha = "",
+    repo = translate_kallithea_repo({ repo_name = repo_name }),
+  }
+end
+
+local function translate_kallithea_pull_request(payload)
+  local pr = payload.pull_request or {}
+  local status = pr.status or "new"
+  local state = (status == "closed" or status == "merged") and "closed" or "open"
+  local target_repo = pr.org_repo_name or payload.repository or ""
+  local source_repo = pr.other_repo_name or payload.source_repository or target_repo
+  local number = payload.pull_request_id or pr.id or 0
+  return {
+    id = pr.id or payload.pull_request_id or 0,
+    node_id = "",
+    number = number,
+    state = state,
+    locked = false,
+    title = pr.title or "",
+    body = pr.description or "",
+    user = translate_kallithea_named_user(pr.owner or payload.created_by),
+    head = translate_kallithea_pr_branch(source_repo, pr.other_ref or payload.source_ref),
+    base = translate_kallithea_pr_branch(target_repo, pr.org_ref or payload.target_ref),
+    draft = false,
+    created_at = pr.created_on or "",
+    updated_at = pr.updated_on or "",
+    closed_at = state == "closed" and (pr.updated_on or "") or nil,
+    merged_at = status == "merged" and (pr.updated_on or "") or nil,
+    merge_commit_sha = nil,
+    merged_by = nil,
+    diff_url = "",
+    patch_url = "",
+    html_url = target_repo ~= ""
+        and (config.base_url .. "/" .. target_repo .. "/pull-request/" .. number)
+      or "",
+    url = "",
+    mergeable = state == "open" or nil,
+    comments = 0,
+    review_comments = 0,
+    commits = 0,
+    additions = 0,
+    deletions = 0,
+    changed_files = 0,
+  }
+end
+
+local function kallithea_pull_request_event(payload, action)
+  local pr = payload.pull_request or {}
+  return make_internal_event({
+    event = "pull_request",
+    action = action,
+    provider = "kallithea",
+    raw = payload,
+    data = {
+      action = action,
+      number = payload.pull_request_id or pr.id,
+      pull_request = translate_kallithea_pull_request(payload),
+      repository = translate_kallithea_repo({ repo_name = payload.repository or pr.org_repo_name }),
+      sender = translate_kallithea_named_user(payload.created_by or pr.owner),
+    },
+    timestamp = pr.updated_on or pr.created_on or "",
+  })
+end
+
 b:webhook("push", kallithea_ref_webhook)
 b:webhook("PUSH_HOOK", kallithea_ref_webhook)
+b:webhook("repository", function(payload)
+  local action = payload.action or "unknown"
+  if action == "created" then
+    return kallithea_repo_lifecycle_handler("created")(payload)
+  elseif action == "deleted" then
+    return kallithea_repo_lifecycle_handler("deleted")(payload)
+  end
+  return make_internal_event({
+    event = "repository",
+    action = "unknown",
+    raw_action = action,
+    provider = "kallithea",
+    raw = payload,
+    data = {
+      action = "unknown",
+      repository = translate_kallithea_repo(payload),
+      sender = translate_kallithea_named_user(payload.created_by or payload.deleted_by),
+    },
+    timestamp = timestamp_string(payload.updated_on or payload.deleted_on or payload.created_on),
+  })
+end)
+b:webhook("CREATE_REPO_HOOK", kallithea_repo_lifecycle_handler("created"))
+b:webhook("DELETE_REPO_HOOK", kallithea_repo_lifecycle_handler("deleted"))
+b:webhook("pull_request", function(payload)
+  return kallithea_pull_request_event(payload, payload.action or "opened")
+end)
+b:webhook("CREATE_PULLREQUEST_HOOK", function(payload)
+  return kallithea_pull_request_event(payload, "opened")
+end)
 
 local function kallithea_normalized_payload_without_envelope_fields(data)
   local payload = {}
@@ -264,12 +403,23 @@ local function kallithea_normalized_payload_without_envelope_fields(data)
   return payload
 end
 
+local KALLITHEA_ACTIONLESS_NORMALIZED_EVENTS = {
+  create = true,
+  delete = true,
+  push = true,
+}
+
 local function translate_kallithea_normalized_webhook(internal_event, fields)
   local data = internal_event.data or {}
   fields = fields or {}
   return make_normalized_webhook_envelope(internal_event, {
     id = fields.id,
-    type = fields.type or normalized_webhook_event_type(internal_event.event, ""),
+    type = fields.type
+      or (
+        KALLITHEA_ACTIONLESS_NORMALIZED_EVENTS[internal_event.event]
+          and normalized_webhook_event_type(internal_event.event, "")
+        or normalized_webhook_event_type(internal_event.event, internal_event.action)
+      ),
     occurred_at = fields.occurred_at,
     actor = fields.actor or data.sender,
     repository = fields.repository or data.repository,
@@ -277,7 +427,7 @@ local function translate_kallithea_normalized_webhook(internal_event, fields)
   })
 end
 
-for _, event in ipairs({ "push", "create", "delete" }) do
+for _, event in ipairs({ "push", "create", "delete", "repository", "pull_request" }) do
   b:webhook_translator(event, translate_kallithea_normalized_webhook)
 end
 
