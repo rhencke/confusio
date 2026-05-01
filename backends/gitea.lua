@@ -7183,7 +7183,12 @@ local DISCUSSION_COMMENT_ACTIONS = {
   deleted = "deleted",
 }
 
-local GITEA_WEBHOOK_PROVIDER = config.backend == "gogs" and "gogs" or "gitea"
+local GOGS_FAMILY_WEBHOOK_BACKENDS = {
+  gogs = true,
+  notabug = true,
+}
+local GITEA_WEBHOOK_PROVIDER = GOGS_FAMILY_WEBHOOK_BACKENDS[config.backend] and config.backend
+  or "gitea"
 local GOGS_NATIVE_WEBHOOK_EVENTS = {
   create = true,
   delete = true,
@@ -7196,7 +7201,7 @@ local GOGS_NATIVE_WEBHOOK_EVENTS = {
 }
 
 local function register_gitea_webhook(event, fn)
-  if config.backend == "gogs" and not GOGS_NATIVE_WEBHOOK_EVENTS[event] then
+  if GOGS_FAMILY_WEBHOOK_BACKENDS[config.backend] and not GOGS_NATIVE_WEBHOOK_EVENTS[event] then
     return
   end
   b:webhook(event, fn)
@@ -8148,7 +8153,8 @@ local function translate_gitea_normalized_webhook(internal_event, fields)
   })
 end
 
-local normalized_webhook_events = config.backend == "gogs" and GOGS_NORMALIZED_WEBHOOK_EVENTS
+local normalized_webhook_events = GOGS_FAMILY_WEBHOOK_BACKENDS[config.backend]
+    and GOGS_NORMALIZED_WEBHOOK_EVENTS
   or GITEA_NORMALIZED_WEBHOOK_EVENTS
 for _, event in ipairs(normalized_webhook_events) do
   b:webhook_translator(event, translate_gitea_normalized_webhook)

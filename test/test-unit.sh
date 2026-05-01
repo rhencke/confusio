@@ -294,76 +294,89 @@ run_delivery_phase test/webhook-delivery-gogs-confusio-shape.hurl \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
 
-# Phase 25: Harness fixture-based delivery tests — pipeline and stage events.
+# Phase 25: NotABug fixture-based delivery tests — every native event × action triple.
+# NotABug uses X-Gogs-Event header to indicate the event type.
+run_delivery_phase test/webhook-delivery-notabug.hurl \
+  -- notabug "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 26: NotABug delivery with "confusio" shape — spot-checks X-Confusio-* headers.
+# Verifies X-Confusio-Source is "notabug" and X-GitHub-Event is absent.
+run_delivery_phase test/webhook-delivery-notabug-confusio-shape.hurl \
+  -- notabug "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+  "webhook_target_shape=confusio"
+
+# Phase 27: Harness fixture-based delivery tests — pipeline and stage events.
 # Harness embeds eventType in the body; no event-type header is required.
 run_delivery_phase test/webhook-delivery-harness.hurl \
   -- harness "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
-# Phase 26: Harness delivery with "confusio" shape — spot-checks X-Confusio-* headers.
+# Phase 28: Harness delivery with "confusio" shape — spot-checks X-Confusio-* headers.
 # Verifies X-Confusio-Source is "harness" and X-GitHub-Event is absent.
 run_delivery_phase test/webhook-delivery-harness-confusio-shape.hurl \
   -- harness "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
 
-# Phase 27: Pagure fixture-based delivery tests — every event type.
+# Phase 29: Pagure fixture-based delivery tests — every event type.
 # Pagure uses X-Pagure-Event header to indicate the event type.
 run_delivery_phase test/webhook-delivery-pagure.hurl \
   -- pagure "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
-# Phase 28: Pagure delivery with "confusio" shape — spot-checks X-Confusio-* headers.
+# Phase 30: Pagure delivery with "confusio" shape — spot-checks X-Confusio-* headers.
 # Verifies X-Confusio-Source is "pagure" and X-GitHub-Event is absent.
 run_delivery_phase test/webhook-delivery-pagure-confusio-shape.hurl \
   -- pagure "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
 
-# Phase 29: Kallithea fixture-based delivery tests — native body-typed hooks.
+# Phase 31: Kallithea fixture-based delivery tests — native body-typed hooks.
 run_delivery_phase test/webhook-delivery-kallithea.hurl \
   -- kallithea "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
-# Phase 30: Kallithea delivery with "confusio" shape — normalized hook envelopes.
+# Phase 32: Kallithea delivery with "confusio" shape — normalized hook envelopes.
 run_delivery_phase test/webhook-delivery-kallithea-confusio-shape.hurl \
   -- kallithea "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
 
-# Phase 31: Forgejo fixture-based delivery tests — every event × action triple.
+# Phase 33: Forgejo fixture-based delivery tests — every event × action triple.
 # Forgejo uses X-Gitea-Event header (API-compatible with Gitea).
 run_delivery_phase test/webhook-delivery-forgejo.hurl \
   -- forgejo "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
-# Phase 32: Forgejo delivery with "confusio" shape — spot-checks X-Confusio-* headers.
+# Phase 34: Forgejo delivery with "confusio" shape — spot-checks X-Confusio-* headers.
 # Verifies X-Confusio-Source is "forgejo" and X-GitHub-Event is absent.
 run_delivery_phase test/webhook-delivery-forgejo-confusio-shape.hurl \
   -- forgejo "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
 
-# Phase 33: Codeberg fixture-based delivery tests — every event × action triple.
+# Phase 35: Codeberg fixture-based delivery tests — every event × action triple.
 # Codeberg uses X-Gitea-Event header (API-compatible with Gitea/Forgejo).
 run_delivery_phase test/webhook-delivery-codeberg.hurl \
   -- codeberg "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
-# Phase 34: Codeberg delivery with "confusio" shape — spot-checks X-Confusio-* headers.
+# Phase 36: Codeberg delivery with "confusio" shape — spot-checks X-Confusio-* headers.
 # Verifies X-Confusio-Source is "codeberg" and X-GitHub-Event is absent.
 run_delivery_phase test/webhook-delivery-codeberg-confusio-shape.hurl \
   -- codeberg "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
 
-# Phase 35: Launchpad fixture-based delivery tests — every native event family.
+# Phase 37: Launchpad fixture-based delivery tests — every native event family.
 # Launchpad uses X-Launchpad-Event-Type to indicate the native event type.
 run_delivery_phase test/webhook-delivery-launchpad.hurl \
   -- launchpad "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
-# Phase 36: Startup event synthesis — github shape.
+# Phase 38: Startup event synthesis — github shape.
 # Verifies that confusio synthesizes installation.created and
 # installation_repositories.added before accepting connections, and delivers
 # both to the configured outbound target.  No /reset is called — the hurl file
@@ -372,8 +385,8 @@ run_delivery_phase test/webhook-delivery-startup.hurl \
   -- gitea "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
-# Phase 37: Startup event synthesis — confusio shape.
-# Same as Phase 36 but with webhook_target_shape=confusio; verifies
+# Phase 39: Startup event synthesis — confusio shape.
+# Same as Phase 38 but with webhook_target_shape=confusio; verifies
 # X-Confusio-* headers are used and X-GitHub-Event is absent.
 run_delivery_phase test/webhook-delivery-startup-confusio-shape.hurl \
   -- gitea "http://127.0.0.1:$MOCK_PORT" \

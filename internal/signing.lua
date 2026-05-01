@@ -44,14 +44,9 @@ function sign_for_backend(backend, secret, body) -- luacheck: globals sign_for_b
   if not secret or secret == "" then
     return {}
   end
-  if
-    backend == "gitea"
-    or backend == "forgejo"
-    or backend == "codeberg"
-    or backend == "notabug"
-  then
+  if backend == "gitea" or backend == "forgejo" or backend == "codeberg" then
     return { ["X-Gitea-Signature"] = hmac_hex("sha256", secret, body) }
-  elseif backend == "gogs" then
+  elseif backend == "gogs" or backend == "notabug" then
     return { ["X-Gogs-Signature"] = hmac_hex("sha256", secret, body) }
   elseif backend == "gitlab" then
     return { ["X-Gitlab-Token"] = secret }

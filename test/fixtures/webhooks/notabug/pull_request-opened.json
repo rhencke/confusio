@@ -1,0 +1,39 @@
+{
+  "action": "opened",
+  "number": 7,
+  "pull_request": {
+    "id": 500, "number": 7, "title": "Add new feature", "body": "This PR adds a new feature.",
+    "state": "open", "draft": false,
+    "html_url": "http://localhost/octocat/hello-world/pulls/7",
+    "url": "http://localhost/api/v1/repos/octocat/hello-world/pulls/7",
+    "user": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""},
+    "head": {
+      "ref": "feature-branch", "sha": "abc123",
+      "repo": {
+        "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+        "private": false, "html_url": "http://localhost/octocat/hello-world",
+        "fork": false, "default_branch": "main",
+        "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+      }
+    },
+    "base": {
+      "ref": "main", "sha": "def456",
+      "repo": {
+        "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+        "private": false, "html_url": "http://localhost/octocat/hello-world",
+        "fork": false, "default_branch": "main",
+        "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+      }
+    },
+    "labels": [], "assignees": [], "requested_reviewers": [],
+    "merged": false, "merged_at": null, "merge_commit_sha": null, "merged_by": null,
+    "created": "2024-01-15T10:00:00Z", "updated": "2024-01-15T10:00:00Z", "closed": null
+  },
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
+}
