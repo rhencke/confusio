@@ -9,6 +9,7 @@
 #   azuredevops_basic — base64("fido:webhooksecret") for Authorization: Basic
 #   gerrit_tok  — the shared secret verbatim or as Bearer token (for Authorization)
 #   gerrit_basic — base64("webhooksecret") for Authorization: Basic
+#   kallithea — shared secret is embedded in the request body
 #   confusio_sig — "sha256=<hex>, v=1, ts=<ts>" (for X-Confusio-Signature-256)
 #
 # Convention: valid credential → 422 (verification passed; no handlers registered
@@ -257,6 +258,52 @@ jsonpath "$.message" == "Signature verification failed"
 
 # Missing Authorization header → 401
 POST http://{{host}}/webhooks/gerrit
+Content-Type: application/json
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# ── kallithea: body-embedded shared secret ───────────────────────────────────
+
+# Valid root secret → passes verification (422)
+POST http://{{host}}/webhooks/kallithea
+Content-Type: application/json
+{
+  "secret": "webhooksecret"
+}
+
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "No webhook handlers registered"
+
+# Valid nested webhook token → passes verification (422)
+POST http://{{host}}/webhooks/kallithea
+Content-Type: application/json
+{
+  "payload": {
+    "webhook_token": "webhooksecret"
+  }
+}
+
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "No webhook handlers registered"
+
+# Bad body secret → 401
+POST http://{{host}}/webhooks/kallithea
+Content-Type: application/json
+{
+  "secret": "wrongtoken"
+}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# Missing body secret → 401
+POST http://{{host}}/webhooks/kallithea
 Content-Type: application/json
 {}
 
