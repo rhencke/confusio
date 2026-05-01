@@ -707,4 +707,317 @@ b:rest("get_commit_check_runs", function(owner, repo_name, ref)
   respond_json(200, { total_count = #runs, check_runs = runs })
 end)
 
+-- Webhooks ------------------------------------------------------------------
+
+local ONEDEV_ZERO_SHA = string.rep("0", 40)
+
+local function onedev_object_id(value)
+  if type(value) == "string" then
+    return value
+  end
+  if type(value) == "table" then
+    return value.name or value.id or value.hash or value.value or value.string or ""
+  end
+  return ""
+end
+
+local function onedev_ref_kind(ref)
+  if ref:match("^refs/heads/") then
+    return "branch"
+  end
+  if ref:match("^refs/tags/") then
+    return "tag"
+  end
+  return "ref"
+end
+
+local function onedev_short_ref(ref)
+  return (ref:gsub("^refs/heads/", ""):gsub("^refs/tags/", ""))
+end
+
+local function onedev_event_repo(payload)
+  payload = payload or {}
+  return translate_onedev_repo(
+    payload.project or (payload.build or {}).project or (payload.pack or {}).project or {}
+  )
+end
+
+local function onedev_event_sender(payload)
+  payload = payload or {}
+  return translate_onedev_user(
+    payload.user or (payload.build or {}).submitter or (payload.pack or {}).user or {}
+  )
+end
+
+local function onedev_event_timestamp(payload, fallback)
+  payload = payload or {}
+  return payload.date
+    or (payload.build or {}).statusDate
+    or (payload.build or {}).finishDate
+    or (payload.build or {}).submitDate
+    or (payload.pack or {}).publishDate
+    or fallback
+    or ""
+end
+
+local function onedev_ref_updated_webhook(payload)
+  payload = payload or {}
+  local ref = payload.refName or payload.ref or ""
+  local before = onedev_object_id(payload.oldCommitId or payload.oldRev or payload.before)
+  local after = onedev_object_id(payload.newCommitId or payload.newRev or payload.after)
+  local repo = onedev_event_repo(payload)
+  local sender = onedev_event_sender(payload)
+  local ref_kind = onedev_ref_kind(ref)
+  local action
+  local event
+  local data
+
+  if before == ONEDEV_ZERO_SHA then
+    action = "create"
+    event = "create"
+    data = {
+      ref = onedev_short_ref(ref),
+      ref_type = ref_kind,
+      master_branch = repo.default_branch or "",
+      description = repo.description,
+      pusher_type = "user",
+      repository = repo,
+      sender = sender,
+    }
+  elseif after == ONEDEV_ZERO_SHA then
+    action = "delete"
+    event = "delete"
+    data = {
+      ref = onedev_short_ref(ref),
+      ref_type = ref_kind,
+      pusher_type = "user",
+      repository = repo,
+      sender = sender,
+    }
+  else
+    action = "push"
+    event = "push"
+    data = {
+      ref = ref,
+      before = before,
+      after = after,
+      created = false,
+      deleted = false,
+      forced = false,
+      compare = "",
+      commits = {},
+      head_commit = nil,
+      pusher = {
+        name = sender.name or sender.login or "",
+        email = sender.email or "",
+      },
+      repository = repo,
+      sender = sender,
+    }
+  end
+
+  return make_internal_event({
+    event = event,
+    action = action,
+    provider = config.backend,
+    raw = payload,
+    data = data,
+    timestamp = onedev_event_timestamp(payload),
+  })
+end
+
+local ONEDEV_BUILD_STATUS = {
+  WAITING = { action = "requested", status = "queued" },
+  PENDING = { action = "requested", status = "queued" },
+  RUNNING = { action = "in_progress", status = "in_progress" },
+  SUCCESSFUL = { action = "completed", status = "completed", conclusion = "success" },
+  FAILED = { action = "completed", status = "completed", conclusion = "failure" },
+  CANCELLED = { action = "completed", status = "completed", conclusion = "cancelled" },
+  CANCELED = { action = "completed", status = "completed", conclusion = "cancelled" },
+  TIMED_OUT = { action = "completed", status = "completed", conclusion = "timed_out" },
+}
+
+local ONEDEV_BUILD_EVENT_DEFAULTS = {
+  BuildSubmitted = { action = "requested", status = "queued" },
+  BuildPending = { action = "requested", status = "queued" },
+  BuildRunning = { action = "in_progress", status = "in_progress" },
+  BuildResumed = { action = "in_progress", status = "in_progress" },
+  BuildFinished = { action = "completed", status = "completed", conclusion = "failure" },
+}
+
+local function onedev_build_state(payload, build)
+  local raw_status = build.status or payload.activity or ""
+  local mapped = ONEDEV_BUILD_STATUS[raw_status] or ONEDEV_BUILD_EVENT_DEFAULTS[payload.type or ""]
+  return mapped or { action = "unknown", status = "queued" }, raw_status
+end
+
+local function onedev_build_webhook(payload)
+  payload = payload or {}
+  local build = payload.build or {}
+  local repo = onedev_event_repo(payload)
+  local sender = onedev_event_sender(payload)
+  local state, raw_status = onedev_build_state(payload, build)
+  local action = state.action
+  local build_url = payload.url or ""
+  if build_url == "" and repo.full_name and repo.full_name ~= "" and build.number then
+    build_url = config.base_url .. "/" .. repo.full_name .. "/~builds/" .. build.number
+  end
+  local run_name = build.jobName or build.name or tostring(build.number or build.id or 0)
+  local workflow_run = {
+    id = build.id or 0,
+    name = run_name,
+    head_branch = build.refName or "",
+    head_sha = build.commitHash or "",
+    run_number = build.number or build.id or 0,
+    event = "push",
+    display_title = run_name,
+    status = state.status,
+    conclusion = state.conclusion,
+    workflow_id = 0,
+    url = build_url,
+    html_url = build_url,
+    pull_requests = {},
+    created_at = build.submitDate or "",
+    updated_at = build.finishDate or build.statusDate or build.submitDate or "",
+    run_attempt = 1,
+    referenced_workflows = {},
+    actor = sender,
+    triggering_actor = sender,
+  }
+  local workflow = {
+    id = 0,
+    name = run_name,
+    path = "",
+    state = "active",
+    url = "",
+    html_url = "",
+    badge_url = "",
+    created_at = "",
+    updated_at = "",
+  }
+
+  return make_internal_event({
+    event = "workflow_run",
+    action = action,
+    raw_action = action == "unknown" and raw_status or nil,
+    provider = config.backend,
+    raw = payload,
+    data = {
+      action = action,
+      workflow_run = workflow_run,
+      workflow = workflow,
+      repository = repo,
+      sender = sender,
+    },
+    timestamp = onedev_event_timestamp(payload, workflow_run.updated_at),
+  })
+end
+
+local function onedev_package_webhook(payload)
+  payload = payload or {}
+  local pack = payload.pack or {}
+  local repo = onedev_event_repo(payload)
+  local sender = onedev_event_sender(payload)
+  local package_type = pack.type or pack.typeName or pack.packageType or ""
+  local published_at = pack.publishDate or payload.date or ""
+  local package_version = {
+    id = pack.id or 0,
+    name = pack.version or pack.name or "",
+    version = pack.version or "",
+    html_url = payload.url or "",
+    created_at = published_at,
+    updated_at = published_at,
+    metadata = {},
+  }
+  local package = {
+    id = pack.id or 0,
+    name = pack.name or pack.reference or pack.version or "",
+    package_type = package_type,
+    html_url = payload.url or "",
+    created_at = published_at,
+    updated_at = published_at,
+    owner = sender,
+    package_version = package_version,
+    registry = {
+      name = "OneDev",
+      type = package_type,
+      url = "",
+    },
+  }
+  return make_internal_event({
+    event = "package",
+    action = "published",
+    provider = config.backend,
+    raw = payload,
+    data = {
+      action = "published",
+      package = package,
+      repository = repo,
+      sender = sender,
+    },
+    timestamp = onedev_event_timestamp(payload, published_at),
+  })
+end
+
+b:webhook("RefUpdated", onedev_ref_updated_webhook)
+
+for _, event in ipairs({
+  "BuildSubmitted",
+  "BuildPending",
+  "BuildRunning",
+  "BuildFinished",
+  "BuildUpdated",
+  "BuildResumed",
+}) do
+  b:webhook(event, onedev_build_webhook)
+end
+
+b:webhook("PackPublished", onedev_package_webhook)
+
+local ONEDEV_ACTIONLESS_NORMALIZED_EVENTS = {
+  create = true,
+  delete = true,
+  push = true,
+}
+
+local ONEDEV_NORMALIZED_WEBHOOK_EVENTS = {
+  "create",
+  "delete",
+  "push",
+  "workflow_run",
+  "package",
+}
+
+local function onedev_normalized_payload_without_envelope_fields(data)
+  local payload = {}
+  for k, v in pairs(data or {}) do
+    if k ~= "sender" and k ~= "repository" then
+      payload[k] = v
+    end
+  end
+  return payload
+end
+
+local function translate_onedev_normalized_webhook(internal_event, fields)
+  local data = internal_event.data or {}
+  fields = fields or {}
+  return make_normalized_webhook_envelope(internal_event, {
+    id = fields.id,
+    type = fields.type
+      or (
+        ONEDEV_ACTIONLESS_NORMALIZED_EVENTS[internal_event.event]
+          and normalized_webhook_event_type(internal_event.event, "")
+        or normalized_webhook_event_type(internal_event.event, internal_event.action)
+      ),
+    occurred_at = fields.occurred_at,
+    actor = fields.actor or data.sender,
+    repository = fields.repository or data.repository,
+    payload = fields.payload or onedev_normalized_payload_without_envelope_fields(data),
+  })
+end
+
+for _, event in ipairs(ONEDEV_NORMALIZED_WEBHOOK_EVENTS) do
+  b:webhook_translator(event, translate_onedev_normalized_webhook)
+end
+
 b:build()

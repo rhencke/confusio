@@ -515,6 +515,7 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
     --   Azure DevOps and Harness use payload.eventType.
     --   Gitblit uses payload.event (e.g. "post-receive").
     --   Gerrit uses payload.type (e.g. "comment-added").
+    --   OneDev uses payload.type (e.g. "RefUpdated").
     --   Kallithea hook plugins embed an event/hook name in the JSON body.
     local ev = event_header(backend)
     if ev == nil and type(payload) == "table" then
@@ -522,7 +523,7 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
         ev = payload.eventType
       elseif backend == "gitblit" and payload.event then
         ev = payload.event
-      elseif backend == "gerrit" and payload.type then
+      elseif (backend == "gerrit" or backend == "onedev") and payload.type then
         ev = payload.type
       elseif backend == "kallithea" then
         ev = kallithea_body_event(payload)
