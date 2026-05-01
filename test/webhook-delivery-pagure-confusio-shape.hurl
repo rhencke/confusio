@@ -33,6 +33,35 @@ jsonpath "$[0].body_json.occurred_at" == "1705312800"
 jsonpath "$[0].body_json.actor.login" == "alice"
 jsonpath "$[0].body_json.repository.full_name" == "myorg/my-repo"
 jsonpath "$[0].body_json.payload.issue.number" == 1
+jsonpath "$[0].body_json.payload.issue.html_url" contains "/myorg/my-repo/issue/1"
+jsonpath "$[0].body_json.payload.issue.milestone.title" == "v1.0"
+
+# ── issue.status.change → issues: closed — confusio shape ────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/pagure
+Content-Type: application/json
+X-Pagure-Event: issue.status.change
+file,fixtures/webhooks/pagure/issue.status.change-closed.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "issues"
+jsonpath "$[0].confusio_source" == "pagure"
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "issue.closed"
+jsonpath "$[0].body_json.occurred_at" == "1705320000"
+jsonpath "$[0].body_json.actor.login" == "bob"
+jsonpath "$[0].body_json.payload.issue.state" == "closed"
+jsonpath "$[0].body_json.payload.issue.closed_at" == "1705320000"
 
 # ── issue.comment.added → issue_comment: created — confusio shape ─────────────
 
@@ -62,6 +91,8 @@ jsonpath "$[0].body_json.occurred_at" == "1705316400"
 jsonpath "$[0].body_json.actor.login" == "bob"
 jsonpath "$[0].body_json.payload.comment.id" == 100
 jsonpath "$[0].body_json.payload.comment.body" == "I can reproduce this too."
+jsonpath "$[0].body_json.payload.comment.html_url" contains "/myorg/my-repo/issue/1#comment-100"
+jsonpath "$[0].body_json.payload.issue.html_url" contains "/myorg/my-repo/issue/1"
 
 # ── pull-request.new → pull_request: opened — confusio shape ─────────────────
 

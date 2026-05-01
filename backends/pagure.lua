@@ -105,6 +105,29 @@ local function translate_pagure_tag(tag)
   }
 end
 
+local function translate_pagure_milestone(milestone)
+  if not milestone or milestone == "" then
+    return nil
+  end
+  if type(milestone) ~= "table" then
+    milestone = { title = tostring(milestone) }
+  end
+  local title = milestone.title or milestone.name or ""
+  local state = (milestone.closed or milestone.status == "Closed") and "closed" or "open"
+  return {
+    id = milestone.id or 0,
+    node_id = "",
+    number = milestone.id or 0,
+    title = title,
+    description = milestone.description or "",
+    state = state,
+    created_at = tostring(milestone.date_created or milestone.created_at or ""),
+    updated_at = tostring(milestone.last_updated or milestone.updated_at or ""),
+    due_on = milestone.due_on or milestone.date_due,
+    closed_at = milestone.closed_at or milestone.date_closed,
+  }
+end
+
 -- Translate a Pagure issue to GitHub format.
 -- Pagure states: "Open", "Closed"
 -- Pagure dates: Unix timestamps as strings
@@ -130,6 +153,10 @@ local function translate_pagure_issue(i)
     -- Try to return as-is if it looks like a timestamp (digits only)
     return tostring(v)
   end
+  local closed_at = nil
+  if state == "closed" then
+    closed_at = ts(i.closed_at or i.date_closed or i.closed_date or i.closed_on or i.last_updated)
+  end
   return {
     id = i.id or 0,
     number = i.id or 0,
@@ -139,26 +166,30 @@ local function translate_pagure_issue(i)
     user = user,
     assignees = assignees,
     labels = labels,
-    milestone = nil,
     created_at = ts(i.date_created),
     updated_at = ts(i.last_updated),
-    closed_at = nil,
+    closed_at = closed_at,
     html_url = config.base_url .. "/" .. (i.full_url or ""),
+    milestone = translate_pagure_milestone(i.milestone),
   }
 end
 
 -- Translate a Pagure comment to GitHub format.
-local function translate_pagure_comment(c)
+local function translate_pagure_comment(c, issue)
   if not c then
     return {}
+  end
+  local html_url = c.full_url and (config.base_url .. "/" .. c.full_url) or ""
+  if html_url == "" and issue and issue.full_url and c.id then
+    html_url = config.base_url .. "/" .. issue.full_url .. "#comment-" .. c.id
   end
   return {
     id = c.id or 0,
     body = c.comment or "",
     user = translate_pagure_user(c.user),
     created_at = tostring(c.date_created or ""),
-    updated_at = tostring(c.date_created or ""),
-    html_url = "",
+    updated_at = tostring(c.last_updated or c.date_updated or c.date_created or ""),
+    html_url = html_url,
   }
 end
 
@@ -1136,7 +1167,7 @@ b:webhook("issue.comment.added", function(payload)
     data = {
       action = "created",
       issue = translate_pagure_issue(msg.issue),
-      comment = translate_pagure_comment(msg.comment),
+      comment = translate_pagure_comment(msg.comment, msg.issue),
       repository = translate_pagure_repo(msg.project),
       sender = pagure_agent_user(msg.agent),
     },
