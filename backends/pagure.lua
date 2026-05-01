@@ -1058,7 +1058,7 @@ local function pagure_agent_user(agent)
 end
 
 -- Translate a Pagure pull request to GitHub format.
-local function translate_pagure_pull(pr)
+local function translate_pagure_pull(pr, project, actor)
   if not pr then
     return {}
   end
@@ -1066,6 +1066,8 @@ local function translate_pagure_pull(pr)
   local is_merged = status == "Merged"
   local gh_state = status == "Open" and "open" or "closed"
   local repo_from = pr.repo_from or {}
+  local head_repo = translate_pagure_repo(repo_from)
+  local base_repo = translate_pagure_repo(project)
   return {
     id = pr.id or 0,
     node_id = "",
@@ -1079,19 +1081,22 @@ local function translate_pagure_pull(pr)
       label = (repo_from.fullname or "") .. ":" .. (pr.branch_from or ""),
       ref = pr.branch_from or "",
       sha = pr.commit_stop or "",
+      repo = head_repo,
     },
     base = {
-      label = "" .. ":" .. (pr.branch or ""),
+      label = (project and project.fullname or "") .. ":" .. (pr.branch or ""),
       ref = pr.branch or "",
-      sha = "",
+      sha = pr.commit_start or "",
+      repo = base_repo,
     },
     draft = false,
     created_at = tostring(pr.date_created or ""),
     updated_at = tostring(pr.last_updated or ""),
     closed_at = (not is_merged and gh_state == "closed") and tostring(pr.last_updated or "") or nil,
     merged_at = is_merged and tostring(pr.last_updated or "") or nil,
-    merge_commit_sha = nil,
-    merged_by = nil,
+    merge_commit_sha = is_merged and (pr.commit_stop or nil) or nil,
+    merged = is_merged,
+    merged_by = is_merged and pagure_agent_user(pr.closed_by or pr.merged_by or actor) or nil,
     html_url = config.base_url .. "/" .. (pr.full_url or ""),
     url = "",
     mergeable = status == "Open" or nil,
@@ -1186,7 +1191,7 @@ b:webhook("pull-request.new", function(payload)
     data = {
       action = "opened",
       number = pr.id,
-      pull_request = translate_pagure_pull(pr),
+      pull_request = translate_pagure_pull(pr, msg.project, msg.agent),
       repository = translate_pagure_repo(msg.project),
       sender = pagure_agent_user(msg.agent),
     },
@@ -1205,7 +1210,7 @@ b:webhook("pull-request.updated", function(payload)
     data = {
       action = "synchronize",
       number = pr.id,
-      pull_request = translate_pagure_pull(pr),
+      pull_request = translate_pagure_pull(pr, msg.project, msg.agent),
       repository = translate_pagure_repo(msg.project),
       sender = pagure_agent_user(msg.agent),
     },
@@ -1224,7 +1229,7 @@ b:webhook("pull-request.closed", function(payload)
     data = {
       action = "closed",
       number = pr.id,
-      pull_request = translate_pagure_pull(pr),
+      pull_request = translate_pagure_pull(pr, msg.project, msg.agent),
       repository = translate_pagure_repo(msg.project),
       sender = pagure_agent_user(msg.agent),
     },
