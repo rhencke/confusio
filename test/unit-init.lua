@@ -2214,6 +2214,73 @@ do
 end
 
 -- ============================================================
+-- Launchpad webhook handlers
+-- ============================================================
+
+do
+  local saved_rest = app.backend.rest
+  local saved_capabilities = app.backend.capabilities
+  local saved_webhooks = app.backend.webhooks
+  local saved_webhook_translators = app.backend.webhook_translators
+  local saved_base_url = config.base_url
+  local saved_backend = config.backend
+
+  app.backend.rest = {}
+  app.backend.capabilities = {}
+  app.backend.webhooks = {}
+  app.backend.webhook_translators = {}
+  config.base_url = ""
+  config.backend = "launchpad"
+  _real_dofile("backends/launchpad.lua")
+
+  local push_payload = {
+    git_repository = "/devel/~fido/confusio/+git/confusio",
+    git_repository_path = "~fido/confusio/+git/confusio",
+    ref_changes = {
+      ["refs/heads/main"] = {
+        old = { commit_sha1 = "1111111111111111111111111111111111111111" },
+        new = { commit_sha1 = "2222222222222222222222222222222222222222" },
+      },
+    },
+  }
+  local push_event = app.backend.webhooks["git:push:0.1"](push_payload)
+  eq(push_event.event, "push", "launchpad webhook: git push maps to push")
+  eq(push_event.provider, "launchpad", "launchpad webhook: git push sets provider")
+  eq(push_event.data.ref, "refs/heads/main", "launchpad webhook: git push sets ref")
+  eq(
+    push_event.data.before,
+    "1111111111111111111111111111111111111111",
+    "launchpad webhook: git push sets before SHA"
+  )
+  eq(
+    push_event.data.after,
+    "2222222222222222222222222222222222222222",
+    "launchpad webhook: git push sets after SHA"
+  )
+  eq(
+    push_event.data.repository.full_name,
+    "fido/confusio",
+    "launchpad webhook: git push sets repository"
+  )
+  local push_envelope = app.backend.webhook_translators.push(push_event)
+  eq(push_envelope.type, "push", "launchpad webhook: normalized push is actionless")
+  eq(push_envelope.repository.full_name, "fido/confusio", "launchpad webhook: push envelope repo")
+
+  local ping_event = app.backend.webhooks.ping({ ping = true })
+  eq(ping_event.event, "ping", "launchpad webhook: ping maps to ping")
+  eq(ping_event.data.zen, "Launchpad", "launchpad webhook: ping sets zen")
+  local ping_envelope = app.backend.webhook_translators.ping(ping_event)
+  eq(ping_envelope.type, "ping", "launchpad webhook: normalized ping is actionless")
+
+  app.backend.rest = saved_rest
+  app.backend.capabilities = saved_capabilities
+  app.backend.webhooks = saved_webhooks
+  app.backend.webhook_translators = saved_webhook_translators
+  config.base_url = saved_base_url
+  config.backend = saved_backend
+end
+
+-- ============================================================
 -- make_webhook_receiver
 -- ============================================================
 

@@ -47,9 +47,129 @@ local LAUNCHPAD_NATIVE_TO_GITHUB_EVENT = {
   ["archive:binary-build:0.1"] = "workflow_run",
 }
 
+local LAUNCHPAD_ACTIONLESS_NORMALIZED_EVENTS = {
+  ping = true,
+  push = true,
+}
+
+local LAUNCHPAD_NORMALIZED_WEBHOOK_EVENTS = {
+  "push",
+  "ping",
+}
+
+local ZERO_SHA = string.rep("0", 40)
+
 -- Extract Launchpad username from an owner/assignee link like ".../~username".
 local function lp_login(link)
   return (link or ""):match("/~([^/]+)$") or ""
+end
+
+local function lp_webhook_owner_login(path)
+  return (path or ""):match("^~([^/]+)/") or ""
+end
+
+local function lp_webhook_repo_name(path)
+  return (path or ""):match("/%+git/(.+)$") or (path or ""):match("/([^/]+)$") or ""
+end
+
+local function lp_webhook_user(login)
+  login = login or ""
+  return {
+    login = login,
+    id = 0,
+    node_id = "",
+    avatar_url = "",
+    url = "",
+    html_url = login ~= "" and ("https://launchpad.net/~" .. login) or "",
+    type = "User",
+  }
+end
+
+local function lp_webhook_repository(payload)
+  payload = payload or {}
+  local path = payload.git_repository_path or ""
+  local owner = lp_webhook_owner_login(path)
+  local name = lp_webhook_repo_name(path)
+  local full_name = owner ~= "" and name ~= "" and (owner .. "/" .. name) or name
+  local html_url = path ~= "" and ("https://code.launchpad.net/" .. path) or ""
+  return {
+    id = 0,
+    node_id = "",
+    name = name,
+    full_name = full_name,
+    private = false,
+    owner = lp_webhook_user(owner),
+    html_url = html_url,
+    url = payload.git_repository or "",
+    git_url = path ~= "" and ("git://git.launchpad.net/" .. path) or "",
+    ssh_url = path ~= "" and ("git+ssh://git.launchpad.net/" .. path) or "",
+    clone_url = path ~= "" and ("https://git.launchpad.net/" .. path) or "",
+    default_branch = "",
+  }
+end
+
+local function lp_webhook_ref_sha(ref_desc)
+  if type(ref_desc) ~= "table" then
+    return nil
+  end
+  return ref_desc.commit_sha1 or ref_desc.sha or ref_desc.id
+end
+
+local function lp_webhook_primary_ref_change(ref_changes)
+  if type(ref_changes) ~= "table" then
+    return "", {}
+  end
+  local refs = {}
+  for ref, _ in pairs(ref_changes) do
+    refs[#refs + 1] = ref
+  end
+  table.sort(refs)
+  local ref = refs[1] or ""
+  return ref, ref_changes[ref] or {}
+end
+
+local function lp_webhook_sender(payload)
+  payload = payload or {}
+  local login = lp_login(payload.person)
+  if login == "" then
+    login = lp_login(payload.person_link)
+  end
+  if login == "" then
+    login = lp_login(payload.owner_link)
+  end
+  if login == "" then
+    login = lp_webhook_owner_login(payload.git_repository_path)
+  end
+  return lp_webhook_user(login)
+end
+
+local function launchpad_normalized_payload_without_envelope_fields(data)
+  data = data or {}
+  local payload = {}
+  for k, v in pairs(data) do
+    if k ~= "repository" and k ~= "sender" and k ~= "actor" then
+      payload[k] = v
+    end
+  end
+  return payload
+end
+
+local function translate_launchpad_normalized_webhook(internal_event, fields)
+  local data = internal_event.data or {}
+  fields = fields or {}
+  return make_normalized_webhook_envelope(internal_event, {
+    id = fields.id,
+    type = fields.type
+      or (
+        LAUNCHPAD_ACTIONLESS_NORMALIZED_EVENTS[internal_event.event]
+          and normalized_webhook_event_type(internal_event.event, "")
+        or normalized_webhook_event_type(internal_event.event, internal_event.action)
+      ),
+    occurred_at = fields.occurred_at,
+    actor = fields.actor or data.sender,
+    repository = fields.repository or data.repository,
+    payload = fields.payload or launchpad_normalized_payload_without_envelope_fields(data),
+  })
 end
 
 local function lp_webhook_unimplemented(event_type)
@@ -140,6 +260,62 @@ end)
 for _, event_type in ipairs(LAUNCHPAD_WEBHOOK_EVENT_TYPES) do
   b:webhook(event_type, lp_webhook_unimplemented(event_type))
 end
+
+for _, event_type in ipairs(LAUNCHPAD_NORMALIZED_WEBHOOK_EVENTS) do
+  b:webhook_translator(event_type, translate_launchpad_normalized_webhook)
+end
+
+b:webhook("git:push:0.1", function(payload)
+  payload = payload or {}
+  local ref, change = lp_webhook_primary_ref_change(payload.ref_changes)
+  local before = lp_webhook_ref_sha(change.old) or ZERO_SHA
+  local after = lp_webhook_ref_sha(change.new) or ZERO_SHA
+  local repository = lp_webhook_repository(payload)
+  local sender = lp_webhook_sender(payload)
+  return make_internal_event({
+    event = "push",
+    action = "push",
+    provider = "launchpad",
+    raw = payload,
+    data = {
+      ref = ref,
+      before = before,
+      after = after,
+      created = change.old == nil and change.new ~= nil,
+      deleted = change.old ~= nil and change.new == nil,
+      forced = false,
+      compare = "",
+      commits = {},
+      head_commit = nil,
+      pusher = {
+        name = sender.login,
+        email = "",
+      },
+      repository = repository,
+      sender = sender,
+      ref_changes = payload.ref_changes or {},
+    },
+    timestamp = "",
+  })
+end)
+
+b:webhook("ping", function(payload)
+  payload = payload or {}
+  return make_internal_event({
+    event = "ping",
+    action = "ping",
+    provider = "launchpad",
+    raw = payload,
+    data = {
+      zen = payload.zen or "Launchpad",
+      hook_id = payload.hook_id,
+      hook = payload.hook or {},
+      repository = lp_webhook_repository(payload),
+      sender = lp_webhook_sender(payload),
+    },
+    timestamp = "",
+  })
+end)
 
 -- Issues --------------------------------------------------------------------
 -- Launchpad: GET /devel/~{owner}/{repo}?ws.op=searchTasks
