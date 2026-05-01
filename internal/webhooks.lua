@@ -466,6 +466,10 @@ local function event_header(backend)
   elseif backend == "pagure" then
     return GetHeader("X-Pagure-Event")
 
+  -- Launchpad: X-Launchpad-Event-Type
+  elseif backend == "launchpad" then
+    return GetHeader("X-Launchpad-Event-Type")
+
   -- Confusio-normalized: X-Confusio-Event
   elseif backend == "confusio" then
     return GetHeader("X-Confusio-Event")

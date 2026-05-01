@@ -2361,7 +2361,32 @@ do
     "webhook_receiver: gogs ignores X-Gitea-Event → 422"
   )
 
+  -- Launchpad uses X-Launchpad-Event-Type.
+  app.backend.webhooks = {
+    ["git:push:0.1"] = function(_payload)
+      return { event = "push" }, nil
+    end,
+  }
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/launchpad",
+      headers = {
+        ["Content-Type"] = "application/json",
+        ["X-Launchpad-Event-Type"] = "git:push:0.1",
+      },
+      body = "{}",
+    }),
+    200,
+    "webhook_receiver: launchpad X-Launchpad-Event-Type handler succeeds → 200"
+  )
+
   -- Kallithea embeds its event name in the JSON body.
+  app.backend.webhooks = {
+    push = function(_payload)
+      return { event = "push" }, nil
+    end,
+  }
   eq(
     call_webhook({
       method = "POST",

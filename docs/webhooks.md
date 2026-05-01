@@ -166,6 +166,7 @@ delivered.  Confusio maps these to its canonical internal event family names.
 | codecommit | _(SNS `Message.detail-type`)_ | `CodeCommit Repository State Change` |
 | kallithea | _(body fields)_ | `push`, `CREATE_REPO_HOOK`, `CREATE_PULLREQUEST_HOOK` |
 | pagure | `X-Pagure-Event` | `issue`, `pull-request`, `git` |
+| launchpad | `X-Launchpad-Event-Type` | `git:push:0.1`, `merge-proposal:0.1`, `bug:0.1` |
 | sourcehut | _(body field `event`)_ | `push`, `patchset:created` |
 | All others | _(backend-specific — see [Signature Verification](#signature-verification))_ | — |
 

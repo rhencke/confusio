@@ -17,9 +17,46 @@ local CLOSED_STATUSES = {
   ["Fix Committed"] = true,
 }
 
+local LAUNCHPAD_WEBHOOK_EVENT_TYPES = {
+  "git:push:0.1",
+  "merge-proposal:0.1",
+  "ping",
+  "bug:0.1",
+  "bug:comment:0.1",
+  "ci:build:0.1",
+  "livefs:build:0.1",
+  "snap:build:0.1",
+  "ocirecipe:build:0.1",
+  "archive:source-package-upload:0.1",
+  "archive:binary-package-upload:0.1",
+  "archive:binary-build:0.1",
+}
+
+local LAUNCHPAD_NATIVE_TO_GITHUB_EVENT = {
+  ["git:push:0.1"] = "push",
+  ["merge-proposal:0.1"] = "pull_request",
+  ping = "ping",
+  ["bug:0.1"] = "issues",
+  ["bug:comment:0.1"] = "issue_comment",
+  ["ci:build:0.1"] = "workflow_run",
+  ["livefs:build:0.1"] = "workflow_run",
+  ["snap:build:0.1"] = "workflow_run",
+  ["ocirecipe:build:0.1"] = "workflow_run",
+  ["archive:source-package-upload:0.1"] = "package",
+  ["archive:binary-package-upload:0.1"] = "package",
+  ["archive:binary-build:0.1"] = "workflow_run",
+}
+
 -- Extract Launchpad username from an owner/assignee link like ".../~username".
 local function lp_login(link)
   return (link or ""):match("/~([^/]+)$") or ""
+end
+
+local function lp_webhook_unimplemented(event_type)
+  local github_event = LAUNCHPAD_NATIVE_TO_GITHUB_EVENT[event_type] or event_type
+  return function(_payload)
+    return nil, "Launchpad webhook event not implemented: " .. github_event
+  end
 end
 
 -- Translate a Launchpad bug task (IBugTask) to GitHub issue format.
@@ -94,6 +131,15 @@ local b = make_backend_builder()
 b:rest("get_root", function()
   proxy_health_check(pcall(Fetch, config.base_url .. "/devel/"))
 end)
+
+-- Inbound webhook event headers ------------------------------------------------
+-- Launchpad sends the native event type in X-Launchpad-Event-Type.  Register the
+-- native keys up front so unsupported events fail as known-but-unimplemented
+-- until the event-family translators replace these handlers.
+
+for _, event_type in ipairs(LAUNCHPAD_WEBHOOK_EVENT_TYPES) do
+  b:webhook(event_type, lp_webhook_unimplemented(event_type))
+end
 
 -- Issues --------------------------------------------------------------------
 -- Launchpad: GET /devel/~{owner}/{repo}?ws.op=searchTasks
