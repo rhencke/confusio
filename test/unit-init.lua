@@ -2483,6 +2483,73 @@ do
 end
 
 -- ============================================================
+-- NotABug webhook handlers
+-- ============================================================
+
+do
+  local saved_rest = app.backend.rest
+  local saved_capabilities = app.backend.capabilities
+  local saved_webhooks = app.backend.webhooks
+  local saved_webhook_translators = app.backend.webhook_translators
+  local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
+  local saved_base_url = config.base_url
+  local saved_backend = config.backend
+
+  app.backend.rest = {}
+  app.backend.capabilities = {}
+  app.backend.webhooks = {}
+  app.backend.webhook_translators = {}
+  graphql_resolvers = {} -- luacheck: globals graphql_resolvers
+  config.base_url = ""
+  config.backend = "notabug"
+  _real_dofile("backends/gitea.lua")
+
+  ok(app.backend.webhooks.issues ~= nil, "notabug webhook: issues handler registered")
+  ok(app.backend.webhooks.issue_comment ~= nil, "notabug webhook: issue_comment handler registered")
+  ok(app.backend.webhooks.pull_request ~= nil, "notabug webhook: pull_request handler registered")
+  ok(app.backend.webhooks.push ~= nil, "notabug webhook: push handler registered")
+  ok(app.backend.webhooks.release ~= nil, "notabug webhook: release handler registered")
+  ok(app.backend.webhooks.label == nil, "notabug webhook: label handler not registered")
+  ok(app.backend.webhooks.milestone == nil, "notabug webhook: milestone handler not registered")
+  ok(app.backend.webhooks.merge_group == nil, "notabug webhook: merge_group handler not registered")
+  ok(app.backend.webhook_translators.issues ~= nil, "notabug webhook: issues translator registered")
+  ok(
+    app.backend.webhook_translators.label == nil,
+    "notabug webhook: label translator not registered"
+  )
+  ok(
+    app.backend.webhook_translators.merge_group == nil,
+    "notabug webhook: merge_group translator not registered"
+  )
+
+  local issue_event = app.backend.webhooks.issues({
+    action = "opened",
+    issue = { number = 1, title = "Bug report", updated = "2024-01-15T10:00:00Z" },
+    repository = { name = "hello-world", full_name = "octocat/hello-world" },
+    sender = { login = "alice" },
+  })
+  eq(issue_event.provider, "notabug", "notabug webhook: native handler sets provider")
+  eq(issue_event.event, "issues", "notabug webhook: issues maps to issues")
+  eq(issue_event.action, "opened", "notabug webhook: issues action preserved")
+
+  local issue_envelope = app.backend.webhook_translators.issues(issue_event)
+  eq(issue_envelope.type, "issue.opened", "notabug webhook: normalized issue includes action")
+  eq(
+    issue_envelope.repository.full_name,
+    "octocat/hello-world",
+    "notabug webhook: normalized issue keeps repository"
+  )
+
+  app.backend.rest = saved_rest
+  app.backend.capabilities = saved_capabilities
+  app.backend.webhooks = saved_webhooks
+  app.backend.webhook_translators = saved_webhook_translators
+  graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
+  config.base_url = saved_base_url
+  config.backend = saved_backend
+end
+
+-- ============================================================
 -- make_webhook_receiver
 -- ============================================================
 
