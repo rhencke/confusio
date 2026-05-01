@@ -1,0 +1,24 @@
+{
+  "event": "pull_request",
+  "hook": "CREATE_PULLREQUEST_HOOK",
+  "action": "opened",
+  "pull_request_id": 7,
+  "pull_request": {
+    "id": 7,
+    "title": "Add webhook fixtures",
+    "description": "Teach confusio about Kallithea hooks.",
+    "status": "new",
+    "created_on": "2024-01-15T11:00:00Z",
+    "updated_on": "2024-01-15T11:00:00Z",
+    "org_repo_name": "octocat/hello-world",
+    "other_repo_name": "alice/hello-world",
+    "org_ref": "main",
+    "other_ref": "feature-branch",
+    "owner": "alice"
+  },
+  "repository": "octocat/hello-world",
+  "source_repository": "alice/hello-world",
+  "target_ref": "main",
+  "source_ref": "feature-branch",
+  "created_by": "alice"
+}

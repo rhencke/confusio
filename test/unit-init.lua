@@ -2361,6 +2361,38 @@ do
     "webhook_receiver: gogs ignores X-Gitea-Event → 422"
   )
 
+  -- Kallithea embeds its event name in the JSON body.
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/kallithea",
+      headers = { ["Content-Type"] = "application/json" },
+      body = '{"event":"push"}',
+    }),
+    200,
+    "webhook_receiver: kallithea root event handler succeeds → 200"
+  )
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/kallithea",
+      headers = { ["Content-Type"] = "application/json" },
+      body = '{"data":{"event_type":"push"}}',
+    }),
+    200,
+    "webhook_receiver: kallithea nested data.event_type handler succeeds → 200"
+  )
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/kallithea",
+      headers = { ["Content-Type"] = "application/json" },
+      body = '{"payload":{"hook_type":"push"}}',
+    }),
+    200,
+    "webhook_receiver: kallithea nested payload.hook_type handler succeeds → 200"
+  )
+
   -- 422 when handler returns nil (normalisation failed)
   app.backend.webhooks = {
     push = function(_payload)
@@ -2793,10 +2825,23 @@ do
     with_secret("kallithea", {}, '{"data":{"secret":"' .. SECRET .. '"}}') ~= 401,
     "verify_signature kallithea: secret in data.secret JSON field → not 401"
   )
+  ok(
+    with_secret("kallithea", {}, '{"payload":{"webhook_token":"' .. SECRET .. '"}}') ~= 401,
+    "verify_signature kallithea: secret in payload.webhook_token JSON field → not 401"
+  )
+  ok(
+    with_secret("kallithea", {}, '{"auth_token":"' .. SECRET .. '"}') ~= 401,
+    "verify_signature kallithea: secret in root auth_token JSON field → not 401"
+  )
   eq(
     with_secret("kallithea", {}, '{"secret":"bad"}'),
     401,
     "verify_signature kallithea: bad body secret → 401"
+  )
+  eq(
+    with_secret("kallithea", {}, '{"secret":{"nested":"' .. SECRET .. '"}}'),
+    401,
+    "verify_signature kallithea: non-scalar body secret → 401"
   )
   eq(
     with_secret("kallithea", {}, '{"event":"push"}'),

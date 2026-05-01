@@ -1,0 +1,36 @@
+{
+  "event": "push",
+  "hook": "PUSH_HOOK",
+  "config": "/srv/kallithea/kallithea.ini",
+  "scm": "git",
+  "username": "alice",
+  "ip": "192.0.2.10",
+  "action": "push",
+  "repository": "octocat/hello-world",
+  "repo_name": "octocat/hello-world",
+  "repo_type": "git",
+  "pushed_revs": [
+    "5a1e9f3d7c2b4a6e8f90123456789abcdef01234"
+  ],
+  "refs": [
+    {
+      "ref": "refs/heads/feature-branch",
+      "type": "heads",
+      "name": "feature-branch",
+      "old_rev": "0000000000000000000000000000000000000000",
+      "new_rev": "5a1e9f3d7c2b4a6e8f90123456789abcdef01234"
+    }
+  ],
+  "commits": [
+    {
+      "id": "5a1e9f3d7c2b4a6e8f90123456789abcdef01234",
+      "message": "Start feature branch",
+      "timestamp": "2024-01-15T10:00:00Z",
+      "author": {
+        "name": "Alice",
+        "email": "alice@example.com",
+        "username": "alice"
+      }
+    }
+  ]
+}

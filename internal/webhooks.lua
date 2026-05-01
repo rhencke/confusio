@@ -112,6 +112,49 @@ local function verify_authorization_variant(secret, auth)
   return false
 end
 
+local KALLITHEA_BODY_TOKEN_FIELDS = {
+  "secret",
+  "token",
+  "auth_token",
+  "webhook_secret",
+  "webhook_token",
+  "authentication_token",
+}
+
+local function first_string_field(tbl, fields)
+  if type(tbl) ~= "table" then
+    return nil
+  end
+  for _, field in ipairs(fields) do
+    local value = tbl[field]
+    if type(value) == "string" or type(value) == "number" then
+      return tostring(value)
+    end
+  end
+  return nil
+end
+
+local function kallithea_body_token(payload)
+  return first_string_field(payload, KALLITHEA_BODY_TOKEN_FIELDS)
+    or first_string_field(payload and payload.data, KALLITHEA_BODY_TOKEN_FIELDS)
+    or first_string_field(payload and payload.payload, KALLITHEA_BODY_TOKEN_FIELDS)
+end
+
+local KALLITHEA_BODY_EVENT_FIELDS = {
+  "event",
+  "event_type",
+  "eventType",
+  "hook",
+  "hook_type",
+  "hookType",
+}
+
+local function kallithea_body_event(payload)
+  return first_string_field(payload, KALLITHEA_BODY_EVENT_FIELDS)
+    or first_string_field(payload and payload.data, KALLITHEA_BODY_EVENT_FIELDS)
+    or first_string_field(payload and payload.payload, KALLITHEA_BODY_EVENT_FIELDS)
+end
+
 -- verify_signature(backend, secret, body[, now]) authenticates the inbound request
 -- using the backend-native scheme.  Returns true on success, false on failure.
 -- When secret is nil or "" (trust-the-network mode) all requests are accepted.
@@ -333,11 +376,11 @@ local function verify_signature(backend, secret, body, now)
     if not ok_parse or type(parsed) ~= "table" then
       return false
     end
-    local tok = parsed.secret or (parsed.data and parsed.data.secret)
+    local tok = kallithea_body_token(parsed)
     if not tok then
       return false
     end
-    return ct_equal(secret, tostring(tok))
+    return ct_equal(secret, tok)
 
   -- Confusio-normalized: X-Confusio-Signature-256, HMAC-SHA256 with timestamp.
   -- Header format: "sha256=<hex>, v=1, ts=<unix>"
@@ -471,6 +514,7 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
     --   Azure DevOps and Harness use payload.eventType.
     --   Gitblit uses payload.event (e.g. "post-receive").
     --   Gerrit uses payload.type (e.g. "comment-added").
+    --   Kallithea hook plugins embed an event/hook name in the JSON body.
     local ev = event_header(backend)
     if ev == nil and type(payload) == "table" then
       if payload.eventType then
@@ -479,6 +523,8 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
         ev = payload.event
       elseif backend == "gerrit" and payload.type then
         ev = payload.type
+      elseif backend == "kallithea" then
+        ev = kallithea_body_event(payload)
       end
     end
 
