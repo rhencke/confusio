@@ -7215,9 +7215,22 @@ local GOGS_NATIVE_WEBHOOK_EVENTS = {
   push = true,
   release = true,
 }
+local GITEA_NON_NATIVE_WEBHOOK_EVENTS = {
+  deploy_key = true,
+  discussion = true,
+  discussion_comment = true,
+  merge_group = true,
+  ping = true,
+  security_and_analysis = true,
+  star = true,
+  watch = true,
+}
 
 local function register_gitea_webhook(event, fn)
   if GOGS_FAMILY_WEBHOOK_BACKENDS[config.backend] and not GOGS_NATIVE_WEBHOOK_EVENTS[event] then
+    return
+  end
+  if config.backend == "gitea" and GITEA_NON_NATIVE_WEBHOOK_EVENTS[event] then
     return
   end
   b:webhook(event, fn)
@@ -7967,7 +7980,8 @@ register_gitea_webhook("repository", function(payload)
 end)
 
 -- deploy_key: SSH deploy key added or removed from a repository.
--- Gitea sends X-Gitea-Event: deploy_key with GitHub-compatible payload.
+-- Forgejo-family aliases can emit X-Gitea-Event: deploy_key with a
+-- GitHub-compatible payload; canonical Gitea does not register this family.
 register_gitea_webhook("deploy_key", function(payload)
   local action = payload.action or "unknown"
   local key = payload.key or {}
@@ -8075,8 +8089,8 @@ register_gitea_webhook("collaborator", function(payload)
 end)
 
 -- star: a user starred or unstarred this repository.
--- Gitea sends X-Gitea-Event: star with action "created" (starred) or "deleted"
--- (unstarred).  Maps directly to GitHub's star event.
+-- Forgejo-family aliases can emit X-Gitea-Event: star with action "created"
+-- (starred) or "deleted" (unstarred).  Maps directly to GitHub's star event.
 local STAR_ACTIONS = { created = "created", deleted = "deleted" }
 register_gitea_webhook("star", function(payload)
   local raw_action = payload.action or ""
@@ -8099,8 +8113,8 @@ register_gitea_webhook("star", function(payload)
 end)
 
 -- watch: a user started watching (subscribing to) this repository.
--- Gitea sends X-Gitea-Event: watch with action "started".  GitHub's watch
--- event also only has "started".
+-- Forgejo-family aliases can emit X-Gitea-Event: watch with action "started".
+-- GitHub's watch event also only has "started".
 local WATCH_ACTIONS = { started = "started" }
 register_gitea_webhook("watch", function(payload)
   local raw_action = payload.action or ""
@@ -8174,9 +8188,9 @@ register_gitea_webhook("package", function(payload)
   })
 end)
 
--- ping: sent by Gitea when a webhook is first created or tested.
--- Gitea sends X-Gitea-Event: ping with zen, hook_id, hook, repository, sender.
--- There is no action field; the event is forwarded as-is.
+-- ping: sent when a webhook is first created or tested.
+-- Forgejo-family aliases can emit X-Gitea-Event: ping with zen, hook_id, hook,
+-- repository, sender.  There is no action field; the event is forwarded as-is.
 register_gitea_webhook("ping", function(payload)
   return make_internal_event({
     event = "ping",
@@ -8206,12 +8220,9 @@ local GITEA_ACTIONLESS_NORMALIZED_EVENTS = {
 local GITEA_NORMALIZED_WEBHOOK_EVENTS = {
   "issues",
   "issue_comment",
-  "discussion",
-  "discussion_comment",
   "label",
   "milestone",
   "pull_request",
-  "merge_group",
   "pull_request_review",
   "pull_request_review_comment",
   "workflow_run",
@@ -8223,13 +8234,20 @@ local GITEA_NORMALIZED_WEBHOOK_EVENTS = {
   "release",
   "fork",
   "repository",
-  "deploy_key",
   "gollum",
   "member",
+  "package",
+}
+
+local FORGEJO_FAMILY_NORMALIZED_WEBHOOK_EVENTS = {
+  "discussion",
+  "discussion_comment",
+  "merge_group",
+  "deploy_key",
   "star",
   "watch",
-  "package",
   "ping",
+  "security_and_analysis",
 }
 
 local GOGS_NORMALIZED_WEBHOOK_EVENTS = {
@@ -8275,7 +8293,9 @@ local normalized_webhook_events = GOGS_FAMILY_WEBHOOK_BACKENDS[config.backend]
     and GOGS_NORMALIZED_WEBHOOK_EVENTS
   or GITEA_NORMALIZED_WEBHOOK_EVENTS
 if FORGEJO_FAMILY_WEBHOOK_BACKENDS[config.backend] then
-  normalized_webhook_events[#normalized_webhook_events + 1] = "security_and_analysis"
+  for _, event in ipairs(FORGEJO_FAMILY_NORMALIZED_WEBHOOK_EVENTS) do
+    normalized_webhook_events[#normalized_webhook_events + 1] = event
+  end
 end
 for _, event in ipairs(normalized_webhook_events) do
   b:webhook_translator(event, translate_gitea_normalized_webhook)

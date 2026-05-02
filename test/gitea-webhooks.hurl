@@ -488,7 +488,7 @@ HTTP 200
 jsonpath "$.message" == "accepted"
 header "X-Confusio-Raw-Action" == "auto_merged"
 
-# ── merge_group: checks_requested → 200 ───────────────────────────────────────
+# ── merge_group: non-native → 422 ─────────────────────────────────────────────
 
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
@@ -518,11 +518,11 @@ X-Gitea-Event: merge_group
   "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
 }
 
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: merge_group"
 
-# ── merge_group: destroyed (reason: merged) → 200 ─────────────────────────────
+# ── merge_group: destroyed (reason: merged) → 422 ─────────────────────────────
 
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
@@ -553,11 +553,11 @@ X-Gitea-Event: merge_group
   "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
 }
 
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: merge_group"
 
-# ── merge_group: destroyed (reason: dequeued) → 200 ──────────────────────────
+# ── merge_group: destroyed (reason: dequeued) → 422 ──────────────────────────
 
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
@@ -588,11 +588,11 @@ X-Gitea-Event: merge_group
   "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
 }
 
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: merge_group"
 
-# ── merge_group: unknown action → 200 + X-Confusio-Raw-Action sidecar ─────────
+# ── merge_group: unknown action → 422 ─────────────────────────────────────────
 
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
@@ -622,10 +622,9 @@ X-Gitea-Event: merge_group
   "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
 }
 
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
-header "X-Confusio-Raw-Action" == "queued"
+jsonpath "$.message" == "Unrecognised event type: merge_group"
 
 # ── pull_request_review: submitted (APPROVED) → 200 ──────────────────────────
 
@@ -1474,7 +1473,7 @@ HTTP 422
 [Asserts]
 jsonpath "$.message" == "Unrecognised event type: security_and_analysis"
 
-# ── star: created → 200 ───────────────────────────────────────────────────────
+# ── star: created → 422 ───────────────────────────────────────────────────────
 
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
@@ -1491,11 +1490,11 @@ X-Gitea-Event: star
   "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
 }
 
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: star"
 
-# ── star: deleted → 200 ───────────────────────────────────────────────────────
+# ── star: deleted → 422 ───────────────────────────────────────────────────────
 
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
@@ -1512,11 +1511,11 @@ X-Gitea-Event: star
   "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
 }
 
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: star"
 
-# ── star: unknown action → 200 + X-Confusio-Raw-Action sidecar ───────────────
+# ── star: unknown action → 422 ────────────────────────────────────────────────
 
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
@@ -1532,12 +1531,11 @@ X-Gitea-Event: star
   "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
 }
 
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
-header "X-Confusio-Raw-Action" == "bookmarked"
+jsonpath "$.message" == "Unrecognised event type: star"
 
-# ── watch: started → 200 ──────────────────────────────────────────────────────
+# ── watch: started → 422 ──────────────────────────────────────────────────────
 
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
@@ -1553,11 +1551,11 @@ X-Gitea-Event: watch
   "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
 }
 
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: watch"
 
-# ── watch: unknown action → 200 + X-Confusio-Raw-Action sidecar ──────────────
+# ── watch: unknown action → 422 ───────────────────────────────────────────────
 
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
@@ -1573,12 +1571,11 @@ X-Gitea-Event: watch
   "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
 }
 
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
-header "X-Confusio-Raw-Action" == "stopped"
+jsonpath "$.message" == "Unrecognised event type: watch"
 
-# ── discussion: created → 200 ────────────────────────────────────────────────
+# ── discussion: created → 422 ────────────────────────────────────────────────
 
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
@@ -1603,11 +1600,11 @@ X-Gitea-Event: discussion
   "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
 }
 
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: discussion"
 
-# ── discussion: labeled → 200 (label field forwarded) ────────────────────────
+# ── discussion: labeled → 422 ─────────────────────────────────────────────────
 
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
@@ -1632,11 +1629,11 @@ X-Gitea-Event: discussion
   "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
 }
 
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: discussion"
 
-# ── discussion: unknown action → 200 + X-Confusio-Raw-Action sidecar ─────────
+# ── discussion: unknown action → 422 ──────────────────────────────────────────
 
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
@@ -1660,12 +1657,11 @@ X-Gitea-Event: discussion
   "sender": {"id": 1, "login": "alice", "avatar_url": "", "html_url": ""}
 }
 
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
-header "X-Confusio-Raw-Action" == "pinned"
+jsonpath "$.message" == "Unrecognised event type: discussion"
 
-# ── discussion_comment: created → 200 ────────────────────────────────────────
+# ── discussion_comment: created → 422 ─────────────────────────────────────────
 
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
@@ -1697,17 +1693,17 @@ X-Gitea-Event: discussion_comment
   "sender": {"id": 2, "login": "bob", "avatar_url": "", "html_url": ""}
 }
 
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: discussion_comment"
 
-# ── ping: ping ────────────────────────────────────────────────────────────────
+# ── ping: non-native → 422 ────────────────────────────────────────────────────
 
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: ping
 file,fixtures/webhooks/gitea/ping.json;
 
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: ping"
