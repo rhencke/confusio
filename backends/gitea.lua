@@ -7127,12 +7127,15 @@ local ISSUES_ACTIONS = {
   edited = "edited",
   closed = "closed",
   reopened = "reopened",
+  deleted = "deleted",
   labeled = "labeled",
-  label_updated = "labeled", -- older Gitea spelling
+  label_updated = "labeled", -- native Gitea spelling
   unlabeled = "unlabeled",
-  label_cleared = "unlabeled", -- older Gitea spelling
+  label_cleared = "unlabeled", -- native Gitea spelling
   assigned = "assigned",
   unassigned = "unassigned",
+  milestoned = "milestoned",
+  demilestoned = "demilestoned",
 }
 local ISSUE_COMMENT_ACTIONS = {
   created = "created",
@@ -7220,6 +7223,17 @@ register_gitea_webhook("issues", function(payload)
   -- label that changed.
   if ISSUES_ACTIONS[raw_action] == "labeled" or ISSUES_ACTIONS[raw_action] == "unlabeled" then
     data.label = translate_gitea_label(payload.label)
+  end
+  -- For assigned/unassigned, include the specific user that changed.
+  if action == "assigned" or action == "unassigned" then
+    data.assignee = payload.assignee and translate_user(payload.assignee) or nil
+  end
+  -- For milestoned/demilestoned, include the affected milestone when Gitea
+  -- supplies it at either the top level or on the issue object.
+  if action == "milestoned" or action == "demilestoned" then
+    data.milestone = translate_gitea_milestone_webhook(
+      payload.milestone or (payload.issue or {}).milestone
+    )
   end
   return make_internal_event({
     event = "issues",

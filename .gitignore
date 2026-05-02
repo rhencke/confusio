@@ -17,9 +17,12 @@ test/fixtures/webhooks/gitea/issues-closed.json
 test/fixtures/webhooks/gitea/issues-reopened.json
 test/fixtures/webhooks/gitea/issues-assigned.json
 test/fixtures/webhooks/gitea/issues-edited.json
+test/fixtures/webhooks/gitea/issues-deleted.json
 test/fixtures/webhooks/gitea/issues-labeled.json
 test/fixtures/webhooks/gitea/issues-unlabeled.json
 test/fixtures/webhooks/gitea/issues-unassigned.json
+test/fixtures/webhooks/gitea/issues-milestoned.json
+test/fixtures/webhooks/gitea/issues-demilestoned.json
 test/fixtures/webhooks/gitea/milestone-closed.json
 test/fixtures/webhooks/gitea/milestone-deleted.json
 test/fixtures/webhooks/gitea/milestone-edited.json
