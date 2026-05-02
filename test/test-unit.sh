@@ -129,7 +129,7 @@ run_gitea_native_delivery_phase() {
   wait_port "mock target" "$DELIVERY_TARGET_PORT"
   wait_port "mock gitea" "$MOCK_PORT"
   wait_http "confusio" "$CONFUSIO_PORT"
-  STRICT_NATIVE_FIXTURES=1 "${shape_env[@]}" scripts/run-gitea-native-webhook-deliveries.sh \
+  env STRICT_NATIVE_FIXTURES=1 "${shape_env[@]}" scripts/run-gitea-native-webhook-deliveries.sh \
     "localhost:$CONFUSIO_PORT" \
     "localhost:$DELIVERY_TARGET_PORT" \
     "$HURL"
