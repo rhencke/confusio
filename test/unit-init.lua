@@ -1810,6 +1810,10 @@ ok(type(app.backend.graphql) == "table", "app.backend.graphql: is a table")
 ok(type(app.backend.capabilities) == "table", "app.backend.capabilities: is a table")
 ok(type(app.backend.webhooks) == "table", "app.backend.webhooks: is a table")
 ok(type(app.backend.webhook_translators) == "table", "app.backend.webhook_translators: is a table")
+ok(
+  type(app.backend.webhook_github_translators) == "table",
+  "app.backend.webhook_github_translators: is a table"
+)
 ok(type(app.allow_anonymous) == "boolean", "app.allow_anonymous: is a boolean")
 ok(app.allow_anonymous == true, "app.allow_anonymous: default true (no backend loaded)")
 ok(type(app.route_match) == "function", "app.route_match: bound router lookup installed on app")
@@ -1832,6 +1836,10 @@ do
     type(test_app.backend.webhook_translators) == "table",
     "make_app: backend.webhook_translators is a table"
   )
+  ok(
+    type(test_app.backend.webhook_github_translators) == "table",
+    "make_app: backend.webhook_github_translators is a table"
+  )
   ok(test_app.allow_anonymous == true, "make_app: allow_anonymous defaults to true")
   ok(test_app ~= app, "make_app: returns a new independent table each call")
 end
@@ -1845,6 +1853,7 @@ do
   local saved_capabilities = app.backend.capabilities
   local saved_webhooks = app.backend.webhooks
   local saved_webhook_translators = app.backend.webhook_translators
+  local saved_webhook_github_translators = app.backend.webhook_github_translators
   local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
   local saved_anon = app.allow_anonymous
 
@@ -1853,6 +1862,7 @@ do
     app.backend.capabilities = saved_capabilities
     app.backend.webhooks = saved_webhooks
     app.backend.webhook_translators = saved_webhook_translators
+    app.backend.webhook_github_translators = saved_webhook_github_translators
     graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
     app.allow_anonymous = saved_anon
   end
@@ -1867,6 +1877,10 @@ do
   ok(
     type(b.webhook_translator) == "function",
     "make_backend_builder: has webhook_translator method"
+  )
+  ok(
+    type(b.webhook_github_translator) == "function",
+    "make_backend_builder: has webhook_github_translator method"
   )
   ok(
     type(b.set_allow_anonymous) == "function",
@@ -1884,14 +1898,20 @@ do
     b2:webhook_translator("push", function() end) == b2,
     "builder:webhook_translator: returns self"
   )
+  ok(
+    b2:webhook_github_translator("push", function() end) == b2,
+    "builder:webhook_github_translator: returns self"
+  )
   ok(b2:set_allow_anonymous(true) == b2, "builder:set_allow_anonymous: returns self")
 
   -- build() populates app.backend.rest, graphql_resolvers, app.backend.capabilities,
-  -- app.backend.webhooks, and app.backend.webhook_translators
+  -- app.backend.webhooks, app.backend.webhook_translators, and
+  -- app.backend.webhook_github_translators
   app.backend.rest = {}
   app.backend.capabilities = {}
   app.backend.webhooks = {}
   app.backend.webhook_translators = {}
+  app.backend.webhook_github_translators = {}
   graphql_resolvers = {} -- luacheck: globals graphql_resolvers
   app.allow_anonymous = true
 
@@ -1900,12 +1920,14 @@ do
   local cap_repos = { get = function() end, list = function() end }
   local push_fn = function() end
   local push_translator_fn = function() end
+  local push_github_translator_fn = function() end
   local b3 = make_backend_builder()
   b3:rest("get_repo", get_fn)
   b3:graphql("Query.viewer", gql_fn)
   b3:capability("repos", cap_repos)
   b3:webhook("push", push_fn)
   b3:webhook_translator("push", push_translator_fn)
+  b3:webhook_github_translator("push", push_github_translator_fn)
   b3:set_allow_anonymous(false)
   b3:build()
 
@@ -1917,6 +1939,11 @@ do
     app.backend.webhook_translators["push"],
     push_translator_fn,
     "builder:build: registers normalized webhook translator"
+  )
+  eq(
+    app.backend.webhook_github_translators["push"],
+    push_github_translator_fn,
+    "builder:build: registers GitHub-shape webhook translator"
   )
   eq(app.allow_anonymous, false, "builder:build: sets allow_anonymous")
 
@@ -3727,6 +3754,35 @@ do
   eq(decoded_gb.ref, "refs/heads/main", "fanout_body github: payload fields forwarded")
   ok(decoded_gb.source == nil, "fanout_body github: no envelope wrapper")
 
+  local internal = make_internal_event({ -- luacheck: globals make_internal_event
+    event = "issues",
+    action = "opened",
+    provider = "gitea",
+    raw = payload,
+    data = {
+      payload = { normalized = true },
+    },
+  })
+  local gtb = fanout_body("gitea", "issues", payload, "github", internal, nil, {
+    id = "github-delivery-123",
+  }, {
+    issues = function(ev, fields)
+      return {
+        action = ev.action,
+        delivery_id = fields.id,
+        issue = ev.data.payload,
+      }
+    end,
+  })
+  local decoded_gtb = DecodeJson(gtb)
+  eq(decoded_gtb.action, "opened", "fanout_body github translator: action forwarded")
+  eq(
+    decoded_gtb.delivery_id,
+    "github-delivery-123",
+    "fanout_body github translator: receives delivery id"
+  )
+  ok(decoded_gtb.issue.normalized == true, "fanout_body github translator: normalized payload used")
+
   -- "confusio" shape: body is the normalized event envelope.
   local cb = fanout_body("gitea", "push", payload, "confusio")
   ok(type(cb) == "string", "fanout_body confusio: returns a string")
@@ -3737,15 +3793,6 @@ do
   ok(type(decoded_cb.payload) == "table", "fanout_body confusio: payload is a table")
   eq(decoded_cb.payload.ref, "refs/heads/main", "fanout_body confusio: payload fields preserved")
 
-  local internal = make_internal_event({ -- luacheck: globals make_internal_event
-    event = "issues",
-    action = "opened",
-    provider = "gitea",
-    raw = payload,
-    data = {
-      payload = { normalized = true },
-    },
-  })
   local tb = fanout_body("gitea", "issues", payload, "confusio", internal, {
     issues = function(ev, fields)
       return {
@@ -3791,12 +3838,23 @@ fanout_register_target({ url = 42 })
 -- (the pre-registered target only subscribes to "push").
 local _fd_calls = {}
 local _real_deliver_fire = deliver_fire
-deliver_fire = function(tgt, backend, event_type, payload) -- luacheck: globals deliver_fire
+deliver_fire = function(
+  tgt,
+  backend,
+  event_type,
+  payload,
+  internal_event,
+  translators,
+  github_translators
+) -- luacheck: globals deliver_fire
   _fd_calls[#_fd_calls + 1] = {
     tgt = tgt,
     backend = backend,
     event_type = event_type,
     payload = payload,
+    internal_event = internal_event,
+    translators = translators,
+    github_translators = github_translators,
   }
   return true, 200, nil
 end
@@ -3836,9 +3894,32 @@ eq(_fd_calls[1].tgt.name, "fd-wildcard", "fanout_dispatch filtered: preserves na
 
 -- Matching event type delivers to both wildcard and issues targets.
 _fd_calls = {}
-local fd3 = fanout_dispatch("gitea", "issues", { action = "opened" })
+local fd3_internal = make_internal_event({
+  event = "issues",
+  action = "opened",
+  provider = "gitea",
+  raw = { action = "opened" },
+  data = {},
+})
+local fd3_translators = { issues = function() end }
+local fd3_github_translators = { issues = function() end }
+local fd3 = fanout_dispatch(
+  "gitea",
+  "issues",
+  { action = "opened" },
+  fd3_internal,
+  fd3_translators,
+  fd3_github_translators
+)
 eq(fd3, 2, "fanout_dispatch match: wildcard and issues targets both match issues event")
 eq(_fd_calls[2].tgt.name, "default", "fanout_dispatch default: unnamed target defaults to default")
+eq(_fd_calls[1].internal_event, fd3_internal, "fanout_dispatch: forwards internal event")
+eq(_fd_calls[1].translators, fd3_translators, "fanout_dispatch: forwards normalized translators")
+eq(
+  _fd_calls[1].github_translators,
+  fd3_github_translators,
+  "fanout_dispatch: forwards GitHub-shape translators"
+)
 
 deliver_fire = _real_deliver_fire -- luacheck: globals deliver_fire
 
@@ -3893,6 +3974,39 @@ do
     _df_last_opts.headers["X-GitHub-Delivery"] ~= nil,
     "deliver_fire github shape: X-GitHub-Delivery header present"
   )
+
+  local github_internal = make_internal_event({
+    event = "issues",
+    action = "opened",
+    provider = "gitea",
+    raw = { action = "opened" },
+    data = { issue = { number = 1 } },
+  })
+  local ok_github_translated = deliver_fire(
+    target_github,
+    "gitea",
+    "issues",
+    { action = "opened" },
+    github_internal,
+    nil,
+    {
+      issues = function(ev, fields)
+        return {
+          action = ev.action,
+          delivery_id = fields.id,
+          issue = ev.data.issue,
+        }
+      end,
+    }
+  )
+  ok(ok_github_translated == true, "deliver_fire github translator: ok is true")
+  local github_translated_body = DecodeJson(_df_last_opts.body)
+  eq(
+    github_translated_body.delivery_id,
+    _df_last_opts.headers["X-GitHub-Delivery"],
+    "deliver_fire github translator: body id matches delivery header"
+  )
+  eq(github_translated_body.issue.number, 1, "deliver_fire github translator: body translated")
 
   -- deliver_fire: 503 → ok=false.
   _df_mock_status = 503

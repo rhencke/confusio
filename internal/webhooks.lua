@@ -562,7 +562,8 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
       internal_event.event,
       payload,
       internal_event,
-      a.backend.webhook_translators
+      a.backend.webhook_translators,
+      a.backend.webhook_github_translators
     ) -- luacheck: globals fanout_dispatch
 
     -- When the action was not recognized, surface it in a sidecar header so
