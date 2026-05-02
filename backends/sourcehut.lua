@@ -144,6 +144,68 @@ local function translate_srht_user(u)
   }
 end
 
+local function translate_srht_label(label)
+  label = label or {}
+  return {
+    id = label.id or 0,
+    node_id = label.rid or "",
+    url = "",
+    name = label.name or "",
+    color = (label.backgroundColor or label.background_color or ""):gsub("^#", ""),
+    description = label.description or "",
+    default = false,
+  }
+end
+
+local function translate_srht_labels(labels)
+  local result = {}
+  for _, label in ipairs(labels or {}) do
+    result[#result + 1] = translate_srht_label(label)
+  end
+  return result
+end
+
+local function translate_srht_tracker_repo(tracker)
+  tracker = tracker or {}
+  local owner = tracker.owner or {}
+  local canonical = sourcehut_canonical(owner)
+  local login = sourcehut_login(owner)
+  local vis = tracker.visibility or "PUBLIC"
+  local private = vis == "private" or vis == "PRIVATE"
+  return {
+    id = tracker.id or 0,
+    node_id = tracker.rid or "",
+    name = tracker.name or "",
+    full_name = login ~= "" and (login .. "/" .. (tracker.name or "")) or (tracker.name or ""),
+    private = private,
+    owner = translate_srht_user(owner),
+    html_url = canonical ~= "" and (todo_base():gsub("/api$", "") .. "/" .. canonical) or "",
+    description = tracker.description,
+    fork = false,
+    url = "",
+    clone_url = "",
+    homepage = "",
+    size = 0,
+    stargazers_count = 0,
+    watchers_count = 0,
+    language = nil,
+    has_issues = true,
+    has_wiki = false,
+    forks_count = 0,
+    archived = false,
+    disabled = false,
+    open_issues_count = 0,
+    default_branch = "",
+    visibility = private and "private" or "public",
+    forks = 0,
+    open_issues = 0,
+    watchers = 0,
+    created_at = tracker.created,
+    updated_at = tracker.updated,
+    pushed_at = tracker.updated,
+  }
+end
+
 -- Translate GitHub create/update request body to Sourcehut format.
 local function translate_srht_req(body_str)
   local req = DecodeJson(body_str or "{}")
@@ -181,20 +243,25 @@ local function translate_srht_ticket(t)
     return {}
   end
   local submitter = t.submitter or {}
-  local canonical = submitter.canonical_name or ""
-  local login = canonical:sub(1, 1) == "~" and canonical:sub(2) or (submitter.name or canonical)
   local status = t.status or "reported"
-  local state = (status == "resolved" or status == "closed") and "closed" or "open"
+  local state = (
+    status == "resolved"
+    or status == "closed"
+    or status == "RESOLVED"
+    or status == "CLOSED"
+  )
+      and "closed"
+    or "open"
   return {
     id = t.id or 0,
-    node_id = "",
+    node_id = t.rid or "",
     number = t.id or 0,
-    title = t.title or "",
+    title = t.subject or t.title or "",
     body = t.body or "",
     state = state,
-    user = { login = login, id = 0, node_id = "", avatar_url = "", url = "", type = "User" },
-    assignees = {},
-    labels = {},
+    user = translate_srht_user(submitter),
+    assignees = translate_list(translate_srht_user, t.assignees),
+    labels = translate_srht_labels(t.labels),
     milestone = nil,
     created_at = t.created or "",
     updated_at = t.updated or t.created or "",
@@ -334,6 +401,236 @@ end
 local function sourcehut_repository(payload)
   payload = sourcehut_payload(payload)
   return translate_srht_repo(payload.repository or {})
+end
+
+local function sourcehut_ticket_payload(payload)
+  payload = sourcehut_payload(payload)
+  return payload.ticket or payload.newTicket or payload.ticketEvent and payload.ticketEvent.ticket
+end
+
+local function sourcehut_label_payload(payload)
+  payload = sourcehut_payload(payload)
+  return payload.label or payload.newLabel
+end
+
+local function sourcehut_event_payload(payload)
+  payload = sourcehut_payload(payload)
+  return payload.newEvent or payload.eventRecord or payload.ticketEvent or payload.event_detail
+end
+
+local function sourcehut_issue_repository(payload, ticket, label)
+  payload = sourcehut_payload(payload)
+  ticket = ticket or sourcehut_ticket_payload(payload) or {}
+  label = label or sourcehut_label_payload(payload) or {}
+  return translate_srht_tracker_repo(
+    payload.tracker or ticket.tracker or label.tracker or (payload.repository or {}).tracker
+  )
+end
+
+local function sourcehut_ticket_sender(ticket)
+  ticket = ticket or {}
+  return translate_srht_user(ticket.submitter or ticket.author)
+end
+
+local function sourcehut_ticket_event(payload, action)
+  payload = payload or {}
+  local ticket = sourcehut_ticket_payload(payload) or {}
+  local sender = sourcehut_sender(payload)
+  return make_internal_event({
+    event = "issues",
+    action = action,
+    provider = "sourcehut",
+    raw = payload,
+    data = {
+      action = action,
+      issue = translate_srht_ticket(ticket),
+      repository = sourcehut_issue_repository(payload, ticket),
+      sender = sender.login ~= "" and sender or sourcehut_ticket_sender(ticket),
+    },
+    timestamp = (sourcehut_webhook(payload) or {}).date or ticket.updated or ticket.created or "",
+  })
+end
+
+local function sourcehut_deleted_ticket_event(payload)
+  payload = payload or {}
+  local data = sourcehut_payload(payload)
+  local ticket_id = data.ticketId or data.ticket_id or 0
+  return make_internal_event({
+    event = "issues",
+    action = "deleted",
+    provider = "sourcehut",
+    raw = payload,
+    data = {
+      action = "deleted",
+      issue = { id = ticket_id, number = ticket_id, state = "closed", labels = {} },
+      repository = sourcehut_issue_repository(payload),
+      sender = sourcehut_sender(payload),
+    },
+    timestamp = (sourcehut_webhook(payload) or {}).date or "",
+  })
+end
+
+local function sourcehut_label_event(payload, action)
+  payload = payload or {}
+  local label = sourcehut_label_payload(payload) or {}
+  local sender = sourcehut_sender(payload)
+  return make_internal_event({
+    event = "label",
+    action = action,
+    provider = "sourcehut",
+    raw = payload,
+    data = {
+      action = action,
+      label = translate_srht_label(label),
+      changes = {},
+      repository = sourcehut_issue_repository(payload, nil, label),
+      sender = sender.login ~= "" and sender or translate_srht_user((label.tracker or {}).owner),
+    },
+    timestamp = (sourcehut_webhook(payload) or {}).date or label.updated or label.created or "",
+  })
+end
+
+local function sourcehut_comment_from_event(event, change)
+  event = event or {}
+  change = change or {}
+  return {
+    id = change.id or event.id or 0,
+    node_id = "",
+    url = "",
+    body = change.text or "",
+    user = translate_srht_user(change.author),
+    created_at = event.created or "",
+    updated_at = event.created or "",
+    html_url = "",
+  }
+end
+
+local function sourcehut_ticket_activity_sender(change, ticket)
+  change = change or {}
+  return translate_srht_user(
+    change.author or change.editor or change.labeler or change.user or ticket and ticket.submitter
+  )
+end
+
+local function sourcehut_status_action(change)
+  change = change or {}
+  local new_status = change.newStatus or change.new_status or ""
+  local old_status = change.oldStatus or change.old_status or ""
+  if new_status == "RESOLVED" or new_status == "CLOSED" or new_status == "resolved" then
+    return "closed"
+  end
+  if old_status == "RESOLVED" or old_status == "CLOSED" or old_status == "resolved" then
+    return "reopened"
+  end
+  return "edited"
+end
+
+local function sourcehut_event_created(payload)
+  payload = payload or {}
+  local event = sourcehut_event_payload(payload) or {}
+  local ticket = event.ticket or {}
+  local change = (event.changes or {})[1] or {}
+  local event_type = change.eventType or change.event_type or ""
+
+  if event_type == "CREATED" then
+    return make_internal_event({
+      event = "issues",
+      action = "opened",
+      provider = "sourcehut",
+      raw = payload,
+      data = {
+        action = "opened",
+        issue = translate_srht_ticket(ticket),
+        repository = sourcehut_issue_repository(payload, ticket),
+        sender = sourcehut_ticket_activity_sender(change, ticket),
+      },
+      timestamp = (sourcehut_webhook(payload) or {}).date or event.created or "",
+    })
+  end
+
+  if event_type == "COMMENT" then
+    return make_internal_event({
+      event = "issue_comment",
+      action = "created",
+      provider = "sourcehut",
+      raw = payload,
+      data = {
+        action = "created",
+        issue = translate_srht_ticket(ticket),
+        comment = sourcehut_comment_from_event(event, change),
+        repository = sourcehut_issue_repository(payload, ticket),
+        sender = sourcehut_ticket_activity_sender(change, ticket),
+      },
+      timestamp = (sourcehut_webhook(payload) or {}).date or event.created or "",
+    })
+  end
+
+  if event_type == "LABEL_ADDED" or event_type == "LABEL_REMOVED" then
+    local action = event_type == "LABEL_ADDED" and "labeled" or "unlabeled"
+    return make_internal_event({
+      event = "issues",
+      action = action,
+      provider = "sourcehut",
+      raw = payload,
+      data = {
+        action = action,
+        issue = translate_srht_ticket(ticket),
+        label = translate_srht_label(change.label),
+        repository = sourcehut_issue_repository(payload, ticket, change.label),
+        sender = sourcehut_ticket_activity_sender(change, ticket),
+      },
+      timestamp = (sourcehut_webhook(payload) or {}).date or event.created or "",
+    })
+  end
+
+  if event_type == "STATUS_CHANGE" then
+    local action = sourcehut_status_action(change)
+    return make_internal_event({
+      event = "issues",
+      action = action,
+      provider = "sourcehut",
+      raw = payload,
+      data = {
+        action = action,
+        issue = translate_srht_ticket(ticket),
+        repository = sourcehut_issue_repository(payload, ticket),
+        sender = sourcehut_ticket_activity_sender(change, ticket),
+      },
+      timestamp = (sourcehut_webhook(payload) or {}).date or event.created or "",
+    })
+  end
+
+  if event_type == "ASSIGNED_USER" or event_type == "UNASSIGNED_USER" then
+    local action = event_type == "ASSIGNED_USER" and "assigned" or "unassigned"
+    return make_internal_event({
+      event = "issues",
+      action = action,
+      provider = "sourcehut",
+      raw = payload,
+      data = {
+        action = action,
+        issue = translate_srht_ticket(ticket),
+        assignee = translate_srht_user(change.user or change.assignee),
+        repository = sourcehut_issue_repository(payload, ticket),
+        sender = sourcehut_ticket_activity_sender(change, ticket),
+      },
+      timestamp = (sourcehut_webhook(payload) or {}).date or event.created or "",
+    })
+  end
+
+  return make_internal_event({
+    event = "issues",
+    action = "edited",
+    provider = "sourcehut",
+    raw = payload,
+    data = {
+      action = "edited",
+      issue = translate_srht_ticket(ticket),
+      repository = sourcehut_issue_repository(payload, ticket),
+      sender = sourcehut_ticket_activity_sender(change, ticket),
+    },
+    timestamp = (sourcehut_webhook(payload) or {}).date or event.created or "",
+  })
 end
 
 local function sourcehut_update_ref(update)
@@ -598,6 +895,20 @@ local function translate_sourcehut_github_webhook(internal_event, _fields)
     payload.master_branch = data.master_branch or ""
     payload.description = data.description
     payload.pusher_type = data.pusher_type or "user"
+  elseif internal_event.event == "issues" then
+    payload.issue = data.issue or {}
+    if data.label then
+      payload.label = data.label
+    end
+    if data.assignee then
+      payload.assignee = data.assignee
+    end
+  elseif internal_event.event == "issue_comment" then
+    payload.issue = data.issue or {}
+    payload.comment = data.comment or {}
+  elseif internal_event.event == "label" then
+    payload.label = data.label or {}
+    payload.changes = data.changes or {}
   end
   return payload
 end
@@ -1069,7 +1380,39 @@ end)
 b:webhook("GIT_PRE_RECEIVE", sourcehut_git_event)
 b:webhook("GIT_POST_RECEIVE", sourcehut_git_event)
 
-for _, event in ipairs({ "push", "create", "delete", "repository" }) do
+b:webhook("TICKET_CREATED", function(payload)
+  return sourcehut_ticket_event(payload, "opened")
+end)
+
+b:webhook("TICKET_UPDATE", function(payload)
+  return sourcehut_ticket_event(payload, "edited")
+end)
+
+b:webhook("TICKET_DELETED", sourcehut_deleted_ticket_event)
+
+b:webhook("LABEL_CREATED", function(payload)
+  return sourcehut_label_event(payload, "created")
+end)
+
+b:webhook("LABEL_UPDATE", function(payload)
+  return sourcehut_label_event(payload, "edited")
+end)
+
+b:webhook("LABEL_DELETED", function(payload)
+  return sourcehut_label_event(payload, "deleted")
+end)
+
+b:webhook("EVENT_CREATED", sourcehut_event_created)
+
+for _, event in ipairs({
+  "push",
+  "create",
+  "delete",
+  "repository",
+  "issues",
+  "issue_comment",
+  "label",
+}) do
   b:webhook_translator(event, translate_sourcehut_normalized_webhook)
   b:webhook_github_translator(event, translate_sourcehut_github_webhook)
 end

@@ -2901,6 +2901,26 @@ do
     app.backend.webhook_github_translators.repository ~= nil,
     "sourcehut webhook: repository GitHub-shape translator registered"
   )
+  ok(app.backend.webhooks.TICKET_CREATED ~= nil, "sourcehut webhook: TICKET_CREATED registered")
+  ok(app.backend.webhooks.TICKET_UPDATE ~= nil, "sourcehut webhook: TICKET_UPDATE registered")
+  ok(app.backend.webhooks.TICKET_DELETED ~= nil, "sourcehut webhook: TICKET_DELETED registered")
+  ok(app.backend.webhooks.LABEL_CREATED ~= nil, "sourcehut webhook: LABEL_CREATED registered")
+  ok(app.backend.webhooks.LABEL_UPDATE ~= nil, "sourcehut webhook: LABEL_UPDATE registered")
+  ok(app.backend.webhooks.LABEL_DELETED ~= nil, "sourcehut webhook: LABEL_DELETED registered")
+  ok(app.backend.webhooks.EVENT_CREATED ~= nil, "sourcehut webhook: EVENT_CREATED registered")
+  ok(
+    app.backend.webhook_translators.issues ~= nil,
+    "sourcehut webhook: issues translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.issues ~= nil,
+    "sourcehut webhook: issues GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_translators.issue_comment ~= nil,
+    "sourcehut webhook: issue_comment translator registered"
+  )
+  ok(app.backend.webhook_translators.label ~= nil, "sourcehut webhook: label translator registered")
 
   local repo_payload = {
     data = {
@@ -3029,6 +3049,169 @@ do
   eq(create_event.event, "create", "sourcehut webhook: zero old id maps to create")
   eq(create_event.data.ref, "v1.0.0", "sourcehut webhook: create strips tag ref")
   eq(create_event.data.ref_type, "tag", "sourcehut webhook: create detects tag ref")
+
+  local ticket_payload = {
+    data = {
+      webhook = { event = "TICKET_CREATED", date = "2026-05-02T03:04:05Z" },
+      ticket = {
+        id = 42,
+        rid = "ticket-rid",
+        subject = "Open the tracker gate",
+        body = "It sticks.",
+        status = "REPORTED",
+        created = "2026-05-02T03:00:00Z",
+        updated = "2026-05-02T03:01:00Z",
+        submitter = { canonicalName = "~fido", username = "fido" },
+        tracker = {
+          id = 9,
+          rid = "tracker-rid",
+          name = "confusio",
+          visibility = "PUBLIC",
+          owner = { canonicalName = "~fido", username = "fido" },
+        },
+        labels = {
+          {
+            id = 5,
+            name = "bug",
+            backgroundColor = "#ff0000",
+          },
+        },
+      },
+    },
+  }
+  local issue_event = app.backend.webhooks.TICKET_CREATED(ticket_payload)
+  eq(issue_event.event, "issues", "sourcehut webhook: TICKET_CREATED maps to issues")
+  eq(issue_event.action, "opened", "sourcehut webhook: TICKET_CREATED maps to opened")
+  eq(issue_event.data.issue.number, 42, "sourcehut webhook: ticket issue number")
+  eq(issue_event.data.issue.title, "Open the tracker gate", "sourcehut webhook: ticket subject")
+  eq(issue_event.data.issue.labels[1].name, "bug", "sourcehut webhook: ticket labels translated")
+  eq(
+    issue_event.data.repository.full_name,
+    "fido/confusio",
+    "sourcehut webhook: ticket tracker maps to repository"
+  )
+  local issue_envelope = app.backend.webhook_translators.issues(issue_event)
+  eq(issue_envelope.type, "issue.opened", "sourcehut webhook: normalized issue type")
+  local issue_github_payload = app.backend.webhook_github_translators.issues(issue_event)
+  eq(
+    issue_github_payload.issue.title,
+    "Open the tracker gate",
+    "sourcehut webhook: GitHub-shape issue includes issue"
+  )
+  eq(
+    app.backend.webhooks.TICKET_UPDATE(ticket_payload).action,
+    "edited",
+    "sourcehut webhook: TICKET_UPDATE maps to edited"
+  )
+  local deleted_issue_event = app.backend.webhooks.TICKET_DELETED({
+    data = {
+      webhook = { event = "TICKET_DELETED" },
+      ticketId = 42,
+    },
+  })
+  eq(deleted_issue_event.action, "deleted", "sourcehut webhook: TICKET_DELETED maps to deleted")
+  eq(deleted_issue_event.data.issue.number, 42, "sourcehut webhook: deleted ticket keeps number")
+
+  local label_payload = {
+    data = {
+      webhook = { event = "LABEL_CREATED", date = "2026-05-02T04:05:06Z" },
+      label = {
+        id = 6,
+        name = "triage",
+        backgroundColor = "#00ff00",
+        tracker = {
+          name = "confusio",
+          owner = { canonicalName = "~fido", username = "fido" },
+        },
+      },
+    },
+  }
+  local label_event = app.backend.webhooks.LABEL_CREATED(label_payload)
+  eq(label_event.event, "label", "sourcehut webhook: LABEL_CREATED maps to label")
+  eq(label_event.action, "created", "sourcehut webhook: LABEL_CREATED maps to created")
+  eq(label_event.data.label.color, "00ff00", "sourcehut webhook: label color strips hash")
+  local label_envelope = app.backend.webhook_translators.label(label_event)
+  eq(label_envelope.type, "label.created", "sourcehut webhook: normalized label type")
+  local label_github_payload = app.backend.webhook_github_translators.label(label_event)
+  eq(
+    label_github_payload.label.name,
+    "triage",
+    "sourcehut webhook: GitHub-shape label includes label"
+  )
+  eq(
+    app.backend.webhooks.LABEL_UPDATE(label_payload).action,
+    "edited",
+    "sourcehut webhook: LABEL_UPDATE maps to edited"
+  )
+  eq(
+    app.backend.webhooks.LABEL_DELETED(label_payload).action,
+    "deleted",
+    "sourcehut webhook: LABEL_DELETED maps to deleted"
+  )
+
+  local comment_event = app.backend.webhooks.EVENT_CREATED({
+    data = {
+      webhook = { event = "EVENT_CREATED", date = "2026-05-02T05:06:07Z" },
+      newEvent = {
+        id = 77,
+        created = "2026-05-02T05:00:00Z",
+        ticket = ticket_payload.data.ticket,
+        changes = {
+          {
+            eventType = "COMMENT",
+            author = { canonicalName = "~rob", username = "rob" },
+            text = "I found the latch.",
+          },
+        },
+      },
+    },
+  })
+  eq(comment_event.event, "issue_comment", "sourcehut webhook: COMMENT maps to issue_comment")
+  eq(comment_event.action, "created", "sourcehut webhook: COMMENT maps to created")
+  eq(comment_event.data.comment.body, "I found the latch.", "sourcehut webhook: comment body")
+  local comment_github_payload = app.backend.webhook_github_translators.issue_comment(comment_event)
+  eq(
+    comment_github_payload.comment.body,
+    "I found the latch.",
+    "sourcehut webhook: GitHub-shape comment includes body"
+  )
+
+  local labeled_event = app.backend.webhooks.EVENT_CREATED({
+    data = {
+      newEvent = {
+        id = 78,
+        ticket = ticket_payload.data.ticket,
+        changes = {
+          {
+            eventType = "LABEL_ADDED",
+            labeler = { canonicalName = "~rob", username = "rob" },
+            label = label_payload.data.label,
+          },
+        },
+      },
+    },
+  })
+  eq(labeled_event.event, "issues", "sourcehut webhook: LABEL_ADDED maps to issues")
+  eq(labeled_event.action, "labeled", "sourcehut webhook: LABEL_ADDED maps to labeled")
+  eq(labeled_event.data.label.name, "triage", "sourcehut webhook: LABEL_ADDED keeps label")
+
+  local closed_event = app.backend.webhooks.EVENT_CREATED({
+    data = {
+      newEvent = {
+        id = 79,
+        ticket = ticket_payload.data.ticket,
+        changes = {
+          {
+            eventType = "STATUS_CHANGE",
+            editor = { canonicalName = "~rob", username = "rob" },
+            oldStatus = "IN_PROGRESS",
+            newStatus = "RESOLVED",
+          },
+        },
+      },
+    },
+  })
+  eq(closed_event.action, "closed", "sourcehut webhook: resolved status maps to closed")
 
   app.backend.rest = saved_rest
   app.backend.capabilities = saved_capabilities
