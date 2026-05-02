@@ -1810,6 +1810,10 @@ ok(type(app.backend.graphql) == "table", "app.backend.graphql: is a table")
 ok(type(app.backend.capabilities) == "table", "app.backend.capabilities: is a table")
 ok(type(app.backend.webhooks) == "table", "app.backend.webhooks: is a table")
 ok(type(app.backend.webhook_translators) == "table", "app.backend.webhook_translators: is a table")
+ok(
+  type(app.backend.webhook_github_translators) == "table",
+  "app.backend.webhook_github_translators: is a table"
+)
 ok(type(app.allow_anonymous) == "boolean", "app.allow_anonymous: is a boolean")
 ok(app.allow_anonymous == true, "app.allow_anonymous: default true (no backend loaded)")
 ok(type(app.route_match) == "function", "app.route_match: bound router lookup installed on app")
@@ -1832,6 +1836,10 @@ do
     type(test_app.backend.webhook_translators) == "table",
     "make_app: backend.webhook_translators is a table"
   )
+  ok(
+    type(test_app.backend.webhook_github_translators) == "table",
+    "make_app: backend.webhook_github_translators is a table"
+  )
   ok(test_app.allow_anonymous == true, "make_app: allow_anonymous defaults to true")
   ok(test_app ~= app, "make_app: returns a new independent table each call")
 end
@@ -1845,6 +1853,7 @@ do
   local saved_capabilities = app.backend.capabilities
   local saved_webhooks = app.backend.webhooks
   local saved_webhook_translators = app.backend.webhook_translators
+  local saved_webhook_github_translators = app.backend.webhook_github_translators
   local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
   local saved_anon = app.allow_anonymous
 
@@ -1853,6 +1862,7 @@ do
     app.backend.capabilities = saved_capabilities
     app.backend.webhooks = saved_webhooks
     app.backend.webhook_translators = saved_webhook_translators
+    app.backend.webhook_github_translators = saved_webhook_github_translators
     graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
     app.allow_anonymous = saved_anon
   end
@@ -1867,6 +1877,10 @@ do
   ok(
     type(b.webhook_translator) == "function",
     "make_backend_builder: has webhook_translator method"
+  )
+  ok(
+    type(b.webhook_github_translator) == "function",
+    "make_backend_builder: has webhook_github_translator method"
   )
   ok(
     type(b.set_allow_anonymous) == "function",
@@ -1884,14 +1898,20 @@ do
     b2:webhook_translator("push", function() end) == b2,
     "builder:webhook_translator: returns self"
   )
+  ok(
+    b2:webhook_github_translator("push", function() end) == b2,
+    "builder:webhook_github_translator: returns self"
+  )
   ok(b2:set_allow_anonymous(true) == b2, "builder:set_allow_anonymous: returns self")
 
   -- build() populates app.backend.rest, graphql_resolvers, app.backend.capabilities,
-  -- app.backend.webhooks, and app.backend.webhook_translators
+  -- app.backend.webhooks, app.backend.webhook_translators, and
+  -- app.backend.webhook_github_translators
   app.backend.rest = {}
   app.backend.capabilities = {}
   app.backend.webhooks = {}
   app.backend.webhook_translators = {}
+  app.backend.webhook_github_translators = {}
   graphql_resolvers = {} -- luacheck: globals graphql_resolvers
   app.allow_anonymous = true
 
@@ -1900,12 +1920,14 @@ do
   local cap_repos = { get = function() end, list = function() end }
   local push_fn = function() end
   local push_translator_fn = function() end
+  local push_github_translator_fn = function() end
   local b3 = make_backend_builder()
   b3:rest("get_repo", get_fn)
   b3:graphql("Query.viewer", gql_fn)
   b3:capability("repos", cap_repos)
   b3:webhook("push", push_fn)
   b3:webhook_translator("push", push_translator_fn)
+  b3:webhook_github_translator("push", push_github_translator_fn)
   b3:set_allow_anonymous(false)
   b3:build()
 
@@ -1917,6 +1939,11 @@ do
     app.backend.webhook_translators["push"],
     push_translator_fn,
     "builder:build: registers normalized webhook translator"
+  )
+  eq(
+    app.backend.webhook_github_translators["push"],
+    push_github_translator_fn,
+    "builder:build: registers GitHub-shape webhook translator"
   )
   eq(app.allow_anonymous, false, "builder:build: sets allow_anonymous")
 
@@ -2483,6 +2510,353 @@ do
 end
 
 -- ============================================================
+-- Phabricator webhook handlers
+-- ============================================================
+
+do
+  local saved_rest = app.backend.rest
+  local saved_capabilities = app.backend.capabilities
+  local saved_webhooks = app.backend.webhooks
+  local saved_webhook_translators = app.backend.webhook_translators
+  local saved_webhook_github_translators = app.backend.webhook_github_translators
+  local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
+  local saved_base_url = config.base_url
+  local saved_backend = config.backend
+
+  app.backend.rest = {}
+  app.backend.capabilities = {}
+  app.backend.webhooks = {}
+  app.backend.webhook_translators = {}
+  app.backend.webhook_github_translators = {}
+  graphql_resolvers = {} -- luacheck: globals graphql_resolvers
+  config.base_url = ""
+  config.backend = "phabricator"
+  _real_dofile("backends/phabricator.lua")
+
+  ok(app.backend.webhooks.TASK ~= nil, "phabricator webhook: TASK handler registered")
+  ok(
+    app.backend.webhook_translators.issues ~= nil,
+    "phabricator webhook: issues translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.issues ~= nil,
+    "phabricator webhook: issues GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_translators.pull_request ~= nil,
+    "phabricator webhook: pull_request translator registered"
+  )
+  ok(app.backend.webhook_translators.push ~= nil, "phabricator webhook: push translator registered")
+  ok(
+    app.backend.webhook_github_translators.push ~= nil,
+    "phabricator webhook: push GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_translators.repository ~= nil,
+    "phabricator webhook: repository translator registered"
+  )
+
+  local task_payload = {
+    object = {
+      type = "TASK",
+      id = 123,
+      phid = "PHID-TASK-123",
+      fields = {
+        name = "Fix the kennel door",
+        status = { value = "open" },
+        authorPHID = "PHID-USER-fido",
+        description = { raw = "The latch sticks." },
+        dateCreated = 1715767200,
+        dateModified = 1715770800,
+      },
+    },
+    repository = { full_name = "phabricator/maniphest" },
+    action = { actorPHID = "PHID-USER-rob", epoch = 1715770800 },
+    transactions = {
+      { type = "title", oldValue = "Fix door", newValue = "Fix the kennel door" },
+    },
+  }
+  local task_event = app.backend.webhooks.TASK(task_payload)
+  eq(task_event.event, "issues", "phabricator webhook: TASK maps to issues")
+  eq(task_event.action, "edited", "phabricator webhook: task title change maps to edited")
+  eq(task_event.provider, "phabricator", "phabricator webhook: TASK sets provider")
+  eq(task_event.data.issue.number, 123, "phabricator webhook: task sets issue number")
+  eq(
+    task_event.data.issue.title,
+    "Fix the kennel door",
+    "phabricator webhook: task sets issue title"
+  )
+  eq(
+    task_event.data.repository.full_name,
+    "phabricator/maniphest",
+    "phabricator webhook: task keeps repository"
+  )
+  eq(task_event.data.sender.login, "PHID-USER-rob", "phabricator webhook: task sets sender")
+  local task_envelope = app.backend.webhook_translators.issues(task_event)
+  eq(task_envelope.type, "issue.edited", "phabricator webhook: normalized task includes action")
+  local task_github_payload = app.backend.webhook_github_translators.issues(task_event)
+  eq(task_github_payload.issue.number, 123, "phabricator webhook: GitHub-shape task includes issue")
+
+  local closed_event = app.backend.webhooks.TASK({
+    object = {
+      type = "TASK",
+      id = 124,
+      phid = "PHID-TASK-124",
+      fields = {
+        name = "Close this",
+        status = { value = "resolved", closed = true },
+      },
+    },
+    transactions = {
+      { type = "status", oldValue = "open", newValue = "resolved" },
+    },
+  })
+  eq(closed_event.action, "closed", "phabricator webhook: status change maps to closed")
+  eq(closed_event.data.issue.state, "closed", "phabricator webhook: closed task state")
+
+  local comment_event = app.backend.webhooks.TASK({
+    object = {
+      type = "TASK",
+      id = 125,
+      phid = "PHID-TASK-125",
+      fields = {
+        name = "Comment here",
+        status = { value = "open" },
+      },
+    },
+    transactions = {
+      {
+        type = "comment",
+        id = 77,
+        phid = "PHID-XACT-TASK-comment",
+        authorPHID = "PHID-USER-commenter",
+        dateCreated = 1715774400,
+        comments = {
+          { content = { raw = "I found a clue." } },
+        },
+      },
+    },
+  })
+  eq(
+    comment_event.event,
+    "issue_comment",
+    "phabricator webhook: comment transaction maps to issue_comment"
+  )
+  eq(comment_event.action, "created", "phabricator webhook: comment maps to created")
+  eq(comment_event.data.comment.body, "I found a clue.", "phabricator webhook: comment body")
+  local comment_envelope = app.backend.webhook_translators.issue_comment(comment_event)
+  eq(
+    comment_envelope.type,
+    "issue.comment.created",
+    "phabricator webhook: normalized comment includes action"
+  )
+  local comment_github_payload = app.backend.webhook_github_translators.issue_comment(comment_event)
+  eq(
+    comment_github_payload.comment.body,
+    "I found a clue.",
+    "phabricator webhook: GitHub-shape comment includes body"
+  )
+
+  local revision_payload = {
+    object = {
+      type = "DREV",
+      id = 45,
+      phid = "PHID-DREV-45",
+      fields = {
+        title = "Teach the code review path",
+        summary = { raw = "Differential review body." },
+        status = { value = "needs-review" },
+        authorPHID = "PHID-USER-reviewer",
+        sourceBranch = "feature/differential",
+        targetBranch = "main",
+        sourceCommit = "abc123",
+        dateCreated = 1715778000,
+        dateModified = 1715781600,
+      },
+    },
+    repository = { full_name = "phabricator/differential" },
+    action = { actorPHID = "PHID-USER-rob", epoch = 1715781600 },
+    transactions = {
+      { type = "core:create" },
+    },
+  }
+  local revision_event = app.backend.webhooks.DREV(revision_payload)
+  eq(revision_event.event, "pull_request", "phabricator webhook: DREV maps to pull_request")
+  eq(revision_event.action, "opened", "phabricator webhook: DREV create maps to opened")
+  eq(revision_event.data.number, 45, "phabricator webhook: DREV sets number")
+  eq(
+    revision_event.data.pull_request.title,
+    "Teach the code review path",
+    "phabricator webhook: DREV sets title"
+  )
+  eq(
+    revision_event.data.pull_request.head.ref,
+    "feature/differential",
+    "phabricator webhook: DREV sets head ref"
+  )
+  eq(revision_event.data.pull_request.base.ref, "main", "phabricator webhook: DREV sets base ref")
+  local revision_envelope = app.backend.webhook_translators.pull_request(revision_event)
+  eq(
+    revision_envelope.type,
+    "pull_request.opened",
+    "phabricator webhook: normalized DREV includes action"
+  )
+  local revision_github_payload =
+    app.backend.webhook_github_translators.pull_request(revision_event)
+  eq(
+    revision_github_payload.pull_request.number,
+    45,
+    "phabricator webhook: GitHub-shape DREV includes pull_request"
+  )
+
+  local accepted_event = app.backend.webhooks.DREV({
+    object = {
+      type = "DREV",
+      id = 46,
+      phid = "PHID-DREV-46",
+      fields = {
+        title = "Accepted review",
+        status = { value = "accepted", closed = true },
+        dateModified = 1715785200,
+      },
+    },
+    transactions = {
+      { type = "status", oldValue = "needs-review", newValue = "accepted" },
+    },
+  })
+  eq(accepted_event.action, "closed", "phabricator webhook: DREV accepted maps to closed")
+  eq(accepted_event.data.pull_request.state, "closed", "phabricator webhook: accepted DREV state")
+  ok(
+    accepted_event.data.pull_request.merged == true,
+    "phabricator webhook: accepted DREV marks merged"
+  )
+
+  local diff_event = app.backend.webhooks.DIFF({
+    object = {
+      type = "DIFF",
+      id = 9001,
+      phid = "PHID-DIFF-9001",
+    },
+    revision = {
+      id = 47,
+      phid = "PHID-DREV-47",
+      fields = {
+        title = "Updated diff",
+        status = { value = "needs-review" },
+        sourceBranch = "feature/updated",
+        targetBranch = "main",
+      },
+    },
+    repository = { full_name = "phabricator/differential" },
+    action = { actorPHID = "PHID-USER-diff" },
+  })
+  eq(diff_event.event, "pull_request", "phabricator webhook: DIFF maps to pull_request")
+  eq(diff_event.action, "synchronize", "phabricator webhook: DIFF maps to synchronize")
+  eq(diff_event.data.number, 47, "phabricator webhook: DIFF uses revision number")
+
+  local commit_event = app.backend.webhooks.CMIT({
+    object = {
+      type = "CMIT",
+      id = 9002,
+      phid = "PHID-CMIT-9002",
+      fields = {
+        identifier = "abcdef123456",
+        message = "Teach Diffusion push webhooks",
+        branch = "main",
+        authorName = "Fido",
+        authorPHID = "PHID-USER-fido",
+        committerName = "Rob",
+        committerPHID = "PHID-USER-rob",
+        epoch = 1715788800,
+      },
+    },
+    repository = {
+      id = 12,
+      phid = "PHID-REPO-confusio",
+      fields = {
+        name = "confusio",
+        shortName = "confusio",
+        defaultBranch = "main",
+      },
+    },
+    action = { actorPHID = "PHID-USER-rob", epoch = 1715788800 },
+  })
+  eq(commit_event.event, "push", "phabricator webhook: CMIT maps to push")
+  eq(commit_event.action, "", "phabricator webhook: CMIT is action-less push")
+  eq(commit_event.data.ref, "refs/heads/main", "phabricator webhook: CMIT sets ref")
+  eq(commit_event.data.after, "abcdef123456", "phabricator webhook: CMIT sets after SHA")
+  eq(
+    commit_event.data.head_commit.message,
+    "Teach Diffusion push webhooks",
+    "phabricator webhook: CMIT sets head commit"
+  )
+  eq(
+    commit_event.data.repository.full_name,
+    "confusio",
+    "phabricator webhook: CMIT translates repository"
+  )
+  local commit_envelope = app.backend.webhook_translators.push(commit_event)
+  eq(commit_envelope.type, "push", "phabricator webhook: normalized CMIT uses push type")
+  local commit_github_payload = app.backend.webhook_github_translators.push(commit_event)
+  eq(
+    commit_github_payload.head_commit.id,
+    "abcdef123456",
+    "phabricator webhook: GitHub-shape CMIT includes head commit"
+  )
+
+  local repo_event = app.backend.webhooks.REPO({
+    object = {
+      type = "REPO",
+      id = 12,
+      phid = "PHID-REPO-confusio",
+      fields = {
+        name = "confusio-renamed",
+        shortName = "confusio-renamed",
+        defaultBranch = "main",
+        dateModified = 1715792400,
+      },
+    },
+    action = { actorPHID = "PHID-USER-rob", epoch = 1715792400 },
+    transactions = {
+      { type = "name", oldValue = "confusio" },
+    },
+  })
+  eq(repo_event.event, "repository", "phabricator webhook: REPO maps to repository")
+  eq(repo_event.action, "renamed", "phabricator webhook: REPO name change maps to renamed")
+  eq(
+    repo_event.data.repository.full_name,
+    "confusio-renamed",
+    "phabricator webhook: REPO translates repository"
+  )
+  eq(
+    repo_event.data.changes.repository.name.from,
+    "confusio",
+    "phabricator webhook: REPO records previous name"
+  )
+  local repo_envelope = app.backend.webhook_translators.repository(repo_event)
+  eq(
+    repo_envelope.type,
+    "repository.renamed",
+    "phabricator webhook: normalized REPO includes action"
+  )
+  local repo_github_payload = app.backend.webhook_github_translators.repository(repo_event)
+  eq(
+    repo_github_payload.repository.name,
+    "confusio-renamed",
+    "phabricator webhook: GitHub-shape REPO includes repository"
+  )
+
+  app.backend.rest = saved_rest
+  app.backend.capabilities = saved_capabilities
+  app.backend.webhooks = saved_webhooks
+  app.backend.webhook_translators = saved_webhook_translators
+  app.backend.webhook_github_translators = saved_webhook_github_translators
+  graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
+  config.base_url = saved_base_url
+  config.backend = saved_backend
+end
+
+-- ============================================================
 -- NotABug webhook handlers
 -- ============================================================
 
@@ -2778,6 +3152,33 @@ do
     }),
     200,
     "webhook_receiver: kallithea nested payload.hook_type handler succeeds → 200"
+  )
+
+  -- Phabricator embeds the object family in object.type or the PHID prefix.
+  app.backend.webhooks = {
+    TASK = function(_payload)
+      return { event = "issues" }, nil
+    end,
+  }
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/phabricator",
+      headers = { ["Content-Type"] = "application/json" },
+      body = '{"object":{"type":"TASK","phid":"PHID-TASK-abcd"}}',
+    }),
+    200,
+    "webhook_receiver: phabricator object.type handler succeeds → 200"
+  )
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/phabricator",
+      headers = { ["Content-Type"] = "application/json" },
+      body = '{"object":{"phid":"PHID-TASK-abcd"}}',
+    }),
+    200,
+    "webhook_receiver: phabricator object PHID prefix handler succeeds → 200"
   )
 
   -- 422 when handler returns nil (normalisation failed)
@@ -3727,6 +4128,35 @@ do
   eq(decoded_gb.ref, "refs/heads/main", "fanout_body github: payload fields forwarded")
   ok(decoded_gb.source == nil, "fanout_body github: no envelope wrapper")
 
+  local internal = make_internal_event({ -- luacheck: globals make_internal_event
+    event = "issues",
+    action = "opened",
+    provider = "gitea",
+    raw = payload,
+    data = {
+      payload = { normalized = true },
+    },
+  })
+  local gtb = fanout_body("gitea", "issues", payload, "github", internal, nil, {
+    id = "github-delivery-123",
+  }, {
+    issues = function(ev, fields)
+      return {
+        action = ev.action,
+        delivery_id = fields.id,
+        issue = ev.data.payload,
+      }
+    end,
+  })
+  local decoded_gtb = DecodeJson(gtb)
+  eq(decoded_gtb.action, "opened", "fanout_body github translator: action forwarded")
+  eq(
+    decoded_gtb.delivery_id,
+    "github-delivery-123",
+    "fanout_body github translator: receives delivery id"
+  )
+  ok(decoded_gtb.issue.normalized == true, "fanout_body github translator: normalized payload used")
+
   -- "confusio" shape: body is the normalized event envelope.
   local cb = fanout_body("gitea", "push", payload, "confusio")
   ok(type(cb) == "string", "fanout_body confusio: returns a string")
@@ -3737,15 +4167,6 @@ do
   ok(type(decoded_cb.payload) == "table", "fanout_body confusio: payload is a table")
   eq(decoded_cb.payload.ref, "refs/heads/main", "fanout_body confusio: payload fields preserved")
 
-  local internal = make_internal_event({ -- luacheck: globals make_internal_event
-    event = "issues",
-    action = "opened",
-    provider = "gitea",
-    raw = payload,
-    data = {
-      payload = { normalized = true },
-    },
-  })
   local tb = fanout_body("gitea", "issues", payload, "confusio", internal, {
     issues = function(ev, fields)
       return {
@@ -3791,12 +4212,23 @@ fanout_register_target({ url = 42 })
 -- (the pre-registered target only subscribes to "push").
 local _fd_calls = {}
 local _real_deliver_fire = deliver_fire
-deliver_fire = function(tgt, backend, event_type, payload) -- luacheck: globals deliver_fire
+deliver_fire = function(
+  tgt,
+  backend,
+  event_type,
+  payload,
+  internal_event,
+  translators,
+  github_translators
+) -- luacheck: globals deliver_fire
   _fd_calls[#_fd_calls + 1] = {
     tgt = tgt,
     backend = backend,
     event_type = event_type,
     payload = payload,
+    internal_event = internal_event,
+    translators = translators,
+    github_translators = github_translators,
   }
   return true, 200, nil
 end
@@ -3836,9 +4268,32 @@ eq(_fd_calls[1].tgt.name, "fd-wildcard", "fanout_dispatch filtered: preserves na
 
 -- Matching event type delivers to both wildcard and issues targets.
 _fd_calls = {}
-local fd3 = fanout_dispatch("gitea", "issues", { action = "opened" })
+local fd3_internal = make_internal_event({
+  event = "issues",
+  action = "opened",
+  provider = "gitea",
+  raw = { action = "opened" },
+  data = {},
+})
+local fd3_translators = { issues = function() end }
+local fd3_github_translators = { issues = function() end }
+local fd3 = fanout_dispatch(
+  "gitea",
+  "issues",
+  { action = "opened" },
+  fd3_internal,
+  fd3_translators,
+  fd3_github_translators
+)
 eq(fd3, 2, "fanout_dispatch match: wildcard and issues targets both match issues event")
 eq(_fd_calls[2].tgt.name, "default", "fanout_dispatch default: unnamed target defaults to default")
+eq(_fd_calls[1].internal_event, fd3_internal, "fanout_dispatch: forwards internal event")
+eq(_fd_calls[1].translators, fd3_translators, "fanout_dispatch: forwards normalized translators")
+eq(
+  _fd_calls[1].github_translators,
+  fd3_github_translators,
+  "fanout_dispatch: forwards GitHub-shape translators"
+)
 
 deliver_fire = _real_deliver_fire -- luacheck: globals deliver_fire
 
@@ -3893,6 +4348,39 @@ do
     _df_last_opts.headers["X-GitHub-Delivery"] ~= nil,
     "deliver_fire github shape: X-GitHub-Delivery header present"
   )
+
+  local github_internal = make_internal_event({
+    event = "issues",
+    action = "opened",
+    provider = "gitea",
+    raw = { action = "opened" },
+    data = { issue = { number = 1 } },
+  })
+  local ok_github_translated = deliver_fire(
+    target_github,
+    "gitea",
+    "issues",
+    { action = "opened" },
+    github_internal,
+    nil,
+    {
+      issues = function(ev, fields)
+        return {
+          action = ev.action,
+          delivery_id = fields.id,
+          issue = ev.data.issue,
+        }
+      end,
+    }
+  )
+  ok(ok_github_translated == true, "deliver_fire github translator: ok is true")
+  local github_translated_body = DecodeJson(_df_last_opts.body)
+  eq(
+    github_translated_body.delivery_id,
+    _df_last_opts.headers["X-GitHub-Delivery"],
+    "deliver_fire github translator: body id matches delivery header"
+  )
+  eq(github_translated_body.issue.number, 1, "deliver_fire github translator: body translated")
 
   -- deliver_fire: 503 → ok=false.
   _df_mock_status = 503

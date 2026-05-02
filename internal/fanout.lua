@@ -6,13 +6,14 @@
 -- logged, and confusio moves on.  No retry, no persistence.
 --
 -- "Shape" controls how the request body is serialised for the target:
---   "github"   — re-encodes the raw inbound payload unchanged (GitHub-emulation)
+--   "github"   — emits a GitHub-compatible payload when a translator exists,
+--                otherwise re-encodes the raw inbound payload unchanged
 --   "confusio" — emits the normalized event envelope
 --
 -- Globals exported:
---   fanout_body(backend, event_type, payload, shape[, internal_event, translators, fields]) → body string
+--   fanout_body(backend, event_type, payload, shape[, internal_event, translators, fields, github_translators]) → body string
 --   fanout_register_target(target)                   — register a static outbound target
---   fanout_dispatch(backend, event_type, payload[, internal_event, translators]) — fire to all matching targets
+--   fanout_dispatch(backend, event_type, payload[, internal_event, translators, github_translators]) — fire to all matching targets
 
 -- _fanout_targets: in-memory list of registered outbound targets.
 -- Each entry is a table: { name, url, events, shape, secret }
@@ -58,16 +59,47 @@ local function normalized_body(backend, event_type, payload, internal_event, tra
   return EncodeJson(envelope) -- luacheck: globals EncodeJson
 end
 
+local function github_body(payload, internal_event, translators, fields)
+  local translator = nil
+  local event_type = internal_event and internal_event.event
+  if type(translators) == "table" then
+    translator = translators[event_type] or translators["*"]
+  end
+  if type(translator) == "function" then
+    local translated = translator(internal_event, fields or {})
+    if type(translated) == "table" then
+      return EncodeJson(translated) -- luacheck: globals EncodeJson
+    end
+  end
+  return EncodeJson(payload) -- luacheck: globals EncodeJson
+end
+
 -- fanout_body: serialises the event for the given delivery shape.
---   "github"   — re-encodes the raw inbound payload (fields forwarded as-is)
+--   "github"   — uses a GitHub-shape translator when registered, otherwise
+--                re-encodes the raw inbound payload
 --   "confusio" — emits the normalized event envelope
 -- Any unknown shape value falls back to "github" behaviour.
-function fanout_body(backend, event_type, payload, shape, internal_event, translators, fields) -- luacheck: globals fanout_body
+function fanout_body(
+  backend,
+  event_type,
+  payload,
+  shape,
+  internal_event,
+  translators,
+  fields,
+  github_translators
+) -- luacheck: globals fanout_body
   if shape == "confusio" then
     return normalized_body(backend, event_type, payload, internal_event, translators, fields)
   end
-  -- "github" (default): forward the raw inbound payload unchanged.
-  return EncodeJson(payload) -- luacheck: globals EncodeJson
+  -- "github" (default): translate to a GitHub-compatible payload when the
+  -- backend registered a translator, otherwise forward the raw payload unchanged.
+  return github_body(
+    payload,
+    internal_event or fallback_internal_event(backend, event_type, payload),
+    github_translators,
+    fields
+  )
 end
 
 -- fanout_register_target: adds a static outbound target to the registry.
@@ -91,11 +123,26 @@ end
 -- fanout_dispatch: fires the inbound event to all matching registered targets.
 -- Delivery is fire-and-record: deliver_fire() is called for each matching target.
 -- Returns the number of targets that matched (regardless of delivery success).
-function fanout_dispatch(backend, event_type, payload, internal_event, translators) -- luacheck: globals fanout_dispatch deliver_fire
+function fanout_dispatch(
+  backend,
+  event_type,
+  payload,
+  internal_event,
+  translators,
+  github_translators
+) -- luacheck: globals fanout_dispatch deliver_fire
   local count = 0
   for _, target in ipairs(_fanout_targets) do
     if fanout_event_matches(event_type, target.events) then
-      deliver_fire(target, backend, event_type, payload, internal_event, translators)
+      deliver_fire(
+        target,
+        backend,
+        event_type,
+        payload,
+        internal_event,
+        translators,
+        github_translators
+      )
       count = count + 1
     end
   end

@@ -1,6 +1,6 @@
 -- Outbound HTTP delivery (fire-and-record).
 --
--- deliver_fire(target, backend, event_type, payload[, internal_event, translators]) performs one HTTP POST
+-- deliver_fire(target, backend, event_type, payload[, internal_event, translators, github_translators]) performs one HTTP POST
 -- to target.url.  No retry, no circuit breaker.  The outcome is logged
 -- (HTTP status or error) and the function returns immediately.
 --
@@ -11,7 +11,7 @@
 --   secret            (string)  — optional HMAC signing secret
 --
 -- Globals exported:
---   deliver_fire(target, backend, event_type, payload[, internal_event, translators]) → ok, http_status_or_nil, error_or_nil
+--   deliver_fire(target, backend, event_type, payload[, internal_event, translators, github_translators]) → ok, http_status_or_nil, error_or_nil
 
 -- _deliver_headers: builds the outbound request headers table.
 -- For "github" shape: X-GitHub-Event, X-GitHub-Delivery, and provider-native signature headers.
@@ -69,7 +69,15 @@ end
 -- Returns (ok, http_status_or_nil, error_or_nil):
 --   ok=true  — delivery succeeded (HTTP 2xx)
 --   ok=false — delivery failed; http_status is nil on network error
-function deliver_fire(target, backend, event_type, payload, internal_event, translators) -- luacheck: globals deliver_fire
+function deliver_fire(
+  target,
+  backend,
+  event_type,
+  payload,
+  internal_event,
+  translators,
+  github_translators
+) -- luacheck: globals deliver_fire
   local t0 = os.clock()
   local delivery_id = make_uuid() -- luacheck: globals make_uuid
   local body = fanout_body( -- luacheck: globals fanout_body
@@ -79,7 +87,8 @@ function deliver_fire(target, backend, event_type, payload, internal_event, tran
     target.shape,
     internal_event,
     translators,
-    { id = delivery_id }
+    { id = delivery_id },
+    github_translators
   )
   local hdrs = _deliver_headers(backend, event_type, delivery_id, target.shape, body, target.secret)
 

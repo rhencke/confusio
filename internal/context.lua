@@ -24,6 +24,10 @@
 --                             internal event name. Confusio-shape delivery calls these
 --                             with (internal_event, fields) and falls back to the shared
 --                             envelope factory when no event-specific translator exists.
+--     backend.webhook_github_translators — GitHub-shape outbound translator registry;
+--                             keyed by internal event name. GitHub-shape delivery calls
+--                             these with (internal_event, fields) and falls back to the
+--                             original provider payload when no translator exists.
 --   webhook_receiver  — webhook receive pipeline; function(); installed by .init.lua after
 --                       make_webhook_receiver(app) is called.  Handles POST /webhooks/{backend}:
 --                       signature verification, event dispatch, and response.  nil until wired.
@@ -38,6 +42,7 @@ function make_app(cfg) -- luacheck: globals make_app
       capabilities = {},
       webhooks = {},
       webhook_translators = {},
+      webhook_github_translators = {},
     },
     allow_anonymous = true,
   }

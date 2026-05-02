@@ -1,0 +1,41 @@
+{
+  "object": {
+    "type": "DREV",
+    "id": 45,
+    "phid": "PHID-DREV-abcd",
+    "fields": {
+      "title": "Review this change",
+      "summary": {
+        "raw": "Pull request body."
+      },
+      "status": {
+        "value": "needs-review"
+      },
+      "authorPHID": "PHID-USER-alice",
+      "sourceBranch": "feature-phab",
+      "targetBranch": "main",
+      "sourceCommit": "abcdef123456",
+      "dateCreated": 1710000300,
+      "dateModified": 1710000300
+    }
+  },
+  "transactions": [
+    {
+      "type": "core:create",
+      "phid": "PHID-XACT-DREV-create",
+      "authorPHID": "PHID-USER-alice",
+      "dateCreated": 1710000300,
+      "dateModified": 1710000300
+    }
+  ],
+  "repository": {
+    "id": 1,
+    "name": "confusio",
+    "full_name": "octocat/confusio"
+  },
+  "sender": {
+    "login": "alice",
+    "id": 1001,
+    "type": "User"
+  }
+}

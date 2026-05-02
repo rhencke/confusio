@@ -1,0 +1,40 @@
+{
+  "object": {
+    "type": "DIFF",
+    "id": 78,
+    "phid": "PHID-DIFF-abcd"
+  },
+  "revision": {
+    "id": 45,
+    "phid": "PHID-DREV-abcd",
+    "fields": {
+      "title": "Review this change",
+      "summary": {
+        "raw": "Pull request body."
+      },
+      "status": {
+        "value": "needs-review"
+      },
+      "authorPHID": "PHID-USER-alice",
+      "sourceBranch": "feature-phab",
+      "targetBranch": "main",
+      "sourceCommit": "fedcba654321",
+      "dateCreated": 1710000300,
+      "dateModified": 1710000400
+    }
+  },
+  "action": {
+    "actorPHID": "PHID-USER-alice",
+    "epoch": 1710000400
+  },
+  "repository": {
+    "id": 1,
+    "name": "confusio",
+    "full_name": "octocat/confusio"
+  },
+  "sender": {
+    "login": "alice",
+    "id": 1001,
+    "type": "User"
+  }
+}

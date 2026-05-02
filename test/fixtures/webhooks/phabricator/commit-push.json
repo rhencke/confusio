@@ -1,0 +1,44 @@
+{
+  "object": {
+    "type": "CMIT",
+    "id": 99,
+    "phid": "PHID-CMIT-abcd",
+    "fields": {
+      "identifier": "abcdef123456",
+      "message": "Push through Diffusion",
+      "branch": "main",
+      "epoch": 1710000500,
+      "author": {
+        "name": "Alice",
+        "email": "alice@example.com",
+        "username": "alice"
+      },
+      "committer": {
+        "name": "Alice",
+        "email": "alice@example.com",
+        "username": "alice"
+      },
+      "added": [
+        "new.lua"
+      ],
+      "modified": [
+        "backends/phabricator.lua"
+      ]
+    }
+  },
+  "before": "0000000000000000000000000000000000000000",
+  "repository": {
+    "fields": {
+      "name": "confusio",
+      "shortName": "confusio",
+      "slug": "octocat/confusio",
+      "defaultBranch": "main"
+    },
+    "phid": "PHID-REPO-abcd"
+  },
+  "sender": {
+    "login": "alice",
+    "id": 1001,
+    "type": "User"
+  }
+}

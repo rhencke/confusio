@@ -1,10 +1,11 @@
 -- Backend builder: the required API for registering REST handlers, GraphQL
--- resolvers, provider capability modules, inbound webhook event handlers, and
--- normalized outbound webhook translators.
+-- resolvers, provider capability modules, inbound webhook event handlers,
+-- normalized outbound webhook translators, and GitHub-shape outbound webhook
+-- translators.
 --
 -- make_backend_builder() returns a builder.  A backend file calls b:rest(name, fn),
 -- b:graphql(key, fn), b:capability(name, module), b:webhook(event, fn),
--- b:webhook_translator(event, fn), and
+-- b:webhook_translator(event, fn), b:webhook_github_translator(event, fn), and
 -- b:set_allow_anonymous(v) to declare its handlers, resolvers, capabilities,
 -- webhook handlers, and metadata, then calls b:build() to commit them to the
 -- app context.
@@ -26,6 +27,12 @@
 -- the normalized delivery envelope.  When no translator exists, the shared
 -- make_normalized_webhook_envelope fallback is used.
 --
+-- GitHub-shape outbound webhook translators live in
+-- app.backend.webhook_github_translators keyed by the internal event name.  The
+-- github-shape delivery path calls translator(internal_event, fields) to build a
+-- GitHub-compatible payload body.  When no translator exists, the raw provider
+-- payload is forwarded unchanged.
+--
 -- Direct assignment to app.backend.rest or graphql_resolvers is forbidden;
 -- make validate-builders enforces this at CI time.
 --
@@ -39,6 +46,7 @@ function make_backend_builder() -- luacheck: globals make_backend_builder
     _capabilities = {},
     _webhooks = {},
     _webhook_translators = {},
+    _webhook_github_translators = {},
     _anonymous = nil,
   }
 
@@ -94,6 +102,17 @@ function make_backend_builder() -- luacheck: globals make_backend_builder
     return self
   end
 
+  -- Register a GitHub-shape outbound webhook translator.
+  -- event: internal event name (e.g. "push", "issues", "pull_request")
+  -- fn:    translator function called with (internal_event, fields).  Returns the
+  --        GitHub-compatible delivery payload for github-shape outbound delivery.
+  -- Strip patterns do NOT apply to webhook translators.
+  -- Returns self for method chaining.
+  function b:webhook_github_translator(event, fn)
+    self._webhook_github_translators[event] = fn
+    return self
+  end
+
   -- Declare the anonymous-access policy for this backend.
   -- v: true = allow unauthenticated requests; false = require Authorization header
   -- When not called, app.allow_anonymous is left at its current value.
@@ -118,6 +137,7 @@ function make_backend_builder() -- luacheck: globals make_backend_builder
   --   app.backend.capabilities[name] = module for each registered capability module
   --   app.backend.webhooks[event]    = fn     for each registered webhook event handler
   --   app.backend.webhook_translators[event] = fn for each normalized webhook translator
+  --   app.backend.webhook_github_translators[event] = fn for each GitHub-shape webhook translator
   --   app.allow_anonymous            = v      only when set_allow_anonymous was called
   function b:build(strip)
     for name, fn in pairs(self._rest) do
@@ -145,6 +165,9 @@ function make_backend_builder() -- luacheck: globals make_backend_builder
     end
     for event, fn in pairs(self._webhook_translators) do
       app.backend.webhook_translators[event] = fn
+    end
+    for event, fn in pairs(self._webhook_github_translators) do
+      app.backend.webhook_github_translators[event] = fn
     end
     if self._anonymous ~= nil then
       app.allow_anonymous = self._anonymous
