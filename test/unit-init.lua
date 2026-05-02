@@ -3606,6 +3606,79 @@ do
     "webhook_receiver: tuleap form payload with invalid JSON → 400"
   )
 
+  app.backend.webhooks = {
+    project_create = function(payload)
+      tuleap_payload_seen = payload
+      return { event = "project" }, nil
+    end,
+  }
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/tuleap",
+      headers = { ["Content-Type"] = "application/x-www-form-urlencoded" },
+      body = "payload=%7B%22event_name%22%3A%22project_create%22%2C%22project_id%22%3A126%7D",
+    }),
+    200,
+    "webhook_receiver: tuleap event_name project_create handler succeeds → 200"
+  )
+  eq(
+    tuleap_payload_seen and tuleap_payload_seen.project_id,
+    126,
+    "webhook_receiver: tuleap project payload is dispatched intact"
+  )
+
+  app.backend.webhooks = {
+    git_push = function(payload)
+      tuleap_payload_seen = payload
+      return { event = "push" }, nil
+    end,
+  }
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/tuleap",
+      headers = { ["Content-Type"] = "application/x-www-form-urlencoded" },
+      body = "payload=%7B%22ref%22%3A%22refs%2Fheads%2Fmain%22%2C%22before%22%3A%221111%22%2C%22after%22%3A%222222%22%2C%22repository%22%3A%7B%22id%22%3A%22123%22%7D%7D",
+    }),
+    200,
+    "webhook_receiver: tuleap git push shape infers git_push → 200"
+  )
+  eq(
+    tuleap_payload_seen and tuleap_payload_seen.ref,
+    "refs/heads/main",
+    "webhook_receiver: tuleap git payload is dispatched intact"
+  )
+
+  app.backend.webhooks = {
+    artifact_create = function(_payload)
+      return { event = "issues", action = "opened" }, nil
+    end,
+    artifact_update = function(_payload)
+      return { event = "issues", action = "edited" }, nil
+    end,
+  }
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/tuleap",
+      headers = { ["Content-Type"] = "application/x-www-form-urlencoded" },
+      body = "payload=%7B%22id%22%3A182%2C%22action%22%3A%22create%22%2C%22current%22%3A%7B%22id%22%3A355743%7D%7D",
+    }),
+    200,
+    "webhook_receiver: tuleap tracker create infers artifact_create → 200"
+  )
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/tuleap",
+      headers = { ["Content-Type"] = "application/x-www-form-urlencoded" },
+      body = "payload=%7B%22id%22%3A182%2C%22action%22%3A%22update%22%2C%22current%22%3A%7B%22id%22%3A355743%7D%2C%22previous%22%3A%7B%22id%22%3A355742%7D%7D",
+    }),
+    200,
+    "webhook_receiver: tuleap tracker update infers artifact_update → 200"
+  )
+
   -- Gogs-family backends use their own event-type header, not X-Gitea-Event.
   app.backend.webhooks = {
     push = function(_payload)

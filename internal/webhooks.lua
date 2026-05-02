@@ -290,6 +290,28 @@ local function sourceforge_body_event(payload)
   return nil
 end
 
+local function tuleap_body_event(payload)
+  if type(payload) ~= "table" then
+    return nil
+  end
+
+  local project_event = first_string_field(payload, { "event_name" })
+  if project_event then
+    return project_event
+  end
+
+  if type(payload.repository) == "table" and (payload.ref or payload.before or payload.after) then
+    return "git_push"
+  end
+
+  local action = first_string_field(payload, { "action" })
+  if action == "create" or action == "update" then
+    return "artifact_" .. action
+  end
+
+  return nil
+end
+
 local function url_decode_component(s)
   s = tostring(s or "")
   local i = 1
@@ -734,6 +756,8 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
     --   Phabricator webhooks embed object.type, or an equivalent PHID prefix.
     --   SourceForge / Allura repo-push webhooks have no event header, so infer
     --   them from their documented ref/update fields.
+    --   Tuleap has no event header; project webhooks use event_name, Git push
+    --   payloads have ref/update fields, and tracker artifact hooks use action.
     local ev = event_header(backend)
     if ev == nil and type(payload) == "table" then
       if payload.eventType then
@@ -752,6 +776,8 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
         ev = phabricator_body_event(payload)
       elseif backend == "sourceforge" then
         ev = sourceforge_body_event(payload)
+      elseif backend == "tuleap" then
+        ev = tuleap_body_event(payload)
       end
     end
 
