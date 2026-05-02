@@ -3378,6 +3378,8 @@ do
 
   ok(app.backend.webhooks.project_create ~= nil, "tuleap webhook: project_create registered")
   ok(app.backend.webhooks.git_push ~= nil, "tuleap webhook: git_push registered")
+  ok(app.backend.webhooks.artifact_create ~= nil, "tuleap webhook: artifact_create registered")
+  ok(app.backend.webhooks.artifact_update ~= nil, "tuleap webhook: artifact_update registered")
 
   local function load_tuleap_fixture(name)
     local f = assert(io.open("test/fixtures/webhooks/tuleap/" .. name .. ".json", "rb"))
@@ -3434,6 +3436,48 @@ do
   eq(tag_delete_event.event, "delete", "tuleap webhook: zero after maps tag to delete")
   eq(tag_delete_event.data.ref, "v1.0.0", "tuleap webhook: tag delete strips tag ref")
   eq(tag_delete_event.data.ref_type, "tag", "tuleap webhook: tag delete detects tag ref")
+
+  local artifact_created_event =
+    app.backend.webhooks.artifact_create(load_tuleap_fixture("artifact-created"))
+  eq(artifact_created_event.event, "issues", "tuleap webhook: artifact_create maps to issues")
+  eq(artifact_created_event.action, "opened", "tuleap webhook: artifact_create opens issue")
+  eq(artifact_created_event.provider, "tuleap", "tuleap webhook: artifact_create sets provider")
+  eq(
+    artifact_created_event.data.issue.number,
+    75291,
+    "tuleap webhook: artifact_create maps artifact id to issue number"
+  )
+  eq(
+    artifact_created_event.data.issue.title,
+    "Normalize Tuleap webhook payloads",
+    "tuleap webhook: artifact_create maps title field"
+  )
+  eq(
+    artifact_created_event.data.issue.body,
+    "Tuleap should fan out as a normalized issue event.",
+    "tuleap webhook: artifact_create maps description field"
+  )
+  eq(
+    artifact_created_event.data.sender.login,
+    "alice",
+    "tuleap webhook: artifact_create maps sender"
+  )
+
+  local artifact_updated_event =
+    app.backend.webhooks.artifact_update(load_tuleap_fixture("artifact-updated"))
+  eq(artifact_updated_event.event, "issues", "tuleap webhook: artifact_update maps to issues")
+  eq(artifact_updated_event.action, "edited", "tuleap webhook: artifact_update edits issue")
+  eq(
+    artifact_updated_event.data.issue.number,
+    75291,
+    "tuleap webhook: artifact_update keeps artifact id"
+  )
+  eq(
+    artifact_updated_event.data.issue.state,
+    "open",
+    "tuleap webhook: artifact_update maps non-closed status to open"
+  )
+  eq(artifact_updated_event.data.sender.login, "bob", "tuleap webhook: artifact_update maps sender")
 
   app.backend.rest = saved_rest
   app.backend.capabilities = saved_capabilities

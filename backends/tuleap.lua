@@ -207,6 +207,90 @@ local function tuleap_project_created_event(payload)
   })
 end
 
+local function tuleap_artifact_field(artifact, label)
+  for _, field in ipairs((artifact or {}).values or {}) do
+    if field.label == label then
+      return field
+    end
+  end
+  return nil
+end
+
+local function tuleap_artifact_field_value(artifact, label)
+  local field = tuleap_artifact_field(artifact, label)
+  if not field then
+    return nil
+  end
+  if field.value ~= nil then
+    return field.value
+  end
+  if field.values and field.values[1] then
+    return field.values[1].label
+  end
+  return nil
+end
+
+local function tuleap_artifact_id(artifact)
+  return tuleap_artifact_field_value(artifact, "Artifact ID") or (artifact or {}).id or 0
+end
+
+local function tuleap_artifact_state(artifact)
+  local status = tostring(tuleap_artifact_field_value(artifact, "Status") or ""):lower()
+  if status == "closed" or status == "done" or status == "resolved" then
+    return "closed"
+  end
+  return "open"
+end
+
+local function translate_tuleap_artifact(artifact)
+  artifact = artifact or {}
+  local issue_id = tuleap_artifact_id(artifact)
+  local submitted_by = artifact.submitted_by_details or {}
+  return {
+    id = issue_id,
+    node_id = "",
+    number = issue_id,
+    title = tuleap_artifact_field_value(artifact, "Title") or "",
+    body = tuleap_artifact_field_value(artifact, "Description") or "",
+    state = tuleap_artifact_state(artifact),
+    user = translate_tuleap_user(submitted_by),
+    assignees = {},
+    labels = {},
+    milestone = nil,
+    created_at = artifact.submitted_on or "",
+    updated_at = tuleap_artifact_field_value(artifact, "Last Update On")
+      or artifact.submitted_on
+      or "",
+    closed_at = nil,
+    html_url = "",
+  }
+end
+
+local function tuleap_artifact_event(action)
+  return function(payload)
+    payload = payload or {}
+    local artifact = payload.current or {}
+    local sender = translate_tuleap_user(
+      payload.user or artifact.last_modified_by or artifact.submitted_by_details
+    )
+    return make_internal_event({
+      event = "issues",
+      action = action,
+      provider = "tuleap",
+      raw = payload,
+      data = {
+        action = action,
+        issue = translate_tuleap_artifact(artifact),
+        repository = {},
+        sender = sender,
+      },
+      timestamp = tuleap_artifact_field_value(artifact, "Last Update On")
+        or artifact.submitted_on
+        or "",
+    })
+  end
+end
+
 local function tuleap_git_event(payload)
   payload = payload or {}
   local raw_ref = payload.ref or ""
@@ -451,5 +535,7 @@ end)
 
 b:webhook("project_create", tuleap_project_created_event)
 b:webhook("git_push", tuleap_git_event)
+b:webhook("artifact_create", tuleap_artifact_event("opened"))
+b:webhook("artifact_update", tuleap_artifact_event("edited"))
 
 b:build()
