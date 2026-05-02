@@ -1,0 +1,13 @@
+{
+  "created_at": "2024-01-15T10:00:00+00:00",
+  "updated_at": "2024-01-15T10:05:00+00:00",
+  "event_name": "project_create",
+  "name": "Hello World",
+  "owner_id": 102,
+  "owner_email": "alice@example.com",
+  "owner_name": "Alice Example",
+  "path": "hello-world",
+  "path_with_namespace": "octocat/hello-world",
+  "project_id": 126,
+  "project_visibility": "public"
+}
