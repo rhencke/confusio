@@ -178,7 +178,7 @@ jsonpath "$[0].confusio_event" == "workflow_run"
 jsonpath "$[0].confusio_source" == "phabricator"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].github_event" == ""
-jsonpath "$[0].body_json.type" == "workflow_run.completed"
+jsonpath "$[0].body_json.type" == "workflow.run.completed"
 jsonpath "$[0].body_json.occurred_at" == "2024-03-09T16:13:20Z"
 jsonpath "$[0].body_json.payload.workflow_run.conclusion" == "success"
 
