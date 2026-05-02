@@ -14,6 +14,33 @@ local auth = function()
 end
 local PAGES = { per_page = "perPage", page = "page" }
 local fetch_json = make_backend_transport("bearer", PAGES).fetch_json
+local ZERO_SHA = "0000000000000000000000000000000000000000"
+
+local function radicle_short_ref(ref)
+  return (ref or ""):match("^refs/[^/]+/(.+)") or (ref or "")
+end
+
+local function radicle_ref_type(ref)
+  return (ref or ""):match("^refs/tags/") and "tag" or "branch"
+end
+
+local function translate_radicle_user(u)
+  u = u or {}
+  local id = u.id or u.did or ""
+  local login = u.alias or u.username or u.login or u.name or id
+  return {
+    login = login or "",
+    id = 0,
+    node_id = id,
+    avatar_url = u.avatar_url or "",
+    url = "",
+    html_url = u.html_url or "",
+    type = "User",
+    site_admin = false,
+    name = u.name,
+    email = u.email,
+  }
+end
 
 -- Map a Radicle repository object to GitHub format.
 local function translate_radicle_repo(r)
@@ -21,11 +48,17 @@ local function translate_radicle_repo(r)
     return {}
   end
   -- Radicle project payload is under payloads["xyz.radicle.project"]
-  local proj = (r.payloads and r.payloads["xyz.radicle.project"]) or {}
+  local proj = (r.payloads and r.payloads["xyz.radicle.project"])
+    or {
+      name = r.name,
+      description = r.description,
+      defaultBranch = r.defaultBranch or r.default_branch,
+    }
   local delegates = r.delegates or {}
-  local owner_did = delegates[1] and delegates[1].id or ""
+  local owner = r.owner or {}
+  local owner_did = owner.id or owner.did or (delegates[1] and delegates[1].id) or ""
   -- DID looks like "did:key:z6Mk..."; extract the key part as login
-  local login = owner_did:match("did:key:(.+)$") or owner_did
+  local login = owner.alias or owner.login or owner_did:match("did:key:(.+)$") or owner_did
   return {
     id = 0,
     node_id = r.rid or "",
@@ -41,11 +74,11 @@ local function translate_radicle_repo(r)
       html_url = "",
       type = "User",
     },
-    html_url = config.base_url .. "/repos/" .. (r.rid or ""),
+    html_url = r.web_url or (config.base_url .. "/repos/" .. (r.rid or "")),
     description = proj.description,
     fork = false,
     url = "",
-    clone_url = r.rid and ("rad://" .. r.rid) or "",
+    clone_url = r.clone_url or (r.rid and ("rad://" .. r.rid) or ""),
     homepage = "",
     size = 0,
     stargazers_count = 0,
@@ -89,6 +122,245 @@ end
 
 local function translate_radicle_repos(repos)
   return translate_list(translate_radicle_repo, repos)
+end
+
+local function translate_radicle_commit(c)
+  c = c or {}
+  local author = c.author or {}
+  local committer = c.committer or author
+  return {
+    id = c.id or "",
+    tree_id = c.tree_id or "",
+    distinct = c.distinct ~= false,
+    message = c.message or "",
+    timestamp = c.timestamp or "",
+    url = c.url or "",
+    author = {
+      name = author.name or "",
+      email = author.email or "",
+      username = author.username or author.alias or author.name or "",
+    },
+    committer = {
+      name = committer.name or author.name or "",
+      email = committer.email or author.email or "",
+      username = committer.username or committer.alias or committer.name or author.name or "",
+    },
+  }
+end
+
+local function translate_radicle_commits(commits)
+  local result = {}
+  for _, commit in ipairs(commits or {}) do
+    result[#result + 1] = translate_radicle_commit(commit)
+  end
+  return result
+end
+
+local function radicle_ref_event(payload)
+  payload = payload or {}
+  local before = payload.before or ZERO_SHA
+  local after = payload.after or ZERO_SHA
+  local ref = payload.ref
+    or (payload.tag and ("refs/tags/" .. payload.tag))
+    or (payload.branch and ("refs/heads/" .. payload.branch))
+    or ""
+  local repository = translate_radicle_repo(payload.repository or {})
+  local sender = translate_radicle_user(payload.pusher or payload.sender)
+  local ref_type = radicle_ref_type(ref)
+  local ref_short = radicle_short_ref(ref)
+
+  if before == ZERO_SHA then
+    return make_internal_event({
+      event = "create",
+      action = "create",
+      provider = "radicle",
+      raw = payload,
+      data = {
+        ref = ref_short,
+        ref_type = ref_type,
+        master_branch = repository.default_branch or "",
+        description = repository.description,
+        pusher_type = "user",
+        repository = repository,
+        sender = sender,
+      },
+      timestamp = payload.occurred_at or "",
+    })
+  end
+
+  if after == ZERO_SHA then
+    return make_internal_event({
+      event = "delete",
+      action = "delete",
+      provider = "radicle",
+      raw = payload,
+      data = {
+        ref = ref_short,
+        ref_type = ref_type,
+        master_branch = repository.default_branch or "",
+        description = repository.description,
+        pusher_type = "user",
+        repository = repository,
+        sender = sender,
+      },
+      timestamp = payload.occurred_at or "",
+    })
+  end
+
+  local commits = translate_radicle_commits(payload.commits)
+  return make_internal_event({
+    event = "push",
+    action = "push",
+    provider = "radicle",
+    raw = payload,
+    data = {
+      ref = ref,
+      before = before,
+      after = after,
+      created = false,
+      deleted = false,
+      forced = payload.forced or false,
+      compare = payload.compare or "",
+      commits = commits,
+      head_commit = commits[#commits],
+      pusher = {
+        name = (payload.pusher or {}).name or (payload.pusher or {}).alias or "",
+        email = (payload.pusher or {}).email or "",
+      },
+      repository = repository,
+      sender = sender,
+    },
+    timestamp = payload.occurred_at or "",
+  })
+end
+
+local RADICLE_PATCH_ACTIONS = {
+  created = "opened",
+  updated = "synchronize",
+}
+
+local function translate_radicle_patch(payload)
+  payload = payload or {}
+  local patch = payload.patch or {}
+  local repository = translate_radicle_repo(payload.repository or {})
+  local author = translate_radicle_user(patch.author or payload.sender)
+  local number = tonumber(patch.number) or 0
+  return {
+    id = number,
+    node_id = patch.id or "",
+    number = number,
+    title = patch.title or "",
+    body = patch.description or "",
+    state = patch.state or "open",
+    draft = false,
+    html_url = patch.url or "",
+    url = patch.url or "",
+    user = author,
+    head = {
+      ref = patch.head_ref or ("patch/" .. tostring(number)),
+      sha = patch.head or "",
+      repo = repository,
+    },
+    base = {
+      ref = patch.target_branch or repository.default_branch or "",
+      sha = patch.base or "",
+      repo = repository,
+    },
+    created_at = patch.created_at or "",
+    updated_at = patch.updated_at or "",
+    closed_at = patch.closed_at,
+    merged = false,
+    merged_at = nil,
+  }
+end
+
+local function radicle_patch_event(payload)
+  payload = payload or {}
+  local raw_action = payload.action or ""
+  local action = RADICLE_PATCH_ACTIONS[raw_action]
+  local pr = translate_radicle_patch(payload)
+  return make_internal_event({
+    event = "pull_request",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = "radicle",
+    raw = payload,
+    data = {
+      action = action or "unknown",
+      number = pr.number,
+      pull_request = pr,
+      repository = translate_radicle_repo(payload.repository or {}),
+      sender = translate_radicle_user(payload.sender or (payload.patch or {}).author),
+      revisions = (payload.patch or {}).revisions,
+    },
+    timestamp = payload.occurred_at or pr.updated_at or pr.created_at or "",
+  })
+end
+
+local RADICLE_ACTIONLESS_NORMALIZED_EVENTS = {
+  create = true,
+  delete = true,
+  push = true,
+}
+
+local function radicle_normalized_payload_without_envelope_fields(data)
+  local payload = {}
+  for k, v in pairs(data or {}) do
+    if k ~= "sender" and k ~= "repository" then
+      payload[k] = v
+    end
+  end
+  return payload
+end
+
+local function translate_radicle_normalized_webhook(internal_event, fields)
+  local data = internal_event.data or {}
+  fields = fields or {}
+  return make_normalized_webhook_envelope(internal_event, {
+    id = fields.id,
+    type = fields.type
+      or (
+        RADICLE_ACTIONLESS_NORMALIZED_EVENTS[internal_event.event]
+          and normalized_webhook_event_type(internal_event.event, "")
+        or normalized_webhook_event_type(internal_event.event, internal_event.action)
+      ),
+    occurred_at = fields.occurred_at,
+    actor = fields.actor or data.sender,
+    repository = fields.repository or data.repository,
+    payload = fields.payload or radicle_normalized_payload_without_envelope_fields(data),
+  })
+end
+
+local function translate_radicle_github_webhook(internal_event, _fields)
+  local data = internal_event.data or {}
+  local payload = {
+    action = data.action or internal_event.action,
+    repository = data.repository or {},
+    sender = data.sender or {},
+  }
+  if internal_event.event == "pull_request" then
+    payload.number = data.number
+    payload.pull_request = data.pull_request or {}
+  elseif internal_event.event == "push" then
+    payload.action = nil
+    payload.ref = data.ref or ""
+    payload.before = data.before or ""
+    payload.after = data.after or ""
+    payload.created = data.created or false
+    payload.deleted = data.deleted or false
+    payload.forced = data.forced or false
+    payload.compare = data.compare or ""
+    payload.commits = data.commits or {}
+    payload.head_commit = data.head_commit
+    payload.pusher = data.pusher or {}
+  elseif internal_event.event == "create" or internal_event.event == "delete" then
+    payload.ref = data.ref or ""
+    payload.ref_type = data.ref_type or ""
+    payload.master_branch = data.master_branch or ""
+    payload.description = data.description
+    payload.pusher_type = data.pusher_type or "user"
+  end
+  return payload
 end
 
 local b = make_backend_builder()
@@ -291,5 +563,13 @@ b:rest("get_repositories", function()
     fetch_json(append_page_params(base() .. "/repos?show=all", PAGES))
   )
 end)
+
+b:webhook("push", radicle_ref_event)
+b:webhook("patch", radicle_patch_event)
+
+for _, event in ipairs({ "push", "create", "delete", "pull_request" }) do
+  b:webhook_translator(event, translate_radicle_normalized_webhook)
+  b:webhook_github_translator(event, translate_radicle_github_webhook)
+end
 
 b:build()
