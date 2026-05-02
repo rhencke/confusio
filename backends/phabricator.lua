@@ -186,9 +186,26 @@ local function phabricator_sender(payload, tx)
     or translate_phabricator_user((tx and tx.authorPHID) or action.actorPHID)
 end
 
+local function phabricator_first_transaction_timestamp(payload)
+  for _, tx in ipairs((payload or {}).transactions or {}) do
+    if tx.dateModified or tx.dateCreated then
+      return tx.dateModified or tx.dateCreated
+    end
+  end
+  return nil
+end
+
 local function phabricator_task_timestamp(payload, tx)
+  payload = payload or {}
   local action = payload.action or {}
-  return ts((tx and (tx.dateModified or tx.dateCreated)) or action.epoch)
+  local fields = (payload.object or {}).fields or {}
+  return ts(
+    (tx and (tx.dateModified or tx.dateCreated))
+      or action.epoch
+      or phabricator_first_transaction_timestamp(payload)
+      or fields.dateModified
+      or fields.dateCreated
+  )
 end
 
 local function phabricator_transaction_type(tx)
