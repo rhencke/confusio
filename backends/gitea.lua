@@ -7231,9 +7231,8 @@ register_gitea_webhook("issues", function(payload)
   -- For milestoned/demilestoned, include the affected milestone when Gitea
   -- supplies it at either the top level or on the issue object.
   if action == "milestoned" or action == "demilestoned" then
-    data.milestone = translate_gitea_milestone_webhook(
-      payload.milestone or (payload.issue or {}).milestone
-    )
+    data.milestone =
+      translate_gitea_milestone_webhook(payload.milestone or (payload.issue or {}).milestone)
   end
   return make_internal_event({
     event = "issues",
