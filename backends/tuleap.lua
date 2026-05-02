@@ -291,6 +291,79 @@ local function tuleap_artifact_event(action)
   end
 end
 
+local TULEAP_ACTIONLESS_NORMALIZED_EVENTS = {
+  create = true,
+  delete = true,
+  push = true,
+}
+
+local function tuleap_normalized_payload_without_envelope_fields(data)
+  local payload = {}
+  for k, v in pairs(data or {}) do
+    if k ~= "sender" and k ~= "repository" then
+      payload[k] = v
+    end
+  end
+  return payload
+end
+
+local function translate_tuleap_normalized_webhook(internal_event, fields)
+  local data = internal_event.data or {}
+  fields = fields or {}
+  return make_normalized_webhook_envelope(internal_event, {
+    id = fields.id,
+    type = fields.type
+      or (
+        TULEAP_ACTIONLESS_NORMALIZED_EVENTS[internal_event.event]
+          and normalized_webhook_event_type(internal_event.event, "")
+        or normalized_webhook_event_type(internal_event.event, internal_event.action)
+      ),
+    occurred_at = fields.occurred_at,
+    actor = fields.actor or data.sender,
+    repository = fields.repository or data.repository,
+    payload = fields.payload or tuleap_normalized_payload_without_envelope_fields(data),
+  })
+end
+
+local function translate_tuleap_github_webhook(internal_event, _fields)
+  local data = internal_event.data or {}
+  local payload = {
+    action = data.action or internal_event.action,
+    repository = data.repository or {},
+    sender = data.sender or {},
+  }
+  if internal_event.event == "project" then
+    payload.project = data.project or {}
+  elseif internal_event.event == "push" then
+    payload.action = nil
+    payload.ref = data.ref or ""
+    payload.before = data.before or ""
+    payload.after = data.after or ""
+    payload.created = data.created or false
+    payload.deleted = data.deleted or false
+    payload.forced = data.forced or false
+    payload.compare = data.compare or ""
+    payload.commits = data.commits or {}
+    payload.head_commit = data.head_commit
+    payload.pusher = data.pusher or {}
+  elseif internal_event.event == "create" or internal_event.event == "delete" then
+    payload.ref = data.ref or ""
+    payload.ref_type = data.ref_type or ""
+    payload.master_branch = data.master_branch or ""
+    payload.description = data.description
+    payload.pusher_type = data.pusher_type or "user"
+  elseif internal_event.event == "issues" then
+    payload.issue = data.issue or {}
+    if data.label then
+      payload.label = data.label
+    end
+    if data.assignee then
+      payload.assignee = data.assignee
+    end
+  end
+  return payload
+end
+
 local function tuleap_git_event(payload)
   payload = payload or {}
   local raw_ref = payload.ref or ""
@@ -537,5 +610,10 @@ b:webhook("project_create", tuleap_project_created_event)
 b:webhook("git_push", tuleap_git_event)
 b:webhook("artifact_create", tuleap_artifact_event("opened"))
 b:webhook("artifact_update", tuleap_artifact_event("edited"))
+
+for _, event in ipairs({ "project", "push", "create", "delete", "issues" }) do
+  b:webhook_translator(event, translate_tuleap_normalized_webhook)
+  b:webhook_github_translator(event, translate_tuleap_github_webhook)
+end
 
 b:build()

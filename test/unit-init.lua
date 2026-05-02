@@ -3380,6 +3380,24 @@ do
   ok(app.backend.webhooks.git_push ~= nil, "tuleap webhook: git_push registered")
   ok(app.backend.webhooks.artifact_create ~= nil, "tuleap webhook: artifact_create registered")
   ok(app.backend.webhooks.artifact_update ~= nil, "tuleap webhook: artifact_update registered")
+  ok(
+    app.backend.webhook_translators.project ~= nil,
+    "tuleap webhook: project translator registered"
+  )
+  ok(app.backend.webhook_translators.push ~= nil, "tuleap webhook: push translator registered")
+  ok(app.backend.webhook_translators.issues ~= nil, "tuleap webhook: issues translator registered")
+  ok(
+    app.backend.webhook_github_translators.project ~= nil,
+    "tuleap webhook: project GitHub translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.push ~= nil,
+    "tuleap webhook: push GitHub translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.issues ~= nil,
+    "tuleap webhook: issues GitHub translator registered"
+  )
 
   local function load_tuleap_fixture(name)
     local f = assert(io.open("test/fixtures/webhooks/tuleap/" .. name .. ".json", "rb"))
@@ -3407,6 +3425,20 @@ do
     "alice@example.com",
     "tuleap webhook: project_create maps owner email to sender"
   )
+  local project_envelope = app.backend.webhook_translators.project(project_event)
+  eq(project_envelope.type, "project.created", "tuleap webhook: normalized project type")
+  eq(
+    project_envelope.payload.project.name,
+    "Hello World",
+    "tuleap webhook: normalized project payload includes project"
+  )
+  local project_github_payload = app.backend.webhook_github_translators.project(project_event)
+  eq(project_github_payload.action, "created", "tuleap webhook: GitHub project action")
+  eq(
+    project_github_payload.project.name,
+    "Hello World",
+    "tuleap webhook: GitHub project payload includes project"
+  )
 
   local push_event = app.backend.webhooks.git_push(load_tuleap_fixture("push"))
   eq(push_event.event, "push", "tuleap webhook: git_push maps update to push")
@@ -3416,11 +3448,26 @@ do
   eq(push_event.data.repository.name, "hello-world", "tuleap webhook: push maps repository name")
   eq(push_event.data.sender.login, "alice", "tuleap webhook: push maps sender")
   eq(push_event.data.pusher.email, "alice@example.com", "tuleap webhook: push maps pusher")
+  local push_envelope = app.backend.webhook_translators.push(push_event)
+  eq(push_envelope.type, "push", "tuleap webhook: normalized push uses actionless type")
+  local push_github_payload = app.backend.webhook_github_translators.push(push_event)
+  eq(push_github_payload.action, nil, "tuleap webhook: GitHub push has no action")
+  eq(push_github_payload.ref, "refs/heads/main", "tuleap webhook: GitHub push includes ref")
+  eq(
+    push_github_payload.pusher.email,
+    "alice@example.com",
+    "tuleap webhook: GitHub push includes pusher"
+  )
 
   local create_event = app.backend.webhooks.git_push(load_tuleap_fixture("create"))
   eq(create_event.event, "create", "tuleap webhook: zero before maps to create")
   eq(create_event.data.ref, "feature/tuleap-fixtures", "tuleap webhook: create strips branch ref")
   eq(create_event.data.ref_type, "branch", "tuleap webhook: create detects branch ref")
+  local create_envelope = app.backend.webhook_translators.create(create_event)
+  eq(create_envelope.type, "create", "tuleap webhook: normalized create uses actionless type")
+  local create_github_payload = app.backend.webhook_github_translators.create(create_event)
+  eq(create_github_payload.ref, "feature/tuleap-fixtures", "tuleap webhook: GitHub create ref")
+  eq(create_github_payload.ref_type, "branch", "tuleap webhook: GitHub create ref_type")
 
   local delete_event = app.backend.webhooks.git_push(load_tuleap_fixture("delete"))
   eq(delete_event.event, "delete", "tuleap webhook: zero after maps to delete")
@@ -3461,6 +3508,20 @@ do
     artifact_created_event.data.sender.login,
     "alice",
     "tuleap webhook: artifact_create maps sender"
+  )
+  local issue_envelope = app.backend.webhook_translators.issues(artifact_created_event)
+  eq(issue_envelope.type, "issue.opened", "tuleap webhook: normalized issue type")
+  eq(
+    issue_envelope.payload.issue.title,
+    "Normalize Tuleap webhook payloads",
+    "tuleap webhook: normalized issue payload includes issue"
+  )
+  local issue_github_payload = app.backend.webhook_github_translators.issues(artifact_created_event)
+  eq(issue_github_payload.action, "opened", "tuleap webhook: GitHub issue action")
+  eq(
+    issue_github_payload.issue.number,
+    75291,
+    "tuleap webhook: GitHub issue payload includes issue"
   )
 
   local artifact_updated_event =
