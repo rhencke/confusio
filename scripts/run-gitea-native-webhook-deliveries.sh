@@ -7,6 +7,7 @@
 # HOST and TARGET use host:port form, matching the variables in the existing
 # webhook-delivery*.hurl files.  By default the harness skips rows whose fixture
 # file has not been added yet; set STRICT_NATIVE_FIXTURES=1 to fail instead.
+# Set GITEA_NATIVE_DELIVERY_SHAPE=confusio to assert normalized delivery shape.
 
 set -euo pipefail
 
@@ -18,13 +19,14 @@ fi
 HOST="$1"
 TARGET="$2"
 HURL="${3:-hurl}"
+SHAPE="${GITEA_NATIVE_DELIVERY_SHAPE:-github}"
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 MANIFEST="$ROOT/test/fixtures/webhooks/gitea/native-delivery.tsv"
 TMP=$(mktemp "$ROOT/test/.gitea-native-delivery.XXXXXX.hurl")
 trap 'rm -f "$TMP"' EXIT
 
-while IFS='|' read -r native_event github_event fixture note; do
+while IFS='|' read -r native_event github_event fixture note normalized_type; do
   case "${native_event:-}" in
     "" | "#"*) continue ;;
   esac
@@ -56,10 +58,29 @@ GET http://{{target}}/deliveries
 HTTP 200
 [Asserts]
 jsonpath "\$" count == 1
+EOF
+
+  if [ "$SHAPE" = "confusio" ]; then
+    if [ -z "${normalized_type:-}" ]; then
+      echo "missing normalized type for Gitea native webhook fixture: $fixture" >&2
+      exit 1
+    fi
+    cat >> "$TMP" <<EOF
+jsonpath "\$[0].confusio_event" == "$github_event"
+jsonpath "\$[0].confusio_source" == "gitea"
+jsonpath "\$[0].confusio_delivery" isString
+jsonpath "\$[0].github_event" == ""
+jsonpath "\$[0].body_json.id" isString
+jsonpath "\$[0].body_json.type" == "$normalized_type"
+jsonpath "\$[0].user_agent" contains "confusio"
+EOF
+  else
+    cat >> "$TMP" <<EOF
 jsonpath "\$[0].github_event" == "$github_event"
 jsonpath "\$[0].github_delivery" isString
 jsonpath "\$[0].user_agent" contains "confusio"
 EOF
+  fi
 
   "$HURL" --connect-timeout 1 --max-time 5 \
     --variable "host=$HOST" \

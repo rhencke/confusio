@@ -111,17 +111,25 @@ run_delivery_phase() {
 }
 
 run_gitea_native_delivery_phase() {
+  local shape="${1:-github}"
+  local shape_env=()
+  local shape_arg=()
+  if [ "$shape" = "confusio" ]; then
+    shape_env=(GITEA_NATIVE_DELIVERY_SHAPE=confusio)
+    shape_arg=("webhook_target_shape=confusio")
+  fi
   local tmpdir; tmpdir=$(mktemp -d)
   start_isolated sh "$DELIVERY_TARGET_BIN" -u -p "$DELIVERY_TARGET_PORT"; TARGET_PID=$!
   start_isolated sh "$MOCK_GITEA_BIN" -p "$MOCK_PORT"; MOCK_PID=$!
   start_confusio "$tmpdir" \
     -- gitea "http://127.0.0.1:$MOCK_PORT" \
-    "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"; PID=$!
+    "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+    "${shape_arg[@]}"; PID=$!
   trap "kill $PID 2>/dev/null || true; kill $MOCK_PID 2>/dev/null || true; kill $TARGET_PID 2>/dev/null || true; rm -rf $tmpdir" EXIT
   wait_port "mock target" "$DELIVERY_TARGET_PORT"
   wait_port "mock gitea" "$MOCK_PORT"
   wait_http "confusio" "$CONFUSIO_PORT"
-  STRICT_NATIVE_FIXTURES=1 scripts/run-gitea-native-webhook-deliveries.sh \
+  STRICT_NATIVE_FIXTURES=1 "${shape_env[@]}" scripts/run-gitea-native-webhook-deliveries.sh \
     "localhost:$CONFUSIO_PORT" \
     "localhost:$DELIVERY_TARGET_PORT" \
     "$HURL"
@@ -218,13 +226,9 @@ run_delivery_phase test/webhook-delivery.hurl \
 # is missing, and verifies GitHub-shaped delivery headers for each accepted row.
 run_gitea_native_delivery_phase
 
-# Phase 8: Gitea delivery with "confusio" shape — spot-checks X-Confusio-* headers.
-# Runs the same fixture files but with webhook_target_shape=confusio to verify the
-# alternate header set (X-Confusio-Event/Source/Delivery) instead of X-GitHub-*.
-run_delivery_phase test/webhook-delivery-gitea-confusio-shape.hurl \
-  -- gitea "http://127.0.0.1:$MOCK_PORT" \
-  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
-  "webhook_target_shape=confusio"
+# Phase 8: Gitea native normalized delivery tests — the same audited native
+# fixture manifest, delivered with webhook_target_shape=confusio.
+run_gitea_native_delivery_phase confusio
 
 # Phase 9: GitLab fixture-based delivery tests — every event × action triple.
 # Uses fixture files from test/fixtures/webhooks/gitlab/ instead of inline payloads.
