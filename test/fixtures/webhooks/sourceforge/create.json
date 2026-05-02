@@ -1,0 +1,27 @@
+{
+  "before": "0000000000000000000000000000000000000000",
+  "after": "3333333333333333333333333333333333333333",
+  "ref": "refs/heads/feature/sourceforge-fixtures",
+  "repository": {
+    "full_name": "/p/octocat/hello-world/",
+    "name": "hello-world",
+    "url": "https://sourceforge.net/p/octocat/hello-world/",
+    "homepage": "https://sourceforge.net/p/octocat/hello-world/",
+    "description": "Hello World repository",
+    "default_branch": "main"
+  },
+  "pusher": {
+    "username": "alice",
+    "name": "Alice",
+    "email": "alice@example.com",
+    "url": "https://sourceforge.net/u/alice/"
+  },
+  "commits": [
+    {
+      "id": "3333333333333333333333333333333333333333",
+      "url": "https://sourceforge.net/p/octocat/hello-world/ci/3333333/",
+      "timestamp": "2024-01-15T10:10:00Z",
+      "message": "Create feature branch"
+    }
+  ]
+}
