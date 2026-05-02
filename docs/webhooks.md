@@ -145,7 +145,7 @@ receiver implementation, and a brief note on the signature scheme used.  The
 | `phabricator` | `POST /webhooks/phabricator` | _(self-hosted)_ | phabricator | `X-Phabricator-Webhook-Signature` HMAC-SHA256 (Conduit key) |
 | `radicle` | `POST /webhooks/radicle` | `https://radicle.xyz` | radicle | Shared secret in `Authorization` header |
 | `rhodecode` | `POST /webhooks/rhodecode` | _(self-hosted)_ | rhodecode | Shared secret in `X-RhodeCode-Signature` header |
-| `sourceforge` | `POST /webhooks/sourceforge` | `https://sourceforge.net` | sourceforge | Shared secret in `X-Sourceforge-Webhook-Secret` header |
+| `sourceforge` | `POST /webhooks/sourceforge` | `https://sourceforge.net` | sourceforge | `X-Allura-Signature` HMAC-SHA1 |
 | `sourcehut` | `POST /webhooks/sourcehut` | `https://sr.ht` | sourcehut | `X-Payload-Signature` ed25519 (public key published by sr.ht) |
 | `tuleap` | `POST /webhooks/tuleap` | _(self-hosted)_ | tuleap | `X-Tuleap-Webhook-Secret` shared secret |
 
@@ -233,8 +233,8 @@ Four distinct schemes appear across the 24 backends:
 |--------|-------------|----------|
 | **HMAC-SHA256** | Signature = `HMAC-SHA256(secret, body)`, hex-encoded | gitea, forgejo, codeberg, notabug, gogs, bitbucket, bitbucket_datacenter, phabricator, pagure (SHA-256 header) |
 | **HMAC-SHA512** | Signature = `HMAC-SHA512(secret, body)`, hex-encoded | pagure (SHA-512 header, older instances) |
-| **HMAC-SHA1** | Signature = `HMAC-SHA1(secret, body)`, hex-encoded | gitbucket (GitHub legacy compat), launchpad |
-| **Shared token** | Secret echoed verbatim in a header or body field; constant-time string compare | gitlab, gitblit, harness, onedev, radicle, rhodecode, sourceforge, tuleap, kallithea |
+| **HMAC-SHA1** | Signature = `HMAC-SHA1(secret, body)`, hex-encoded | gitbucket (GitHub legacy compat), launchpad, sourceforge |
+| **Shared token** | Secret echoed verbatim in a header or body field; constant-time string compare | gitlab, gitblit, harness, onedev, radicle, rhodecode, tuleap, kallithea |
 | **Bearer / Basic** | Secret in Authorization header (Bearer or Basic form) | azuredevops (Basic), gerrit (Basic or Bearer) |
 | **Asymmetric / platform** | ed25519 or platform-managed certificate signing | sourcehut, codecommit |
 
@@ -263,7 +263,7 @@ Four distinct schemes appear across the 24 backends:
 | `phabricator` | `X-Phabricator-Webhook-Signature` | HMAC-SHA256 | `<hex>` |
 | `radicle` | `Authorization` | Shared token | verbatim |
 | `rhodecode` | `X-RhodeCode-Signature` | Shared token | verbatim |
-| `sourceforge` | `X-Sourceforge-Webhook-Secret` | Shared token | verbatim |
+| `sourceforge` | `X-Allura-Signature` | HMAC-SHA1 | `sha1=<hex>` |
 | `sourcehut` | `X-Payload-Signature` | ed25519 | base64 |
 | `tuleap` | `X-Tuleap-Webhook-Secret` | Shared token | verbatim |
 
@@ -626,16 +626,19 @@ accept if constant_time_equal(expected, received)
 
 ### SourceForge
 
-SourceForge sends the shared secret in `X-Sourceforge-Webhook-Secret`.
+SourceForge runs Allura for project webhooks. Allura signs the raw JSON payload
+with the configured webhook secret and sends the digest in `X-Allura-Signature`.
 
 ```
 secret   = configured shared secret
-received = value of X-Sourceforge-Webhook-Secret
+expected = "sha1=" ++ HMAC-SHA1(secret, body) as lowercase hex
+received = value of X-Allura-Signature
 
-accept if constant_time_equal(secret, received)
+accept if constant_time_equal(expected, received)
 ```
 
-**Configuration:** Set when registering the webhook in SourceForge project settings.
+**Configuration:** Set `secret` when registering the webhook in SourceForge or
+Allura project settings; Allura may generate one if left blank.
 
 ---
 

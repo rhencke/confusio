@@ -349,16 +349,16 @@ local function verify_signature(backend, secret, body, now)
     end
     return ct_equal(secret, tok)
 
-  -- SourceForge: X-Sourceforge-Webhook-Secret, verbatim shared token
+  -- SourceForge / Allura: X-Allura-Signature, HMAC-SHA1, prefix "sha1="
   elseif backend == "sourceforge" then
     if not secret or secret == "" then
       return true
     end
-    local tok = GetHeader("X-Sourceforge-Webhook-Secret")
-    if not tok then
+    local sig = GetHeader("X-Allura-Signature")
+    if not sig then
       return false
     end
-    return ct_equal(secret, tok)
+    return ct_equal("sha1=" .. hmac_hex("sha1", secret, body), sig)
 
   -- Tuleap: X-Tuleap-Webhook-Secret, verbatim shared token
   elseif backend == "tuleap" then

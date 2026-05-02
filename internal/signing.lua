@@ -74,7 +74,7 @@ function sign_for_backend(backend, secret, body) -- luacheck: globals sign_for_b
   elseif backend == "rhodecode" then
     return { ["X-RhodeCode-Signature"] = secret }
   elseif backend == "sourceforge" then
-    return { ["X-Sourceforge-Webhook-Secret"] = secret }
+    return { ["X-Allura-Signature"] = "sha1=" .. hmac_hex("sha1", secret, body) }
   elseif backend == "tuleap" then
     return { ["X-Tuleap-Webhook-Secret"] = secret }
   elseif backend == "azuredevops" then
