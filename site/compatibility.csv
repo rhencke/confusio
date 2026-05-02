@@ -463,13 +463,13 @@ GET /users/{username}/received_events,~empty list,~empty list,~empty list,~empty
 GET /users/{username}/received_events/public,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
 GET /users/{username}/starred,~empty list,~empty list,~empty list,y,~empty list,y,~empty list,~empty list,~empty list,y,~empty list,y,~empty list,~empty list,~empty list,y,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
 GET /users/{username}/subscriptions,~empty list,~empty list,~empty list,y,~empty list,y,~empty list,~empty list,~empty list,y,~empty list,y,~empty list,~empty list,~empty list,y,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
-webhook create/create,y,y,y,y,n,y,y,y,y,y,y,y,n,y,n,y,y,y,n,y,n,n,n,n
+webhook create/create,y,y,y,y,n,y,y,y,y,y,y,y,n,y,n,y,y,y,n,y,n,y,n,n
 webhook custom_property/created,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook custom_property/deleted,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook custom_property/updated,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook custom_property_values/updated,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook commit_comment/created,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-webhook delete/delete,y,y,y,y,n,y,y,y,y,y,y,y,n,y,n,y,y,y,n,y,n,n,n,n
+webhook delete/delete,y,y,y,y,n,y,y,y,y,y,y,y,n,y,n,y,y,y,n,y,n,y,n,n
 webhook discussion/answered,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook discussion/category_changed,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook discussion/closed,n,n,n,y,n,y,n,n,y,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n
@@ -546,7 +546,7 @@ webhook pull_request_review/dismissed,y,y,n,y,n,y,y,n,y,y,y,y,n,n,n,n,n,n,n,n,n,
 webhook pull_request_review_comment/created,n,y,n,y,n,y,n,n,n,y,y,y,n,n,n,n,y,n,n,n,n,n,n,n
 webhook pull_request_review_comment/edited,n,y,n,y,n,y,n,n,n,y,y,y,n,n,n,n,y,n,n,n,n,n,n,n
 webhook pull_request_review_comment/deleted,n,y,n,y,n,y,n,n,n,y,y,y,n,n,n,n,n,n,n,n,n,n,n,n
-webhook push/push,y,y,y,y,n,y,y,y,y,y,y,y,n,y,y,y,y,y,y,y,n,n,n,n
+webhook push/push,y,y,y,y,n,y,y,y,y,y,y,y,n,y,y,y,y,y,y,y,n,y,n,n
 webhook release/published,y,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook release/edited,n,n,n,y,n,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook release/deleted,y,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n

@@ -640,6 +640,13 @@ accept if constant_time_equal(expected, received)
 **Configuration:** Set `secret` when registering the webhook in SourceForge or
 Allura project settings; Allura may generate one if left blank.
 
+**Supported events:** SourceForge / Allura repository hooks do not send an event
+type header.  Confusio infers Allura `repo-push` payloads from the documented
+ref update shape and translates them to GitHub-compatible `push`, `create`, or
+`delete` events.  Branch and tag create/delete events are derived when `before`
+or `after` is the all-zero SHA; other SourceForge webhook families are not
+mapped.
+
 ---
 
 ### Tuleap
@@ -2310,13 +2317,13 @@ Webhook event/action support is generated from `internal/catalog.lua` and
 <!-- WEBHOOK_ACTION_SUPPORT_START -->
 | Event | Action | Azure DevOps | Bitbucket | Bitbucket DC | Codeberg | CodeCommit | Forgejo | Gerrit | GitBlit | GitBucket | Gitea | GitLab | Gogs | Harness | Kallithea | Launchpad | NotABug | OneDev | Pagure | Phabricator | Radicle | RhodeCode | SourceForge | Sourcehut | Tuleap |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Create | `create` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| Create | `create` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ |
 | Custom Property | `created` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `deleted` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `updated` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Custom Property Values | `updated` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Commit Comments | `created` | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| Delete | `delete` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| Delete | `delete` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ |
 | Discussions | `answered` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `category_changed` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `closed` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
@@ -2393,7 +2400,7 @@ Webhook event/action support is generated from `internal/catalog.lua` and
 | PR Review Comments | `created` | ✗ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `edited` | ✗ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `deleted` | ✗ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| Push | `push` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| Push | `push` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
 | Release | `published` | ✓ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `edited` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `deleted` | ✓ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
@@ -2557,6 +2564,10 @@ Triggered when one or more commits are pushed to a branch or tag.
 - Radicle `push` requests carry branch or tag ref changes in the body `event_type:
   "push"` family.  Confusio forwards commit details when present and derives
   create/delete from all-zero `before` / `after` SHAs.
+- SourceForge / Allura `repo-push` events do not include an event header.  Confusio
+  infers the event from the body, forwards commit `id`, `url`, `timestamp`, and
+  `message` when present, and derives create/delete from all-zero `before` /
+  `after` SHAs.
 
 #### `commits[]` fields
 
@@ -2585,6 +2596,9 @@ Triggered when one or more commits are pushed to a branch or tag.
   forges include only the author.
 - `added` / `removed` / `modified`: Only GitHub and GitLab include per-file diff lists
   in push events.  All other backends emit `[]` for these three fields.
+- SourceForge / Allura documents commit `id`, `url`, `timestamp`, and `message`.
+  Author, committer, and file lists are empty unless present in the delivered
+  payload.
 
 **Confusio-normalized differences:** In the confusio shape, `commits[].author` uses
 the actor schema (`id`, `login`, `display_name`, `source_url`) rather than the git
@@ -2620,11 +2634,12 @@ field structure.
 **Backend-specific gaps:**
 - `gerrit`: Gerrit `ref-updated` events become `create` or `delete` when `oldRev` or
   `newRev` is the all-zero SHA.
-- `sourcehut`, `pagure`, `phabricator`, `launchpad`, `radicle`: Create/delete events
-  may arrive embedded in a push event rather than as discrete event types.  Confusio
-  splits them when the push `before` or `after` is all-zero.
-- `codecommit`, `kallithea`, `rhodecode`, `tuleap`, `sourceforge`: Create/delete events
-  may not be delivered at all depending on forge configuration.  If no event is
+- `sourcehut`, `pagure`, `phabricator`, `launchpad`, `radicle`, `sourceforge`:
+  Create/delete events may arrive embedded in a push event rather than as
+  discrete event types.  Confusio splits them when the push `before` or `after`
+  is all-zero.
+- `codecommit`, `kallithea`, `rhodecode`, `tuleap`: Create/delete events may not
+  be delivered at all depending on forge configuration.  If no event is
   received, the `create` / `delete` event will not be emitted.
 
 ---
