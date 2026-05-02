@@ -31,25 +31,68 @@ local _t = make_backend_transport("token", PAGES)
 local fetch_json = _t.fetch_json
 local proxy_handler = _t.proxy_handler
 
+local ZERO_SHA = "0000000000000000000000000000000000000000"
+
+local function strip_tilde(value)
+  value = value or ""
+  return value:sub(1, 1) == "~" and value:sub(2) or value
+end
+
+local function sourcehut_canonical(entity)
+  entity = entity or {}
+  return entity.canonical_name or entity.canonicalName or entity.username or entity.name or ""
+end
+
+local function sourcehut_login(entity)
+  local canonical = sourcehut_canonical(entity)
+  if canonical ~= "" then
+    return strip_tilde(canonical)
+  end
+  return (entity or {}).login or ""
+end
+
+local function ref_name(ref)
+  return (ref or ""):match("^refs/heads/(.+)$")
+    or (ref or ""):match("^refs/tags/(.+)$")
+    or (ref or "")
+end
+
+local function ref_type(ref)
+  if (ref or ""):match("^refs/tags/") then
+    return "tag"
+  end
+  return "branch"
+end
+
 -- Map a Sourcehut repository object to GitHub format.
 local function translate_srht_repo(r)
   if not r then
     return {}
   end
   local owner = r.owner or {}
-  local canonical = owner.canonical_name or ""
-  -- canonical_name is like "~username", strip the tilde for login
-  local login = canonical:sub(1, 1) == "~" and canonical:sub(2) or canonical
+  local canonical = sourcehut_canonical(owner)
+  local login = sourcehut_login(owner)
   local vis = r.visibility or "public"
+  local private = vis == "private" or vis == "PRIVATE"
+  local head = r.HEAD or r.head or {}
+  local default_branch = ""
+  if type(head) == "table" then
+    default_branch = (head.name or ""):match("^refs/heads/(.+)") or head.name or ""
+  else
+    default_branch = tostring(head or ""):match("^refs/heads/(.+)") or tostring(head or "")
+  end
+  if default_branch == "" then
+    default_branch = "main"
+  end
   return {
     id = r.id or 0,
-    node_id = "",
+    node_id = r.rid or "",
     name = r.name,
     full_name = login .. "/" .. (r.name or ""),
-    private = vis == "private",
+    private = private,
     owner = {
       login = login,
-      id = 0,
+      id = owner.id or 0,
       node_id = "",
       avatar_url = "",
       url = "",
@@ -72,15 +115,32 @@ local function translate_srht_repo(r)
     archived = false,
     disabled = false,
     open_issues_count = 0,
-    default_branch = r.HEAD and ((r.HEAD.name or ""):match("^refs/heads/(.+)") or r.HEAD.name)
-      or "main",
-    visibility = vis == "private" and "private" or "public",
+    default_branch = default_branch,
+    visibility = private and "private" or "public",
     forks = 0,
     open_issues = 0,
     watchers = 0,
     created_at = r.created,
     updated_at = r.updated,
     pushed_at = r.updated,
+  }
+end
+
+local function translate_srht_user(u)
+  u = u or {}
+  local canonical = sourcehut_canonical(u)
+  local login = sourcehut_login(u)
+  return {
+    login = login,
+    id = u.id or 0,
+    node_id = "",
+    avatar_url = "",
+    url = u.url or "",
+    html_url = canonical ~= "" and (config.base_url .. "/" .. canonical) or "",
+    type = "User",
+    site_admin = false,
+    name = u.name or u.username or login,
+    email = u.email or "",
   }
 end
 
@@ -225,16 +285,321 @@ local function translate_srht_commit(c)
     return {}
   end
   local author = c.author or {}
+  local committer = c.committer or author
+  local author_date = author.time or c.timestamp or ""
+  local committer_date = committer.time or author_date
   return {
     sha = c.id or "",
     commit = {
       message = c.message or "",
-      author = { name = author.name or "", email = author.email or "", date = c.timestamp or "" },
-      committer = { name = author.name or "", email = author.email or "", date = c.timestamp or "" },
+      author = { name = author.name or "", email = author.email or "", date = author_date },
+      committer = {
+        name = committer.name or "",
+        email = committer.email or "",
+        date = committer_date,
+      },
     },
     author = { login = author.name or "", id = 0, avatar_url = "" },
-    committer = { login = author.name or "", id = 0, avatar_url = "" },
+    committer = { login = committer.name or "", id = 0, avatar_url = "" },
   }
+end
+
+local function sourcehut_payload(payload)
+  if type(payload) == "table" and type(payload.data) == "table" then
+    return payload.data
+  end
+  return payload or {}
+end
+
+local function sourcehut_webhook(payload)
+  payload = sourcehut_payload(payload)
+  return payload.webhook or payload
+end
+
+local function sourcehut_event_name(payload)
+  local webhook = sourcehut_webhook(payload)
+  return webhook.event or webhook.event_type or webhook.eventType or ""
+end
+
+local function sourcehut_sender(payload)
+  payload = sourcehut_payload(payload)
+  return translate_srht_user(
+    payload.pusher
+      or payload.sender
+      or payload.actor
+      or payload.repository and payload.repository.owner
+  )
+end
+
+local function sourcehut_repository(payload)
+  payload = sourcehut_payload(payload)
+  return translate_srht_repo(payload.repository or {})
+end
+
+local function sourcehut_update_ref(update)
+  update = update or {}
+  local ref = update.ref or update.reference or {}
+  if type(ref) == "table" then
+    return ref.name or update.name or update.refName or ""
+  end
+  return ref or update.name or update.refName or ""
+end
+
+local function sourcehut_object_id(value)
+  if type(value) == "table" then
+    return value.id or value.target or value.sha or value.oid or ""
+  end
+  return value or ""
+end
+
+local function sourcehut_first_nonempty(...)
+  for i = 1, select("#", ...) do
+    local value = select(i, ...)
+    if value ~= nil and value ~= "" then
+      return value
+    end
+  end
+  return ""
+end
+
+local function sourcehut_update_before(update)
+  update = update or {}
+  return sourcehut_object_id(update.old or update.oldTarget or update.from or update.before)
+end
+
+local function sourcehut_update_after(update)
+  update = update or {}
+  local ref = update.ref or update.reference or {}
+  return sourcehut_first_nonempty(
+    sourcehut_object_id(update.new or update.newTarget or update.to or update.after),
+    type(ref) == "table" and (ref.target or "") or ""
+  )
+end
+
+local function sourcehut_first_update(payload)
+  payload = sourcehut_payload(payload)
+  for _, update in ipairs(payload.updates or {}) do
+    if type(update) == "table" then
+      return update
+    end
+  end
+  return payload.update
+end
+
+local function sourcehut_commit_identity(sig)
+  sig = sig or {}
+  local login = sourcehut_login(sig)
+  return {
+    name = sig.name or sig.username or login,
+    email = sig.email or "",
+    username = sig.username or login,
+  }
+end
+
+local function translate_srht_push_commit(c)
+  c = c or {}
+  local author = c.author or {}
+  local committer = c.committer or author
+  local author_time = author.time or c.timestamp or ""
+  local committer_time = committer.time or author_time
+  return {
+    id = c.id or c.sha or "",
+    tree_id = type(c.tree) == "table" and (c.tree.id or "") or c.tree or "",
+    distinct = c.distinct ~= false,
+    message = c.message or "",
+    timestamp = committer_time,
+    url = c.url or "",
+    author = {
+      name = author.name or "",
+      email = author.email or "",
+      username = author.name or "",
+    },
+    committer = {
+      name = committer.name or "",
+      email = committer.email or "",
+      username = committer.name or "",
+    },
+    added = c.added or {},
+    removed = c.removed or {},
+    modified = c.modified or {},
+  }
+end
+
+local function sourcehut_update_commits(update)
+  local commits = {}
+  update = update or {}
+  local raw_commits = update.commits or update.log and update.log.results or update.results or {}
+  for _, commit in ipairs(raw_commits) do
+    commits[#commits + 1] = translate_srht_push_commit(commit)
+  end
+  return commits
+end
+
+local function sourcehut_repo_event(payload, action)
+  payload = payload or {}
+  local data = sourcehut_payload(payload)
+  local repository = translate_srht_repo(data.repository or {})
+  return make_internal_event({
+    event = "repository",
+    action = action,
+    provider = "sourcehut",
+    raw = payload,
+    data = {
+      action = action,
+      repository = repository,
+      sender = sourcehut_sender(payload),
+    },
+    timestamp = (sourcehut_webhook(payload) or {}).date or data.date or repository.updated_at or "",
+  })
+end
+
+local function sourcehut_git_event(payload)
+  payload = payload or {}
+  local update = sourcehut_first_update(payload)
+  if not update then
+    return nil, "No Sourcehut ref update"
+  end
+
+  local raw_ref = sourcehut_update_ref(update)
+  local before = sourcehut_update_before(update)
+  local after = sourcehut_update_after(update)
+  local repository = sourcehut_repository(payload)
+  local sender = sourcehut_sender(payload)
+
+  if before == "" then
+    before = ZERO_SHA
+  end
+  if after == "" then
+    after = ZERO_SHA
+  end
+
+  if before == ZERO_SHA then
+    return make_internal_event({
+      event = "create",
+      action = "create",
+      provider = "sourcehut",
+      raw = payload,
+      data = {
+        ref = ref_name(raw_ref),
+        ref_type = ref_type(raw_ref),
+        master_branch = repository.default_branch or "",
+        description = repository.description,
+        pusher_type = "user",
+        repository = repository,
+        sender = sender,
+      },
+      timestamp = (sourcehut_webhook(payload) or {}).date or "",
+    })
+  end
+
+  if after == ZERO_SHA then
+    return make_internal_event({
+      event = "delete",
+      action = "delete",
+      provider = "sourcehut",
+      raw = payload,
+      data = {
+        ref = ref_name(raw_ref),
+        ref_type = ref_type(raw_ref),
+        master_branch = repository.default_branch or "",
+        description = repository.description,
+        pusher_type = "user",
+        repository = repository,
+        sender = sender,
+      },
+      timestamp = (sourcehut_webhook(payload) or {}).date or "",
+    })
+  end
+
+  local commits = sourcehut_update_commits(update)
+  local head_commit = #commits > 0 and commits[#commits] or nil
+  return make_internal_event({
+    event = "push",
+    action = "",
+    provider = "sourcehut",
+    raw = payload,
+    data = {
+      ref = raw_ref,
+      before = before,
+      after = after,
+      created = false,
+      deleted = false,
+      forced = update.forced or false,
+      compare = update.compare or update.compareUrl or "",
+      commits = commits,
+      head_commit = head_commit,
+      pusher = sourcehut_commit_identity((sourcehut_payload(payload).pusher or {})),
+      repository = repository,
+      sender = sender,
+      sourcehut_event = sourcehut_event_name(payload),
+    },
+    timestamp = (sourcehut_webhook(payload) or {}).date
+      or (head_commit and head_commit.timestamp)
+      or "",
+  })
+end
+
+local SOURCEHUT_ACTIONLESS_NORMALIZED_EVENTS = {
+  create = true,
+  delete = true,
+  push = true,
+}
+
+local function sourcehut_normalized_payload_without_envelope_fields(data)
+  local payload = {}
+  for k, v in pairs(data or {}) do
+    if k ~= "sender" and k ~= "repository" then
+      payload[k] = v
+    end
+  end
+  return payload
+end
+
+local function translate_sourcehut_normalized_webhook(internal_event, fields)
+  local data = internal_event.data or {}
+  fields = fields or {}
+  return make_normalized_webhook_envelope(internal_event, {
+    id = fields.id,
+    type = fields.type
+      or (
+        SOURCEHUT_ACTIONLESS_NORMALIZED_EVENTS[internal_event.event]
+          and normalized_webhook_event_type(internal_event.event, "")
+        or normalized_webhook_event_type(internal_event.event, internal_event.action)
+      ),
+    occurred_at = fields.occurred_at,
+    actor = fields.actor or data.sender,
+    repository = fields.repository or data.repository,
+    payload = fields.payload or sourcehut_normalized_payload_without_envelope_fields(data),
+  })
+end
+
+local function translate_sourcehut_github_webhook(internal_event, _fields)
+  local data = internal_event.data or {}
+  local payload = {
+    action = data.action or internal_event.action,
+    repository = data.repository or {},
+    sender = data.sender or {},
+  }
+  if internal_event.event == "push" then
+    payload.action = nil
+    payload.ref = data.ref or ""
+    payload.before = data.before or ""
+    payload.after = data.after or ""
+    payload.created = data.created or false
+    payload.deleted = data.deleted or false
+    payload.forced = data.forced or false
+    payload.compare = data.compare or ""
+    payload.commits = data.commits or {}
+    payload.head_commit = data.head_commit
+    payload.pusher = data.pusher or {}
+  elseif internal_event.event == "create" or internal_event.event == "delete" then
+    payload.ref = data.ref or ""
+    payload.ref_type = data.ref_type or ""
+    payload.master_branch = data.master_branch or ""
+    payload.description = data.description
+    payload.pusher_type = data.pusher_type or "user"
+  end
+  return payload
 end
 
 local b = make_backend_builder()
@@ -688,5 +1053,25 @@ b:graphql("node.Issue", function(local_id, _ctx)
   end
   return graphql_translate_issue(translate_srht_ticket(data), owner, repo)
 end)
+
+b:webhook("REPO_CREATED", function(payload)
+  return sourcehut_repo_event(payload, "created")
+end)
+
+b:webhook("REPO_UPDATE", function(payload)
+  return sourcehut_repo_event(payload, "edited")
+end)
+
+b:webhook("REPO_DELETED", function(payload)
+  return sourcehut_repo_event(payload, "deleted")
+end)
+
+b:webhook("GIT_PRE_RECEIVE", sourcehut_git_event)
+b:webhook("GIT_POST_RECEIVE", sourcehut_git_event)
+
+for _, event in ipairs({ "push", "create", "delete", "repository" }) do
+  b:webhook_translator(event, translate_sourcehut_normalized_webhook)
+  b:webhook_github_translator(event, translate_sourcehut_github_webhook)
+end
 
 b:build()

@@ -2860,6 +2860,187 @@ do
 end
 
 -- ============================================================
+-- Sourcehut webhook handlers
+-- ============================================================
+
+do
+  local saved_rest = app.backend.rest
+  local saved_capabilities = app.backend.capabilities
+  local saved_webhooks = app.backend.webhooks
+  local saved_webhook_translators = app.backend.webhook_translators
+  local saved_webhook_github_translators = app.backend.webhook_github_translators
+  local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
+  local saved_base_url = config.base_url
+  local saved_backend = config.backend
+
+  app.backend.rest = {}
+  app.backend.capabilities = {}
+  app.backend.webhooks = {}
+  app.backend.webhook_translators = {}
+  app.backend.webhook_github_translators = {}
+  graphql_resolvers = {} -- luacheck: globals graphql_resolvers
+  config.base_url = ""
+  config.backend = "sourcehut"
+  _real_dofile("backends/sourcehut.lua")
+
+  ok(app.backend.webhooks.REPO_CREATED ~= nil, "sourcehut webhook: REPO_CREATED registered")
+  ok(app.backend.webhooks.REPO_UPDATE ~= nil, "sourcehut webhook: REPO_UPDATE registered")
+  ok(app.backend.webhooks.REPO_DELETED ~= nil, "sourcehut webhook: REPO_DELETED registered")
+  ok(app.backend.webhooks.GIT_PRE_RECEIVE ~= nil, "sourcehut webhook: GIT_PRE_RECEIVE registered")
+  ok(app.backend.webhooks.GIT_POST_RECEIVE ~= nil, "sourcehut webhook: GIT_POST_RECEIVE registered")
+  ok(app.backend.webhook_translators.push ~= nil, "sourcehut webhook: push translator registered")
+  ok(
+    app.backend.webhook_github_translators.push ~= nil,
+    "sourcehut webhook: push GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_translators.repository ~= nil,
+    "sourcehut webhook: repository translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.repository ~= nil,
+    "sourcehut webhook: repository GitHub-shape translator registered"
+  )
+
+  local repo_payload = {
+    data = {
+      webhook = { event = "REPO_CREATED", date = "2026-05-02T01:02:03Z" },
+      repository = {
+        id = 272,
+        rid = "repo-rid",
+        name = "confusio",
+        description = "Webhook kennel",
+        visibility = "PUBLIC",
+        owner = { id = 7, canonicalName = "~fido", name = "Fido" },
+        HEAD = { name = "refs/heads/main" },
+        created = "2026-05-01T00:00:00Z",
+        updated = "2026-05-02T01:00:00Z",
+      },
+    },
+  }
+  local repo_event = app.backend.webhooks.REPO_CREATED(repo_payload)
+  eq(repo_event.event, "repository", "sourcehut webhook: REPO_CREATED maps to repository")
+  eq(repo_event.action, "created", "sourcehut webhook: REPO_CREATED maps to created")
+  eq(repo_event.provider, "sourcehut", "sourcehut webhook: repository sets provider")
+  eq(
+    repo_event.data.repository.full_name,
+    "fido/confusio",
+    "sourcehut webhook: repository full_name translated"
+  )
+  eq(
+    repo_event.data.sender.login,
+    "fido",
+    "sourcehut webhook: repository sender falls back to owner"
+  )
+  local repo_envelope = app.backend.webhook_translators.repository(repo_event)
+  eq(repo_envelope.type, "repository.created", "sourcehut webhook: normalized repository type")
+  local repo_github_payload = app.backend.webhook_github_translators.repository(repo_event)
+  eq(
+    repo_github_payload.repository.name,
+    "confusio",
+    "sourcehut webhook: GitHub-shape repository includes repository"
+  )
+  eq(
+    app.backend.webhooks.REPO_UPDATE(repo_payload).action,
+    "edited",
+    "sourcehut webhook: REPO_UPDATE maps to edited"
+  )
+  eq(
+    app.backend.webhooks.REPO_DELETED(repo_payload).action,
+    "deleted",
+    "sourcehut webhook: REPO_DELETED maps to deleted"
+  )
+
+  local git_payload = {
+    data = {
+      webhook = { event = "GIT_POST_RECEIVE", date = "2026-05-02T02:03:04Z" },
+      repository = {
+        id = 272,
+        name = "confusio",
+        visibility = "PUBLIC",
+        owner = { canonicalName = "~fido" },
+        HEAD = { name = "refs/heads/main" },
+      },
+      pusher = { canonicalName = "~rob", name = "Rob" },
+      updates = {
+        {
+          ref = { name = "refs/heads/main" },
+          old = { id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+          new = { id = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+          log = {
+            results = {
+              {
+                id = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                message = "Teach sourcehut pushes",
+                author = {
+                  name = "Fido",
+                  email = "fido@example.test",
+                  time = "2026-05-02T02:00:00Z",
+                },
+                committer = {
+                  name = "Rob",
+                  email = "rob@example.test",
+                  time = "2026-05-02T02:01:00Z",
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  }
+  local push_event = app.backend.webhooks.GIT_POST_RECEIVE(git_payload)
+  eq(push_event.event, "push", "sourcehut webhook: GIT_POST_RECEIVE maps to push")
+  eq(push_event.action, "", "sourcehut webhook: push is action-less")
+  eq(push_event.data.ref, "refs/heads/main", "sourcehut webhook: push keeps ref")
+  eq(
+    push_event.data.head_commit.id,
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "sourcehut webhook: push sets head commit"
+  )
+  eq(push_event.data.sender.login, "rob", "sourcehut webhook: push sets sender from pusher")
+  local push_envelope = app.backend.webhook_translators.push(push_event)
+  eq(push_envelope.type, "push", "sourcehut webhook: normalized push uses actionless type")
+  local push_github_payload = app.backend.webhook_github_translators.push(push_event)
+  eq(
+    push_github_payload.head_commit.message,
+    "Teach sourcehut pushes",
+    "sourcehut webhook: GitHub-shape push includes head commit"
+  )
+  eq(push_github_payload.pusher.name, "Rob", "sourcehut webhook: GitHub-shape push includes pusher")
+
+  local create_event = app.backend.webhooks.GIT_PRE_RECEIVE({
+    data = {
+      webhook = { event = "GIT_PRE_RECEIVE" },
+      repository = {
+        name = "confusio",
+        owner = { canonicalName = "~fido" },
+        HEAD = { name = "refs/heads/main" },
+      },
+      updates = {
+        {
+          ref = { name = "refs/tags/v1.0.0" },
+          old = { id = "0000000000000000000000000000000000000000" },
+          new = { id = "cccccccccccccccccccccccccccccccccccccccc" },
+        },
+      },
+    },
+  })
+  eq(create_event.event, "create", "sourcehut webhook: zero old id maps to create")
+  eq(create_event.data.ref, "v1.0.0", "sourcehut webhook: create strips tag ref")
+  eq(create_event.data.ref_type, "tag", "sourcehut webhook: create detects tag ref")
+
+  app.backend.rest = saved_rest
+  app.backend.capabilities = saved_capabilities
+  app.backend.webhooks = saved_webhooks
+  app.backend.webhook_translators = saved_webhook_translators
+  app.backend.webhook_github_translators = saved_webhook_github_translators
+  graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
+  config.base_url = saved_base_url
+  config.backend = saved_backend
+end
+
+-- ============================================================
 -- NotABug webhook handlers
 -- ============================================================
 
