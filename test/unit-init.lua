@@ -2546,6 +2546,15 @@ do
     app.backend.webhook_translators.pull_request ~= nil,
     "phabricator webhook: pull_request translator registered"
   )
+  ok(app.backend.webhook_translators.push ~= nil, "phabricator webhook: push translator registered")
+  ok(
+    app.backend.webhook_github_translators.push ~= nil,
+    "phabricator webhook: push GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_translators.repository ~= nil,
+    "phabricator webhook: repository translator registered"
+  )
 
   local task_payload = {
     object = {
@@ -2744,6 +2753,98 @@ do
   eq(diff_event.event, "pull_request", "phabricator webhook: DIFF maps to pull_request")
   eq(diff_event.action, "synchronize", "phabricator webhook: DIFF maps to synchronize")
   eq(diff_event.data.number, 47, "phabricator webhook: DIFF uses revision number")
+
+  local commit_event = app.backend.webhooks.CMIT({
+    object = {
+      type = "CMIT",
+      id = 9002,
+      phid = "PHID-CMIT-9002",
+      fields = {
+        identifier = "abcdef123456",
+        message = "Teach Diffusion push webhooks",
+        branch = "main",
+        authorName = "Fido",
+        authorPHID = "PHID-USER-fido",
+        committerName = "Rob",
+        committerPHID = "PHID-USER-rob",
+        epoch = 1715788800,
+      },
+    },
+    repository = {
+      id = 12,
+      phid = "PHID-REPO-confusio",
+      fields = {
+        name = "confusio",
+        shortName = "confusio",
+        defaultBranch = "main",
+      },
+    },
+    action = { actorPHID = "PHID-USER-rob", epoch = 1715788800 },
+  })
+  eq(commit_event.event, "push", "phabricator webhook: CMIT maps to push")
+  eq(commit_event.action, "push", "phabricator webhook: CMIT action is push")
+  eq(commit_event.data.ref, "refs/heads/main", "phabricator webhook: CMIT sets ref")
+  eq(commit_event.data.after, "abcdef123456", "phabricator webhook: CMIT sets after SHA")
+  eq(
+    commit_event.data.head_commit.message,
+    "Teach Diffusion push webhooks",
+    "phabricator webhook: CMIT sets head commit"
+  )
+  eq(
+    commit_event.data.repository.full_name,
+    "confusio",
+    "phabricator webhook: CMIT translates repository"
+  )
+  local commit_envelope = app.backend.webhook_translators.push(commit_event)
+  eq(commit_envelope.type, "push.push", "phabricator webhook: normalized CMIT includes action")
+  local commit_github_payload = app.backend.webhook_github_translators.push(commit_event)
+  eq(
+    commit_github_payload.head_commit.id,
+    "abcdef123456",
+    "phabricator webhook: GitHub-shape CMIT includes head commit"
+  )
+
+  local repo_event = app.backend.webhooks.REPO({
+    object = {
+      type = "REPO",
+      id = 12,
+      phid = "PHID-REPO-confusio",
+      fields = {
+        name = "confusio-renamed",
+        shortName = "confusio-renamed",
+        defaultBranch = "main",
+        dateModified = 1715792400,
+      },
+    },
+    action = { actorPHID = "PHID-USER-rob", epoch = 1715792400 },
+    transactions = {
+      { type = "name", oldValue = "confusio" },
+    },
+  })
+  eq(repo_event.event, "repository", "phabricator webhook: REPO maps to repository")
+  eq(repo_event.action, "renamed", "phabricator webhook: REPO name change maps to renamed")
+  eq(
+    repo_event.data.repository.full_name,
+    "confusio-renamed",
+    "phabricator webhook: REPO translates repository"
+  )
+  eq(
+    repo_event.data.changes.repository.name.from,
+    "confusio",
+    "phabricator webhook: REPO records previous name"
+  )
+  local repo_envelope = app.backend.webhook_translators.repository(repo_event)
+  eq(
+    repo_envelope.type,
+    "repository.renamed",
+    "phabricator webhook: normalized REPO includes action"
+  )
+  local repo_github_payload = app.backend.webhook_github_translators.repository(repo_event)
+  eq(
+    repo_github_payload.repository.name,
+    "confusio-renamed",
+    "phabricator webhook: GitHub-shape REPO includes repository"
+  )
 
   app.backend.rest = saved_rest
   app.backend.capabilities = saved_capabilities

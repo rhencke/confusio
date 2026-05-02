@@ -57,6 +57,30 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 
+# Diffusion commit PHID-prefix payloads reach the push translator.
+POST http://{{host}}/webhooks/phabricator
+Content-Type: application/json
+{
+  "object": {
+    "phid": "PHID-CMIT-abcd",
+    "fields": {
+      "identifier": "abcdef123456",
+      "message": "Push through Diffusion",
+      "branch": "main"
+    }
+  },
+  "repository": {
+    "fields": {
+      "name": "confusio",
+      "shortName": "confusio"
+    }
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
 # Unknown object families remain explicit 422s.
 POST http://{{host}}/webhooks/phabricator
 Content-Type: application/json

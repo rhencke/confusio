@@ -114,6 +114,71 @@ local function phabricator_repository(payload)
   return payload.repository or payload.project or {}
 end
 
+local function phabricator_repository_id(repo)
+  if type(repo) ~= "table" then
+    return 0
+  end
+  return repo.id
+    or (repo.fields or {}).id
+    or tonumber(repo.monogram and repo.monogram:match("^r([A-Z0-9]+)$"))
+    or 0
+end
+
+local function translate_phabricator_repository(repo)
+  repo = repo or {}
+  local f = repo.fields or {}
+  local name = f.shortName or f.name or repo.shortName or repo.name or ""
+  local full_name = f.slug or f.fullName or repo.full_name or name
+  local id = phabricator_repository_id(repo)
+  local default_branch = f.defaultBranch or f.repositoryBranch or repo.default_branch or "master"
+  local clone_url = f.cloneURI or f.uri or f.remoteURI or repo.clone_url or repo.uri or ""
+  return {
+    id = id,
+    node_id = repo.phid or "",
+    name = name,
+    full_name = full_name,
+    private = f.viewPolicy and f.viewPolicy ~= "public" or repo.private or false,
+    owner = {
+      login = f.ownerPHID or "",
+      id = 0,
+      node_id = f.ownerPHID or "",
+      avatar_url = "",
+      url = "",
+      type = "User",
+    },
+    html_url = repo.uri or f.uri or (config.base_url .. "/diffusion/" .. tostring(id)),
+    description = f.description or repo.description,
+    fork = false,
+    url = "",
+    clone_url = clone_url,
+    ssh_url = f.sshURI or repo.ssh_url or clone_url,
+    default_branch = default_branch,
+    master_branch = default_branch,
+    created_at = ts(f.dateCreated),
+    updated_at = ts(f.dateModified),
+  }
+end
+
+local function phabricator_object_phid_type(phid)
+  if type(phid) ~= "string" then
+    return nil
+  end
+  return phid:match("^PHID%-([A-Z0-9]+)%-")
+end
+
+local function phabricator_event_repository(payload)
+  payload = payload or {}
+  local repo = payload.repository or payload.project
+  if type(repo) == "table" then
+    return repo.full_name and repo or translate_phabricator_repository(repo)
+  end
+  local object = payload.object or {}
+  if object.type == "REPO" or phabricator_object_phid_type(object.phid) == "REPO" then
+    return translate_phabricator_repository(object)
+  end
+  return {}
+end
+
 local function phabricator_sender(payload, tx)
   local action = payload.action or {}
   return payload.sender
@@ -281,6 +346,80 @@ local function phabricator_differential_revision_payload(payload)
     return payload.differentialRevision
   end
   return payload.object or {}
+end
+
+local function phabricator_ref_name(value)
+  local ref = phabricator_branch_name(value, "master")
+  if ref:match("^refs/") then
+    return ref
+  end
+  return "refs/heads/" .. ref
+end
+
+local function phabricator_git_identity(value, fallback_phid)
+  if type(value) == "table" then
+    return {
+      name = value.name or value.realName or value.username or fallback_phid or "",
+      email = value.email or value.emailAddress or "",
+      username = value.username or value.login or fallback_phid or "",
+    }
+  end
+  return {
+    name = value or fallback_phid or "",
+    email = "",
+    username = fallback_phid or "",
+  }
+end
+
+local function translate_phabricator_commit(commit)
+  commit = commit or {}
+  local f = commit.fields or {}
+  local identifier = f.identifier or commit.identifier or commit.name or ""
+  local author_phid = f.authorPHID or commit.authorPHID
+  local committer_phid = f.committerPHID or commit.committerPHID or author_phid
+  return {
+    id = identifier,
+    message = f.message or f.commitMessage or f.summary or commit.message or "",
+    timestamp = ts(f.epoch or f.dateCreated or commit.epoch or commit.dateCreated),
+    url = commit.uri or (identifier ~= "" and (config.base_url .. "/r" .. identifier) or ""),
+    author = phabricator_git_identity(f.author or f.authorName or commit.author, author_phid),
+    committer = phabricator_git_identity(
+      f.committer or f.committerName or commit.committer or f.author or f.authorName,
+      committer_phid
+    ),
+    added = f.added or commit.added or {},
+    removed = f.removed or commit.removed or {},
+    modified = f.modified or commit.modified or {},
+  }
+end
+
+local function phabricator_commit_payload(payload)
+  payload = payload or {}
+  if type(payload.commit) == "table" then
+    return payload.commit
+  end
+  return payload.object or {}
+end
+
+local function phabricator_commit_ref(payload, commit)
+  payload = payload or {}
+  commit = commit or {}
+  local f = commit.fields or {}
+  return phabricator_ref_name(payload.ref or f.branch or f.ref or payload.branch)
+end
+
+local function phabricator_repository_action(payload)
+  for _, tx in ipairs(payload.transactions or {}) do
+    local tx_type = phabricator_transaction_type(tx)
+    if tx_type == "core:create" or tx_type == "create" then
+      return "created"
+    elseif tx_type == "delete" or tx_type == "destroy" or tx_type == "repository:delete" then
+      return "deleted"
+    elseif tx_type == "name" or tx_type == "shortname" or tx_type == "callsign" then
+      return "renamed"
+    end
+  end
+  return payload.action_name or payload.repository_action or "edited"
 end
 
 -- Look up a project PHID by slug (repo name, or owner/repo).
@@ -458,6 +597,20 @@ local function translate_phabricator_github_webhook(internal_event, _fields)
   elseif internal_event.event == "pull_request" then
     payload.number = data.number
     payload.pull_request = data.pull_request or {}
+  elseif internal_event.event == "push" then
+    payload.action = nil
+    payload.ref = data.ref or ""
+    payload.before = data.before or ""
+    payload.after = data.after or ""
+    payload.created = data.created or false
+    payload.deleted = data.deleted or false
+    payload.forced = data.forced or false
+    payload.compare = data.compare or ""
+    payload.commits = data.commits or {}
+    payload.head_commit = data.head_commit
+    payload.pusher = data.pusher or {}
+  elseif internal_event.event == "repository" then
+    payload.changes = data.changes
   end
   return payload
 end
@@ -480,9 +633,13 @@ end
 b:webhook_translator("issues", translate_phabricator_normalized_webhook)
 b:webhook_translator("issue_comment", translate_phabricator_normalized_webhook)
 b:webhook_translator("pull_request", translate_phabricator_normalized_webhook)
+b:webhook_translator("push", translate_phabricator_normalized_webhook)
+b:webhook_translator("repository", translate_phabricator_normalized_webhook)
 b:webhook_github_translator("issues", translate_phabricator_github_webhook)
 b:webhook_github_translator("issue_comment", translate_phabricator_github_webhook)
 b:webhook_github_translator("pull_request", translate_phabricator_github_webhook)
+b:webhook_github_translator("push", translate_phabricator_github_webhook)
+b:webhook_github_translator("repository", translate_phabricator_github_webhook)
 
 b:webhook("TASK", function(payload)
   payload = payload or {}
@@ -557,6 +714,67 @@ b:webhook("DIFF", function(payload)
       repository = phabricator_repository(payload),
       sender = phabricator_sender(payload),
     },
+    timestamp = phabricator_task_timestamp(payload),
+  })
+end)
+
+b:webhook("CMIT", function(payload)
+  payload = payload or {}
+  local commit_source = phabricator_commit_payload(payload)
+  local commit = translate_phabricator_commit(commit_source)
+  local repository = phabricator_event_repository(payload)
+  return make_internal_event({
+    event = "push",
+    action = "push",
+    provider = "phabricator",
+    raw = payload,
+    data = {
+      ref = phabricator_commit_ref(payload, commit_source),
+      before = payload.before or "",
+      after = commit.id,
+      created = false,
+      deleted = false,
+      forced = false,
+      compare = payload.compare or payload.compare_url or "",
+      commits = { commit },
+      head_commit = commit,
+      pusher = {
+        name = commit.committer.name or commit.author.name or "",
+        email = commit.committer.email or commit.author.email or "",
+      },
+      repository = repository,
+      sender = phabricator_sender(payload),
+    },
+    timestamp = commit.timestamp,
+  })
+end)
+
+b:webhook("REPO", function(payload)
+  payload = payload or {}
+  local action = phabricator_repository_action(payload)
+  local repository = translate_phabricator_repository(payload.object or payload.repository or {})
+  local data = {
+    action = action,
+    repository = repository,
+    sender = phabricator_sender(payload),
+  }
+  if action == "renamed" then
+    for _, tx in ipairs(payload.transactions or {}) do
+      local tx_type = phabricator_transaction_type(tx)
+      if tx_type == "name" or tx_type == "shortname" or tx_type == "callsign" then
+        data.changes = {
+          repository = { name = { from = tx.oldValue or tx.old or "" } },
+        }
+        break
+      end
+    end
+  end
+  return make_internal_event({
+    event = "repository",
+    action = action,
+    provider = "phabricator",
+    raw = payload,
+    data = data,
     timestamp = phabricator_task_timestamp(payload),
   })
 end)
