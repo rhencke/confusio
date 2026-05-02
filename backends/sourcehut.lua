@@ -75,7 +75,7 @@ local function translate_srht_repo(r)
   local vis = r.visibility or "public"
   local private = vis == "private" or vis == "PRIVATE"
   local head = r.HEAD or r.head or {}
-  local default_branch = ""
+  local default_branch
   if type(head) == "table" then
     default_branch = (head.name or ""):match("^refs/heads/(.+)") or head.name or ""
   else
