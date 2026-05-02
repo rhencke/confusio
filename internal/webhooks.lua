@@ -155,6 +155,21 @@ local function kallithea_body_event(payload)
     or first_string_field(payload and payload.payload, KALLITHEA_BODY_EVENT_FIELDS)
 end
 
+local function phabricator_phid_type(phid)
+  if type(phid) ~= "string" then
+    return nil
+  end
+  return phid:match("^PHID%-([A-Z0-9]+)%-")
+end
+
+local function phabricator_body_event(payload)
+  local object = type(payload and payload.object) == "table" and payload.object or {}
+  return first_string_field(object, { "type", "objectType", "object_type" })
+    or first_string_field(payload, { "objectType", "object_type" })
+    or phabricator_phid_type(object.phid)
+    or phabricator_phid_type(payload and payload.objectPHID)
+end
+
 -- verify_signature(backend, secret, body[, now]) authenticates the inbound request
 -- using the backend-native scheme.  Returns true on success, false on failure.
 -- When secret is nil or "" (trust-the-network mode) all requests are accepted.
@@ -517,6 +532,7 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
     --   Gerrit uses payload.type (e.g. "comment-added").
     --   OneDev uses payload.type (e.g. "RefUpdated").
     --   Kallithea hook plugins embed an event/hook name in the JSON body.
+    --   Phabricator webhooks embed object.type, or an equivalent PHID prefix.
     local ev = event_header(backend)
     if ev == nil and type(payload) == "table" then
       if payload.eventType then
@@ -527,6 +543,8 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
         ev = payload.type
       elseif backend == "kallithea" then
         ev = kallithea_body_event(payload)
+      elseif backend == "phabricator" then
+        ev = phabricator_body_event(payload)
       end
     end
 

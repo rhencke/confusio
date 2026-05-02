@@ -204,10 +204,49 @@ local function translate_harbormaster_build(b, ref)
   }
 end
 
+local PHABRICATOR_NATIVE_TO_GITHUB_EVENT = {
+  TASK = "issues",
+  DREV = "pull_request",
+  DIFF = "pull_request",
+  CMIT = "push",
+  REPO = "repository",
+  HMBB = "workflow_run",
+  HMBD = "workflow_run",
+  HMBT = "workflow_job",
+}
+
+local PHABRICATOR_WEBHOOK_OBJECT_TYPES = {
+  "TASK",
+  "DREV",
+  "DIFF",
+  "CMIT",
+  "REPO",
+  "HMBB",
+  "HMBD",
+  "HMBT",
+}
+
+local function phabricator_webhook_unimplemented(object_type)
+  local github_event = PHABRICATOR_NATIVE_TO_GITHUB_EVENT[object_type] or object_type
+  return function(_payload)
+    return nil, "Phabricator webhook event not implemented: " .. github_event
+  end
+end
+
 local b = make_backend_builder()
 b:rest("get_root", function()
   proxy_health_check(pcall(Fetch, config.base_url .. "/api/conduit.ping"))
 end)
+
+-- Inbound webhook dispatch --------------------------------------------------
+-- Phabricator sends a generic webhook envelope with object.type (or an object
+-- PHID whose prefix is the same type constant).  Register the native object
+-- families up front so the receiver can distinguish known Phabricator webhook
+-- families from truly unknown payloads while the family translators land.
+
+for _, object_type in ipairs(PHABRICATOR_WEBHOOK_OBJECT_TYPES) do
+  b:webhook(object_type, phabricator_webhook_unimplemented(object_type))
+end
 
 -- Issues --------------------------------------------------------------------
 -- GET /repos/{owner}/{repo}/issues

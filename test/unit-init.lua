@@ -2807,6 +2807,33 @@ do
     "webhook_receiver: kallithea nested payload.hook_type handler succeeds → 200"
   )
 
+  -- Phabricator embeds the object family in object.type or the PHID prefix.
+  app.backend.webhooks = {
+    TASK = function(_payload)
+      return { event = "issues" }, nil
+    end,
+  }
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/phabricator",
+      headers = { ["Content-Type"] = "application/json" },
+      body = '{"object":{"type":"TASK","phid":"PHID-TASK-abcd"}}',
+    }),
+    200,
+    "webhook_receiver: phabricator object.type handler succeeds → 200"
+  )
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/phabricator",
+      headers = { ["Content-Type"] = "application/json" },
+      body = '{"object":{"phid":"PHID-TASK-abcd"}}',
+    }),
+    200,
+    "webhook_receiver: phabricator object PHID prefix handler succeeds → 200"
+  )
+
   -- 422 when handler returns nil (normalisation failed)
   app.backend.webhooks = {
     push = function(_payload)
