@@ -7865,9 +7865,16 @@ end)
 
 -- release: release lifecycle.  Gitea and GitHub release objects share the same
 -- field names, so only the nested `author` user object needs translation.
+-- Gitea emits `updated` for release edits; map it to GitHub's `edited`.
 -- The `edited` action does not carry a `changes` object in Gitea; confusio
 -- emits `changes: {}` as a stub to preserve GitHub shape.
--- Actions are 1-to-1: published, edited, deleted, prereleased.
+local RELEASE_ACTIONS = {
+  published = "published",
+  updated = "edited",
+  edited = "edited",
+  deleted = "deleted",
+  prereleased = "prereleased",
+}
 local function translate_gitea_webhook_release(r)
   r = r or {}
   return {
@@ -7887,10 +7894,11 @@ local function translate_gitea_webhook_release(r)
 end
 
 register_gitea_webhook("release", function(payload)
-  local action = payload.action or "unknown"
+  local raw_action = payload.action or ""
+  local action = RELEASE_ACTIONS[raw_action]
   local rel = translate_gitea_webhook_release(payload.release)
   local data = {
-    action = action,
+    action = action or "unknown",
     release = rel,
     repository = translate_repo(payload.repository or {}),
     sender = translate_user(payload.sender or {}),
@@ -7900,7 +7908,8 @@ register_gitea_webhook("release", function(payload)
   end
   return make_internal_event({
     event = "release",
-    action = action,
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
     provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = data,
@@ -7982,10 +7991,12 @@ register_gitea_webhook("deploy_key", function(payload)
   })
 end)
 
--- gollum: wiki page created or edited.
--- Gitea sends X-Gitea-Event: gollum with GitHub-compatible payload.
+-- gollum: wiki page created, edited, or deleted.
+-- Gitea sends X-Gitea-Event: wiki; GitHub's equivalent family is gollum.
+-- Keep the older gollum registration as a permissive alias for fixture and
+-- Gitea-family compatibility.
 -- The pages[] array carries the per-page action; there is no top-level action.
-register_gitea_webhook("gollum", function(payload)
+local function normalize_gitea_wiki_webhook(payload)
   local pages = payload.pages or {}
   local first_action = (pages[1] or {}).action or "edited"
   local data = {
@@ -8001,7 +8012,10 @@ register_gitea_webhook("gollum", function(payload)
     data = data,
     timestamp = "",
   })
-end)
+end
+
+register_gitea_webhook("wiki", normalize_gitea_wiki_webhook)
+register_gitea_webhook("gollum", normalize_gitea_wiki_webhook)
 
 -- security_and_analysis: repository code-security settings were toggled.
 -- Unlike most webhook events there is no `action` field; confusio uses the
@@ -8101,14 +8115,11 @@ register_gitea_webhook("watch", function(payload)
   })
 end)
 
--- package: a package version was created (published) or deleted from the
--- registry.  Gitea sends X-Gitea-Event: package with action "created" or
--- "deleted".  The payload carries the package as a flat object with a
--- version string; there is no nested version ID.
--- Action mapping: "created" → "published", "deleted" → "deleted".
--- Note: "deleted" is not a GitHub package action; it is preserved in
--- confusio output so consumers can detect removals from Gitea backends.
-local PACKAGE_ACTIONS = { created = "published", deleted = "deleted" }
+-- package: a package version was created or deleted from the registry.  Gitea
+-- sends X-Gitea-Event: package with action "created" or "deleted".  Preserve
+-- those native actions so consumers can distinguish Gitea package lifecycle
+-- events from GitHub's package event vocabulary.
+local PACKAGE_ACTIONS = { created = "created", deleted = "deleted" }
 local function translate_gitea_webhook_package(p)
   p = p or {}
   local created = p.created_at or ""

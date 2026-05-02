@@ -1175,7 +1175,7 @@ jsonpath "$[0].github_event" == "release"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 
-# ── release: edited ───────────────────────────────────────────────────────────
+# ── release: updated → edited ─────────────────────────────────────────────────
 
 POST http://{{target}}/reset
 {}
@@ -1184,7 +1184,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: release
-file,fixtures/webhooks/gitea/release-edited.json;
+file,fixtures/webhooks/gitea/release-updated.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -1307,7 +1307,7 @@ jsonpath "$[0].github_event" == "repository"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 
-# ── gollum: created ───────────────────────────────────────────────────────────
+# ── wiki: created → gollum ────────────────────────────────────────────────────
 
 POST http://{{target}}/reset
 {}
@@ -1315,8 +1315,8 @@ HTTP 200
 
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
-X-Gitea-Event: gollum
-file,fixtures/webhooks/gitea/gollum-created.json;
+X-Gitea-Event: wiki
+file,fixtures/webhooks/gitea/wiki-created.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -1329,7 +1329,7 @@ jsonpath "$[0].github_event" == "gollum"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 
-# ── gollum: edited ────────────────────────────────────────────────────────────
+# ── wiki: edited → gollum ─────────────────────────────────────────────────────
 
 POST http://{{target}}/reset
 {}
@@ -1337,8 +1337,30 @@ HTTP 200
 
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
-X-Gitea-Event: gollum
-file,fixtures/webhooks/gitea/gollum-edited.json;
+X-Gitea-Event: wiki
+file,fixtures/webhooks/gitea/wiki-edited.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "gollum"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
+# ── wiki: deleted → gollum ────────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: wiki
+file,fixtures/webhooks/gitea/wiki-deleted.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
