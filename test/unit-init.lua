@@ -2782,7 +2782,7 @@ do
     action = { actorPHID = "PHID-USER-rob", epoch = 1715788800 },
   })
   eq(commit_event.event, "push", "phabricator webhook: CMIT maps to push")
-  eq(commit_event.action, "push", "phabricator webhook: CMIT action is push")
+  eq(commit_event.action, "", "phabricator webhook: CMIT is action-less push")
   eq(commit_event.data.ref, "refs/heads/main", "phabricator webhook: CMIT sets ref")
   eq(commit_event.data.after, "abcdef123456", "phabricator webhook: CMIT sets after SHA")
   eq(
@@ -2796,7 +2796,7 @@ do
     "phabricator webhook: CMIT translates repository"
   )
   local commit_envelope = app.backend.webhook_translators.push(commit_event)
-  eq(commit_envelope.type, "push.push", "phabricator webhook: normalized CMIT includes action")
+  eq(commit_envelope.type, "push", "phabricator webhook: normalized CMIT uses push type")
   local commit_github_payload = app.backend.webhook_github_translators.push(commit_event)
   eq(
     commit_github_payload.head_commit.id,
