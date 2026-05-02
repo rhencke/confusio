@@ -90,6 +90,91 @@ local function hmac_hex(alg, secret, body)
   return to_hex(GetCryptoHash(alg, body, secret)) -- luacheck: globals GetCryptoHash
 end
 
+local function strip_ascii_space(s)
+  return tostring(s or ""):gsub("%s+", "")
+end
+
+local function shell_quote(s)
+  return "'" .. tostring(s):gsub("'", "'\\''") .. "'"
+end
+
+local function write_file(path, body)
+  local f = io.open(path, "wb")
+  if not f then
+    return false
+  end
+  f:write(body)
+  f:close()
+  return true
+end
+
+local ED25519_SPKI_DER_PREFIX =
+  string.char(0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00)
+
+local function openssl_ed25519_verify(public_key, body, signature)
+  local base = os.tmpname()
+  local key_path = base .. ".pub.der"
+  local body_path = base .. ".body"
+  local sig_path = base .. ".sig"
+
+  local ok = write_file(key_path, ED25519_SPKI_DER_PREFIX .. public_key)
+    and write_file(body_path, body)
+    and write_file(sig_path, signature)
+  if not ok then
+    os.remove(base)
+    os.remove(key_path)
+    os.remove(body_path)
+    os.remove(sig_path)
+    return false
+  end
+
+  local cmd = table.concat({
+    "openssl pkeyutl -verify -rawin -pubin -keyform DER",
+    "-inkey",
+    shell_quote(key_path),
+    "-sigfile",
+    shell_quote(sig_path),
+    "-in",
+    shell_quote(body_path),
+    ">/dev/null 2>&1",
+  }, " ")
+  local ok_exec, _, code = os.execute(cmd)
+  os.remove(base)
+  os.remove(key_path)
+  os.remove(body_path)
+  os.remove(sig_path)
+  return ok_exec == true or code == 0
+end
+
+local function sourcehut_ed25519_verify(public_key, body, signature)
+  if type(SourcehutVerifyEd25519) == "function" then -- luacheck: globals SourcehutVerifyEd25519
+    return SourcehutVerifyEd25519(public_key, body, signature)
+  end
+  return openssl_ed25519_verify(public_key, body, signature)
+end
+
+local function verify_sourcehut_signature(public_key_b64, body)
+  if not public_key_b64 or public_key_b64 == "" then
+    return true
+  end
+
+  local sig_b64 = GetHeader("X-Payload-Signature")
+  if not sig_b64 then
+    return false
+  end
+
+  local ok_key, public_key = pcall(DecodeBase64, strip_ascii_space(public_key_b64))
+  local ok_sig, signature = pcall(DecodeBase64, strip_ascii_space(sig_b64))
+  if not ok_key or not ok_sig or type(public_key) ~= "string" or type(signature) ~= "string" then
+    return false
+  end
+  if #public_key ~= 32 or #signature ~= 64 then
+    return false
+  end
+
+  return sourcehut_ed25519_verify(public_key, body, signature)
+end
+
 local function verify_authorization_variant(secret, auth)
   if not auth then
     return false
@@ -445,11 +530,18 @@ local function verify_signature(backend, secret, body, now)
     local basestring = "v1:" .. ts_str .. ":" .. body
     return ct_equal(hmac_hex("sha256", secret, basestring), hex)
 
-  -- CodeCommit (SNS X.509), Sourcehut (ed25519):
-  -- Complex asymmetric and platform-managed schemes not yet implemented.
-  -- Trust-the-network when no secret configured; reject otherwise so operators
-  -- restrict access via network policy until full verification ships.
-  elseif backend == "codecommit" or backend == "sourcehut" then
+  -- Sourcehut: X-Payload-Signature, Ed25519 over raw body.
+  -- The configured "secret" is the base64-encoded 32-byte public key used to
+  -- verify sr.ht's detached payload signature.  With no key configured, retain
+  -- the global trust-the-network mode used by other webhook backends.
+  elseif backend == "sourcehut" then
+    return verify_sourcehut_signature(secret, body)
+
+  -- CodeCommit (SNS X.509):
+  -- Complex platform-managed scheme not yet implemented. Trust-the-network
+  -- when no secret configured; reject otherwise so operators restrict access
+  -- via network policy until full verification ships.
+  elseif backend == "codecommit" then
     return not secret or secret == ""
   else
     return false

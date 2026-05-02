@@ -34,7 +34,7 @@ reset_request()
 -- Override Redbean HTTP context built-ins before loading .init.lua.
 -- luacheck: push
 -- luacheck: globals SetStatus SetHeader Write GetHeader GetPath GetParam GetMethod GetBody Route
--- luacheck: globals GetCryptoHash DecodeBase64
+-- luacheck: globals GetCryptoHash DecodeBase64 SourcehutVerifyEd25519
 SetStatus = function(code, _reason)
   _last_status = code
 end
@@ -79,6 +79,9 @@ end
 -- Stub DecodeBase64: identity decode for Basic auth verification tests.
 DecodeBase64 = function(s)
   return s
+end
+SourcehutVerifyEd25519 = function(public_key, body, signature)
+  return public_key == string.rep("k", 32) and body == "{}" and signature == string.rep("s", 64)
 end
 -- Stub Fetch: records outbound calls so startup synthesis (synthesize_startup_events)
 -- and deliver_fire tests do not make real network requests.  Returns a 200 response.
@@ -3668,20 +3671,69 @@ do
     "verify_signature kallithea: invalid JSON body → 401"
   )
 
-  -- ── Trust-the-network-only backends: codecommit, sourcehut
-  -- These use asymmetric/platform-managed schemes not yet implemented.
+  -- ── Trust-the-network-only backend: codecommit
+  -- SNS signature verification is not yet implemented.
   -- No secret → accepted; any secret configured → always rejected.
-  for _, be in ipairs({ "codecommit", "sourcehut" }) do
-    ok(
-      no_secret(be, {}) ~= 401,
-      "verify_signature " .. be .. ": no secret (trust-the-network) → not 401"
-    )
-    eq(
-      call_sig(be, {}, nil, { [be] = SECRET }),
-      401,
-      "verify_signature " .. be .. ": secret configured (unimplemented scheme) → 401"
-    )
-  end
+  ok(
+    no_secret("codecommit", {}) ~= 401,
+    "verify_signature codecommit: no secret (trust-the-network) → not 401"
+  )
+  eq(
+    call_sig("codecommit", {}, nil, { codecommit = SECRET }),
+    401,
+    "verify_signature codecommit: secret configured (unimplemented scheme) → 401"
+  )
+
+  -- ── Sourcehut: X-Payload-Signature, Ed25519 over raw body
+  -- Unit tests use identity base64 decoding and a stub verifier.  The hurl
+  -- suite exercises the OpenSSL-backed verifier with a real Ed25519 keypair.
+  local SOURCEHUT_PUBLIC_KEY = string.rep("k", 32)
+  local SOURCEHUT_SIGNATURE = string.rep("s", 64)
+  ok(no_secret("sourcehut", {}) ~= 401, "verify_signature sourcehut: no public key → not 401")
+  ok(
+    call_sig(
+      "sourcehut",
+      { ["X-Payload-Signature"] = SOURCEHUT_SIGNATURE },
+      nil,
+      { sourcehut = SOURCEHUT_PUBLIC_KEY }
+    ) ~= 401,
+    "verify_signature sourcehut: valid X-Payload-Signature → not 401"
+  )
+  eq(
+    call_sig(
+      "sourcehut",
+      { ["X-Payload-Signature"] = string.rep("x", 64) },
+      nil,
+      { sourcehut = SOURCEHUT_PUBLIC_KEY }
+    ),
+    401,
+    "verify_signature sourcehut: bad X-Payload-Signature → 401"
+  )
+  eq(
+    call_sig("sourcehut", {}, nil, { sourcehut = SOURCEHUT_PUBLIC_KEY }),
+    401,
+    "verify_signature sourcehut: missing X-Payload-Signature → 401"
+  )
+  eq(
+    call_sig(
+      "sourcehut",
+      { ["X-Payload-Signature"] = "short" },
+      nil,
+      { sourcehut = SOURCEHUT_PUBLIC_KEY }
+    ),
+    401,
+    "verify_signature sourcehut: malformed signature length → 401"
+  )
+  eq(
+    call_sig(
+      "sourcehut",
+      { ["X-Payload-Signature"] = SOURCEHUT_SIGNATURE },
+      nil,
+      { sourcehut = "short" }
+    ),
+    401,
+    "verify_signature sourcehut: malformed public key length → 401"
+  )
 
   -- ── Confusio-normalized: X-Confusio-Signature-256, HMAC-SHA256 + timestamp
   -- Header format: "sha256=<hex>, v=1, ts=<unix>"
