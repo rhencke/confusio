@@ -145,7 +145,7 @@ receiver implementation, and a brief note on the signature scheme used.  The
 | `phabricator` | `POST /webhooks/phabricator` | _(self-hosted)_ | phabricator | `X-Phabricator-Webhook-Signature` HMAC-SHA256 (Conduit key) |
 | `radicle` | `POST /webhooks/radicle` | `https://radicle.xyz` | radicle | Shared secret in `Authorization` header |
 | `rhodecode` | `POST /webhooks/rhodecode` | _(self-hosted)_ | rhodecode | Shared secret in `X-RhodeCode-Signature` header |
-| `sourceforge` | `POST /webhooks/sourceforge` | `https://sourceforge.net` | sourceforge | Shared secret in `X-Sourceforge-Webhook-Secret` header |
+| `sourceforge` | `POST /webhooks/sourceforge` | `https://sourceforge.net` | sourceforge | `X-Allura-Signature` HMAC-SHA1 |
 | `sourcehut` | `POST /webhooks/sourcehut` | `https://sr.ht` | sourcehut | `X-Payload-Signature` ed25519 (public key published by sr.ht) |
 | `tuleap` | `POST /webhooks/tuleap` | _(self-hosted)_ | tuleap | `X-Tuleap-Webhook-Secret` shared secret |
 
@@ -233,8 +233,8 @@ Four distinct schemes appear across the 24 backends:
 |--------|-------------|----------|
 | **HMAC-SHA256** | Signature = `HMAC-SHA256(secret, body)`, hex-encoded | gitea, forgejo, codeberg, notabug, gogs, bitbucket, bitbucket_datacenter, phabricator, pagure (SHA-256 header) |
 | **HMAC-SHA512** | Signature = `HMAC-SHA512(secret, body)`, hex-encoded | pagure (SHA-512 header, older instances) |
-| **HMAC-SHA1** | Signature = `HMAC-SHA1(secret, body)`, hex-encoded | gitbucket (GitHub legacy compat), launchpad |
-| **Shared token** | Secret echoed verbatim in a header or body field; constant-time string compare | gitlab, gitblit, harness, onedev, radicle, rhodecode, sourceforge, tuleap, kallithea |
+| **HMAC-SHA1** | Signature = `HMAC-SHA1(secret, body)`, hex-encoded | gitbucket (GitHub legacy compat), launchpad, sourceforge |
+| **Shared token** | Secret echoed verbatim in a header or body field; constant-time string compare | gitlab, gitblit, harness, onedev, radicle, rhodecode, tuleap, kallithea |
 | **Bearer / Basic** | Secret in Authorization header (Bearer or Basic form) | azuredevops (Basic), gerrit (Basic or Bearer) |
 | **Asymmetric / platform** | ed25519 or platform-managed certificate signing | sourcehut, codecommit |
 
@@ -263,7 +263,7 @@ Four distinct schemes appear across the 24 backends:
 | `phabricator` | `X-Phabricator-Webhook-Signature` | HMAC-SHA256 | `<hex>` |
 | `radicle` | `Authorization` | Shared token | verbatim |
 | `rhodecode` | `X-RhodeCode-Signature` | Shared token | verbatim |
-| `sourceforge` | `X-Sourceforge-Webhook-Secret` | Shared token | verbatim |
+| `sourceforge` | `X-Allura-Signature` | HMAC-SHA1 | `sha1=<hex>` |
 | `sourcehut` | `X-Payload-Signature` | ed25519 | base64 |
 | `tuleap` | `X-Tuleap-Webhook-Secret` | Shared token | verbatim |
 
@@ -626,16 +626,26 @@ accept if constant_time_equal(expected, received)
 
 ### SourceForge
 
-SourceForge sends the shared secret in `X-Sourceforge-Webhook-Secret`.
+SourceForge runs Allura for project webhooks. Allura signs the raw JSON payload
+with the configured webhook secret and sends the digest in `X-Allura-Signature`.
 
 ```
 secret   = configured shared secret
-received = value of X-Sourceforge-Webhook-Secret
+expected = "sha1=" ++ HMAC-SHA1(secret, body) as lowercase hex
+received = value of X-Allura-Signature
 
-accept if constant_time_equal(secret, received)
+accept if constant_time_equal(expected, received)
 ```
 
-**Configuration:** Set when registering the webhook in SourceForge project settings.
+**Configuration:** Set `secret` when registering the webhook in SourceForge or
+Allura project settings; Allura may generate one if left blank.
+
+**Supported events:** SourceForge / Allura repository hooks do not send an event
+type header.  Confusio infers Allura `repo-push` payloads from the documented
+ref update shape and translates them to GitHub-compatible `push`, `create`, or
+`delete` events.  Branch and tag create/delete events are derived when `before`
+or `after` is the all-zero SHA; other SourceForge webhook families are not
+mapped.
 
 ---
 
@@ -2307,13 +2317,13 @@ Webhook event/action support is generated from `internal/catalog.lua` and
 <!-- WEBHOOK_ACTION_SUPPORT_START -->
 | Event | Action | Azure DevOps | Bitbucket | Bitbucket DC | Codeberg | CodeCommit | Forgejo | Gerrit | GitBlit | GitBucket | Gitea | GitLab | Gogs | Harness | Kallithea | Launchpad | NotABug | OneDev | Pagure | Phabricator | Radicle | RhodeCode | SourceForge | Sourcehut | Tuleap |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Create | `create` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| Create | `create` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ |
 | Custom Property | `created` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `deleted` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `updated` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Custom Property Values | `updated` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Commit Comments | `created` | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| Delete | `delete` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| Delete | `delete` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ |
 | Discussions | `answered` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `category_changed` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `closed` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
@@ -2390,7 +2400,7 @@ Webhook event/action support is generated from `internal/catalog.lua` and
 | PR Review Comments | `created` | ✗ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `edited` | ✗ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `deleted` | ✗ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| Push | `push` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| Push | `push` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
 | Release | `published` | ✓ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `edited` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `deleted` | ✓ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
@@ -2554,6 +2564,10 @@ Triggered when one or more commits are pushed to a branch or tag.
 - Radicle `push` requests carry branch or tag ref changes in the body `event_type:
   "push"` family.  Confusio forwards commit details when present and derives
   create/delete from all-zero `before` / `after` SHAs.
+- SourceForge / Allura `repo-push` events do not include an event header.  Confusio
+  infers the event from the body, forwards commit `id`, `url`, `timestamp`, and
+  `message` when present, and derives create/delete from all-zero `before` /
+  `after` SHAs.
 
 #### `commits[]` fields
 
@@ -2582,6 +2596,9 @@ Triggered when one or more commits are pushed to a branch or tag.
   forges include only the author.
 - `added` / `removed` / `modified`: Only GitHub and GitLab include per-file diff lists
   in push events.  All other backends emit `[]` for these three fields.
+- SourceForge / Allura documents commit `id`, `url`, `timestamp`, and `message`.
+  Author, committer, and file lists are empty unless present in the delivered
+  payload.
 
 **Confusio-normalized differences:** In the confusio shape, `commits[].author` uses
 the actor schema (`id`, `login`, `display_name`, `source_url`) rather than the git
@@ -2617,11 +2634,12 @@ field structure.
 **Backend-specific gaps:**
 - `gerrit`: Gerrit `ref-updated` events become `create` or `delete` when `oldRev` or
   `newRev` is the all-zero SHA.
-- `sourcehut`, `pagure`, `phabricator`, `launchpad`, `radicle`: Create/delete events
-  may arrive embedded in a push event rather than as discrete event types.  Confusio
-  splits them when the push `before` or `after` is all-zero.
-- `codecommit`, `kallithea`, `rhodecode`, `tuleap`, `sourceforge`: Create/delete events
-  may not be delivered at all depending on forge configuration.  If no event is
+- `sourcehut`, `pagure`, `phabricator`, `launchpad`, `radicle`, `sourceforge`:
+  Create/delete events may arrive embedded in a push event rather than as
+  discrete event types.  Confusio splits them when the push `before` or `after`
+  is all-zero.
+- `codecommit`, `kallithea`, `rhodecode`, `tuleap`: Create/delete events may not
+  be delivered at all depending on forge configuration.  If no event is
   received, the `create` / `delete` event will not be emitted.
 
 ---

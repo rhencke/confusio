@@ -1,0 +1,27 @@
+{
+  "before": "1111111111111111111111111111111111111111",
+  "after": "2222222222222222222222222222222222222222",
+  "ref": "refs/heads/main",
+  "repository": {
+    "full_name": "/p/octocat/hello-world/",
+    "name": "hello-world",
+    "url": "https://sourceforge.net/p/octocat/hello-world/",
+    "homepage": "https://sourceforge.net/p/octocat/hello-world/",
+    "description": "Hello World repository",
+    "default_branch": "main"
+  },
+  "pusher": {
+    "username": "alice",
+    "name": "Alice",
+    "email": "alice@example.com",
+    "url": "https://sourceforge.net/u/alice/"
+  },
+  "commits": [
+    {
+      "id": "2222222222222222222222222222222222222222",
+      "url": "https://sourceforge.net/p/octocat/hello-world/ci/2222222/",
+      "timestamp": "2024-01-15T10:05:00Z",
+      "message": "Update README"
+    }
+  ]
+}

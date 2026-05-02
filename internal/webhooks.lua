@@ -179,6 +179,16 @@ local function phabricator_body_event(payload)
     or phabricator_phid_type(payload and payload.objectPHID)
 end
 
+local function sourceforge_body_event(payload)
+  if type(payload) ~= "table" or type(payload.repository) ~= "table" then
+    return nil
+  end
+  if payload.ref or payload.before or payload.after or payload.commits then
+    return "repo-push"
+  end
+  return nil
+end
+
 -- verify_signature(backend, secret, body[, now]) authenticates the inbound request
 -- using the backend-native scheme.  Returns true on success, false on failure.
 -- When secret is nil or "" (trust-the-network mode) all requests are accepted.
@@ -349,16 +359,16 @@ local function verify_signature(backend, secret, body, now)
     end
     return ct_equal(secret, tok)
 
-  -- SourceForge: X-Sourceforge-Webhook-Secret, verbatim shared token
+  -- SourceForge / Allura: X-Allura-Signature, HMAC-SHA1, prefix "sha1="
   elseif backend == "sourceforge" then
     if not secret or secret == "" then
       return true
     end
-    local tok = GetHeader("X-Sourceforge-Webhook-Secret")
-    if not tok then
+    local sig = GetHeader("X-Allura-Signature")
+    if not sig then
       return false
     end
-    return ct_equal(secret, tok)
+    return ct_equal("sha1=" .. hmac_hex("sha1", secret, body), sig)
 
   -- Tuleap: X-Tuleap-Webhook-Secret, verbatim shared token
   elseif backend == "tuleap" then
@@ -543,6 +553,8 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
     --   Kallithea hook plugins embed an event/hook name in the JSON body.
     --   Radicle CI adapter requests use payload.event_type (e.g. "push", "patch").
     --   Phabricator webhooks embed object.type, or an equivalent PHID prefix.
+    --   SourceForge / Allura repo-push webhooks have no event header, so infer
+    --   them from their documented ref/update fields.
     local ev = event_header(backend)
     if ev == nil and type(payload) == "table" then
       if payload.eventType then
@@ -557,6 +569,8 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
         ev = radicle_body_event(payload)
       elseif backend == "phabricator" then
         ev = phabricator_body_event(payload)
+      elseif backend == "sourceforge" then
+        ev = sourceforge_body_event(payload)
       end
     end
 

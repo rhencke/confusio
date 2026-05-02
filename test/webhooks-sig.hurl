@@ -7,6 +7,7 @@
 #   bb_sig      — "sha256=<hex>" (for X-Hub-Signature on bitbucket and bitbucket_datacenter)
 #   gb_sig      — "sha1=<hex>" (for X-Hub-Signature on gitbucket)
 #   launchpad_sig — "sha1=<hex>" (for X-Hub-Signature on launchpad)
+#   sourceforge_sig — "sha1=<hex>" (for X-Allura-Signature on sourceforge)
 #   phabricator_sig — HMAC-SHA256("{}", secret) as hex (for X-Phabricator-Webhook-Signature)
 #   azuredevops_basic — base64("fido:webhooksecret") for Authorization: Basic
 #   gerrit_tok  — the shared secret verbatim or as Bearer token (for Authorization)
@@ -531,6 +532,47 @@ jsonpath "$.message" == "Signature verification failed"
 
 # Missing body secret → 401
 POST http://{{host}}/webhooks/kallithea
+Content-Type: application/json
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# ── sourceforge: X-Allura-Signature, HMAC-SHA1, sha1= prefix ────────────────
+
+# Valid signature → passes verification (422)
+POST http://{{host}}/webhooks/sourceforge
+Content-Type: application/json
+X-Allura-Signature: {{sourceforge_sig}}
+{}
+
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "No webhook handlers registered"
+
+# Bad signature → 401
+POST http://{{host}}/webhooks/sourceforge
+Content-Type: application/json
+X-Allura-Signature: sha1=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# Legacy shared-secret header is not Allura's native webhook signature → 401
+POST http://{{host}}/webhooks/sourceforge
+Content-Type: application/json
+X-Sourceforge-Webhook-Secret: webhooksecret
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# Missing signature header → 401
+POST http://{{host}}/webhooks/sourceforge
 Content-Type: application/json
 {}
 

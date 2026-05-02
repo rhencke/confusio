@@ -3567,21 +3567,21 @@ do
     "verify_signature rhodecode: missing X-RhodeCode-Signature → 401"
   )
 
-  -- ── Verbatim shared token: sourceforge (X-Sourceforge-Webhook-Secret)
+  -- ── SourceForge / Allura: X-Allura-Signature, HMAC-SHA1, sha1= prefix
   ok(no_secret("sourceforge", {}) ~= 401, "verify_signature sourceforge: no secret → not 401")
   ok(
-    with_secret("sourceforge", { ["X-Sourceforge-Webhook-Secret"] = SECRET }) ~= 401,
-    "verify_signature sourceforge: valid X-Sourceforge-Webhook-Secret → not 401"
+    with_secret("sourceforge", { ["X-Allura-Signature"] = "sha1=" .. STUB_HEX }) ~= 401,
+    "verify_signature sourceforge: valid X-Allura-Signature → not 401"
   )
   eq(
-    with_secret("sourceforge", { ["X-Sourceforge-Webhook-Secret"] = "bad" }),
+    with_secret("sourceforge", { ["X-Allura-Signature"] = "sha1=deadbeef" }),
     401,
-    "verify_signature sourceforge: bad X-Sourceforge-Webhook-Secret → 401"
+    "verify_signature sourceforge: bad X-Allura-Signature → 401"
   )
   eq(
     with_secret("sourceforge", {}),
     401,
-    "verify_signature sourceforge: missing X-Sourceforge-Webhook-Secret → 401"
+    "verify_signature sourceforge: missing X-Allura-Signature → 401"
   )
 
   -- ── Verbatim shared token: tuleap (X-Tuleap-Webhook-Secret)
@@ -3821,6 +3821,18 @@ do
     )
     ok(h["X-Hub-Signature-256"] == nil, "sign_for_backend " .. be .. ": no X-Hub-Signature-256")
   end
+
+  -- SourceForge / Allura: HMAC-SHA1 via X-Allura-Signature.
+  local sfb_sourceforge = sign_for_backend("sourceforge", SECRET, BODY)
+  eq(
+    sfb_sourceforge["X-Allura-Signature"],
+    "sha1=" .. STUB_HEX,
+    "sign_for_backend sourceforge: X-Allura-Signature sha1= present"
+  )
+  ok(
+    sfb_sourceforge["X-Sourceforge-Webhook-Secret"] == nil,
+    "sign_for_backend sourceforge: no legacy shared-token header"
+  )
 
   -- Default (unknown backend): GitHub-style.
   local sfb_def = sign_for_backend("unknown_backend", SECRET, BODY)

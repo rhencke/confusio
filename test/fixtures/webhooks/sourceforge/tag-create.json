@@ -1,0 +1,27 @@
+{
+  "before": "0000000000000000000000000000000000000000",
+  "after": "5555555555555555555555555555555555555555",
+  "ref": "refs/tags/v1.0.0",
+  "repository": {
+    "full_name": "/p/octocat/hello-world/",
+    "name": "hello-world",
+    "url": "https://sourceforge.net/p/octocat/hello-world/",
+    "homepage": "https://sourceforge.net/p/octocat/hello-world/",
+    "description": "Hello World repository",
+    "default_branch": "main"
+  },
+  "pusher": {
+    "username": "alice",
+    "name": "Alice",
+    "email": "alice@example.com",
+    "url": "https://sourceforge.net/u/alice/"
+  },
+  "commits": [
+    {
+      "id": "5555555555555555555555555555555555555555",
+      "url": "https://sourceforge.net/p/octocat/hello-world/ci/5555555/",
+      "timestamp": "2024-01-15T10:15:00Z",
+      "message": "Tag v1.0.0"
+    }
+  ]
+}
