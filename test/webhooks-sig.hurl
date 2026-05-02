@@ -53,6 +53,47 @@ HTTP 401
 [Asserts]
 jsonpath "$.message" == "Signature verification failed"
 
+# sha256= prefix is not accepted by Gitea's native header format
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Signature: sha256={{gitea_sig}}
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# ── forgejo: X-Gitea-Signature, HMAC-SHA256, no prefix ──────────────────────
+
+# Valid signature → passes verification (422 = accepted, no handlers)
+POST http://{{host}}/webhooks/forgejo
+Content-Type: application/json
+X-Gitea-Signature: {{gitea_sig}}
+{}
+
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "No webhook handlers registered"
+
+# Bad signature → 401 signature verification failed
+POST http://{{host}}/webhooks/forgejo
+Content-Type: application/json
+X-Gitea-Signature: deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# Missing signature header → 401
+POST http://{{host}}/webhooks/forgejo
+Content-Type: application/json
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
 # ── codeberg: X-Gitea-Signature, HMAC-SHA256, no prefix ──────────────────────
 
 # Valid signature → passes verification (422 = accepted, no handlers)
