@@ -3154,6 +3154,36 @@ do
     "webhook_receiver: kallithea nested payload.hook_type handler succeeds → 200"
   )
 
+  -- Radicle CI adapter requests embed the event family in the JSON body.
+  app.backend.webhooks = {
+    push = function(_payload)
+      return { event = "push" }, nil
+    end,
+    patch = function(_payload)
+      return { event = "pull_request" }, nil
+    end,
+  }
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/radicle",
+      headers = { ["Content-Type"] = "application/json" },
+      body = '{"request":"trigger","version":1,"event_type":"push"}',
+    }),
+    200,
+    "webhook_receiver: radicle event_type push handler succeeds → 200"
+  )
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/radicle",
+      headers = { ["Content-Type"] = "application/json" },
+      body = '{"request":"trigger","version":1,"event_type":"patch"}',
+    }),
+    200,
+    "webhook_receiver: radicle event_type patch handler succeeds → 200"
+  )
+
   -- Phabricator embeds the object family in object.type or the PHID prefix.
   app.backend.webhooks = {
     TASK = function(_payload)

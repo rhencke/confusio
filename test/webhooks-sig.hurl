@@ -12,6 +12,7 @@
 #   gerrit_tok  — the shared secret verbatim or as Bearer token (for Authorization)
 #   gerrit_basic — base64("webhooksecret") for Authorization: Basic
 #   onedev_tok — the shared secret verbatim (for X-OneDev-Signature)
+#   radicle_tok — the shared secret verbatim (for Authorization)
 #   kallithea — shared secret is embedded in the request body
 #   confusio_sig — "sha256=<hex>, v=1, ts=<ts>" (for X-Confusio-Signature-256)
 #
@@ -429,6 +430,63 @@ jsonpath "$.message" == "Signature verification failed"
 POST http://{{host}}/webhooks/onedev
 Content-Type: application/json
 {}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# ── radicle: Authorization raw shared secret, event_type in body ─────────────
+
+# Valid raw Authorization token and event_type → passes verification and extracts event
+POST http://{{host}}/webhooks/radicle
+Content-Type: application/json
+Authorization: {{radicle_tok}}
+{
+  "request": "trigger",
+  "version": 1,
+  "event_type": "push"
+}
+
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "Unrecognised event type: push"
+
+# Bad Authorization token → 401
+POST http://{{host}}/webhooks/radicle
+Content-Type: application/json
+Authorization: wrongtoken
+{
+  "request": "trigger",
+  "version": 1,
+  "event_type": "push"
+}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# Bearer Authorization is not Radicle's native webhook signature → 401
+POST http://{{host}}/webhooks/radicle
+Content-Type: application/json
+Authorization: Bearer {{radicle_tok}}
+{
+  "request": "trigger",
+  "version": 1,
+  "event_type": "push"
+}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# Missing Authorization header → 401
+POST http://{{host}}/webhooks/radicle
+Content-Type: application/json
+{
+  "request": "trigger",
+  "version": 1,
+  "event_type": "push"
+}
 
 HTTP 401
 [Asserts]
