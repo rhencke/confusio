@@ -529,6 +529,163 @@ local function translate_harbormaster_build(b, ref)
   }
 end
 
+local PHABRICATOR_HARBORMASTER_FAILURE_STATUSES = {
+  failed = "failure",
+  unexpected = "failure",
+  deadlocked = "failure",
+  aborted = "cancelled",
+}
+
+local function phabricator_harbormaster_status_value(object)
+  local f = object and object.fields or {}
+  local status = f.buildStatus or f.status or object and object.status or {}
+  if type(status) == "table" then
+    return status.value or status.name or ""
+  end
+  return status or ""
+end
+
+local function phabricator_harbormaster_run_state(object)
+  local raw_status = phabricator_harbormaster_status_value(object)
+  if raw_status == "passed" then
+    return "completed", "completed", "success"
+  end
+  local failure = PHABRICATOR_HARBORMASTER_FAILURE_STATUSES[raw_status]
+  if failure then
+    return "completed", "completed", failure
+  end
+  if raw_status == "queued" or raw_status == "pending" or raw_status == "waiting" then
+    return "requested", "queued", nil
+  end
+  return "in_progress", "in_progress", nil
+end
+
+local function phabricator_harbormaster_job_state(object)
+  local raw_status = phabricator_harbormaster_status_value(object)
+  if raw_status == "passed" then
+    return "completed", "completed", "success"
+  end
+  local failure = PHABRICATOR_HARBORMASTER_FAILURE_STATUSES[raw_status]
+  if failure then
+    return "completed", "completed", failure
+  end
+  if raw_status == "paused" or raw_status == "waiting" then
+    return "waiting", "waiting", nil
+  end
+  if raw_status == "queued" or raw_status == "pending" then
+    return "queued", "queued", nil
+  end
+  return "in_progress", "in_progress", nil
+end
+
+local function phabricator_harbormaster_name(object)
+  local f = object and object.fields or {}
+  local plan = f.buildPlan or object and object.buildPlan or {}
+  return f.name
+    or f.buildableName
+    or f.buildName
+    or plan.name
+    or object and (object.name or object.title)
+    or ("Harbormaster " .. tostring(object and object.id or "build"))
+end
+
+local function phabricator_harbormaster_ref(payload, object)
+  local f = object and object.fields or {}
+  local commit = payload and payload.commit or {}
+  local commit_fields = commit.fields or {}
+  return f.commitIdentifier
+    or f.commit
+    or f.commitIdentifierRaw
+    or payload and payload.head_sha
+    or commit_fields.identifier
+    or commit.identifier
+    or ""
+end
+
+local function phabricator_harbormaster_branch(payload, object)
+  local f = object and object.fields or {}
+  return phabricator_branch_name(
+    payload and (payload.branch or payload.ref) or f.branch or f.repositoryBranch,
+    ""
+  )
+end
+
+local function phabricator_harbormaster_timestamp(payload, object)
+  local f = object and object.fields or {}
+  local action = payload and payload.action or {}
+  return ts(f.dateModified or f.dateCreated or action.epoch)
+end
+
+local function translate_harbormaster_workflow(object, payload)
+  object = object or {}
+  local f = object.fields or {}
+  return {
+    id = f.buildPlanID or 0,
+    name = phabricator_harbormaster_name(object),
+    path = "",
+    state = "active",
+    url = "",
+    html_url = object.uri or (config.base_url .. "/B" .. tostring(object.id or "")),
+    badge_url = "",
+    created_at = ts(f.dateCreated),
+    updated_at = phabricator_harbormaster_timestamp(payload, object),
+  }
+end
+
+local function translate_harbormaster_workflow_run(object, payload)
+  local action, status, conclusion = phabricator_harbormaster_run_state(object)
+  local f = object and object.fields or {}
+  local sender = phabricator_sender(payload)
+  return action,
+    {
+      id = object and object.id or 0,
+      name = phabricator_harbormaster_name(object),
+      head_branch = phabricator_harbormaster_branch(payload, object),
+      head_sha = phabricator_harbormaster_ref(payload, object),
+      run_number = object and object.id or 0,
+      event = "push",
+      display_title = phabricator_harbormaster_name(object),
+      status = status,
+      conclusion = conclusion,
+      workflow_id = f.buildPlanID or 0,
+      url = "",
+      html_url = object and (object.uri or (config.base_url .. "/B" .. tostring(object.id or "")))
+        or "",
+      pull_requests = {},
+      created_at = ts(f.dateCreated),
+      updated_at = phabricator_harbormaster_timestamp(payload, object),
+      run_attempt = 1,
+      referenced_workflows = {},
+      actor = sender,
+      triggering_actor = sender,
+    }
+end
+
+local function translate_harbormaster_workflow_job(object, payload)
+  local action, status, conclusion = phabricator_harbormaster_job_state(object)
+  local f = object and object.fields or {}
+  return action,
+    {
+      id = object and object.id or 0,
+      run_id = f.buildID or 0,
+      run_url = "",
+      run_attempt = 1,
+      name = phabricator_harbormaster_name(object),
+      head_sha = phabricator_harbormaster_ref(payload, object),
+      url = "",
+      html_url = object and (object.uri or (config.base_url .. "/B" .. tostring(object.id or "")))
+        or "",
+      status = status,
+      conclusion = conclusion,
+      started_at = ts(f.dateStarted or f.dateCreated),
+      completed_at = status == "completed" and ts(f.dateCompleted or f.dateModified) or nil,
+      steps = {},
+      labels = {},
+      runner_id = nil,
+      runner_name = "",
+    }
+end
+
 local PHABRICATOR_NATIVE_TO_GITHUB_EVENT = {
   TASK = "issues",
   DREV = "pull_request",
@@ -611,6 +768,11 @@ local function translate_phabricator_github_webhook(internal_event, _fields)
     payload.pusher = data.pusher or {}
   elseif internal_event.event == "repository" then
     payload.changes = data.changes
+  elseif internal_event.event == "workflow_run" then
+    payload.workflow_run = data.workflow_run or {}
+    payload.workflow = data.workflow or {}
+  elseif internal_event.event == "workflow_job" then
+    payload.workflow_job = data.workflow_job or {}
   end
   return payload
 end
@@ -635,11 +797,15 @@ b:webhook_translator("issue_comment", translate_phabricator_normalized_webhook)
 b:webhook_translator("pull_request", translate_phabricator_normalized_webhook)
 b:webhook_translator("push", translate_phabricator_normalized_webhook)
 b:webhook_translator("repository", translate_phabricator_normalized_webhook)
+b:webhook_translator("workflow_run", translate_phabricator_normalized_webhook)
+b:webhook_translator("workflow_job", translate_phabricator_normalized_webhook)
 b:webhook_github_translator("issues", translate_phabricator_github_webhook)
 b:webhook_github_translator("issue_comment", translate_phabricator_github_webhook)
 b:webhook_github_translator("pull_request", translate_phabricator_github_webhook)
 b:webhook_github_translator("push", translate_phabricator_github_webhook)
 b:webhook_github_translator("repository", translate_phabricator_github_webhook)
+b:webhook_github_translator("workflow_run", translate_phabricator_github_webhook)
+b:webhook_github_translator("workflow_job", translate_phabricator_github_webhook)
 
 b:webhook("TASK", function(payload)
   payload = payload or {}
@@ -776,6 +942,48 @@ b:webhook("REPO", function(payload)
     raw = payload,
     data = data,
     timestamp = phabricator_task_timestamp(payload),
+  })
+end)
+
+local function phabricator_harbormaster_workflow_run_event(payload)
+  payload = payload or {}
+  local object = payload.object or {}
+  local action, workflow_run = translate_harbormaster_workflow_run(object, payload)
+  return make_internal_event({
+    event = "workflow_run",
+    action = action,
+    provider = "phabricator",
+    raw = payload,
+    data = {
+      action = action,
+      workflow_run = workflow_run,
+      workflow = translate_harbormaster_workflow(object, payload),
+      repository = phabricator_event_repository(payload),
+      sender = phabricator_sender(payload),
+    },
+    timestamp = phabricator_harbormaster_timestamp(payload, object),
+  })
+end
+
+b:webhook("HMBB", phabricator_harbormaster_workflow_run_event)
+b:webhook("HMBD", phabricator_harbormaster_workflow_run_event)
+
+b:webhook("HMBT", function(payload)
+  payload = payload or {}
+  local object = payload.object or {}
+  local action, workflow_job = translate_harbormaster_workflow_job(object, payload)
+  return make_internal_event({
+    event = "workflow_job",
+    action = action,
+    provider = "phabricator",
+    raw = payload,
+    data = {
+      action = action,
+      workflow_job = workflow_job,
+      repository = phabricator_event_repository(payload),
+      sender = phabricator_sender(payload),
+    },
+    timestamp = phabricator_harbormaster_timestamp(payload, object),
   })
 end)
 

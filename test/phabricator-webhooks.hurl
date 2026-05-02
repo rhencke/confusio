@@ -81,6 +81,66 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 
+# Harbormaster build payloads translate to workflow_run events.
+POST http://{{host}}/webhooks/phabricator
+Content-Type: application/json
+{
+  "object": {
+    "type": "HMBD",
+    "id": 7,
+    "phid": "PHID-HMBD-abcd",
+    "fields": {
+      "name": "unit tests",
+      "buildStatus": {
+        "value": "passed"
+      },
+      "commitIdentifier": "abcdef123456",
+      "dateCreated": 1710000000,
+      "dateModified": 1710000300
+    }
+  },
+  "repository": {
+    "fields": {
+      "name": "confusio",
+      "shortName": "confusio"
+    }
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+# Harbormaster build target payloads translate to workflow_job events.
+POST http://{{host}}/webhooks/phabricator
+Content-Type: application/json
+{
+  "object": {
+    "type": "HMBT",
+    "id": 9,
+    "phid": "PHID-HMBT-abcd",
+    "fields": {
+      "name": "lint",
+      "buildStatus": {
+        "value": "failed"
+      },
+      "commitIdentifier": "abcdef123456",
+      "dateCreated": 1710000000,
+      "dateModified": 1710000300
+    }
+  },
+  "repository": {
+    "fields": {
+      "name": "confusio",
+      "shortName": "confusio"
+    }
+  }
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
 # Unknown object families remain explicit 422s.
 POST http://{{host}}/webhooks/phabricator
 Content-Type: application/json
