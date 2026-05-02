@@ -8017,24 +8017,6 @@ end
 register_gitea_webhook("wiki", normalize_gitea_wiki_webhook)
 register_gitea_webhook("gollum", normalize_gitea_wiki_webhook)
 
--- security_and_analysis: repository code-security settings were toggled.
--- Unlike most webhook events there is no `action` field; confusio uses the
--- sentinel action "changed" for all deliveries.
-register_gitea_webhook("security_and_analysis", function(payload)
-  return make_internal_event({
-    event = "security_and_analysis",
-    action = "changed",
-    provider = GITEA_WEBHOOK_PROVIDER,
-    raw = payload,
-    data = {
-      changes = payload.changes or {},
-      repository = translate_repo(payload.repository or {}),
-      sender = translate_user(payload.sender or {}),
-    },
-    timestamp = "",
-  })
-end)
-
 -- member: repository collaborator added or removed.
 -- Gitea sends X-Gitea-Event: collaborator with action "added" or "deleted".
 -- GitHub's member event uses "added" and "removed"; map "deleted" → "removed".
@@ -8219,7 +8201,6 @@ local GITEA_NORMALIZED_WEBHOOK_EVENTS = {
   "repository",
   "deploy_key",
   "gollum",
-  "security_and_analysis",
   "member",
   "star",
   "watch",

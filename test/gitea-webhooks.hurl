@@ -1136,6 +1136,35 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 
+# ── status: error → 200 ───────────────────────────────────────────────────────
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: status
+{
+  "id": 504,
+  "sha": "feedfacefeedfacefeedfacefeedfacefeedface",
+  "state": "error",
+  "target_url": "https://ci.example.com/builds/102",
+  "context": "ci/build",
+  "description": "Build errored",
+  "branches": [],
+  "commit": null,
+  "created_at": "2024-01-15T12:00:00Z",
+  "updated_at": "2024-01-15T12:01:00Z",
+  "repository": {
+    "id": 100, "name": "hello-world", "full_name": "octocat/hello-world",
+    "private": false, "html_url": "http://localhost/octocat/hello-world",
+    "fork": false, "default_branch": "main",
+    "owner": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+  },
+  "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
+}
+
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
 # ── push: branch push with commits → 200 ─────────────────────────────────────
 
 POST http://{{host}}/webhooks/gitea
@@ -1418,7 +1447,7 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 
-# ── security_and_analysis: changed → 200 (no action field) ──────────────────
+# ── security_and_analysis: non-native → 422 ──────────────────────────────────
 
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
@@ -1441,9 +1470,9 @@ X-Gitea-Event: security_and_analysis
   "sender": {"id": 1, "login": "octocat", "avatar_url": "", "html_url": ""}
 }
 
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: security_and_analysis"
 
 # ── star: created → 200 ───────────────────────────────────────────────────────
 
