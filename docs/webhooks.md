@@ -167,6 +167,7 @@ delivered.  Confusio maps these to its canonical internal event family names.
 | kallithea | _(body fields)_ | `push`, `CREATE_REPO_HOOK`, `CREATE_PULLREQUEST_HOOK` |
 | pagure | `X-Pagure-Event` | `issue`, `pull-request`, `git` |
 | launchpad | `X-Launchpad-Event-Type` | `git:push:0.1`, `merge-proposal:0.1`, `bug:0.1` |
+| radicle | _(body field `event_type`)_ | `push`, `patch` |
 | sourcehut | _(body field `event`)_ | `push`, `patchset:created` |
 | All others | _(backend-specific — see [Signature Verification](#signature-verification))_ | — |
 
@@ -233,8 +234,8 @@ Four distinct schemes appear across the 24 backends:
 | **HMAC-SHA256** | Signature = `HMAC-SHA256(secret, body)`, hex-encoded | gitea, forgejo, codeberg, notabug, gogs, bitbucket, bitbucket_datacenter, phabricator, pagure (SHA-256 header) |
 | **HMAC-SHA512** | Signature = `HMAC-SHA512(secret, body)`, hex-encoded | pagure (SHA-512 header, older instances) |
 | **HMAC-SHA1** | Signature = `HMAC-SHA1(secret, body)`, hex-encoded | gitbucket (GitHub legacy compat), launchpad |
-| **Shared token** | Secret echoed verbatim in a header; constant-time string compare | gitlab, gitblit, harness, onedev, rhodecode, sourceforge, tuleap, kallithea |
-| **Bearer / Basic** | Secret in Authorization header (Bearer or Basic form) | azuredevops (Basic), gerrit (Basic or Bearer), radicle (raw) |
+| **Shared token** | Secret echoed verbatim in a header or body field; constant-time string compare | gitlab, gitblit, harness, onedev, radicle, rhodecode, sourceforge, tuleap, kallithea |
+| **Bearer / Basic** | Secret in Authorization header (Bearer or Basic form) | azuredevops (Basic), gerrit (Basic or Bearer) |
 | **Asymmetric / platform** | ed25519 or platform-managed certificate signing | sourcehut, codecommit |
 
 ### Quick reference
@@ -575,6 +576,9 @@ accept if constant_time_equal(secret, received)
 
 Radicle sends the shared secret in the `Authorization` header.  Current Radicle node
 versions do not use a `Bearer` or `Basic` prefix — the secret value is sent as-is.
+Radicle CI adapter requests identify the event family in the root `event_type` body
+field; current values are `push` for branch/tag ref changes and `patch` for patch
+create/update requests.
 
 ```
 secret   = configured shared secret

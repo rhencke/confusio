@@ -140,13 +140,13 @@ CONFUSIO_TS=$(date +%s)
 CONFUSIO_SIG="sha256=$(printf 'v1:%s:%s' "$CONFUSIO_TS" "$WH_BODY" | openssl dgst -sha256 -hmac "$WH_SECRET" | awk '{print $NF}'), v=1, ts=${CONFUSIO_TS}"
 # Write secrets to 0600-permission files — never pass raw secrets on the CLI.
 WH_SECRET_DIR=$(mktemp -d)
-for wh_backend in gitea codeberg gitlab bitbucket bitbucket_datacenter gitbucket launchpad phabricator pagure gerrit onedev kallithea confusio; do
+for wh_backend in gitea codeberg gitlab bitbucket bitbucket_datacenter gitbucket launchpad phabricator pagure gerrit onedev radicle kallithea confusio; do
   printf '%s' "$WH_SECRET" > "$WH_SECRET_DIR/$wh_backend.secret"
   chmod 600 "$WH_SECRET_DIR/$wh_backend.secret"
 done
 printf '%s' "$AZUREDEVOPS_SECRET" > "$WH_SECRET_DIR/azuredevops.secret"
 chmod 600 "$WH_SECRET_DIR/azuredevops.secret"
-WH_CLI_ARGS="-- webhook_secret_file_gitea=$WH_SECRET_DIR/gitea.secret webhook_secret_file_codeberg=$WH_SECRET_DIR/codeberg.secret webhook_secret_file_gitlab=$WH_SECRET_DIR/gitlab.secret webhook_secret_file_bitbucket=$WH_SECRET_DIR/bitbucket.secret webhook_secret_file_bitbucket_datacenter=$WH_SECRET_DIR/bitbucket_datacenter.secret webhook_secret_file_gitbucket=$WH_SECRET_DIR/gitbucket.secret webhook_secret_file_launchpad=$WH_SECRET_DIR/launchpad.secret webhook_secret_file_phabricator=$WH_SECRET_DIR/phabricator.secret webhook_secret_file_pagure=$WH_SECRET_DIR/pagure.secret webhook_secret_file_azuredevops=$WH_SECRET_DIR/azuredevops.secret webhook_secret_file_gerrit=$WH_SECRET_DIR/gerrit.secret webhook_secret_file_onedev=$WH_SECRET_DIR/onedev.secret webhook_secret_file_kallithea=$WH_SECRET_DIR/kallithea.secret webhook_secret_file_confusio=$WH_SECRET_DIR/confusio.secret"
+WH_CLI_ARGS="-- webhook_secret_file_gitea=$WH_SECRET_DIR/gitea.secret webhook_secret_file_codeberg=$WH_SECRET_DIR/codeberg.secret webhook_secret_file_gitlab=$WH_SECRET_DIR/gitlab.secret webhook_secret_file_bitbucket=$WH_SECRET_DIR/bitbucket.secret webhook_secret_file_bitbucket_datacenter=$WH_SECRET_DIR/bitbucket_datacenter.secret webhook_secret_file_gitbucket=$WH_SECRET_DIR/gitbucket.secret webhook_secret_file_launchpad=$WH_SECRET_DIR/launchpad.secret webhook_secret_file_phabricator=$WH_SECRET_DIR/phabricator.secret webhook_secret_file_pagure=$WH_SECRET_DIR/pagure.secret webhook_secret_file_azuredevops=$WH_SECRET_DIR/azuredevops.secret webhook_secret_file_gerrit=$WH_SECRET_DIR/gerrit.secret webhook_secret_file_onedev=$WH_SECRET_DIR/onedev.secret webhook_secret_file_radicle=$WH_SECRET_DIR/radicle.secret webhook_secret_file_kallithea=$WH_SECRET_DIR/kallithea.secret webhook_secret_file_confusio=$WH_SECRET_DIR/confusio.secret"
 wh_dir=$(mktemp -d)
 start_confusio "$wh_dir" "$WH_CLI_ARGS"; WH_PID=$!
 trap "kill $WH_PID 2>/dev/null || true; rm -rf $wh_dir; rm -rf $WH_SECRET_DIR" EXIT
@@ -164,6 +164,7 @@ $HURL --retry 10 --retry-interval 200 --connect-timeout 1 --max-time 5 \
   --variable "gerrit_tok=$WH_SECRET" \
   --variable "gerrit_basic=$GERRIT_BASIC" \
   --variable "onedev_tok=$WH_SECRET" \
+  --variable "radicle_tok=$WH_SECRET" \
   --variable "confusio_sig=$CONFUSIO_SIG" \
   test/webhooks-sig.hurl
 kill $WH_PID 2>/dev/null || true; sleep 0.3

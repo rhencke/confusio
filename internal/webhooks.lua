@@ -149,10 +149,19 @@ local KALLITHEA_BODY_EVENT_FIELDS = {
   "hookType",
 }
 
+local RADICLE_BODY_EVENT_FIELDS = {
+  "event_type",
+  "eventType",
+}
+
 local function kallithea_body_event(payload)
   return first_string_field(payload, KALLITHEA_BODY_EVENT_FIELDS)
     or first_string_field(payload and payload.data, KALLITHEA_BODY_EVENT_FIELDS)
     or first_string_field(payload and payload.payload, KALLITHEA_BODY_EVENT_FIELDS)
+end
+
+local function radicle_body_event(payload)
+  return first_string_field(payload, RADICLE_BODY_EVENT_FIELDS)
 end
 
 local function phabricator_phid_type(phid)
@@ -532,6 +541,7 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
     --   Gerrit uses payload.type (e.g. "comment-added").
     --   OneDev uses payload.type (e.g. "RefUpdated").
     --   Kallithea hook plugins embed an event/hook name in the JSON body.
+    --   Radicle CI adapter requests use payload.event_type (e.g. "push", "patch").
     --   Phabricator webhooks embed object.type, or an equivalent PHID prefix.
     local ev = event_header(backend)
     if ev == nil and type(payload) == "table" then
@@ -543,6 +553,8 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
         ev = payload.type
       elseif backend == "kallithea" then
         ev = kallithea_body_event(payload)
+      elseif backend == "radicle" then
+        ev = radicle_body_event(payload)
       elseif backend == "phabricator" then
         ev = phabricator_body_event(payload)
       end
