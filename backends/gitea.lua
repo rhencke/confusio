@@ -315,9 +315,15 @@ local function translate_gitea_review(r)
     return {}
   end
   local state = r.state or r.type or "COMMENT"
-  if state == "REJECT" or state == "REQUEST_CHANGES" then
+  if state == "pull_request_review_approved" then
+    state = "APPROVED"
+  elseif state == "pull_request_review_rejected" then
     state = "CHANGES_REQUESTED"
-  elseif state ~= "APPROVED" and state ~= "DISMISSED" then
+  elseif state == "pull_request_review_comment" then
+    state = "COMMENT"
+  elseif state == "REJECT" or state == "REQUEST_CHANGES" then
+    state = "CHANGES_REQUESTED"
+  elseif state ~= "APPROVED" and state ~= "CHANGES_REQUESTED" and state ~= "DISMISSED" then
     state = "COMMENT"
   end
   return {
@@ -7160,14 +7166,17 @@ local PULL_REQUEST_ACTIONS = {
   closed = "closed",
   reopened = "reopened",
   edited = "edited",
+  deleted = "deleted",
   synchronize = "synchronize", -- commits pushed to PR head branch
-  synchronized = "synchronize", -- older Gitea spelling
+  synchronized = "synchronize", -- native Gitea spelling
   labeled = "labeled",
-  label_updated = "labeled", -- older Gitea spelling
+  label_updated = "labeled", -- native Gitea spelling
   unlabeled = "unlabeled",
-  label_cleared = "unlabeled", -- older Gitea spelling
+  label_cleared = "unlabeled", -- native Gitea spelling
   assigned = "assigned",
   unassigned = "unassigned",
+  milestoned = "milestoned",
+  demilestoned = "demilestoned",
   review_requested = "review_requested",
   review_request_removed = "review_request_removed",
 }
@@ -7380,6 +7389,15 @@ register_gitea_webhook("pull_request", function(payload)
   if action == "labeled" or action == "unlabeled" then
     data.label = translate_gitea_label(payload.label)
   end
+  -- For assigned/unassigned, include the specific user that changed.
+  if action == "assigned" or action == "unassigned" then
+    data.assignee = payload.assignee and translate_user(payload.assignee) or nil
+  end
+  -- For milestoned/demilestoned, include the affected milestone when Gitea
+  -- supplies it at either the top level or on the pull request object.
+  if action == "milestoned" or action == "demilestoned" then
+    data.milestone = translate_gitea_milestone_webhook(payload.milestone or raw_pr.milestone)
+  end
   -- For review_requested/review_request_removed, include the affected reviewer.
   if action == "review_requested" or action == "review_request_removed" then
     data.requested_reviewer = payload.requested_reviewer
@@ -7440,6 +7458,7 @@ local PULL_REQUEST_REVIEW_ACTIONS = {
   submitted = "submitted",
   edited = "edited",
   dismissed = "dismissed",
+  reviewed = "submitted",
 }
 
 register_gitea_webhook("pull_request_review", function(payload)
@@ -7467,6 +7486,51 @@ register_gitea_webhook("pull_request_review", function(payload)
   })
 end)
 
+local PULL_REQUEST_COMMENT_ACTIONS = {
+  reviewed = "created",
+  created = "created",
+  edited = "edited",
+  deleted = "deleted",
+}
+
+local function make_gitea_pull_request_review_event(payload, review_state)
+  local raw_action = payload.action or ""
+  local action = PULL_REQUEST_REVIEW_ACTIONS[raw_action]
+  local raw_review = payload.review or {}
+  local review_source = {}
+  for k, v in pairs(raw_review) do
+    review_source[k] = v
+  end
+  review_source.state = review_source.state or review_state
+  local review = translate_gitea_review(review_source)
+  local raw_pr = payload.pull_request or {}
+  local pr = translate_gitea_pull(raw_pr)
+  local data = {
+    action = action or "unknown",
+    review = review,
+    pull_request = pr,
+    repository = translate_repo(payload.repository or {}),
+    sender = translate_user(payload.sender or {}),
+  }
+  return make_internal_event({
+    event = "pull_request_review",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = GITEA_WEBHOOK_PROVIDER,
+    raw = payload,
+    data = data,
+    timestamp = raw_review.submitted_at or raw_review.updated_at or "",
+  })
+end
+
+register_gitea_webhook("pull_request_approved", function(payload)
+  return make_gitea_pull_request_review_event(payload, "APPROVED")
+end)
+
+register_gitea_webhook("pull_request_rejected", function(payload)
+  return make_gitea_pull_request_review_event(payload, "CHANGES_REQUESTED")
+end)
+
 -- pull_request_review_comment actions: inline diff comments on a PR review.
 -- Gitea emits created/edited/deleted matching GitHub's naming directly.
 local PULL_REQUEST_REVIEW_COMMENT_ACTIONS = {
@@ -7479,6 +7543,31 @@ register_gitea_webhook("pull_request_review_comment", function(payload)
   local raw_action = payload.action or ""
   local action = PULL_REQUEST_REVIEW_COMMENT_ACTIONS[raw_action]
   local raw_comment = payload.comment or {}
+  local comment = translate_gitea_review_comment(raw_comment)
+  local raw_pr = payload.pull_request or {}
+  local pr = translate_gitea_pull(raw_pr)
+  local data = {
+    action = action or "unknown",
+    comment = comment,
+    pull_request = pr,
+    repository = translate_repo(payload.repository or {}),
+    sender = translate_user(payload.sender or {}),
+  }
+  return make_internal_event({
+    event = "pull_request_review_comment",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = GITEA_WEBHOOK_PROVIDER,
+    raw = payload,
+    data = data,
+    timestamp = raw_comment.updated_at or raw_comment.updated or "",
+  })
+end)
+
+register_gitea_webhook("pull_request_comment", function(payload)
+  local raw_action = payload.action or ""
+  local action = PULL_REQUEST_COMMENT_ACTIONS[raw_action]
+  local raw_comment = payload.comment or payload.review_comment or payload.review or {}
   local comment = translate_gitea_review_comment(raw_comment)
   local raw_pr = payload.pull_request or {}
   local pr = translate_gitea_pull(raw_pr)

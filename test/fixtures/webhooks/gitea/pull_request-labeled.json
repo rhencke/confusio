@@ -1,5 +1,5 @@
 {
-  "action": "labeled",
+  "action": "label_updated",
   "number": 7,
   "pull_request": {
     "id": 500, "number": 7, "title": "Add new feature", "body": null,

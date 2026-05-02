@@ -31,6 +31,13 @@ test/fixtures/webhooks/gitea/label-deleted.json
 test/fixtures/webhooks/gitea/label-edited.json
 test/fixtures/webhooks/gitea/issue_comment-deleted.json
 test/fixtures/webhooks/gitea/issue_comment-edited.json
+test/fixtures/webhooks/gitea/pull_request-deleted.json
+test/fixtures/webhooks/gitea/pull_request-milestoned.json
+test/fixtures/webhooks/gitea/pull_request-demilestoned.json
+test/fixtures/webhooks/gitea/pull_request-synchronized.json
+test/fixtures/webhooks/gitea/pull_request_approved-reviewed.json
+test/fixtures/webhooks/gitea/pull_request_rejected-reviewed.json
+test/fixtures/webhooks/gitea/pull_request_comment-reviewed.json
 test/fixtures/webhooks/gitea/pull_request_review_comment-deleted.json
 test/fixtures/webhooks/gitea/pull_request_review_comment-edited.json
 test/fixtures/webhooks/gitea/workflow_run-in_progress.json
