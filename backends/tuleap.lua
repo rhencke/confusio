@@ -13,6 +13,20 @@ local auth = function()
   return make_fetch_opts("bearer")
 end
 local fetch_json = make_backend_transport("bearer").fetch_json
+local ZERO_SHA = "0000000000000000000000000000000000000000"
+
+local function short_ref(ref)
+  return (ref or ""):match("^refs/heads/(.+)$")
+    or (ref or ""):match("^refs/tags/(.+)$")
+    or (ref or "")
+end
+
+local function ref_type(ref)
+  if (ref or ""):match("^refs/tags/") then
+    return "tag"
+  end
+  return "branch"
+end
 
 -- Translate a Tuleap git repository object to GitHub format.
 local function translate_tuleap_repo(r)
@@ -20,12 +34,21 @@ local function translate_tuleap_repo(r)
     return {}
   end
   local project = r.project or {}
-  local shortname = project.shortname or ""
+  local name = r.name or ""
+  local full_name = r.full_name or ""
+  local shortname = project.shortname
+    or project.path
+    or project.name
+    or full_name:match("^([^/]+)/")
+    or ""
+  if full_name == "" then
+    full_name = shortname ~= "" and (shortname .. "/" .. name) or name
+  end
   return {
     id = r.id or 0,
     node_id = "",
-    name = r.name or "",
-    full_name = shortname .. "/" .. (r.name or ""),
+    name = name,
+    full_name = full_name,
     private = false,
     owner = {
       login = shortname,
@@ -68,18 +91,191 @@ local function translate_tuleap_user(u)
   if not u then
     return {}
   end
+  local login = u.username or u.login or u.name or u.real_name or ""
+  local html_url = u.user_url or ""
+  if html_url == "" then
+    html_url = config.base_url .. "/users/" .. login
+  elseif html_url:match("^/") then
+    html_url = config.base_url .. html_url
+  end
   return {
-    login = u.username or "",
+    login = login,
     id = u.id or 0,
     node_id = "",
     avatar_url = u.avatar_url or "",
-    html_url = config.base_url .. "/users/" .. (u.username or ""),
+    html_url = html_url,
     type = "User",
     site_admin = false,
-    name = u.real_name or u.display_name or u.username or "",
-    email = "",
+    name = u.real_name or u.display_name or login,
+    email = u.email or "",
     blog = "",
   }
+end
+
+local function tuleap_project_url(path)
+  if path and path ~= "" then
+    return config.base_url .. "/projects/" .. path
+  end
+  return ""
+end
+
+local function translate_tuleap_project_webhook(payload)
+  payload = payload or {}
+  local sender = translate_tuleap_user({
+    id = payload.owner_id,
+    username = payload.owner_username or payload.owner_name,
+    real_name = payload.owner_name,
+    email = payload.owner_email,
+  })
+  return {
+    id = payload.project_id or payload.id or 0,
+    node_id = "",
+    name = payload.name or payload.path or "",
+    body = payload.description or "",
+    url = "",
+    html_url = tuleap_project_url(payload.path),
+    owner_url = sender.html_url or "",
+    creator = sender,
+    created_at = payload.created_at or "",
+    updated_at = payload.updated_at or payload.created_at or "",
+    path = payload.path or "",
+    path_with_namespace = payload.path_with_namespace or payload.path or "",
+    visibility = payload.project_visibility or payload.visibility or "",
+  }
+end
+
+local function translate_tuleap_commit(c)
+  c = c or {}
+  local author = c.author or {}
+  local committer = c.committer or author
+  return {
+    id = c.id or c.sha or "",
+    message = c.message or "",
+    timestamp = c.timestamp or c.date or "",
+    url = c.url or "",
+    author = {
+      name = author.name or "",
+      email = author.email or "",
+      username = author.username or author.login or author.name or "",
+    },
+    committer = {
+      name = committer.name or author.name or "",
+      email = committer.email or author.email or "",
+      username = committer.username or committer.login or committer.name or author.name or "",
+    },
+    added = c.added or {},
+    removed = c.removed or {},
+    modified = c.modified or {},
+  }
+end
+
+local function translate_tuleap_commits(commits)
+  local result = {}
+  for _, commit in ipairs(commits or {}) do
+    result[#result + 1] = translate_tuleap_commit(commit)
+  end
+  return result
+end
+
+local function tuleap_sender(payload)
+  return translate_tuleap_user(payload.sender or payload.user or payload.pusher)
+end
+
+local function tuleap_pusher(payload)
+  local pusher = payload.pusher or payload.sender or payload.user or {}
+  return {
+    name = pusher.name or pusher.username or pusher.login or pusher.real_name or "",
+    email = pusher.email or "",
+  }
+end
+
+local function tuleap_project_created_event(payload)
+  payload = payload or {}
+  local project = translate_tuleap_project_webhook(payload)
+  local sender = project.creator or {}
+  return make_internal_event({
+    event = "project",
+    action = "created",
+    provider = "tuleap",
+    raw = payload,
+    data = {
+      action = "created",
+      project = project,
+      sender = sender,
+    },
+    timestamp = payload.created_at or payload.updated_at or "",
+  })
+end
+
+local function tuleap_git_event(payload)
+  payload = payload or {}
+  local raw_ref = payload.ref or ""
+  local before = payload.before or ""
+  local after = payload.after or ""
+  local repository = translate_tuleap_repo(payload.repository)
+  local sender = tuleap_sender(payload)
+
+  if before == ZERO_SHA then
+    return make_internal_event({
+      event = "create",
+      action = "create",
+      provider = "tuleap",
+      raw = payload,
+      data = {
+        ref = short_ref(raw_ref),
+        ref_type = ref_type(raw_ref),
+        master_branch = repository.default_branch or "",
+        description = repository.description,
+        pusher_type = "user",
+        repository = repository,
+        sender = sender,
+      },
+      timestamp = payload.timestamp or "",
+    })
+  end
+
+  if after == ZERO_SHA then
+    return make_internal_event({
+      event = "delete",
+      action = "delete",
+      provider = "tuleap",
+      raw = payload,
+      data = {
+        ref = short_ref(raw_ref),
+        ref_type = ref_type(raw_ref),
+        master_branch = repository.default_branch or "",
+        description = repository.description,
+        pusher_type = "user",
+        repository = repository,
+        sender = sender,
+      },
+      timestamp = payload.timestamp or "",
+    })
+  end
+
+  local commits = translate_tuleap_commits(payload.commits)
+  local head_commit = #commits > 0 and commits[#commits] or nil
+  return make_internal_event({
+    event = "push",
+    action = "push",
+    provider = "tuleap",
+    raw = payload,
+    data = {
+      ref = raw_ref,
+      before = before,
+      after = after,
+      created = false,
+      deleted = false,
+      forced = payload.forced or false,
+      compare = payload.compare or payload.compare_url or "",
+      commits = commits,
+      head_commit = head_commit,
+      pusher = tuleap_pusher(payload),
+      repository = repository,
+      sender = sender,
+    },
+    timestamp = payload.timestamp or (head_commit and head_commit.timestamp) or "",
+  })
 end
 
 -- Returns limit and offset query params for Tuleap pagination.
@@ -252,5 +448,8 @@ b:rest("search_users", function()
     return { total_count = #items, incomplete_results = false, items = items }
   end, fetch_json(users_url(q)))
 end)
+
+b:webhook("project_create", tuleap_project_created_event)
+b:webhook("git_push", tuleap_git_event)
 
 b:build()

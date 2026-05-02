@@ -3353,6 +3353,99 @@ do
 end
 
 -- ============================================================
+-- Tuleap webhook handlers
+-- ============================================================
+
+do
+  local saved_rest = app.backend.rest
+  local saved_capabilities = app.backend.capabilities
+  local saved_webhooks = app.backend.webhooks
+  local saved_webhook_translators = app.backend.webhook_translators
+  local saved_webhook_github_translators = app.backend.webhook_github_translators
+  local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
+  local saved_base_url = config.base_url
+  local saved_backend = config.backend
+
+  app.backend.rest = {}
+  app.backend.capabilities = {}
+  app.backend.webhooks = {}
+  app.backend.webhook_translators = {}
+  app.backend.webhook_github_translators = {}
+  graphql_resolvers = {} -- luacheck: globals graphql_resolvers
+  config.base_url = ""
+  config.backend = "tuleap"
+  _real_dofile("backends/tuleap.lua")
+
+  ok(app.backend.webhooks.project_create ~= nil, "tuleap webhook: project_create registered")
+  ok(app.backend.webhooks.git_push ~= nil, "tuleap webhook: git_push registered")
+
+  local function load_tuleap_fixture(name)
+    local f = assert(io.open("test/fixtures/webhooks/tuleap/" .. name .. ".json", "rb"))
+    local body = f:read("*a")
+    f:close()
+    return DecodeJson(body)
+  end
+
+  local project_event = app.backend.webhooks.project_create(load_tuleap_fixture("project-created"))
+  eq(project_event.event, "project", "tuleap webhook: project_create maps to project")
+  eq(project_event.action, "created", "tuleap webhook: project_create maps to created")
+  eq(project_event.provider, "tuleap", "tuleap webhook: project_create sets provider")
+  eq(
+    project_event.data.project.name,
+    "Hello World",
+    "tuleap webhook: project_create keeps project name"
+  )
+  eq(
+    project_event.data.project.path_with_namespace,
+    "octocat/hello-world",
+    "tuleap webhook: project_create keeps namespace path"
+  )
+  eq(
+    project_event.data.sender.email,
+    "alice@example.com",
+    "tuleap webhook: project_create maps owner email to sender"
+  )
+
+  local push_event = app.backend.webhooks.git_push(load_tuleap_fixture("push"))
+  eq(push_event.event, "push", "tuleap webhook: git_push maps update to push")
+  eq(push_event.action, "push", "tuleap webhook: git_push action set")
+  eq(push_event.provider, "tuleap", "tuleap webhook: git_push sets provider")
+  eq(push_event.data.ref, "refs/heads/main", "tuleap webhook: push keeps full ref")
+  eq(push_event.data.repository.name, "hello-world", "tuleap webhook: push maps repository name")
+  eq(push_event.data.sender.login, "alice", "tuleap webhook: push maps sender")
+  eq(push_event.data.pusher.email, "alice@example.com", "tuleap webhook: push maps pusher")
+
+  local create_event = app.backend.webhooks.git_push(load_tuleap_fixture("create"))
+  eq(create_event.event, "create", "tuleap webhook: zero before maps to create")
+  eq(create_event.data.ref, "feature/tuleap-fixtures", "tuleap webhook: create strips branch ref")
+  eq(create_event.data.ref_type, "branch", "tuleap webhook: create detects branch ref")
+
+  local delete_event = app.backend.webhooks.git_push(load_tuleap_fixture("delete"))
+  eq(delete_event.event, "delete", "tuleap webhook: zero after maps to delete")
+  eq(delete_event.data.ref, "feature/tuleap-fixtures", "tuleap webhook: delete strips branch ref")
+  eq(delete_event.data.ref_type, "branch", "tuleap webhook: delete detects branch ref")
+
+  local tag_create_event = app.backend.webhooks.git_push(load_tuleap_fixture("tag-create"))
+  eq(tag_create_event.event, "create", "tuleap webhook: zero before maps tag to create")
+  eq(tag_create_event.data.ref, "v1.0.0", "tuleap webhook: tag create strips tag ref")
+  eq(tag_create_event.data.ref_type, "tag", "tuleap webhook: tag create detects tag ref")
+
+  local tag_delete_event = app.backend.webhooks.git_push(load_tuleap_fixture("tag-delete"))
+  eq(tag_delete_event.event, "delete", "tuleap webhook: zero after maps tag to delete")
+  eq(tag_delete_event.data.ref, "v1.0.0", "tuleap webhook: tag delete strips tag ref")
+  eq(tag_delete_event.data.ref_type, "tag", "tuleap webhook: tag delete detects tag ref")
+
+  app.backend.rest = saved_rest
+  app.backend.capabilities = saved_capabilities
+  app.backend.webhooks = saved_webhooks
+  app.backend.webhook_translators = saved_webhook_translators
+  app.backend.webhook_github_translators = saved_webhook_github_translators
+  graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
+  config.base_url = saved_base_url
+  config.backend = saved_backend
+end
+
+-- ============================================================
 -- NotABug webhook handlers
 -- ============================================================
 
