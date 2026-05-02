@@ -1,0 +1,15 @@
+{
+  "event": "LABEL_UPDATE",
+  "webhook": { "event": "LABEL_UPDATE", "date": "2024-01-15T13:05:00Z" },
+  "label": {
+    "id": 5,
+    "name": "bug",
+    "backgroundColor": "#0075ca",
+    "tracker": {
+      "id": 1,
+      "name": "hello-world",
+      "visibility": "PUBLIC",
+      "owner": { "canonical_name": "~octocat", "name": "octocat" }
+    }
+  }
+}

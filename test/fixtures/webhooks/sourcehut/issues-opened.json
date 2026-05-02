@@ -1,0 +1,20 @@
+{
+  "event": "TICKET_CREATED",
+  "webhook": { "event": "TICKET_CREATED", "date": "2024-01-15T12:00:00Z" },
+  "ticket": {
+    "id": 1,
+    "title": "Found a bug",
+    "body": "Something broke.",
+    "status": "reported",
+    "created": "2024-01-15T12:00:00Z",
+    "updated": "2024-01-15T12:00:00Z",
+    "submitter": { "canonical_name": "~octocat", "name": "octocat" },
+    "tracker": {
+      "id": 1,
+      "name": "hello-world",
+      "description": "Issues",
+      "visibility": "PUBLIC",
+      "owner": { "canonical_name": "~octocat", "name": "octocat" }
+    }
+  }
+}

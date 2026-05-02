@@ -1,0 +1,27 @@
+{
+  "event": "EVENT_CREATED",
+  "webhook": { "event": "EVENT_CREATED", "date": "2024-01-15T12:30:00Z" },
+  "newEvent": {
+    "created": "2024-01-15T12:30:00Z",
+    "ticket": {
+      "id": 1,
+      "title": "Found a bug",
+      "status": "resolved",
+      "submitter": { "canonical_name": "~octocat", "name": "octocat" },
+      "tracker": {
+        "id": 1,
+        "name": "hello-world",
+        "visibility": "PUBLIC",
+        "owner": { "canonical_name": "~octocat", "name": "octocat" }
+      }
+    },
+    "changes": [
+      {
+        "eventType": "STATUS_CHANGE",
+        "oldStatus": "REPORTED",
+        "newStatus": "RESOLVED",
+        "editor": { "canonical_name": "~octocat", "name": "octocat" }
+      }
+    ]
+  }
+}

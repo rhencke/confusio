@@ -1,0 +1,26 @@
+{
+  "event": "PATCHSET_RECEIVED",
+  "webhook": { "event": "PATCHSET_RECEIVED", "date": "2024-01-15T15:00:00Z" },
+  "sender": { "canonical_name": "~octocat", "name": "octocat" },
+  "repository": {
+    "id": 1,
+    "name": "hello-world",
+    "description": "My first repo",
+    "visibility": "public",
+    "HEAD": { "name": "refs/heads/main", "target": "abc123def456" },
+    "owner": { "canonical_name": "~octocat", "name": "octocat" }
+  },
+  "newPatchset": {
+    "id": 7,
+    "subject": "Add feature",
+    "coverLetter": "Please review.",
+    "created": "2024-01-15T15:00:00Z",
+    "updated": "2024-01-15T15:00:00Z",
+    "submitter": { "canonical_name": "~octocat", "name": "octocat" },
+    "ref": "refs/patches/7",
+    "commit": "def456abc123def456abc123def456abc123def4",
+    "targetBranch": "main",
+    "baseCommit": "abc123def456abc123def456abc123def456abcd",
+    "url": "https://lists.sr.ht/~octocat/hello-world/patches/7"
+  }
+}

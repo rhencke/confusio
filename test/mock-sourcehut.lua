@@ -77,6 +77,34 @@ function OnHttpRequest()
     SetStatus(200, "OK")
     raw("file content\n")
 
+  -- Webhooks ---------------------------------------------------------------
+  elseif path == rp .. "/webhooks/1" and GetMethod() == "DELETE" then
+    SetStatus(204, "No Content")
+  elseif path == rp .. "/webhooks/1" and GetMethod() == "PUT" then
+    SetStatus(200, "OK")
+    json(
+      '{"id":1,"url":"https://example.com/updated-hook",'
+        .. '"events":["REPO_UPDATE","GIT_POST_RECEIVE"],"enabled":true}'
+    )
+  elseif path == rp .. "/webhooks/1" then
+    SetStatus(200, "OK")
+    json(
+      '{"id":1,"url":"https://example.com/hook",' .. '"events":["GIT_POST_RECEIVE"],"enabled":true}'
+    )
+  elseif path == rp .. "/webhooks" and GetMethod() == "POST" then
+    SetStatus(201, "Created")
+    json(
+      '{"id":2,"url":"https://example.com/new-hook",'
+        .. '"events":["GIT_POST_RECEIVE","PATCHSET_RECEIVED"],"enabled":true}'
+    )
+  elseif path == rp .. "/webhooks" then
+    SetStatus(200, "OK")
+    json(
+      '{"results":[{"id":1,"url":"https://example.com/hook",'
+        .. '"events":["GIT_POST_RECEIVE"],"enabled":true}],'
+        .. '"total":1,"cursor":null}'
+    )
+
   -- todo.sr.ht Issues (tracker) --------------------------------------------
   -- Paths: /api/~octocat/trackers/hello-world/tickets[/{id}[/events]]
   elseif path == "/api/~octocat/trackers/hello-world/tickets" then

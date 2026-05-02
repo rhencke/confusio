@@ -1,0 +1,28 @@
+{
+  "event": "EVENT_CREATED",
+  "webhook": { "event": "EVENT_CREATED", "date": "2024-01-15T12:01:00Z" },
+  "newEvent": {
+    "created": "2024-01-15T12:01:00Z",
+    "ticket": {
+      "id": 2,
+      "title": "New ticket from activity stream",
+      "body": "Created through EVENT_CREATED.",
+      "status": "reported",
+      "created": "2024-01-15T12:01:00Z",
+      "updated": "2024-01-15T12:01:00Z",
+      "submitter": { "canonical_name": "~octocat", "name": "octocat" },
+      "tracker": {
+        "id": 1,
+        "name": "hello-world",
+        "visibility": "PUBLIC",
+        "owner": { "canonical_name": "~octocat", "name": "octocat" }
+      }
+    },
+    "changes": [
+      {
+        "eventType": "CREATED",
+        "author": { "canonical_name": "~octocat", "name": "octocat" }
+      }
+    ]
+  }
+}

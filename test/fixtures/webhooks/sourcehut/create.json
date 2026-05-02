@@ -1,0 +1,20 @@
+{
+  "event": "GIT_POST_RECEIVE",
+  "webhook": { "event": "GIT_POST_RECEIVE", "date": "2024-01-15T11:00:00Z" },
+  "pusher": { "canonical_name": "~octocat", "name": "octocat" },
+  "repository": {
+    "id": 1,
+    "name": "hello-world",
+    "description": "My first repo",
+    "visibility": "public",
+    "HEAD": { "name": "refs/heads/main", "target": "abc123def456" },
+    "owner": { "canonical_name": "~octocat", "name": "octocat" }
+  },
+  "updates": [
+    {
+      "ref": { "name": "refs/heads/feature" },
+      "old": { "id": "0000000000000000000000000000000000000000" },
+      "new": { "id": "abc123def456abc123def456abc123def456abcd" }
+    }
+  ]
+}

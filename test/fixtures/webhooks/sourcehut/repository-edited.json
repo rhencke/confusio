@@ -1,0 +1,15 @@
+{
+  "event": "REPO_UPDATE",
+  "webhook": { "event": "REPO_UPDATE", "date": "2024-01-15T10:05:00Z" },
+  "sender": { "canonical_name": "~octocat", "name": "octocat" },
+  "repository": {
+    "id": 1,
+    "name": "hello-world",
+    "description": "Updated description",
+    "visibility": "public",
+    "created": "2024-01-15T10:00:00Z",
+    "updated": "2024-01-15T10:05:00Z",
+    "HEAD": { "name": "refs/heads/main", "target": "abc123def456" },
+    "owner": { "canonical_name": "~octocat", "name": "octocat" }
+  }
+}
