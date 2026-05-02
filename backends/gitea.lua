@@ -8212,7 +8212,6 @@ local GITEA_ACTIONLESS_NORMALIZED_EVENTS = {
   create = true,
   delete = true,
   fork = true,
-  gollum = true,
   ping = true,
   push = true,
 }
