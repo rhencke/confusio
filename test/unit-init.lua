@@ -2542,6 +2542,10 @@ do
     app.backend.webhook_github_translators.issues ~= nil,
     "phabricator webhook: issues GitHub-shape translator registered"
   )
+  ok(
+    app.backend.webhook_translators.pull_request ~= nil,
+    "phabricator webhook: pull_request translator registered"
+  )
 
   local task_payload = {
     object = {
@@ -2643,6 +2647,103 @@ do
     "I found a clue.",
     "phabricator webhook: GitHub-shape comment includes body"
   )
+
+  local revision_payload = {
+    object = {
+      type = "DREV",
+      id = 45,
+      phid = "PHID-DREV-45",
+      fields = {
+        title = "Teach the code review path",
+        summary = { raw = "Differential review body." },
+        status = { value = "needs-review" },
+        authorPHID = "PHID-USER-reviewer",
+        sourceBranch = "feature/differential",
+        targetBranch = "main",
+        sourceCommit = "abc123",
+        dateCreated = 1715778000,
+        dateModified = 1715781600,
+      },
+    },
+    repository = { full_name = "phabricator/differential" },
+    action = { actorPHID = "PHID-USER-rob", epoch = 1715781600 },
+    transactions = {
+      { type = "core:create" },
+    },
+  }
+  local revision_event = app.backend.webhooks.DREV(revision_payload)
+  eq(revision_event.event, "pull_request", "phabricator webhook: DREV maps to pull_request")
+  eq(revision_event.action, "opened", "phabricator webhook: DREV create maps to opened")
+  eq(revision_event.data.number, 45, "phabricator webhook: DREV sets number")
+  eq(
+    revision_event.data.pull_request.title,
+    "Teach the code review path",
+    "phabricator webhook: DREV sets title"
+  )
+  eq(
+    revision_event.data.pull_request.head.ref,
+    "feature/differential",
+    "phabricator webhook: DREV sets head ref"
+  )
+  eq(revision_event.data.pull_request.base.ref, "main", "phabricator webhook: DREV sets base ref")
+  local revision_envelope = app.backend.webhook_translators.pull_request(revision_event)
+  eq(
+    revision_envelope.type,
+    "pull_request.opened",
+    "phabricator webhook: normalized DREV includes action"
+  )
+  local revision_github_payload =
+    app.backend.webhook_github_translators.pull_request(revision_event)
+  eq(
+    revision_github_payload.pull_request.number,
+    45,
+    "phabricator webhook: GitHub-shape DREV includes pull_request"
+  )
+
+  local accepted_event = app.backend.webhooks.DREV({
+    object = {
+      type = "DREV",
+      id = 46,
+      phid = "PHID-DREV-46",
+      fields = {
+        title = "Accepted review",
+        status = { value = "accepted", closed = true },
+        dateModified = 1715785200,
+      },
+    },
+    transactions = {
+      { type = "status", oldValue = "needs-review", newValue = "accepted" },
+    },
+  })
+  eq(accepted_event.action, "closed", "phabricator webhook: DREV accepted maps to closed")
+  eq(accepted_event.data.pull_request.state, "closed", "phabricator webhook: accepted DREV state")
+  ok(
+    accepted_event.data.pull_request.merged == true,
+    "phabricator webhook: accepted DREV marks merged"
+  )
+
+  local diff_event = app.backend.webhooks.DIFF({
+    object = {
+      type = "DIFF",
+      id = 9001,
+      phid = "PHID-DIFF-9001",
+    },
+    revision = {
+      id = 47,
+      phid = "PHID-DREV-47",
+      fields = {
+        title = "Updated diff",
+        status = { value = "needs-review" },
+        sourceBranch = "feature/updated",
+        targetBranch = "main",
+      },
+    },
+    repository = { full_name = "phabricator/differential" },
+    action = { actorPHID = "PHID-USER-diff" },
+  })
+  eq(diff_event.event, "pull_request", "phabricator webhook: DIFF maps to pull_request")
+  eq(diff_event.action, "synchronize", "phabricator webhook: DIFF maps to synchronize")
+  eq(diff_event.data.number, 47, "phabricator webhook: DIFF uses revision number")
 
   app.backend.rest = saved_rest
   app.backend.capabilities = saved_capabilities

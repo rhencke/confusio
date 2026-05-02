@@ -186,6 +186,103 @@ local function phabricator_task_comment_transaction(payload)
   return nil
 end
 
+local function phabricator_revision_id(rev)
+  if type(rev) ~= "table" then
+    return 0
+  end
+  return rev.id
+    or (rev.fields or {}).id
+    or tonumber(rev.monogram and rev.monogram:match("^D(%d+)$"))
+    or 0
+end
+
+local function phabricator_branch_name(value, fallback)
+  if type(value) == "table" then
+    return value.name or value.shortName or fallback or ""
+  end
+  return value or fallback or ""
+end
+
+local function translate_differential_revision(rev, payload)
+  rev = rev or {}
+  payload = payload or {}
+  local f = rev.fields or {}
+  local id = phabricator_revision_id(rev)
+  local status = type(f.status) == "table" and f.status or {}
+  local status_value = status.value or f.status or ""
+  local closed = status.closed or status_value == "accepted" or status_value == "abandoned"
+  local source_branch = phabricator_branch_name(f.sourceBranch or f.branch, "HEAD")
+  local target_branch = phabricator_branch_name(f.targetBranch or f.repositoryBranch, "master")
+  local repository = phabricator_repository(payload)
+  return {
+    id = id,
+    node_id = rev.phid or "",
+    number = id,
+    title = f.title or rev.title or rev.name or "",
+    body = type(f.summary) == "table" and (f.summary.raw or "") or tostring(f.summary or ""),
+    state = closed and "closed" or "open",
+    user = translate_phabricator_user(f.authorPHID),
+    head = {
+      label = source_branch,
+      ref = source_branch,
+      sha = f.sourceCommit or f.diffPHID or "",
+      repo = repository,
+    },
+    base = {
+      label = target_branch,
+      ref = target_branch,
+      sha = f.targetCommit or "",
+      repo = repository,
+    },
+    draft = false,
+    created_at = ts(f.dateCreated),
+    updated_at = ts(f.dateModified),
+    closed_at = closed and ts(f.dateModified) or nil,
+    merged_at = status_value == "accepted" and ts(f.dateModified) or nil,
+    merge_commit_sha = nil,
+    merged = status_value == "accepted",
+    merged_by = status_value == "accepted" and translate_phabricator_user(f.authorPHID) or nil,
+    html_url = rev.uri or (config.base_url .. "/D" .. id),
+    url = "",
+    mergeable = not closed or nil,
+    comments = 0,
+    review_comments = 0,
+    commits = 0,
+    additions = 0,
+    deletions = 0,
+    changed_files = 0,
+  }
+end
+
+local function phabricator_differential_action(payload)
+  for _, tx in ipairs(payload.transactions or {}) do
+    local tx_type = phabricator_transaction_type(tx)
+    if tx_type == "core:create" or tx_type == "create" then
+      return "opened"
+    elseif tx_type == "status" then
+      local value = phabricator_transaction_new_value(tx)
+      if value == "needs-review" or value == "needs-revision" or value == "open" then
+        return "reopened"
+      end
+      return "closed"
+    elseif tx_type == "update" or tx_type == "diff" or tx_type == "differential:update" then
+      return "synchronize"
+    end
+  end
+  return "edited"
+end
+
+local function phabricator_differential_revision_payload(payload)
+  payload = payload or {}
+  if type(payload.revision) == "table" then
+    return payload.revision
+  end
+  if type(payload.differentialRevision) == "table" then
+    return payload.differentialRevision
+  end
+  return payload.object or {}
+end
+
 -- Look up a project PHID by slug (repo name, or owner/repo).
 -- Returns the PHID string on success, nil on failure.
 local function resolve_project_phid(owner, repo_name)
@@ -358,6 +455,9 @@ local function translate_phabricator_github_webhook(internal_event, _fields)
   elseif internal_event.event == "issue_comment" then
     payload.issue = data.issue or {}
     payload.comment = data.comment or {}
+  elseif internal_event.event == "pull_request" then
+    payload.number = data.number
+    payload.pull_request = data.pull_request or {}
   end
   return payload
 end
@@ -379,8 +479,10 @@ end
 
 b:webhook_translator("issues", translate_phabricator_normalized_webhook)
 b:webhook_translator("issue_comment", translate_phabricator_normalized_webhook)
+b:webhook_translator("pull_request", translate_phabricator_normalized_webhook)
 b:webhook_github_translator("issues", translate_phabricator_github_webhook)
 b:webhook_github_translator("issue_comment", translate_phabricator_github_webhook)
+b:webhook_github_translator("pull_request", translate_phabricator_github_webhook)
 
 b:webhook("TASK", function(payload)
   payload = payload or {}
@@ -412,6 +514,46 @@ b:webhook("TASK", function(payload)
     data = {
       action = action,
       issue = translate_task(task),
+      repository = phabricator_repository(payload),
+      sender = phabricator_sender(payload),
+    },
+    timestamp = phabricator_task_timestamp(payload),
+  })
+end)
+
+b:webhook("DREV", function(payload)
+  payload = payload or {}
+  local action = phabricator_differential_action(payload)
+  local pull_request = translate_differential_revision(payload.object, payload)
+  return make_internal_event({
+    event = "pull_request",
+    action = action,
+    provider = "phabricator",
+    raw = payload,
+    data = {
+      action = action,
+      number = pull_request.number,
+      pull_request = pull_request,
+      repository = phabricator_repository(payload),
+      sender = phabricator_sender(payload),
+    },
+    timestamp = phabricator_task_timestamp(payload),
+  })
+end)
+
+b:webhook("DIFF", function(payload)
+  payload = payload or {}
+  local revision = phabricator_differential_revision_payload(payload)
+  local pull_request = translate_differential_revision(revision, payload)
+  return make_internal_event({
+    event = "pull_request",
+    action = "synchronize",
+    provider = "phabricator",
+    raw = payload,
+    data = {
+      action = "synchronize",
+      number = pull_request.number,
+      pull_request = pull_request,
       repository = phabricator_repository(payload),
       sender = phabricator_sender(payload),
     },

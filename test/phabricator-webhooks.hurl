@@ -31,23 +31,31 @@ HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
 
-# Missing object.type falls back to the PHID prefix.
+# Missing object.type falls back to the PHID prefix and reaches Differential.
 POST http://{{host}}/webhooks/phabricator
 Content-Type: application/json
 {
   "object": {
-    "phid": "PHID-DREV-abcd"
+    "id": 45,
+    "phid": "PHID-DREV-abcd",
+    "fields": {
+      "title": "Review this change",
+      "status": {
+        "value": "needs-review"
+      }
+    }
   },
   "transactions": [
     {
+      "type": "core:create",
       "phid": "PHID-XACT-DREV-abcd"
     }
   ]
 }
 
-HTTP 422
+HTTP 200
 [Asserts]
-jsonpath "$.message" == "Phabricator webhook event not implemented: pull_request"
+jsonpath "$.message" == "accepted"
 
 # Unknown object families remain explicit 422s.
 POST http://{{host}}/webhooks/phabricator
