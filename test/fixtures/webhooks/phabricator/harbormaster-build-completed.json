@@ -1,0 +1,32 @@
+{
+  "object": {
+    "type": "HMBD",
+    "id": 7,
+    "phid": "PHID-HMBD-abcd",
+    "fields": {
+      "name": "unit tests",
+      "buildStatus": {
+        "value": "passed"
+      },
+      "buildPlanID": 70,
+      "commitIdentifier": "abcdef123456",
+      "dateCreated": 1710000700,
+      "dateModified": 1710000800
+    }
+  },
+  "branch": "main",
+  "repository": {
+    "fields": {
+      "name": "confusio",
+      "shortName": "confusio",
+      "slug": "octocat/confusio",
+      "defaultBranch": "main"
+    },
+    "phid": "PHID-REPO-abcd"
+  },
+  "sender": {
+    "login": "alice",
+    "id": 1001,
+    "type": "User"
+  }
+}

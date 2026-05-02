@@ -1,0 +1,28 @@
+{
+  "object": {
+    "type": "REPO",
+    "id": 1,
+    "phid": "PHID-REPO-abcd",
+    "fields": {
+      "name": "confusio",
+      "shortName": "confusio",
+      "slug": "octocat/confusio",
+      "defaultBranch": "main",
+      "dateCreated": 1710000600,
+      "dateModified": 1710000600
+    }
+  },
+  "transactions": [
+    {
+      "type": "core:create",
+      "authorPHID": "PHID-USER-alice",
+      "dateCreated": 1710000600,
+      "dateModified": 1710000600
+    }
+  ],
+  "sender": {
+    "login": "alice",
+    "id": 1001,
+    "type": "User"
+  }
+}

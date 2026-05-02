@@ -1,0 +1,38 @@
+{
+  "object": {
+    "type": "TASK",
+    "id": 123,
+    "phid": "PHID-TASK-abcd",
+    "fields": {
+      "name": "Fix the task",
+      "status": {
+        "value": "open"
+      },
+      "authorPHID": "PHID-USER-alice",
+      "description": {
+        "raw": "The task body."
+      },
+      "dateCreated": 1710000000,
+      "dateModified": 1710000100
+    }
+  },
+  "transactions": [
+    {
+      "type": "core:create",
+      "phid": "PHID-XACT-TASK-create",
+      "authorPHID": "PHID-USER-alice",
+      "dateCreated": 1710000100,
+      "dateModified": 1710000100
+    }
+  ],
+  "repository": {
+    "id": 1,
+    "name": "confusio",
+    "full_name": "octocat/confusio"
+  },
+  "sender": {
+    "login": "alice",
+    "id": 1001,
+    "type": "User"
+  }
+}

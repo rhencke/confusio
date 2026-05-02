@@ -1,0 +1,46 @@
+{
+  "object": {
+    "type": "TASK",
+    "id": 123,
+    "phid": "PHID-TASK-abcd",
+    "fields": {
+      "name": "Fix the task",
+      "status": {
+        "value": "open"
+      },
+      "authorPHID": "PHID-USER-alice",
+      "description": {
+        "raw": "The task body."
+      },
+      "dateCreated": 1710000000,
+      "dateModified": 1710000200
+    }
+  },
+  "transactions": [
+    {
+      "id": 456,
+      "type": "comment",
+      "phid": "PHID-XACT-TASK-comment",
+      "authorPHID": "PHID-USER-bob",
+      "dateCreated": 1710000200,
+      "dateModified": 1710000200,
+      "comments": [
+        {
+          "content": {
+            "raw": "I can reproduce this."
+          }
+        }
+      ]
+    }
+  ],
+  "repository": {
+    "id": 1,
+    "name": "confusio",
+    "full_name": "octocat/confusio"
+  },
+  "sender": {
+    "login": "bob",
+    "id": 1002,
+    "type": "User"
+  }
+}

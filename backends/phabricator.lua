@@ -891,7 +891,7 @@ b:webhook("CMIT", function(payload)
   local repository = phabricator_event_repository(payload)
   return make_internal_event({
     event = "push",
-    action = "push",
+    action = "",
     provider = "phabricator",
     raw = payload,
     data = {
