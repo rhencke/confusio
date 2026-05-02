@@ -1,0 +1,25 @@
+{
+  "ref": "refs/heads/feature/tuleap-fixtures",
+  "after": "0000000000000000000000000000000000000000",
+  "before": "4444444444444444444444444444444444444444",
+  "repository": {
+    "id": "123",
+    "name": "hello-world",
+    "full_name": "hello-world"
+  },
+  "pusher": {
+    "name": "alice",
+    "email": "alice@example.com"
+  },
+  "sender": {
+    "id": 102,
+    "uri": "users/102",
+    "user_url": "/users/alice",
+    "real_name": "Alice Example",
+    "display_name": "Alice Example (alice)",
+    "username": "alice",
+    "ldap_id": "102",
+    "avatar_url": "https://tuleap.example.com/users/alice/avatar.png",
+    "is_anonymous": false
+  }
+}

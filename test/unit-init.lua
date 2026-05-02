@@ -3353,6 +3353,204 @@ do
 end
 
 -- ============================================================
+-- Tuleap webhook handlers
+-- ============================================================
+
+do
+  local saved_rest = app.backend.rest
+  local saved_capabilities = app.backend.capabilities
+  local saved_webhooks = app.backend.webhooks
+  local saved_webhook_translators = app.backend.webhook_translators
+  local saved_webhook_github_translators = app.backend.webhook_github_translators
+  local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
+  local saved_base_url = config.base_url
+  local saved_backend = config.backend
+
+  app.backend.rest = {}
+  app.backend.capabilities = {}
+  app.backend.webhooks = {}
+  app.backend.webhook_translators = {}
+  app.backend.webhook_github_translators = {}
+  graphql_resolvers = {} -- luacheck: globals graphql_resolvers
+  config.base_url = ""
+  config.backend = "tuleap"
+  _real_dofile("backends/tuleap.lua")
+
+  ok(app.backend.webhooks.project_create ~= nil, "tuleap webhook: project_create registered")
+  ok(app.backend.webhooks.git_push ~= nil, "tuleap webhook: git_push registered")
+  ok(app.backend.webhooks.artifact_create ~= nil, "tuleap webhook: artifact_create registered")
+  ok(app.backend.webhooks.artifact_update ~= nil, "tuleap webhook: artifact_update registered")
+  ok(
+    app.backend.webhook_translators.project ~= nil,
+    "tuleap webhook: project translator registered"
+  )
+  ok(app.backend.webhook_translators.push ~= nil, "tuleap webhook: push translator registered")
+  ok(app.backend.webhook_translators.issues ~= nil, "tuleap webhook: issues translator registered")
+  ok(
+    app.backend.webhook_github_translators.project ~= nil,
+    "tuleap webhook: project GitHub translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.push ~= nil,
+    "tuleap webhook: push GitHub translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.issues ~= nil,
+    "tuleap webhook: issues GitHub translator registered"
+  )
+
+  local function load_tuleap_fixture(name)
+    local f = assert(io.open("test/fixtures/webhooks/tuleap/" .. name .. ".json", "rb"))
+    local body = f:read("*a")
+    f:close()
+    return DecodeJson(body)
+  end
+
+  local project_event = app.backend.webhooks.project_create(load_tuleap_fixture("project-created"))
+  eq(project_event.event, "project", "tuleap webhook: project_create maps to project")
+  eq(project_event.action, "created", "tuleap webhook: project_create maps to created")
+  eq(project_event.provider, "tuleap", "tuleap webhook: project_create sets provider")
+  eq(
+    project_event.data.project.name,
+    "Hello World",
+    "tuleap webhook: project_create keeps project name"
+  )
+  eq(
+    project_event.data.project.path_with_namespace,
+    "octocat/hello-world",
+    "tuleap webhook: project_create keeps namespace path"
+  )
+  eq(
+    project_event.data.sender.email,
+    "alice@example.com",
+    "tuleap webhook: project_create maps owner email to sender"
+  )
+  local project_envelope = app.backend.webhook_translators.project(project_event)
+  eq(project_envelope.type, "project.created", "tuleap webhook: normalized project type")
+  eq(
+    project_envelope.payload.project.name,
+    "Hello World",
+    "tuleap webhook: normalized project payload includes project"
+  )
+  local project_github_payload = app.backend.webhook_github_translators.project(project_event)
+  eq(project_github_payload.action, "created", "tuleap webhook: GitHub project action")
+  eq(
+    project_github_payload.project.name,
+    "Hello World",
+    "tuleap webhook: GitHub project payload includes project"
+  )
+
+  local push_event = app.backend.webhooks.git_push(load_tuleap_fixture("push"))
+  eq(push_event.event, "push", "tuleap webhook: git_push maps update to push")
+  eq(push_event.action, "push", "tuleap webhook: git_push action set")
+  eq(push_event.provider, "tuleap", "tuleap webhook: git_push sets provider")
+  eq(push_event.data.ref, "refs/heads/main", "tuleap webhook: push keeps full ref")
+  eq(push_event.data.repository.name, "hello-world", "tuleap webhook: push maps repository name")
+  eq(push_event.data.sender.login, "alice", "tuleap webhook: push maps sender")
+  eq(push_event.data.pusher.email, "alice@example.com", "tuleap webhook: push maps pusher")
+  local push_envelope = app.backend.webhook_translators.push(push_event)
+  eq(push_envelope.type, "push", "tuleap webhook: normalized push uses actionless type")
+  local push_github_payload = app.backend.webhook_github_translators.push(push_event)
+  eq(push_github_payload.action, nil, "tuleap webhook: GitHub push has no action")
+  eq(push_github_payload.ref, "refs/heads/main", "tuleap webhook: GitHub push includes ref")
+  eq(
+    push_github_payload.pusher.email,
+    "alice@example.com",
+    "tuleap webhook: GitHub push includes pusher"
+  )
+
+  local create_event = app.backend.webhooks.git_push(load_tuleap_fixture("create"))
+  eq(create_event.event, "create", "tuleap webhook: zero before maps to create")
+  eq(create_event.data.ref, "feature/tuleap-fixtures", "tuleap webhook: create strips branch ref")
+  eq(create_event.data.ref_type, "branch", "tuleap webhook: create detects branch ref")
+  local create_envelope = app.backend.webhook_translators.create(create_event)
+  eq(create_envelope.type, "create", "tuleap webhook: normalized create uses actionless type")
+  local create_github_payload = app.backend.webhook_github_translators.create(create_event)
+  eq(create_github_payload.ref, "feature/tuleap-fixtures", "tuleap webhook: GitHub create ref")
+  eq(create_github_payload.ref_type, "branch", "tuleap webhook: GitHub create ref_type")
+
+  local delete_event = app.backend.webhooks.git_push(load_tuleap_fixture("delete"))
+  eq(delete_event.event, "delete", "tuleap webhook: zero after maps to delete")
+  eq(delete_event.data.ref, "feature/tuleap-fixtures", "tuleap webhook: delete strips branch ref")
+  eq(delete_event.data.ref_type, "branch", "tuleap webhook: delete detects branch ref")
+
+  local tag_create_event = app.backend.webhooks.git_push(load_tuleap_fixture("tag-create"))
+  eq(tag_create_event.event, "create", "tuleap webhook: zero before maps tag to create")
+  eq(tag_create_event.data.ref, "v1.0.0", "tuleap webhook: tag create strips tag ref")
+  eq(tag_create_event.data.ref_type, "tag", "tuleap webhook: tag create detects tag ref")
+
+  local tag_delete_event = app.backend.webhooks.git_push(load_tuleap_fixture("tag-delete"))
+  eq(tag_delete_event.event, "delete", "tuleap webhook: zero after maps tag to delete")
+  eq(tag_delete_event.data.ref, "v1.0.0", "tuleap webhook: tag delete strips tag ref")
+  eq(tag_delete_event.data.ref_type, "tag", "tuleap webhook: tag delete detects tag ref")
+
+  local artifact_created_event =
+    app.backend.webhooks.artifact_create(load_tuleap_fixture("artifact-created"))
+  eq(artifact_created_event.event, "issues", "tuleap webhook: artifact_create maps to issues")
+  eq(artifact_created_event.action, "opened", "tuleap webhook: artifact_create opens issue")
+  eq(artifact_created_event.provider, "tuleap", "tuleap webhook: artifact_create sets provider")
+  eq(
+    artifact_created_event.data.issue.number,
+    75291,
+    "tuleap webhook: artifact_create maps artifact id to issue number"
+  )
+  eq(
+    artifact_created_event.data.issue.title,
+    "Normalize Tuleap webhook payloads",
+    "tuleap webhook: artifact_create maps title field"
+  )
+  eq(
+    artifact_created_event.data.issue.body,
+    "Tuleap should fan out as a normalized issue event.",
+    "tuleap webhook: artifact_create maps description field"
+  )
+  eq(
+    artifact_created_event.data.sender.login,
+    "alice",
+    "tuleap webhook: artifact_create maps sender"
+  )
+  local issue_envelope = app.backend.webhook_translators.issues(artifact_created_event)
+  eq(issue_envelope.type, "issue.opened", "tuleap webhook: normalized issue type")
+  eq(
+    issue_envelope.payload.issue.title,
+    "Normalize Tuleap webhook payloads",
+    "tuleap webhook: normalized issue payload includes issue"
+  )
+  local issue_github_payload = app.backend.webhook_github_translators.issues(artifact_created_event)
+  eq(issue_github_payload.action, "opened", "tuleap webhook: GitHub issue action")
+  eq(
+    issue_github_payload.issue.number,
+    75291,
+    "tuleap webhook: GitHub issue payload includes issue"
+  )
+
+  local artifact_updated_event =
+    app.backend.webhooks.artifact_update(load_tuleap_fixture("artifact-updated"))
+  eq(artifact_updated_event.event, "issues", "tuleap webhook: artifact_update maps to issues")
+  eq(artifact_updated_event.action, "edited", "tuleap webhook: artifact_update edits issue")
+  eq(
+    artifact_updated_event.data.issue.number,
+    75291,
+    "tuleap webhook: artifact_update keeps artifact id"
+  )
+  eq(
+    artifact_updated_event.data.issue.state,
+    "open",
+    "tuleap webhook: artifact_update maps non-closed status to open"
+  )
+  eq(artifact_updated_event.data.sender.login, "bob", "tuleap webhook: artifact_update maps sender")
+
+  app.backend.rest = saved_rest
+  app.backend.capabilities = saved_capabilities
+  app.backend.webhooks = saved_webhooks
+  app.backend.webhook_translators = saved_webhook_translators
+  app.backend.webhook_github_translators = saved_webhook_github_translators
+  graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
+  config.base_url = saved_base_url
+  config.backend = saved_backend
+end
+
+-- ============================================================
 -- NotABug webhook handlers
 -- ============================================================
 
@@ -3482,6 +3680,16 @@ do
     400,
     "webhook_receiver: non-JSON Content-Type → 400"
   )
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/tuleap",
+      headers = { ["Content-Type"] = "text/plain" },
+      body = "",
+    }),
+    400,
+    "webhook_receiver: unsupported Tuleap Content-Type → 400"
+  )
 
   -- 400 for missing Content-Type
   eq(
@@ -3539,7 +3747,142 @@ do
     "webhook_receiver: registered handler succeeds → 200"
   )
 
+  -- Tuleap natively sends application/x-www-form-urlencoded with a payload
+  -- field containing the JSON webhook body.
+  local tuleap_payload_seen = nil
+  app.backend.webhooks = {
+    ["test-event"] = function(payload)
+      tuleap_payload_seen = payload
+      return { event = "repository" }, nil
+    end,
+  }
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/tuleap",
+      headers = {
+        ["Content-Type"] = "application/x-www-form-urlencoded; charset=utf-8",
+      },
+      body = "payload=%7B%22eventType%22%3A%22test-event%22%2C%22message%22%3A%22hello+world+%26+100%25%22%7D&ignored=1",
+    }),
+    200,
+    "webhook_receiver: tuleap form payload succeeds → 200"
+  )
+  eq(
+    tuleap_payload_seen and tuleap_payload_seen.message,
+    "hello world & 100%",
+    "webhook_receiver: tuleap form payload is URL-decoded before JSON parse"
+  )
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/tuleap",
+      headers = { ["Content-Type"] = "application/x-www-form-urlencoded" },
+      body = "not_payload=%7B%7D",
+    }),
+    400,
+    "webhook_receiver: tuleap form without payload → 400"
+  )
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/tuleap",
+      headers = { ["Content-Type"] = "application/x-www-form-urlencoded" },
+      body = "payload=%7B%22eventType%22%3A%22test-event%22%7",
+    }),
+    400,
+    "webhook_receiver: tuleap malformed form encoding → 400"
+  )
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/tuleap",
+      headers = { ["Content-Type"] = "application/x-www-form-urlencoded" },
+      body = "payload=not-json",
+    }),
+    400,
+    "webhook_receiver: tuleap form payload with invalid JSON → 400"
+  )
+
+  app.backend.webhooks = {
+    project_create = function(payload)
+      tuleap_payload_seen = payload
+      return { event = "project" }, nil
+    end,
+  }
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/tuleap",
+      headers = { ["Content-Type"] = "application/x-www-form-urlencoded" },
+      body = "payload=%7B%22event_name%22%3A%22project_create%22%2C%22project_id%22%3A126%7D",
+    }),
+    200,
+    "webhook_receiver: tuleap event_name project_create handler succeeds → 200"
+  )
+  eq(
+    tuleap_payload_seen and tuleap_payload_seen.project_id,
+    126,
+    "webhook_receiver: tuleap project payload is dispatched intact"
+  )
+
+  app.backend.webhooks = {
+    git_push = function(payload)
+      tuleap_payload_seen = payload
+      return { event = "push" }, nil
+    end,
+  }
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/tuleap",
+      headers = { ["Content-Type"] = "application/x-www-form-urlencoded" },
+      body = "payload=%7B%22ref%22%3A%22refs%2Fheads%2Fmain%22%2C%22before%22%3A%221111%22%2C%22after%22%3A%222222%22%2C%22repository%22%3A%7B%22id%22%3A%22123%22%7D%7D",
+    }),
+    200,
+    "webhook_receiver: tuleap git push shape infers git_push → 200"
+  )
+  eq(
+    tuleap_payload_seen and tuleap_payload_seen.ref,
+    "refs/heads/main",
+    "webhook_receiver: tuleap git payload is dispatched intact"
+  )
+
+  app.backend.webhooks = {
+    artifact_create = function(_payload)
+      return { event = "issues", action = "opened" }, nil
+    end,
+    artifact_update = function(_payload)
+      return { event = "issues", action = "edited" }, nil
+    end,
+  }
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/tuleap",
+      headers = { ["Content-Type"] = "application/x-www-form-urlencoded" },
+      body = "payload=%7B%22id%22%3A182%2C%22action%22%3A%22create%22%2C%22current%22%3A%7B%22id%22%3A355743%7D%7D",
+    }),
+    200,
+    "webhook_receiver: tuleap tracker create infers artifact_create → 200"
+  )
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/tuleap",
+      headers = { ["Content-Type"] = "application/x-www-form-urlencoded" },
+      body = "payload=%7B%22id%22%3A182%2C%22action%22%3A%22update%22%2C%22current%22%3A%7B%22id%22%3A355743%7D%2C%22previous%22%3A%7B%22id%22%3A355742%7D%7D",
+    }),
+    200,
+    "webhook_receiver: tuleap tracker update infers artifact_update → 200"
+  )
+
   -- Gogs-family backends use their own event-type header, not X-Gitea-Event.
+  app.backend.webhooks = {
+    push = function(_payload)
+      return { event = "push" }, nil
+    end,
+  }
   eq(
     call_webhook({
       method = "POST",

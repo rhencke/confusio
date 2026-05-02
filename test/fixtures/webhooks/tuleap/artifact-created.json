@@ -1,0 +1,113 @@
+{
+  "id": 182,
+  "action": "create",
+  "user": {
+    "id": 102,
+    "uri": "users/102",
+    "user_url": "/users/alice",
+    "real_name": "Alice Example",
+    "display_name": "Alice Example (alice)",
+    "username": "alice",
+    "ldap_id": "102",
+    "avatar_url": "https://tuleap.example.com/users/alice/avatar.png",
+    "is_anonymous": false
+  },
+  "submitter_user_groups": [
+    {
+      "id": "102_3",
+      "uri": "user_groups/102_3",
+      "label": "Project members",
+      "users_uri": "user_groups/102_3/users",
+      "short_name": "project_members",
+      "key": "ugroup_project_members_name_key"
+    }
+  ],
+  "current": {
+    "id": 355743,
+    "submitted_by": 102,
+    "submitted_by_details": {
+      "id": 102,
+      "uri": "users/102",
+      "user_url": "/users/alice",
+      "real_name": "Alice Example",
+      "display_name": "Alice Example (alice)",
+      "username": "alice",
+      "ldap_id": "102",
+      "avatar_url": "https://tuleap.example.com/users/alice/avatar.png",
+      "is_anonymous": false
+    },
+    "submitted_on": "2024-01-15T10:30:00+00:00",
+    "email": null,
+    "last_comment": {
+      "body": "First report from Tuleap.",
+      "post_processed_body": "<p>First report from Tuleap.</p>",
+      "format": "text"
+    },
+    "last_modified_by": {
+      "id": 102,
+      "uri": "users/102",
+      "user_url": "/users/alice",
+      "real_name": "Alice Example",
+      "display_name": "Alice Example (alice)",
+      "username": "alice",
+      "ldap_id": "102",
+      "avatar_url": "https://tuleap.example.com/users/alice/avatar.png",
+      "is_anonymous": false
+    },
+    "values": [
+      {
+        "field_id": 592,
+        "type": "aid",
+        "label": "Artifact ID",
+        "value": 75291
+      },
+      {
+        "field_id": 580,
+        "type": "string",
+        "label": "Title",
+        "value": "Normalize Tuleap webhook payloads"
+      },
+      {
+        "field_id": 581,
+        "type": "text",
+        "label": "Description",
+        "value": "Tuleap should fan out as a normalized issue event.",
+        "format": "text"
+      },
+      {
+        "field_id": 587,
+        "type": "sb",
+        "label": "Status",
+        "values": [
+          {
+            "id": "371",
+            "label": "Todo",
+            "color": {
+              "r": 204,
+              "g": 0,
+              "b": 204
+            },
+            "tlp_color": "deep-purple"
+          }
+        ],
+        "bind_value_ids": [
+          371
+        ]
+      },
+      {
+        "field_id": 593,
+        "type": "subon",
+        "label": "Submitted On",
+        "value": "2024-01-15T10:30:00+00:00"
+      },
+      {
+        "field_id": 596,
+        "type": "lud",
+        "label": "Last Update On",
+        "value": "2024-01-15T10:30:00+00:00"
+      }
+    ]
+  },
+  "previous": null,
+  "is_custom_code_execution": false
+}

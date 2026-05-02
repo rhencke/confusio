@@ -72,7 +72,7 @@ value is `y` or starts with `~`.  Concretely:
 | kallithea | 5 | 73 |
 | rhodecode | 5 | 73 |
 | sourceforge | 5 | 69 |
-| tuleap | 5 | 79 |
+| tuleap | 12 | 79 |
 
 ### What a "passing" test means
 
@@ -951,6 +951,12 @@ configure the post-receive hook with `X-Gitblit-Token`, and drive one branch upd
 branch creation, and one branch deletion against the fixture repository.  Those three
 post-receive commands are the supported Gitblit webhook surface and should assert both
 GitHub-shaped delivery headers and confusio-shaped normalized event bodies.
+
+Tuleap real-world webhook coverage should run against the
+`tuleap/tuleap-community-edition` container, configure a webhook secret, and drive
+project creation, Git branch/tag update/create/delete, and tracker artifact
+create/update payloads.  The live run should assert both GitHub-shaped delivery
+headers and confusio-shaped normalized event bodies.
 
 **Exit criteria**: all Docker backends produce a result (pass or classified failure) for two
 consecutive weekly runs without the bootstrap script hanging or erroring.

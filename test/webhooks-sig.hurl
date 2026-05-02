@@ -16,6 +16,7 @@
 #   radicle_tok — the shared secret verbatim (for Authorization)
 #   kallithea — shared secret is embedded in the request body
 #   sourcehut_sig — Ed25519("{}") as base64 (for X-Payload-Signature)
+#   tuleap_tok — the shared secret verbatim (for X-Tuleap-Webhook-Secret)
 #   confusio_sig — "sha256=<hex>, v=1, ts=<ts>" (for X-Confusio-Signature-256)
 #
 # Convention: valid credential → 422 (verification passed; no handlers registered
@@ -576,6 +577,37 @@ jsonpath "$.message" == "Signature verification failed"
 POST http://{{host}}/webhooks/sourceforge
 Content-Type: application/json
 {}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# ── tuleap: X-Tuleap-Webhook-Secret, verbatim shared token ──────────────────
+
+# Valid token → passes verification (422)
+POST http://{{host}}/webhooks/tuleap
+Content-Type: application/x-www-form-urlencoded
+X-Tuleap-Webhook-Secret: {{tuleap_tok}}
+`payload=%7B%7D`
+
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "No webhook handlers registered"
+
+# Bad token → 401
+POST http://{{host}}/webhooks/tuleap
+Content-Type: application/x-www-form-urlencoded
+X-Tuleap-Webhook-Secret: wrongtoken
+`payload=%7B%7D`
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# Missing token header → 401
+POST http://{{host}}/webhooks/tuleap
+Content-Type: application/x-www-form-urlencoded
+`payload=%7B%7D`
 
 HTTP 401
 [Asserts]
