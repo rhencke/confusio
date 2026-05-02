@@ -110,6 +110,24 @@ run_delivery_phase() {
   kill $PID 2>/dev/null || true; kill $MOCK_PID 2>/dev/null || true; kill $TARGET_PID 2>/dev/null || true; sleep 0.3
 }
 
+run_gitea_native_delivery_phase() {
+  local tmpdir; tmpdir=$(mktemp -d)
+  start_isolated sh "$DELIVERY_TARGET_BIN" -u -p "$DELIVERY_TARGET_PORT"; TARGET_PID=$!
+  start_isolated sh "$MOCK_GITEA_BIN" -p "$MOCK_PORT"; MOCK_PID=$!
+  start_confusio "$tmpdir" \
+    -- gitea "http://127.0.0.1:$MOCK_PORT" \
+    "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"; PID=$!
+  trap "kill $PID 2>/dev/null || true; kill $MOCK_PID 2>/dev/null || true; kill $TARGET_PID 2>/dev/null || true; rm -rf $tmpdir" EXIT
+  wait_port "mock target" "$DELIVERY_TARGET_PORT"
+  wait_port "mock gitea" "$MOCK_PORT"
+  wait_http "confusio" "$CONFUSIO_PORT"
+  STRICT_NATIVE_FIXTURES=1 scripts/run-gitea-native-webhook-deliveries.sh \
+    "localhost:$CONFUSIO_PORT" \
+    "localhost:$DELIVERY_TARGET_PORT" \
+    "$HURL"
+  kill $PID 2>/dev/null || true; kill $MOCK_PID 2>/dev/null || true; kill $TARGET_PID 2>/dev/null || true; sleep 0.3
+}
+
 MOCK_ARGS="-- gitea http://127.0.0.1:$MOCK_PORT"
 
 # Phase 1: Gitea via CLI flags
@@ -195,12 +213,10 @@ run_delivery_phase test/webhook-delivery.hurl \
   -- gitea "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
-# Phase 7: Gitea fixture-based delivery tests — every event × action triple.
-# Uses fixture files from test/fixtures/webhooks/gitea/ instead of inline payloads.
-# Verifies github_event, github_delivery UUID, and confusio User-Agent for each.
-run_delivery_phase test/webhook-delivery-gitea.hurl \
-  -- gitea "http://127.0.0.1:$MOCK_PORT" \
-  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+# Phase 7: Gitea native fixture delivery tests — every audited native event ×
+# action triple.  The strict manifest runner fails if any listed native fixture
+# is missing, and verifies GitHub-shaped delivery headers for each accepted row.
+run_gitea_native_delivery_phase
 
 # Phase 8: Gitea delivery with "confusio" shape — spot-checks X-Confusio-* headers.
 # Runs the same fixture files but with webhook_target_shape=confusio to verify the
