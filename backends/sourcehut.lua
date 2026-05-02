@@ -836,6 +836,216 @@ local function sourcehut_git_event(payload)
   })
 end
 
+local function sourcehut_job_payload(payload)
+  payload = sourcehut_payload(payload)
+  return payload.job or payload.newJob or payload.build
+end
+
+local function sourcehut_job_state(job, forced_action)
+  job = job or {}
+  local status_key = tostring(job.status or job.state or ""):lower()
+  local states = {
+    success = { "completed", "completed", "success" },
+    failed = { "completed", "completed", "failure" },
+    timeout = { "completed", "completed", "failure" },
+    cancelled = { "completed", "completed", "cancelled" },
+    canceled = { "completed", "completed", "cancelled" },
+    running = { "in_progress", "in_progress", nil },
+    queued = { "requested", "queued", nil },
+    pending = { "requested", "queued", nil },
+  }
+  local mapped = states[status_key] or { "in_progress", "in_progress", nil }
+  local action = forced_action or mapped[1]
+  return action, mapped[2], mapped[3]
+end
+
+local function sourcehut_job_name(job)
+  job = job or {}
+  return job.note or job.name or job.manifest or ("Sourcehut job " .. tostring(job.id or 0))
+end
+
+local function sourcehut_job_ref(job)
+  job = job or {}
+  return sourcehut_first_nonempty(job.ref, job.branch, job.head_branch)
+end
+
+local function sourcehut_job_sha(job)
+  job = job or {}
+  return sourcehut_first_nonempty(job.commit, job.commitId, job.commit_id, job.sha, job.head_sha)
+end
+
+local function translate_srht_workflow(job)
+  job = job or {}
+  local name = sourcehut_job_name(job)
+  return {
+    id = job.id or 0,
+    name = name,
+    path = job.url or job.webUrl or job.web_url or "",
+    state = "active",
+    url = "",
+    html_url = job.url or job.webUrl or job.web_url or "",
+    badge_url = "",
+    created_at = job.created,
+    updated_at = job.updated or job.created,
+  }
+end
+
+local function translate_srht_workflow_run(job, payload, action)
+  job = job or {}
+  local _, status, conclusion = sourcehut_job_state(job, action)
+  local sender = sourcehut_sender(payload)
+  local name = sourcehut_job_name(job)
+  return {
+    id = job.id or 0,
+    name = name,
+    head_branch = ref_name(sourcehut_job_ref(job)),
+    head_sha = sourcehut_job_sha(job),
+    run_number = job.id or 0,
+    event = "push",
+    display_title = name,
+    status = status,
+    conclusion = conclusion,
+    workflow_id = job.id or 0,
+    url = "",
+    html_url = job.url or job.webUrl or job.web_url or "",
+    pull_requests = {},
+    created_at = job.created,
+    updated_at = job.updated or job.created,
+    run_attempt = 1,
+    referenced_workflows = {},
+    actor = sender,
+    triggering_actor = sender,
+  }
+end
+
+local function sourcehut_job_event(payload, forced_action)
+  payload = payload or {}
+  local job = sourcehut_job_payload(payload) or {}
+  local action = sourcehut_job_state(job, forced_action)
+  local repository = sourcehut_repository(payload)
+  local workflow_run = translate_srht_workflow_run(job, payload, action)
+  return make_internal_event({
+    event = "workflow_run",
+    action = action,
+    provider = "sourcehut",
+    raw = payload,
+    data = {
+      action = action,
+      workflow = translate_srht_workflow(job),
+      workflow_run = workflow_run,
+      repository = repository,
+      sender = sourcehut_sender(payload),
+    },
+    timestamp = (sourcehut_webhook(payload) or {}).date
+      or workflow_run.updated_at
+      or workflow_run.created_at
+      or "",
+  })
+end
+
+local function sourcehut_patchset_payload(payload)
+  payload = sourcehut_payload(payload)
+  return payload.patchset or payload.newPatchset
+end
+
+local function sourcehut_patchset_sender(patchset)
+  patchset = patchset or {}
+  return translate_srht_user(patchset.submitter or patchset.owner or patchset.author)
+end
+
+local function translate_srht_patchset(patchset, payload)
+  patchset = patchset or {}
+  local repository = sourcehut_repository(payload)
+  local sender = sourcehut_patchset_sender(patchset)
+  local number = patchset.id or patchset.number or 0
+  local base_ref = sourcehut_first_nonempty(
+    patchset.targetBranch,
+    patchset.target_branch,
+    patchset.base,
+    repository.default_branch
+  )
+  return {
+    id = patchset.id or 0,
+    node_id = patchset.rid or "",
+    number = number,
+    state = "open",
+    locked = false,
+    title = patchset.subject or patchset.title or "",
+    user = sender,
+    body = patchset.coverLetter or patchset.cover_letter or patchset.body or "",
+    created_at = patchset.created,
+    updated_at = patchset.updated or patchset.created,
+    closed_at = nil,
+    merged_at = nil,
+    merge_commit_sha = nil,
+    assignee = nil,
+    assignees = {},
+    requested_reviewers = {},
+    requested_teams = {},
+    labels = {},
+    milestone = nil,
+    draft = false,
+    commits_url = "",
+    review_comments_url = "",
+    review_comment_url = "",
+    comments_url = "",
+    statuses_url = "",
+    head = {
+      label = sourcehut_first_nonempty(patchset.ref, patchset.branch, "patchset/" .. number),
+      ref = sourcehut_first_nonempty(patchset.ref, patchset.branch, "patchset/" .. number),
+      sha = sourcehut_first_nonempty(patchset.commit, patchset.commitId, patchset.sha),
+      user = sender,
+      repo = repository,
+    },
+    base = {
+      label = base_ref,
+      ref = base_ref,
+      sha = sourcehut_first_nonempty(patchset.baseCommit, patchset.base_commit, patchset.baseSha),
+      user = repository.owner or {},
+      repo = repository,
+    },
+    html_url = patchset.url or patchset.webUrl or patchset.web_url or "",
+    url = "",
+    diff_url = "",
+    patch_url = "",
+    merged = false,
+    mergeable = nil,
+    rebaseable = nil,
+    mergeable_state = "unknown",
+    merged_by = nil,
+    comments = 0,
+    review_comments = 0,
+    commits = 0,
+    additions = 0,
+    deletions = 0,
+    changed_files = 0,
+  }
+end
+
+local function sourcehut_patchset_event(payload)
+  payload = payload or {}
+  local patchset = sourcehut_patchset_payload(payload) or {}
+  local pull_request = translate_srht_patchset(patchset, payload)
+  local sender = sourcehut_sender(payload)
+  return make_internal_event({
+    event = "pull_request",
+    action = "opened",
+    provider = "sourcehut",
+    raw = payload,
+    data = {
+      action = "opened",
+      number = pull_request.number,
+      pull_request = pull_request,
+      repository = sourcehut_repository(payload),
+      sender = sender.login ~= "" and sender or sourcehut_patchset_sender(patchset),
+    },
+    timestamp = (sourcehut_webhook(payload) or {}).date
+      or pull_request.updated_at
+      or pull_request.created_at
+      or "",
+  })
+end
+
 local SOURCEHUT_ACTIONLESS_NORMALIZED_EVENTS = {
   create = true,
   delete = true,
@@ -909,6 +1119,12 @@ local function translate_sourcehut_github_webhook(internal_event, _fields)
   elseif internal_event.event == "label" then
     payload.label = data.label or {}
     payload.changes = data.changes or {}
+  elseif internal_event.event == "workflow_run" then
+    payload.workflow_run = data.workflow_run or {}
+    payload.workflow = data.workflow or {}
+  elseif internal_event.event == "pull_request" then
+    payload.number = data.number
+    payload.pull_request = data.pull_request or {}
   end
   return payload
 end
@@ -1404,6 +1620,14 @@ end)
 
 b:webhook("EVENT_CREATED", sourcehut_event_created)
 
+b:webhook("JOB_CREATED", function(payload)
+  return sourcehut_job_event(payload, "requested")
+end)
+
+b:webhook("JOB_UPDATED", sourcehut_job_event)
+
+b:webhook("PATCHSET_RECEIVED", sourcehut_patchset_event)
+
 for _, event in ipairs({
   "push",
   "create",
@@ -1412,6 +1636,8 @@ for _, event in ipairs({
   "issues",
   "issue_comment",
   "label",
+  "workflow_run",
+  "pull_request",
 }) do
   b:webhook_translator(event, translate_sourcehut_normalized_webhook)
   b:webhook_github_translator(event, translate_sourcehut_github_webhook)

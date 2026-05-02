@@ -2908,6 +2908,12 @@ do
   ok(app.backend.webhooks.LABEL_UPDATE ~= nil, "sourcehut webhook: LABEL_UPDATE registered")
   ok(app.backend.webhooks.LABEL_DELETED ~= nil, "sourcehut webhook: LABEL_DELETED registered")
   ok(app.backend.webhooks.EVENT_CREATED ~= nil, "sourcehut webhook: EVENT_CREATED registered")
+  ok(app.backend.webhooks.JOB_CREATED ~= nil, "sourcehut webhook: JOB_CREATED registered")
+  ok(app.backend.webhooks.JOB_UPDATED ~= nil, "sourcehut webhook: JOB_UPDATED registered")
+  ok(
+    app.backend.webhooks.PATCHSET_RECEIVED ~= nil,
+    "sourcehut webhook: PATCHSET_RECEIVED registered"
+  )
   ok(
     app.backend.webhook_translators.issues ~= nil,
     "sourcehut webhook: issues translator registered"
@@ -2921,6 +2927,22 @@ do
     "sourcehut webhook: issue_comment translator registered"
   )
   ok(app.backend.webhook_translators.label ~= nil, "sourcehut webhook: label translator registered")
+  ok(
+    app.backend.webhook_translators.workflow_run ~= nil,
+    "sourcehut webhook: workflow_run translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.workflow_run ~= nil,
+    "sourcehut webhook: workflow_run GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_translators.pull_request ~= nil,
+    "sourcehut webhook: pull_request translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.pull_request ~= nil,
+    "sourcehut webhook: pull_request GitHub-shape translator registered"
+  )
 
   local repo_payload = {
     data = {
@@ -3212,6 +3234,113 @@ do
     },
   })
   eq(closed_event.action, "closed", "sourcehut webhook: resolved status maps to closed")
+
+  local job_payload = {
+    data = {
+      webhook = { event = "JOB_UPDATED", date = "2026-05-02T06:07:08Z" },
+      repository = {
+        id = 272,
+        name = "confusio",
+        visibility = "PUBLIC",
+        owner = { canonicalName = "~fido", username = "fido" },
+        HEAD = { name = "refs/heads/main" },
+      },
+      sender = { canonicalName = "~rob", username = "rob" },
+      job = {
+        id = 88,
+        note = "sourcehut build",
+        status = "success",
+        commit = "dddddddddddddddddddddddddddddddddddddddd",
+        branch = "refs/heads/main",
+        url = "https://builds.sr.ht/~fido/job/88",
+        created = "2026-05-02T06:00:00Z",
+        updated = "2026-05-02T06:05:00Z",
+      },
+    },
+  }
+  local job_event = app.backend.webhooks.JOB_UPDATED(job_payload)
+  eq(job_event.event, "workflow_run", "sourcehut webhook: JOB_UPDATED maps to workflow_run")
+  eq(job_event.action, "completed", "sourcehut webhook: successful job maps to completed")
+  eq(
+    job_event.data.workflow_run.conclusion,
+    "success",
+    "sourcehut webhook: successful job conclusion"
+  )
+  eq(
+    job_event.data.workflow_run.head_sha,
+    "dddddddddddddddddddddddddddddddddddddddd",
+    "sourcehut webhook: job commit maps to head_sha"
+  )
+  local job_envelope = app.backend.webhook_translators.workflow_run(job_event)
+  eq(job_envelope.type, "workflow.run.completed", "sourcehut webhook: normalized workflow_run type")
+  local job_github_payload = app.backend.webhook_github_translators.workflow_run(job_event)
+  eq(
+    job_github_payload.workflow_run.status,
+    "completed",
+    "sourcehut webhook: GitHub-shape workflow_run includes status"
+  )
+  eq(
+    app.backend.webhooks.JOB_CREATED({
+      data = {
+        webhook = { event = "JOB_CREATED" },
+        job = { id = 89, status = "queued" },
+      },
+    }).action,
+    "requested",
+    "sourcehut webhook: JOB_CREATED maps to requested"
+  )
+
+  local patchset_payload = {
+    data = {
+      webhook = { event = "PATCHSET_RECEIVED", date = "2026-05-02T07:08:09Z" },
+      repository = {
+        id = 272,
+        name = "confusio",
+        visibility = "PUBLIC",
+        owner = { canonicalName = "~fido", username = "fido" },
+        HEAD = { name = "refs/heads/main" },
+      },
+      patchset = {
+        id = 17,
+        rid = "patchset-rid",
+        subject = "Teach sourcehut patchsets",
+        coverLetter = "This came in by mail.",
+        ref = "patches/v1",
+        targetBranch = "main",
+        commit = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        created = "2026-05-02T07:00:00Z",
+        updated = "2026-05-02T07:01:00Z",
+        url = "https://lists.sr.ht/~fido/confusio/patches/17",
+        submitter = { canonicalName = "~rob", username = "rob" },
+      },
+    },
+  }
+  local patchset_event = app.backend.webhooks.PATCHSET_RECEIVED(patchset_payload)
+  eq(
+    patchset_event.event,
+    "pull_request",
+    "sourcehut webhook: PATCHSET_RECEIVED maps to pull_request"
+  )
+  eq(patchset_event.action, "opened", "sourcehut webhook: patchset maps to opened")
+  eq(
+    patchset_event.data.number,
+    17,
+    "sourcehut webhook: patchset number maps to pull_request number"
+  )
+  eq(
+    patchset_event.data.pull_request.title,
+    "Teach sourcehut patchsets",
+    "sourcehut webhook: patchset subject maps to pull_request title"
+  )
+  local patchset_envelope = app.backend.webhook_translators.pull_request(patchset_event)
+  eq(patchset_envelope.type, "pull_request.opened", "sourcehut webhook: normalized patchset type")
+  local patchset_github_payload =
+    app.backend.webhook_github_translators.pull_request(patchset_event)
+  eq(
+    patchset_github_payload.pull_request.head.ref,
+    "patches/v1",
+    "sourcehut webhook: GitHub-shape patchset includes head ref"
+  )
 
   app.backend.rest = saved_rest
   app.backend.capabilities = saved_capabilities
