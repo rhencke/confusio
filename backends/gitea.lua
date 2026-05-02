@@ -7201,6 +7201,10 @@ local GOGS_FAMILY_WEBHOOK_BACKENDS = {
 }
 local GITEA_WEBHOOK_PROVIDER = GOGS_FAMILY_WEBHOOK_BACKENDS[config.backend] and config.backend
   or "gitea"
+local FORGEJO_FAMILY_WEBHOOK_BACKENDS = {
+  codeberg = true,
+  forgejo = true,
+}
 local GOGS_NATIVE_WEBHOOK_EVENTS = {
   create = true,
   delete = true,
@@ -8017,6 +8021,26 @@ end
 register_gitea_webhook("wiki", normalize_gitea_wiki_webhook)
 register_gitea_webhook("gollum", normalize_gitea_wiki_webhook)
 
+-- security_and_analysis is not a native Gitea wire event, but Forgejo-family
+-- aliases support it.  Keep it out of the canonical Gitea receiver while
+-- preserving the alias behaviour that their tests and matrix claim.
+if FORGEJO_FAMILY_WEBHOOK_BACKENDS[config.backend] then
+  register_gitea_webhook("security_and_analysis", function(payload)
+    return make_internal_event({
+      event = "security_and_analysis",
+      action = "changed",
+      provider = GITEA_WEBHOOK_PROVIDER,
+      raw = payload,
+      data = {
+        changes = payload.changes or {},
+        repository = translate_repo(payload.repository or {}),
+        sender = translate_user(payload.sender or {}),
+      },
+      timestamp = "",
+    })
+  end)
+end
+
 -- member: repository collaborator added or removed.
 -- Gitea sends X-Gitea-Event: collaborator with action "added" or "deleted".
 -- GitHub's member event uses "added" and "removed"; map "deleted" → "removed".
@@ -8250,6 +8274,9 @@ end
 local normalized_webhook_events = GOGS_FAMILY_WEBHOOK_BACKENDS[config.backend]
     and GOGS_NORMALIZED_WEBHOOK_EVENTS
   or GITEA_NORMALIZED_WEBHOOK_EVENTS
+if FORGEJO_FAMILY_WEBHOOK_BACKENDS[config.backend] then
+  normalized_webhook_events[#normalized_webhook_events + 1] = "security_and_analysis"
+end
 for _, event in ipairs(normalized_webhook_events) do
   b:webhook_translator(event, translate_gitea_normalized_webhook)
 end
