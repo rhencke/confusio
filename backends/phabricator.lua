@@ -66,17 +66,19 @@ local function translate_task(t)
     return {}
   end
   local f = t.fields or {}
-  local status_obj = f.status or {}
-  local state = (status_obj.value == "open" or status_obj.value == nil) and "open" or "closed"
-  if status_obj.closed then
+  local status_obj = type(f.status) == "table" and f.status or {}
+  local status_value = status_obj.value or f.status
+  local state = (status_value == "open" or status_value == nil) and "open" or "closed"
+  if status_obj.closed or f.closed then
     state = "closed"
   end
   local desc = f.description or {}
+  local id = t.id or f.id or tonumber(t.monogram and t.monogram:match("^T(%d+)$")) or 0
   return {
-    id = t.id or 0,
+    id = id,
     node_id = t.phid or "",
-    number = t.id or 0,
-    title = f.name or "",
+    number = id,
+    title = f.name or t.name or t.title or "",
     body = type(desc) == "table" and (desc.raw or "") or tostring(desc),
     state = state,
     user = {
@@ -93,8 +95,95 @@ local function translate_task(t)
     created_at = ts(f.dateCreated),
     updated_at = ts(f.dateModified),
     closed_at = nil,
-    html_url = config.base_url .. "/T" .. (t.id or ""),
+    html_url = t.uri or (config.base_url .. "/T" .. id),
   }
+end
+
+local function translate_phabricator_user(phid)
+  return {
+    login = phid or "",
+    id = 0,
+    node_id = phid or "",
+    avatar_url = "",
+    url = "",
+    type = "User",
+  }
+end
+
+local function phabricator_repository(payload)
+  return payload.repository or payload.project or {}
+end
+
+local function phabricator_sender(payload, tx)
+  local action = payload.action or {}
+  return payload.sender
+    or payload.actor
+    or translate_phabricator_user((tx and tx.authorPHID) or action.actorPHID)
+end
+
+local function phabricator_task_timestamp(payload, tx)
+  local action = payload.action or {}
+  return ts((tx and (tx.dateModified or tx.dateCreated)) or action.epoch)
+end
+
+local function phabricator_transaction_type(tx)
+  if type(tx) ~= "table" then
+    return ""
+  end
+  return tx.type or tx.transactionType or ""
+end
+
+local function phabricator_transaction_new_value(tx)
+  if type(tx) ~= "table" then
+    return nil
+  end
+  return tx.newValue or tx.new or tx.value
+end
+
+local function phabricator_comment_body(tx)
+  local comments = tx and tx.comments
+  local comment = comments and comments[1] or tx and tx.comment or {}
+  local content = comment.content or {}
+  return type(content) == "table" and (content.raw or content.remarkup or "") or tostring(content)
+end
+
+local function translate_phabricator_comment(tx)
+  tx = tx or {}
+  return {
+    id = tx.id or 0,
+    node_id = tx.phid or "",
+    url = "",
+    body = phabricator_comment_body(tx),
+    user = translate_phabricator_user(tx.authorPHID),
+    created_at = ts(tx.dateCreated),
+    updated_at = ts(tx.dateModified or tx.dateCreated),
+    html_url = "",
+  }
+end
+
+local function phabricator_task_action(payload)
+  for _, tx in ipairs(payload.transactions or {}) do
+    local tx_type = phabricator_transaction_type(tx)
+    if tx_type == "core:create" or tx_type == "create" then
+      return "opened"
+    elseif tx_type == "status" then
+      local value = phabricator_transaction_new_value(tx)
+      if value == "open" then
+        return "reopened"
+      end
+      return "closed"
+    end
+  end
+  return "edited"
+end
+
+local function phabricator_task_comment_transaction(payload)
+  for _, tx in ipairs(payload.transactions or {}) do
+    if phabricator_transaction_type(tx) == "comment" then
+      return tx
+    end
+  end
+  return nil
 end
 
 -- Look up a project PHID by slug (repo name, or owner/repo).
@@ -233,6 +322,46 @@ local function phabricator_webhook_unimplemented(object_type)
   end
 end
 
+local function phabricator_normalized_payload_without_envelope_fields(data)
+  local payload = {}
+  for k, v in pairs(data or {}) do
+    if k ~= "sender" and k ~= "repository" then
+      payload[k] = v
+    end
+  end
+  return payload
+end
+
+local function translate_phabricator_normalized_webhook(internal_event, fields)
+  local data = internal_event.data or {}
+  fields = fields or {}
+  return make_normalized_webhook_envelope(internal_event, {
+    id = fields.id,
+    type = fields.type
+      or normalized_webhook_event_type(internal_event.event, internal_event.action),
+    occurred_at = fields.occurred_at,
+    actor = fields.actor or data.sender,
+    repository = fields.repository or data.repository,
+    payload = fields.payload or phabricator_normalized_payload_without_envelope_fields(data),
+  })
+end
+
+local function translate_phabricator_github_webhook(internal_event, _fields)
+  local data = internal_event.data or {}
+  local payload = {
+    action = data.action or internal_event.action,
+    repository = data.repository or {},
+    sender = data.sender or {},
+  }
+  if internal_event.event == "issues" then
+    payload.issue = data.issue or {}
+  elseif internal_event.event == "issue_comment" then
+    payload.issue = data.issue or {}
+    payload.comment = data.comment or {}
+  end
+  return payload
+end
+
 local b = make_backend_builder()
 b:rest("get_root", function()
   proxy_health_check(pcall(Fetch, config.base_url .. "/api/conduit.ping"))
@@ -247,6 +376,48 @@ end)
 for _, object_type in ipairs(PHABRICATOR_WEBHOOK_OBJECT_TYPES) do
   b:webhook(object_type, phabricator_webhook_unimplemented(object_type))
 end
+
+b:webhook_translator("issues", translate_phabricator_normalized_webhook)
+b:webhook_translator("issue_comment", translate_phabricator_normalized_webhook)
+b:webhook_github_translator("issues", translate_phabricator_github_webhook)
+b:webhook_github_translator("issue_comment", translate_phabricator_github_webhook)
+
+b:webhook("TASK", function(payload)
+  payload = payload or {}
+  local task = payload.object or {}
+  local comment_tx = phabricator_task_comment_transaction(payload)
+  if comment_tx then
+    return make_internal_event({
+      event = "issue_comment",
+      action = "created",
+      provider = "phabricator",
+      raw = payload,
+      data = {
+        action = "created",
+        issue = translate_task(task),
+        comment = translate_phabricator_comment(comment_tx),
+        repository = phabricator_repository(payload),
+        sender = phabricator_sender(payload, comment_tx),
+      },
+      timestamp = phabricator_task_timestamp(payload, comment_tx),
+    })
+  end
+
+  local action = phabricator_task_action(payload)
+  return make_internal_event({
+    event = "issues",
+    action = action,
+    provider = "phabricator",
+    raw = payload,
+    data = {
+      action = action,
+      issue = translate_task(task),
+      repository = phabricator_repository(payload),
+      sender = phabricator_sender(payload),
+    },
+    timestamp = phabricator_task_timestamp(payload),
+  })
+end)
 
 -- Issues --------------------------------------------------------------------
 -- GET /repos/{owner}/{repo}/issues

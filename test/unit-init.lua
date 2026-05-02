@@ -2510,6 +2510,151 @@ do
 end
 
 -- ============================================================
+-- Phabricator webhook handlers
+-- ============================================================
+
+do
+  local saved_rest = app.backend.rest
+  local saved_capabilities = app.backend.capabilities
+  local saved_webhooks = app.backend.webhooks
+  local saved_webhook_translators = app.backend.webhook_translators
+  local saved_webhook_github_translators = app.backend.webhook_github_translators
+  local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
+  local saved_base_url = config.base_url
+  local saved_backend = config.backend
+
+  app.backend.rest = {}
+  app.backend.capabilities = {}
+  app.backend.webhooks = {}
+  app.backend.webhook_translators = {}
+  app.backend.webhook_github_translators = {}
+  graphql_resolvers = {} -- luacheck: globals graphql_resolvers
+  config.base_url = ""
+  config.backend = "phabricator"
+  _real_dofile("backends/phabricator.lua")
+
+  ok(app.backend.webhooks.TASK ~= nil, "phabricator webhook: TASK handler registered")
+  ok(
+    app.backend.webhook_translators.issues ~= nil,
+    "phabricator webhook: issues translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.issues ~= nil,
+    "phabricator webhook: issues GitHub-shape translator registered"
+  )
+
+  local task_payload = {
+    object = {
+      type = "TASK",
+      id = 123,
+      phid = "PHID-TASK-123",
+      fields = {
+        name = "Fix the kennel door",
+        status = { value = "open" },
+        authorPHID = "PHID-USER-fido",
+        description = { raw = "The latch sticks." },
+        dateCreated = 1715767200,
+        dateModified = 1715770800,
+      },
+    },
+    repository = { full_name = "phabricator/maniphest" },
+    action = { actorPHID = "PHID-USER-rob", epoch = 1715770800 },
+    transactions = {
+      { type = "title", oldValue = "Fix door", newValue = "Fix the kennel door" },
+    },
+  }
+  local task_event = app.backend.webhooks.TASK(task_payload)
+  eq(task_event.event, "issues", "phabricator webhook: TASK maps to issues")
+  eq(task_event.action, "edited", "phabricator webhook: task title change maps to edited")
+  eq(task_event.provider, "phabricator", "phabricator webhook: TASK sets provider")
+  eq(task_event.data.issue.number, 123, "phabricator webhook: task sets issue number")
+  eq(
+    task_event.data.issue.title,
+    "Fix the kennel door",
+    "phabricator webhook: task sets issue title"
+  )
+  eq(
+    task_event.data.repository.full_name,
+    "phabricator/maniphest",
+    "phabricator webhook: task keeps repository"
+  )
+  eq(task_event.data.sender.login, "PHID-USER-rob", "phabricator webhook: task sets sender")
+  local task_envelope = app.backend.webhook_translators.issues(task_event)
+  eq(task_envelope.type, "issue.edited", "phabricator webhook: normalized task includes action")
+  local task_github_payload = app.backend.webhook_github_translators.issues(task_event)
+  eq(task_github_payload.issue.number, 123, "phabricator webhook: GitHub-shape task includes issue")
+
+  local closed_event = app.backend.webhooks.TASK({
+    object = {
+      type = "TASK",
+      id = 124,
+      phid = "PHID-TASK-124",
+      fields = {
+        name = "Close this",
+        status = { value = "resolved", closed = true },
+      },
+    },
+    transactions = {
+      { type = "status", oldValue = "open", newValue = "resolved" },
+    },
+  })
+  eq(closed_event.action, "closed", "phabricator webhook: status change maps to closed")
+  eq(closed_event.data.issue.state, "closed", "phabricator webhook: closed task state")
+
+  local comment_event = app.backend.webhooks.TASK({
+    object = {
+      type = "TASK",
+      id = 125,
+      phid = "PHID-TASK-125",
+      fields = {
+        name = "Comment here",
+        status = { value = "open" },
+      },
+    },
+    transactions = {
+      {
+        type = "comment",
+        id = 77,
+        phid = "PHID-XACT-TASK-comment",
+        authorPHID = "PHID-USER-commenter",
+        dateCreated = 1715774400,
+        comments = {
+          { content = { raw = "I found a clue." } },
+        },
+      },
+    },
+  })
+  eq(
+    comment_event.event,
+    "issue_comment",
+    "phabricator webhook: comment transaction maps to issue_comment"
+  )
+  eq(comment_event.action, "created", "phabricator webhook: comment maps to created")
+  eq(comment_event.data.comment.body, "I found a clue.", "phabricator webhook: comment body")
+  local comment_envelope = app.backend.webhook_translators.issue_comment(comment_event)
+  eq(
+    comment_envelope.type,
+    "issue.comment.created",
+    "phabricator webhook: normalized comment includes action"
+  )
+  local comment_github_payload = app.backend.webhook_github_translators.issue_comment(comment_event)
+  eq(
+    comment_github_payload.comment.body,
+    "I found a clue.",
+    "phabricator webhook: GitHub-shape comment includes body"
+  )
+
+  app.backend.rest = saved_rest
+  app.backend.capabilities = saved_capabilities
+  app.backend.webhooks = saved_webhooks
+  app.backend.webhook_translators = saved_webhook_translators
+  app.backend.webhook_github_translators = saved_webhook_github_translators
+  graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
+  config.base_url = saved_base_url
+  config.backend = saved_backend
+end
+
+-- ============================================================
 -- NotABug webhook handlers
 -- ============================================================
 

@@ -4,24 +4,32 @@
 # native object family from object.type, or from the object PHID prefix when
 # type is absent, then dispatches to the backend's registered handler.
 
-# Known object.type reaches the Phabricator handler registry.
+# Known TASK object.type reaches the Phabricator Maniphest handler.
 POST http://{{host}}/webhooks/phabricator
 Content-Type: application/json
 {
   "object": {
     "type": "TASK",
-    "phid": "PHID-TASK-abcd"
+    "id": 123,
+    "phid": "PHID-TASK-abcd",
+    "fields": {
+      "name": "Fix the task",
+      "status": {
+        "value": "open"
+      }
+    }
   },
   "transactions": [
     {
+      "type": "title",
       "phid": "PHID-XACT-TASK-abcd"
     }
   ]
 }
 
-HTTP 422
+HTTP 200
 [Asserts]
-jsonpath "$.message" == "Phabricator webhook event not implemented: issues"
+jsonpath "$.message" == "accepted"
 
 # Missing object.type falls back to the PHID prefix.
 POST http://{{host}}/webhooks/phabricator
