@@ -1,0 +1,65 @@
+# Native Gitea webhook delivery manifest.
+#
+# Format:
+#   X-Gitea-Event|GitHub event header expected downstream|fixture file|note
+#
+# This follows docs/gitea-webhook-audit.md.  Some fixture paths are intentionally
+# listed before the corresponding fixture exists so the translation tasks can
+# fill in each audited event/action triple and then run the harness in strict
+# mode.
+create|create|create.json|branch or tag creation
+delete|delete|delete.json|branch or tag deletion
+fork|fork|fork.json|repository fork
+push|push|push.json|branch or tag push
+issues|issues|issues-opened.json|opened
+issues|issues|issues-closed.json|closed
+issues|issues|issues-reopened.json|reopened
+issues|issues|issues-edited.json|edited
+issues|issues|issues-deleted.json|deleted
+issues|issues|issues-assigned.json|assigned
+issues|issues|issues-unassigned.json|unassigned
+issues|issues|issues-labeled.json|label_updated
+issues|issues|issues-unlabeled.json|label_cleared
+issues|issues|issues-milestoned.json|milestoned
+issues|issues|issues-demilestoned.json|demilestoned
+issue_comment|issue_comment|issue_comment-created.json|created
+issue_comment|issue_comment|issue_comment-edited.json|edited
+issue_comment|issue_comment|issue_comment-deleted.json|deleted
+pull_request|pull_request|pull_request-opened.json|opened
+pull_request|pull_request|pull_request-closed.json|closed
+pull_request|pull_request|pull_request-reopened.json|reopened
+pull_request|pull_request|pull_request-edited.json|edited
+pull_request|pull_request|pull_request-deleted.json|deleted
+pull_request|pull_request|pull_request-assigned.json|assigned
+pull_request|pull_request|pull_request-unassigned.json|unassigned
+pull_request|pull_request|pull_request-labeled.json|label_updated
+pull_request|pull_request|pull_request-unlabeled.json|label_cleared
+pull_request|pull_request|pull_request-milestoned.json|milestoned
+pull_request|pull_request|pull_request-demilestoned.json|demilestoned
+pull_request|pull_request|pull_request-synchronized.json|synchronized
+pull_request|pull_request|pull_request-review_requested.json|review_requested
+pull_request|pull_request|pull_request-review_request_removed.json|review_request_removed
+pull_request_approved|pull_request_review|pull_request_approved-reviewed.json|approved review
+pull_request_rejected|pull_request_review|pull_request_rejected-reviewed.json|rejected review
+pull_request_comment|pull_request_review_comment|pull_request_comment-reviewed.json|review comment
+wiki|gollum|wiki-created.json|created
+wiki|gollum|wiki-edited.json|edited
+wiki|gollum|wiki-deleted.json|deleted
+repository|repository|repository-created.json|created
+repository|repository|repository-deleted.json|deleted
+release|release|release-published.json|published
+release|release|release-updated.json|updated
+release|release|release-deleted.json|deleted
+package|package|package-published.json|created
+package|package|package-deleted.json|deleted
+status|status|status-pending.json|pending
+status|status|status-success.json|success
+status|status|status-error.json|error
+status|status|status-failure.json|failure
+workflow_run|workflow_run|workflow_run-requested.json|requested
+workflow_run|workflow_run|workflow_run-in_progress.json|in_progress
+workflow_run|workflow_run|workflow_run-completed.json|completed
+workflow_job|workflow_job|workflow_job-queued.json|queued
+workflow_job|workflow_job|workflow_job-in_progress.json|in_progress
+workflow_job|workflow_job|workflow_job-completed.json|completed
+workflow_job|workflow_job|workflow_job-waiting.json|waiting

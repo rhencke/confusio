@@ -49,6 +49,7 @@ test/fixtures/webhooks/gitea/discussion-unlabeled.json
 test/fixtures/webhooks/gitea/discussion_comment-deleted.json
 test/fixtures/webhooks/gitea/discussion_comment-edited.json
 test/fixtures/webhooks/gitea/package-deleted.json
+test/.gitea-native-delivery.*.hurl
 test/fixtures/webhooks/gitbucket/delete.json
 test/fixtures/webhooks/gitbucket/issues-closed.json
 test/fixtures/webhooks/gitbucket/issues-edited.json
