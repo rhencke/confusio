@@ -1,0 +1,22 @@
+{
+  "event": "JOB_UPDATED",
+  "webhook": { "event": "JOB_UPDATED", "date": "2024-01-15T14:02:00Z" },
+  "sender": { "canonical_name": "~octocat", "name": "octocat" },
+  "repository": {
+    "id": 1,
+    "name": "hello-world",
+    "visibility": "public",
+    "HEAD": { "name": "refs/heads/main", "target": "abc123def456" },
+    "owner": { "canonical_name": "~octocat", "name": "octocat" }
+  },
+  "job": {
+    "id": 42,
+    "status": "running",
+    "note": "ci/test",
+    "ref": "refs/heads/main",
+    "commit": "abc123def456",
+    "created": "2024-01-15T14:00:00Z",
+    "updated": "2024-01-15T14:02:00Z",
+    "url": "https://builds.sr.ht/~octocat/job/42"
+  }
+}

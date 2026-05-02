@@ -15,6 +15,7 @@
 #   onedev_tok — the shared secret verbatim (for X-OneDev-Signature)
 #   radicle_tok — the shared secret verbatim (for Authorization)
 #   kallithea — shared secret is embedded in the request body
+#   sourcehut_sig — Ed25519("{}") as base64 (for X-Payload-Signature)
 #   confusio_sig — "sha256=<hex>, v=1, ts=<ts>" (for X-Confusio-Signature-256)
 #
 # Convention: valid credential → 422 (verification passed; no handlers registered
@@ -573,6 +574,37 @@ jsonpath "$.message" == "Signature verification failed"
 
 # Missing signature header → 401
 POST http://{{host}}/webhooks/sourceforge
+Content-Type: application/json
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# ── sourcehut: X-Payload-Signature, Ed25519 detached signature ───────────────
+
+# Valid signature → passes verification (422)
+POST http://{{host}}/webhooks/sourcehut
+Content-Type: application/json
+X-Payload-Signature: {{sourcehut_sig}}
+{}
+
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "No webhook handlers registered"
+
+# Bad signature → 401
+POST http://{{host}}/webhooks/sourcehut
+Content-Type: application/json
+X-Payload-Signature: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# Missing signature header → 401
+POST http://{{host}}/webhooks/sourcehut
 Content-Type: application/json
 {}
 

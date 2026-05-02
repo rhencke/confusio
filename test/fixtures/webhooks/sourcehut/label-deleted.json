@@ -1,0 +1,15 @@
+{
+  "event": "LABEL_DELETED",
+  "webhook": { "event": "LABEL_DELETED", "date": "2024-01-15T13:10:00Z" },
+  "label": {
+    "id": 5,
+    "name": "bug",
+    "backgroundColor": "#d73a4a",
+    "tracker": {
+      "id": 1,
+      "name": "hello-world",
+      "visibility": "PUBLIC",
+      "owner": { "canonical_name": "~octocat", "name": "octocat" }
+    }
+  }
+}

@@ -34,7 +34,7 @@ reset_request()
 -- Override Redbean HTTP context built-ins before loading .init.lua.
 -- luacheck: push
 -- luacheck: globals SetStatus SetHeader Write GetHeader GetPath GetParam GetMethod GetBody Route
--- luacheck: globals GetCryptoHash DecodeBase64
+-- luacheck: globals GetCryptoHash DecodeBase64 SourcehutVerifyEd25519
 SetStatus = function(code, _reason)
   _last_status = code
 end
@@ -79,6 +79,9 @@ end
 -- Stub DecodeBase64: identity decode for Basic auth verification tests.
 DecodeBase64 = function(s)
   return s
+end
+SourcehutVerifyEd25519 = function(public_key, body, signature)
+  return public_key == string.rep("k", 32) and body == "{}" and signature == string.rep("s", 64)
 end
 -- Stub Fetch: records outbound calls so startup synthesis (synthesize_startup_events)
 -- and deliver_fire tests do not make real network requests.  Returns a 200 response.
@@ -2857,6 +2860,499 @@ do
 end
 
 -- ============================================================
+-- Sourcehut webhook handlers
+-- ============================================================
+
+do
+  local saved_rest = app.backend.rest
+  local saved_capabilities = app.backend.capabilities
+  local saved_webhooks = app.backend.webhooks
+  local saved_webhook_translators = app.backend.webhook_translators
+  local saved_webhook_github_translators = app.backend.webhook_github_translators
+  local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
+  local saved_base_url = config.base_url
+  local saved_backend = config.backend
+
+  app.backend.rest = {}
+  app.backend.capabilities = {}
+  app.backend.webhooks = {}
+  app.backend.webhook_translators = {}
+  app.backend.webhook_github_translators = {}
+  graphql_resolvers = {} -- luacheck: globals graphql_resolvers
+  config.base_url = ""
+  config.backend = "sourcehut"
+  _real_dofile("backends/sourcehut.lua")
+
+  ok(app.backend.webhooks.REPO_CREATED ~= nil, "sourcehut webhook: REPO_CREATED registered")
+  ok(app.backend.webhooks.REPO_UPDATE ~= nil, "sourcehut webhook: REPO_UPDATE registered")
+  ok(app.backend.webhooks.REPO_DELETED ~= nil, "sourcehut webhook: REPO_DELETED registered")
+  ok(app.backend.webhooks.GIT_PRE_RECEIVE ~= nil, "sourcehut webhook: GIT_PRE_RECEIVE registered")
+  ok(app.backend.webhooks.GIT_POST_RECEIVE ~= nil, "sourcehut webhook: GIT_POST_RECEIVE registered")
+  ok(app.backend.webhook_translators.push ~= nil, "sourcehut webhook: push translator registered")
+  ok(
+    app.backend.webhook_github_translators.push ~= nil,
+    "sourcehut webhook: push GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_translators.repository ~= nil,
+    "sourcehut webhook: repository translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.repository ~= nil,
+    "sourcehut webhook: repository GitHub-shape translator registered"
+  )
+  ok(app.backend.webhooks.TICKET_CREATED ~= nil, "sourcehut webhook: TICKET_CREATED registered")
+  ok(app.backend.webhooks.TICKET_UPDATE ~= nil, "sourcehut webhook: TICKET_UPDATE registered")
+  ok(app.backend.webhooks.TICKET_DELETED ~= nil, "sourcehut webhook: TICKET_DELETED registered")
+  ok(app.backend.webhooks.LABEL_CREATED ~= nil, "sourcehut webhook: LABEL_CREATED registered")
+  ok(app.backend.webhooks.LABEL_UPDATE ~= nil, "sourcehut webhook: LABEL_UPDATE registered")
+  ok(app.backend.webhooks.LABEL_DELETED ~= nil, "sourcehut webhook: LABEL_DELETED registered")
+  ok(app.backend.webhooks.EVENT_CREATED ~= nil, "sourcehut webhook: EVENT_CREATED registered")
+  ok(app.backend.webhooks.JOB_CREATED ~= nil, "sourcehut webhook: JOB_CREATED registered")
+  ok(app.backend.webhooks.JOB_UPDATED ~= nil, "sourcehut webhook: JOB_UPDATED registered")
+  ok(
+    app.backend.webhooks.PATCHSET_RECEIVED ~= nil,
+    "sourcehut webhook: PATCHSET_RECEIVED registered"
+  )
+  ok(
+    app.backend.webhook_translators.issues ~= nil,
+    "sourcehut webhook: issues translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.issues ~= nil,
+    "sourcehut webhook: issues GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_translators.issue_comment ~= nil,
+    "sourcehut webhook: issue_comment translator registered"
+  )
+  ok(app.backend.webhook_translators.label ~= nil, "sourcehut webhook: label translator registered")
+  ok(
+    app.backend.webhook_translators.workflow_run ~= nil,
+    "sourcehut webhook: workflow_run translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.workflow_run ~= nil,
+    "sourcehut webhook: workflow_run GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_translators.pull_request ~= nil,
+    "sourcehut webhook: pull_request translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.pull_request ~= nil,
+    "sourcehut webhook: pull_request GitHub-shape translator registered"
+  )
+
+  local repo_payload = {
+    data = {
+      webhook = { event = "REPO_CREATED", date = "2026-05-02T01:02:03Z" },
+      repository = {
+        id = 272,
+        rid = "repo-rid",
+        name = "confusio",
+        description = "Webhook kennel",
+        visibility = "PUBLIC",
+        owner = { id = 7, canonicalName = "~fido", name = "Fido" },
+        HEAD = { name = "refs/heads/main" },
+        created = "2026-05-01T00:00:00Z",
+        updated = "2026-05-02T01:00:00Z",
+      },
+    },
+  }
+  local repo_event = app.backend.webhooks.REPO_CREATED(repo_payload)
+  eq(repo_event.event, "repository", "sourcehut webhook: REPO_CREATED maps to repository")
+  eq(repo_event.action, "created", "sourcehut webhook: REPO_CREATED maps to created")
+  eq(repo_event.provider, "sourcehut", "sourcehut webhook: repository sets provider")
+  eq(
+    repo_event.data.repository.full_name,
+    "fido/confusio",
+    "sourcehut webhook: repository full_name translated"
+  )
+  eq(
+    repo_event.data.sender.login,
+    "fido",
+    "sourcehut webhook: repository sender falls back to owner"
+  )
+  local repo_envelope = app.backend.webhook_translators.repository(repo_event)
+  eq(repo_envelope.type, "repository.created", "sourcehut webhook: normalized repository type")
+  local repo_github_payload = app.backend.webhook_github_translators.repository(repo_event)
+  eq(
+    repo_github_payload.repository.name,
+    "confusio",
+    "sourcehut webhook: GitHub-shape repository includes repository"
+  )
+  eq(
+    app.backend.webhooks.REPO_UPDATE(repo_payload).action,
+    "edited",
+    "sourcehut webhook: REPO_UPDATE maps to edited"
+  )
+  eq(
+    app.backend.webhooks.REPO_DELETED(repo_payload).action,
+    "deleted",
+    "sourcehut webhook: REPO_DELETED maps to deleted"
+  )
+
+  local git_payload = {
+    data = {
+      webhook = { event = "GIT_POST_RECEIVE", date = "2026-05-02T02:03:04Z" },
+      repository = {
+        id = 272,
+        name = "confusio",
+        visibility = "PUBLIC",
+        owner = { canonicalName = "~fido" },
+        HEAD = { name = "refs/heads/main" },
+      },
+      pusher = { canonicalName = "~rob", name = "Rob" },
+      updates = {
+        {
+          ref = { name = "refs/heads/main" },
+          old = { id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+          new = { id = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+          log = {
+            results = {
+              {
+                id = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                message = "Teach sourcehut pushes",
+                author = {
+                  name = "Fido",
+                  email = "fido@example.test",
+                  time = "2026-05-02T02:00:00Z",
+                },
+                committer = {
+                  name = "Rob",
+                  email = "rob@example.test",
+                  time = "2026-05-02T02:01:00Z",
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  }
+  local push_event = app.backend.webhooks.GIT_POST_RECEIVE(git_payload)
+  eq(push_event.event, "push", "sourcehut webhook: GIT_POST_RECEIVE maps to push")
+  eq(push_event.action, "", "sourcehut webhook: push is action-less")
+  eq(push_event.data.ref, "refs/heads/main", "sourcehut webhook: push keeps ref")
+  eq(
+    push_event.data.head_commit.id,
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "sourcehut webhook: push sets head commit"
+  )
+  eq(push_event.data.sender.login, "rob", "sourcehut webhook: push sets sender from pusher")
+  local push_envelope = app.backend.webhook_translators.push(push_event)
+  eq(push_envelope.type, "push", "sourcehut webhook: normalized push uses actionless type")
+  local push_github_payload = app.backend.webhook_github_translators.push(push_event)
+  eq(
+    push_github_payload.head_commit.message,
+    "Teach sourcehut pushes",
+    "sourcehut webhook: GitHub-shape push includes head commit"
+  )
+  eq(push_github_payload.pusher.name, "Rob", "sourcehut webhook: GitHub-shape push includes pusher")
+
+  local create_event = app.backend.webhooks.GIT_PRE_RECEIVE({
+    data = {
+      webhook = { event = "GIT_PRE_RECEIVE" },
+      repository = {
+        name = "confusio",
+        owner = { canonicalName = "~fido" },
+        HEAD = { name = "refs/heads/main" },
+      },
+      updates = {
+        {
+          ref = { name = "refs/tags/v1.0.0" },
+          old = { id = "0000000000000000000000000000000000000000" },
+          new = { id = "cccccccccccccccccccccccccccccccccccccccc" },
+        },
+      },
+    },
+  })
+  eq(create_event.event, "create", "sourcehut webhook: zero old id maps to create")
+  eq(create_event.data.ref, "v1.0.0", "sourcehut webhook: create strips tag ref")
+  eq(create_event.data.ref_type, "tag", "sourcehut webhook: create detects tag ref")
+
+  local ticket_payload = {
+    data = {
+      webhook = { event = "TICKET_CREATED", date = "2026-05-02T03:04:05Z" },
+      ticket = {
+        id = 42,
+        rid = "ticket-rid",
+        subject = "Open the tracker gate",
+        body = "It sticks.",
+        status = "REPORTED",
+        created = "2026-05-02T03:00:00Z",
+        updated = "2026-05-02T03:01:00Z",
+        submitter = { canonicalName = "~fido", username = "fido" },
+        tracker = {
+          id = 9,
+          rid = "tracker-rid",
+          name = "confusio",
+          visibility = "PUBLIC",
+          owner = { canonicalName = "~fido", username = "fido" },
+        },
+        labels = {
+          {
+            id = 5,
+            name = "bug",
+            backgroundColor = "#ff0000",
+          },
+        },
+      },
+    },
+  }
+  local issue_event = app.backend.webhooks.TICKET_CREATED(ticket_payload)
+  eq(issue_event.event, "issues", "sourcehut webhook: TICKET_CREATED maps to issues")
+  eq(issue_event.action, "opened", "sourcehut webhook: TICKET_CREATED maps to opened")
+  eq(issue_event.data.issue.number, 42, "sourcehut webhook: ticket issue number")
+  eq(issue_event.data.issue.title, "Open the tracker gate", "sourcehut webhook: ticket subject")
+  eq(issue_event.data.issue.labels[1].name, "bug", "sourcehut webhook: ticket labels translated")
+  eq(
+    issue_event.data.repository.full_name,
+    "fido/confusio",
+    "sourcehut webhook: ticket tracker maps to repository"
+  )
+  local issue_envelope = app.backend.webhook_translators.issues(issue_event)
+  eq(issue_envelope.type, "issue.opened", "sourcehut webhook: normalized issue type")
+  local issue_github_payload = app.backend.webhook_github_translators.issues(issue_event)
+  eq(
+    issue_github_payload.issue.title,
+    "Open the tracker gate",
+    "sourcehut webhook: GitHub-shape issue includes issue"
+  )
+  eq(
+    app.backend.webhooks.TICKET_UPDATE(ticket_payload).action,
+    "edited",
+    "sourcehut webhook: TICKET_UPDATE maps to edited"
+  )
+  local deleted_issue_event = app.backend.webhooks.TICKET_DELETED({
+    data = {
+      webhook = { event = "TICKET_DELETED" },
+      ticketId = 42,
+    },
+  })
+  eq(deleted_issue_event.action, "deleted", "sourcehut webhook: TICKET_DELETED maps to deleted")
+  eq(deleted_issue_event.data.issue.number, 42, "sourcehut webhook: deleted ticket keeps number")
+
+  local label_payload = {
+    data = {
+      webhook = { event = "LABEL_CREATED", date = "2026-05-02T04:05:06Z" },
+      label = {
+        id = 6,
+        name = "triage",
+        backgroundColor = "#00ff00",
+        tracker = {
+          name = "confusio",
+          owner = { canonicalName = "~fido", username = "fido" },
+        },
+      },
+    },
+  }
+  local label_event = app.backend.webhooks.LABEL_CREATED(label_payload)
+  eq(label_event.event, "label", "sourcehut webhook: LABEL_CREATED maps to label")
+  eq(label_event.action, "created", "sourcehut webhook: LABEL_CREATED maps to created")
+  eq(label_event.data.label.color, "00ff00", "sourcehut webhook: label color strips hash")
+  local label_envelope = app.backend.webhook_translators.label(label_event)
+  eq(label_envelope.type, "label.created", "sourcehut webhook: normalized label type")
+  local label_github_payload = app.backend.webhook_github_translators.label(label_event)
+  eq(
+    label_github_payload.label.name,
+    "triage",
+    "sourcehut webhook: GitHub-shape label includes label"
+  )
+  eq(
+    app.backend.webhooks.LABEL_UPDATE(label_payload).action,
+    "edited",
+    "sourcehut webhook: LABEL_UPDATE maps to edited"
+  )
+  eq(
+    app.backend.webhooks.LABEL_DELETED(label_payload).action,
+    "deleted",
+    "sourcehut webhook: LABEL_DELETED maps to deleted"
+  )
+
+  local comment_event = app.backend.webhooks.EVENT_CREATED({
+    data = {
+      webhook = { event = "EVENT_CREATED", date = "2026-05-02T05:06:07Z" },
+      newEvent = {
+        id = 77,
+        created = "2026-05-02T05:00:00Z",
+        ticket = ticket_payload.data.ticket,
+        changes = {
+          {
+            eventType = "COMMENT",
+            author = { canonicalName = "~rob", username = "rob" },
+            text = "I found the latch.",
+          },
+        },
+      },
+    },
+  })
+  eq(comment_event.event, "issue_comment", "sourcehut webhook: COMMENT maps to issue_comment")
+  eq(comment_event.action, "created", "sourcehut webhook: COMMENT maps to created")
+  eq(comment_event.data.comment.body, "I found the latch.", "sourcehut webhook: comment body")
+  local comment_github_payload = app.backend.webhook_github_translators.issue_comment(comment_event)
+  eq(
+    comment_github_payload.comment.body,
+    "I found the latch.",
+    "sourcehut webhook: GitHub-shape comment includes body"
+  )
+
+  local labeled_event = app.backend.webhooks.EVENT_CREATED({
+    data = {
+      newEvent = {
+        id = 78,
+        ticket = ticket_payload.data.ticket,
+        changes = {
+          {
+            eventType = "LABEL_ADDED",
+            labeler = { canonicalName = "~rob", username = "rob" },
+            label = label_payload.data.label,
+          },
+        },
+      },
+    },
+  })
+  eq(labeled_event.event, "issues", "sourcehut webhook: LABEL_ADDED maps to issues")
+  eq(labeled_event.action, "labeled", "sourcehut webhook: LABEL_ADDED maps to labeled")
+  eq(labeled_event.data.label.name, "triage", "sourcehut webhook: LABEL_ADDED keeps label")
+
+  local closed_event = app.backend.webhooks.EVENT_CREATED({
+    data = {
+      newEvent = {
+        id = 79,
+        ticket = ticket_payload.data.ticket,
+        changes = {
+          {
+            eventType = "STATUS_CHANGE",
+            editor = { canonicalName = "~rob", username = "rob" },
+            oldStatus = "IN_PROGRESS",
+            newStatus = "RESOLVED",
+          },
+        },
+      },
+    },
+  })
+  eq(closed_event.action, "closed", "sourcehut webhook: resolved status maps to closed")
+
+  local job_payload = {
+    data = {
+      webhook = { event = "JOB_UPDATED", date = "2026-05-02T06:07:08Z" },
+      repository = {
+        id = 272,
+        name = "confusio",
+        visibility = "PUBLIC",
+        owner = { canonicalName = "~fido", username = "fido" },
+        HEAD = { name = "refs/heads/main" },
+      },
+      sender = { canonicalName = "~rob", username = "rob" },
+      job = {
+        id = 88,
+        note = "sourcehut build",
+        status = "success",
+        commit = "dddddddddddddddddddddddddddddddddddddddd",
+        branch = "refs/heads/main",
+        url = "https://builds.sr.ht/~fido/job/88",
+        created = "2026-05-02T06:00:00Z",
+        updated = "2026-05-02T06:05:00Z",
+      },
+    },
+  }
+  local job_event = app.backend.webhooks.JOB_UPDATED(job_payload)
+  eq(job_event.event, "workflow_run", "sourcehut webhook: JOB_UPDATED maps to workflow_run")
+  eq(job_event.action, "completed", "sourcehut webhook: successful job maps to completed")
+  eq(
+    job_event.data.workflow_run.conclusion,
+    "success",
+    "sourcehut webhook: successful job conclusion"
+  )
+  eq(
+    job_event.data.workflow_run.head_sha,
+    "dddddddddddddddddddddddddddddddddddddddd",
+    "sourcehut webhook: job commit maps to head_sha"
+  )
+  local job_envelope = app.backend.webhook_translators.workflow_run(job_event)
+  eq(job_envelope.type, "workflow.run.completed", "sourcehut webhook: normalized workflow_run type")
+  local job_github_payload = app.backend.webhook_github_translators.workflow_run(job_event)
+  eq(
+    job_github_payload.workflow_run.status,
+    "completed",
+    "sourcehut webhook: GitHub-shape workflow_run includes status"
+  )
+  eq(
+    app.backend.webhooks.JOB_CREATED({
+      data = {
+        webhook = { event = "JOB_CREATED" },
+        job = { id = 89, status = "queued" },
+      },
+    }).action,
+    "requested",
+    "sourcehut webhook: JOB_CREATED maps to requested"
+  )
+
+  local patchset_payload = {
+    data = {
+      webhook = { event = "PATCHSET_RECEIVED", date = "2026-05-02T07:08:09Z" },
+      repository = {
+        id = 272,
+        name = "confusio",
+        visibility = "PUBLIC",
+        owner = { canonicalName = "~fido", username = "fido" },
+        HEAD = { name = "refs/heads/main" },
+      },
+      patchset = {
+        id = 17,
+        rid = "patchset-rid",
+        subject = "Teach sourcehut patchsets",
+        coverLetter = "This came in by mail.",
+        ref = "patches/v1",
+        targetBranch = "main",
+        commit = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        created = "2026-05-02T07:00:00Z",
+        updated = "2026-05-02T07:01:00Z",
+        url = "https://lists.sr.ht/~fido/confusio/patches/17",
+        submitter = { canonicalName = "~rob", username = "rob" },
+      },
+    },
+  }
+  local patchset_event = app.backend.webhooks.PATCHSET_RECEIVED(patchset_payload)
+  eq(
+    patchset_event.event,
+    "pull_request",
+    "sourcehut webhook: PATCHSET_RECEIVED maps to pull_request"
+  )
+  eq(patchset_event.action, "opened", "sourcehut webhook: patchset maps to opened")
+  eq(
+    patchset_event.data.number,
+    17,
+    "sourcehut webhook: patchset number maps to pull_request number"
+  )
+  eq(
+    patchset_event.data.pull_request.title,
+    "Teach sourcehut patchsets",
+    "sourcehut webhook: patchset subject maps to pull_request title"
+  )
+  local patchset_envelope = app.backend.webhook_translators.pull_request(patchset_event)
+  eq(patchset_envelope.type, "pull_request.opened", "sourcehut webhook: normalized patchset type")
+  local patchset_github_payload =
+    app.backend.webhook_github_translators.pull_request(patchset_event)
+  eq(
+    patchset_github_payload.pull_request.head.ref,
+    "patches/v1",
+    "sourcehut webhook: GitHub-shape patchset includes head ref"
+  )
+
+  app.backend.rest = saved_rest
+  app.backend.capabilities = saved_capabilities
+  app.backend.webhooks = saved_webhooks
+  app.backend.webhook_translators = saved_webhook_translators
+  app.backend.webhook_github_translators = saved_webhook_github_translators
+  graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
+  config.base_url = saved_base_url
+  config.backend = saved_backend
+end
+
+-- ============================================================
 -- NotABug webhook handlers
 -- ============================================================
 
@@ -3182,6 +3678,46 @@ do
     }),
     200,
     "webhook_receiver: radicle event_type patch handler succeeds → 200"
+  )
+
+  -- Sourcehut GraphQL webhooks can embed the event name under data.webhook.
+  app.backend.webhooks = {
+    push = function(_payload)
+      return { event = "push" }, nil
+    end,
+    ["patchset:created"] = function(_payload)
+      return { event = "pull_request" }, nil
+    end,
+  }
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/sourcehut",
+      headers = { ["Content-Type"] = "application/json" },
+      body = '{"event":"push"}',
+    }),
+    200,
+    "webhook_receiver: sourcehut root event handler succeeds → 200"
+  )
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/sourcehut",
+      headers = { ["Content-Type"] = "application/json" },
+      body = '{"webhook":{"event":"push"}}',
+    }),
+    200,
+    "webhook_receiver: sourcehut webhook.event handler succeeds → 200"
+  )
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/sourcehut",
+      headers = { ["Content-Type"] = "application/json" },
+      body = '{"data":{"webhook":{"event":"patchset:created"}}}',
+    }),
+    200,
+    "webhook_receiver: sourcehut data.webhook.event handler succeeds → 200"
   )
 
   -- Phabricator embeds the object family in object.type or the PHID prefix.
@@ -3668,20 +4204,69 @@ do
     "verify_signature kallithea: invalid JSON body → 401"
   )
 
-  -- ── Trust-the-network-only backends: codecommit, sourcehut
-  -- These use asymmetric/platform-managed schemes not yet implemented.
+  -- ── Trust-the-network-only backend: codecommit
+  -- SNS signature verification is not yet implemented.
   -- No secret → accepted; any secret configured → always rejected.
-  for _, be in ipairs({ "codecommit", "sourcehut" }) do
-    ok(
-      no_secret(be, {}) ~= 401,
-      "verify_signature " .. be .. ": no secret (trust-the-network) → not 401"
-    )
-    eq(
-      call_sig(be, {}, nil, { [be] = SECRET }),
-      401,
-      "verify_signature " .. be .. ": secret configured (unimplemented scheme) → 401"
-    )
-  end
+  ok(
+    no_secret("codecommit", {}) ~= 401,
+    "verify_signature codecommit: no secret (trust-the-network) → not 401"
+  )
+  eq(
+    call_sig("codecommit", {}, nil, { codecommit = SECRET }),
+    401,
+    "verify_signature codecommit: secret configured (unimplemented scheme) → 401"
+  )
+
+  -- ── Sourcehut: X-Payload-Signature, Ed25519 over raw body
+  -- Unit tests use identity base64 decoding and a stub verifier.  The hurl
+  -- suite exercises the OpenSSL-backed verifier with a real Ed25519 keypair.
+  local SOURCEHUT_PUBLIC_KEY = string.rep("k", 32)
+  local SOURCEHUT_SIGNATURE = string.rep("s", 64)
+  ok(no_secret("sourcehut", {}) ~= 401, "verify_signature sourcehut: no public key → not 401")
+  ok(
+    call_sig(
+      "sourcehut",
+      { ["X-Payload-Signature"] = SOURCEHUT_SIGNATURE },
+      nil,
+      { sourcehut = SOURCEHUT_PUBLIC_KEY }
+    ) ~= 401,
+    "verify_signature sourcehut: valid X-Payload-Signature → not 401"
+  )
+  eq(
+    call_sig(
+      "sourcehut",
+      { ["X-Payload-Signature"] = string.rep("x", 64) },
+      nil,
+      { sourcehut = SOURCEHUT_PUBLIC_KEY }
+    ),
+    401,
+    "verify_signature sourcehut: bad X-Payload-Signature → 401"
+  )
+  eq(
+    call_sig("sourcehut", {}, nil, { sourcehut = SOURCEHUT_PUBLIC_KEY }),
+    401,
+    "verify_signature sourcehut: missing X-Payload-Signature → 401"
+  )
+  eq(
+    call_sig(
+      "sourcehut",
+      { ["X-Payload-Signature"] = "short" },
+      nil,
+      { sourcehut = SOURCEHUT_PUBLIC_KEY }
+    ),
+    401,
+    "verify_signature sourcehut: malformed signature length → 401"
+  )
+  eq(
+    call_sig(
+      "sourcehut",
+      { ["X-Payload-Signature"] = SOURCEHUT_SIGNATURE },
+      nil,
+      { sourcehut = "short" }
+    ),
+    401,
+    "verify_signature sourcehut: malformed public key length → 401"
+  )
 
   -- ── Confusio-normalized: X-Confusio-Signature-256, HMAC-SHA256 + timestamp
   -- Header format: "sha256=<hex>, v=1, ts=<unix>"
