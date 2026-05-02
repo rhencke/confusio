@@ -41,6 +41,7 @@ test/fixtures/webhooks/gitea/pull_request_comment-reviewed.json
 test/fixtures/webhooks/gitea/pull_request_review_comment-deleted.json
 test/fixtures/webhooks/gitea/pull_request_review_comment-edited.json
 test/fixtures/webhooks/gitea/workflow_run-in_progress.json
+test/fixtures/webhooks/gitea/status-error.json
 test/fixtures/webhooks/gitea/release-edited.json
 test/fixtures/webhooks/gitea/release-deleted.json
 test/fixtures/webhooks/gitea/release-prereleased.json

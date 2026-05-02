@@ -88,6 +88,7 @@ gitea|pull_request_review-submitted.json|pull_request_approved-reviewed.json|.ac
 gitea|pull_request_review-submitted.json|pull_request_rejected-reviewed.json|.action = "reviewed" | .review.type = "pull_request_review_rejected" | .review.body = "Needs changes." | del(.review.state)
 gitea|pull_request_review_comment-created.json|pull_request_comment-reviewed.json|.action = "reviewed"
 gitea|workflow_run-requested.json|workflow_run-in_progress.json|.action = "in_progress" | .workflow_run.status = "in_progress" | .workflow_run.updated_at = "2024-01-15T11:01:00Z"
+gitea|status-failure.json|status-error.json|.state = "error" | .sha = "feedfacefeedfacefeedfacefeedfacefeedface" | .description = "Build errored" | .target_url = "https://ci.example.com/builds/102"
 gitea|release-published.json|release-edited.json|.action = "edited" | .release.name = "Release 1.0.0 (updated)" | .release.body = "Updated notes"
 gitea|release-published.json|release-deleted.json|.action = "deleted"
 gitea|star-created.json|star-deleted.json|.action = "deleted" | .starred_at = null
