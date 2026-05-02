@@ -3482,6 +3482,16 @@ do
     400,
     "webhook_receiver: non-JSON Content-Type → 400"
   )
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/tuleap",
+      headers = { ["Content-Type"] = "text/plain" },
+      body = "",
+    }),
+    400,
+    "webhook_receiver: unsupported Tuleap Content-Type → 400"
+  )
 
   -- 400 for missing Content-Type
   eq(
@@ -3539,7 +3549,69 @@ do
     "webhook_receiver: registered handler succeeds → 200"
   )
 
+  -- Tuleap natively sends application/x-www-form-urlencoded with a payload
+  -- field containing the JSON webhook body.
+  local tuleap_payload_seen = nil
+  app.backend.webhooks = {
+    ["test-event"] = function(payload)
+      tuleap_payload_seen = payload
+      return { event = "repository" }, nil
+    end,
+  }
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/tuleap",
+      headers = {
+        ["Content-Type"] = "application/x-www-form-urlencoded; charset=utf-8",
+      },
+      body = "payload=%7B%22eventType%22%3A%22test-event%22%2C%22message%22%3A%22hello+world+%26+100%25%22%7D&ignored=1",
+    }),
+    200,
+    "webhook_receiver: tuleap form payload succeeds → 200"
+  )
+  eq(
+    tuleap_payload_seen and tuleap_payload_seen.message,
+    "hello world & 100%",
+    "webhook_receiver: tuleap form payload is URL-decoded before JSON parse"
+  )
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/tuleap",
+      headers = { ["Content-Type"] = "application/x-www-form-urlencoded" },
+      body = "not_payload=%7B%7D",
+    }),
+    400,
+    "webhook_receiver: tuleap form without payload → 400"
+  )
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/tuleap",
+      headers = { ["Content-Type"] = "application/x-www-form-urlencoded" },
+      body = "payload=%7B%22eventType%22%3A%22test-event%22%7",
+    }),
+    400,
+    "webhook_receiver: tuleap malformed form encoding → 400"
+  )
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/tuleap",
+      headers = { ["Content-Type"] = "application/x-www-form-urlencoded" },
+      body = "payload=not-json",
+    }),
+    400,
+    "webhook_receiver: tuleap form payload with invalid JSON → 400"
+  )
+
   -- Gogs-family backends use their own event-type header, not X-Gitea-Event.
+  app.backend.webhooks = {
+    push = function(_payload)
+      return { event = "push" }, nil
+    end,
+  }
   eq(
     call_webhook({
       method = "POST",

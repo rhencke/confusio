@@ -3,7 +3,8 @@
 -- Processing stages:
 --   1. Route    — extract backend name from path; 404 for unknown backend
 --   2. Method   — POST only; 405 for other methods
---   3. Format   — Content-Type must be application/json; 400 otherwise
+--   3. Format   — Content-Type must be application/json, except Tuleap
+--                 also accepts application/x-www-form-urlencoded payload=<json>
 --   4. Verify   — backend-specific signature checked against raw body; 401 on failure
 --   5. Dispatch — decoded payload passed to app.backend.webhooks[event]; 422 for unknown
 --   6. Respond  — 200 on success
@@ -287,6 +288,71 @@ local function sourceforge_body_event(payload)
     return "repo-push"
   end
   return nil
+end
+
+local function url_decode_component(s)
+  s = tostring(s or "")
+  local i = 1
+  while true do
+    local p = s:find("%%", i, true)
+    if not p then
+      break
+    end
+    local hex = s:sub(p + 1, p + 2)
+    if #hex ~= 2 or not hex:match("^%x%x$") then
+      return nil
+    end
+    i = p + 3
+  end
+  return (
+    s:gsub("+", " "):gsub("%%(%x%x)", function(hex)
+      return string.char(tonumber(hex, 16))
+    end)
+  )
+end
+
+local function form_field(body, name)
+  for pair in (body .. "&"):gmatch("([^&]*)&") do
+    if pair ~= "" then
+      local raw_key, raw_value = pair:match("^([^=]*)=?(.*)$")
+      local key = url_decode_component(raw_key)
+      if not key then
+        return nil, "Malformed form body"
+      end
+      if key == name then
+        local value = url_decode_component(raw_value)
+        if not value then
+          return nil, "Malformed form body"
+        end
+        return value, nil
+      end
+    end
+  end
+  return nil, "Missing form field: " .. name
+end
+
+local function parse_webhook_payload(backend, content_type, body)
+  if content_type:find("application/json", 1, true) then
+    local ok_parse, payload = pcall(DecodeJson, body)
+    if not ok_parse or type(payload) ~= "table" then
+      return nil, "Invalid JSON body"
+    end
+    return payload, nil
+  end
+
+  if backend == "tuleap" and content_type:find("application/x-www-form-urlencoded", 1, true) then
+    local payload_json, form_err = form_field(body, "payload")
+    if not payload_json then
+      return nil, form_err or "Invalid form body"
+    end
+    local ok_parse, payload = pcall(DecodeJson, payload_json)
+    if not ok_parse or type(payload) ~= "table" then
+      return nil, "Invalid JSON body"
+    end
+    return payload, nil
+  end
+
+  return nil, "Content-Type must be application/json"
 end
 
 -- verify_signature(backend, secret, body[, now]) authenticates the inbound request
@@ -622,9 +688,13 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
       return
     end
 
-    -- Content-Type: must include application/json.
+    -- Content-Type: must include application/json for most backends.  Tuleap
+    -- natively sends form-encoded requests with a payload=<json> field.
     local ct = GetHeader("Content-Type") or ""
-    if not ct:find("application/json", 1, true) then
+    local is_json = ct:find("application/json", 1, true) ~= nil
+    local is_tuleap_form = backend == "tuleap"
+      and ct:find("application/x-www-form-urlencoded", 1, true) ~= nil
+    if not is_json and not is_tuleap_form then
       respond_json(400, { message = "Content-Type must be application/json" })
       return
     end
@@ -643,10 +713,11 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
       return
     end
 
-    -- Decode JSON body.
-    local ok_parse, payload = pcall(DecodeJson, body)
-    if not ok_parse or type(payload) ~= "table" then
-      respond_json(400, { message = "Invalid JSON body" })
+    -- Decode JSON body. Tuleap's form body is verified as raw bytes first,
+    -- then the URL-encoded payload field is decoded as the JSON payload.
+    local payload, parse_err = parse_webhook_payload(backend, ct, body)
+    if not payload then
+      respond_json(400, { message = parse_err or "Invalid JSON body" })
       return
     end
 
