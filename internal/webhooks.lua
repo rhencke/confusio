@@ -239,6 +239,12 @@ local RADICLE_BODY_EVENT_FIELDS = {
   "eventType",
 }
 
+local SOURCEHUT_BODY_EVENT_FIELDS = {
+  "event",
+  "event_type",
+  "eventType",
+}
+
 local function kallithea_body_event(payload)
   return first_string_field(payload, KALLITHEA_BODY_EVENT_FIELDS)
     or first_string_field(payload and payload.data, KALLITHEA_BODY_EVENT_FIELDS)
@@ -247,6 +253,15 @@ end
 
 local function radicle_body_event(payload)
   return first_string_field(payload, RADICLE_BODY_EVENT_FIELDS)
+end
+
+local function sourcehut_body_event(payload)
+  return first_string_field(payload, SOURCEHUT_BODY_EVENT_FIELDS)
+    or first_string_field(payload and payload.webhook, SOURCEHUT_BODY_EVENT_FIELDS)
+    or first_string_field(
+      payload and payload.data and payload.data.webhook,
+      SOURCEHUT_BODY_EVENT_FIELDS
+    )
 end
 
 local function phabricator_phid_type(phid)
@@ -644,6 +659,7 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
     --   OneDev uses payload.type (e.g. "RefUpdated").
     --   Kallithea hook plugins embed an event/hook name in the JSON body.
     --   Radicle CI adapter requests use payload.event_type (e.g. "push", "patch").
+    --   Sourcehut GraphQL webhooks commonly use payload.data.webhook.event.
     --   Phabricator webhooks embed object.type, or an equivalent PHID prefix.
     --   SourceForge / Allura repo-push webhooks have no event header, so infer
     --   them from their documented ref/update fields.
@@ -659,6 +675,8 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
         ev = kallithea_body_event(payload)
       elseif backend == "radicle" then
         ev = radicle_body_event(payload)
+      elseif backend == "sourcehut" then
+        ev = sourcehut_body_event(payload)
       elseif backend == "phabricator" then
         ev = phabricator_body_event(payload)
       elseif backend == "sourceforge" then

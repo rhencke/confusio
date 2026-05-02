@@ -3187,6 +3187,46 @@ do
     "webhook_receiver: radicle event_type patch handler succeeds → 200"
   )
 
+  -- Sourcehut GraphQL webhooks can embed the event name under data.webhook.
+  app.backend.webhooks = {
+    push = function(_payload)
+      return { event = "push" }, nil
+    end,
+    ["patchset:created"] = function(_payload)
+      return { event = "pull_request" }, nil
+    end,
+  }
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/sourcehut",
+      headers = { ["Content-Type"] = "application/json" },
+      body = '{"event":"push"}',
+    }),
+    200,
+    "webhook_receiver: sourcehut root event handler succeeds → 200"
+  )
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/sourcehut",
+      headers = { ["Content-Type"] = "application/json" },
+      body = '{"webhook":{"event":"push"}}',
+    }),
+    200,
+    "webhook_receiver: sourcehut webhook.event handler succeeds → 200"
+  )
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/sourcehut",
+      headers = { ["Content-Type"] = "application/json" },
+      body = '{"data":{"webhook":{"event":"patchset:created"}}}',
+    }),
+    200,
+    "webhook_receiver: sourcehut data.webhook.event handler succeeds → 200"
+  )
+
   -- Phabricator embeds the object family in object.type or the PHID prefix.
   app.backend.webhooks = {
     TASK = function(_payload)
