@@ -1,0 +1,30 @@
+{
+  "request": "trigger",
+  "version": 1,
+  "event_type": "push",
+  "event_id": "radicle-ref-delete-1",
+  "occurred_at": "2024-01-15T10:06:00Z",
+  "repository": {
+    "rid": "rad:z3gqcJUoA1n9HaHKufZs1",
+    "name": "hello-world",
+    "description": "My first repo",
+    "default_branch": "main",
+    "web_url": "https://radicle.example/nodes/z6MkGxABC123/rad:z3gqcJUoA1n9HaHKufZs1",
+    "clone_url": "rad://rad:z3gqcJUoA1n9HaHKufZs1",
+    "owner": {
+      "id": "did:key:z6MkGxABC123",
+      "alias": "octocat"
+    }
+  },
+  "pusher": {
+    "id": "did:key:z6MkAlice",
+    "alias": "alice",
+    "name": "Alice Example",
+    "email": "alice@example.com"
+  },
+  "ref": "refs/heads/feature/radicle-fixtures",
+  "branch": "feature/radicle-fixtures",
+  "before": "3333333333333333333333333333333333333333",
+  "after": "0000000000000000000000000000000000000000",
+  "commits": []
+}

@@ -1,0 +1,45 @@
+{
+  "request": "trigger",
+  "version": 1,
+  "event_type": "patch",
+  "event_id": "radicle-patch-created-1",
+  "occurred_at": "2024-01-15T10:30:00Z",
+  "repository": {
+    "rid": "rad:z3gqcJUoA1n9HaHKufZs1",
+    "name": "hello-world",
+    "description": "My first repo",
+    "default_branch": "main",
+    "web_url": "https://radicle.example/nodes/z6MkGxABC123/rad:z3gqcJUoA1n9HaHKufZs1",
+    "clone_url": "rad://rad:z3gqcJUoA1n9HaHKufZs1",
+    "owner": {
+      "id": "did:key:z6MkGxABC123",
+      "alias": "octocat"
+    }
+  },
+  "sender": {
+    "id": "did:key:z6MkAlice",
+    "alias": "alice",
+    "name": "Alice Example",
+    "email": "alice@example.com"
+  },
+  "action": "created",
+  "patch": {
+    "id": "patches/1",
+    "number": 1,
+    "title": "Add checkout flow",
+    "description": "Implement checkout flow.",
+    "state": "open",
+    "target_branch": "main",
+    "base": "1111111111111111111111111111111111111111",
+    "head": "4444444444444444444444444444444444444444",
+    "url": "https://radicle.example/nodes/z6MkGxABC123/rad:z3gqcJUoA1n9HaHKufZs1/patches/1",
+    "author": {
+      "id": "did:key:z6MkAlice",
+      "alias": "alice",
+      "name": "Alice Example",
+      "email": "alice@example.com"
+    },
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z"
+  }
+}
