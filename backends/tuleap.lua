@@ -325,8 +325,8 @@ local function translate_tuleap_normalized_webhook(internal_event, fields)
   })
 end
 
-local function translate_tuleap_github_webhook(internal_event, _fields)
-  return github_webhook_payload(internal_event)
+local function translate_tuleap_github_webhook(internal_event, fields)
+  return github_webhook_payload(internal_event, fields)
 end
 
 local function tuleap_git_event(payload)

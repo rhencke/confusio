@@ -331,8 +331,8 @@ local function translate_radicle_normalized_webhook(internal_event, fields)
   })
 end
 
-local function translate_radicle_github_webhook(internal_event, _fields)
-  return github_webhook_payload(internal_event)
+local function translate_radicle_github_webhook(internal_event, fields)
+  return github_webhook_payload(internal_event, fields)
 end
 
 local b = make_backend_builder()

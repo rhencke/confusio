@@ -53,6 +53,7 @@ jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].body_json.ref" == "feature/sourceforge-fixtures"
 jsonpath "$[0].body_json.ref_type" == "branch"
 jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.sender.login" == "alice"
 
 # -- branch delete -> delete -------------------------------------------------
 
@@ -75,6 +76,8 @@ jsonpath "$[0].github_event" == "delete"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].body_json.ref" == "feature/sourceforge-fixtures"
 jsonpath "$[0].body_json.ref_type" == "branch"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.sender.login" == "alice"
 
 # -- tag create -> create ----------------------------------------------------
 
@@ -97,6 +100,7 @@ jsonpath "$[0].github_event" == "create"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].body_json.ref" == "v1.0.0"
 jsonpath "$[0].body_json.ref_type" == "tag"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
 
 # -- tag delete -> delete ----------------------------------------------------
 
@@ -119,3 +123,4 @@ jsonpath "$[0].github_event" == "delete"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].body_json.ref" == "v1.0.0"
 jsonpath "$[0].body_json.ref_type" == "tag"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"

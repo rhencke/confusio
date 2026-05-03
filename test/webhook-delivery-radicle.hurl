@@ -28,6 +28,8 @@ jsonpath "$[0].body_json.ref" == "refs/heads/main"
 jsonpath "$[0].body_json.before" == "1111111111111111111111111111111111111111"
 jsonpath "$[0].body_json.after" == "2222222222222222222222222222222222222222"
 jsonpath "$[0].body_json.commits[0].id" == "2222222222222222222222222222222222222222"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.sender.login" == "alice"
 
 # ── branch create -> create -------------------------------------------------
 
@@ -51,6 +53,7 @@ jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].body_json.ref" == "feature/radicle-fixtures"
 jsonpath "$[0].body_json.ref_type" == "branch"
 jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.sender.login" == "alice"
 
 # ── branch delete -> delete -------------------------------------------------
 
@@ -73,6 +76,8 @@ jsonpath "$[0].github_event" == "delete"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].body_json.ref" == "feature/radicle-fixtures"
 jsonpath "$[0].body_json.ref_type" == "branch"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.sender.login" == "alice"
 
 # ── tag create -> create ----------------------------------------------------
 
@@ -95,6 +100,7 @@ jsonpath "$[0].github_event" == "create"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].body_json.ref" == "v1.0.0"
 jsonpath "$[0].body_json.ref_type" == "tag"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
 
 # ── tag delete -> delete ----------------------------------------------------
 
@@ -117,6 +123,7 @@ jsonpath "$[0].github_event" == "delete"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].body_json.ref" == "v1.0.0"
 jsonpath "$[0].body_json.ref_type" == "tag"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
 
 # ── patch created -> pull_request opened -----------------------------------
 
