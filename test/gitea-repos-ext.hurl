@@ -256,6 +256,7 @@ jsonpath "$.url" == "https://example.com/updated-hook"
 
 # POST /repos/{owner}/{repo}/hooks/{hook_id}/tests
 POST http://{{host}}/repos/octocat/hello-world/hooks/1/tests
+Content-Length: 0
 
 HTTP 204
 
