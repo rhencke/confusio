@@ -279,7 +279,7 @@ jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
 jsonpath "$[0].body_json.type" == "discussion.created"
 jsonpath "$[0].body_json.payload.discussion.title" == "How do I configure X?"
-# ── package: published — confusio shape ───────────────────────────────────────
+# ── package: created — confusio shape ─────────────────────────────────────────
 
 POST http://{{target}}/reset
 {}
@@ -302,5 +302,6 @@ jsonpath "$[0].confusio_source" == "codeberg"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
-jsonpath "$[0].body_json.type" == "package.published"
+jsonpath "$[0].body_json.type" == "package.created"
+jsonpath "$[0].body_json.payload.action" == "created"
 jsonpath "$[0].body_json.payload.package.name" == "my-lib"

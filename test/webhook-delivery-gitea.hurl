@@ -679,17 +679,14 @@ POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: merge_group
 file,fixtures/webhooks/gitea/merge_group-checks_requested.json;
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: merge_group"
 
 GET http://{{target}}/deliveries
 HTTP 200
 [Asserts]
-jsonpath "$" count == 1
-jsonpath "$[0].github_event" == "merge_group"
-jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$" count == 0
 
 # ── merge_group: destroyed ────────────────────────────────────────────────────
 
@@ -701,17 +698,14 @@ POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: merge_group
 file,fixtures/webhooks/gitea/merge_group-destroyed.json;
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: merge_group"
 
 GET http://{{target}}/deliveries
 HTTP 200
 [Asserts]
-jsonpath "$" count == 1
-jsonpath "$[0].github_event" == "merge_group"
-jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$" count == 0
 
 # ── pull_request_review: submitted ────────────────────────────────────────────
 
@@ -1065,6 +1059,28 @@ jsonpath "$[0].github_event" == "status"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 
+# ── status: error ─────────────────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: status
+file,fixtures/webhooks/gitea/status-error.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "status"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
 # ── push: push ────────────────────────────────────────────────────────────────
 
 POST http://{{target}}/reset
@@ -1175,7 +1191,7 @@ jsonpath "$[0].github_event" == "release"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 
-# ── release: edited ───────────────────────────────────────────────────────────
+# ── release: updated → edited ─────────────────────────────────────────────────
 
 POST http://{{target}}/reset
 {}
@@ -1184,7 +1200,7 @@ HTTP 200
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: release
-file,fixtures/webhooks/gitea/release-edited.json;
+file,fixtures/webhooks/gitea/release-updated.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -1307,7 +1323,7 @@ jsonpath "$[0].github_event" == "repository"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 
-# ── gollum: created ───────────────────────────────────────────────────────────
+# ── wiki: created → gollum ────────────────────────────────────────────────────
 
 POST http://{{target}}/reset
 {}
@@ -1315,8 +1331,8 @@ HTTP 200
 
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
-X-Gitea-Event: gollum
-file,fixtures/webhooks/gitea/gollum-created.json;
+X-Gitea-Event: wiki
+file,fixtures/webhooks/gitea/wiki-created.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -1329,7 +1345,7 @@ jsonpath "$[0].github_event" == "gollum"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 
-# ── gollum: edited ────────────────────────────────────────────────────────────
+# ── wiki: edited → gollum ─────────────────────────────────────────────────────
 
 POST http://{{target}}/reset
 {}
@@ -1337,8 +1353,30 @@ HTTP 200
 
 POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
-X-Gitea-Event: gollum
-file,fixtures/webhooks/gitea/gollum-edited.json;
+X-Gitea-Event: wiki
+file,fixtures/webhooks/gitea/wiki-edited.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "gollum"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].user_agent" contains "confusio"
+
+# ── wiki: deleted → gollum ────────────────────────────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: wiki
+file,fixtures/webhooks/gitea/wiki-deleted.json;
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "accepted"
@@ -1361,17 +1399,14 @@ POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: deploy_key
 file,fixtures/webhooks/gitea/deploy_key-created.json;
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: deploy_key"
 
 GET http://{{target}}/deliveries
 HTTP 200
 [Asserts]
-jsonpath "$" count == 1
-jsonpath "$[0].github_event" == "deploy_key"
-jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$" count == 0
 
 # ── deploy_key: deleted ───────────────────────────────────────────────────────
 
@@ -1383,17 +1418,14 @@ POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: deploy_key
 file,fixtures/webhooks/gitea/deploy_key-deleted.json;
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: deploy_key"
 
 GET http://{{target}}/deliveries
 HTTP 200
 [Asserts]
-jsonpath "$" count == 1
-jsonpath "$[0].github_event" == "deploy_key"
-jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$" count == 0
 
 # ── member: added ─────────────────────────────────────────────────────────────
 
@@ -1449,17 +1481,14 @@ POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: star
 file,fixtures/webhooks/gitea/star-created.json;
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: star"
 
 GET http://{{target}}/deliveries
 HTTP 200
 [Asserts]
-jsonpath "$" count == 1
-jsonpath "$[0].github_event" == "star"
-jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$" count == 0
 
 # ── star: deleted ─────────────────────────────────────────────────────────────
 
@@ -1471,17 +1500,14 @@ POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: star
 file,fixtures/webhooks/gitea/star-deleted.json;
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: star"
 
 GET http://{{target}}/deliveries
 HTTP 200
 [Asserts]
-jsonpath "$" count == 1
-jsonpath "$[0].github_event" == "star"
-jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$" count == 0
 
 # ── watch: started ────────────────────────────────────────────────────────────
 
@@ -1493,17 +1519,14 @@ POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: watch
 file,fixtures/webhooks/gitea/watch-started.json;
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: watch"
 
 GET http://{{target}}/deliveries
 HTTP 200
 [Asserts]
-jsonpath "$" count == 1
-jsonpath "$[0].github_event" == "watch"
-jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$" count == 0
 
 # ── discussion: created ───────────────────────────────────────────────────────
 
@@ -1515,17 +1538,14 @@ POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: discussion
 file,fixtures/webhooks/gitea/discussion-created.json;
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: discussion"
 
 GET http://{{target}}/deliveries
 HTTP 200
 [Asserts]
-jsonpath "$" count == 1
-jsonpath "$[0].github_event" == "discussion"
-jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$" count == 0
 
 # ── discussion: edited ────────────────────────────────────────────────────────
 
@@ -1537,17 +1557,14 @@ POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: discussion
 file,fixtures/webhooks/gitea/discussion-edited.json;
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: discussion"
 
 GET http://{{target}}/deliveries
 HTTP 200
 [Asserts]
-jsonpath "$" count == 1
-jsonpath "$[0].github_event" == "discussion"
-jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$" count == 0
 
 # ── discussion: deleted ───────────────────────────────────────────────────────
 
@@ -1559,17 +1576,14 @@ POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: discussion
 file,fixtures/webhooks/gitea/discussion-deleted.json;
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: discussion"
 
 GET http://{{target}}/deliveries
 HTTP 200
 [Asserts]
-jsonpath "$" count == 1
-jsonpath "$[0].github_event" == "discussion"
-jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$" count == 0
 
 # ── discussion: closed ────────────────────────────────────────────────────────
 
@@ -1581,17 +1595,14 @@ POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: discussion
 file,fixtures/webhooks/gitea/discussion-closed.json;
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: discussion"
 
 GET http://{{target}}/deliveries
 HTTP 200
 [Asserts]
-jsonpath "$" count == 1
-jsonpath "$[0].github_event" == "discussion"
-jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$" count == 0
 
 # ── discussion: reopened ──────────────────────────────────────────────────────
 
@@ -1603,17 +1614,14 @@ POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: discussion
 file,fixtures/webhooks/gitea/discussion-reopened.json;
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: discussion"
 
 GET http://{{target}}/deliveries
 HTTP 200
 [Asserts]
-jsonpath "$" count == 1
-jsonpath "$[0].github_event" == "discussion"
-jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$" count == 0
 
 # ── discussion: labeled ───────────────────────────────────────────────────────
 
@@ -1625,17 +1633,14 @@ POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: discussion
 file,fixtures/webhooks/gitea/discussion-labeled.json;
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: discussion"
 
 GET http://{{target}}/deliveries
 HTTP 200
 [Asserts]
-jsonpath "$" count == 1
-jsonpath "$[0].github_event" == "discussion"
-jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$" count == 0
 
 # ── discussion: unlabeled ─────────────────────────────────────────────────────
 
@@ -1647,17 +1652,14 @@ POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: discussion
 file,fixtures/webhooks/gitea/discussion-unlabeled.json;
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: discussion"
 
 GET http://{{target}}/deliveries
 HTTP 200
 [Asserts]
-jsonpath "$" count == 1
-jsonpath "$[0].github_event" == "discussion"
-jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$" count == 0
 
 # ── discussion_comment: created ───────────────────────────────────────────────
 
@@ -1669,17 +1671,14 @@ POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: discussion_comment
 file,fixtures/webhooks/gitea/discussion_comment-created.json;
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: discussion_comment"
 
 GET http://{{target}}/deliveries
 HTTP 200
 [Asserts]
-jsonpath "$" count == 1
-jsonpath "$[0].github_event" == "discussion_comment"
-jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$" count == 0
 
 # ── discussion_comment: edited ────────────────────────────────────────────────
 
@@ -1691,17 +1690,14 @@ POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: discussion_comment
 file,fixtures/webhooks/gitea/discussion_comment-edited.json;
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: discussion_comment"
 
 GET http://{{target}}/deliveries
 HTTP 200
 [Asserts]
-jsonpath "$" count == 1
-jsonpath "$[0].github_event" == "discussion_comment"
-jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$" count == 0
 
 # ── discussion_comment: deleted ───────────────────────────────────────────────
 
@@ -1713,17 +1709,14 @@ POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: discussion_comment
 file,fixtures/webhooks/gitea/discussion_comment-deleted.json;
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: discussion_comment"
 
 GET http://{{target}}/deliveries
 HTTP 200
 [Asserts]
-jsonpath "$" count == 1
-jsonpath "$[0].github_event" == "discussion_comment"
-jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$" count == 0
 # ── package: published ────────────────────────────────────────────────────────
 
 POST http://{{target}}/reset
@@ -1778,14 +1771,11 @@ POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: ping
 file,fixtures/webhooks/gitea/ping.json;
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: ping"
 
 GET http://{{target}}/deliveries
 HTTP 200
 [Asserts]
-jsonpath "$" count == 1
-jsonpath "$[0].github_event" == "ping"
-jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$" count == 0

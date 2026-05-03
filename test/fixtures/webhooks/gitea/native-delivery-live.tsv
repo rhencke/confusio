@@ -1,0 +1,22 @@
+# Native Gitea webhook delivery manifest for live integration smoke coverage.
+#
+# This keeps live-provider integration small by selecting one audited native
+# fixture per native Gitea event family while reusing the strict delivery
+# assertions from native-delivery.tsv.
+create|create|create.json|branch or tag creation|create
+delete|delete|delete.json|branch or tag deletion|delete
+fork|fork|fork.json|repository fork|fork
+push|push|push.json|branch or tag push|push
+issues|issues|issues-opened.json|opened|issue.opened
+issue_comment|issue_comment|issue_comment-created.json|created|issue.comment.created
+pull_request|pull_request|pull_request-opened.json|opened|pull_request.opened
+pull_request_approved|pull_request_review|pull_request_approved-reviewed.json|approved review|pull_request.review.submitted
+pull_request_rejected|pull_request_review|pull_request_rejected-reviewed.json|rejected review|pull_request.review.submitted
+pull_request_comment|pull_request_review_comment|pull_request_comment-reviewed.json|review comment|pull_request.review_comment.created
+wiki|gollum|wiki-created.json|created|gollum.created
+repository|repository|repository-created.json|created|repository.created
+release|release|release-published.json|published|release.published
+package|package|package-published.json|created|package.created
+status|status|status-success.json|success|status.success
+workflow_run|workflow_run|workflow_run-completed.json|completed|workflow.run.completed
+workflow_job|workflow_job|workflow_job-completed.json|completed|workflow.job.completed

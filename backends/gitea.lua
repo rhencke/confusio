@@ -315,9 +315,15 @@ local function translate_gitea_review(r)
     return {}
   end
   local state = r.state or r.type or "COMMENT"
-  if state == "REJECT" or state == "REQUEST_CHANGES" then
+  if state == "pull_request_review_approved" then
+    state = "APPROVED"
+  elseif state == "pull_request_review_rejected" then
     state = "CHANGES_REQUESTED"
-  elseif state ~= "APPROVED" and state ~= "DISMISSED" then
+  elseif state == "pull_request_review_comment" then
+    state = "COMMENT"
+  elseif state == "REJECT" or state == "REQUEST_CHANGES" then
+    state = "CHANGES_REQUESTED"
+  elseif state ~= "APPROVED" and state ~= "CHANGES_REQUESTED" and state ~= "DISMISSED" then
     state = "COMMENT"
   end
   return {
@@ -7127,12 +7133,15 @@ local ISSUES_ACTIONS = {
   edited = "edited",
   closed = "closed",
   reopened = "reopened",
+  deleted = "deleted",
   labeled = "labeled",
-  label_updated = "labeled", -- older Gitea spelling
+  label_updated = "labeled", -- native Gitea spelling
   unlabeled = "unlabeled",
-  label_cleared = "unlabeled", -- older Gitea spelling
+  label_cleared = "unlabeled", -- native Gitea spelling
   assigned = "assigned",
   unassigned = "unassigned",
+  milestoned = "milestoned",
+  demilestoned = "demilestoned",
 }
 local ISSUE_COMMENT_ACTIONS = {
   created = "created",
@@ -7157,14 +7166,17 @@ local PULL_REQUEST_ACTIONS = {
   closed = "closed",
   reopened = "reopened",
   edited = "edited",
+  deleted = "deleted",
   synchronize = "synchronize", -- commits pushed to PR head branch
-  synchronized = "synchronize", -- older Gitea spelling
+  synchronized = "synchronize", -- native Gitea spelling
   labeled = "labeled",
-  label_updated = "labeled", -- older Gitea spelling
+  label_updated = "labeled", -- native Gitea spelling
   unlabeled = "unlabeled",
-  label_cleared = "unlabeled", -- older Gitea spelling
+  label_cleared = "unlabeled", -- native Gitea spelling
   assigned = "assigned",
   unassigned = "unassigned",
+  milestoned = "milestoned",
+  demilestoned = "demilestoned",
   review_requested = "review_requested",
   review_request_removed = "review_request_removed",
 }
@@ -7189,6 +7201,10 @@ local GOGS_FAMILY_WEBHOOK_BACKENDS = {
 }
 local GITEA_WEBHOOK_PROVIDER = GOGS_FAMILY_WEBHOOK_BACKENDS[config.backend] and config.backend
   or "gitea"
+local FORGEJO_FAMILY_WEBHOOK_BACKENDS = {
+  codeberg = true,
+  forgejo = true,
+}
 local GOGS_NATIVE_WEBHOOK_EVENTS = {
   create = true,
   delete = true,
@@ -7199,9 +7215,22 @@ local GOGS_NATIVE_WEBHOOK_EVENTS = {
   push = true,
   release = true,
 }
+local GITEA_NON_NATIVE_WEBHOOK_EVENTS = {
+  deploy_key = true,
+  discussion = true,
+  discussion_comment = true,
+  merge_group = true,
+  ping = true,
+  security_and_analysis = true,
+  star = true,
+  watch = true,
+}
 
 local function register_gitea_webhook(event, fn)
   if GOGS_FAMILY_WEBHOOK_BACKENDS[config.backend] and not GOGS_NATIVE_WEBHOOK_EVENTS[event] then
+    return
+  end
+  if config.backend == "gitea" and GITEA_NON_NATIVE_WEBHOOK_EVENTS[event] then
     return
   end
   b:webhook(event, fn)
@@ -7220,6 +7249,16 @@ register_gitea_webhook("issues", function(payload)
   -- label that changed.
   if ISSUES_ACTIONS[raw_action] == "labeled" or ISSUES_ACTIONS[raw_action] == "unlabeled" then
     data.label = translate_gitea_label(payload.label)
+  end
+  -- For assigned/unassigned, include the specific user that changed.
+  if action == "assigned" or action == "unassigned" then
+    data.assignee = payload.assignee and translate_user(payload.assignee) or nil
+  end
+  -- For milestoned/demilestoned, include the affected milestone when Gitea
+  -- supplies it at either the top level or on the issue object.
+  if action == "milestoned" or action == "demilestoned" then
+    data.milestone =
+      translate_gitea_milestone_webhook(payload.milestone or (payload.issue or {}).milestone)
   end
   return make_internal_event({
     event = "issues",
@@ -7367,6 +7406,15 @@ register_gitea_webhook("pull_request", function(payload)
   if action == "labeled" or action == "unlabeled" then
     data.label = translate_gitea_label(payload.label)
   end
+  -- For assigned/unassigned, include the specific user that changed.
+  if action == "assigned" or action == "unassigned" then
+    data.assignee = payload.assignee and translate_user(payload.assignee) or nil
+  end
+  -- For milestoned/demilestoned, include the affected milestone when Gitea
+  -- supplies it at either the top level or on the pull request object.
+  if action == "milestoned" or action == "demilestoned" then
+    data.milestone = translate_gitea_milestone_webhook(payload.milestone or raw_pr.milestone)
+  end
   -- For review_requested/review_request_removed, include the affected reviewer.
   if action == "review_requested" or action == "review_request_removed" then
     data.requested_reviewer = payload.requested_reviewer
@@ -7427,6 +7475,7 @@ local PULL_REQUEST_REVIEW_ACTIONS = {
   submitted = "submitted",
   edited = "edited",
   dismissed = "dismissed",
+  reviewed = "submitted",
 }
 
 register_gitea_webhook("pull_request_review", function(payload)
@@ -7454,6 +7503,51 @@ register_gitea_webhook("pull_request_review", function(payload)
   })
 end)
 
+local PULL_REQUEST_COMMENT_ACTIONS = {
+  reviewed = "created",
+  created = "created",
+  edited = "edited",
+  deleted = "deleted",
+}
+
+local function make_gitea_pull_request_review_event(payload, review_state)
+  local raw_action = payload.action or ""
+  local action = PULL_REQUEST_REVIEW_ACTIONS[raw_action]
+  local raw_review = payload.review or {}
+  local review_source = {}
+  for k, v in pairs(raw_review) do
+    review_source[k] = v
+  end
+  review_source.state = review_source.state or review_state
+  local review = translate_gitea_review(review_source)
+  local raw_pr = payload.pull_request or {}
+  local pr = translate_gitea_pull(raw_pr)
+  local data = {
+    action = action or "unknown",
+    review = review,
+    pull_request = pr,
+    repository = translate_repo(payload.repository or {}),
+    sender = translate_user(payload.sender or {}),
+  }
+  return make_internal_event({
+    event = "pull_request_review",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = GITEA_WEBHOOK_PROVIDER,
+    raw = payload,
+    data = data,
+    timestamp = raw_review.submitted_at or raw_review.updated_at or "",
+  })
+end
+
+register_gitea_webhook("pull_request_approved", function(payload)
+  return make_gitea_pull_request_review_event(payload, "APPROVED")
+end)
+
+register_gitea_webhook("pull_request_rejected", function(payload)
+  return make_gitea_pull_request_review_event(payload, "CHANGES_REQUESTED")
+end)
+
 -- pull_request_review_comment actions: inline diff comments on a PR review.
 -- Gitea emits created/edited/deleted matching GitHub's naming directly.
 local PULL_REQUEST_REVIEW_COMMENT_ACTIONS = {
@@ -7466,6 +7560,31 @@ register_gitea_webhook("pull_request_review_comment", function(payload)
   local raw_action = payload.action or ""
   local action = PULL_REQUEST_REVIEW_COMMENT_ACTIONS[raw_action]
   local raw_comment = payload.comment or {}
+  local comment = translate_gitea_review_comment(raw_comment)
+  local raw_pr = payload.pull_request or {}
+  local pr = translate_gitea_pull(raw_pr)
+  local data = {
+    action = action or "unknown",
+    comment = comment,
+    pull_request = pr,
+    repository = translate_repo(payload.repository or {}),
+    sender = translate_user(payload.sender or {}),
+  }
+  return make_internal_event({
+    event = "pull_request_review_comment",
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
+    provider = GITEA_WEBHOOK_PROVIDER,
+    raw = payload,
+    data = data,
+    timestamp = raw_comment.updated_at or raw_comment.updated or "",
+  })
+end)
+
+register_gitea_webhook("pull_request_comment", function(payload)
+  local raw_action = payload.action or ""
+  local action = PULL_REQUEST_COMMENT_ACTIONS[raw_action]
+  local raw_comment = payload.comment or payload.review_comment or payload.review or {}
   local comment = translate_gitea_review_comment(raw_comment)
   local raw_pr = payload.pull_request or {}
   local pr = translate_gitea_pull(raw_pr)
@@ -7763,9 +7882,16 @@ end)
 
 -- release: release lifecycle.  Gitea and GitHub release objects share the same
 -- field names, so only the nested `author` user object needs translation.
+-- Gitea emits `updated` for release edits; map it to GitHub's `edited`.
 -- The `edited` action does not carry a `changes` object in Gitea; confusio
 -- emits `changes: {}` as a stub to preserve GitHub shape.
--- Actions are 1-to-1: published, edited, deleted, prereleased.
+local RELEASE_ACTIONS = {
+  published = "published",
+  updated = "edited",
+  edited = "edited",
+  deleted = "deleted",
+  prereleased = "prereleased",
+}
 local function translate_gitea_webhook_release(r)
   r = r or {}
   return {
@@ -7785,10 +7911,11 @@ local function translate_gitea_webhook_release(r)
 end
 
 register_gitea_webhook("release", function(payload)
-  local action = payload.action or "unknown"
+  local raw_action = payload.action or ""
+  local action = RELEASE_ACTIONS[raw_action]
   local rel = translate_gitea_webhook_release(payload.release)
   local data = {
-    action = action,
+    action = action or "unknown",
     release = rel,
     repository = translate_repo(payload.repository or {}),
     sender = translate_user(payload.sender or {}),
@@ -7798,7 +7925,8 @@ register_gitea_webhook("release", function(payload)
   end
   return make_internal_event({
     event = "release",
-    action = action,
+    action = action or "unknown",
+    raw_action = action and nil or raw_action,
     provider = GITEA_WEBHOOK_PROVIDER,
     raw = payload,
     data = data,
@@ -7852,7 +7980,8 @@ register_gitea_webhook("repository", function(payload)
 end)
 
 -- deploy_key: SSH deploy key added or removed from a repository.
--- Gitea sends X-Gitea-Event: deploy_key with GitHub-compatible payload.
+-- Forgejo-family aliases can emit X-Gitea-Event: deploy_key with a
+-- GitHub-compatible payload; canonical Gitea does not register this family.
 register_gitea_webhook("deploy_key", function(payload)
   local action = payload.action or "unknown"
   local key = payload.key or {}
@@ -7880,10 +8009,12 @@ register_gitea_webhook("deploy_key", function(payload)
   })
 end)
 
--- gollum: wiki page created or edited.
--- Gitea sends X-Gitea-Event: gollum with GitHub-compatible payload.
+-- gollum: wiki page created, edited, or deleted.
+-- Gitea sends X-Gitea-Event: wiki; GitHub's equivalent family is gollum.
+-- Keep the older gollum registration as a permissive alias for fixture and
+-- Gitea-family compatibility.
 -- The pages[] array carries the per-page action; there is no top-level action.
-register_gitea_webhook("gollum", function(payload)
+local function normalize_gitea_wiki_webhook(payload)
   local pages = payload.pages or {}
   local first_action = (pages[1] or {}).action or "edited"
   local data = {
@@ -7899,25 +8030,30 @@ register_gitea_webhook("gollum", function(payload)
     data = data,
     timestamp = "",
   })
-end)
+end
 
--- security_and_analysis: repository code-security settings were toggled.
--- Unlike most webhook events there is no `action` field; confusio uses the
--- sentinel action "changed" for all deliveries.
-register_gitea_webhook("security_and_analysis", function(payload)
-  return make_internal_event({
-    event = "security_and_analysis",
-    action = "changed",
-    provider = GITEA_WEBHOOK_PROVIDER,
-    raw = payload,
-    data = {
-      changes = payload.changes or {},
-      repository = translate_repo(payload.repository or {}),
-      sender = translate_user(payload.sender or {}),
-    },
-    timestamp = "",
-  })
-end)
+register_gitea_webhook("wiki", normalize_gitea_wiki_webhook)
+register_gitea_webhook("gollum", normalize_gitea_wiki_webhook)
+
+-- security_and_analysis is not a native Gitea wire event, but Forgejo-family
+-- aliases support it.  Keep it out of the canonical Gitea receiver while
+-- preserving the alias behaviour that their tests and matrix claim.
+if FORGEJO_FAMILY_WEBHOOK_BACKENDS[config.backend] then
+  register_gitea_webhook("security_and_analysis", function(payload)
+    return make_internal_event({
+      event = "security_and_analysis",
+      action = "changed",
+      provider = GITEA_WEBHOOK_PROVIDER,
+      raw = payload,
+      data = {
+        changes = payload.changes or {},
+        repository = translate_repo(payload.repository or {}),
+        sender = translate_user(payload.sender or {}),
+      },
+      timestamp = "",
+    })
+  end)
+end
 
 -- member: repository collaborator added or removed.
 -- Gitea sends X-Gitea-Event: collaborator with action "added" or "deleted".
@@ -7953,8 +8089,8 @@ register_gitea_webhook("collaborator", function(payload)
 end)
 
 -- star: a user starred or unstarred this repository.
--- Gitea sends X-Gitea-Event: star with action "created" (starred) or "deleted"
--- (unstarred).  Maps directly to GitHub's star event.
+-- Forgejo-family aliases can emit X-Gitea-Event: star with action "created"
+-- (starred) or "deleted" (unstarred).  Maps directly to GitHub's star event.
 local STAR_ACTIONS = { created = "created", deleted = "deleted" }
 register_gitea_webhook("star", function(payload)
   local raw_action = payload.action or ""
@@ -7977,8 +8113,8 @@ register_gitea_webhook("star", function(payload)
 end)
 
 -- watch: a user started watching (subscribing to) this repository.
--- Gitea sends X-Gitea-Event: watch with action "started".  GitHub's watch
--- event also only has "started".
+-- Forgejo-family aliases can emit X-Gitea-Event: watch with action "started".
+-- GitHub's watch event also only has "started".
 local WATCH_ACTIONS = { started = "started" }
 register_gitea_webhook("watch", function(payload)
   local raw_action = payload.action or ""
@@ -7999,14 +8135,11 @@ register_gitea_webhook("watch", function(payload)
   })
 end)
 
--- package: a package version was created (published) or deleted from the
--- registry.  Gitea sends X-Gitea-Event: package with action "created" or
--- "deleted".  The payload carries the package as a flat object with a
--- version string; there is no nested version ID.
--- Action mapping: "created" → "published", "deleted" → "deleted".
--- Note: "deleted" is not a GitHub package action; it is preserved in
--- confusio output so consumers can detect removals from Gitea backends.
-local PACKAGE_ACTIONS = { created = "published", deleted = "deleted" }
+-- package: a package version was created or deleted from the registry.  Gitea
+-- sends X-Gitea-Event: package with action "created" or "deleted".  Preserve
+-- those native actions so consumers can distinguish Gitea package lifecycle
+-- events from GitHub's package event vocabulary.
+local PACKAGE_ACTIONS = { created = "created", deleted = "deleted" }
 local function translate_gitea_webhook_package(p)
   p = p or {}
   local created = p.created_at or ""
@@ -8055,9 +8188,9 @@ register_gitea_webhook("package", function(payload)
   })
 end)
 
--- ping: sent by Gitea when a webhook is first created or tested.
--- Gitea sends X-Gitea-Event: ping with zen, hook_id, hook, repository, sender.
--- There is no action field; the event is forwarded as-is.
+-- ping: sent when a webhook is first created or tested.
+-- Forgejo-family aliases can emit X-Gitea-Event: ping with zen, hook_id, hook,
+-- repository, sender.  There is no action field; the event is forwarded as-is.
 register_gitea_webhook("ping", function(payload)
   return make_internal_event({
     event = "ping",
@@ -8079,7 +8212,6 @@ local GITEA_ACTIONLESS_NORMALIZED_EVENTS = {
   create = true,
   delete = true,
   fork = true,
-  gollum = true,
   ping = true,
   push = true,
 }
@@ -8087,12 +8219,9 @@ local GITEA_ACTIONLESS_NORMALIZED_EVENTS = {
 local GITEA_NORMALIZED_WEBHOOK_EVENTS = {
   "issues",
   "issue_comment",
-  "discussion",
-  "discussion_comment",
   "label",
   "milestone",
   "pull_request",
-  "merge_group",
   "pull_request_review",
   "pull_request_review_comment",
   "workflow_run",
@@ -8104,14 +8233,20 @@ local GITEA_NORMALIZED_WEBHOOK_EVENTS = {
   "release",
   "fork",
   "repository",
-  "deploy_key",
   "gollum",
-  "security_and_analysis",
   "member",
+  "package",
+}
+
+local FORGEJO_FAMILY_NORMALIZED_WEBHOOK_EVENTS = {
+  "discussion",
+  "discussion_comment",
+  "merge_group",
+  "deploy_key",
   "star",
   "watch",
-  "package",
   "ping",
+  "security_and_analysis",
 }
 
 local GOGS_NORMALIZED_WEBHOOK_EVENTS = {
@@ -8156,6 +8291,11 @@ end
 local normalized_webhook_events = GOGS_FAMILY_WEBHOOK_BACKENDS[config.backend]
     and GOGS_NORMALIZED_WEBHOOK_EVENTS
   or GITEA_NORMALIZED_WEBHOOK_EVENTS
+if FORGEJO_FAMILY_WEBHOOK_BACKENDS[config.backend] then
+  for _, event in ipairs(FORGEJO_FAMILY_NORMALIZED_WEBHOOK_EVENTS) do
+    normalized_webhook_events[#normalized_webhook_events + 1] = event
+  end
+end
 for _, event in ipairs(normalized_webhook_events) do
   b:webhook_translator(event, translate_gitea_normalized_webhook)
 end

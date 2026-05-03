@@ -1,5 +1,5 @@
 {
-  "action": "unlabeled",
+  "action": "label_cleared",
   "number": 7,
   "pull_request": {
     "id": 500, "number": 7, "title": "Add new feature", "body": null,

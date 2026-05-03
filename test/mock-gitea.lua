@@ -288,11 +288,23 @@ function OnHttpRequest()
       '[{"id":1,"type":"gitea","active":true,"events":["push"],'
         .. '"config":{"url":"https://example.com/hook","content_type":"json"}}]',
     },
+    ["POST /api/v1/repos/octocat/hello-world/hooks"] = {
+      201,
+      '{"id":2,"type":"gitea","active":true,"events":["push"],'
+        .. '"config":{"url":"https://example.com/new-hook","content_type":"json"}}',
+    },
     ["/api/v1/repos/octocat/hello-world/hooks/1"] = {
       200,
       '{"id":1,"type":"gitea","active":true,"events":["push"],'
         .. '"config":{"url":"https://example.com/hook","content_type":"json"}}',
     },
+    ["PATCH /api/v1/repos/octocat/hello-world/hooks/1"] = {
+      200,
+      '{"id":1,"type":"gitea","active":true,"events":["push","issues"],'
+        .. '"config":{"url":"https://example.com/updated-hook","content_type":"json"}}',
+    },
+    ["DELETE /api/v1/repos/octocat/hello-world/hooks/1"] = { 204, nil },
+    ["POST /api/v1/repos/octocat/hello-world/hooks/1/tests"] = { 204, nil },
 
     -- Compare
     ["/api/v1/repos/octocat/hello-world/compare/main...develop"] = {

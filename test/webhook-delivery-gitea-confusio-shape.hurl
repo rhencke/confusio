@@ -228,6 +228,28 @@ jsonpath "$[0].body_json.occurred_at" == "2024-01-15T10:00:00Z"
 jsonpath "$[0].body_json.actor.login" == "alice"
 jsonpath "$[0].body_json.payload.release.tag_name" == "v1.0.0"
 
+# ── release: updated → edited — confusio shape ───────────────────────────────
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/gitea
+Content-Type: application/json
+X-Gitea-Event: release
+file,fixtures/webhooks/gitea/release-updated.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "release"
+jsonpath "$[0].body_json.type" == "release.edited"
+jsonpath "$[0].body_json.payload.action" == "edited"
+
 # ── member: added — confusio shape ───────────────────────────────────────────
 
 POST http://{{target}}/reset
@@ -264,22 +286,15 @@ POST http://{{host}}/webhooks/gitea
 Content-Type: application/json
 X-Gitea-Event: discussion
 file,fixtures/webhooks/gitea/discussion-created.json;
-HTTP 200
+HTTP 422
 [Asserts]
-jsonpath "$.message" == "accepted"
+jsonpath "$.message" == "Unrecognised event type: discussion"
 
 GET http://{{target}}/deliveries
 HTTP 200
 [Asserts]
-jsonpath "$" count == 1
-jsonpath "$[0].confusio_event" == "discussion"
-jsonpath "$[0].confusio_source" == "gitea"
-jsonpath "$[0].confusio_delivery" isString
-jsonpath "$[0].user_agent" contains "confusio"
-jsonpath "$[0].github_event" == ""
-jsonpath "$[0].body_json.type" == "discussion.created"
-jsonpath "$[0].body_json.payload.discussion.title" == "How do I configure X?"
-# ── package: published — confusio shape ───────────────────────────────────────
+jsonpath "$" count == 0
+# ── package: created — confusio shape ─────────────────────────────────────────
 
 POST http://{{target}}/reset
 {}
@@ -302,5 +317,6 @@ jsonpath "$[0].confusio_source" == "gitea"
 jsonpath "$[0].confusio_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
 jsonpath "$[0].github_event" == ""
-jsonpath "$[0].body_json.type" == "package.published"
+jsonpath "$[0].body_json.type" == "package.created"
+jsonpath "$[0].body_json.payload.action" == "created"
 jsonpath "$[0].body_json.payload.package.name" == "my-lib"
