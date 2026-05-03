@@ -623,6 +623,37 @@ HTTP 401
 [Asserts]
 jsonpath "$.message" == "Signature verification failed"
 
+# ── rhodecode: X-RhodeCode-Signature, verbatim shared token ─────────────────
+
+# Valid token → passes verification (422)
+POST http://{{host}}/webhooks/rhodecode
+Content-Type: application/json
+X-RhodeCode-Signature: {{rhodecode_tok}}
+{}
+
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "No webhook handlers registered"
+
+# Bad token → 401
+POST http://{{host}}/webhooks/rhodecode
+Content-Type: application/json
+X-RhodeCode-Signature: wrongtoken
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# Missing token header → 401
+POST http://{{host}}/webhooks/rhodecode
+Content-Type: application/json
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
 # ── tuleap: X-Tuleap-Webhook-Secret, verbatim shared token ──────────────────
 
 # Valid token → passes verification (422)

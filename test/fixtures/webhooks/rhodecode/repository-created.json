@@ -1,0 +1,10 @@
+{
+  "event": "CREATE_REPO_HOOK",
+  "action": "created",
+  "repo_name": "octocat/new-repo",
+  "repo_id": 99,
+  "created_by": "admin",
+  "description": "A freshly fetched repository",
+  "created_on": "2024-01-15T14:00:00Z",
+  "private": true
+}

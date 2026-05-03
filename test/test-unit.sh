@@ -177,7 +177,7 @@ openssl pkey -in "$SOURCEHUT_KEY" -pubout -outform DER -out "$SOURCEHUT_PUB_DER"
 SOURCEHUT_PUBLIC_KEY=$(tail -c 32 "$SOURCEHUT_PUB_DER" | openssl base64 -A)
 openssl pkeyutl -sign -rawin -inkey "$SOURCEHUT_KEY" -in "$SOURCEHUT_BODY" -out "$SOURCEHUT_SIG_BIN"
 SOURCEHUT_SIG=$(openssl base64 -A < "$SOURCEHUT_SIG_BIN")
-for wh_backend in gitea forgejo codeberg gitlab bitbucket bitbucket_datacenter gitbucket launchpad phabricator pagure gerrit onedev radicle kallithea sourceforge tuleap codecommit confusio; do
+for wh_backend in gitea forgejo codeberg gitlab bitbucket bitbucket_datacenter gitbucket launchpad phabricator pagure gerrit onedev radicle kallithea sourceforge tuleap codecommit rhodecode confusio; do
   printf '%s' "$WH_SECRET" > "$WH_SECRET_DIR/$wh_backend.secret"
   chmod 600 "$WH_SECRET_DIR/$wh_backend.secret"
 done
@@ -185,7 +185,7 @@ printf '%s' "$SOURCEHUT_PUBLIC_KEY" > "$WH_SECRET_DIR/sourcehut.secret"
 chmod 600 "$WH_SECRET_DIR/sourcehut.secret"
 printf '%s' "$AZUREDEVOPS_SECRET" > "$WH_SECRET_DIR/azuredevops.secret"
 chmod 600 "$WH_SECRET_DIR/azuredevops.secret"
-WH_CLI_ARGS="-- webhook_secret_file_gitea=$WH_SECRET_DIR/gitea.secret webhook_secret_file_forgejo=$WH_SECRET_DIR/forgejo.secret webhook_secret_file_codeberg=$WH_SECRET_DIR/codeberg.secret webhook_secret_file_gitlab=$WH_SECRET_DIR/gitlab.secret webhook_secret_file_bitbucket=$WH_SECRET_DIR/bitbucket.secret webhook_secret_file_bitbucket_datacenter=$WH_SECRET_DIR/bitbucket_datacenter.secret webhook_secret_file_gitbucket=$WH_SECRET_DIR/gitbucket.secret webhook_secret_file_launchpad=$WH_SECRET_DIR/launchpad.secret webhook_secret_file_phabricator=$WH_SECRET_DIR/phabricator.secret webhook_secret_file_pagure=$WH_SECRET_DIR/pagure.secret webhook_secret_file_azuredevops=$WH_SECRET_DIR/azuredevops.secret webhook_secret_file_gerrit=$WH_SECRET_DIR/gerrit.secret webhook_secret_file_onedev=$WH_SECRET_DIR/onedev.secret webhook_secret_file_radicle=$WH_SECRET_DIR/radicle.secret webhook_secret_file_kallithea=$WH_SECRET_DIR/kallithea.secret webhook_secret_file_sourceforge=$WH_SECRET_DIR/sourceforge.secret webhook_secret_file_tuleap=$WH_SECRET_DIR/tuleap.secret webhook_secret_file_codecommit=$WH_SECRET_DIR/codecommit.secret webhook_secret_file_sourcehut=$WH_SECRET_DIR/sourcehut.secret webhook_secret_file_confusio=$WH_SECRET_DIR/confusio.secret"
+WH_CLI_ARGS="-- webhook_secret_file_gitea=$WH_SECRET_DIR/gitea.secret webhook_secret_file_forgejo=$WH_SECRET_DIR/forgejo.secret webhook_secret_file_codeberg=$WH_SECRET_DIR/codeberg.secret webhook_secret_file_gitlab=$WH_SECRET_DIR/gitlab.secret webhook_secret_file_bitbucket=$WH_SECRET_DIR/bitbucket.secret webhook_secret_file_bitbucket_datacenter=$WH_SECRET_DIR/bitbucket_datacenter.secret webhook_secret_file_gitbucket=$WH_SECRET_DIR/gitbucket.secret webhook_secret_file_launchpad=$WH_SECRET_DIR/launchpad.secret webhook_secret_file_phabricator=$WH_SECRET_DIR/phabricator.secret webhook_secret_file_pagure=$WH_SECRET_DIR/pagure.secret webhook_secret_file_azuredevops=$WH_SECRET_DIR/azuredevops.secret webhook_secret_file_gerrit=$WH_SECRET_DIR/gerrit.secret webhook_secret_file_onedev=$WH_SECRET_DIR/onedev.secret webhook_secret_file_radicle=$WH_SECRET_DIR/radicle.secret webhook_secret_file_kallithea=$WH_SECRET_DIR/kallithea.secret webhook_secret_file_sourceforge=$WH_SECRET_DIR/sourceforge.secret webhook_secret_file_tuleap=$WH_SECRET_DIR/tuleap.secret webhook_secret_file_codecommit=$WH_SECRET_DIR/codecommit.secret webhook_secret_file_rhodecode=$WH_SECRET_DIR/rhodecode.secret webhook_secret_file_sourcehut=$WH_SECRET_DIR/sourcehut.secret webhook_secret_file_confusio=$WH_SECRET_DIR/confusio.secret"
 wh_dir=$(mktemp -d)
 start_confusio "$wh_dir" "$WH_CLI_ARGS"; WH_PID=$!
 trap "kill $WH_PID 2>/dev/null || true; rm -rf $wh_dir; rm -rf $WH_SECRET_DIR" EXIT
@@ -204,6 +204,7 @@ $HURL --retry 10 --retry-interval 200 --connect-timeout 1 --max-time 5 \
   --variable "gerrit_basic=$GERRIT_BASIC" \
   --variable "onedev_tok=$WH_SECRET" \
   --variable "radicle_tok=$WH_SECRET" \
+  --variable "rhodecode_tok=$WH_SECRET" \
   --variable "sourceforge_sig=$SOURCEFORGE_SIG" \
   --variable "tuleap_tok=$WH_SECRET" \
   --variable "sourcehut_sig=$SOURCEHUT_SIG" \
@@ -496,7 +497,18 @@ run_delivery_phase test/webhook-delivery-codecommit-confusio-shape.hurl \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
 
-# Phase 52: Startup event synthesis — github shape.
+# Phase 52: RhodeCode fixture-based delivery tests — refs, pull requests, repositories.
+run_delivery_phase test/webhook-delivery-rhodecode.hurl \
+  -- rhodecode "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 53: RhodeCode delivery with "confusio" shape — normalized hook envelopes.
+run_delivery_phase test/webhook-delivery-rhodecode-confusio-shape.hurl \
+  -- rhodecode "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+  "webhook_target_shape=confusio"
+
+# Phase 54: Startup event synthesis — github shape.
 # Verifies that confusio synthesizes installation.created and
 # installation_repositories.added before accepting connections, and delivers
 # both to the configured outbound target.  No /reset is called — the hurl file
@@ -505,8 +517,8 @@ run_delivery_phase test/webhook-delivery-startup.hurl \
   -- gitea "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
-# Phase 53: Startup event synthesis — confusio shape.
-# Same as Phase 52 but with webhook_target_shape=confusio; verifies
+# Phase 55: Startup event synthesis — confusio shape.
+# Same as Phase 54 but with webhook_target_shape=confusio; verifies
 # X-Confusio-* headers are used and X-GitHub-Event is absent.
 run_delivery_phase test/webhook-delivery-startup-confusio-shape.hurl \
   -- gitea "http://127.0.0.1:$MOCK_PORT" \

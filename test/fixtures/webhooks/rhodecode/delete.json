@@ -1,0 +1,12 @@
+{
+  "hook_type": "PUSH_HOOK",
+  "repo_name": "octocat/hello-world",
+  "username": "alice",
+  "refs": [
+    {
+      "ref": "refs/heads/stale-branch",
+      "old_rev": "3333333333333333333333333333333333333333",
+      "new_rev": "0000000000000000000000000000000000000000"
+    }
+  ]
+}

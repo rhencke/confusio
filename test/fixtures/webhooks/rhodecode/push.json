@@ -1,0 +1,27 @@
+{
+  "event": "PUSH_HOOK",
+  "repo_name": "octocat/hello-world",
+  "repo_id": 42,
+  "username": "alice",
+  "email": "alice@example.com",
+  "default_branch": "main",
+  "refs": [
+    {
+      "ref": "refs/heads/main",
+      "old_rev": "1111111111111111111111111111111111111111",
+      "new_rev": "2222222222222222222222222222222222222222"
+    }
+  ],
+  "commits": [
+    {
+      "id": "2222222222222222222222222222222222222222",
+      "message": "Teach RhodeCode hooks to fetch",
+      "timestamp": "2024-01-15T12:00:00Z",
+      "author": {
+        "name": "Alice",
+        "email": "alice@example.com",
+        "username": "alice"
+      }
+    }
+  ]
+}

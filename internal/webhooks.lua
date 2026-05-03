@@ -271,6 +271,30 @@ local function codecommit_body_event(payload)
   return nil
 end
 
+local function rhodecode_body_event(payload)
+  if type(payload) ~= "table" then
+    return nil
+  end
+  local ev = payload.event
+    or payload.event_type
+    or payload.hook
+    or payload.hook_type
+    or payload.hook_name
+  if type(ev) == "string" and ev ~= "" then
+    return ev
+  end
+  if type(payload.pull_request) == "table" or payload.pull_request_id then
+    return "pull_request"
+  end
+  if payload.refs or payload.pushed_revs or payload.commits or payload.branch then
+    return "push"
+  end
+  if payload.action == "created" or payload.action == "deleted" then
+    return "repository"
+  end
+  return nil
+end
+
 local function kallithea_body_event(payload)
   return first_string_field(payload, KALLITHEA_BODY_EVENT_FIELDS)
     or first_string_field(payload and payload.data, KALLITHEA_BODY_EVENT_FIELDS)
@@ -807,12 +831,16 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
     --   Tuleap has no event header; project webhooks use event_name, Git push
     --   payloads have ref/update fields, and tracker artifact hooks use action.
     --   CodeCommit trigger/SNS/EventBridge payloads identify themselves in body.
+    --   RhodeCode integration payloads identify hooks in body, or carry
+    --   enough ref / pull-request fields to infer the event family.
     local ev = event_header(backend)
     if ev == nil and type(payload) == "table" then
       if payload.eventType then
         ev = payload.eventType
       elseif backend == "codecommit" then
         ev = codecommit_body_event(payload)
+      elseif backend == "rhodecode" then
+        ev = rhodecode_body_event(payload)
       elseif backend == "gitblit" and payload.event then
         ev = payload.event
       elseif (backend == "gerrit" or backend == "onedev") and payload.type then

@@ -1,0 +1,12 @@
+{
+  "hook": "PUSH_HOOK",
+  "repo_name": "octocat/hello-world",
+  "username": "alice",
+  "refs": [
+    {
+      "ref": "refs/heads/feature-branch",
+      "old_rev": "0000000000000000000000000000000000000000",
+      "new_rev": "3333333333333333333333333333333333333333"
+    }
+  ]
+}

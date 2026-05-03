@@ -126,6 +126,7 @@ local PULL_REQUEST_PROVIDERS = provider_list(
   "launchpad",
   "phabricator",
   "radicle",
+  "rhodecode",
   "sourcehut"
 )
 
@@ -402,7 +403,13 @@ local EVENT_DEFS = {
     "transferred",
   }, {
     supported = provider_list(GITEA_FAMILY, "gitlab", "azuredevops", "sourcehut"),
-    partial = provider_list(BITBUCKET_FAMILY, SIMPLE_GIT_PROVIDERS, "launchpad", "sourceforge"),
+    partial = provider_list(
+      BITBUCKET_FAMILY,
+      SIMPLE_GIT_PROVIDERS,
+      "launchpad",
+      "rhodecode",
+      "sourceforge"
+    ),
   }),
   event(
     "repository_advisory",
