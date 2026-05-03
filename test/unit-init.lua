@@ -5201,6 +5201,22 @@ end
 -- make_internal_event
 -- ============================================================
 
+ok(type(webhook_event_catalog) == "table", "webhook_event_catalog: exported as global table")
+ok(type(webhook_catalog_events) == "function", "webhook_catalog_events: exported as function")
+ok(type(webhook_catalog_providers) == "function", "webhook_catalog_providers: exported as function")
+ok(
+  type(webhook_catalog_event_names) == "function",
+  "webhook_catalog_event_names: exported as function"
+)
+ok(type(webhook_catalog_event) == "function", "webhook_catalog_event: exported as function")
+ok(
+  type(webhook_catalog_event_known) == "function",
+  "webhook_catalog_event_known: exported as function"
+)
+ok(
+  type(webhook_catalog_normalized_base) == "function",
+  "webhook_catalog_normalized_base: exported as function"
+)
 ok(type(make_internal_event) == "function", "make_internal_event: exported as global function")
 ok(
   type(normalized_webhook_event_type) == "function",
@@ -5210,6 +5226,49 @@ ok(
   type(make_normalized_webhook_envelope) == "function",
   "make_normalized_webhook_envelope: exported as global function"
 )
+
+do
+  local providers = webhook_catalog_providers()
+  ok(#providers >= 25, "webhook_catalog_providers: includes all supported webhook sources")
+
+  local names = webhook_catalog_event_names()
+  ok(names.issues == true, "webhook_catalog_event_names: includes issues")
+  ok(names.pull_request == true, "webhook_catalog_event_names: includes pull_request")
+  ok(names.workflow_run == true, "webhook_catalog_event_names: includes workflow_run")
+  ok(
+    names.not_a_github_event == nil,
+    "webhook_catalog_event_names: excludes unsupported event names"
+  )
+  ok(webhook_catalog_event_known("release"), "webhook_catalog_event_known: known event")
+  ok(
+    not webhook_catalog_event_known("not_a_github_event"),
+    "webhook_catalog_event_known: unknown event"
+  )
+
+  local issues_def = webhook_catalog_event("issues")
+  eq(issues_def.normalized_base, "issue", "webhook_catalog_event: issues normalized base")
+  ok(#issues_def.actions > 1, "webhook_catalog_event: issues records action coverage")
+  ok(
+    issues_def.providers.gitea.status == "supported",
+    "webhook_catalog_event: provider source status recorded"
+  )
+  ok(
+    type(issues_def.providers.gitblit) == "table",
+    "webhook_catalog_event: unsupported/no-analog provider entries are explicit"
+  )
+
+  local security_def = webhook_catalog_event("security_advisory")
+  eq(
+    security_def.providers.gitea.status,
+    "no_analog",
+    "webhook_catalog_event: no-analog provider status is explicit"
+  )
+  eq(
+    webhook_catalog_normalized_base("workflow_run"),
+    "workflow.run",
+    "webhook_catalog_normalized_base: dotted bases come from catalog"
+  )
+end
 
 do
   -- All required fields present → table with correct keys.

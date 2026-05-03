@@ -96,6 +96,14 @@ globals = {
   "graphql_register_builtin_resolvers",
   "make_dispatcher",
   "make_webhook_receiver",
+  -- Webhook coverage catalog: internal/webhook_catalog.lua
+  "webhook_event_catalog",
+  "webhook_catalog_events",
+  "webhook_catalog_providers",
+  "webhook_catalog_event_names",
+  "webhook_catalog_event",
+  "webhook_catalog_event_known",
+  "webhook_catalog_normalized_base",
   -- Webhook event mapping: internal/webhook_event.lua
   "make_internal_event",
   "normalized_webhook_event_type",

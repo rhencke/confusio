@@ -31,81 +31,6 @@
 --   normalized_webhook_event_type    — normalized event namespace helper
 --   make_normalized_webhook_envelope — normalized event envelope factory
 
-local NORMALIZED_EVENT_BASES = {
-  branch_protection_configuration = "branch_protection_configuration",
-  branch_protection_rule = "branch_protection_rule",
-  check_run = "check_run",
-  check_suite = "check_suite",
-  code_scanning_alert = "code_scanning_alert",
-  create = "create",
-  custom_property = "custom_property",
-  custom_property_values = "custom_property_values",
-  delete = "delete",
-  dependabot_alert = "dependabot_alert",
-  deploy_key = "deploy_key",
-  deployment = "deployment",
-  deployment_protection_rule = "deployment.protection_rule",
-  deployment_review = "deployment.review",
-  deployment_status = "deployment.status",
-  discussion = "discussion",
-  discussion_comment = "discussion.comment",
-  fork = "fork",
-  github_app_authorization = "github_app_authorization",
-  gollum = "gollum",
-  installation = "installation",
-  installation_repositories = "installation.repositories",
-  installation_target = "installation.target",
-  issue_comment = "issue.comment",
-  issues = "issue",
-  label = "label",
-  marketplace_purchase = "marketplace_purchase",
-  member = "member",
-  membership = "membership",
-  merge_group = "merge_group",
-  meta = "meta",
-  milestone = "milestone",
-  org_block = "org_block",
-  organization = "organization",
-  package = "package",
-  page_build = "page_build",
-  personal_access_token_request = "personal_access_token_request",
-  ping = "ping",
-  project = "project",
-  project_card = "project.card",
-  project_column = "project.column",
-  projects_v2 = "projects_v2",
-  projects_v2_item = "projects_v2.item",
-  projects_v2_status_update = "projects_v2.status_update",
-  public = "public",
-  pull_request = "pull_request",
-  pull_request_review = "pull_request.review",
-  pull_request_review_comment = "pull_request.review_comment",
-  pull_request_review_thread = "pull_request.review_thread",
-  push = "push",
-  registry_package = "registry_package",
-  release = "release",
-  repository = "repository",
-  repository_advisory = "repository.advisory",
-  repository_dispatch = "repository.dispatch",
-  repository_import = "repository.import",
-  repository_ruleset = "repository.ruleset",
-  repository_vulnerability_alert = "repository.vulnerability_alert",
-  secret_scanning_alert = "secret_scanning_alert",
-  secret_scanning_alert_location = "secret_scanning_alert.location",
-  security_advisory = "security_advisory",
-  security_and_analysis = "security_and_analysis",
-  sponsorship = "sponsorship",
-  star = "star",
-  status = "status",
-  sub_issues = "sub_issues",
-  team = "team",
-  team_add = "team.add",
-  watch = "watch",
-  workflow_dispatch = "workflow.dispatch",
-  workflow_job = "workflow.job",
-  workflow_run = "workflow.run",
-}
-
 -- make_internal_event(fields) constructs the canonical internal event table.
 --
 -- Required fields (normalizer must supply):
@@ -144,7 +69,11 @@ end
 --
 -- Action-less events return only their event-family name.
 function normalized_webhook_event_type(event, action) -- luacheck: globals normalized_webhook_event_type
-  local base = NORMALIZED_EVENT_BASES[event] or event or ""
+  local base = nil
+  if type(webhook_catalog_normalized_base) == "function" then -- luacheck: globals webhook_catalog_normalized_base
+    base = webhook_catalog_normalized_base(event)
+  end
+  base = base or event or ""
   if action and action ~= "" then
     return base .. "." .. action
   end
