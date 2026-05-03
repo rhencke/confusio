@@ -5,6 +5,8 @@
 #   2. POSTs the fixture to /webhooks/gitlab with the appropriate X-Gitlab-Event header.
 #   3. Queries the delivery target and asserts exactly one delivery was recorded with
 #      the correct github_event, a UUID delivery ID, and confusio in the User-Agent.
+#      Representative event families also assert the GitHub-compatible body shape
+#      emitted by the GitLab translator.
 #
 # Fixtures live in test/fixtures/webhooks/gitlab/ — one file per event × action.
 # All assertions use the "github" delivery shape (default).
@@ -30,6 +32,11 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "issues"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "opened"
+jsonpath "$[0].body_json.issue.number" == 1
+jsonpath "$[0].body_json.issue.title" == "Found a bug"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.sender.login" == "octocat"
 
 # ── issues: closed ────────────────────────────────────────────────────────────
 
@@ -316,6 +323,10 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "opened"
+jsonpath "$[0].body_json.number" == 1
+jsonpath "$[0].body_json.pull_request.title" == "Add new feature"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
 
 # ── pull_request: closed ──────────────────────────────────────────────────────
 
@@ -602,6 +613,9 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "workflow_run"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "completed"
+jsonpath "$[0].body_json.workflow_run.status" == "completed"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
 
 # ── workflow_run: in_progress ─────────────────────────────────────────────────
 
@@ -910,6 +924,9 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "deployment_status"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "created"
+jsonpath "$[0].body_json.deployment_status.state" == "success"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
 
 # ── deployment_status: created (failed) ───────────────────────────────────────
 
@@ -954,6 +971,9 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "repository"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "created"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.sender.login" == "alice"
 
 # ── repository: deleted ───────────────────────────────────────────────────────
 
@@ -1086,6 +1106,9 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "gollum"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.pages" count == 1
+jsonpath "$[0].body_json.pages[0].action" == "created"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
 
 # ── gollum: edited (Wiki Page Hook) ──────────────────────────────────────────
 
@@ -1218,6 +1241,9 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "membership"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "added"
+jsonpath "$[0].body_json.member.login" == "bob"
+jsonpath "$[0].body_json.organization.login" == "engineering"
 
 # ── organization: renamed (System Hook group_rename) ─────────────────────────
 
@@ -1306,6 +1332,9 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "code_scanning_alert"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "created"
+jsonpath "$[0].body_json.alert.rule.id" == "vuln-702"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
 
 # ── code_scanning_alert: closed_by_user ──────────────────────────────────────
 
@@ -1548,6 +1577,9 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "personal_access_token_request"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "created"
+jsonpath "$[0].body_json.personal_access_token_request.token_type" == "access_token"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
 
 # ── personal_access_token_request: created (Resource Deploy Token Hook) ───────
 

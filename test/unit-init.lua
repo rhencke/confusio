@@ -4128,6 +4128,208 @@ do
 end
 
 -- ============================================================
+-- GitLab GitHub-shape webhook translators
+-- ============================================================
+
+do
+  local saved_rest = app.backend.rest
+  local saved_capabilities = app.backend.capabilities
+  local saved_webhooks = app.backend.webhooks
+  local saved_webhook_translators = app.backend.webhook_translators
+  local saved_webhook_github_translators = app.backend.webhook_github_translators
+  local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
+  local saved_base_url = config.base_url
+  local saved_backend = config.backend
+
+  app.backend.rest = {}
+  app.backend.capabilities = {}
+  app.backend.webhooks = {}
+  app.backend.webhook_translators = {}
+  app.backend.webhook_github_translators = {}
+  graphql_resolvers = {} -- luacheck: globals graphql_resolvers
+  config.base_url = ""
+  config.backend = "gitlab"
+  _real_dofile("backends/gitlab.lua")
+
+  ok(
+    app.backend.webhook_github_translators.issues ~= nil,
+    "gitlab webhook: issues GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.pull_request ~= nil,
+    "gitlab webhook: pull_request GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.workflow_run ~= nil,
+    "gitlab webhook: workflow_run GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.deployment_status ~= nil,
+    "gitlab webhook: deployment_status GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.code_scanning_alert ~= nil,
+    "gitlab webhook: code_scanning_alert GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.personal_access_token_request ~= nil,
+    "gitlab webhook: personal_access_token_request GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.membership ~= nil,
+    "gitlab webhook: membership GitHub-shape translator registered"
+  )
+
+  local repo = { full_name = "gitlab-org/gitlab", name = "gitlab" }
+  local sender = { login = "fido" }
+  local issue_event = make_internal_event({
+    event = "issues",
+    action = "opened",
+    provider = "gitlab",
+    data = {
+      action = "opened",
+      issue = { number = 101, title = "Translate GitLab webhooks" },
+      repository = repo,
+      sender = sender,
+    },
+  })
+  local issue_github_payload = app.backend.webhook_github_translators.issues(issue_event)
+  eq(issue_github_payload.action, "opened", "gitlab webhook: GitHub-shape issue action")
+  eq(
+    issue_github_payload.issue.title,
+    "Translate GitLab webhooks",
+    "gitlab webhook: GitHub-shape issue body"
+  )
+  eq(
+    issue_github_payload.repository.full_name,
+    "gitlab-org/gitlab",
+    "gitlab webhook: GitHub-shape issue repository"
+  )
+  eq(issue_github_payload.sender.login, "fido", "gitlab webhook: GitHub-shape issue sender")
+
+  local pull_request_event = make_internal_event({
+    event = "pull_request",
+    action = "review_requested",
+    provider = "gitlab",
+    data = {
+      action = "review_requested",
+      number = 22,
+      pull_request = { number = 22, title = "MR becomes PR" },
+      requested_reviewer = { login = "rob" },
+      repository = repo,
+      sender = sender,
+    },
+  })
+  local pull_request_github_payload =
+    app.backend.webhook_github_translators.pull_request(pull_request_event)
+  eq(pull_request_github_payload.number, 22, "gitlab webhook: GitHub-shape pull_request number")
+  eq(
+    pull_request_github_payload.requested_reviewer.login,
+    "rob",
+    "gitlab webhook: GitHub-shape requested reviewer"
+  )
+
+  local workflow_run_event = make_internal_event({
+    event = "workflow_run",
+    action = "completed",
+    provider = "gitlab",
+    data = {
+      action = "completed",
+      workflow_run = { id = 77, status = "completed", conclusion = "success" },
+      workflow = { id = 9, name = "test" },
+      repository = repo,
+      sender = sender,
+    },
+  })
+  local workflow_run_github_payload =
+    app.backend.webhook_github_translators.workflow_run(workflow_run_event)
+  eq(
+    workflow_run_github_payload.workflow_run.conclusion,
+    "success",
+    "gitlab webhook: GitHub-shape workflow_run body"
+  )
+  eq(
+    workflow_run_github_payload.workflow.name,
+    "test",
+    "gitlab webhook: GitHub-shape workflow body"
+  )
+
+  local alert_event = make_internal_event({
+    event = "code_scanning_alert",
+    action = "created",
+    provider = "gitlab",
+    data = {
+      action = "created",
+      alert = { number = 5, state = "open", rule = { id = "gl-sast" } },
+      repository = repo,
+      sender = sender,
+    },
+  })
+  local alert_github_payload =
+    app.backend.webhook_github_translators.code_scanning_alert(alert_event)
+  eq(
+    alert_github_payload.alert.rule.id,
+    "gl-sast",
+    "gitlab webhook: GitHub-shape code scanning alert"
+  )
+
+  local membership_event = make_internal_event({
+    event = "membership",
+    action = "added",
+    provider = "gitlab",
+    data = {
+      action = "added",
+      member = { login = "new-member" },
+      organization = { login = "gitlab-org" },
+      sender = sender,
+    },
+  })
+  local membership_github_payload =
+    app.backend.webhook_github_translators.membership(membership_event)
+  eq(
+    membership_github_payload.member.login,
+    "new-member",
+    "gitlab webhook: GitHub-shape membership member"
+  )
+  eq(
+    membership_github_payload.organization.login,
+    "gitlab-org",
+    "gitlab webhook: GitHub-shape membership organization"
+  )
+
+  local pat_event = make_internal_event({
+    event = "personal_access_token_request",
+    action = "created",
+    provider = "gitlab",
+    data = {
+      action = "created",
+      personal_access_token_request = { id = 88, reason = "deploy token" },
+      organization = { login = "gitlab-org" },
+      sender = sender,
+    },
+  })
+  local pat_github_payload =
+    app.backend.webhook_github_translators.personal_access_token_request(pat_event, {
+      payload = { custom = "override" },
+    })
+  eq(
+    pat_github_payload.personal_access_token_request.id,
+    88,
+    "gitlab webhook: GitHub-shape personal access token request"
+  )
+  eq(pat_github_payload.custom, "override", "gitlab webhook: GitHub-shape overrides apply")
+
+  app.backend.rest = saved_rest
+  app.backend.capabilities = saved_capabilities
+  app.backend.webhooks = saved_webhooks
+  app.backend.webhook_translators = saved_webhook_translators
+  app.backend.webhook_github_translators = saved_webhook_github_translators
+  graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
+  config.base_url = saved_base_url
+  config.backend = saved_backend
+end
+
+-- ============================================================
 -- make_webhook_receiver
 -- ============================================================
 
