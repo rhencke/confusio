@@ -4330,6 +4330,219 @@ do
 end
 
 -- ============================================================
+-- Azure DevOps GitHub-shape webhook translators
+-- ============================================================
+
+do
+  local saved_rest = app.backend.rest
+  local saved_capabilities = app.backend.capabilities
+  local saved_webhooks = app.backend.webhooks
+  local saved_webhook_translators = app.backend.webhook_translators
+  local saved_webhook_github_translators = app.backend.webhook_github_translators
+  local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
+  local saved_base_url = config.base_url
+  local saved_backend = config.backend
+
+  app.backend.rest = {}
+  app.backend.capabilities = {}
+  app.backend.webhooks = {}
+  app.backend.webhook_translators = {}
+  app.backend.webhook_github_translators = {}
+  graphql_resolvers = {} -- luacheck: globals graphql_resolvers
+  config.base_url = ""
+  config.backend = "azuredevops"
+  _real_dofile("backends/azuredevops.lua")
+
+  ok(
+    app.backend.webhook_github_translators.issues ~= nil,
+    "azuredevops webhook: issues GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.pull_request ~= nil,
+    "azuredevops webhook: pull_request GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.workflow_run ~= nil,
+    "azuredevops webhook: workflow_run GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.deployment_status ~= nil,
+    "azuredevops webhook: deployment_status GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.code_scanning_alert ~= nil,
+    "azuredevops webhook: code_scanning_alert GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.dependabot_alert ~= nil,
+    "azuredevops webhook: dependabot_alert GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.secret_scanning_alert ~= nil,
+    "azuredevops webhook: secret_scanning_alert GitHub-shape translator registered"
+  )
+
+  local issue_event = app.backend.webhooks["workitem.created"]({
+    eventType = "workitem.created",
+    resource = {
+      id = 195,
+      fields = {
+        ["System.Title"] = "Normalize event payloads",
+        ["System.State"] = "Active",
+        ["System.Description"] = "One shape for every receiver.",
+        ["System.CreatedBy"] = { uniqueName = "alice@example.com", displayName = "Alice" },
+        ["System.ChangedBy"] = { uniqueName = "alice@example.com", displayName = "Alice" },
+        ["System.CreatedDate"] = "2024-01-15T10:00:00Z",
+        ["System.ChangedDate"] = "2024-01-15T10:00:00Z",
+      },
+    },
+    createdDate = "2024-01-15T10:00:00Z",
+  })
+  local issue_github_payload = app.backend.webhook_github_translators.issues(issue_event)
+  eq(issue_github_payload.action, "opened", "azuredevops webhook: GitHub-shape issue action")
+  eq(
+    issue_github_payload.issue.title,
+    "Normalize event payloads",
+    "azuredevops webhook: GitHub-shape issue body"
+  )
+  eq(
+    issue_github_payload.sender.login,
+    "alice@example.com",
+    "azuredevops webhook: GitHub-shape issue sender"
+  )
+
+  local repo = {
+    id = "repo-id-1",
+    name = "confusio",
+    remoteUrl = "https://dev.azure.com/rhencke/project/_git/confusio",
+    isPrivate = false,
+    project = { id = "project-id-1", name = "project" },
+  }
+  local pull_event = app.backend.webhooks["git.pullrequest.created"]({
+    eventType = "git.pullrequest.created",
+    resource = {
+      pullRequestId = 365,
+      title = "Translate Azure hooks",
+      description = "Service hooks become GitHub payloads.",
+      status = "active",
+      sourceRefName = "refs/heads/ado-hooks",
+      targetRefName = "refs/heads/main",
+      lastMergeSourceCommit = { commitId = "abc123" },
+      lastMergeTargetCommit = { commitId = "def456" },
+      createdBy = { uniqueName = "fido@example.com", displayName = "Fido" },
+      creationDate = "2024-01-15T10:00:00Z",
+      repository = repo,
+    },
+    createdDate = "2024-01-15T10:00:00Z",
+  })
+  local pull_github_payload = app.backend.webhook_github_translators.pull_request(pull_event)
+  eq(pull_github_payload.action, "opened", "azuredevops webhook: GitHub-shape PR action")
+  eq(pull_github_payload.number, 365, "azuredevops webhook: GitHub-shape PR number")
+  eq(
+    pull_github_payload.pull_request.head.ref,
+    "ado-hooks",
+    "azuredevops webhook: GitHub-shape PR head ref"
+  )
+
+  local workflow_event = app.backend.webhooks["build.complete"]({
+    eventType = "build.complete",
+    resource = {
+      id = 101,
+      buildNumber = "20240115.1",
+      result = "succeeded",
+      sourceBranch = "refs/heads/main",
+      sourceVersion = "abc123def456",
+      queueTime = "2024-01-15T10:00:00Z",
+      finishTime = "2024-01-15T10:10:00Z",
+      definition = { id = 5, name = "CI Pipeline" },
+      repository = repo,
+      requestedBy = { uniqueName = "alice@example.com", displayName = "Alice" },
+    },
+  })
+  local workflow_github_payload =
+    app.backend.webhook_github_translators.workflow_run(workflow_event)
+  eq(
+    workflow_github_payload.workflow_run.conclusion,
+    "success",
+    "azuredevops webhook: GitHub-shape workflow conclusion"
+  )
+  eq(
+    workflow_github_payload.workflow.name,
+    "CI Pipeline",
+    "azuredevops webhook: GitHub-shape workflow body"
+  )
+
+  local deployment_event =
+    app.backend.webhooks["ms.azure-devops-release.deployment-completed-event"]({
+      eventType = "ms.azure-devops-release.deployment-completed-event",
+      resource = {
+        deployment = {
+          id = 11,
+          status = "succeeded",
+          completedOn = "2024-01-15T14:10:00Z",
+          release = {
+            id = 1,
+            name = "Release-1",
+            releaseDefinition = { id = 7, name = "Fabrikam.CD" },
+            project = { id = "proj-id-001", name = "octocat" },
+          },
+          environment = {
+            id = 5,
+            name = "Production",
+            owner = { displayName = "Alice", uniqueName = "alice@example.com" },
+          },
+        },
+      },
+    })
+  local deployment_github_payload =
+    app.backend.webhook_github_translators.deployment_status(deployment_event)
+  eq(
+    deployment_github_payload.deployment_status.state,
+    "success",
+    "azuredevops webhook: GitHub-shape deployment status"
+  )
+  eq(
+    deployment_github_payload.deployment.environment,
+    "Production",
+    "azuredevops webhook: GitHub-shape deployment body"
+  )
+
+  local alert_event = app.backend.webhooks["ms.vss-alerts.alert-created-event"]({
+    eventType = "ms.vss-alerts.alert-created-event",
+    resource = {
+      alertId = 101,
+      title = "Path injection",
+      repositoryUrl = "https://dev.azure.com/octocat/SecurityProject/_git/hello-world",
+      alertType = "code",
+      firstSeenDate = "2024-01-15T10:00:00Z",
+      state = "active",
+      rule = { id = "js/path-injection", name = "Path injection" },
+    },
+  })
+  local alert_github_payload =
+    app.backend.webhook_github_translators.code_scanning_alert(alert_event)
+  eq(
+    alert_github_payload.alert.rule.id,
+    "js/path-injection",
+    "azuredevops webhook: GitHub-shape code scanning alert"
+  )
+  eq(
+    alert_github_payload.repository.full_name,
+    "SecurityProject/hello-world",
+    "azuredevops webhook: GitHub-shape alert repository"
+  )
+
+  app.backend.rest = saved_rest
+  app.backend.capabilities = saved_capabilities
+  app.backend.webhooks = saved_webhooks
+  app.backend.webhook_translators = saved_webhook_translators
+  app.backend.webhook_github_translators = saved_webhook_github_translators
+  graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
+  config.base_url = saved_base_url
+  config.backend = saved_backend
+end
+
+-- ============================================================
 -- Bitbucket-family GitHub-shape webhook translators
 -- ============================================================
 
