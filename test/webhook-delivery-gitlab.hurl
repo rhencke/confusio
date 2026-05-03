@@ -613,8 +613,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "workflow_run"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
-jsonpath "$[0].body_json.action" == "completed"
-jsonpath "$[0].body_json.workflow_run.status" == "completed"
+jsonpath "$[0].body_json.action" == "requested"
+jsonpath "$[0].body_json.workflow_run.status" == "queued"
 jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
 
 # ── workflow_run: in_progress ─────────────────────────────────────────────────
