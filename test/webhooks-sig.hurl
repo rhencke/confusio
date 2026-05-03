@@ -654,6 +654,21 @@ HTTP 401
 [Asserts]
 jsonpath "$.message" == "Signature verification failed"
 
+# ── codecommit: SNS X.509 signatures are not verified from shared secrets ───
+
+# CodeCommit's SNS signature model needs certificate-chain validation, not a
+# shared webhook secret. When a local secret is configured, reject instead of
+# pretending an HMAC/token check would be meaningful.
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+X-Amz-Sns-Message-Type: Notification
+X-Amz-Sns-Signature: placeholder
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
 # ── sourcehut: X-Payload-Signature, Ed25519 detached signature ───────────────
 
 # Valid signature → passes verification (422)

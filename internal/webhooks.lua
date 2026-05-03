@@ -246,6 +246,31 @@ local SOURCEHUT_BODY_EVENT_FIELDS = {
   "eventType",
 }
 
+local function codecommit_body_event(payload)
+  if type(payload) ~= "table" then
+    return nil
+  end
+  if payload.Type == "Notification" and type(payload.Message) == "string" then
+    local ok, nested = pcall(DecodeJson, payload.Message)
+    if ok then
+      return codecommit_body_event(nested)
+    end
+  end
+  if type(payload.Records) == "table" and type(payload.Records[1]) == "table" then
+    local record = payload.Records[1]
+    if record.eventSource == "aws:codecommit" or type(record.codecommit) == "table" then
+      return "codecommit"
+    end
+  end
+  if
+    payload.source == "aws.codecommit"
+    or payload["detail-type"] == "CodeCommit Repository State Change"
+  then
+    return "codecommit"
+  end
+  return nil
+end
+
 local function kallithea_body_event(payload)
   return first_string_field(payload, KALLITHEA_BODY_EVENT_FIELDS)
     or first_string_field(payload and payload.data, KALLITHEA_BODY_EVENT_FIELDS)
@@ -781,10 +806,13 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
     --   them from their documented ref/update fields.
     --   Tuleap has no event header; project webhooks use event_name, Git push
     --   payloads have ref/update fields, and tracker artifact hooks use action.
+    --   CodeCommit trigger/SNS/EventBridge payloads identify themselves in body.
     local ev = event_header(backend)
     if ev == nil and type(payload) == "table" then
       if payload.eventType then
         ev = payload.eventType
+      elseif backend == "codecommit" then
+        ev = codecommit_body_event(payload)
       elseif backend == "gitblit" and payload.event then
         ev = payload.event
       elseif (backend == "gerrit" or backend == "onedev") and payload.type then

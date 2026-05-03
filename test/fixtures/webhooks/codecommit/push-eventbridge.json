@@ -1,0 +1,21 @@
+{
+  "version": "0",
+  "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+  "detail-type": "CodeCommit Repository State Change",
+  "source": "aws.codecommit",
+  "account": "123456789012",
+  "time": "2024-01-15T12:02:00Z",
+  "region": "us-east-1",
+  "resources": [
+    "arn:aws:codecommit:us-east-1:123456789012:hello-world"
+  ],
+  "detail": {
+    "event": "referenceUpdated",
+    "repositoryName": "hello-world",
+    "referenceType": "branch",
+    "referenceName": "main",
+    "commitId": "4444444444444444444444444444444444444444",
+    "oldCommitId": "3333333333333333333333333333333333333333",
+    "callerUserArn": "arn:aws:iam::123456789012:user/carol"
+  }
+}
