@@ -306,12 +306,26 @@ local EVENT_DEFS = {
       partial = provider_list(GITEA_FAMILY, "gitlab", "sourcehut"),
     }
   ),
+  event("project_card", "project.card", { "converted", "created", "deleted", "edited", "moved" }, {
+    supported = { "gitbucket" },
+  }),
+  event("project_column", "project.column", { "created", "deleted", "edited", "moved" }, {
+    supported = { "gitbucket" },
+  }),
   event("projects_v2", "projects_v2", { "created", "edited", "closed", "reopened", "deleted" }, {}),
   event(
     "projects_v2_item",
     "projects_v2.item",
     { "created", "edited", "deleted", "archived", "restored", "converted" },
     {}
+  ),
+  event(
+    "projects_v2_status_update",
+    "projects_v2.status_update",
+    { "created", "edited", "deleted" },
+    {
+      supported = { "gitbucket" },
+    }
   ),
   event("public", "public", { "" }, {
     unsupported = provider_list(GITEA_FAMILY, "gitlab"),
