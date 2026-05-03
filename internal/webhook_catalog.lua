@@ -155,6 +155,9 @@ local EVENT_DEFS = {
       partial = { "azuredevops", "gitlab" },
     }
   ),
+  event("commit_comment", "commit_comment", { "created" }, {
+    supported = { "bitbucket" },
+  }),
   event("create", "create", { "" }, {
     supported = REF_PROVIDERS,
   }),
@@ -277,13 +280,13 @@ local EVENT_DEFS = {
   event(
     "organization",
     "organization",
-    { "deleted", "renamed", "member_added", "member_removed", "member_invited" },
+    { "created", "deleted", "renamed", "member_added", "member_removed", "member_invited" },
     {
       supported = { "gitlab", "sourcehut" },
       partial = provider_list(GITEA_FAMILY),
     }
   ),
-  event("package", "package", { "published", "updated" }, {
+  event("package", "package", { "created", "published", "updated", "deleted" }, {
     unsupported = provider_list(GITEA_FAMILY, "gitlab"),
   }),
   event("page_build", "page_build", { "" }, {
@@ -423,7 +426,7 @@ local EVENT_DEFS = {
   event(
     "secret_scanning_alert",
     "secret_scanning_alert",
-    { "created", "reopened", "resolved", "revoked" },
+    { "created", "reopened", "resolved", "revoked", "validated" },
     {
       unsupported = { "gitlab" },
     }
