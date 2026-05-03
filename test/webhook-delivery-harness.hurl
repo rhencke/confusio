@@ -29,6 +29,12 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "workflow_run"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "in_progress"
+jsonpath "$[0].body_json.workflow_run.name" == "my-pipeline"
+jsonpath "$[0].body_json.workflow_run.status" == "in_progress"
+jsonpath "$[0].body_json.workflow_run.head_branch" == "main"
+jsonpath "$[0].body_json.workflow_run.head_sha" == "abc123def456"
+jsonpath "$[0].body_json.repository.full_name" == "myorg/my-repo"
 
 # ── pipeline_execution_success → workflow_run: completed/success ──────────────
 
@@ -50,6 +56,10 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "workflow_run"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "completed"
+jsonpath "$[0].body_json.workflow_run.status" == "completed"
+jsonpath "$[0].body_json.workflow_run.conclusion" == "success"
+jsonpath "$[0].body_json.workflow_run.run_number" == 1
 
 # ── pipeline_execution_failed → workflow_run: completed/failure ───────────────
 
@@ -71,6 +81,10 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "workflow_run"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "completed"
+jsonpath "$[0].body_json.workflow_run.status" == "completed"
+jsonpath "$[0].body_json.workflow_run.conclusion" == "failure"
+jsonpath "$[0].body_json.workflow_run.head_branch" == "feature-branch"
 
 # ── pipeline_execution_aborted → workflow_run: completed/cancelled ────────────
 
@@ -92,6 +106,10 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "workflow_run"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "completed"
+jsonpath "$[0].body_json.workflow_run.status" == "completed"
+jsonpath "$[0].body_json.workflow_run.conclusion" == "cancelled"
+jsonpath "$[0].body_json.workflow_run.head_sha" == "ddd444eee555"
 
 # ── stage_execution_started → workflow_job: in_progress ──────────────────────
 
@@ -113,6 +131,10 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "workflow_job"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "in_progress"
+jsonpath "$[0].body_json.workflow_job.name" == "Build Stage"
+jsonpath "$[0].body_json.workflow_job.status" == "in_progress"
+jsonpath "$[0].body_json.repository.full_name" == "myorg/my-repo"
 
 # ── stage_execution_success → workflow_job: completed/success ────────────────
 
@@ -134,6 +156,10 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "workflow_job"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "completed"
+jsonpath "$[0].body_json.workflow_job.name" == "Build Stage"
+jsonpath "$[0].body_json.workflow_job.status" == "completed"
+jsonpath "$[0].body_json.workflow_job.conclusion" == "success"
 
 # ── stage_execution_failed → workflow_job: completed/failure ─────────────────
 
@@ -155,6 +181,10 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "workflow_job"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "completed"
+jsonpath "$[0].body_json.workflow_job.name" == "Test Stage"
+jsonpath "$[0].body_json.workflow_job.status" == "completed"
+jsonpath "$[0].body_json.workflow_job.conclusion" == "failure"
 
 # ── stage_execution_aborted → workflow_job: completed/cancelled ───────────────
 
@@ -176,3 +206,7 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "workflow_job"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "completed"
+jsonpath "$[0].body_json.workflow_job.name" == "Deploy Stage"
+jsonpath "$[0].body_json.workflow_job.status" == "completed"
+jsonpath "$[0].body_json.workflow_job.conclusion" == "cancelled"

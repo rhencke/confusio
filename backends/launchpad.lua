@@ -593,6 +593,10 @@ local function translate_launchpad_normalized_webhook(internal_event, fields)
   })
 end
 
+local function translate_launchpad_github_webhook(internal_event, fields)
+  return github_webhook_payload(internal_event, fields)
+end
+
 local function lp_webhook_unimplemented(event_type)
   local github_event = LAUNCHPAD_NATIVE_TO_GITHUB_EVENT[event_type] or event_type
   return function(_payload)
@@ -684,6 +688,7 @@ end
 
 for _, event_type in ipairs(LAUNCHPAD_NORMALIZED_WEBHOOK_EVENTS) do
   b:webhook_translator(event_type, translate_launchpad_normalized_webhook)
+  b:webhook_github_translator(event_type, translate_launchpad_github_webhook)
 end
 
 b:webhook("git:push:0.1", function(payload)
