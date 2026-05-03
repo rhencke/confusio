@@ -4330,6 +4330,216 @@ do
 end
 
 -- ============================================================
+-- Bitbucket-family GitHub-shape webhook translators
+-- ============================================================
+
+do
+  local saved_rest = app.backend.rest
+  local saved_capabilities = app.backend.capabilities
+  local saved_webhooks = app.backend.webhooks
+  local saved_webhook_translators = app.backend.webhook_translators
+  local saved_webhook_github_translators = app.backend.webhook_github_translators
+  local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
+  local saved_base_url = config.base_url
+  local saved_backend = config.backend
+
+  app.backend.rest = {}
+  app.backend.capabilities = {}
+  app.backend.webhooks = {}
+  app.backend.webhook_translators = {}
+  app.backend.webhook_github_translators = {}
+  graphql_resolvers = {} -- luacheck: globals graphql_resolvers
+  config.base_url = ""
+  config.backend = "bitbucket"
+  _real_dofile("backends/bitbucket.lua")
+
+  ok(
+    app.backend.webhook_github_translators.issues ~= nil,
+    "bitbucket webhook: issues GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.pull_request ~= nil,
+    "bitbucket webhook: pull_request GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.workflow_run ~= nil,
+    "bitbucket webhook: workflow_run GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.fork ~= nil,
+    "bitbucket webhook: fork GitHub-shape translator registered"
+  )
+
+  local bb_repo = {
+    slug = "confusio",
+    full_name = "rhencke/confusio",
+    owner = { nickname = "rhencke" },
+    mainbranch = { name = "main" },
+  }
+  local issue_event = app.backend.webhooks["issue:created"]({
+    actor = { nickname = "fido", display_name = "Fido" },
+    repository = bb_repo,
+    issue = {
+      id = 195,
+      title = "Normalize webhook payloads",
+      content = { raw = "Fetch once; cache twice." },
+      reporter = { nickname = "rob" },
+      created_on = "2026-05-03T01:02:03Z",
+    },
+  })
+  local issue_github_payload = app.backend.webhook_github_translators.issues(issue_event)
+  eq(issue_github_payload.action, "opened", "bitbucket webhook: GitHub-shape issue action")
+  eq(
+    issue_github_payload.issue.title,
+    "Normalize webhook payloads",
+    "bitbucket webhook: GitHub-shape issue body"
+  )
+  eq(
+    issue_github_payload.repository.full_name,
+    "rhencke/confusio",
+    "bitbucket webhook: GitHub-shape issue repository"
+  )
+  eq(issue_github_payload.sender.login, "fido", "bitbucket webhook: GitHub-shape sender")
+
+  local pull_event = app.backend.webhooks["pullrequest:created"]({
+    actor = { nickname = "fido" },
+    repository = bb_repo,
+    pullrequest = {
+      id = 365,
+      title = "Emit Bitbucket payloads",
+      author = { nickname = "fido" },
+      source = { branch = { name = "bitbucket-shape" }, commit = { hash = "abc123" } },
+      destination = { branch = { name = "main" }, commit = { hash = "def456" } },
+      created_on = "2026-05-03T02:00:00Z",
+      updated_on = "2026-05-03T02:01:00Z",
+    },
+  })
+  local pull_github_payload = app.backend.webhook_github_translators.pull_request(pull_event)
+  eq(pull_github_payload.action, "opened", "bitbucket webhook: GitHub-shape PR action")
+  eq(pull_github_payload.number, 365, "bitbucket webhook: GitHub-shape PR number")
+  eq(
+    pull_github_payload.pull_request.title,
+    "Emit Bitbucket payloads",
+    "bitbucket webhook: GitHub-shape PR body"
+  )
+
+  app.backend.rest = saved_rest
+  app.backend.capabilities = saved_capabilities
+  app.backend.webhooks = saved_webhooks
+  app.backend.webhook_translators = saved_webhook_translators
+  app.backend.webhook_github_translators = saved_webhook_github_translators
+  graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
+  config.base_url = saved_base_url
+  config.backend = saved_backend
+end
+
+do
+  local saved_rest = app.backend.rest
+  local saved_capabilities = app.backend.capabilities
+  local saved_webhooks = app.backend.webhooks
+  local saved_webhook_translators = app.backend.webhook_translators
+  local saved_webhook_github_translators = app.backend.webhook_github_translators
+  local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
+  local saved_base_url = config.base_url
+  local saved_backend = config.backend
+
+  app.backend.rest = {}
+  app.backend.capabilities = {}
+  app.backend.webhooks = {}
+  app.backend.webhook_translators = {}
+  app.backend.webhook_github_translators = {}
+  graphql_resolvers = {} -- luacheck: globals graphql_resolvers
+  config.base_url = ""
+  config.backend = "bitbucket_datacenter"
+  _real_dofile("backends/bitbucket_datacenter.lua")
+
+  ok(
+    app.backend.webhook_github_translators.pull_request ~= nil,
+    "bitbucket_datacenter webhook: pull_request GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.status ~= nil,
+    "bitbucket_datacenter webhook: status GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.repository ~= nil,
+    "bitbucket_datacenter webhook: repository GitHub-shape translator registered"
+  )
+
+  local dc_repo = {
+    slug = "confusio",
+    name = "confusio",
+    project = { key = "RH", id = 12 },
+    default_branch = "main",
+  }
+  local dc_pr = {
+    id = 365,
+    title = "Translate Data Center payloads",
+    state = "OPEN",
+    author = { user = { name = "fido", displayName = "Fido" } },
+    fromRef = { displayId = "bbdc-shape", latestCommit = "abc123", repository = dc_repo },
+    toRef = { displayId = "main", latestCommit = "def456", repository = dc_repo },
+    createdDate = 1777770000000,
+    updatedDate = 1777770060000,
+  }
+  local dc_pull_event = app.backend.webhooks["pr:opened"]({
+    actor = { name = "fido", displayName = "Fido" },
+    pullRequest = dc_pr,
+  })
+  local dc_pull_github_payload =
+    app.backend.webhook_github_translators.pull_request(dc_pull_event)
+  eq(
+    dc_pull_github_payload.action,
+    "opened",
+    "bitbucket_datacenter webhook: GitHub-shape PR action"
+  )
+  eq(
+    dc_pull_github_payload.repository.full_name,
+    "RH/confusio",
+    "bitbucket_datacenter webhook: GitHub-shape repository"
+  )
+  eq(
+    dc_pull_github_payload.pull_request.title,
+    "Translate Data Center payloads",
+    "bitbucket_datacenter webhook: GitHub-shape PR body"
+  )
+
+  local dc_status_event = app.backend.webhooks["build:status_created"]({
+    actor = { name = "fido" },
+    repository = dc_repo,
+    commit = { id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+    buildStatus = {
+      state = "SUCCESSFUL",
+      key = "test",
+      description = "Tests passed",
+      url = "https://ci.example.test/build/1",
+      createdDate = 1777770000000,
+    },
+  })
+  local dc_status_github_payload =
+    app.backend.webhook_github_translators.status(dc_status_event)
+  eq(
+    dc_status_github_payload.state,
+    "success",
+    "bitbucket_datacenter webhook: GitHub-shape status state"
+  )
+  eq(
+    dc_status_github_payload.sha,
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bitbucket_datacenter webhook: GitHub-shape status sha"
+  )
+
+  app.backend.rest = saved_rest
+  app.backend.capabilities = saved_capabilities
+  app.backend.webhooks = saved_webhooks
+  app.backend.webhook_translators = saved_webhook_translators
+  app.backend.webhook_github_translators = saved_webhook_github_translators
+  graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
+  config.base_url = saved_base_url
+  config.backend = saved_backend
+end
+
+-- ============================================================
 -- make_webhook_receiver
 -- ============================================================
 

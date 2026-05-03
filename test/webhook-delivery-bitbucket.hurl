@@ -32,6 +32,10 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "issues"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "opened"
+jsonpath "$[0].body_json.issue.title" == "Found a bug"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
+jsonpath "$[0].body_json.sender.login" == "octocat"
 
 # ── issues: edited ────────────────────────────────────────────────────────────
 
@@ -164,6 +168,10 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "opened"
+jsonpath "$[0].body_json.number" == 1
+jsonpath "$[0].body_json.pull_request.title" == "Fix the bug"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
 
 # ── pull_request: synchronize ─────────────────────────────────────────────────
 
@@ -406,6 +414,9 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "status"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.state" == "success"
+jsonpath "$[0].body_json.context" == "my-ci/build"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
 
 # ── status: pending (commit_status_updated) ───────────────────────────────────
 
@@ -516,6 +527,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "fork"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.forkee.full_name" == "bob/hello-world"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
 
 # ── repository: created ───────────────────────────────────────────────────────
 
@@ -560,6 +573,10 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "workflow_run"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "completed"
+jsonpath "$[0].body_json.workflow.name" == "CI"
+jsonpath "$[0].body_json.workflow_run.status" == "completed"
+jsonpath "$[0].body_json.workflow_run.conclusion" == "success"
 
 # ── workflow_job: completed ──────────────────────────────────────────────────
 
