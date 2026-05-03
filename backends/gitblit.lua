@@ -403,8 +403,13 @@ local function translate_gitblit_normalized_webhook(internal_event, fields)
   })
 end
 
+local function translate_gitblit_github_webhook(internal_event, fields)
+  return github_webhook_payload(internal_event, fields)
+end
+
 for _, event in ipairs({ "push", "create", "delete" }) do
   b:webhook_translator(event, translate_gitblit_normalized_webhook)
+  b:webhook_github_translator(event, translate_gitblit_github_webhook)
 end
 
 b:build()
