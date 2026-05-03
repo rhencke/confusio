@@ -152,6 +152,20 @@ do
       .. ")"
   )
 
+  arg = { "--provider", "--upstream=https://git.example.com" } -- luacheck: globals arg
+  local ok_missing_provider_value, err_missing_provider_value = pcall(_real_dofile, ".init.lua")
+  assert(
+    not ok_missing_provider_value,
+    "--provider: missing split value should cause startup error"
+  )
+  assert(
+    type(err_missing_provider_value) == "string"
+      and err_missing_provider_value:find("missing value"),
+    "--provider: missing split value error should mention missing value (got: "
+      .. tostring(err_missing_provider_value)
+      .. ")"
+  )
+
   arg = { "--provider=gitea" } -- luacheck: globals arg
   local ok_missing_upstream, err_missing_upstream = pcall(_real_dofile, ".init.lua")
   assert(not ok_missing_upstream, "--provider without --upstream should cause startup error")
@@ -169,6 +183,16 @@ do
     type(err_empty_upstream) == "string" and err_empty_upstream:find("missing value"),
     "--upstream: empty value error should mention missing value (got: "
       .. tostring(err_empty_upstream)
+      .. ")"
+  )
+
+  arg = { "--webhook-admin=runtime", "--provider=gitea", "--upstream=https://git.example.com" } -- luacheck: globals arg
+  local ok_unknown_flag, err_unknown_flag = pcall(_real_dofile, ".init.lua")
+  assert(not ok_unknown_flag, "unknown startup flag should cause startup error")
+  assert(
+    type(err_unknown_flag) == "string" and err_unknown_flag:find("unknown startup flag"),
+    "unknown startup flag error should mention unknown startup flag (got: "
+      .. tostring(err_unknown_flag)
       .. ")"
   )
 
