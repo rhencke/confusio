@@ -226,6 +226,222 @@ do
       .. ")"
   )
 
+  arg = { "--webhook-target=name=only-name" } -- luacheck: globals arg
+  local ok_missing_target_url, err_missing_target_url = pcall(_real_dofile, ".init.lua")
+  assert(not ok_missing_target_url, "--webhook-target: missing url should cause startup error")
+  assert(
+    type(err_missing_target_url) == "string" and err_missing_target_url:find("requires url"),
+    "--webhook-target: missing url error should mention required url (got: "
+      .. tostring(err_missing_target_url)
+      .. ")"
+  )
+
+  arg = { "--webhook-target=" } -- luacheck: globals arg
+  local ok_empty_target_spec, err_empty_target_spec = pcall(_real_dofile, ".init.lua")
+  assert(not ok_empty_target_spec, "--webhook-target: empty spec should cause startup error")
+  assert(
+    type(err_empty_target_spec) == "string" and err_empty_target_spec:find("missing value"),
+    "--webhook-target: empty spec error should mention missing value (got: "
+      .. tostring(err_empty_target_spec)
+      .. ")"
+  )
+
+  arg = { "--webhook-target=url=https://hook.example.com/no-name" } -- luacheck: globals arg
+  local ok_missing_target_name, err_missing_target_name = pcall(_real_dofile, ".init.lua")
+  assert(not ok_missing_target_name, "--webhook-target: missing name should cause startup error")
+  assert(
+    type(err_missing_target_name) == "string" and err_missing_target_name:find("requires name"),
+    "--webhook-target: missing name error should mention required name (got: "
+      .. tostring(err_missing_target_name)
+      .. ")"
+  )
+
+  arg = { "--webhook-target=name=bad,url=not-a-url" } -- luacheck: globals arg
+  local ok_bad_target_url, err_bad_target_url = pcall(_real_dofile, ".init.lua")
+  assert(not ok_bad_target_url, "--webhook-target: invalid url should cause startup error")
+  assert(
+    type(err_bad_target_url) == "string" and err_bad_target_url:find("invalid webhook target URL"),
+    "--webhook-target: invalid url error should mention invalid target URL (got: "
+      .. tostring(err_bad_target_url)
+      .. ")"
+  )
+
+  arg = { "--webhook-target=name=bad,url=https://hook.example.com,shape=xml" } -- luacheck: globals arg
+  local ok_bad_target_shape, err_bad_target_shape = pcall(_real_dofile, ".init.lua")
+  assert(not ok_bad_target_shape, "--webhook-target: invalid shape should cause startup error")
+  assert(
+    type(err_bad_target_shape) == "string"
+      and err_bad_target_shape:find("unsupported webhook target shape"),
+    "--webhook-target: invalid shape error should mention unsupported shape (got: "
+      .. tostring(err_bad_target_shape)
+      .. ")"
+  )
+
+  arg = { "--webhook-target=name=bad,url=https://hook.example.com,color=blue" } -- luacheck: globals arg
+  local ok_unsupported_target_field, err_unsupported_target_field = pcall(_real_dofile, ".init.lua")
+  assert(
+    not ok_unsupported_target_field,
+    "--webhook-target: unsupported field should cause startup error"
+  )
+  assert(
+    type(err_unsupported_target_field) == "string"
+      and err_unsupported_target_field:find("unsupported --webhook-target field", 1, true),
+    "--webhook-target: unsupported field error should mention unsupported field (got: "
+      .. tostring(err_unsupported_target_field)
+      .. ")"
+  )
+
+  arg = { "--webhook-target=name=bad,url=https://hook.example.com,events=" } -- luacheck: globals arg
+  local ok_empty_target_events, err_empty_target_events = pcall(_real_dofile, ".init.lua")
+  assert(not ok_empty_target_events, "--webhook-target: empty events should cause startup error")
+  assert(
+    type(err_empty_target_events) == "string" and err_empty_target_events:find("missing"),
+    "--webhook-target: empty events error should mention missing value (got: "
+      .. tostring(err_empty_target_events)
+      .. ")"
+  )
+
+  arg = { "--webhook-target=name=bad,url=https://hook.example.com,events=++" } -- luacheck: globals arg
+  local ok_delimiter_only_events, err_delimiter_only_events = pcall(_real_dofile, ".init.lua")
+  assert(
+    not ok_delimiter_only_events,
+    "--webhook-target: delimiter-only events should cause startup error"
+  )
+  assert(
+    type(err_delimiter_only_events) == "string"
+      and err_delimiter_only_events:find("events must not be empty"),
+    "--webhook-target: delimiter-only events error should mention empty events (got: "
+      .. tostring(err_delimiter_only_events)
+      .. ")"
+  )
+
+  arg = { "--webhook-target=name=bad,url=https://hook.example.com,events=push+not_a_github_event" } -- luacheck: globals arg
+  local ok_bad_target_event, err_bad_target_event = pcall(_real_dofile, ".init.lua")
+  assert(not ok_bad_target_event, "--webhook-target: invalid event should cause startup error")
+  assert(
+    type(err_bad_target_event) == "string"
+      and err_bad_target_event:find("unsupported webhook target event"),
+    "--webhook-target: invalid event error should mention unsupported event (got: "
+      .. tostring(err_bad_target_event)
+      .. ")"
+  )
+
+  arg = { "--webhook-target=name=bad,url" } -- luacheck: globals arg
+  local ok_malformed_target, err_malformed_target = pcall(_real_dofile, ".init.lua")
+  assert(not ok_malformed_target, "--webhook-target: malformed field should cause startup error")
+  assert(
+    type(err_malformed_target) == "string" and err_malformed_target:find("malformed"),
+    "--webhook-target: malformed field error should mention malformed field (got: "
+      .. tostring(err_malformed_target)
+      .. ")"
+  )
+
+  arg = { "--webhook-target=name=bad,name=bad2,url=https://hook.example.com" } -- luacheck: globals arg
+  local ok_duplicate_target_field, err_duplicate_target_field = pcall(_real_dofile, ".init.lua")
+  assert(
+    not ok_duplicate_target_field,
+    "--webhook-target: duplicate field should cause startup error"
+  )
+  assert(
+    type(err_duplicate_target_field) == "string" and err_duplicate_target_field:find("duplicate"),
+    "--webhook-target: duplicate field error should mention duplicate field (got: "
+      .. tostring(err_duplicate_target_field)
+      .. ")"
+  )
+
+  arg = {
+    "--webhook-target=name=one,url=https://hook.example.com/one",
+    "--webhook-target=name=one,url=https://hook.example.com/two",
+  } -- luacheck: globals arg
+  local ok_duplicate_target_name, err_duplicate_target_name = pcall(_real_dofile, ".init.lua")
+  assert(
+    not ok_duplicate_target_name,
+    "--webhook-target: duplicate names should cause startup error"
+  )
+  assert(
+    type(err_duplicate_target_name) == "string"
+      and err_duplicate_target_name:find("duplicate webhook target name"),
+    "--webhook-target: duplicate name error should mention duplicate target name (got: "
+      .. tostring(err_duplicate_target_name)
+      .. ")"
+  )
+
+  arg = {
+    "--webhook-target=name=bad,url=https://hook.example.com,secret_file=/tmp/no-such-target-secret",
+  } -- luacheck: globals arg
+  local ok_bad_target_secret, err_bad_target_secret = pcall(_real_dofile, ".init.lua")
+  assert(
+    not ok_bad_target_secret,
+    "--webhook-target: missing secret file should cause startup error"
+  )
+  assert(
+    type(err_bad_target_secret) == "string" and err_bad_target_secret:find("not found"),
+    "--webhook-target: missing secret file error should mention not found (got: "
+      .. tostring(err_bad_target_secret)
+      .. ")"
+  )
+
+  arg = { "webhook_target=not-a-url" } -- luacheck: globals arg
+  local ok_bad_legacy_target_url, err_bad_legacy_target_url = pcall(_real_dofile, ".init.lua")
+  assert(
+    not ok_bad_legacy_target_url,
+    "legacy webhook_target: invalid url should cause startup error"
+  )
+  assert(
+    type(err_bad_legacy_target_url) == "string"
+      and err_bad_legacy_target_url:find("invalid webhook target URL"),
+    "legacy webhook_target: invalid url error should mention invalid target URL (got: "
+      .. tostring(err_bad_legacy_target_url)
+      .. ")"
+  )
+
+  arg = { "webhook_target=https://hook.example.com", "webhook_target_shape=xml" } -- luacheck: globals arg
+  local ok_bad_legacy_target_shape, err_bad_legacy_target_shape = pcall(_real_dofile, ".init.lua")
+  assert(
+    not ok_bad_legacy_target_shape,
+    "legacy webhook_target_shape: invalid shape should cause startup error"
+  )
+  assert(
+    type(err_bad_legacy_target_shape) == "string"
+      and err_bad_legacy_target_shape:find("unsupported webhook target shape"),
+    "legacy webhook_target_shape: invalid shape error should mention unsupported shape (got: "
+      .. tostring(err_bad_legacy_target_shape)
+      .. ")"
+  )
+
+  arg = { "webhook_target=https://hook.example.com", "webhook_target_events=" } -- luacheck: globals arg
+  local ok_empty_legacy_target_events, err_empty_legacy_target_events =
+    pcall(_real_dofile, ".init.lua")
+  assert(
+    not ok_empty_legacy_target_events,
+    "legacy webhook_target_events: empty events should cause startup error"
+  )
+  assert(
+    type(err_empty_legacy_target_events) == "string"
+      and err_empty_legacy_target_events:find("events must not be empty"),
+    "legacy webhook_target_events: empty events error should mention empty events (got: "
+      .. tostring(err_empty_legacy_target_events)
+      .. ")"
+  )
+
+  arg = {
+    "--webhook-target=name=legacy,url=https://hook.example.com/new",
+    "webhook_target=https://hook.example.com/legacy",
+    "webhook_target_name=legacy",
+  } -- luacheck: globals arg
+  local ok_legacy_duplicate, err_legacy_duplicate = pcall(_real_dofile, ".init.lua")
+  assert(
+    not ok_legacy_duplicate,
+    "--webhook-target: legacy duplicate name should cause startup error"
+  )
+  assert(
+    type(err_legacy_duplicate) == "string"
+      and err_legacy_duplicate:find("duplicate webhook target name"),
+    "--webhook-target: legacy duplicate name error should mention duplicate target name (got: "
+      .. tostring(err_legacy_duplicate)
+      .. ")"
+  )
+
   arg = saved_arg -- luacheck: globals arg
 end
 
@@ -309,11 +525,16 @@ end
 --   webhook_target_events=push,pull_request: event filter
 --   webhook_target_shape=github: delivery shape
 --   webhook_target_secret_file: path to 0600 file with outbound HMAC signing secret
+--   repeated --webhook-target: startup-only target specs
 arg = { -- luacheck: globals arg
   "--provider",
   "gitea",
   "--upstream=https://git.example.com/api/",
   "webhook_secret_file_gitea=" .. _ws_secret_file,
+  "--webhook-target=name=fido,url=https://hook.example.com/fido,shape=github,events=release+workflow_run,secret_file="
+    .. _wt_secret_file,
+  "--webhook-target",
+  "name=auditor,url=https://hook.example.com/audit,shape=confusio,events=workflow_run,secret=inline-audit-secret",
   "webhook_target=https://hook.example.com/wt-coverage",
   "webhook_target_name=wt-coverage",
   "webhook_target_events=push,pull_request",
@@ -377,11 +598,61 @@ assert(
   "webhook_target_secret_file CLI arg: secret mismatch: "
     .. tostring((config.webhook_target or {}).secret)
 )
+assert(
+  type(config.webhook_targets) == "table",
+  "--webhook-target CLI arg: config.webhook_targets should be a table after load"
+)
+assert(#config.webhook_targets == 2, "--webhook-target CLI arg: expected two repeated targets")
+assert(
+  config.webhook_targets[1].name == "fido",
+  "--webhook-target CLI arg: first target name mismatch: "
+    .. tostring((config.webhook_targets[1] or {}).name)
+)
+assert(
+  config.webhook_targets[1].url == "https://hook.example.com/fido",
+  "--webhook-target CLI arg: first target url mismatch: "
+    .. tostring((config.webhook_targets[1] or {}).url)
+)
+assert(
+  config.webhook_targets[1].shape == "github",
+  "--webhook-target CLI arg: first target shape mismatch: "
+    .. tostring((config.webhook_targets[1] or {}).shape)
+)
+assert(
+  config.webhook_targets[1].events[1] == "release"
+    and config.webhook_targets[1].events[2] == "workflow_run",
+  "--webhook-target CLI arg: first target event filter mismatch"
+)
+assert(
+  config.webhook_targets[1].secret == "wt-hmac-secret",
+  "--webhook-target CLI arg: first target secret_file mismatch: "
+    .. tostring((config.webhook_targets[1] or {}).secret)
+)
+assert(
+  config.webhook_targets[2].name == "auditor",
+  "--webhook-target CLI arg: second target name mismatch: "
+    .. tostring((config.webhook_targets[2] or {}).name)
+)
+assert(
+  config.webhook_targets[2].shape == "confusio",
+  "--webhook-target CLI arg: second target shape mismatch: "
+    .. tostring((config.webhook_targets[2] or {}).shape)
+)
+assert(
+  config.webhook_targets[2].events[1] == "workflow_run",
+  "--webhook-target CLI arg: second target event filter mismatch"
+)
+assert(
+  config.webhook_targets[2].secret == "inline-audit-secret",
+  "--webhook-target CLI arg: second target inline secret mismatch: "
+    .. tostring((config.webhook_targets[2] or {}).secret)
+)
 
 -- Clear coverage-only state so later tests see a clean config.
 -- (config and app.config reference the same table.)
 config.webhook_secrets = {}
 config.webhook_target = nil
+config.webhook_targets = nil
 
 -- Restore dofile so later tests that call it work normally.
 dofile = _real_dofile -- luacheck: globals dofile
