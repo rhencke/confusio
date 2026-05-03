@@ -199,6 +199,71 @@ HTTP 200
 header "Content-Type" == "application/json; charset=utf-8"
 jsonpath "$.id" == 1
 
+# POST /repos/{owner}/{repo}/hooks
+POST http://{{host}}/repos/octocat/hello-world/hooks
+Content-Type: application/json
+{
+  "name": "web",
+  "active": true,
+  "events": ["push"],
+  "config": {
+    "url": "https://example.com/new-hook",
+    "content_type": "json"
+  }
+}
+
+HTTP 201
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$.id" == 2
+
+# PATCH /repos/{owner}/{repo}/hooks/{hook_id}
+PATCH http://{{host}}/repos/octocat/hello-world/hooks/1
+Content-Type: application/json
+{
+  "active": true,
+  "events": ["push", "issues"],
+  "config": {
+    "url": "https://example.com/updated-hook",
+    "content_type": "json"
+  }
+}
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$.events[1]" == "issues"
+
+# GET /repos/{owner}/{repo}/hooks/{hook_id}/config
+GET http://{{host}}/repos/octocat/hello-world/hooks/1/config
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$.url" == "https://example.com/hook"
+
+# PATCH /repos/{owner}/{repo}/hooks/{hook_id}/config
+PATCH http://{{host}}/repos/octocat/hello-world/hooks/1/config
+Content-Type: application/json
+{
+  "url": "https://example.com/updated-hook"
+}
+
+HTTP 200
+[Asserts]
+header "Content-Type" == "application/json; charset=utf-8"
+jsonpath "$.url" == "https://example.com/updated-hook"
+
+# POST /repos/{owner}/{repo}/hooks/{hook_id}/tests
+POST http://{{host}}/repos/octocat/hello-world/hooks/1/tests
+
+HTTP 204
+
+# DELETE /repos/{owner}/{repo}/hooks/{hook_id}
+DELETE http://{{host}}/repos/octocat/hello-world/hooks/1
+
+HTTP 204
+
 # GET /repos/{owner}/{repo}/compare/{basehead}
 GET http://{{host}}/repos/octocat/hello-world/compare/main...develop
 

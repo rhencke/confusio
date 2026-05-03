@@ -241,7 +241,7 @@ test-unit: test-unit-functions gen-webhook-fixtures confusio.com $(MOCKS) mock-t
 test-unit-backends: $(addprefix test-unit-,$(BACKENDS))
 
 test-integration: | test-unit
-test-integration: confusio.com hurl
+test-integration: confusio.com mock-target.com hurl
 	bash test/test-integration.sh
 
 validate-mock: mock-gitea.com

@@ -8,6 +8,7 @@
 # webhook-delivery*.hurl files.  By default the harness skips rows whose fixture
 # file has not been added yet; set STRICT_NATIVE_FIXTURES=1 to fail instead.
 # Set GITEA_NATIVE_DELIVERY_SHAPE=confusio to assert normalized delivery shape.
+# Set GITEA_NATIVE_DELIVERY_MANIFEST=/path/to/manifest.tsv to run a subset.
 
 set -euo pipefail
 
@@ -22,7 +23,7 @@ HURL="${3:-hurl}"
 SHAPE="${GITEA_NATIVE_DELIVERY_SHAPE:-github}"
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-MANIFEST="$ROOT/test/fixtures/webhooks/gitea/native-delivery.tsv"
+MANIFEST="${GITEA_NATIVE_DELIVERY_MANIFEST:-$ROOT/test/fixtures/webhooks/gitea/native-delivery.tsv}"
 TMP=$(mktemp "$ROOT/test/.gitea-native-delivery.XXXXXX.hurl")
 trap 'rm -f "$TMP"' EXIT
 
