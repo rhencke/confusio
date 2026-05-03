@@ -579,6 +579,7 @@ function github_webhook_payload(internal_event, fields) -- luacheck: globals git
       "requested_reviewer",
       fields.requested_reviewer or data.requested_reviewer
     )
+    include_if_present(payload, "changes", fields.changes or data.changes)
   elseif event == "pull_request_review" then
     payload.review = data_field(data, fields, "review") or {}
     payload.pull_request = fields.pull_request
