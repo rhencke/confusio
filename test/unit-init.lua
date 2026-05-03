@@ -349,10 +349,10 @@ do
       .. ")"
   )
 
-  arg = {
+  arg = { -- luacheck: globals arg
     "--webhook-target=name=one,url=https://hook.example.com/one",
     "--webhook-target=name=one,url=https://hook.example.com/two",
-  } -- luacheck: globals arg
+  }
   local ok_duplicate_target_name, err_duplicate_target_name = pcall(_real_dofile, ".init.lua")
   assert(
     not ok_duplicate_target_name,
@@ -366,9 +366,9 @@ do
       .. ")"
   )
 
-  arg = {
+  arg = { -- luacheck: globals arg
     "--webhook-target=name=bad,url=https://hook.example.com,secret_file=/tmp/no-such-target-secret",
-  } -- luacheck: globals arg
+  }
   local ok_bad_target_secret, err_bad_target_secret = pcall(_real_dofile, ".init.lua")
   assert(
     not ok_bad_target_secret,
@@ -424,11 +424,11 @@ do
       .. ")"
   )
 
-  arg = {
+  arg = { -- luacheck: globals arg
     "--webhook-target=name=legacy,url=https://hook.example.com/new",
     "webhook_target=https://hook.example.com/legacy",
     "webhook_target_name=legacy",
-  } -- luacheck: globals arg
+  }
   local ok_legacy_duplicate, err_legacy_duplicate = pcall(_real_dofile, ".init.lua")
   assert(
     not ok_legacy_duplicate,
