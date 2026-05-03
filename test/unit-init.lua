@@ -3942,6 +3942,7 @@ do
   local saved_capabilities = app.backend.capabilities
   local saved_webhooks = app.backend.webhooks
   local saved_webhook_translators = app.backend.webhook_translators
+  local saved_webhook_github_translators = app.backend.webhook_github_translators
   local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
   local saved_base_url = config.base_url
   local saved_backend = config.backend
@@ -3950,6 +3951,7 @@ do
   app.backend.capabilities = {}
   app.backend.webhooks = {}
   app.backend.webhook_translators = {}
+  app.backend.webhook_github_translators = {}
   graphql_resolvers = {} -- luacheck: globals graphql_resolvers
   config.base_url = ""
   config.backend = "notabug"
@@ -3967,6 +3969,14 @@ do
   ok(
     app.backend.webhook_translators.label == nil,
     "notabug webhook: label translator not registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.issues ~= nil,
+    "notabug webhook: issues GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.label == nil,
+    "notabug webhook: label GitHub-shape translator not registered"
   )
   ok(
     app.backend.webhook_translators.merge_group == nil,
@@ -3990,11 +4000,128 @@ do
     "octocat/hello-world",
     "notabug webhook: normalized issue keeps repository"
   )
+  local issue_github_payload = app.backend.webhook_github_translators.issues(issue_event)
+  eq(issue_github_payload.action, "opened", "notabug webhook: GitHub-shape issue action")
+  eq(issue_github_payload.issue.title, "Bug report", "notabug webhook: GitHub-shape issue body")
+  eq(
+    issue_github_payload.repository.full_name,
+    "octocat/hello-world",
+    "notabug webhook: GitHub-shape issue repository"
+  )
 
   app.backend.rest = saved_rest
   app.backend.capabilities = saved_capabilities
   app.backend.webhooks = saved_webhooks
   app.backend.webhook_translators = saved_webhook_translators
+  app.backend.webhook_github_translators = saved_webhook_github_translators
+  graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
+  config.base_url = saved_base_url
+  config.backend = saved_backend
+end
+
+-- ============================================================
+-- Gitea-family GitHub-shape webhook translators
+-- ============================================================
+
+do
+  local saved_rest = app.backend.rest
+  local saved_capabilities = app.backend.capabilities
+  local saved_webhooks = app.backend.webhooks
+  local saved_webhook_translators = app.backend.webhook_translators
+  local saved_webhook_github_translators = app.backend.webhook_github_translators
+  local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
+  local saved_base_url = config.base_url
+  local saved_backend = config.backend
+
+  app.backend.rest = {}
+  app.backend.capabilities = {}
+  app.backend.webhooks = {}
+  app.backend.webhook_translators = {}
+  app.backend.webhook_github_translators = {}
+  graphql_resolvers = {} -- luacheck: globals graphql_resolvers
+  config.base_url = ""
+  config.backend = "forgejo"
+  _real_dofile("backends/gitea.lua")
+
+  ok(
+    app.backend.webhook_github_translators.issues ~= nil,
+    "forgejo webhook: issues GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.discussion ~= nil,
+    "forgejo webhook: discussion GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.merge_group ~= nil,
+    "forgejo webhook: merge_group GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.deploy_key ~= nil,
+    "forgejo webhook: deploy_key GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.security_and_analysis ~= nil,
+    "forgejo webhook: security_and_analysis GitHub-shape translator registered"
+  )
+
+  local discussion_event = app.backend.webhooks.discussion({
+    action = "labeled",
+    discussion = {
+      id = 44,
+      number = 9,
+      title = "Webhook payloads",
+      body = "Need GitHub shape.",
+      user = { login = "fido" },
+      updated = "2026-05-03T10:00:00Z",
+    },
+    label = { id = 2, name = "triage", color = "5319e7" },
+    repository = { name = "confusio", full_name = "rhencke/confusio" },
+    sender = { login = "fido" },
+  })
+  local discussion_github_payload =
+    app.backend.webhook_github_translators.discussion(discussion_event)
+  eq(discussion_github_payload.action, "labeled", "forgejo webhook: GitHub-shape discussion action")
+  eq(
+    discussion_github_payload.discussion.title,
+    "Webhook payloads",
+    "forgejo webhook: GitHub-shape discussion body"
+  )
+  eq(
+    discussion_github_payload.label.name,
+    "triage",
+    "forgejo webhook: GitHub-shape discussion label"
+  )
+
+  local merge_group_event = app.backend.webhooks.merge_group({
+    action = "destroyed",
+    reason = "dequeued",
+    merge_group = {
+      head_sha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      head_ref = "gh-readonly-queue/main/pr-1",
+      base_sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      base_ref = "main",
+    },
+    repository = { name = "confusio", full_name = "rhencke/confusio" },
+    sender = { login = "fido" },
+  })
+  local merge_group_github_payload =
+    app.backend.webhook_github_translators.merge_group(merge_group_event)
+  eq(
+    merge_group_github_payload.merge_group.head_ref,
+    "gh-readonly-queue/main/pr-1",
+    "forgejo webhook: GitHub-shape merge_group body"
+  )
+  eq(
+    merge_group_github_payload.reason,
+    "dequeued",
+    "forgejo webhook: GitHub-shape merge_group reason"
+  )
+
+  app.backend.rest = saved_rest
+  app.backend.capabilities = saved_capabilities
+  app.backend.webhooks = saved_webhooks
+  app.backend.webhook_translators = saved_webhook_translators
+  app.backend.webhook_github_translators = saved_webhook_github_translators
   graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
   config.base_url = saved_base_url
   config.backend = saved_backend

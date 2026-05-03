@@ -80,7 +80,109 @@ EOF
 jsonpath "\$[0].github_event" == "$github_event"
 jsonpath "\$[0].github_delivery" isString
 jsonpath "\$[0].user_agent" contains "confusio"
+jsonpath "\$[0].body_json.repository.full_name" isString
+jsonpath "\$[0].body_json.sender.login" isString
 EOF
+    case "$github_event" in
+      create|delete)
+        cat >> "$TMP" <<EOF
+jsonpath "\$[0].body_json.ref" isString
+jsonpath "\$[0].body_json.ref_type" isString
+jsonpath "\$[0].body_json.pusher_type" == "user"
+EOF
+        ;;
+      fork)
+        cat >> "$TMP" <<EOF
+jsonpath "\$[0].body_json.forkee.full_name" isString
+EOF
+        ;;
+      push)
+        cat >> "$TMP" <<EOF
+jsonpath "\$[0].body_json.ref" isString
+jsonpath "\$[0].body_json.after" isString
+jsonpath "\$[0].body_json.commits" isCollection
+jsonpath "\$[0].body_json.pusher.name" isString
+EOF
+        ;;
+      issues)
+        cat >> "$TMP" <<EOF
+jsonpath "\$[0].body_json.action" isString
+jsonpath "\$[0].body_json.issue.number" isInteger
+jsonpath "\$[0].body_json.issue.title" isString
+EOF
+        ;;
+      issue_comment)
+        cat >> "$TMP" <<EOF
+jsonpath "\$[0].body_json.action" isString
+jsonpath "\$[0].body_json.issue.number" isInteger
+jsonpath "\$[0].body_json.comment.id" isInteger
+EOF
+        ;;
+      pull_request)
+        cat >> "$TMP" <<EOF
+jsonpath "\$[0].body_json.action" isString
+jsonpath "\$[0].body_json.number" isInteger
+jsonpath "\$[0].body_json.pull_request.number" isInteger
+EOF
+        ;;
+      pull_request_review)
+        cat >> "$TMP" <<EOF
+jsonpath "\$[0].body_json.action" isString
+jsonpath "\$[0].body_json.review.state" isString
+jsonpath "\$[0].body_json.pull_request.number" isInteger
+EOF
+        ;;
+      pull_request_review_comment)
+        cat >> "$TMP" <<EOF
+jsonpath "\$[0].body_json.action" isString
+jsonpath "\$[0].body_json.comment.id" isInteger
+jsonpath "\$[0].body_json.pull_request.number" isInteger
+EOF
+        ;;
+      gollum)
+        cat >> "$TMP" <<EOF
+jsonpath "\$[0].body_json.pages" isCollection
+EOF
+        ;;
+      repository)
+        cat >> "$TMP" <<EOF
+jsonpath "\$[0].body_json.action" isString
+jsonpath "\$[0].body_json.repository.name" isString
+EOF
+        ;;
+      release)
+        cat >> "$TMP" <<EOF
+jsonpath "\$[0].body_json.action" isString
+jsonpath "\$[0].body_json.release.tag_name" isString
+EOF
+        ;;
+      package)
+        cat >> "$TMP" <<EOF
+jsonpath "\$[0].body_json.action" isString
+jsonpath "\$[0].body_json.package.name" isString
+EOF
+        ;;
+      status)
+        cat >> "$TMP" <<EOF
+jsonpath "\$[0].body_json.sha" isString
+jsonpath "\$[0].body_json.state" isString
+EOF
+        ;;
+      workflow_run)
+        cat >> "$TMP" <<EOF
+jsonpath "\$[0].body_json.action" isString
+jsonpath "\$[0].body_json.workflow_run.status" isString
+jsonpath "\$[0].body_json.workflow.name" isString
+EOF
+        ;;
+      workflow_job)
+        cat >> "$TMP" <<EOF
+jsonpath "\$[0].body_json.action" isString
+jsonpath "\$[0].body_json.workflow_job.status" isString
+jsonpath "\$[0].body_json.workflow_job.name" isString
+EOF
+        ;;
+    esac
   fi
 
   "$HURL" --connect-timeout 1 --max-time 5 \

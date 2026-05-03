@@ -8288,6 +8288,10 @@ local function translate_gitea_normalized_webhook(internal_event, fields)
   })
 end
 
+local function translate_gitea_github_webhook(internal_event, fields)
+  return github_webhook_payload(internal_event, fields)
+end
+
 local normalized_webhook_events = GOGS_FAMILY_WEBHOOK_BACKENDS[config.backend]
     and GOGS_NORMALIZED_WEBHOOK_EVENTS
   or GITEA_NORMALIZED_WEBHOOK_EVENTS
@@ -8298,6 +8302,7 @@ if FORGEJO_FAMILY_WEBHOOK_BACKENDS[config.backend] then
 end
 for _, event in ipairs(normalized_webhook_events) do
   b:webhook_translator(event, translate_gitea_normalized_webhook)
+  b:webhook_github_translator(event, translate_gitea_github_webhook)
 end
 
 b:capability("repos", repos)
