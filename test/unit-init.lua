@@ -3627,10 +3627,21 @@ ok(type(app.webhook_receiver) == "function", "app.webhook_receiver: installed on
 do
   -- Helper: call app.webhook_receiver() with stubbed HTTP context and return status.
   local function call_webhook(opts)
+    local saved_config = app.config
+    local configured_backend = opts.configured_backend
+      or (opts.path or ""):match("^/webhooks/([^/]+)$")
+      or saved_config.backend
+    app.config = {
+      backend = configured_backend,
+      base_url = saved_config.base_url,
+      webhook_secrets = saved_config.webhook_secrets or {},
+    }
     reset_request(opts)
     reset_response()
     app.webhook_receiver()
-    return _last_status
+    local status = _last_status
+    app.config = saved_config
+    return status
   end
 
   -- 404 for unknown backend
@@ -3656,6 +3667,38 @@ do
     404,
     "webhook_receiver: extra path segment → 404"
   )
+
+  -- 404 for known providers that do not match the configured provider.
+  local _mismatch_logs = {}
+  local _real_Log = Log
+  Log = function(level, msg) -- luacheck: globals Log
+    _mismatch_logs[#_mismatch_logs + 1] = { level = level, msg = msg }
+  end
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/gitlab",
+      configured_backend = "gitea",
+      headers = {
+        ["Content-Type"] = "application/json",
+        ["X-Gitlab-Event"] = "Issue Hook",
+      },
+      body = "{}",
+    }),
+    404,
+    "webhook_receiver: provider mismatch → 404"
+  )
+  ok(#_mismatch_logs == 1, "webhook_receiver: provider mismatch is logged")
+  eq(_mismatch_logs[1].level, kLogWarn, "webhook_receiver: provider mismatch logs at kLogWarn") -- luacheck: globals kLogWarn
+  ok(
+    _mismatch_logs[1].msg:find("configured_provider=gitea", 1, true) ~= nil,
+    "webhook_receiver: provider mismatch log includes configured provider"
+  )
+  ok(
+    _mismatch_logs[1].msg:find("requested_provider=gitlab", 1, true) ~= nil,
+    "webhook_receiver: provider mismatch log includes requested provider"
+  )
+  Log = _real_Log
 
   -- 405 for non-POST method
   eq(
@@ -4133,6 +4176,8 @@ do
   -- Simulate allow_anonymous=false with no Authorization header: a REST path
   -- gets 401, but a webhook path is handled by webhook_receiver (not blocked).
   local saved_anon = app.allow_anonymous
+  local saved_dispatch_config = app.config
+  app.config = { backend = "gitea", base_url = "", webhook_secrets = {} }
   app.allow_anonymous = false
   -- REST path with no auth → 401
   reset_request({ method = "GET", path = "/repos/alice/myrepo", headers = {}, body = nil })
@@ -4153,6 +4198,7 @@ do
   eq(_last_status, 422, "dispatcher: /webhooks/* bypasses auth gate (allow_anonymous=false)")
 
   app.allow_anonymous = saved_anon
+  app.config = saved_dispatch_config
 end
 
 -- ============================================================
@@ -4179,7 +4225,7 @@ do
   local function call_sig(backend, extra_headers, body, secrets)
     local saved_config = app.config
     app.config = {
-      backend = "testbackend",
+      backend = backend,
       base_url = "",
       webhook_secrets = secrets or {},
     }
@@ -4939,10 +4985,18 @@ end
 
 do
   local function call_webhook_full(opts)
+    local saved_config = app.config
+    app.config = {
+      backend = (opts.path or ""):match("^/webhooks/([^/]+)$") or saved_config.backend,
+      base_url = saved_config.base_url,
+      webhook_secrets = saved_config.webhook_secrets or {},
+    }
     reset_request(opts)
     reset_response()
     app.webhook_receiver()
-    return _last_status, _last_headers
+    local status, headers = _last_status, _last_headers
+    app.config = saved_config
+    return status, headers
   end
 
   local saved_webhooks = app.backend.webhooks

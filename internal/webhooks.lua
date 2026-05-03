@@ -695,11 +695,34 @@ local function event_header(backend)
   end
 end
 
+local function log_provider_mismatch(configured_backend, requested_backend)
+  if type(Log) == "function" then -- luacheck: globals Log kLogWarn
+    Log(
+      kLogWarn,
+      string.format(
+        "webhook receive rejected: configured_provider=%s requested_provider=%s path=%s",
+        configured_backend,
+        requested_backend,
+        GetPath()
+      )
+    )
+  end
+end
+
 function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
   return function()
     -- Route: path must be /webhooks/{backend} with no trailing segments.
     local backend = GetPath():match("^/webhooks/([^/]+)$")
     if not backend or not KNOWN_BACKENDS[backend] then
+      respond_json(404, { message = "Not Found" })
+      return
+    end
+
+    -- A configured confusio instance ingests webhooks from exactly one
+    -- upstream provider. Treat other known provider paths as absent.
+    local configured_backend = ((a.config or {}).backend or "")
+    if configured_backend ~= "" and backend ~= configured_backend then
+      log_provider_mismatch(configured_backend, backend)
       respond_json(404, { message = "Not Found" })
       return
     end
