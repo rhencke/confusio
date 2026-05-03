@@ -5613,6 +5613,128 @@ fanout_register_target({})
 fanout_register_target({ url = "" })
 fanout_register_target({ url = 42 })
 
+do
+  -- The main init call registered three startup targets:
+  --   fido        → release + workflow_run, github shape
+  --   auditor     → workflow_run, confusio shape
+  --   wt-coverage → push + pull_request, github shape
+  -- Exercise the real fanout_dispatch → deliver_fire path before replacing
+  -- deliver_fire below.
+  local _real_Fetch = Fetch
+  local _real_Log = Log
+  local _startup_fetch_calls = {}
+  local _startup_log_calls = {}
+  Fetch = function(url, opts) -- luacheck: globals Fetch
+    _startup_fetch_calls[#_startup_fetch_calls + 1] = { url = url, opts = opts }
+    if url:find("/fido", 1, true) then
+      error("startup target unavailable")
+    end
+    return 204, {}, ""
+  end
+  Log = function(level, msg) -- luacheck: globals Log
+    _startup_log_calls[#_startup_log_calls + 1] = { level = level, msg = msg }
+  end
+
+  local fd_startup_count = fanout_dispatch("gitea", "workflow_run", {
+    action = "completed",
+    workflow_run = { id = 123 },
+  })
+  eq(
+    fd_startup_count,
+    2,
+    "fanout_dispatch startup targets: workflow_run matches repeated target filters only"
+  )
+  eq(
+    #_startup_fetch_calls,
+    2,
+    "fanout_dispatch startup targets: failed first target does not block second target"
+  )
+  eq(
+    _startup_fetch_calls[1].url,
+    "https://hook.example.com/fido",
+    "fanout_dispatch startup targets: first repeated target delivered"
+  )
+  eq(
+    _startup_fetch_calls[2].url,
+    "https://hook.example.com/audit",
+    "fanout_dispatch startup targets: second repeated target delivered"
+  )
+  eq(
+    _startup_fetch_calls[1].opts.headers["X-GitHub-Event"],
+    "workflow_run",
+    "fanout_dispatch startup targets: github shape uses GitHub event header"
+  )
+  ok(
+    _startup_fetch_calls[1].opts.headers["X-Confusio-Event"] == nil,
+    "fanout_dispatch startup targets: github shape omits Confusio event header"
+  )
+  eq(
+    _startup_fetch_calls[2].opts.headers["X-Confusio-Event"],
+    "workflow_run",
+    "fanout_dispatch startup targets: confusio shape uses Confusio event header"
+  )
+  ok(
+    _startup_fetch_calls[2].opts.headers["X-GitHub-Event"] == nil,
+    "fanout_dispatch startup targets: confusio shape omits GitHub event header"
+  )
+  eq(
+    DecodeJson(_startup_fetch_calls[2].opts.body).type,
+    "workflow.run",
+    "fanout_dispatch startup targets: confusio shape body records normalized event type"
+  )
+  eq(#_startup_log_calls, 2, "fanout_dispatch startup targets: every delivery attempt is logged")
+  eq(
+    _startup_log_calls[1].level,
+    kLogWarn, -- luacheck: globals kLogWarn
+    "fanout_dispatch startup targets: failed delivery is logged as warning"
+  )
+  eq(
+    _startup_log_calls[2].level,
+    kLogVerbose, -- luacheck: globals kLogVerbose
+    "fanout_dispatch startup targets: successful delivery is logged as verbose"
+  )
+  ok(
+    _startup_log_calls[1].msg:find("target=fido", 1, true) ~= nil,
+    "fanout_dispatch startup targets: failed target name logged"
+  )
+  ok(
+    _startup_log_calls[1].msg:find("error=", 1, true) ~= nil,
+    "fanout_dispatch startup targets: failed target log includes error"
+  )
+  ok(
+    _startup_log_calls[2].msg:find("target=auditor", 1, true) ~= nil,
+    "fanout_dispatch startup targets: succeeding target name logged"
+  )
+  ok(
+    _startup_fetch_calls[1].url ~= _startup_fetch_calls[2].url,
+    "fanout_dispatch startup targets: no retry or duplicate delivery attempt created"
+  )
+
+  _startup_fetch_calls = {}
+  _startup_log_calls = {}
+  local fd_push_count = fanout_dispatch("gitea", "push", {
+    ref = "refs/heads/main",
+  })
+  eq(
+    fd_push_count,
+    1,
+    "fanout_dispatch startup targets: push matches only the legacy target filter"
+  )
+  eq(
+    #_startup_fetch_calls,
+    1,
+    "fanout_dispatch startup targets: filtered-out targets receive no delivery attempt"
+  )
+  eq(
+    _startup_fetch_calls[1].url,
+    "https://hook.example.com/wt-coverage",
+    "fanout_dispatch startup targets: legacy target still participates in fanout"
+  )
+
+  Fetch = _real_Fetch -- luacheck: globals Fetch
+  Log = _real_Log -- luacheck: globals Log
+end
+
 -- Mock deliver_fire for all fanout tests so no real HTTP calls are made.
 -- The startup wiring (webhook_target CLI arg) already registered one target
 -- with events=["push"].  Tests use an event type of "create" to get a clean baseline
