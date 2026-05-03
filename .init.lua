@@ -10,6 +10,54 @@ config = {
   webhook_secrets = {},
 }
 
+local supported_providers = {
+  azuredevops = true,
+  bitbucket = true,
+  bitbucket_datacenter = true,
+  codeberg = true,
+  codecommit = true,
+  forgejo = true,
+  gerrit = true,
+  gitblit = true,
+  gitbucket = true,
+  gitea = true,
+  gitlab = true,
+  gogs = true,
+  harness = true,
+  kallithea = true,
+  launchpad = true,
+  notabug = true,
+  onedev = true,
+  pagure = true,
+  phabricator = true,
+  radicle = true,
+  rhodecode = true,
+  sourceforge = true,
+  sourcehut = true,
+  tuleap = true,
+}
+
+local function set_config_once(field, value, source)
+  local current = config[field]
+  if current ~= nil and current ~= "" then
+    error(
+      string.format(
+        "conflicting %s configuration: %s conflicts with existing value %s",
+        source,
+        value,
+        current
+      )
+    )
+  end
+  config[field] = value
+end
+
+local function valid_url(url)
+  return type(url) == "string"
+    and url:match("^https?://[^%s/][^%s]*$") ~= nil
+    and url:match("^https?://[^%s]*%.%.") == nil
+end
+
 -- read_secret_file: reads a signing secret from a file after verifying that
 -- the file is owned by the current process's effective uid and has permissions
 -- exactly 0600 (owner read+write only — no group or other access).
@@ -45,6 +93,10 @@ end
 --   First positional  = backend
 --   Second positional = base_url
 --
+-- Startup provider flags:
+--   --provider=BACKEND / --provider BACKEND — backend provider name
+--   --upstream=URL     / --upstream URL     — upstream base URL
+--
 -- Key=value pairs (any arg containing "=") configure webhook options:
 --   webhook_secret_file_BACKEND=/path — path to 0600 file with inbound signing secret
 --   webhook_target=URL                — outbound delivery target URL
@@ -54,13 +106,39 @@ end
 --   webhook_target_secret_file=/path — path to 0600 file with outbound HMAC signing secret
 local positional_keys = { "backend", "base_url" }
 local pos_idx = 1
+local saw_provider_flag = false
+local saw_upstream_flag = false
 local function webhook_target_config()
   config.webhook_target = config.webhook_target or {}
   return config.webhook_target
 end
-for _, a in ipairs(arg or {}) do
+local argv = arg or {}
+local i = 1
+while i <= #argv do
+  local a = argv[i]
+  local consumed_next = false
+  local flag_key, flag_val = a:match("^%-%-([^=]+)=(.*)$")
+  if not flag_key and (a == "--provider" or a == "--upstream") then
+    flag_key = a:sub(3)
+    flag_val = argv[i + 1]
+    if flag_val == nil or flag_val:match("^%-%-") then
+      error("missing value for --" .. flag_key)
+    end
+    consumed_next = true
+  end
+  if flag_key and flag_val == "" then
+    error("missing value for --" .. flag_key)
+  end
   local kv_key, kv_val = a:match("^([^=]+)=(.*)$")
-  if kv_key then
+  if flag_key == "provider" then
+    saw_provider_flag = true
+    set_config_once("backend", flag_val, "--provider")
+  elseif flag_key == "upstream" then
+    saw_upstream_flag = true
+    set_config_once("base_url", flag_val, "--upstream")
+  elseif flag_key then
+    error("unknown startup flag: --" .. flag_key)
+  elseif kv_key then
     -- Key=value pair: webhook config.
     local wh_backend = kv_key:match("^webhook_secret_file_(.+)$")
     if wh_backend then
@@ -81,12 +159,26 @@ for _, a in ipairs(arg or {}) do
       webhook_target_config().secret = read_secret_file(kv_val)
     end
   elseif positional_keys[pos_idx] then
-    config[positional_keys[pos_idx]] = a
+    set_config_once(positional_keys[pos_idx], a, "positional " .. positional_keys[pos_idx])
     pos_idx = pos_idx + 1
   end
+  if consumed_next then
+    i = i + 1
+  end
+  i = i + 1
 end
 
 config.base_url = config.base_url:gsub("/$", "")
+
+if config.backend ~= "" and not supported_providers[config.backend] then
+  error("unsupported provider: " .. config.backend)
+end
+if saw_provider_flag and not saw_upstream_flag then
+  error("--upstream is required when --provider is used")
+end
+if config.base_url ~= "" and not valid_url(config.base_url) then
+  error("invalid upstream URL: " .. config.base_url)
+end
 
 dofile("/zip/internal/http.lua")
 dofile("/zip/internal/proxy.lua")

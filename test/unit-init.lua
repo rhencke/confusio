@@ -115,7 +115,7 @@ end
 -- Case 1: file not found → startup error.
 do
   local saved_arg = arg -- luacheck: globals arg
-  arg = { "testbackend", "webhook_secret_file_gitea=/tmp/no-such-file-fido-test-9x7z.txt" } -- luacheck: globals arg
+  arg = { "gitea", "webhook_secret_file_gitea=/tmp/no-such-file-fido-test-9x7z.txt" } -- luacheck: globals arg
   local ok1, err1 = pcall(_real_dofile, ".init.lua")
   arg = saved_arg -- luacheck: globals arg
   assert(not ok1, "read_secret_file: missing file should cause startup error")
@@ -125,6 +125,84 @@ do
       .. tostring(err1)
       .. ")"
   )
+end
+
+-- Provider/upstream flag validation happens before module loading, so these
+-- pcall checks can exercise startup failures without affecting the main load.
+do
+  local saved_arg = arg
+
+  arg = { "--provider=notarealprovider", "--upstream=https://git.example.com" } -- luacheck: globals arg
+  local ok_provider, err_provider = pcall(_real_dofile, ".init.lua")
+  assert(not ok_provider, "--provider: unsupported provider should cause startup error")
+  assert(
+    type(err_provider) == "string" and err_provider:find("unsupported provider"),
+    "--provider: unsupported provider error should mention unsupported provider (got: "
+      .. tostring(err_provider)
+      .. ")"
+  )
+
+  arg = { "--provider=", "--upstream=https://git.example.com" } -- luacheck: globals arg
+  local ok_empty_provider, err_empty_provider = pcall(_real_dofile, ".init.lua")
+  assert(not ok_empty_provider, "--provider: empty value should cause startup error")
+  assert(
+    type(err_empty_provider) == "string" and err_empty_provider:find("missing value"),
+    "--provider: empty value error should mention missing value (got: "
+      .. tostring(err_empty_provider)
+      .. ")"
+  )
+
+  arg = { "--provider=gitea" } -- luacheck: globals arg
+  local ok_missing_upstream, err_missing_upstream = pcall(_real_dofile, ".init.lua")
+  assert(not ok_missing_upstream, "--provider without --upstream should cause startup error")
+  assert(
+    type(err_missing_upstream) == "string" and err_missing_upstream:find("%-%-upstream"),
+    "--provider without --upstream error should mention --upstream (got: "
+      .. tostring(err_missing_upstream)
+      .. ")"
+  )
+
+  arg = { "--provider=gitea", "--upstream=" } -- luacheck: globals arg
+  local ok_empty_upstream, err_empty_upstream = pcall(_real_dofile, ".init.lua")
+  assert(not ok_empty_upstream, "--upstream: empty value should cause startup error")
+  assert(
+    type(err_empty_upstream) == "string" and err_empty_upstream:find("missing value"),
+    "--upstream: empty value error should mention missing value (got: "
+      .. tostring(err_empty_upstream)
+      .. ")"
+  )
+
+  arg = { "--provider=gitea", "--upstream=not-a-url" } -- luacheck: globals arg
+  local ok_bad_url, err_bad_url = pcall(_real_dofile, ".init.lua")
+  assert(not ok_bad_url, "--upstream: invalid URL should cause startup error")
+  assert(
+    type(err_bad_url) == "string" and err_bad_url:find("invalid upstream URL"),
+    "--upstream: invalid URL error should mention invalid upstream URL (got: "
+      .. tostring(err_bad_url)
+      .. ")"
+  )
+
+  arg = { "gitea", "--provider=gitlab", "--upstream=https://git.example.com" } -- luacheck: globals arg
+  local ok_conflict, err_conflict = pcall(_real_dofile, ".init.lua")
+  assert(not ok_conflict, "--provider: conflicting positional provider should cause startup error")
+  assert(
+    type(err_conflict) == "string" and err_conflict:find("conflicting"),
+    "--provider: conflict error should mention conflicting configuration (got: "
+      .. tostring(err_conflict)
+      .. ")"
+  )
+
+  arg = { "--provider=gitea", "--provider=gitea", "--upstream=https://git.example.com" } -- luacheck: globals arg
+  local ok_duplicate, err_duplicate = pcall(_real_dofile, ".init.lua")
+  assert(not ok_duplicate, "--provider: duplicate provider flag should cause startup error")
+  assert(
+    type(err_duplicate) == "string" and err_duplicate:find("conflicting"),
+    "--provider: duplicate provider error should mention conflicting configuration (got: "
+      .. tostring(err_duplicate)
+      .. ")"
+  )
+
+  arg = saved_arg -- luacheck: globals arg
 end
 
 -- Case 2: file owned by wrong uid → startup error.  Mock unix.stat to return
@@ -152,7 +230,7 @@ do
   fh2:write("secret")
   fh2:close()
   os.execute("chmod 600 " .. tmpf2)
-  arg = { "testbackend", "webhook_secret_file_gitea=" .. tmpf2 } -- luacheck: globals arg
+  arg = { "gitea", "webhook_secret_file_gitea=" .. tmpf2 } -- luacheck: globals arg
   local ok2, err2 = pcall(_real_dofile, ".init.lua")
   arg = saved_arg -- luacheck: globals arg
   unix.stat = saved_stat
@@ -173,7 +251,7 @@ do
   fh3:write("secret")
   fh3:close()
   os.execute("chmod 644 " .. tmpf3)
-  arg = { "testbackend", "webhook_secret_file_gitea=" .. tmpf3 } -- luacheck: globals arg
+  arg = { "gitea", "webhook_secret_file_gitea=" .. tmpf3 } -- luacheck: globals arg
   local ok3, err3 = pcall(_real_dofile, ".init.lua")
   arg = saved_arg -- luacheck: globals arg
   os.remove(tmpf3)
@@ -200,7 +278,7 @@ do
 end
 
 -- Provide SCRIPTARGS entries to exercise all CLI parsing paths in .init.lua:
---   positional: backend name (backend file load is suppressed by the dofile stub)
+--   --provider / --upstream: provider name and upstream URL
 --   webhook_secret_file_BACKEND: path to 0600 file with inbound signing secret
 --   webhook_target=URL: outbound delivery target
 --   webhook_target_name=wt-coverage: logical outbound target name
@@ -208,7 +286,9 @@ end
 --   webhook_target_shape=github: delivery shape
 --   webhook_target_secret_file: path to 0600 file with outbound HMAC signing secret
 arg = { -- luacheck: globals arg
-  "testbackend",
+  "--provider",
+  "gitea",
+  "--upstream=https://git.example.com/api/",
   "webhook_secret_file_gitea=" .. _ws_secret_file,
   "webhook_target=https://hook.example.com/wt-coverage",
   "webhook_target_name=wt-coverage",
@@ -223,6 +303,14 @@ _real_dofile(".init.lua")
 -- Clean up temp secret files (secrets are now in config, files no longer needed).
 os.remove(_ws_secret_file)
 os.remove(_wt_secret_file)
+
+assert(config.backend == "gitea", "--provider CLI arg: config.backend should be gitea")
+assert(
+  config.base_url == "https://git.example.com/api",
+  "--upstream CLI arg: trailing slash should be stripped from config.base_url (got: "
+    .. tostring(config.base_url)
+    .. ")"
+)
 
 -- Verify the SCRIPTARGS webhook_secret_file_* arg populated config.webhook_secrets.
 assert(
