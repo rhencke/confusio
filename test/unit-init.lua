@@ -4486,8 +4486,7 @@ do
     actor = { name = "fido", displayName = "Fido" },
     pullRequest = dc_pr,
   })
-  local dc_pull_github_payload =
-    app.backend.webhook_github_translators.pull_request(dc_pull_event)
+  local dc_pull_github_payload = app.backend.webhook_github_translators.pull_request(dc_pull_event)
   eq(
     dc_pull_github_payload.action,
     "opened",
@@ -4516,8 +4515,7 @@ do
       createdDate = 1777770000000,
     },
   })
-  local dc_status_github_payload =
-    app.backend.webhook_github_translators.status(dc_status_event)
+  local dc_status_github_payload = app.backend.webhook_github_translators.status(dc_status_event)
   eq(
     dc_status_github_payload.state,
     "success",
