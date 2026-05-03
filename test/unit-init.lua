@@ -5422,6 +5422,140 @@ do
 end
 
 -- ============================================================
+-- GitHub webhook payload builders
+-- ============================================================
+
+ok(type(github_webhook_payload) == "function", "github_webhook_payload: exported")
+ok(type(github_webhook_repository) == "function", "github_webhook_repository: exported")
+ok(type(github_webhook_sender) == "function", "github_webhook_sender: exported")
+ok(type(github_webhook_issue) == "function", "github_webhook_issue: exported")
+ok(type(github_webhook_pull_request) == "function", "github_webhook_pull_request: exported")
+ok(type(github_webhook_release) == "function", "github_webhook_release: exported")
+ok(type(github_webhook_installation) == "function", "github_webhook_installation: exported")
+ok(type(github_webhook_projects_v2) == "function", "github_webhook_projects_v2: exported")
+
+do
+  local repo = github_webhook_repository({
+    id = 42,
+    name = "confusio",
+    full_name = "rhencke/confusio",
+    owner = { login = "rhencke", id = 7 },
+    private = true,
+  }, {
+    allow_forking = false,
+  })
+  eq(repo.id, 42, "github_webhook_repository: preserves provider id")
+  eq(repo.full_name, "rhencke/confusio", "github_webhook_repository: preserves full name")
+  eq(repo.owner.login, "rhencke", "github_webhook_repository: normalizes owner")
+  eq(repo.owner.node_id, "", "github_webhook_repository: owner keeps GitHub defaults")
+  eq(repo.visibility, "private", "github_webhook_repository: derives private visibility")
+  ok(repo.allow_forking == false, "github_webhook_repository: override can force false")
+  eq(repo.has_issues, true, "github_webhook_repository: stable boolean default")
+
+  local issue = github_webhook_issue({
+    number = 19,
+    title = "Normalize webhooks",
+    user = { login = "fido" },
+  })
+  eq(issue.number, 19, "github_webhook_issue: preserves issue number")
+  eq(issue.state, "open", "github_webhook_issue: defaults state")
+  eq(issue.user.login, "fido", "github_webhook_issue: normalizes user")
+  eq(issue.user.type, "User", "github_webhook_issue: user keeps GitHub defaults")
+  eq(issue.author_association, "NONE", "github_webhook_issue: defaults author association")
+
+  local pr = github_webhook_pull_request({
+    number = 365,
+    title = "Webhook translation",
+    head = { ref = "normalize-webhook-payloads" },
+    base = { ref = "main" },
+  }, {
+    mergeable_state = "clean",
+  })
+  eq(pr.number, 365, "github_webhook_pull_request: preserves number")
+  eq(pr.head.ref, "normalize-webhook-payloads", "github_webhook_pull_request: preserves head")
+  eq(pr.base.ref, "main", "github_webhook_pull_request: preserves base")
+  eq(pr.mergeable_state, "clean", "github_webhook_pull_request: override point")
+
+  local release = github_webhook_release({
+    id = 5,
+    tag_name = "v3",
+    author = { login = "release-bot" },
+  })
+  eq(release.tag_name, "v3", "github_webhook_release: preserves tag")
+  ok(release.draft == false, "github_webhook_release: defaults draft false")
+  eq(release.author.login, "release-bot", "github_webhook_release: normalizes author")
+
+  local installation = github_webhook_installation({
+    id = 99,
+    account = { login = "rhencke" },
+  })
+  eq(installation.id, 99, "github_webhook_installation: preserves id")
+  eq(installation.repository_selection, "all", "github_webhook_installation: default selection")
+  eq(installation.app_slug, "confusio", "github_webhook_installation: confusio default app slug")
+
+  local project_v2 = github_webhook_projects_v2({ number = 2, title = "Event side" })
+  eq(project_v2.number, 2, "github_webhook_projects_v2: preserves number")
+  eq(project_v2.title, "Event side", "github_webhook_projects_v2: preserves title")
+  ok(project_v2.closed == false, "github_webhook_projects_v2: defaults closed false")
+end
+
+do
+  local event = make_internal_event({
+    event = "issues",
+    action = "opened",
+    provider = "gitea",
+    data = {
+      issue = { number = 12, title = "A thing", user = { login = "fido" } },
+      repository = { full_name = "rhencke/confusio", owner = { login = "rhencke" } },
+      sender = { login = "fido" },
+      label = { name = "Insight", color = "5319e7" },
+    },
+  })
+  local payload = github_webhook_payload(event)
+  eq(payload.action, "opened", "github_webhook_payload: action envelope")
+  eq(payload.issue.number, 12, "github_webhook_payload: issues includes issue")
+  eq(
+    payload.repository.full_name,
+    "rhencke/confusio",
+    "github_webhook_payload: includes repository"
+  )
+  eq(payload.sender.login, "fido", "github_webhook_payload: includes sender")
+  eq(payload.label.name, "Insight", "github_webhook_payload: includes action-specific label")
+
+  local overridden = github_webhook_payload(event, {
+    action = "edited",
+    issue = { number = 99 },
+    payload = { enterprise = { slug = "test-enterprise" } },
+  })
+  eq(overridden.action, "edited", "github_webhook_payload: action override")
+  eq(overridden.issue.number, 99, "github_webhook_payload: entity override")
+  eq(
+    overridden.enterprise.slug,
+    "test-enterprise",
+    "github_webhook_payload: top-level payload override"
+  )
+
+  local push_payload = github_webhook_payload(make_internal_event({
+    event = "push",
+    action = "push",
+    provider = "sourceforge",
+    data = {
+      ref = "refs/heads/main",
+      before = "0000",
+      after = "1111",
+      repository = { full_name = "rhencke/confusio" },
+      sender = { login = "fido" },
+      commits = { { id = "1111", message = "fetch stick" } },
+      head_commit = { id = "1111" },
+      pusher = { name = "Fido" },
+    },
+  }))
+  ok(push_payload.action == nil, "github_webhook_payload: push has no action")
+  eq(push_payload.ref, "refs/heads/main", "github_webhook_payload: push ref")
+  eq(push_payload.commits[1].id, "1111", "github_webhook_payload: push commits")
+end
+
+-- ============================================================
 -- webhook_receiver: unknown-action sidecar header
 -- ============================================================
 
