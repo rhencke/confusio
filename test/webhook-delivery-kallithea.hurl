@@ -24,8 +24,10 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "push"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
-jsonpath "$[0].body_json.hook" == "PUSH_HOOK"
-jsonpath "$[0].body_json.refs[0].ref" == "refs/heads/main"
+jsonpath "$[0].body_json.ref" == "refs/heads/main"
+jsonpath "$[0].body_json.before" == "95790bf891e76fee5db5ef17d2523a6f6e048239"
+jsonpath "$[0].body_json.after" == "5a1e9f3d7c2b4a6e8f90123456789abcdef01234"
+jsonpath "$[0].body_json.head_commit.id" == "5a1e9f3d7c2b4a6e8f90123456789abcdef01234"
 
 # ── PUSH_HOOK create -> create ----------------------------------------------
 
@@ -46,7 +48,9 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "create"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.refs[0].name" == "feature-branch"
+jsonpath "$[0].body_json.ref" == "feature-branch"
+jsonpath "$[0].body_json.ref_type" == "branch"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
 
 # ── PUSH_HOOK delete -> delete ----------------------------------------------
 
@@ -67,7 +71,9 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "delete"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.pushed_revs[0]" == "delete_branch=>stale-branch"
+jsonpath "$[0].body_json.ref" == "stale-branch"
+jsonpath "$[0].body_json.ref_type" == "branch"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
 
 # ── CREATE_REPO_HOOK -> repository created ----------------------------------
 
@@ -88,8 +94,8 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "repository"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.hook" == "CREATE_REPO_HOOK"
 jsonpath "$[0].body_json.action" == "created"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
 
 # ── DELETE_REPO_HOOK -> repository deleted ----------------------------------
 
@@ -110,8 +116,8 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "repository"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.hook" == "DELETE_REPO_HOOK"
 jsonpath "$[0].body_json.action" == "deleted"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
 
 # ── CREATE_PULLREQUEST_HOOK -> pull_request opened --------------------------
 
@@ -132,5 +138,7 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.hook" == "CREATE_PULLREQUEST_HOOK"
+jsonpath "$[0].body_json.action" == "opened"
+jsonpath "$[0].body_json.number" == 7
 jsonpath "$[0].body_json.pull_request.id" == 7
+jsonpath "$[0].body_json.pull_request.title" == "Add webhook fixtures"
