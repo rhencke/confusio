@@ -40,85 +40,119 @@ local function full_ref(ref)
   return "refs/heads/" .. (ref.name or "")
 end
 
-local function translate_kallithea_user(payload)
-  local login = payload.username or payload.user or ""
-  return {
-    login = login,
-    id = 0,
-    node_id = "",
-    avatar_url = "",
-    html_url = login ~= "" and (config.base_url .. "/_admin/users/edit/" .. login) or "",
-    type = "User",
-    site_admin = false,
-    name = login,
-    email = payload.email or "",
-    blog = "",
-  }
+local function kallithea_user_login(payload)
+  return (payload or {}).username or (payload or {}).user or ""
 end
 
-local function translate_kallithea_named_user(login, email)
-  login = login or ""
-  return {
-    login = login,
-    id = 0,
-    node_id = "",
-    avatar_url = "",
-    html_url = login ~= "" and (config.base_url .. "/_admin/users/edit/" .. login) or "",
-    type = "User",
-    site_admin = false,
-    name = login,
-    email = email or "",
-    blog = "",
-  }
+local function kallithea_user_url(login)
+  return login ~= "" and (config.base_url .. "/_admin/users/edit/" .. login) or ""
 end
 
-local function translate_kallithea_repo(payload)
-  local full_name = payload.repo_name or payload.repository or ""
-  local owner, repo_name = split_repo_name(full_name)
-  return {
-    id = payload.repo_id or 0,
-    node_id = "",
-    name = repo_name,
-    full_name = full_name,
-    private = payload.private or false,
-    owner = {
-      login = owner,
-      id = payload.owner_id or 0,
-      node_id = "",
-      avatar_url = "",
-      url = "",
-      html_url = owner ~= "" and (config.base_url .. "/_admin/users/edit/" .. owner) or "",
-      type = "User",
-    },
-    html_url = full_name ~= "" and (config.base_url .. "/" .. full_name) or "",
-    description = payload.description,
-    fork = payload.fork_id ~= nil,
-    url = "",
-    git_url = "",
-    ssh_url = "",
-    clone_url = payload.clone_uri
-      or (full_name ~= "" and (config.base_url .. "/" .. full_name) or ""),
-    homepage = "",
-    size = 0,
-    stargazers_count = 0,
-    watchers_count = 0,
-    language = nil,
-    has_issues = false,
-    has_wiki = payload.enable_downloads or false,
-    forks_count = 0,
-    archived = false,
-    disabled = false,
-    open_issues_count = 0,
-    default_branch = payload.default_branch or "main",
-    visibility = payload.private and "private" or "public",
-    forks = 0,
-    open_issues = 0,
-    watchers = 0,
-    created_at = payload.created_on,
-    updated_at = payload.updated_on,
-    pushed_at = payload.pushed_at,
-  }
+local translate_kallithea_user = make_translator({
+  login = computed(kallithea_user_login),
+  id = const(0),
+  node_id = const(""),
+  avatar_url = const(""),
+  html_url = computed(function(payload)
+    return kallithea_user_url(kallithea_user_login(payload))
+  end),
+  type = const("User"),
+  site_admin = const(false),
+  name = computed(kallithea_user_login),
+  email = field("email", { default = "" }),
+  blog = const(""),
+})
+
+local translate_kallithea_named_user = make_translator({
+  login = computed(function(login)
+    return login or ""
+  end),
+  id = const(0),
+  node_id = const(""),
+  avatar_url = const(""),
+  html_url = computed(function(login)
+    return kallithea_user_url(login or "")
+  end),
+  type = const("User"),
+  site_admin = const(false),
+  name = computed(function(login)
+    return login or ""
+  end),
+  email = computed(function(_login, email)
+    return email or ""
+  end),
+  blog = const(""),
+})
+
+local function kallithea_repo_full_name(payload)
+  return (payload or {}).repo_name or (payload or {}).repository or ""
 end
+
+local translate_kallithea_repo_owner = make_translator({
+  login = computed(function(payload)
+    local owner = split_repo_name(kallithea_repo_full_name(payload))
+    return owner
+  end),
+  id = field("owner_id", { default = 0 }),
+  node_id = const(""),
+  avatar_url = const(""),
+  url = const(""),
+  html_url = computed(function(payload)
+    local owner = split_repo_name(kallithea_repo_full_name(payload))
+    return kallithea_user_url(owner)
+  end),
+  type = const("User"),
+})
+
+local translate_kallithea_repo = make_translator({
+  id = field("repo_id", { default = 0 }),
+  node_id = const(""),
+  name = computed(function(payload)
+    local _, repo_name = split_repo_name(kallithea_repo_full_name(payload))
+    return repo_name
+  end),
+  full_name = computed(kallithea_repo_full_name),
+  private = field("private", { default = false }),
+  owner = computed(function(payload)
+    return translate_kallithea_repo_owner(payload)
+  end),
+  html_url = computed(function(payload)
+    local full_name = kallithea_repo_full_name(payload)
+    return full_name ~= "" and (config.base_url .. "/" .. full_name) or ""
+  end),
+  description = "description",
+  fork = computed(function(payload)
+    return payload.fork_id ~= nil
+  end),
+  url = const(""),
+  git_url = const(""),
+  ssh_url = const(""),
+  clone_url = computed(function(payload)
+    local full_name = kallithea_repo_full_name(payload)
+    return payload.clone_uri or (full_name ~= "" and (config.base_url .. "/" .. full_name) or "")
+  end),
+  homepage = const(""),
+  size = const(0),
+  stargazers_count = const(0),
+  watchers_count = const(0),
+  language = const(nil),
+  has_issues = const(false),
+  has_wiki = field("enable_downloads", { default = false }),
+  forks_count = const(0),
+  archived = const(false),
+  disabled = const(false),
+  open_issues_count = const(0),
+  default_branch = field("default_branch", { default = "main" }),
+  visibility = computed(function(payload)
+    return payload.private and "private" or "public"
+  end),
+  forks = const(0),
+  open_issues = const(0),
+  watchers = const(0),
+  created_at = "created_on",
+  updated_at = "updated_on",
+  pushed_at = "pushed_at",
+})
 
 local function timestamp_string(value)
   if value == nil then
@@ -127,32 +161,37 @@ local function timestamp_string(value)
   return tostring(value)
 end
 
-local function translate_kallithea_push_commit(c)
-  if not c then
-    return {}
-  end
-  local author = c.author or {}
-  local committer = c.committer or author
-  return {
-    id = c.id or c.sha or "",
-    message = c.message or "",
-    timestamp = c.timestamp or c.date or "",
-    url = c.url or "",
-    author = {
-      name = author.name or "",
-      email = author.email or "",
-      username = author.username or "",
-    },
-    committer = {
-      name = committer.name or "",
-      email = committer.email or "",
-      username = committer.username or "",
-    },
-    added = c.added or {},
-    removed = c.removed or {},
-    modified = c.modified or {},
-  }
-end
+local translate_kallithea_push_commit_actor = make_translator({
+  name = field("name", { default = "" }),
+  email = field("email", { default = "" }),
+  username = field("username", { default = "" }),
+})
+
+local translate_kallithea_push_commit = make_translator({
+  id = computed(function(c)
+    return c.id or c.sha or ""
+  end),
+  message = field("message", { default = "" }),
+  timestamp = computed(function(c)
+    return c.timestamp or c.date or ""
+  end),
+  url = field("url", { default = "" }),
+  author = computed(function(c)
+    return translate_kallithea_push_commit_actor(c.author or {})
+  end),
+  committer = computed(function(c)
+    return translate_kallithea_push_commit_actor(c.committer or c.author or {})
+  end),
+  added = computed(function(c)
+    return c.added or {}
+  end),
+  removed = computed(function(c)
+    return c.removed or {}
+  end),
+  modified = computed(function(c)
+    return c.modified or {}
+  end),
+})
 
 local function ref_from_pushed_rev(rev)
   local action, name = tostring(rev or ""):match("^([^=]+)=>(.+)$")
@@ -285,7 +324,7 @@ local function kallithea_repo_lifecycle_handler(action)
         action = action,
         repository = translate_kallithea_repo(payload),
         sender = translate_kallithea_named_user(
-          payload.created_by or payload.deleted_by or payload.username
+          payload.created_by or payload.deleted_by or payload.username or ""
         ),
       },
       timestamp = timestamp_string(payload.updated_on or payload.deleted_on or payload.created_on),
@@ -293,55 +332,119 @@ local function kallithea_repo_lifecycle_handler(action)
   end
 end
 
-local function translate_kallithea_pr_branch(repo_name, ref)
-  return {
-    label = repo_name ~= "" and (repo_name .. ":" .. (ref or "")) or (ref or ""),
-    ref = ref or "",
-    sha = "",
-    repo = translate_kallithea_repo({ repo_name = repo_name }),
-  }
+local translate_kallithea_pr_branch = make_translator({
+  label = computed(function(repo_name, ref)
+    repo_name = repo_name or ""
+    return repo_name ~= "" and (repo_name .. ":" .. (ref or "")) or (ref or "")
+  end),
+  ref = computed(function(_repo_name, ref)
+    return ref or ""
+  end),
+  sha = const(""),
+  repo = computed(function(repo_name)
+    repo_name = repo_name or ""
+    return translate_kallithea_repo({ repo_name = repo_name })
+  end),
+})
+
+local function kallithea_payload_pr(payload)
+  return (payload or {}).pull_request or {}
 end
 
-local function translate_kallithea_pull_request(payload)
-  local pr = payload.pull_request or {}
-  local status = pr.status or "new"
-  local state = (status == "closed" or status == "merged") and "closed" or "open"
-  local target_repo = pr.org_repo_name or payload.repository or ""
-  local source_repo = pr.other_repo_name or payload.source_repository or target_repo
-  local number = payload.pull_request_id or pr.id or 0
-  return {
-    id = pr.id or payload.pull_request_id or 0,
-    node_id = "",
-    number = number,
-    state = state,
-    locked = false,
-    title = pr.title or "",
-    body = pr.description or "",
-    user = translate_kallithea_named_user(pr.owner or payload.created_by),
-    head = translate_kallithea_pr_branch(source_repo, pr.other_ref or payload.source_ref),
-    base = translate_kallithea_pr_branch(target_repo, pr.org_ref or payload.target_ref),
-    draft = false,
-    created_at = pr.created_on or "",
-    updated_at = pr.updated_on or "",
-    closed_at = state == "closed" and (pr.updated_on or "") or nil,
-    merged_at = status == "merged" and (pr.updated_on or "") or nil,
-    merge_commit_sha = nil,
-    merged_by = nil,
-    diff_url = "",
-    patch_url = "",
-    html_url = target_repo ~= ""
-        and (config.base_url .. "/" .. target_repo .. "/pull-request/" .. number)
-      or "",
-    url = "",
-    mergeable = state == "open" or nil,
-    comments = 0,
-    review_comments = 0,
-    commits = 0,
-    additions = 0,
-    deletions = 0,
-    changed_files = 0,
-  }
+local function kallithea_pr_status(payload)
+  return kallithea_payload_pr(payload).status or "new"
 end
+
+local function kallithea_pr_state(payload)
+  local status = kallithea_pr_status(payload)
+  return (status == "closed" or status == "merged") and "closed" or "open"
+end
+
+local function kallithea_pr_target_repo(payload)
+  local pr = kallithea_payload_pr(payload)
+  return pr.org_repo_name or payload.repository or ""
+end
+
+local function kallithea_pr_source_repo(payload)
+  local pr = kallithea_payload_pr(payload)
+  return pr.other_repo_name or payload.source_repository or kallithea_pr_target_repo(payload)
+end
+
+local function kallithea_pr_number(payload)
+  local pr = kallithea_payload_pr(payload)
+  return payload.pull_request_id or pr.id or 0
+end
+
+local translate_kallithea_pull_request = make_translator({
+  id = computed(function(payload)
+    local pr = kallithea_payload_pr(payload)
+    return pr.id or payload.pull_request_id or 0
+  end),
+  node_id = const(""),
+  number = computed(kallithea_pr_number),
+  state = computed(kallithea_pr_state),
+  locked = const(false),
+  title = computed(function(payload)
+    return kallithea_payload_pr(payload).title or ""
+  end),
+  body = computed(function(payload)
+    return kallithea_payload_pr(payload).description or ""
+  end),
+  user = computed(function(payload)
+    local pr = kallithea_payload_pr(payload)
+    return translate_kallithea_named_user(pr.owner or payload.created_by or "")
+  end),
+  head = computed(function(payload)
+    local pr = kallithea_payload_pr(payload)
+    return translate_kallithea_pr_branch(
+      kallithea_pr_source_repo(payload),
+      pr.other_ref or payload.source_ref
+    )
+  end),
+  base = computed(function(payload)
+    local pr = kallithea_payload_pr(payload)
+    return translate_kallithea_pr_branch(
+      kallithea_pr_target_repo(payload),
+      pr.org_ref or payload.target_ref
+    )
+  end),
+  draft = const(false),
+  created_at = computed(function(payload)
+    return kallithea_payload_pr(payload).created_on or ""
+  end),
+  updated_at = computed(function(payload)
+    return kallithea_payload_pr(payload).updated_on or ""
+  end),
+  closed_at = computed(function(payload)
+    local pr = kallithea_payload_pr(payload)
+    return kallithea_pr_state(payload) == "closed" and (pr.updated_on or "") or nil
+  end),
+  merged_at = computed(function(payload)
+    local pr = kallithea_payload_pr(payload)
+    return kallithea_pr_status(payload) == "merged" and (pr.updated_on or "") or nil
+  end),
+  merge_commit_sha = const(nil),
+  merged_by = const(nil),
+  diff_url = const(""),
+  patch_url = const(""),
+  html_url = computed(function(payload)
+    local target_repo = kallithea_pr_target_repo(payload)
+    local number = kallithea_pr_number(payload)
+    return target_repo ~= ""
+        and (config.base_url .. "/" .. target_repo .. "/pull-request/" .. number)
+      or ""
+  end),
+  url = const(""),
+  mergeable = computed(function(payload)
+    return kallithea_pr_state(payload) == "open" or nil
+  end),
+  comments = const(0),
+  review_comments = const(0),
+  commits = const(0),
+  additions = const(0),
+  deletions = const(0),
+  changed_files = const(0),
+})
 
 local function kallithea_pull_request_event(payload, action)
   local pr = payload.pull_request or {}
@@ -355,7 +458,7 @@ local function kallithea_pull_request_event(payload, action)
       number = payload.pull_request_id or pr.id,
       pull_request = translate_kallithea_pull_request(payload),
       repository = translate_kallithea_repo({ repo_name = payload.repository or pr.org_repo_name }),
-      sender = translate_kallithea_named_user(payload.created_by or pr.owner),
+      sender = translate_kallithea_named_user(payload.created_by or pr.owner or ""),
     },
     timestamp = pr.updated_on or pr.created_on or "",
   })
@@ -379,7 +482,7 @@ b:webhook("repository", function(payload)
     data = {
       action = "unknown",
       repository = translate_kallithea_repo(payload),
-      sender = translate_kallithea_named_user(payload.created_by or payload.deleted_by),
+      sender = translate_kallithea_named_user(payload.created_by or payload.deleted_by or ""),
     },
     timestamp = timestamp_string(payload.updated_on or payload.deleted_on or payload.created_on),
   })
