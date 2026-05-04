@@ -50,7 +50,7 @@ local function resolve_field(spec, input, output_key)
   return apply_transform(spec.transform, value)
 end
 
-local function resolve_value(spec, input, output_key)
+local function resolve_value(spec, input, output_key, ...)
   if type(spec) == "string" then
     return input[spec]
   end
@@ -72,14 +72,14 @@ local function resolve_value(spec, input, output_key)
     return translate_list(spec.translator, value)
   end
   if spec.kind == "computed" then
-    return spec.fn(input)
+    return spec.fn(input, ...)
   end
   error(
     "unknown translator spec kind for field " .. tostring(output_key) .. ": " .. tostring(spec.kind)
   )
 end
 
-local function translator_apply(translator, input)
+local function translator_apply(translator, input, ...)
   if input == nil then
     if translator.nil_returns_nil then
       return nil
@@ -88,7 +88,7 @@ local function translator_apply(translator, input)
   end
   local output = {}
   for output_key, spec in pairs(translator.spec) do
-    local ok, value = pcall(resolve_value, spec, input, output_key)
+    local ok, value = pcall(resolve_value, spec, input, output_key, ...)
     if not ok then
       error("translator field " .. tostring(output_key) .. ": " .. tostring(value))
     end

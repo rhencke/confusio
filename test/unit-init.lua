@@ -811,6 +811,13 @@ do
   ok(type(empty) == "table", "make_translator: nil input returns an empty table")
   local optional = make_translator({ id = "id" }, { nil_returns_nil = true })
   ok(optional(nil) == nil, "make_translator: nil_returns_nil preserves nil result")
+  local with_context = make_translator({
+    id = "id",
+    offset_id = computed(function(i, offset)
+      return i.id + offset
+    end),
+  })
+  eq(with_context({ id = 7 }, 3).offset_id, 10, "make_translator: computed sees call context")
   eq(
     #translate_issue_spec({ labels = nil }).labels,
     0,
