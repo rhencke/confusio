@@ -541,6 +541,30 @@ do
   )
 end
 
+-- Returned backend specs are registered by .init.lua. Most current backends still
+-- call b:build() directly, so use a tiny synthetic Gitea spec to cover the loader
+-- branch without loading the real backend.
+do
+  local saved_arg = arg
+  local saved_dofile = dofile
+  local spec_handler = function() end
+  arg = { "gitea", "https://git.example.com" } -- luacheck: globals arg
+  dofile = function(path) -- luacheck: globals dofile
+    if path == "/zip/backends/gitea.lua" then
+      return { rest = { get_repo = spec_handler } }
+    end
+    return saved_dofile(path)
+  end
+  local ok_spec, err_spec = pcall(_real_dofile, ".init.lua")
+  arg = saved_arg -- luacheck: globals arg
+  dofile = saved_dofile -- luacheck: globals dofile
+  assert(ok_spec, "returned backend spec should load successfully: " .. tostring(err_spec))
+  assert(
+    app.backend.rest.get_repo == spec_handler,
+    "returned backend spec should register REST handlers"
+  )
+end
+
 -- Create temp secret files (0600) for the main init call.
 -- These exercise the success path of read_secret_file.
 local _ws_secret_file = os.tmpname()
