@@ -29,6 +29,9 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "issues"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "opened"
+jsonpath "$[0].body_json.issue.title" == "Fix login bug"
+jsonpath "$[0].body_json.sender.login" == "alice@example.com"
 
 # ── workitem.updated → issues: edited ────────────────────────────────────────
 
@@ -134,6 +137,10 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "opened"
+jsonpath "$[0].body_json.number" == 42
+jsonpath "$[0].body_json.pull_request.title" == "Add new feature"
+jsonpath "$[0].body_json.repository.full_name" == "myproject/my-repo"
 
 # ── git.pullrequest.updated (active) → pull_request: synchronize ──────────────
 
@@ -197,6 +204,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request_review"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "submitted"
+jsonpath "$[0].body_json.review.state" == "APPROVED"
 
 # ── git.pullrequest.reviewervote (vote=0) → pull_request_review: dismissed ────
 
@@ -260,6 +269,9 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "push"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.ref" == "refs/heads/main"
+jsonpath "$[0].body_json.after" == "f1d2d2f924e986ac86fdf7b36c94bcdf32beec15"
+jsonpath "$[0].body_json.commits" count == 1
 
 # ── git.push (create: oldObjectId = zero) → create: create ────────────────────
 
@@ -323,6 +335,9 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "workflow_run"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "completed"
+jsonpath "$[0].body_json.workflow_run.conclusion" == "success"
+jsonpath "$[0].body_json.workflow.name" == "CI Pipeline"
 
 # ── build.complete (failed) → workflow_run: completed/failure ─────────────────
 
@@ -386,6 +401,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "repository"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "created"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
 
 # ── release created → release: published ─────────────────────────────────────
 
@@ -407,6 +424,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "release"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "published"
+jsonpath "$[0].body_json.release.name" == "Release-1"
 
 # ── release abandoned → release: deleted ─────────────────────────────────────
 
@@ -449,6 +468,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "deployment"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "created"
+jsonpath "$[0].body_json.deployment.environment" == "Production"
 
 # ── deployment completed (success) → deployment_status: created ──────────────
 
@@ -470,6 +491,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "deployment_status"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "created"
+jsonpath "$[0].body_json.deployment_status.state" == "success"
 
 # ── deployment completed (rejected) → deployment_status: created ─────────────
 
@@ -512,6 +535,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "deployment_review"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "requested"
+jsonpath "$[0].body_json.environment" == "Production"
 
 # ── deployment approval completed (approved) → deployment_review: approved ───
 
@@ -617,6 +642,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "code_scanning_alert"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "created"
+jsonpath "$[0].body_json.alert.rule.id" == "js/path-injection"
 
 # ── Advanced Security dependency alert state changed → dependabot_alert ──────
 
@@ -638,6 +665,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "dependabot_alert"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "dismissed"
+jsonpath "$[0].body_json.alert.dependency.package.ecosystem" == "npm"
 
 # ── Advanced Security secret alert updated → secret_scanning_alert ───────────
 
@@ -659,3 +688,5 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "secret_scanning_alert"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "validated"
+jsonpath "$[0].body_json.alert.secret_type" == "github_personal_access_token"

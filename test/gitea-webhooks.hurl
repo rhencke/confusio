@@ -4,6 +4,17 @@
 # Trust-the-network mode (no webhook_secret_BACKEND CLI arg): signature headers omitted.
 # All paths return 200 when a registered handler succeeds.
 
+# ── provider binding: other known webhook providers are absent ───────────────
+
+POST http://{{host}}/webhooks/gitlab
+Content-Type: application/json
+X-Gitlab-Event: Issue Hook
+{}
+
+HTTP 404
+[Asserts]
+jsonpath "$.message" == "Not Found"
+
 # ── issues: known action → 200 ───────────────────────────────────────────────
 
 POST http://{{host}}/webhooks/gitea

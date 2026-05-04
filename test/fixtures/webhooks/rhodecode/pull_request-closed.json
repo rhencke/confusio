@@ -1,0 +1,20 @@
+{
+  "event_type": "pull_request",
+  "action": "closed",
+  "repository": "octocat/hello-world",
+  "created_by": "bob",
+  "pull_request_id": 8,
+  "pull_request": {
+    "id": 8,
+    "title": "Close the loop",
+    "description": "Done.",
+    "status": "closed",
+    "owner": "bob",
+    "org_repo_name": "octocat/hello-world",
+    "other_repo_name": "bob/hello-world",
+    "org_ref": "main",
+    "other_ref": "cleanup",
+    "created_on": "2024-01-15T13:00:00Z",
+    "updated_on": "2024-01-15T13:30:00Z"
+  }
+}

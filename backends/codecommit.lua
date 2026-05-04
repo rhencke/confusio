@@ -15,6 +15,8 @@ local auth = function()
 end
 local fetch_json = make_backend_transport("basic").fetch_json
 
+local ZERO_SHA = "0000000000000000000000000000000000000000"
+
 -- Translate a CodeCommit repositoryMetadata (or summary) object to GitHub format.
 local function translate_repo(r)
   if not r then
@@ -61,6 +63,183 @@ local function translate_repo(r)
     updated_at = r.lastModifiedDate and tostring(r.lastModifiedDate) or nil,
     pushed_at = r.lastModifiedDate and tostring(r.lastModifiedDate) or nil,
   }
+end
+
+local function codecommit_user_from_arn(arn)
+  local login = tostring(arn or ""):match(":user/(.+)$")
+    or tostring(arn or ""):match(":role/(.+)$")
+    or ""
+  return {
+    login = login,
+    id = 0,
+    node_id = "",
+    avatar_url = "",
+    url = "",
+    html_url = "",
+    type = "User",
+    site_admin = false,
+  }
+end
+
+local function codecommit_repository(name, account_id, region)
+  name = name or ""
+  return translate_repo({
+    repositoryId = "",
+    repositoryName = name,
+    repositoryDescription = nil,
+    defaultBranch = "main",
+    cloneUrlHttp = region ~= ""
+        and ("https://git-codecommit." .. region .. ".amazonaws.com/v1/repos/" .. name)
+      or "",
+    accountId = account_id or "",
+  })
+end
+
+local function codecommit_eventbridge_ref(detail)
+  detail = detail or {}
+  local name = detail.referenceName or ""
+  local ref_type = detail.referenceType or "branch"
+  if name:match("^refs/") then
+    return name
+  end
+  if ref_type == "tag" then
+    return "refs/tags/" .. name
+  end
+  return "refs/heads/" .. name
+end
+
+local function codecommit_normalized_payload_without_envelope_fields(data)
+  local payload = {}
+  for k, v in pairs(data or {}) do
+    if k ~= "sender" and k ~= "repository" then
+      payload[k] = v
+    end
+  end
+  return payload
+end
+
+local function translate_codecommit_normalized_webhook(internal_event, fields)
+  local data = internal_event.data or {}
+  fields = fields or {}
+  return make_normalized_webhook_envelope(internal_event, {
+    id = fields.id,
+    type = fields.type or normalized_webhook_event_type(internal_event.event, ""),
+    occurred_at = fields.occurred_at,
+    actor = fields.actor or data.sender,
+    repository = fields.repository or data.repository,
+    payload = fields.payload or codecommit_normalized_payload_without_envelope_fields(data),
+  })
+end
+
+local function translate_codecommit_github_webhook(internal_event, fields)
+  return github_webhook_payload(internal_event, fields)
+end
+
+local function decode_codecommit_message(payload)
+  if
+    type(payload) == "table"
+    and payload.Type == "Notification"
+    and type(payload.Message) == "string"
+  then
+    local ok, nested = pcall(DecodeJson, payload.Message)
+    if ok and type(nested) == "table" then
+      return nested
+    end
+  end
+  return payload or {}
+end
+
+local function codecommit_push_from_record(payload, record)
+  record = record or {}
+  local reference = ((record.codecommit or {}).references or {})[1] or {}
+  local raw_ref = reference.ref or reference.referenceName or ""
+  local after = reference.commit or reference.commitId or ""
+  local before = reference.oldCommit or reference.oldCommitId or ""
+  if before == "" and after ~= "" then
+    before = ZERO_SHA
+  elseif after == "" and before ~= "" then
+    after = ZERO_SHA
+  end
+  local repo_name = record.eventSourceARN and record.eventSourceARN:match(":([^:]+)$")
+    or record.repositoryName
+    or ""
+  local region = record.awsRegion or ""
+  local account_id = tostring(record.eventSourceARN or ""):match(":codecommit:[^:]+:(%d+):") or ""
+  local sender = codecommit_user_from_arn(record.userIdentityARN)
+  local repository = codecommit_repository(repo_name, account_id, region)
+  return make_internal_event({
+    event = "push",
+    action = "push",
+    provider = "codecommit",
+    raw = payload,
+    data = {
+      ref = raw_ref,
+      before = before,
+      after = after,
+      created = before == "" or before == ZERO_SHA,
+      deleted = after == "" or after == ZERO_SHA,
+      forced = false,
+      compare = "",
+      commits = {},
+      head_commit = nil,
+      pusher = { name = sender.login, email = "" },
+      repository = repository,
+      sender = sender,
+    },
+    timestamp = record.eventTime or "",
+  })
+end
+
+local function codecommit_push_from_eventbridge(payload)
+  local detail = payload.detail or {}
+  local raw_ref = codecommit_eventbridge_ref(detail)
+  local after = detail.commitId or ""
+  local before = detail.oldCommitId or ""
+  if before == "" and after ~= "" then
+    before = ZERO_SHA
+  elseif after == "" and before ~= "" then
+    after = ZERO_SHA
+  end
+  local region = payload.region or ""
+  local account_id = payload.account or ""
+  local repo_name = detail.repositoryName or ""
+  local sender = codecommit_user_from_arn(detail.callerUserArn or detail.userIdentityARN)
+  local repository = codecommit_repository(repo_name, account_id, region)
+  return make_internal_event({
+    event = "push",
+    action = "push",
+    provider = "codecommit",
+    raw = payload,
+    data = {
+      ref = raw_ref,
+      before = before,
+      after = after,
+      created = before == "" or before == ZERO_SHA,
+      deleted = after == "" or after == ZERO_SHA,
+      forced = false,
+      compare = "",
+      commits = {},
+      head_commit = nil,
+      pusher = { name = sender.login, email = "" },
+      repository = repository,
+      sender = sender,
+    },
+    timestamp = payload.time or "",
+  })
+end
+
+local function codecommit_webhook(payload)
+  payload = decode_codecommit_message(payload)
+  if type(payload.Records) == "table" and type(payload.Records[1]) == "table" then
+    return codecommit_push_from_record(payload, payload.Records[1])
+  end
+  if
+    payload.source == "aws.codecommit"
+    or payload["detail-type"] == "CodeCommit Repository State Change"
+  then
+    return codecommit_push_from_eventbridge(payload)
+  end
+  return nil, "Unsupported CodeCommit webhook payload"
 end
 
 -- Fetch one page of repository summaries from /v1/repos.
@@ -194,5 +373,9 @@ b:rest("search_repositories", function()
   end
   respond_json(200, { total_count = #items, incomplete_results = incomplete, items = items })
 end)
+
+b:webhook("codecommit", codecommit_webhook)
+b:webhook_translator("push", translate_codecommit_normalized_webhook)
+b:webhook_github_translator("push", translate_codecommit_github_webhook)
 
 b:build()

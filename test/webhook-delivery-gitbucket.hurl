@@ -29,6 +29,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "issues"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "opened"
+jsonpath "$[0].body_json.issue.title" == "Bug report"
 
 # ── issues: closed ────────────────────────────────────────────────────────────
 
@@ -183,6 +185,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "issue_comment"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "created"
+jsonpath "$[0].body_json.comment.body" == "I can reproduce this too."
 
 # ── issue_comment: edited ─────────────────────────────────────────────────────
 
@@ -249,6 +253,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "label"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "created"
+jsonpath "$[0].body_json.label.name" == "enhancement"
 
 # ── label: edited ─────────────────────────────────────────────────────────────
 
@@ -315,6 +321,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "milestone"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "created"
+jsonpath "$[0].body_json.milestone.title" == "v1.0"
 
 # ── milestone: closed ─────────────────────────────────────────────────────────
 
@@ -381,6 +389,9 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "opened"
+jsonpath "$[0].body_json.number" == 5
+jsonpath "$[0].body_json.pull_request.title" == "Add awesome feature"
 
 # ── pull_request: closed ──────────────────────────────────────────────────────
 
@@ -491,6 +502,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request_review"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "submitted"
+jsonpath "$[0].body_json.review.state" == "APPROVED"
 
 # ── pull_request_review: dismissed ────────────────────────────────────────────
 
@@ -535,6 +548,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "push"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.ref" == "refs/heads/main"
+jsonpath "$[0].body_json.after" == "abc123def456abc123def456abc123def456abc123"
 
 # ── create: create ────────────────────────────────────────────────────────────
 
@@ -557,6 +572,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "create"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.ref" == "feature-branch"
+jsonpath "$[0].body_json.ref_type" == "branch"
 
 # ── delete: delete ────────────────────────────────────────────────────────────
 
@@ -579,6 +596,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "delete"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.ref" == "stale-branch"
+jsonpath "$[0].body_json.ref_type" == "branch"
 
 # ── fork: fork ────────────────────────────────────────────────────────────────
 
@@ -623,6 +642,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "release"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "published"
+jsonpath "$[0].body_json.release.tag_name" == "v1.0.0"
 
 # ── release: edited ───────────────────────────────────────────────────────────
 
@@ -689,6 +710,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "repository"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "created"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
 
 # ── repository: deleted ───────────────────────────────────────────────────────
 
@@ -733,6 +756,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "gollum"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.pages[0].page_name" == "Home"
+jsonpath "$[0].body_json.pages[0].action" == "created"
 
 # ── gollum: edited ────────────────────────────────────────────────────────────
 
@@ -777,6 +802,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "deploy_key"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "created"
+jsonpath "$[0].body_json.key.title" == "Deploy key"
 
 # ── deploy_key: deleted ───────────────────────────────────────────────────────
 
@@ -1129,6 +1156,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "member"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "added"
+jsonpath "$[0].body_json.member.login" == "bob"
 
 # ── member: removed ───────────────────────────────────────────────────────────
 
@@ -1173,6 +1202,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "organization"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "member_added"
+jsonpath "$[0].body_json.membership.user.login" == "bob"
 
 # ── organization: member_removed ──────────────────────────────────────────────
 
@@ -1327,6 +1358,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "project"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "created"
+jsonpath "$[0].body_json.project.name" == "My Project"
 
 # ── project: closed ───────────────────────────────────────────────────────────
 
@@ -2207,6 +2240,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "package"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "published"
+jsonpath "$[0].body_json.package.name" == "my-lib"
 
 # ── package: updated ─────────────────────────────────────────────────────────
 
@@ -2295,6 +2330,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "ping"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.zen" == "Responsive is better than fast."
+jsonpath "$[0].body_json.hook_id" == 1
 
 # ── meta: deleted ─────────────────────────────────────────────────────────────
 

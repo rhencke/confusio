@@ -25,7 +25,10 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "push"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
-jsonpath "$[0].body_json.action" == "pushed"
+jsonpath "$[0].body_json.ref" == "refs/heads/main"
+jsonpath "$[0].body_json.before" == "1111111111111111111111111111111111111111"
+jsonpath "$[0].body_json.after" == "2222222222222222222222222222222222222222"
+jsonpath "$[0].body_json.repository.full_name" == "fido/main"
 
 # -- ping -> ping -------------------------------------------------------------
 
@@ -69,7 +72,10 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "issues"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.bug" == "/bugs/1234"
+jsonpath "$[0].body_json.action" == "opened"
+jsonpath "$[0].body_json.issue.number" == 1234
+jsonpath "$[0].body_json.issue.title" == "Webhook bug"
+jsonpath "$[0].body_json.repository.full_name" == "launchpad/confusio"
 
 # -- bug:comment:0.1 created -> issue_comment --------------------------------
 
@@ -91,7 +97,10 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "issue_comment"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.bug_comment" == "/bugs/1234/comments/5"
+jsonpath "$[0].body_json.action" == "created"
+jsonpath "$[0].body_json.issue.number" == 1234
+jsonpath "$[0].body_json.comment.id" == 5
+jsonpath "$[0].body_json.comment.body" == "Woof, found the bug."
 
 # -- merge-proposal:0.1 created -> pull_request -------------------------------
 
@@ -113,7 +122,11 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.merge_proposal" == "/~fido/confusio/+git/feature/+merge/42"
+jsonpath "$[0].body_json.action" == "opened"
+jsonpath "$[0].body_json.number" == 42
+jsonpath "$[0].body_json.pull_request.title" == "Add the good feature"
+jsonpath "$[0].body_json.pull_request.head.repo.full_name" == "fido/feature"
+jsonpath "$[0].body_json.pull_request.base.repo.full_name" == "fido/main"
 
 # -- ci:build:0.1 created -> workflow_run -------------------------------------
 
@@ -135,7 +148,10 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "workflow_run"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.build" == "/~fido/confusio/+git/main/+build/77"
+jsonpath "$[0].body_json.action" == "requested"
+jsonpath "$[0].body_json.workflow_run.id" == 77
+jsonpath "$[0].body_json.workflow_run.status" == "queued"
+jsonpath "$[0].body_json.workflow_run.head_sha" == "3333333333333333333333333333333333333333"
 
 # -- livefs:build:0.1 building -> workflow_run --------------------------------
 
@@ -157,7 +173,9 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "workflow_run"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.status" == "Currently building"
+jsonpath "$[0].body_json.action" == "in_progress"
+jsonpath "$[0].body_json.workflow_run.id" == 87
+jsonpath "$[0].body_json.workflow_run.status" == "in_progress"
 
 # -- snap:build:0.1 success -> workflow_run -----------------------------------
 
@@ -179,7 +197,9 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "workflow_run"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.status" == "Successfully built"
+jsonpath "$[0].body_json.action" == "completed"
+jsonpath "$[0].body_json.workflow_run.id" == 88
+jsonpath "$[0].body_json.workflow_run.conclusion" == "success"
 
 # -- ocirecipe:build:0.1 cancelled -> workflow_run ----------------------------
 
@@ -201,7 +221,9 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "workflow_run"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.status" == "Cancelled build"
+jsonpath "$[0].body_json.action" == "completed"
+jsonpath "$[0].body_json.workflow_run.id" == 89
+jsonpath "$[0].body_json.workflow_run.conclusion" == "cancelled"
 
 # -- archive:binary-build:0.1 failed -> workflow_run --------------------------
 
@@ -223,7 +245,9 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "workflow_run"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.source_package_name" == "confusio"
+jsonpath "$[0].body_json.action" == "completed"
+jsonpath "$[0].body_json.workflow_run.id" == 99
+jsonpath "$[0].body_json.workflow_run.conclusion" == "failure"
 
 # -- archive:source-package-upload:0.1 accepted -> package --------------------
 
@@ -245,7 +269,9 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "package"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.package_name" == "confusio"
+jsonpath "$[0].body_json.action" == "published"
+jsonpath "$[0].body_json.package.name" == "confusio"
+jsonpath "$[0].body_json.package.package_version.name" == "1.2.3"
 
 # -- archive:binary-package-upload:0.1 rejected -> package --------------------
 
@@ -267,4 +293,6 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "package"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.source_package_name" == "confusio"
+jsonpath "$[0].body_json.action" == "updated"
+jsonpath "$[0].body_json.package.name" == "confusio"
+jsonpath "$[0].body_json.package.package_version.metadata.status" == "Rejected"

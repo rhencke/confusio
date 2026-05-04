@@ -29,6 +29,9 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request_review"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "submitted"
+jsonpath "$[0].body_json.review.state" == "APPROVED"
+jsonpath "$[0].body_json.pull_request.number" == 1001
 
 # ── reviewer-added → pull_request: review_requested ─────────────────────────
 
@@ -50,7 +53,9 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
-jsonpath "$[0].body_json.type" == "reviewer-added"
+jsonpath "$[0].body_json.action" == "review_requested"
+jsonpath "$[0].body_json.requested_reviewer.login" == "nina"
+jsonpath "$[0].body_json.pull_request.number" == 1004
 
 # ── reviewer-deleted → pull_request: review_request_removed ─────────────────
 
@@ -72,7 +77,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
-jsonpath "$[0].body_json.type" == "reviewer-deleted"
+jsonpath "$[0].body_json.action" == "review_request_removed"
+jsonpath "$[0].body_json.requested_reviewer.login" == "nina"
 
 # ── vote-deleted → pull_request_review: dismissed ───────────────────────────
 
@@ -94,7 +100,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request_review"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
-jsonpath "$[0].body_json.type" == "vote-deleted"
+jsonpath "$[0].body_json.action" == "dismissed"
+jsonpath "$[0].body_json.review.state" == "DISMISSED"
 
 # ── ref-updated → push ──────────────────────────────────────────────────────
 
@@ -116,7 +123,9 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "push"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
-jsonpath "$[0].body_json.type" == "ref-updated"
+jsonpath "$[0].body_json.ref" == "refs/heads/main"
+jsonpath "$[0].body_json.before" == "1111111111111111111111111111111111111111"
+jsonpath "$[0].body_json.after" == "2222222222222222222222222222222222222222"
 
 # ── ref-updated → create ────────────────────────────────────────────────────
 
@@ -137,7 +146,8 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "create"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.refUpdate.refName" == "refs/heads/feature/ref-map"
+jsonpath "$[0].body_json.ref" == "feature/ref-map"
+jsonpath "$[0].body_json.ref_type" == "branch"
 
 # ── ref-updated → delete ────────────────────────────────────────────────────
 
@@ -158,7 +168,8 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "delete"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.refUpdate.refName" == "refs/tags/v1.0.0"
+jsonpath "$[0].body_json.ref" == "v1.0.0"
+jsonpath "$[0].body_json.ref_type" == "tag"
 
 # ── batch-ref-updated → push ────────────────────────────────────────────────
 
@@ -179,7 +190,7 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "push"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.refUpdates[0].refName" == "refs/heads/release"
+jsonpath "$[0].body_json.ref" == "refs/heads/release"
 
 # ── project-created → repository: created ──────────────────────────────────
 
@@ -200,8 +211,8 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "repository"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.type" == "project-created"
-jsonpath "$[0].body_json.projectName" == "myorg/new-repo"
+jsonpath "$[0].body_json.action" == "created"
+jsonpath "$[0].body_json.repository.full_name" == "myorg/new-repo"
 
 # ── project-deleted → repository: deleted ──────────────────────────────────
 
@@ -222,8 +233,8 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "repository"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.type" == "project-deleted"
-jsonpath "$[0].body_json.projectName" == "myorg/old-repo"
+jsonpath "$[0].body_json.action" == "deleted"
+jsonpath "$[0].body_json.repository.full_name" == "myorg/old-repo"
 
 # ── project-head-updated → repository: edited ──────────────────────────────
 
@@ -244,9 +255,9 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "repository"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.type" == "project-head-updated"
-jsonpath "$[0].body_json.oldHead" == "refs/heads/master"
-jsonpath "$[0].body_json.newHead" == "refs/heads/main"
+jsonpath "$[0].body_json.action" == "edited"
+jsonpath "$[0].body_json.changes.repository.default_branch.from" == "master"
+jsonpath "$[0].body_json.repository.full_name" == "myorg/my-repo"
 
 # ── patchset-created (first patch set) → pull_request: opened ───────────────
 
@@ -268,7 +279,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
-jsonpath "$[0].body_json.type" == "patchset-created"
+jsonpath "$[0].body_json.action" == "opened"
+jsonpath "$[0].body_json.pull_request.number" == 1002
 
 # ── patchset-created (later patch set) → pull_request: synchronize ──────────
 
@@ -290,7 +302,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
-jsonpath "$[0].body_json.patchSet.number" == 2
+jsonpath "$[0].body_json.action" == "synchronize"
+jsonpath "$[0].body_json.pull_request.head.sha" == "333ccc444ddd"
 
 # ── change-merged → pull_request: closed / merged ───────────────────────────
 
@@ -312,7 +325,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
-jsonpath "$[0].body_json.type" == "change-merged"
+jsonpath "$[0].body_json.action" == "closed"
+jsonpath "$[0].body_json.pull_request.merged" == true
 
 # ── change-abandoned → pull_request: closed / not merged ────────────────────
 
@@ -334,7 +348,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
-jsonpath "$[0].body_json.reason" == "Superseded by another change"
+jsonpath "$[0].body_json.action" == "closed"
+jsonpath "$[0].body_json.pull_request.merged" == false
 
 # ── change-restored → pull_request: reopened ────────────────────────────────
 
@@ -356,7 +371,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
-jsonpath "$[0].body_json.type" == "change-restored"
+jsonpath "$[0].body_json.action" == "reopened"
+jsonpath "$[0].body_json.pull_request.state" == "open"
 
 # ── topic-changed → pull_request: edited ────────────────────────────────────
 
@@ -378,7 +394,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
-jsonpath "$[0].body_json.type" == "topic-changed"
+jsonpath "$[0].body_json.action" == "edited"
+jsonpath "$[0].body_json.changes.topic.to" == "checkout-v2"
 
 # ── hashtags-changed (added) → pull_request: labeled ────────────────────────
 
@@ -399,7 +416,8 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.added[0]" == "docs"
+jsonpath "$[0].body_json.action" == "labeled"
+jsonpath "$[0].body_json.label.name" == "docs"
 
 # ── hashtags-changed (removed) → pull_request: unlabeled ────────────────────
 
@@ -420,7 +438,8 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.removed[0]" == "checkout"
+jsonpath "$[0].body_json.action" == "unlabeled"
+jsonpath "$[0].body_json.label.name" == "checkout"
 
 # ── wip-state-changed → pull_request: edited ────────────────────────────────
 
@@ -441,7 +460,8 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.change.wip" == true
+jsonpath "$[0].body_json.action" == "edited"
+jsonpath "$[0].body_json.changes.draft.to" == true
 
 # ── private-state-changed → pull_request: edited ────────────────────────────
 
@@ -462,7 +482,8 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.change.private" == true
+jsonpath "$[0].body_json.action" == "edited"
+jsonpath "$[0].body_json.changes.private.to" == true
 
 # ── assignee-changed (assigned) → pull_request: assigned ────────────────────
 
@@ -483,7 +504,8 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.assignee.username" == "dana"
+jsonpath "$[0].body_json.action" == "assigned"
+jsonpath "$[0].body_json.assignee.login" == "dana"
 
 # ── assignee-changed (unassigned) → pull_request: unassigned ────────────────
 
@@ -504,7 +526,8 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.oldAssignee.username" == "dana"
+jsonpath "$[0].body_json.action" == "unassigned"
+jsonpath "$[0].body_json.changes.assignee.from.login" == "dana"
 
 # ── comment-added (changes_requested) → pull_request_review: submitted/CHANGES_REQUESTED
 
@@ -526,6 +549,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request_review"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "submitted"
+jsonpath "$[0].body_json.review.state" == "CHANGES_REQUESTED"
 
 # ── comment-added (no vote) → pull_request_review: submitted/COMMENTED ────────
 
@@ -547,3 +572,5 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request_review"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "submitted"
+jsonpath "$[0].body_json.review.state" == "COMMENTED"

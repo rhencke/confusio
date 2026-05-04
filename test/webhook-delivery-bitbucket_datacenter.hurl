@@ -32,6 +32,10 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "opened"
+jsonpath "$[0].body_json.number" == 1
+jsonpath "$[0].body_json.pull_request.title" == "Fix the bug"
+jsonpath "$[0].body_json.repository.full_name" == "OCTO/hello-world"
 
 # ── pull_request: edited ──────────────────────────────────────────────────────
 
@@ -318,6 +322,9 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "status"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.state" == "success"
+jsonpath "$[0].body_json.context" == "my-ci/build"
+jsonpath "$[0].body_json.sha" == "abc1234567890abcdef1234567890abcdef12345"
 
 # ── status: pending (build:status_updated) ────────────────────────────────────
 
@@ -406,3 +413,6 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "repository"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "renamed"
+jsonpath "$[0].body_json.repository.name" == "hello-universe"
+jsonpath "$[0].body_json.changes.repository.name.from" == "hello-world"

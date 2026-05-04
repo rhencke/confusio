@@ -623,6 +623,37 @@ HTTP 401
 [Asserts]
 jsonpath "$.message" == "Signature verification failed"
 
+# ── rhodecode: X-RhodeCode-Signature, verbatim shared token ─────────────────
+
+# Valid token → passes verification (422)
+POST http://{{host}}/webhooks/rhodecode
+Content-Type: application/json
+X-RhodeCode-Signature: {{rhodecode_tok}}
+{}
+
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "No webhook handlers registered"
+
+# Bad token → 401
+POST http://{{host}}/webhooks/rhodecode
+Content-Type: application/json
+X-RhodeCode-Signature: wrongtoken
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# Missing token header → 401
+POST http://{{host}}/webhooks/rhodecode
+Content-Type: application/json
+{}
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
 # ── tuleap: X-Tuleap-Webhook-Secret, verbatim shared token ──────────────────
 
 # Valid token → passes verification (422)
@@ -649,6 +680,21 @@ jsonpath "$.message" == "Signature verification failed"
 POST http://{{host}}/webhooks/tuleap
 Content-Type: application/x-www-form-urlencoded
 `payload=%7B%7D`
+
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Signature verification failed"
+
+# ── codecommit: SNS X.509 signatures are not verified from shared secrets ───
+
+# CodeCommit's SNS signature model needs certificate-chain validation, not a
+# shared webhook secret. When a local secret is configured, reject instead of
+# pretending an HMAC/token check would be meaningful.
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+X-Amz-Sns-Message-Type: Notification
+X-Amz-Sns-Signature: placeholder
+{}
 
 HTTP 401
 [Asserts]

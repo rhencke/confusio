@@ -1389,8 +1389,13 @@ local function translate_pagure_normalized_webhook(internal_event, fields)
   })
 end
 
+local function translate_pagure_github_webhook(internal_event, fields)
+  return github_webhook_payload(internal_event, fields)
+end
+
 for _, event in ipairs(PAGURE_NORMALIZED_WEBHOOK_EVENTS) do
   b:webhook_translator(event, translate_pagure_normalized_webhook)
+  b:webhook_github_translator(event, translate_pagure_github_webhook)
 end
 
 b:build()

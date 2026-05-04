@@ -24,7 +24,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "push"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
-jsonpath "$[0].body_json.type" == "RefUpdated"
+jsonpath "$[0].body_json.ref" == "refs/heads/main"
+jsonpath "$[0].body_json.after" == "5a1e9f3d7c2b4a6e8f90123456789abcdef01234"
 
 # -- RefUpdated create -> create --------------------------------------------
 
@@ -45,7 +46,8 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "create"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.refName" == "refs/heads/feature-branch"
+jsonpath "$[0].body_json.ref" == "feature-branch"
+jsonpath "$[0].body_json.ref_type" == "branch"
 
 # -- RefUpdated delete -> delete --------------------------------------------
 
@@ -66,7 +68,8 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "delete"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.refName" == "refs/heads/stale-branch"
+jsonpath "$[0].body_json.ref" == "stale-branch"
+jsonpath "$[0].body_json.ref_type" == "branch"
 
 # -- IssueOpened -> issues opened -------------------------------------------
 
@@ -87,7 +90,8 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "issues"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.type" == "IssueOpened"
+jsonpath "$[0].body_json.action" == "opened"
+jsonpath "$[0].body_json.issue.title" == "Bug report"
 
 # -- IssueChanged closed -> issues closed -----------------------------------
 
@@ -108,7 +112,8 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "issues"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.activity" == "closed"
+jsonpath "$[0].body_json.action" == "closed"
+jsonpath "$[0].body_json.issue.state" == "closed"
 
 # -- IssueCommentCreated -> issue_comment created ---------------------------
 
@@ -129,7 +134,8 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "issue_comment"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.comment.content" == "Confirmed, I can reproduce this."
+jsonpath "$[0].body_json.action" == "created"
+jsonpath "$[0].body_json.comment.body" == "Confirmed, I can reproduce this."
 
 # -- PullRequestOpened -> pull_request opened -------------------------------
 
@@ -150,7 +156,8 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.type" == "PullRequestOpened"
+jsonpath "$[0].body_json.action" == "opened"
+jsonpath "$[0].body_json.number" == 9
 
 # -- PullRequestChanged added commits -> pull_request synchronize ------------
 
@@ -171,7 +178,8 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.activity" == "added commits"
+jsonpath "$[0].body_json.action" == "synchronize"
+jsonpath "$[0].body_json.pull_request.head.ref" == "feature"
 
 # -- PullRequestCodeCommentCreated -> pull_request_review_comment created ----
 
@@ -192,7 +200,8 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request_review_comment"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.comment.mark.path" == "src/app.lua"
+jsonpath "$[0].body_json.action" == "created"
+jsonpath "$[0].body_json.comment.path" == "src/app.lua"
 
 # -- BuildFinished SUCCESSFUL -> workflow_run completed ----------------------
 
@@ -213,7 +222,8 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "workflow_run"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.build.status" == "SUCCESSFUL"
+jsonpath "$[0].body_json.action" == "completed"
+jsonpath "$[0].body_json.workflow_run.conclusion" == "success"
 
 # -- PackPublished -> package published -------------------------------------
 
@@ -234,4 +244,5 @@ HTTP 200
 jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "package"
 jsonpath "$[0].github_delivery" isString
-jsonpath "$[0].body_json.pack.name" == "hello-world"
+jsonpath "$[0].body_json.action" == "published"
+jsonpath "$[0].body_json.package.name" == "hello-world"

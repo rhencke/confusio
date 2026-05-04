@@ -756,42 +756,8 @@ local function translate_phabricator_normalized_webhook(internal_event, fields)
   })
 end
 
-local function translate_phabricator_github_webhook(internal_event, _fields)
-  local data = internal_event.data or {}
-  local payload = {
-    action = data.action or internal_event.action,
-    repository = data.repository or {},
-    sender = data.sender or {},
-  }
-  if internal_event.event == "issues" then
-    payload.issue = data.issue or {}
-  elseif internal_event.event == "issue_comment" then
-    payload.issue = data.issue or {}
-    payload.comment = data.comment or {}
-  elseif internal_event.event == "pull_request" then
-    payload.number = data.number
-    payload.pull_request = data.pull_request or {}
-  elseif internal_event.event == "push" then
-    payload.action = nil
-    payload.ref = data.ref or ""
-    payload.before = data.before or ""
-    payload.after = data.after or ""
-    payload.created = data.created or false
-    payload.deleted = data.deleted or false
-    payload.forced = data.forced or false
-    payload.compare = data.compare or ""
-    payload.commits = data.commits or {}
-    payload.head_commit = data.head_commit
-    payload.pusher = data.pusher or {}
-  elseif internal_event.event == "repository" then
-    payload.changes = data.changes
-  elseif internal_event.event == "workflow_run" then
-    payload.workflow_run = data.workflow_run or {}
-    payload.workflow = data.workflow or {}
-  elseif internal_event.event == "workflow_job" then
-    payload.workflow_job = data.workflow_job or {}
-  end
-  return payload
+local function translate_phabricator_github_webhook(internal_event, fields)
+  return github_webhook_payload(internal_event, fields)
 end
 
 local b = make_backend_builder()

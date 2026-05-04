@@ -29,6 +29,9 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "issues"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "opened"
+jsonpath "$[0].body_json.issue.title" == "Bug report"
+jsonpath "$[0].body_json.repository.full_name" == "myorg/my-repo"
 
 # ── issue.edit → issues: edited ───────────────────────────────────────────────
 
@@ -51,6 +54,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "issues"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "edited"
+jsonpath "$[0].body_json.issue.number" == 1
 
 # ── issue.status.change (closed) → issues: closed ────────────────────────────
 
@@ -73,6 +78,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "issues"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "closed"
+jsonpath "$[0].body_json.issue.state" == "closed"
 
 # ── issue.status.change (reopened) → issues: reopened ────────────────────────
 
@@ -95,6 +102,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "issues"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "reopened"
+jsonpath "$[0].body_json.issue.state" == "open"
 
 # ── issue.comment.added → issue_comment: created ─────────────────────────────
 
@@ -117,6 +126,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "issue_comment"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "created"
+jsonpath "$[0].body_json.comment.body" == "I can reproduce this too."
 
 # ── pull-request.new → pull_request: opened ───────────────────────────────────
 
@@ -139,6 +150,9 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "opened"
+jsonpath "$[0].body_json.number" == 5
+jsonpath "$[0].body_json.pull_request.title" == "Add awesome feature"
 
 # ── pull-request.updated → pull_request: synchronize ─────────────────────────
 
@@ -161,6 +175,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "synchronize"
+jsonpath "$[0].body_json.number" == 5
 
 # ── pull-request.closed → pull_request: closed ────────────────────────────────
 
@@ -183,6 +199,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "pull_request"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.action" == "closed"
+jsonpath "$[0].body_json.pull_request.state" == "closed"
 
 # ── git.receive (push) → push: push ───────────────────────────────────────────
 
@@ -205,6 +223,10 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "push"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.ref" == "refs/heads/main"
+jsonpath "$[0].body_json.before" == "6dcb09b5b57875f334f61aebed695e2e4193db5e"
+jsonpath "$[0].body_json.after" == "f1d2d2f924e986ac86fdf7b36c94bcdf32beec15"
+jsonpath "$[0].body_json.head_commit.sha" == "f1d2d2f924e986ac86fdf7b36c94bcdf32beec15"
 
 # ── git.receive (create) → create: create ────────────────────────────────────
 
@@ -227,6 +249,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "create"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.ref" == "feature-branch"
+jsonpath "$[0].body_json.ref_type" == "branch"
 
 # ── git.receive (delete) → delete: delete ────────────────────────────────────
 
@@ -249,6 +273,8 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "delete"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.ref" == "stale-branch"
+jsonpath "$[0].body_json.ref_type" == "branch"
 
 # ── project.forked → fork: fork ───────────────────────────────────────────────
 
@@ -271,3 +297,5 @@ jsonpath "$" count == 1
 jsonpath "$[0].github_event" == "fork"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].user_agent" contains "confusio"
+jsonpath "$[0].body_json.forkee.full_name" == "forks/bob/hello-world"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"

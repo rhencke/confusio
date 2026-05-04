@@ -115,7 +115,7 @@ end
 -- Case 1: file not found → startup error.
 do
   local saved_arg = arg -- luacheck: globals arg
-  arg = { "testbackend", "webhook_secret_file_gitea=/tmp/no-such-file-fido-test-9x7z.txt" } -- luacheck: globals arg
+  arg = { "gitea", "webhook_secret_file_gitea=/tmp/no-such-file-fido-test-9x7z.txt" } -- luacheck: globals arg
   local ok1, err1 = pcall(_real_dofile, ".init.lua")
   arg = saved_arg -- luacheck: globals arg
   assert(not ok1, "read_secret_file: missing file should cause startup error")
@@ -125,6 +125,362 @@ do
       .. tostring(err1)
       .. ")"
   )
+end
+
+-- Provider/upstream flag validation happens before module loading, so these
+-- pcall checks can exercise startup failures without affecting the main load.
+do
+  local saved_arg = arg
+
+  arg = { "--provider=notarealprovider", "--upstream=https://git.example.com" } -- luacheck: globals arg
+  local ok_provider, err_provider = pcall(_real_dofile, ".init.lua")
+  assert(not ok_provider, "--provider: unsupported provider should cause startup error")
+  assert(
+    type(err_provider) == "string" and err_provider:find("unsupported provider"),
+    "--provider: unsupported provider error should mention unsupported provider (got: "
+      .. tostring(err_provider)
+      .. ")"
+  )
+
+  arg = { "--provider=", "--upstream=https://git.example.com" } -- luacheck: globals arg
+  local ok_empty_provider, err_empty_provider = pcall(_real_dofile, ".init.lua")
+  assert(not ok_empty_provider, "--provider: empty value should cause startup error")
+  assert(
+    type(err_empty_provider) == "string" and err_empty_provider:find("missing value"),
+    "--provider: empty value error should mention missing value (got: "
+      .. tostring(err_empty_provider)
+      .. ")"
+  )
+
+  arg = { "--provider", "--upstream=https://git.example.com" } -- luacheck: globals arg
+  local ok_missing_provider_value, err_missing_provider_value = pcall(_real_dofile, ".init.lua")
+  assert(
+    not ok_missing_provider_value,
+    "--provider: missing split value should cause startup error"
+  )
+  assert(
+    type(err_missing_provider_value) == "string"
+      and err_missing_provider_value:find("missing value"),
+    "--provider: missing split value error should mention missing value (got: "
+      .. tostring(err_missing_provider_value)
+      .. ")"
+  )
+
+  arg = { "--provider=gitea" } -- luacheck: globals arg
+  local ok_missing_upstream, err_missing_upstream = pcall(_real_dofile, ".init.lua")
+  assert(not ok_missing_upstream, "--provider without --upstream should cause startup error")
+  assert(
+    type(err_missing_upstream) == "string" and err_missing_upstream:find("%-%-upstream"),
+    "--provider without --upstream error should mention --upstream (got: "
+      .. tostring(err_missing_upstream)
+      .. ")"
+  )
+
+  arg = { "--provider=gitea", "--upstream=" } -- luacheck: globals arg
+  local ok_empty_upstream, err_empty_upstream = pcall(_real_dofile, ".init.lua")
+  assert(not ok_empty_upstream, "--upstream: empty value should cause startup error")
+  assert(
+    type(err_empty_upstream) == "string" and err_empty_upstream:find("missing value"),
+    "--upstream: empty value error should mention missing value (got: "
+      .. tostring(err_empty_upstream)
+      .. ")"
+  )
+
+  arg = { "--webhook-admin=runtime", "--provider=gitea", "--upstream=https://git.example.com" } -- luacheck: globals arg
+  local ok_unknown_flag, err_unknown_flag = pcall(_real_dofile, ".init.lua")
+  assert(not ok_unknown_flag, "unknown startup flag should cause startup error")
+  assert(
+    type(err_unknown_flag) == "string" and err_unknown_flag:find("unknown startup flag"),
+    "unknown startup flag error should mention unknown startup flag (got: "
+      .. tostring(err_unknown_flag)
+      .. ")"
+  )
+
+  arg = { "--config=/tmp/confusio.toml", "--provider=gitea", "--upstream=https://git.example.com" } -- luacheck: globals arg
+  local ok_config_file_flag, err_config_file_flag = pcall(_real_dofile, ".init.lua")
+  assert(not ok_config_file_flag, "config file startup flag should cause startup error")
+  assert(
+    type(err_config_file_flag) == "string" and err_config_file_flag:find("unknown startup flag"),
+    "config file startup flag error should mention unknown startup flag (got: "
+      .. tostring(err_config_file_flag)
+      .. ")"
+  )
+
+  arg = { -- luacheck: globals arg
+    "--webhook-target-env=CONFUSIO_WEBHOOK_TARGETS",
+    "--provider=gitea",
+    "--upstream=https://git.example.com",
+  }
+  local ok_target_env_flag, err_target_env_flag = pcall(_real_dofile, ".init.lua")
+  assert(not ok_target_env_flag, "webhook target env startup flag should cause startup error")
+  assert(
+    type(err_target_env_flag) == "string" and err_target_env_flag:find("unknown startup flag"),
+    "webhook target env startup flag error should mention unknown startup flag (got: "
+      .. tostring(err_target_env_flag)
+      .. ")"
+  )
+
+  arg = { -- luacheck: globals arg
+    "--webhook-secret-env=CONFUSIO_WEBHOOK_SECRET",
+    "--provider=gitea",
+    "--upstream=https://git.example.com",
+  }
+  local ok_secret_env_flag, err_secret_env_flag = pcall(_real_dofile, ".init.lua")
+  assert(not ok_secret_env_flag, "webhook secret env startup flag should cause startup error")
+  assert(
+    type(err_secret_env_flag) == "string" and err_secret_env_flag:find("unknown startup flag"),
+    "webhook secret env startup flag error should mention unknown startup flag (got: "
+      .. tostring(err_secret_env_flag)
+      .. ")"
+  )
+
+  arg = { "--provider=gitea", "--upstream=not-a-url" } -- luacheck: globals arg
+  local ok_bad_url, err_bad_url = pcall(_real_dofile, ".init.lua")
+  assert(not ok_bad_url, "--upstream: invalid URL should cause startup error")
+  assert(
+    type(err_bad_url) == "string" and err_bad_url:find("invalid upstream URL"),
+    "--upstream: invalid URL error should mention invalid upstream URL (got: "
+      .. tostring(err_bad_url)
+      .. ")"
+  )
+
+  arg = { "gitea", "--provider=gitlab", "--upstream=https://git.example.com" } -- luacheck: globals arg
+  local ok_conflict, err_conflict = pcall(_real_dofile, ".init.lua")
+  assert(not ok_conflict, "--provider: conflicting positional provider should cause startup error")
+  assert(
+    type(err_conflict) == "string" and err_conflict:find("conflicting"),
+    "--provider: conflict error should mention conflicting configuration (got: "
+      .. tostring(err_conflict)
+      .. ")"
+  )
+
+  arg = { "--provider=gitea", "--provider=gitea", "--upstream=https://git.example.com" } -- luacheck: globals arg
+  local ok_duplicate, err_duplicate = pcall(_real_dofile, ".init.lua")
+  assert(not ok_duplicate, "--provider: duplicate provider flag should cause startup error")
+  assert(
+    type(err_duplicate) == "string" and err_duplicate:find("conflicting"),
+    "--provider: duplicate provider error should mention conflicting configuration (got: "
+      .. tostring(err_duplicate)
+      .. ")"
+  )
+
+  arg = { "--webhook-target=name=only-name" } -- luacheck: globals arg
+  local ok_missing_target_url, err_missing_target_url = pcall(_real_dofile, ".init.lua")
+  assert(not ok_missing_target_url, "--webhook-target: missing url should cause startup error")
+  assert(
+    type(err_missing_target_url) == "string" and err_missing_target_url:find("requires url"),
+    "--webhook-target: missing url error should mention required url (got: "
+      .. tostring(err_missing_target_url)
+      .. ")"
+  )
+
+  arg = { "--webhook-target=" } -- luacheck: globals arg
+  local ok_empty_target_spec, err_empty_target_spec = pcall(_real_dofile, ".init.lua")
+  assert(not ok_empty_target_spec, "--webhook-target: empty spec should cause startup error")
+  assert(
+    type(err_empty_target_spec) == "string" and err_empty_target_spec:find("missing value"),
+    "--webhook-target: empty spec error should mention missing value (got: "
+      .. tostring(err_empty_target_spec)
+      .. ")"
+  )
+
+  arg = { "--webhook-target=url=https://hook.example.com/no-name" } -- luacheck: globals arg
+  local ok_missing_target_name, err_missing_target_name = pcall(_real_dofile, ".init.lua")
+  assert(not ok_missing_target_name, "--webhook-target: missing name should cause startup error")
+  assert(
+    type(err_missing_target_name) == "string" and err_missing_target_name:find("requires name"),
+    "--webhook-target: missing name error should mention required name (got: "
+      .. tostring(err_missing_target_name)
+      .. ")"
+  )
+
+  arg = { "--webhook-target=name=bad,url=not-a-url" } -- luacheck: globals arg
+  local ok_bad_target_url, err_bad_target_url = pcall(_real_dofile, ".init.lua")
+  assert(not ok_bad_target_url, "--webhook-target: invalid url should cause startup error")
+  assert(
+    type(err_bad_target_url) == "string" and err_bad_target_url:find("invalid webhook target URL"),
+    "--webhook-target: invalid url error should mention invalid target URL (got: "
+      .. tostring(err_bad_target_url)
+      .. ")"
+  )
+
+  arg = { "--webhook-target=name=bad,url=https://hook.example.com,shape=xml" } -- luacheck: globals arg
+  local ok_bad_target_shape, err_bad_target_shape = pcall(_real_dofile, ".init.lua")
+  assert(not ok_bad_target_shape, "--webhook-target: invalid shape should cause startup error")
+  assert(
+    type(err_bad_target_shape) == "string"
+      and err_bad_target_shape:find("unsupported webhook target shape"),
+    "--webhook-target: invalid shape error should mention unsupported shape (got: "
+      .. tostring(err_bad_target_shape)
+      .. ")"
+  )
+
+  arg = { "--webhook-target=name=bad,url=https://hook.example.com,color=blue" } -- luacheck: globals arg
+  local ok_unsupported_target_field, err_unsupported_target_field = pcall(_real_dofile, ".init.lua")
+  assert(
+    not ok_unsupported_target_field,
+    "--webhook-target: unsupported field should cause startup error"
+  )
+  assert(
+    type(err_unsupported_target_field) == "string"
+      and err_unsupported_target_field:find("unsupported --webhook-target field", 1, true),
+    "--webhook-target: unsupported field error should mention unsupported field (got: "
+      .. tostring(err_unsupported_target_field)
+      .. ")"
+  )
+
+  arg = { "--webhook-target=name=bad,url=https://hook.example.com,events=" } -- luacheck: globals arg
+  local ok_empty_target_events, err_empty_target_events = pcall(_real_dofile, ".init.lua")
+  assert(not ok_empty_target_events, "--webhook-target: empty events should cause startup error")
+  assert(
+    type(err_empty_target_events) == "string" and err_empty_target_events:find("missing"),
+    "--webhook-target: empty events error should mention missing value (got: "
+      .. tostring(err_empty_target_events)
+      .. ")"
+  )
+
+  arg = { "--webhook-target=name=bad,url=https://hook.example.com,events=++" } -- luacheck: globals arg
+  local ok_delimiter_only_events, err_delimiter_only_events = pcall(_real_dofile, ".init.lua")
+  assert(
+    not ok_delimiter_only_events,
+    "--webhook-target: delimiter-only events should cause startup error"
+  )
+  assert(
+    type(err_delimiter_only_events) == "string"
+      and err_delimiter_only_events:find("events must not be empty"),
+    "--webhook-target: delimiter-only events error should mention empty events (got: "
+      .. tostring(err_delimiter_only_events)
+      .. ")"
+  )
+
+  arg = { "--webhook-target=name=bad,url=https://hook.example.com,events=push+not_a_github_event" } -- luacheck: globals arg
+  local ok_bad_target_event, err_bad_target_event = pcall(_real_dofile, ".init.lua")
+  assert(not ok_bad_target_event, "--webhook-target: invalid event should cause startup error")
+  assert(
+    type(err_bad_target_event) == "string"
+      and err_bad_target_event:find("unsupported webhook target event"),
+    "--webhook-target: invalid event error should mention unsupported event (got: "
+      .. tostring(err_bad_target_event)
+      .. ")"
+  )
+
+  arg = { "--webhook-target=name=bad,url" } -- luacheck: globals arg
+  local ok_malformed_target, err_malformed_target = pcall(_real_dofile, ".init.lua")
+  assert(not ok_malformed_target, "--webhook-target: malformed field should cause startup error")
+  assert(
+    type(err_malformed_target) == "string" and err_malformed_target:find("malformed"),
+    "--webhook-target: malformed field error should mention malformed field (got: "
+      .. tostring(err_malformed_target)
+      .. ")"
+  )
+
+  arg = { "--webhook-target=name=bad,name=bad2,url=https://hook.example.com" } -- luacheck: globals arg
+  local ok_duplicate_target_field, err_duplicate_target_field = pcall(_real_dofile, ".init.lua")
+  assert(
+    not ok_duplicate_target_field,
+    "--webhook-target: duplicate field should cause startup error"
+  )
+  assert(
+    type(err_duplicate_target_field) == "string" and err_duplicate_target_field:find("duplicate"),
+    "--webhook-target: duplicate field error should mention duplicate field (got: "
+      .. tostring(err_duplicate_target_field)
+      .. ")"
+  )
+
+  arg = { -- luacheck: globals arg
+    "--webhook-target=name=one,url=https://hook.example.com/one",
+    "--webhook-target=name=one,url=https://hook.example.com/two",
+  }
+  local ok_duplicate_target_name, err_duplicate_target_name = pcall(_real_dofile, ".init.lua")
+  assert(
+    not ok_duplicate_target_name,
+    "--webhook-target: duplicate names should cause startup error"
+  )
+  assert(
+    type(err_duplicate_target_name) == "string"
+      and err_duplicate_target_name:find("duplicate webhook target name"),
+    "--webhook-target: duplicate name error should mention duplicate target name (got: "
+      .. tostring(err_duplicate_target_name)
+      .. ")"
+  )
+
+  arg = { -- luacheck: globals arg
+    "--webhook-target=name=bad,url=https://hook.example.com,secret_file=/tmp/no-such-target-secret",
+  }
+  local ok_bad_target_secret, err_bad_target_secret = pcall(_real_dofile, ".init.lua")
+  assert(
+    not ok_bad_target_secret,
+    "--webhook-target: missing secret file should cause startup error"
+  )
+  assert(
+    type(err_bad_target_secret) == "string" and err_bad_target_secret:find("not found"),
+    "--webhook-target: missing secret file error should mention not found (got: "
+      .. tostring(err_bad_target_secret)
+      .. ")"
+  )
+
+  arg = { "webhook_target=not-a-url" } -- luacheck: globals arg
+  local ok_bad_legacy_target_url, err_bad_legacy_target_url = pcall(_real_dofile, ".init.lua")
+  assert(
+    not ok_bad_legacy_target_url,
+    "legacy webhook_target: invalid url should cause startup error"
+  )
+  assert(
+    type(err_bad_legacy_target_url) == "string"
+      and err_bad_legacy_target_url:find("invalid webhook target URL"),
+    "legacy webhook_target: invalid url error should mention invalid target URL (got: "
+      .. tostring(err_bad_legacy_target_url)
+      .. ")"
+  )
+
+  arg = { "webhook_target=https://hook.example.com", "webhook_target_shape=xml" } -- luacheck: globals arg
+  local ok_bad_legacy_target_shape, err_bad_legacy_target_shape = pcall(_real_dofile, ".init.lua")
+  assert(
+    not ok_bad_legacy_target_shape,
+    "legacy webhook_target_shape: invalid shape should cause startup error"
+  )
+  assert(
+    type(err_bad_legacy_target_shape) == "string"
+      and err_bad_legacy_target_shape:find("unsupported webhook target shape"),
+    "legacy webhook_target_shape: invalid shape error should mention unsupported shape (got: "
+      .. tostring(err_bad_legacy_target_shape)
+      .. ")"
+  )
+
+  arg = { "webhook_target=https://hook.example.com", "webhook_target_events=" } -- luacheck: globals arg
+  local ok_empty_legacy_target_events, err_empty_legacy_target_events =
+    pcall(_real_dofile, ".init.lua")
+  assert(
+    not ok_empty_legacy_target_events,
+    "legacy webhook_target_events: empty events should cause startup error"
+  )
+  assert(
+    type(err_empty_legacy_target_events) == "string"
+      and err_empty_legacy_target_events:find("events must not be empty"),
+    "legacy webhook_target_events: empty events error should mention empty events (got: "
+      .. tostring(err_empty_legacy_target_events)
+      .. ")"
+  )
+
+  arg = { -- luacheck: globals arg
+    "--webhook-target=name=legacy,url=https://hook.example.com/new",
+    "webhook_target=https://hook.example.com/legacy",
+    "webhook_target_name=legacy",
+  }
+  local ok_legacy_duplicate, err_legacy_duplicate = pcall(_real_dofile, ".init.lua")
+  assert(
+    not ok_legacy_duplicate,
+    "--webhook-target: legacy duplicate name should cause startup error"
+  )
+  assert(
+    type(err_legacy_duplicate) == "string"
+      and err_legacy_duplicate:find("duplicate webhook target name"),
+    "--webhook-target: legacy duplicate name error should mention duplicate target name (got: "
+      .. tostring(err_legacy_duplicate)
+      .. ")"
+  )
+
+  arg = saved_arg -- luacheck: globals arg
 end
 
 -- Case 2: file owned by wrong uid → startup error.  Mock unix.stat to return
@@ -152,7 +508,7 @@ do
   fh2:write("secret")
   fh2:close()
   os.execute("chmod 600 " .. tmpf2)
-  arg = { "testbackend", "webhook_secret_file_gitea=" .. tmpf2 } -- luacheck: globals arg
+  arg = { "gitea", "webhook_secret_file_gitea=" .. tmpf2 } -- luacheck: globals arg
   local ok2, err2 = pcall(_real_dofile, ".init.lua")
   arg = saved_arg -- luacheck: globals arg
   unix.stat = saved_stat
@@ -173,7 +529,7 @@ do
   fh3:write("secret")
   fh3:close()
   os.execute("chmod 644 " .. tmpf3)
-  arg = { "testbackend", "webhook_secret_file_gitea=" .. tmpf3 } -- luacheck: globals arg
+  arg = { "gitea", "webhook_secret_file_gitea=" .. tmpf3 } -- luacheck: globals arg
   local ok3, err3 = pcall(_real_dofile, ".init.lua")
   arg = saved_arg -- luacheck: globals arg
   os.remove(tmpf3)
@@ -200,16 +556,23 @@ do
 end
 
 -- Provide SCRIPTARGS entries to exercise all CLI parsing paths in .init.lua:
---   positional: backend name (backend file load is suppressed by the dofile stub)
+--   --provider / --upstream: provider name and upstream URL
 --   webhook_secret_file_BACKEND: path to 0600 file with inbound signing secret
 --   webhook_target=URL: outbound delivery target
 --   webhook_target_name=wt-coverage: logical outbound target name
 --   webhook_target_events=push,pull_request: event filter
 --   webhook_target_shape=github: delivery shape
 --   webhook_target_secret_file: path to 0600 file with outbound HMAC signing secret
+--   repeated --webhook-target: startup-only target specs
 arg = { -- luacheck: globals arg
-  "testbackend",
+  "--provider",
+  "gitea",
+  "--upstream=https://git.example.com/api/",
   "webhook_secret_file_gitea=" .. _ws_secret_file,
+  "--webhook-target=name=fido,url=https://hook.example.com/fido,shape=github,events=release+workflow_run,secret_file="
+    .. _wt_secret_file,
+  "--webhook-target",
+  "name=auditor,url=https://hook.example.com/audit,shape=confusio,events=workflow_run,secret=inline-audit-secret",
   "webhook_target=https://hook.example.com/wt-coverage",
   "webhook_target_name=wt-coverage",
   "webhook_target_events=push,pull_request",
@@ -223,6 +586,14 @@ _real_dofile(".init.lua")
 -- Clean up temp secret files (secrets are now in config, files no longer needed).
 os.remove(_ws_secret_file)
 os.remove(_wt_secret_file)
+
+assert(config.backend == "gitea", "--provider CLI arg: config.backend should be gitea")
+assert(
+  config.base_url == "https://git.example.com/api",
+  "--upstream CLI arg: trailing slash should be stripped from config.base_url (got: "
+    .. tostring(config.base_url)
+    .. ")"
+)
 
 -- Verify the SCRIPTARGS webhook_secret_file_* arg populated config.webhook_secrets.
 assert(
@@ -265,11 +636,61 @@ assert(
   "webhook_target_secret_file CLI arg: secret mismatch: "
     .. tostring((config.webhook_target or {}).secret)
 )
+assert(
+  type(config.webhook_targets) == "table",
+  "--webhook-target CLI arg: config.webhook_targets should be a table after load"
+)
+assert(#config.webhook_targets == 2, "--webhook-target CLI arg: expected two repeated targets")
+assert(
+  config.webhook_targets[1].name == "fido",
+  "--webhook-target CLI arg: first target name mismatch: "
+    .. tostring((config.webhook_targets[1] or {}).name)
+)
+assert(
+  config.webhook_targets[1].url == "https://hook.example.com/fido",
+  "--webhook-target CLI arg: first target url mismatch: "
+    .. tostring((config.webhook_targets[1] or {}).url)
+)
+assert(
+  config.webhook_targets[1].shape == "github",
+  "--webhook-target CLI arg: first target shape mismatch: "
+    .. tostring((config.webhook_targets[1] or {}).shape)
+)
+assert(
+  config.webhook_targets[1].events[1] == "release"
+    and config.webhook_targets[1].events[2] == "workflow_run",
+  "--webhook-target CLI arg: first target event filter mismatch"
+)
+assert(
+  config.webhook_targets[1].secret == "wt-hmac-secret",
+  "--webhook-target CLI arg: first target secret_file mismatch: "
+    .. tostring((config.webhook_targets[1] or {}).secret)
+)
+assert(
+  config.webhook_targets[2].name == "auditor",
+  "--webhook-target CLI arg: second target name mismatch: "
+    .. tostring((config.webhook_targets[2] or {}).name)
+)
+assert(
+  config.webhook_targets[2].shape == "confusio",
+  "--webhook-target CLI arg: second target shape mismatch: "
+    .. tostring((config.webhook_targets[2] or {}).shape)
+)
+assert(
+  config.webhook_targets[2].events[1] == "workflow_run",
+  "--webhook-target CLI arg: second target event filter mismatch"
+)
+assert(
+  config.webhook_targets[2].secret == "inline-audit-secret",
+  "--webhook-target CLI arg: second target inline secret mismatch: "
+    .. tostring((config.webhook_targets[2] or {}).secret)
+)
 
 -- Clear coverage-only state so later tests see a clean config.
 -- (config and app.config reference the same table.)
 config.webhook_secrets = {}
 config.webhook_target = nil
+config.webhook_targets = nil
 
 -- Restore dofile so later tests that call it work normally.
 dofile = _real_dofile -- luacheck: globals dofile
@@ -292,6 +713,30 @@ end
 
 local function eq(a, b, msg)
   ok(a == b, msg .. " (got " .. tostring(a) .. ", want " .. tostring(b) .. ")")
+end
+
+local function read_file(path)
+  local f = assert(io.open(path, "r"))
+  local body = f:read("*a")
+  f:close()
+  return body
+end
+
+do
+  local init_source = read_file(".init.lua")
+  ok(
+    init_source:find("os.getenv", 1, true) == nil,
+    ".init.lua: startup webhook config does not read environment variables"
+  )
+  ok(
+    init_source:find("--config", 1, true) == nil,
+    ".init.lua: startup webhook config has no config-file flag"
+  )
+  local catalog_source = read_file("internal/catalog.lua")
+  ok(
+    catalog_source:find('"/admin', 1, true) == nil,
+    "route catalog: no /admin routes are registered"
+  )
 end
 
 -- ============================================================
@@ -1174,6 +1619,93 @@ reset_response()
 reset_request({ method = "GET", path = "/nonexistent/path/that/does/not/exist" })
 OnHttpRequest()
 eq(_last_status, 404, "OnHttpRequest: unknown path → 404")
+
+-- Webhook configuration is startup-only.  There is no admin API, runtime target
+-- registry, outbox, replay, or Confusio delivery inspection surface.
+reset_response()
+reset_request({ method = "POST", path = "/admin/webhook-targets" })
+OnHttpRequest()
+eq(_last_status, 404, "OnHttpRequest: POST /admin/webhook-targets → 404")
+
+reset_response()
+reset_request({ method = "GET", path = "/admin/webhook-deliveries" })
+OnHttpRequest()
+eq(_last_status, 404, "OnHttpRequest: GET /admin/webhook-deliveries → 404")
+
+reset_response()
+reset_request({ method = "POST", path = "/webhook-targets" })
+OnHttpRequest()
+eq(_last_status, 404, "OnHttpRequest: POST /webhook-targets → 404")
+
+reset_response()
+reset_request({ method = "GET", path = "/deliveries" })
+OnHttpRequest()
+eq(_last_status, 404, "OnHttpRequest: GET /deliveries → 404")
+
+reset_response()
+reset_request({ method = "GET", path = "/outbox" })
+OnHttpRequest()
+eq(_last_status, 404, "OnHttpRequest: GET /outbox → 404")
+
+reset_response()
+reset_request({ method = "POST", path = "/replay" })
+OnHttpRequest()
+eq(_last_status, 404, "OnHttpRequest: POST /replay → 404")
+
+-- GitHub-compatible hook delivery endpoints expose no Confusio delivery state:
+-- lists are empty, individual delivery records are absent, and redelivery is
+-- deliberately not implemented.
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/hooks" })
+OnHttpRequest()
+eq(_last_status, 200, "OnHttpRequest: GET /repos/{owner}/{repo}/hooks → 200")
+eq(_last_body, "[]", "OnHttpRequest: GET /repos/{owner}/{repo}/hooks → body is []")
+
+reset_response()
+reset_request({ method = "POST", path = "/repos/alice/myrepo/hooks" })
+OnHttpRequest()
+eq(_last_status, 501, "OnHttpRequest: POST /repos/{owner}/{repo}/hooks → 501")
+
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/hooks/1/deliveries" })
+OnHttpRequest()
+eq(_last_status, 200, "OnHttpRequest: GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries → 200")
+eq(
+  _last_body,
+  "[]",
+  "OnHttpRequest: GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries → body is []"
+)
+
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/hooks/1/deliveries/abc" })
+OnHttpRequest()
+eq(
+  _last_status,
+  404,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries/{delivery_id} → 404"
+)
+
+reset_response()
+reset_request({
+  method = "POST",
+  path = "/repos/alice/myrepo/hooks/1/deliveries/abc/attempts",
+})
+OnHttpRequest()
+eq(
+  _last_status,
+  501,
+  "OnHttpRequest: POST /repos/{owner}/{repo}/hooks/{hook_id}/deliveries/{delivery_id}/attempts → 501"
+)
+
+reset_response()
+reset_request({ method = "GET", path = "/app/hook/deliveries" })
+OnHttpRequest()
+eq(_last_status, 404, "OnHttpRequest: GET /app/hook/deliveries → 404")
+
+reset_response()
+reset_request({ method = "POST", path = "/app/hook/deliveries/abc/attempts" })
+OnHttpRequest()
+eq(_last_status, 404, "OnHttpRequest: POST /app/hook/deliveries/{delivery_id}/attempts → 404")
 
 -- GET /zen — built-in, no backend needed
 reset_response()
@@ -3559,6 +4091,7 @@ do
   local saved_capabilities = app.backend.capabilities
   local saved_webhooks = app.backend.webhooks
   local saved_webhook_translators = app.backend.webhook_translators
+  local saved_webhook_github_translators = app.backend.webhook_github_translators
   local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
   local saved_base_url = config.base_url
   local saved_backend = config.backend
@@ -3567,6 +4100,7 @@ do
   app.backend.capabilities = {}
   app.backend.webhooks = {}
   app.backend.webhook_translators = {}
+  app.backend.webhook_github_translators = {}
   graphql_resolvers = {} -- luacheck: globals graphql_resolvers
   config.base_url = ""
   config.backend = "notabug"
@@ -3584,6 +4118,14 @@ do
   ok(
     app.backend.webhook_translators.label == nil,
     "notabug webhook: label translator not registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.issues ~= nil,
+    "notabug webhook: issues GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.label == nil,
+    "notabug webhook: label GitHub-shape translator not registered"
   )
   ok(
     app.backend.webhook_translators.merge_group == nil,
@@ -3607,11 +4149,751 @@ do
     "octocat/hello-world",
     "notabug webhook: normalized issue keeps repository"
   )
+  local issue_github_payload = app.backend.webhook_github_translators.issues(issue_event)
+  eq(issue_github_payload.action, "opened", "notabug webhook: GitHub-shape issue action")
+  eq(issue_github_payload.issue.title, "Bug report", "notabug webhook: GitHub-shape issue body")
+  eq(
+    issue_github_payload.repository.full_name,
+    "octocat/hello-world",
+    "notabug webhook: GitHub-shape issue repository"
+  )
 
   app.backend.rest = saved_rest
   app.backend.capabilities = saved_capabilities
   app.backend.webhooks = saved_webhooks
   app.backend.webhook_translators = saved_webhook_translators
+  app.backend.webhook_github_translators = saved_webhook_github_translators
+  graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
+  config.base_url = saved_base_url
+  config.backend = saved_backend
+end
+
+-- ============================================================
+-- Gitea-family GitHub-shape webhook translators
+-- ============================================================
+
+do
+  local saved_rest = app.backend.rest
+  local saved_capabilities = app.backend.capabilities
+  local saved_webhooks = app.backend.webhooks
+  local saved_webhook_translators = app.backend.webhook_translators
+  local saved_webhook_github_translators = app.backend.webhook_github_translators
+  local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
+  local saved_base_url = config.base_url
+  local saved_backend = config.backend
+
+  app.backend.rest = {}
+  app.backend.capabilities = {}
+  app.backend.webhooks = {}
+  app.backend.webhook_translators = {}
+  app.backend.webhook_github_translators = {}
+  graphql_resolvers = {} -- luacheck: globals graphql_resolvers
+  config.base_url = ""
+  config.backend = "forgejo"
+  _real_dofile("backends/gitea.lua")
+
+  ok(
+    app.backend.webhook_github_translators.issues ~= nil,
+    "forgejo webhook: issues GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.discussion ~= nil,
+    "forgejo webhook: discussion GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.merge_group ~= nil,
+    "forgejo webhook: merge_group GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.deploy_key ~= nil,
+    "forgejo webhook: deploy_key GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.security_and_analysis ~= nil,
+    "forgejo webhook: security_and_analysis GitHub-shape translator registered"
+  )
+
+  local discussion_event = app.backend.webhooks.discussion({
+    action = "labeled",
+    discussion = {
+      id = 44,
+      number = 9,
+      title = "Webhook payloads",
+      body = "Need GitHub shape.",
+      user = { login = "fido" },
+      updated = "2026-05-03T10:00:00Z",
+    },
+    label = { id = 2, name = "triage", color = "5319e7" },
+    repository = { name = "confusio", full_name = "rhencke/confusio" },
+    sender = { login = "fido" },
+  })
+  local discussion_github_payload =
+    app.backend.webhook_github_translators.discussion(discussion_event)
+  eq(discussion_github_payload.action, "labeled", "forgejo webhook: GitHub-shape discussion action")
+  eq(
+    discussion_github_payload.discussion.title,
+    "Webhook payloads",
+    "forgejo webhook: GitHub-shape discussion body"
+  )
+  eq(
+    discussion_github_payload.label.name,
+    "triage",
+    "forgejo webhook: GitHub-shape discussion label"
+  )
+
+  local merge_group_event = app.backend.webhooks.merge_group({
+    action = "destroyed",
+    reason = "dequeued",
+    merge_group = {
+      head_sha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      head_ref = "gh-readonly-queue/main/pr-1",
+      base_sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      base_ref = "main",
+    },
+    repository = { name = "confusio", full_name = "rhencke/confusio" },
+    sender = { login = "fido" },
+  })
+  local merge_group_github_payload =
+    app.backend.webhook_github_translators.merge_group(merge_group_event)
+  eq(
+    merge_group_github_payload.merge_group.head_ref,
+    "gh-readonly-queue/main/pr-1",
+    "forgejo webhook: GitHub-shape merge_group body"
+  )
+  eq(
+    merge_group_github_payload.reason,
+    "dequeued",
+    "forgejo webhook: GitHub-shape merge_group reason"
+  )
+
+  app.backend.rest = saved_rest
+  app.backend.capabilities = saved_capabilities
+  app.backend.webhooks = saved_webhooks
+  app.backend.webhook_translators = saved_webhook_translators
+  app.backend.webhook_github_translators = saved_webhook_github_translators
+  graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
+  config.base_url = saved_base_url
+  config.backend = saved_backend
+end
+
+-- ============================================================
+-- GitLab GitHub-shape webhook translators
+-- ============================================================
+
+do
+  local saved_rest = app.backend.rest
+  local saved_capabilities = app.backend.capabilities
+  local saved_webhooks = app.backend.webhooks
+  local saved_webhook_translators = app.backend.webhook_translators
+  local saved_webhook_github_translators = app.backend.webhook_github_translators
+  local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
+  local saved_base_url = config.base_url
+  local saved_backend = config.backend
+
+  app.backend.rest = {}
+  app.backend.capabilities = {}
+  app.backend.webhooks = {}
+  app.backend.webhook_translators = {}
+  app.backend.webhook_github_translators = {}
+  graphql_resolvers = {} -- luacheck: globals graphql_resolvers
+  config.base_url = ""
+  config.backend = "gitlab"
+  _real_dofile("backends/gitlab.lua")
+
+  ok(
+    app.backend.webhook_github_translators.issues ~= nil,
+    "gitlab webhook: issues GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.pull_request ~= nil,
+    "gitlab webhook: pull_request GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.workflow_run ~= nil,
+    "gitlab webhook: workflow_run GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.deployment_status ~= nil,
+    "gitlab webhook: deployment_status GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.code_scanning_alert ~= nil,
+    "gitlab webhook: code_scanning_alert GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.personal_access_token_request ~= nil,
+    "gitlab webhook: personal_access_token_request GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.membership ~= nil,
+    "gitlab webhook: membership GitHub-shape translator registered"
+  )
+
+  local repo = { full_name = "gitlab-org/gitlab", name = "gitlab" }
+  local sender = { login = "fido" }
+  local issue_event = make_internal_event({
+    event = "issues",
+    action = "opened",
+    provider = "gitlab",
+    data = {
+      action = "opened",
+      issue = { number = 101, title = "Translate GitLab webhooks" },
+      repository = repo,
+      sender = sender,
+    },
+  })
+  local issue_github_payload = app.backend.webhook_github_translators.issues(issue_event)
+  eq(issue_github_payload.action, "opened", "gitlab webhook: GitHub-shape issue action")
+  eq(
+    issue_github_payload.issue.title,
+    "Translate GitLab webhooks",
+    "gitlab webhook: GitHub-shape issue body"
+  )
+  eq(
+    issue_github_payload.repository.full_name,
+    "gitlab-org/gitlab",
+    "gitlab webhook: GitHub-shape issue repository"
+  )
+  eq(issue_github_payload.sender.login, "fido", "gitlab webhook: GitHub-shape issue sender")
+
+  local pull_request_event = make_internal_event({
+    event = "pull_request",
+    action = "review_requested",
+    provider = "gitlab",
+    data = {
+      action = "review_requested",
+      number = 22,
+      pull_request = { number = 22, title = "MR becomes PR" },
+      requested_reviewer = { login = "rob" },
+      repository = repo,
+      sender = sender,
+    },
+  })
+  local pull_request_github_payload =
+    app.backend.webhook_github_translators.pull_request(pull_request_event)
+  eq(pull_request_github_payload.number, 22, "gitlab webhook: GitHub-shape pull_request number")
+  eq(
+    pull_request_github_payload.requested_reviewer.login,
+    "rob",
+    "gitlab webhook: GitHub-shape requested reviewer"
+  )
+
+  local workflow_run_event = make_internal_event({
+    event = "workflow_run",
+    action = "completed",
+    provider = "gitlab",
+    data = {
+      action = "completed",
+      workflow_run = { id = 77, status = "completed", conclusion = "success" },
+      workflow = { id = 9, name = "test" },
+      repository = repo,
+      sender = sender,
+    },
+  })
+  local workflow_run_github_payload =
+    app.backend.webhook_github_translators.workflow_run(workflow_run_event)
+  eq(
+    workflow_run_github_payload.workflow_run.conclusion,
+    "success",
+    "gitlab webhook: GitHub-shape workflow_run body"
+  )
+  eq(
+    workflow_run_github_payload.workflow.name,
+    "test",
+    "gitlab webhook: GitHub-shape workflow body"
+  )
+
+  local alert_event = make_internal_event({
+    event = "code_scanning_alert",
+    action = "created",
+    provider = "gitlab",
+    data = {
+      action = "created",
+      alert = { number = 5, state = "open", rule = { id = "gl-sast" } },
+      repository = repo,
+      sender = sender,
+    },
+  })
+  local alert_github_payload =
+    app.backend.webhook_github_translators.code_scanning_alert(alert_event)
+  eq(
+    alert_github_payload.alert.rule.id,
+    "gl-sast",
+    "gitlab webhook: GitHub-shape code scanning alert"
+  )
+
+  local membership_event = make_internal_event({
+    event = "membership",
+    action = "added",
+    provider = "gitlab",
+    data = {
+      action = "added",
+      member = { login = "new-member" },
+      organization = { login = "gitlab-org" },
+      sender = sender,
+    },
+  })
+  local membership_github_payload =
+    app.backend.webhook_github_translators.membership(membership_event)
+  eq(
+    membership_github_payload.member.login,
+    "new-member",
+    "gitlab webhook: GitHub-shape membership member"
+  )
+  eq(
+    membership_github_payload.organization.login,
+    "gitlab-org",
+    "gitlab webhook: GitHub-shape membership organization"
+  )
+
+  local pat_event = make_internal_event({
+    event = "personal_access_token_request",
+    action = "created",
+    provider = "gitlab",
+    data = {
+      action = "created",
+      personal_access_token_request = { id = 88, reason = "deploy token" },
+      organization = { login = "gitlab-org" },
+      sender = sender,
+    },
+  })
+  local pat_github_payload =
+    app.backend.webhook_github_translators.personal_access_token_request(pat_event, {
+      payload = { custom = "override" },
+    })
+  eq(
+    pat_github_payload.personal_access_token_request.id,
+    88,
+    "gitlab webhook: GitHub-shape personal access token request"
+  )
+  eq(pat_github_payload.custom, "override", "gitlab webhook: GitHub-shape overrides apply")
+
+  app.backend.rest = saved_rest
+  app.backend.capabilities = saved_capabilities
+  app.backend.webhooks = saved_webhooks
+  app.backend.webhook_translators = saved_webhook_translators
+  app.backend.webhook_github_translators = saved_webhook_github_translators
+  graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
+  config.base_url = saved_base_url
+  config.backend = saved_backend
+end
+
+-- ============================================================
+-- Azure DevOps GitHub-shape webhook translators
+-- ============================================================
+
+do
+  local saved_rest = app.backend.rest
+  local saved_capabilities = app.backend.capabilities
+  local saved_webhooks = app.backend.webhooks
+  local saved_webhook_translators = app.backend.webhook_translators
+  local saved_webhook_github_translators = app.backend.webhook_github_translators
+  local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
+  local saved_base_url = config.base_url
+  local saved_backend = config.backend
+
+  app.backend.rest = {}
+  app.backend.capabilities = {}
+  app.backend.webhooks = {}
+  app.backend.webhook_translators = {}
+  app.backend.webhook_github_translators = {}
+  graphql_resolvers = {} -- luacheck: globals graphql_resolvers
+  config.base_url = ""
+  config.backend = "azuredevops"
+  _real_dofile("backends/azuredevops.lua")
+
+  ok(
+    app.backend.webhook_github_translators.issues ~= nil,
+    "azuredevops webhook: issues GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.pull_request ~= nil,
+    "azuredevops webhook: pull_request GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.workflow_run ~= nil,
+    "azuredevops webhook: workflow_run GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.deployment_status ~= nil,
+    "azuredevops webhook: deployment_status GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.code_scanning_alert ~= nil,
+    "azuredevops webhook: code_scanning_alert GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.dependabot_alert ~= nil,
+    "azuredevops webhook: dependabot_alert GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.secret_scanning_alert ~= nil,
+    "azuredevops webhook: secret_scanning_alert GitHub-shape translator registered"
+  )
+
+  local issue_event = app.backend.webhooks["workitem.created"]({
+    eventType = "workitem.created",
+    resource = {
+      id = 195,
+      fields = {
+        ["System.Title"] = "Normalize event payloads",
+        ["System.State"] = "Active",
+        ["System.Description"] = "One shape for every receiver.",
+        ["System.CreatedBy"] = { uniqueName = "alice@example.com", displayName = "Alice" },
+        ["System.ChangedBy"] = { uniqueName = "alice@example.com", displayName = "Alice" },
+        ["System.CreatedDate"] = "2024-01-15T10:00:00Z",
+        ["System.ChangedDate"] = "2024-01-15T10:00:00Z",
+      },
+    },
+    createdDate = "2024-01-15T10:00:00Z",
+  })
+  local issue_github_payload = app.backend.webhook_github_translators.issues(issue_event)
+  eq(issue_github_payload.action, "opened", "azuredevops webhook: GitHub-shape issue action")
+  eq(
+    issue_github_payload.issue.title,
+    "Normalize event payloads",
+    "azuredevops webhook: GitHub-shape issue body"
+  )
+  eq(
+    issue_github_payload.sender.login,
+    "alice@example.com",
+    "azuredevops webhook: GitHub-shape issue sender"
+  )
+
+  local repo = {
+    id = "repo-id-1",
+    name = "confusio",
+    remoteUrl = "https://dev.azure.com/rhencke/project/_git/confusio",
+    isPrivate = false,
+    project = { id = "project-id-1", name = "project" },
+  }
+  local pull_event = app.backend.webhooks["git.pullrequest.created"]({
+    eventType = "git.pullrequest.created",
+    resource = {
+      pullRequestId = 365,
+      title = "Translate Azure hooks",
+      description = "Service hooks become GitHub payloads.",
+      status = "active",
+      sourceRefName = "refs/heads/ado-hooks",
+      targetRefName = "refs/heads/main",
+      lastMergeSourceCommit = { commitId = "abc123" },
+      lastMergeTargetCommit = { commitId = "def456" },
+      createdBy = { uniqueName = "fido@example.com", displayName = "Fido" },
+      creationDate = "2024-01-15T10:00:00Z",
+      repository = repo,
+    },
+    createdDate = "2024-01-15T10:00:00Z",
+  })
+  local pull_github_payload = app.backend.webhook_github_translators.pull_request(pull_event)
+  eq(pull_github_payload.action, "opened", "azuredevops webhook: GitHub-shape PR action")
+  eq(pull_github_payload.number, 365, "azuredevops webhook: GitHub-shape PR number")
+  eq(
+    pull_github_payload.pull_request.head.ref,
+    "ado-hooks",
+    "azuredevops webhook: GitHub-shape PR head ref"
+  )
+
+  local workflow_event = app.backend.webhooks["build.complete"]({
+    eventType = "build.complete",
+    resource = {
+      id = 101,
+      buildNumber = "20240115.1",
+      result = "succeeded",
+      sourceBranch = "refs/heads/main",
+      sourceVersion = "abc123def456",
+      queueTime = "2024-01-15T10:00:00Z",
+      finishTime = "2024-01-15T10:10:00Z",
+      definition = { id = 5, name = "CI Pipeline" },
+      repository = repo,
+      requestedBy = { uniqueName = "alice@example.com", displayName = "Alice" },
+    },
+  })
+  local workflow_github_payload =
+    app.backend.webhook_github_translators.workflow_run(workflow_event)
+  eq(
+    workflow_github_payload.workflow_run.conclusion,
+    "success",
+    "azuredevops webhook: GitHub-shape workflow conclusion"
+  )
+  eq(
+    workflow_github_payload.workflow.name,
+    "CI Pipeline",
+    "azuredevops webhook: GitHub-shape workflow body"
+  )
+
+  local deployment_event =
+    app.backend.webhooks["ms.azure-devops-release.deployment-completed-event"]({
+      eventType = "ms.azure-devops-release.deployment-completed-event",
+      resource = {
+        deployment = {
+          id = 11,
+          status = "succeeded",
+          completedOn = "2024-01-15T14:10:00Z",
+          release = {
+            id = 1,
+            name = "Release-1",
+            releaseDefinition = { id = 7, name = "Fabrikam.CD" },
+            project = { id = "proj-id-001", name = "octocat" },
+          },
+          environment = {
+            id = 5,
+            name = "Production",
+            owner = { displayName = "Alice", uniqueName = "alice@example.com" },
+          },
+        },
+      },
+    })
+  local deployment_github_payload =
+    app.backend.webhook_github_translators.deployment_status(deployment_event)
+  eq(
+    deployment_github_payload.deployment_status.state,
+    "success",
+    "azuredevops webhook: GitHub-shape deployment status"
+  )
+  eq(
+    deployment_github_payload.deployment.environment,
+    "Production",
+    "azuredevops webhook: GitHub-shape deployment body"
+  )
+
+  local alert_event = app.backend.webhooks["ms.vss-alerts.alert-created-event"]({
+    eventType = "ms.vss-alerts.alert-created-event",
+    resource = {
+      alertId = 101,
+      title = "Path injection",
+      repositoryUrl = "https://dev.azure.com/octocat/SecurityProject/_git/hello-world",
+      alertType = "code",
+      firstSeenDate = "2024-01-15T10:00:00Z",
+      state = "active",
+      rule = { id = "js/path-injection", name = "Path injection" },
+    },
+  })
+  local alert_github_payload =
+    app.backend.webhook_github_translators.code_scanning_alert(alert_event)
+  eq(
+    alert_github_payload.alert.rule.id,
+    "js/path-injection",
+    "azuredevops webhook: GitHub-shape code scanning alert"
+  )
+  eq(
+    alert_github_payload.repository.full_name,
+    "SecurityProject/hello-world",
+    "azuredevops webhook: GitHub-shape alert repository"
+  )
+
+  app.backend.rest = saved_rest
+  app.backend.capabilities = saved_capabilities
+  app.backend.webhooks = saved_webhooks
+  app.backend.webhook_translators = saved_webhook_translators
+  app.backend.webhook_github_translators = saved_webhook_github_translators
+  graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
+  config.base_url = saved_base_url
+  config.backend = saved_backend
+end
+
+-- ============================================================
+-- Bitbucket-family GitHub-shape webhook translators
+-- ============================================================
+
+do
+  local saved_rest = app.backend.rest
+  local saved_capabilities = app.backend.capabilities
+  local saved_webhooks = app.backend.webhooks
+  local saved_webhook_translators = app.backend.webhook_translators
+  local saved_webhook_github_translators = app.backend.webhook_github_translators
+  local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
+  local saved_base_url = config.base_url
+  local saved_backend = config.backend
+
+  app.backend.rest = {}
+  app.backend.capabilities = {}
+  app.backend.webhooks = {}
+  app.backend.webhook_translators = {}
+  app.backend.webhook_github_translators = {}
+  graphql_resolvers = {} -- luacheck: globals graphql_resolvers
+  config.base_url = ""
+  config.backend = "bitbucket"
+  _real_dofile("backends/bitbucket.lua")
+
+  ok(
+    app.backend.webhook_github_translators.issues ~= nil,
+    "bitbucket webhook: issues GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.pull_request ~= nil,
+    "bitbucket webhook: pull_request GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.workflow_run ~= nil,
+    "bitbucket webhook: workflow_run GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.fork ~= nil,
+    "bitbucket webhook: fork GitHub-shape translator registered"
+  )
+
+  local bb_repo = {
+    slug = "confusio",
+    full_name = "rhencke/confusio",
+    owner = { nickname = "rhencke" },
+    mainbranch = { name = "main" },
+  }
+  local issue_event = app.backend.webhooks["issue:created"]({
+    actor = { nickname = "fido", display_name = "Fido" },
+    repository = bb_repo,
+    issue = {
+      id = 195,
+      title = "Normalize webhook payloads",
+      content = { raw = "Fetch once; cache twice." },
+      reporter = { nickname = "rob" },
+      created_on = "2026-05-03T01:02:03Z",
+    },
+  })
+  local issue_github_payload = app.backend.webhook_github_translators.issues(issue_event)
+  eq(issue_github_payload.action, "opened", "bitbucket webhook: GitHub-shape issue action")
+  eq(
+    issue_github_payload.issue.title,
+    "Normalize webhook payloads",
+    "bitbucket webhook: GitHub-shape issue body"
+  )
+  eq(
+    issue_github_payload.repository.full_name,
+    "rhencke/confusio",
+    "bitbucket webhook: GitHub-shape issue repository"
+  )
+  eq(issue_github_payload.sender.login, "fido", "bitbucket webhook: GitHub-shape sender")
+
+  local pull_event = app.backend.webhooks["pullrequest:created"]({
+    actor = { nickname = "fido" },
+    repository = bb_repo,
+    pullrequest = {
+      id = 365,
+      title = "Emit Bitbucket payloads",
+      author = { nickname = "fido" },
+      source = { branch = { name = "bitbucket-shape" }, commit = { hash = "abc123" } },
+      destination = { branch = { name = "main" }, commit = { hash = "def456" } },
+      created_on = "2026-05-03T02:00:00Z",
+      updated_on = "2026-05-03T02:01:00Z",
+    },
+  })
+  local pull_github_payload = app.backend.webhook_github_translators.pull_request(pull_event)
+  eq(pull_github_payload.action, "opened", "bitbucket webhook: GitHub-shape PR action")
+  eq(pull_github_payload.number, 365, "bitbucket webhook: GitHub-shape PR number")
+  eq(
+    pull_github_payload.pull_request.title,
+    "Emit Bitbucket payloads",
+    "bitbucket webhook: GitHub-shape PR body"
+  )
+
+  app.backend.rest = saved_rest
+  app.backend.capabilities = saved_capabilities
+  app.backend.webhooks = saved_webhooks
+  app.backend.webhook_translators = saved_webhook_translators
+  app.backend.webhook_github_translators = saved_webhook_github_translators
+  graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
+  config.base_url = saved_base_url
+  config.backend = saved_backend
+end
+
+do
+  local saved_rest = app.backend.rest
+  local saved_capabilities = app.backend.capabilities
+  local saved_webhooks = app.backend.webhooks
+  local saved_webhook_translators = app.backend.webhook_translators
+  local saved_webhook_github_translators = app.backend.webhook_github_translators
+  local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
+  local saved_base_url = config.base_url
+  local saved_backend = config.backend
+
+  app.backend.rest = {}
+  app.backend.capabilities = {}
+  app.backend.webhooks = {}
+  app.backend.webhook_translators = {}
+  app.backend.webhook_github_translators = {}
+  graphql_resolvers = {} -- luacheck: globals graphql_resolvers
+  config.base_url = ""
+  config.backend = "bitbucket_datacenter"
+  _real_dofile("backends/bitbucket_datacenter.lua")
+
+  ok(
+    app.backend.webhook_github_translators.pull_request ~= nil,
+    "bitbucket_datacenter webhook: pull_request GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.status ~= nil,
+    "bitbucket_datacenter webhook: status GitHub-shape translator registered"
+  )
+  ok(
+    app.backend.webhook_github_translators.repository ~= nil,
+    "bitbucket_datacenter webhook: repository GitHub-shape translator registered"
+  )
+
+  local dc_repo = {
+    slug = "confusio",
+    name = "confusio",
+    project = { key = "RH", id = 12 },
+    default_branch = "main",
+  }
+  local dc_pr = {
+    id = 365,
+    title = "Translate Data Center payloads",
+    state = "OPEN",
+    author = { user = { name = "fido", displayName = "Fido" } },
+    fromRef = { displayId = "bbdc-shape", latestCommit = "abc123", repository = dc_repo },
+    toRef = { displayId = "main", latestCommit = "def456", repository = dc_repo },
+    createdDate = 1777770000000,
+    updatedDate = 1777770060000,
+  }
+  local dc_pull_event = app.backend.webhooks["pr:opened"]({
+    actor = { name = "fido", displayName = "Fido" },
+    pullRequest = dc_pr,
+  })
+  local dc_pull_github_payload = app.backend.webhook_github_translators.pull_request(dc_pull_event)
+  eq(
+    dc_pull_github_payload.action,
+    "opened",
+    "bitbucket_datacenter webhook: GitHub-shape PR action"
+  )
+  eq(
+    dc_pull_github_payload.repository.full_name,
+    "RH/confusio",
+    "bitbucket_datacenter webhook: GitHub-shape repository"
+  )
+  eq(
+    dc_pull_github_payload.pull_request.title,
+    "Translate Data Center payloads",
+    "bitbucket_datacenter webhook: GitHub-shape PR body"
+  )
+
+  local dc_status_event = app.backend.webhooks["build:status_created"]({
+    actor = { name = "fido" },
+    repository = dc_repo,
+    commit = { id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+    buildStatus = {
+      state = "SUCCESSFUL",
+      key = "test",
+      description = "Tests passed",
+      url = "https://ci.example.test/build/1",
+      createdDate = 1777770000000,
+    },
+  })
+  local dc_status_github_payload = app.backend.webhook_github_translators.status(dc_status_event)
+  eq(
+    dc_status_github_payload.state,
+    "success",
+    "bitbucket_datacenter webhook: GitHub-shape status state"
+  )
+  eq(
+    dc_status_github_payload.sha,
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bitbucket_datacenter webhook: GitHub-shape status sha"
+  )
+
+  app.backend.rest = saved_rest
+  app.backend.capabilities = saved_capabilities
+  app.backend.webhooks = saved_webhooks
+  app.backend.webhook_translators = saved_webhook_translators
+  app.backend.webhook_github_translators = saved_webhook_github_translators
   graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
   config.base_url = saved_base_url
   config.backend = saved_backend
@@ -3627,10 +4909,21 @@ ok(type(app.webhook_receiver) == "function", "app.webhook_receiver: installed on
 do
   -- Helper: call app.webhook_receiver() with stubbed HTTP context and return status.
   local function call_webhook(opts)
+    local saved_config = app.config
+    local configured_backend = opts.configured_backend
+      or (opts.path or ""):match("^/webhooks/([^/]+)$")
+      or saved_config.backend
+    app.config = {
+      backend = configured_backend,
+      base_url = saved_config.base_url,
+      webhook_secrets = saved_config.webhook_secrets or {},
+    }
     reset_request(opts)
     reset_response()
     app.webhook_receiver()
-    return _last_status
+    local status = _last_status
+    app.config = saved_config
+    return status
   end
 
   -- 404 for unknown backend
@@ -3656,6 +4949,38 @@ do
     404,
     "webhook_receiver: extra path segment → 404"
   )
+
+  -- 404 for known providers that do not match the configured provider.
+  local _mismatch_logs = {}
+  local _real_Log = Log
+  Log = function(level, msg) -- luacheck: globals Log
+    _mismatch_logs[#_mismatch_logs + 1] = { level = level, msg = msg }
+  end
+  eq(
+    call_webhook({
+      method = "POST",
+      path = "/webhooks/gitlab",
+      configured_backend = "gitea",
+      headers = {
+        ["Content-Type"] = "application/json",
+        ["X-Gitlab-Event"] = "Issue Hook",
+      },
+      body = "{}",
+    }),
+    404,
+    "webhook_receiver: provider mismatch → 404"
+  )
+  ok(#_mismatch_logs == 1, "webhook_receiver: provider mismatch is logged")
+  eq(_mismatch_logs[1].level, kLogWarn, "webhook_receiver: provider mismatch logs at kLogWarn") -- luacheck: globals kLogWarn
+  ok(
+    _mismatch_logs[1].msg:find("configured_provider=gitea", 1, true) ~= nil,
+    "webhook_receiver: provider mismatch log includes configured provider"
+  )
+  ok(
+    _mismatch_logs[1].msg:find("requested_provider=gitlab", 1, true) ~= nil,
+    "webhook_receiver: provider mismatch log includes requested provider"
+  )
+  Log = _real_Log
 
   -- 405 for non-POST method
   eq(
@@ -4133,6 +5458,8 @@ do
   -- Simulate allow_anonymous=false with no Authorization header: a REST path
   -- gets 401, but a webhook path is handled by webhook_receiver (not blocked).
   local saved_anon = app.allow_anonymous
+  local saved_dispatch_config = app.config
+  app.config = { backend = "gitea", base_url = "", webhook_secrets = {} }
   app.allow_anonymous = false
   -- REST path with no auth → 401
   reset_request({ method = "GET", path = "/repos/alice/myrepo", headers = {}, body = nil })
@@ -4153,6 +5480,7 @@ do
   eq(_last_status, 422, "dispatcher: /webhooks/* bypasses auth gate (allow_anonymous=false)")
 
   app.allow_anonymous = saved_anon
+  app.config = saved_dispatch_config
 end
 
 -- ============================================================
@@ -4179,7 +5507,7 @@ do
   local function call_sig(backend, extra_headers, body, secrets)
     local saved_config = app.config
     app.config = {
-      backend = "testbackend",
+      backend = backend,
       base_url = "",
       webhook_secrets = secrets or {},
     }
@@ -4772,6 +6100,22 @@ end
 -- make_internal_event
 -- ============================================================
 
+ok(type(webhook_event_catalog) == "table", "webhook_event_catalog: exported as global table")
+ok(type(webhook_catalog_events) == "function", "webhook_catalog_events: exported as function")
+ok(type(webhook_catalog_providers) == "function", "webhook_catalog_providers: exported as function")
+ok(
+  type(webhook_catalog_event_names) == "function",
+  "webhook_catalog_event_names: exported as function"
+)
+ok(type(webhook_catalog_event) == "function", "webhook_catalog_event: exported as function")
+ok(
+  type(webhook_catalog_event_known) == "function",
+  "webhook_catalog_event_known: exported as function"
+)
+ok(
+  type(webhook_catalog_normalized_base) == "function",
+  "webhook_catalog_normalized_base: exported as function"
+)
 ok(type(make_internal_event) == "function", "make_internal_event: exported as global function")
 ok(
   type(normalized_webhook_event_type) == "function",
@@ -4781,6 +6125,49 @@ ok(
   type(make_normalized_webhook_envelope) == "function",
   "make_normalized_webhook_envelope: exported as global function"
 )
+
+do
+  local providers = webhook_catalog_providers()
+  ok(#providers >= 25, "webhook_catalog_providers: includes all supported webhook sources")
+
+  local names = webhook_catalog_event_names()
+  ok(names.issues == true, "webhook_catalog_event_names: includes issues")
+  ok(names.pull_request == true, "webhook_catalog_event_names: includes pull_request")
+  ok(names.workflow_run == true, "webhook_catalog_event_names: includes workflow_run")
+  ok(
+    names.not_a_github_event == nil,
+    "webhook_catalog_event_names: excludes unsupported event names"
+  )
+  ok(webhook_catalog_event_known("release"), "webhook_catalog_event_known: known event")
+  ok(
+    not webhook_catalog_event_known("not_a_github_event"),
+    "webhook_catalog_event_known: unknown event"
+  )
+
+  local issues_def = webhook_catalog_event("issues")
+  eq(issues_def.normalized_base, "issue", "webhook_catalog_event: issues normalized base")
+  ok(#issues_def.actions > 1, "webhook_catalog_event: issues records action coverage")
+  ok(
+    issues_def.providers.gitea.status == "supported",
+    "webhook_catalog_event: provider source status recorded"
+  )
+  ok(
+    type(issues_def.providers.gitblit) == "table",
+    "webhook_catalog_event: unsupported/no-analog provider entries are explicit"
+  )
+
+  local security_def = webhook_catalog_event("security_advisory")
+  eq(
+    security_def.providers.gitea.status,
+    "no_analog",
+    "webhook_catalog_event: no-analog provider status is explicit"
+  )
+  eq(
+    webhook_catalog_normalized_base("workflow_run"),
+    "workflow.run",
+    "webhook_catalog_normalized_base: dotted bases come from catalog"
+  )
+end
 
 do
   -- All required fields present → table with correct keys.
@@ -4934,15 +6321,157 @@ do
 end
 
 -- ============================================================
+-- GitHub webhook payload builders
+-- ============================================================
+
+ok(type(github_webhook_payload) == "function", "github_webhook_payload: exported")
+ok(type(github_webhook_repository) == "function", "github_webhook_repository: exported")
+ok(type(github_webhook_sender) == "function", "github_webhook_sender: exported")
+ok(type(github_webhook_issue) == "function", "github_webhook_issue: exported")
+ok(type(github_webhook_pull_request) == "function", "github_webhook_pull_request: exported")
+ok(type(github_webhook_release) == "function", "github_webhook_release: exported")
+ok(type(github_webhook_installation) == "function", "github_webhook_installation: exported")
+ok(type(github_webhook_projects_v2) == "function", "github_webhook_projects_v2: exported")
+
+do
+  local repo = github_webhook_repository({
+    id = 42,
+    name = "confusio",
+    full_name = "rhencke/confusio",
+    owner = { login = "rhencke", id = 7 },
+    private = true,
+  }, {
+    allow_forking = false,
+  })
+  eq(repo.id, 42, "github_webhook_repository: preserves provider id")
+  eq(repo.full_name, "rhencke/confusio", "github_webhook_repository: preserves full name")
+  eq(repo.owner.login, "rhencke", "github_webhook_repository: normalizes owner")
+  eq(repo.owner.node_id, "", "github_webhook_repository: owner keeps GitHub defaults")
+  eq(repo.visibility, "private", "github_webhook_repository: derives private visibility")
+  ok(repo.allow_forking == false, "github_webhook_repository: override can force false")
+  eq(repo.has_issues, true, "github_webhook_repository: stable boolean default")
+
+  local issue = github_webhook_issue({
+    number = 19,
+    title = "Normalize webhooks",
+    user = { login = "fido" },
+  })
+  eq(issue.number, 19, "github_webhook_issue: preserves issue number")
+  eq(issue.state, "open", "github_webhook_issue: defaults state")
+  eq(issue.user.login, "fido", "github_webhook_issue: normalizes user")
+  eq(issue.user.type, "User", "github_webhook_issue: user keeps GitHub defaults")
+  eq(issue.author_association, "NONE", "github_webhook_issue: defaults author association")
+
+  local pr = github_webhook_pull_request({
+    number = 365,
+    title = "Webhook translation",
+    head = { ref = "normalize-webhook-payloads" },
+    base = { ref = "main" },
+  }, {
+    mergeable_state = "clean",
+  })
+  eq(pr.number, 365, "github_webhook_pull_request: preserves number")
+  eq(pr.head.ref, "normalize-webhook-payloads", "github_webhook_pull_request: preserves head")
+  eq(pr.base.ref, "main", "github_webhook_pull_request: preserves base")
+  eq(pr.mergeable_state, "clean", "github_webhook_pull_request: override point")
+
+  local release = github_webhook_release({
+    id = 5,
+    tag_name = "v3",
+    author = { login = "release-bot" },
+  })
+  eq(release.tag_name, "v3", "github_webhook_release: preserves tag")
+  ok(release.draft == false, "github_webhook_release: defaults draft false")
+  eq(release.author.login, "release-bot", "github_webhook_release: normalizes author")
+
+  local installation = github_webhook_installation({
+    id = 99,
+    account = { login = "rhencke" },
+  })
+  eq(installation.id, 99, "github_webhook_installation: preserves id")
+  eq(installation.repository_selection, "all", "github_webhook_installation: default selection")
+  eq(installation.app_slug, "confusio", "github_webhook_installation: confusio default app slug")
+
+  local project_v2 = github_webhook_projects_v2({ number = 2, title = "Event side" })
+  eq(project_v2.number, 2, "github_webhook_projects_v2: preserves number")
+  eq(project_v2.title, "Event side", "github_webhook_projects_v2: preserves title")
+  ok(project_v2.closed == false, "github_webhook_projects_v2: defaults closed false")
+end
+
+do
+  local event = make_internal_event({
+    event = "issues",
+    action = "opened",
+    provider = "gitea",
+    data = {
+      issue = { number = 12, title = "A thing", user = { login = "fido" } },
+      repository = { full_name = "rhencke/confusio", owner = { login = "rhencke" } },
+      sender = { login = "fido" },
+      label = { name = "Insight", color = "5319e7" },
+    },
+  })
+  local payload = github_webhook_payload(event)
+  eq(payload.action, "opened", "github_webhook_payload: action envelope")
+  eq(payload.issue.number, 12, "github_webhook_payload: issues includes issue")
+  eq(
+    payload.repository.full_name,
+    "rhencke/confusio",
+    "github_webhook_payload: includes repository"
+  )
+  eq(payload.sender.login, "fido", "github_webhook_payload: includes sender")
+  eq(payload.label.name, "Insight", "github_webhook_payload: includes action-specific label")
+
+  local overridden = github_webhook_payload(event, {
+    action = "edited",
+    issue = { number = 99 },
+    payload = { enterprise = { slug = "test-enterprise" } },
+  })
+  eq(overridden.action, "edited", "github_webhook_payload: action override")
+  eq(overridden.issue.number, 99, "github_webhook_payload: entity override")
+  eq(
+    overridden.enterprise.slug,
+    "test-enterprise",
+    "github_webhook_payload: top-level payload override"
+  )
+
+  local push_payload = github_webhook_payload(make_internal_event({
+    event = "push",
+    action = "push",
+    provider = "sourceforge",
+    data = {
+      ref = "refs/heads/main",
+      before = "0000",
+      after = "1111",
+      repository = { full_name = "rhencke/confusio" },
+      sender = { login = "fido" },
+      commits = { { id = "1111", message = "fetch stick" } },
+      head_commit = { id = "1111" },
+      pusher = { name = "Fido" },
+    },
+  }))
+  ok(push_payload.action == nil, "github_webhook_payload: push has no action")
+  eq(push_payload.ref, "refs/heads/main", "github_webhook_payload: push ref")
+  eq(push_payload.commits[1].id, "1111", "github_webhook_payload: push commits")
+end
+
+-- ============================================================
 -- webhook_receiver: unknown-action sidecar header
 -- ============================================================
 
 do
   local function call_webhook_full(opts)
+    local saved_config = app.config
+    app.config = {
+      backend = (opts.path or ""):match("^/webhooks/([^/]+)$") or saved_config.backend,
+      base_url = saved_config.base_url,
+      webhook_secrets = saved_config.webhook_secrets or {},
+    }
     reset_request(opts)
     reset_response()
     app.webhook_receiver()
-    return _last_status, _last_headers
+    local status, headers = _last_status, _last_headers
+    app.config = saved_config
+    return status, headers
   end
 
   local saved_webhooks = app.backend.webhooks
@@ -5175,6 +6704,128 @@ fanout_register_target(nil)
 fanout_register_target({})
 fanout_register_target({ url = "" })
 fanout_register_target({ url = 42 })
+
+do
+  -- The main init call registered three startup targets:
+  --   fido        → release + workflow_run, github shape
+  --   auditor     → workflow_run, confusio shape
+  --   wt-coverage → push + pull_request, github shape
+  -- Exercise the real fanout_dispatch → deliver_fire path before replacing
+  -- deliver_fire below.
+  local _real_Fetch = Fetch
+  local _real_Log = Log
+  local _startup_fetch_calls = {}
+  local _startup_log_calls = {}
+  Fetch = function(url, opts) -- luacheck: globals Fetch
+    _startup_fetch_calls[#_startup_fetch_calls + 1] = { url = url, opts = opts }
+    if url:find("/fido", 1, true) then
+      error("startup target unavailable")
+    end
+    return 204, {}, ""
+  end
+  Log = function(level, msg) -- luacheck: globals Log
+    _startup_log_calls[#_startup_log_calls + 1] = { level = level, msg = msg }
+  end
+
+  local fd_startup_count = fanout_dispatch("gitea", "workflow_run", {
+    action = "completed",
+    workflow_run = { id = 123 },
+  })
+  eq(
+    fd_startup_count,
+    2,
+    "fanout_dispatch startup targets: workflow_run matches repeated target filters only"
+  )
+  eq(
+    #_startup_fetch_calls,
+    2,
+    "fanout_dispatch startup targets: failed first target does not block second target"
+  )
+  eq(
+    _startup_fetch_calls[1].url,
+    "https://hook.example.com/fido",
+    "fanout_dispatch startup targets: first repeated target delivered"
+  )
+  eq(
+    _startup_fetch_calls[2].url,
+    "https://hook.example.com/audit",
+    "fanout_dispatch startup targets: second repeated target delivered"
+  )
+  eq(
+    _startup_fetch_calls[1].opts.headers["X-GitHub-Event"],
+    "workflow_run",
+    "fanout_dispatch startup targets: github shape uses GitHub event header"
+  )
+  ok(
+    _startup_fetch_calls[1].opts.headers["X-Confusio-Event"] == nil,
+    "fanout_dispatch startup targets: github shape omits Confusio event header"
+  )
+  eq(
+    _startup_fetch_calls[2].opts.headers["X-Confusio-Event"],
+    "workflow_run",
+    "fanout_dispatch startup targets: confusio shape uses Confusio event header"
+  )
+  ok(
+    _startup_fetch_calls[2].opts.headers["X-GitHub-Event"] == nil,
+    "fanout_dispatch startup targets: confusio shape omits GitHub event header"
+  )
+  eq(
+    DecodeJson(_startup_fetch_calls[2].opts.body).type,
+    "workflow.run",
+    "fanout_dispatch startup targets: confusio shape body records normalized event type"
+  )
+  eq(#_startup_log_calls, 2, "fanout_dispatch startup targets: every delivery attempt is logged")
+  eq(
+    _startup_log_calls[1].level,
+    kLogWarn, -- luacheck: globals kLogWarn
+    "fanout_dispatch startup targets: failed delivery is logged as warning"
+  )
+  eq(
+    _startup_log_calls[2].level,
+    kLogVerbose, -- luacheck: globals kLogVerbose
+    "fanout_dispatch startup targets: successful delivery is logged as verbose"
+  )
+  ok(
+    _startup_log_calls[1].msg:find("target=fido", 1, true) ~= nil,
+    "fanout_dispatch startup targets: failed target name logged"
+  )
+  ok(
+    _startup_log_calls[1].msg:find("error=", 1, true) ~= nil,
+    "fanout_dispatch startup targets: failed target log includes error"
+  )
+  ok(
+    _startup_log_calls[2].msg:find("target=auditor", 1, true) ~= nil,
+    "fanout_dispatch startup targets: succeeding target name logged"
+  )
+  ok(
+    _startup_fetch_calls[1].url ~= _startup_fetch_calls[2].url,
+    "fanout_dispatch startup targets: no retry or duplicate delivery attempt created"
+  )
+
+  _startup_fetch_calls = {}
+  _startup_log_calls = {}
+  local fd_push_count = fanout_dispatch("gitea", "push", {
+    ref = "refs/heads/main",
+  })
+  eq(
+    fd_push_count,
+    1,
+    "fanout_dispatch startup targets: push matches only the legacy target filter"
+  )
+  eq(
+    #_startup_fetch_calls,
+    1,
+    "fanout_dispatch startup targets: filtered-out targets receive no delivery attempt"
+  )
+  eq(
+    _startup_fetch_calls[1].url,
+    "https://hook.example.com/wt-coverage",
+    "fanout_dispatch startup targets: legacy target still participates in fanout"
+  )
+
+  Fetch = _real_Fetch -- luacheck: globals Fetch
+  Log = _real_Log -- luacheck: globals Log
+end
 
 -- Mock deliver_fire for all fanout tests so no real HTTP calls are made.
 -- The startup wiring (webhook_target CLI arg) already registered one target

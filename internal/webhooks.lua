@@ -22,6 +22,8 @@
 -- Globals exported:
 --   make_webhook_receiver   — builder factory; called once at startup
 
+-- luacheck: globals webhook_catalog_event_for_normalized_type
+
 -- KNOWN_BACKENDS maps path segment to true for all recognised inbound sources.
 -- Requests with an unrecognised segment return 404.
 -- Includes the 24 forge backends plus "confusio" for cross-instance forwarding.
@@ -245,6 +247,66 @@ local SOURCEHUT_BODY_EVENT_FIELDS = {
   "event_type",
   "eventType",
 }
+
+local function codecommit_body_event(payload)
+  if type(payload) ~= "table" then
+    return nil
+  end
+  if payload.Type == "Notification" and type(payload.Message) == "string" then
+    local ok, nested = pcall(DecodeJson, payload.Message)
+    if ok then
+      return codecommit_body_event(nested)
+    end
+  end
+  if type(payload.Records) == "table" and type(payload.Records[1]) == "table" then
+    local record = payload.Records[1]
+    if record.eventSource == "aws:codecommit" or type(record.codecommit) == "table" then
+      return "codecommit"
+    end
+  end
+  if
+    payload.source == "aws.codecommit"
+    or payload["detail-type"] == "CodeCommit Repository State Change"
+  then
+    return "codecommit"
+  end
+  return nil
+end
+
+local function rhodecode_body_event(payload)
+  if type(payload) ~= "table" then
+    return nil
+  end
+  local ev = payload.event
+    or payload.event_type
+    or payload.hook
+    or payload.hook_type
+    or payload.hook_name
+  if type(ev) == "string" and ev ~= "" then
+    return ev
+  end
+  if type(payload.pull_request) == "table" or payload.pull_request_id then
+    return "pull_request"
+  end
+  if payload.refs or payload.pushed_revs or payload.commits or payload.branch then
+    return "push"
+  end
+  if payload.action == "created" or payload.action == "deleted" then
+    return "repository"
+  end
+  return nil
+end
+
+local function confusio_body_event(payload)
+  if type(payload) ~= "table" then
+    return nil
+  end
+  local event_name = nil
+  if type(webhook_catalog_event_for_normalized_type) == "function" then -- luacheck: globals webhook_catalog_event_for_normalized_type
+    event_name = webhook_catalog_event_for_normalized_type(payload.type)
+  end
+  return event_name
+end
 
 local function kallithea_body_event(payload)
   return first_string_field(payload, KALLITHEA_BODY_EVENT_FIELDS)
@@ -695,11 +757,34 @@ local function event_header(backend)
   end
 end
 
+local function log_provider_mismatch(configured_backend, requested_backend)
+  if type(Log) == "function" then -- luacheck: globals Log kLogWarn
+    Log(
+      kLogWarn,
+      string.format(
+        "webhook receive rejected: configured_provider=%s requested_provider=%s path=%s",
+        configured_backend,
+        requested_backend,
+        GetPath()
+      )
+    )
+  end
+end
+
 function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
   return function()
     -- Route: path must be /webhooks/{backend} with no trailing segments.
     local backend = GetPath():match("^/webhooks/([^/]+)$")
     if not backend or not KNOWN_BACKENDS[backend] then
+      respond_json(404, { message = "Not Found" })
+      return
+    end
+
+    -- A configured confusio instance ingests webhooks from exactly one
+    -- upstream provider. Treat other known provider paths as absent.
+    local configured_backend = ((a.config or {}).backend or "")
+    if configured_backend ~= "" and backend ~= configured_backend then
+      log_provider_mismatch(configured_backend, backend)
       respond_json(404, { message = "Not Found" })
       return
     end
@@ -758,10 +843,20 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
     --   them from their documented ref/update fields.
     --   Tuleap has no event header; project webhooks use event_name, Git push
     --   payloads have ref/update fields, and tracker artifact hooks use action.
+    --   CodeCommit trigger/SNS/EventBridge payloads identify themselves in body.
+    --   RhodeCode integration payloads identify hooks in body, or carry
+    --   enough ref / pull-request fields to infer the event family.
+    --   Confusio normalized events carry the dotted event type in the body.
     local ev = event_header(backend)
     if ev == nil and type(payload) == "table" then
       if payload.eventType then
         ev = payload.eventType
+      elseif backend == "codecommit" then
+        ev = codecommit_body_event(payload)
+      elseif backend == "rhodecode" then
+        ev = rhodecode_body_event(payload)
+      elseif backend == "confusio" then
+        ev = confusio_body_event(payload)
       elseif backend == "gitblit" and payload.event then
         ev = payload.event
       elseif (backend == "gerrit" or backend == "onedev") and payload.type then

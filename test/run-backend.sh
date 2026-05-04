@@ -15,6 +15,8 @@ HURL_FILES=("$@")
 
 CONFUSIO_BIN="$(pwd)/confusio.com"
 HURL="$(pwd)/hurl"
+BACKEND_NAME="${MOCK_BIN##*/mock-}"
+BACKEND_NAME="${BACKEND_NAME%.com}"
 
 start_isolated() {
   if command -v setsid >/dev/null 2>&1; then
@@ -50,5 +52,6 @@ CPID=$!
 # Run all hurl files in parallel
 "$HURL" --retry 20 --retry-interval 300 --connect-timeout 1 --max-time 10 \
   --variable "host=localhost:$CPORT" \
+  --variable "backend=$BACKEND_NAME" \
   --jobs "$(nproc)" \
   "${HURL_FILES[@]}"

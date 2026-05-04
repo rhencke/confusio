@@ -325,43 +325,8 @@ local function translate_tuleap_normalized_webhook(internal_event, fields)
   })
 end
 
-local function translate_tuleap_github_webhook(internal_event, _fields)
-  local data = internal_event.data or {}
-  local payload = {
-    action = data.action or internal_event.action,
-    repository = data.repository or {},
-    sender = data.sender or {},
-  }
-  if internal_event.event == "project" then
-    payload.project = data.project or {}
-  elseif internal_event.event == "push" then
-    payload.action = nil
-    payload.ref = data.ref or ""
-    payload.before = data.before or ""
-    payload.after = data.after or ""
-    payload.created = data.created or false
-    payload.deleted = data.deleted or false
-    payload.forced = data.forced or false
-    payload.compare = data.compare or ""
-    payload.commits = data.commits or {}
-    payload.head_commit = data.head_commit
-    payload.pusher = data.pusher or {}
-  elseif internal_event.event == "create" or internal_event.event == "delete" then
-    payload.ref = data.ref or ""
-    payload.ref_type = data.ref_type or ""
-    payload.master_branch = data.master_branch or ""
-    payload.description = data.description
-    payload.pusher_type = data.pusher_type or "user"
-  elseif internal_event.event == "issues" then
-    payload.issue = data.issue or {}
-    if data.label then
-      payload.label = data.label
-    end
-    if data.assignee then
-      payload.assignee = data.assignee
-    end
-  end
-  return payload
+local function translate_tuleap_github_webhook(internal_event, fields)
+  return github_webhook_payload(internal_event, fields)
 end
 
 local function tuleap_git_event(payload)

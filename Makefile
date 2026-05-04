@@ -204,8 +204,9 @@ validate-capabilities: $(REDBEAN_BIN) $(DUMP_CAPS_SCRIPT) $(VALIDATE_CAPS_SCRIPT
 gen-webhook-fixtures:
 	bash scripts/gen-webhook-fixtures.sh test
 
-validate-fixtures: gen-webhook-fixtures
-	python3 scripts/validate-fixtures.py test
+validate-fixtures: $(REDBEAN_BIN) internal/webhook_catalog.lua scripts/dump-webhook-catalog.lua gen-webhook-fixtures
+	$(REDBEAN) scripts/dump-webhook-catalog.lua > /tmp/confusio-webhook-catalog.json
+	python3 scripts/validate-fixtures.py test /tmp/confusio-webhook-catalog.json
 
 generate-schema: $(REDBEAN_BIN) $(GEN_GRAPHQL_SCHEMA_SCRIPT)
 	$(REDBEAN) $(GEN_GRAPHQL_SCHEMA_SCRIPT)
