@@ -74,6 +74,7 @@ jsonpath "$[0].github_event" == "delete"
 jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].body_json.ref" == "stale-branch"
 jsonpath "$[0].body_json.ref_type" == "branch"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/hello-world"
 
 # -- CREATE_PULLREQUEST_HOOK -> pull_request opened --------------------------
 
@@ -100,6 +101,30 @@ jsonpath "$[0].body_json.pull_request.title" == "Add webhook fixtures"
 jsonpath "$[0].body_json.pull_request.head.repo.full_name" == "alice/hello-world"
 jsonpath "$[0].body_json.pull_request.base.repo.full_name" == "octocat/hello-world"
 
+# -- pull_request update -> pull_request synchronize -------------------------
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/rhodecode
+Content-Type: application/json
+file,fixtures/webhooks/rhodecode/pull_request-synchronize.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.action" == "synchronize"
+jsonpath "$[0].body_json.number" == 7
+jsonpath "$[0].body_json.pull_request.head.sha" == "4444444444444444444444444444444444444444"
+jsonpath "$[0].body_json.pull_request.base.sha" == "1111111111111111111111111111111111111111"
+
 # -- pull_request closed -> pull_request closed ------------------------------
 
 POST http://{{target}}/reset
@@ -122,6 +147,55 @@ jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].body_json.action" == "closed"
 jsonpath "$[0].body_json.number" == 8
 jsonpath "$[0].body_json.pull_request.state" == "closed"
+jsonpath "$[0].body_json.pull_request.closed_at" == "2024-01-15T13:30:00Z"
+
+# -- pull_request merged -> pull_request closed ------------------------------
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/rhodecode
+Content-Type: application/json
+file,fixtures/webhooks/rhodecode/pull_request-merged.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.action" == "closed"
+jsonpath "$[0].body_json.number" == 8
+jsonpath "$[0].body_json.pull_request.merged" == true
+jsonpath "$[0].body_json.pull_request.merged_at" == "2024-01-15T13:35:00Z"
+jsonpath "$[0].body_json.pull_request.merge_commit_sha" == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+# -- pull_request reopen -> pull_request reopened ----------------------------
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/rhodecode
+Content-Type: application/json
+file,fixtures/webhooks/rhodecode/pull_request-reopened.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.action" == "reopened"
+jsonpath "$[0].body_json.number" == 8
+jsonpath "$[0].body_json.pull_request.state" == "open"
 
 # -- CREATE_REPO_HOOK -> repository created ----------------------------------
 
@@ -145,3 +219,26 @@ jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].body_json.action" == "created"
 jsonpath "$[0].body_json.repository.full_name" == "octocat/new-repo"
 jsonpath "$[0].body_json.repository.private" == true
+
+# -- DELETE_REPO_HOOK -> repository deleted ----------------------------------
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/rhodecode
+Content-Type: application/json
+file,fixtures/webhooks/rhodecode/repository-deleted.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "repository"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.action" == "deleted"
+jsonpath "$[0].body_json.repository.full_name" == "octocat/old-repo"
+jsonpath "$[0].body_json.repository.private" == false

@@ -1,0 +1,22 @@
+{
+  "event_type": "pull_request",
+  "action": "update",
+  "repository": "octocat/hello-world",
+  "created_by": "alice",
+  "pull_request_id": 7,
+  "pull_request": {
+    "id": 7,
+    "title": "Add webhook fixtures",
+    "description": "RhodeCode should look like GitHub on the wire.",
+    "status": "updated",
+    "owner": "alice",
+    "org_repo_name": "octocat/hello-world",
+    "other_repo_name": "alice/hello-world",
+    "org_ref": "main",
+    "other_ref": "feature/rhodecode",
+    "org_rev": "1111111111111111111111111111111111111111",
+    "other_rev": "4444444444444444444444444444444444444444",
+    "created_on": "2024-01-15T12:15:00Z",
+    "updated_on": "2024-01-15T12:20:00Z"
+  }
+}
