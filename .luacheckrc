@@ -136,6 +136,7 @@ globals = {
   "sign_github",
   "sign_for_backend",
   "SourcehutVerifyEd25519",
+  "CodeCommitVerifySnsSignature",
   -- Fan-out dispatcher: internal/fanout.lua
   "fanout_body",
   "fanout_dispatch",

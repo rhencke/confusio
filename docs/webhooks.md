@@ -336,7 +336,7 @@ Several distinct schemes appear across the supported inbound sources:
 | `bitbucket` | `X-Hub-Signature` | HMAC-SHA256 | `sha256=<hex>` |
 | `bitbucket_datacenter` | `X-Hub-Signature` | HMAC-SHA256 | `sha256=<hex>` |
 | `codeberg` | `X-Gitea-Signature` | HMAC-SHA256 | `<hex>` |
-| `codecommit` | _(none)_ | Trust-the-network only | configured secret rejects |
+| `codecommit` | SNS body fields | SNS X.509 RSA signature | `SignatureVersion` 1 or 2 |
 | `confusio` | `X-Confusio-Signature-256` | HMAC-SHA256 with timestamp | `sha256=<hex>, v=1, ts=<unix>` |
 | `forgejo` | `X-Gitea-Signature` | HMAC-SHA256 | `<hex>` |
 | `gerrit` | `Authorization` | Basic or Bearer | see notes |
@@ -854,17 +854,22 @@ closest GitHub webhook families:
 
 CodeCommit can deliver repository changes through SNS-style, EventBridge-style, or
 trigger-style JSON payloads.  Confusio currently supports event-family inference and
-payload translation for those body shapes, but it does **not** implement AWS SNS X.509
-signature verification yet.
+payload translation for those body shapes.  When CodeCommit is delivered through SNS,
+confusio can verify the SNS `SignatureVersion` 1 or 2 RSA signature against the
+certificate published in `SigningCertURL`.
 
 When no `webhook_secret_file_codecommit` is configured, CodeCommit ingest runs in
-trust-the-network mode.  When a CodeCommit inbound secret is configured, confusio
-rejects the request with `401` rather than pretending to verify a scheme it does not
-support.  Operators should restrict `/webhooks/codecommit` with network policy until
-full SNS certificate verification is implemented.
+trust-the-network mode for direct trigger, EventBridge, and SNS payloads.  When a
+CodeCommit inbound secret is configured, confusio requires a signed SNS HTTP payload,
+validates that `SigningCertURL` points at an SNS `amazonaws.com` certificate endpoint,
+builds the canonical SNS string-to-sign, fetches and caches the certificate, and
+verifies the decoded signature before dispatch.  Unsigned direct trigger/EventBridge
+payloads are rejected in this mode.
 
 **Configuration:** Register the confusio receiver URL as the CodeCommit/SNS/EventBridge
-HTTP endpoint and leave the CodeCommit inbound secret unset.
+HTTP endpoint.  Leave the CodeCommit inbound secret unset for network-trusted direct
+trigger/EventBridge delivery; set `webhook_secret_file_codecommit` to any non-empty
+value to require SNS signature verification.
 
 ---
 

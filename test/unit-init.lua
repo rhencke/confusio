@@ -34,7 +34,7 @@ reset_request()
 -- Override Redbean HTTP context built-ins before loading .init.lua.
 -- luacheck: push
 -- luacheck: globals SetStatus SetHeader Write GetHeader GetPath GetParam GetMethod GetBody Route
--- luacheck: globals GetCryptoHash DecodeBase64 SourcehutVerifyEd25519
+-- luacheck: globals GetCryptoHash DecodeBase64 SourcehutVerifyEd25519 CodeCommitVerifySnsSignature
 SetStatus = function(code, _reason)
   _last_status = code
 end
@@ -83,6 +83,7 @@ end
 SourcehutVerifyEd25519 = function(public_key, body, signature)
   return public_key == string.rep("k", 32) and body == "{}" and signature == string.rep("s", 64)
 end
+CodeCommitVerifySnsSignature = nil
 -- Stub Fetch: records outbound calls so startup synthesis (synthesize_startup_events)
 -- and deliver_fire tests do not make real network requests.  Returns a 200 response.
 -- Individual tests that need more control save/restore Fetch locally.
@@ -5875,18 +5876,151 @@ do
     "verify_signature kallithea: invalid JSON body → 401"
   )
 
-  -- ── Trust-the-network-only backend: codecommit
-  -- SNS signature verification is not yet implemented.
-  -- No secret → accepted; any secret configured → always rejected.
+  -- ── CodeCommit: Amazon SNS X.509 signature verification
+  -- No secret → trust-the-network; configured secret enables SNS signature verification.
   ok(
     no_secret("codecommit", {}) ~= 401,
     "verify_signature codecommit: no secret (trust-the-network) → not 401"
   )
-  eq(
-    call_sig("codecommit", {}, nil, { codecommit = SECRET }),
-    401,
-    "verify_signature codecommit: secret configured (unimplemented scheme) → 401"
+
+  local saved_fetch = Fetch
+  local saved_codecommit_sns_verify = CodeCommitVerifySnsSignature
+  local fetched_cert_url = nil
+  local captured_sns = nil
+  local sns_cert = "-----BEGIN CERTIFICATE-----\ntest-cert\n-----END CERTIFICATE-----\n"
+  local sns_cert_url = "https://sns.us-east-1.amazonaws.com/SimpleNotificationService-test.pem"
+  local sns_topic = "arn:aws:sns:us-east-1:123456789012:codecommit"
+  local sns_timestamp = "2024-01-15T12:00:00.000Z"
+  local sns_body = '{"Type":"Notification","MessageId":"mid-1","TopicArn":"'
+    .. sns_topic
+    .. '","Subject":"subject","Message":"hello","Timestamp":"'
+    .. sns_timestamp
+    .. '","SignatureVersion":"1","Signature":"good-signature","SigningCertURL":"'
+    .. sns_cert_url
+    .. '","UnsubscribeURL":"https://sns.us-east-1.amazonaws.com/?Action=Unsubscribe"}'
+  local sns_expected_string = table.concat({
+    "Message",
+    "hello",
+    "MessageId",
+    "mid-1",
+    "Subject",
+    "subject",
+    "Timestamp",
+    sns_timestamp,
+    "TopicArn",
+    sns_topic,
+    "Type",
+    "Notification",
+  }, "\n")
+
+  Fetch = function(url, _opts)
+    fetched_cert_url = url
+    return 200, {}, sns_cert
+  end
+  CodeCommitVerifySnsSignature = function(cert, string_to_sign, signature, alg)
+    captured_sns = {
+      cert = cert,
+      string_to_sign = string_to_sign,
+      signature = signature,
+      alg = alg,
+    }
+    return cert == sns_cert
+      and string_to_sign == sns_expected_string
+      and signature == "good-signature"
+      and alg == "sha1"
+  end
+  ok(
+    call_sig("codecommit", {}, sns_body, { codecommit = SECRET }) ~= 401,
+    "verify_signature codecommit: valid SNS notification signature → not 401"
   )
+  eq(
+    fetched_cert_url,
+    sns_cert_url,
+    "verify_signature codecommit: fetches certificate from SigningCertURL"
+  )
+  eq(
+    captured_sns and captured_sns.string_to_sign,
+    sns_expected_string,
+    "verify_signature codecommit: builds canonical SNS notification string"
+  )
+  eq(captured_sns and captured_sns.alg, "sha1", "verify_signature codecommit: version 1 uses SHA1")
+
+  local sns_v2_body = sns_body:gsub('"SignatureVersion":"1"', '"SignatureVersion":"2"')
+  CodeCommitVerifySnsSignature = function(_cert, _string_to_sign, _signature, alg)
+    return alg == "sha256"
+  end
+  ok(
+    call_sig("codecommit", {}, sns_v2_body, { codecommit = SECRET }) ~= 401,
+    "verify_signature codecommit: valid SNS SignatureVersion 2 → not 401"
+  )
+
+  local sub_body = '{"Type":"SubscriptionConfirmation","MessageId":"sub-1","Token":"token-1","TopicArn":"'
+    .. sns_topic
+    .. '","Message":"confirm","SubscribeURL":"https://sns.us-east-1.amazonaws.com/?Action=ConfirmSubscription","Timestamp":"'
+    .. sns_timestamp
+    .. '","SignatureVersion":"2","Signature":"good-signature","SigningCertURL":"'
+    .. sns_cert_url
+    .. '"}'
+  local sub_expected_string = table.concat({
+    "Message",
+    "confirm",
+    "MessageId",
+    "sub-1",
+    "SubscribeURL",
+    "https://sns.us-east-1.amazonaws.com/?Action=ConfirmSubscription",
+    "Timestamp",
+    sns_timestamp,
+    "Token",
+    "token-1",
+    "TopicArn",
+    sns_topic,
+    "Type",
+    "SubscriptionConfirmation",
+  }, "\n")
+  CodeCommitVerifySnsSignature = function(_cert, string_to_sign, _signature, alg)
+    return string_to_sign == sub_expected_string and alg == "sha256"
+  end
+  ok(
+    call_sig("codecommit", {}, sub_body, { codecommit = SECRET }) ~= 401,
+    "verify_signature codecommit: valid SNS subscription confirmation → not 401"
+  )
+
+  CodeCommitVerifySnsSignature = function()
+    return false
+  end
+  eq(
+    call_sig("codecommit", {}, sns_body, { codecommit = SECRET }),
+    401,
+    "verify_signature codecommit: bad SNS signature → 401"
+  )
+
+  eq(
+    call_sig(
+      "codecommit",
+      {},
+      sns_body:gsub("https://sns.us-east-1.amazonaws.com", "https://example.com"),
+      { codecommit = SECRET }
+    ),
+    401,
+    "verify_signature codecommit: untrusted SigningCertURL → 401"
+  )
+  eq(
+    call_sig(
+      "codecommit",
+      {},
+      sns_body:gsub('"SignatureVersion":"1"', '"SignatureVersion":"3"'),
+      { codecommit = SECRET }
+    ),
+    401,
+    "verify_signature codecommit: unsupported SignatureVersion → 401"
+  )
+  eq(
+    call_sig("codecommit", {}, '{"Records":[]}', { codecommit = SECRET }),
+    401,
+    "verify_signature codecommit: configured verification rejects unsigned direct payloads"
+  )
+  Fetch = saved_fetch
+  CodeCommitVerifySnsSignature = saved_codecommit_sns_verify
 
   -- ── Sourcehut: X-Payload-Signature, Ed25519 over raw body
   -- Unit tests use identity base64 decoding and a stub verifier.  The hurl
