@@ -3,4 +3,4 @@
 if config.base_url == "" then
   config.base_url = provider_families.gitea.aliases[config.backend].default_url
 end
-dofile("/zip/backends/gitea.lua")
+return dofile("/zip/backends/gitea.lua")

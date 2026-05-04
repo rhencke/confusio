@@ -4465,7 +4465,7 @@ do
   graphql_resolvers = {} -- luacheck: globals graphql_resolvers
   config.base_url = ""
   config.backend = "notabug"
-  _real_dofile("backends/gitea.lua")
+  register_backend_spec(_real_dofile("backends/gitea.lua"), backend_strip_patterns(config.backend))
 
   ok(app.backend.webhooks.issues ~= nil, "notabug webhook: issues handler registered")
   ok(app.backend.webhooks.issue_comment ~= nil, "notabug webhook: issue_comment handler registered")
@@ -4551,7 +4551,7 @@ do
   graphql_resolvers = {} -- luacheck: globals graphql_resolvers
   config.base_url = ""
   config.backend = "forgejo"
-  _real_dofile("backends/gitea.lua")
+  register_backend_spec(_real_dofile("backends/gitea.lua"), backend_strip_patterns(config.backend))
 
   ok(
     app.backend.webhook_github_translators.issues ~= nil,
