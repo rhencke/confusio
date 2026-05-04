@@ -22,6 +22,8 @@
 -- Globals exported:
 --   make_webhook_receiver   — builder factory; called once at startup
 
+-- luacheck: globals webhook_catalog_event_for_normalized_type
+
 -- KNOWN_BACKENDS maps path segment to true for all recognised inbound sources.
 -- Requests with an unrecognised segment return 404.
 -- Includes the 24 forge backends plus "confusio" for cross-instance forwarding.
