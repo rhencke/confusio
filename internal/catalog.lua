@@ -2882,6 +2882,11 @@ local webhook_event_sections = {
       -- delete
       { "webhook delete/delete", "wh_delete_delete" },
 
+      -- branch_protection_rule
+      { "webhook branch_protection_rule/created", "wh_branch_protection_rule_created" },
+      { "webhook branch_protection_rule/edited", "wh_branch_protection_rule_edited" },
+      { "webhook branch_protection_rule/deleted", "wh_branch_protection_rule_deleted" },
+
       -- discussion
       { "webhook discussion/answered", "wh_discussion_answered" },
       { "webhook discussion/category_changed", "wh_discussion_category_changed" },

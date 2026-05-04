@@ -67,7 +67,7 @@ value is `y` or starts with `~`.  Concretely:
 | radicle | 11 | 73 |
 | gerrit | 10 | 73 |
 | phabricator | 9 | 72 |
-| codecommit | 8 | 74 |
+| codecommit | 24 | 75 |
 | launchpad | 8 | 73 |
 | kallithea | 5 | 73 |
 | rhodecode | 5 | 73 |
@@ -136,7 +136,7 @@ value is marginal given their support level.
 
 | Backend | Why deferred | Path forward |
 |---------|-------------|--------------|
-| `codecommit` | AWS CodeCommit entered maintenance mode in February 2024 and is no longer accepting new users as of July 2024.  Only 8 `y` endpoints. | Keep unit tests.  Remove or archive backend once AWS formally retires the service. |
+| `codecommit` | AWS CodeCommit entered maintenance mode in February 2024 and is no longer accepting new users as of July 2024.  Webhook coverage is fixture-backed because new live accounts are not available. | Keep unit tests and mock webhook deliveries.  Add a live SNS/EventBridge smoke test only if an existing AWS account with CodeCommit access is available. |
 | `radicle` | Peer-to-peer; no central server.  Requires a local Radicle node and a seed server; not suitable for standard GHA runners. | Investigate self-hosted runner with persistent Radicle node. |
 
 ## Account and credential management
