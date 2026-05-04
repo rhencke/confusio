@@ -99,7 +99,6 @@ local REF_PROVIDERS = provider_list(
   SOURCEHUT_RELATED,
   "azuredevops",
   "gitlab",
-  "launchpad",
   "rhodecode"
 )
 
@@ -153,7 +152,7 @@ local EVENT_DEFS = {
     "code_scanning_alert",
     { "created", "reopened", "closed", "fixed_in_branch" },
     {
-      partial = { "azuredevops", "gitlab" },
+      partial = { "azuredevops", "gitbucket", "gitlab" },
     }
   ),
   event("commit_comment", "commit_comment", { "created" }, {
@@ -162,8 +161,12 @@ local EVENT_DEFS = {
   event("create", "create", { "" }, {
     supported = REF_PROVIDERS,
   }),
-  event("custom_property", "custom_property", { "created", "updated", "deleted" }, {}),
-  event("custom_property_values", "custom_property_values", { "updated" }, {}),
+  event("custom_property", "custom_property", { "created", "updated", "deleted" }, {
+    partial = { "gitbucket" },
+  }),
+  event("custom_property_values", "custom_property_values", { "updated" }, {
+    partial = { "gitbucket" },
+  }),
   event("delete", "delete", { "" }, {
     supported = REF_PROVIDERS,
   }),
@@ -172,6 +175,7 @@ local EVENT_DEFS = {
     "dependabot_alert",
     { "created", "dismissed", "fixed", "reintroduced", "reopened" },
     {
+      partial = { "azuredevops", "gitbucket" },
       unsupported = { "gitlab" },
     }
   ),
@@ -205,13 +209,15 @@ local EVENT_DEFS = {
     "answered",
     "unanswered",
   }, {
-    partial = { "sourcehut" },
+    partial = { "codeberg", "gitbucket", "sourcehut" },
   }),
   event("discussion_comment", "discussion.comment", { "created", "edited", "deleted" }, {
     partial = { "sourcehut" },
   }),
   event("fork", "fork", { "" }, {
-    unsupported = provider_list(GITEA_FAMILY, "gitlab", BITBUCKET_FAMILY),
+    supported = GITEA_FAMILY,
+    partial = { "pagure" },
+    unsupported = provider_list("gitlab", BITBUCKET_FAMILY),
   }),
   event("github_app_authorization", "github_app_authorization", { "revoked" }, {}),
   event("gollum", "gollum", { "" }, {
@@ -232,7 +238,7 @@ local EVENT_DEFS = {
   event("installation_target", "installation.target", { "renamed" }, {}),
   event("issue_comment", "issue.comment", { "created", "edited", "deleted" }, {
     supported = ISSUE_PROVIDERS,
-    partial = provider_list(BITBUCKET_FAMILY, "radicle"),
+    partial = provider_list(BITBUCKET_FAMILY, "gitbucket", "launchpad", "radicle"),
   }),
   event("issues", "issue", {
     "opened",
@@ -253,7 +259,7 @@ local EVENT_DEFS = {
     "demilestoned",
   }, {
     supported = ISSUE_PROVIDERS,
-    partial = provider_list(BITBUCKET_FAMILY, "radicle"),
+    partial = provider_list(BITBUCKET_FAMILY, "gitbucket", "launchpad", "radicle"),
   }),
   event("label", "label", { "created", "edited", "deleted" }, {
     supported = provider_list(GITEA_FAMILY, "gitlab", "sourcehut"),
@@ -267,15 +273,16 @@ local EVENT_DEFS = {
   ),
   event("member", "member", { "added", "edited", "deleted" }, {
     supported = { "gitlab" },
-    partial = provider_list(GITEA_FAMILY, "sourcehut"),
+    partial = provider_list(GITEA_FAMILY, "gitbucket", "sourcehut"),
   }),
   event("membership", "membership", { "added", "removed" }, {
-    partial = { "gitlab" },
+    partial = { "gitbucket", "gitlab" },
   }),
   event("merge_group", "merge_group", { "checks_requested", "destroyed" }, {}),
   event("meta", "meta", { "deleted" }, {}),
   event("milestone", "milestone", { "created", "closed", "opened", "edited", "deleted" }, {
     supported = provider_list(GITEA_FAMILY, "gitlab"),
+    partial = { "gitbucket" },
   }),
   event("org_block", "org_block", { "blocked", "unblocked" }, {}),
   event(
@@ -284,11 +291,12 @@ local EVENT_DEFS = {
     { "created", "deleted", "renamed", "member_added", "member_removed", "member_invited" },
     {
       supported = { "gitlab", "sourcehut" },
-      partial = provider_list(GITEA_FAMILY),
+      partial = provider_list(GITEA_FAMILY, "gitbucket"),
     }
   ),
   event("package", "package", { "created", "published", "updated", "deleted" }, {
-    unsupported = provider_list(GITEA_FAMILY, "gitlab"),
+    partial = provider_list(GITEA_FAMILY, "gitbucket", "launchpad"),
+    unsupported = { "gitlab" },
   }),
   event("page_build", "page_build", { "" }, {
     unsupported = provider_list(GITEA_FAMILY, "gitlab"),
@@ -297,17 +305,19 @@ local EVENT_DEFS = {
     "personal_access_token_request",
     "personal_access_token_request",
     { "approved", "cancelled", "created", "denied" },
-    {}
+    {
+      partial = { "gitlab" },
+    }
   ),
   event("ping", "ping", { "" }, {
-    supported = provider_list(GITEA_FAMILY, "gitlab", BITBUCKET_FAMILY),
+    supported = provider_list(GITEA_FAMILY, "gitlab", BITBUCKET_FAMILY, "launchpad"),
   }),
   event(
     "project",
     "project",
     { "created", "updated", "closed", "reopened", "edited", "deleted" },
     {
-      partial = provider_list(GITEA_FAMILY, "gitlab", "sourcehut"),
+      partial = provider_list(GITEA_FAMILY, "gitbucket", "gitlab", "sourcehut", "tuleap"),
     }
   ),
   event("project_card", "project.card", { "converted", "created", "deleted", "edited", "moved" }, {
@@ -316,12 +326,16 @@ local EVENT_DEFS = {
   event("project_column", "project.column", { "created", "deleted", "edited", "moved" }, {
     supported = { "gitbucket" },
   }),
-  event("projects_v2", "projects_v2", { "created", "edited", "closed", "reopened", "deleted" }, {}),
+  event("projects_v2", "projects_v2", { "created", "edited", "closed", "reopened", "deleted" }, {
+    partial = { "gitbucket" },
+  }),
   event(
     "projects_v2_item",
     "projects_v2.item",
     { "created", "edited", "deleted", "archived", "restored", "converted" },
-    {}
+    {
+      partial = { "gitbucket" },
+    }
   ),
   event(
     "projects_v2_status_update",
@@ -361,7 +375,7 @@ local EVENT_DEFS = {
   }),
   event("pull_request_review", "pull_request.review", { "submitted", "edited", "dismissed" }, {
     supported = provider_list(GITEA_FAMILY, "gitlab", BITBUCKET_FAMILY, CHANGE_REVIEW_PROVIDERS),
-    partial = { "azuredevops", "radicle", "sourcehut" },
+    partial = { "azuredevops", "gitbucket", "radicle", "sourcehut" },
   }),
   event(
     "pull_request_review_comment",
@@ -376,7 +390,7 @@ local EVENT_DEFS = {
     partial = provider_list(GITEA_FAMILY, "gitlab", BITBUCKET_FAMILY),
   }),
   event("push", "push", { "" }, {
-    supported = REF_PROVIDERS,
+    supported = provider_list(REF_PROVIDERS, "launchpad"),
     partial = { "codecommit" },
   }),
   event("registry_package", "registry_package", { "published", "updated" }, {
@@ -388,7 +402,7 @@ local EVENT_DEFS = {
     { "published", "unpublished", "created", "edited", "deleted", "prereleased", "released" },
     {
       supported = provider_list(GITEA_FAMILY, "gitlab"),
-      partial = { "azuredevops", "harness" },
+      partial = { "azuredevops", "gitbucket", "harness" },
     }
   ),
   event("repository", "repository", {
@@ -406,7 +420,8 @@ local EVENT_DEFS = {
     partial = provider_list(
       BITBUCKET_FAMILY,
       SIMPLE_GIT_PROVIDERS,
-      "launchpad",
+      "gerrit",
+      "phabricator",
       "rhodecode",
       "sourceforge"
     ),
@@ -415,7 +430,9 @@ local EVENT_DEFS = {
     "repository_advisory",
     "repository.advisory",
     { "published", "updated", "withdrawn", "reported" },
-    {}
+    {
+      partial = { "gitbucket" },
+    }
   ),
   event("repository_dispatch", "repository.dispatch", { "" }, {}),
   event("repository_import", "repository.import", { "success", "failure", "cancel" }, {
@@ -435,13 +452,17 @@ local EVENT_DEFS = {
     "secret_scanning_alert",
     { "created", "reopened", "resolved", "revoked", "validated" },
     {
+      partial = { "azuredevops", "gitbucket" },
       unsupported = { "gitlab" },
     }
   ),
   event("secret_scanning_alert_location", "secret_scanning_alert.location", { "created" }, {
+    partial = { "gitbucket" },
     unsupported = { "gitlab" },
   }),
-  event("security_advisory", "security_advisory", { "published", "updated", "withdrawn" }, {}),
+  event("security_advisory", "security_advisory", { "published", "updated", "withdrawn" }, {
+    partial = { "gitbucket" },
+  }),
   event("security_and_analysis", "security_and_analysis", { "" }, {
     unsupported = provider_list(GITEA_FAMILY, "gitlab"),
   }),
@@ -473,11 +494,11 @@ local EVENT_DEFS = {
     "team",
     { "created", "deleted", "edited", "added_to_repository", "removed_from_repository" },
     {
-      partial = { "gitlab" },
+      partial = { "gitbucket", "gitlab" },
     }
   ),
   event("team_add", "team.add", { "" }, {
-    partial = { "gitlab" },
+    partial = { "gitbucket", "gitlab" },
   }),
   event("watch", "watch", { "started" }, {
     supported = provider_list(GITEA_FAMILY),
@@ -488,11 +509,22 @@ local EVENT_DEFS = {
   }),
   event("workflow_job", "workflow.job", { "queued", "in_progress", "completed", "waiting" }, {
     supported = { "gitlab" },
-    partial = { "azuredevops", "harness", "sourcehut" },
+    partial = { "azuredevops", "bitbucket", "harness", "phabricator", "sourcehut" },
   }),
   event("workflow_run", "workflow.run", { "requested", "in_progress", "completed" }, {
     supported = { "gitlab" },
-    partial = { "azuredevops", "harness", "sourcehut" },
+    partial = {
+      "azuredevops",
+      "bitbucket",
+      "codeberg",
+      "forgejo",
+      "gitea",
+      "harness",
+      "launchpad",
+      "onedev",
+      "phabricator",
+      "sourcehut",
+    },
   }),
 }
 

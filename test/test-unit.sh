@@ -420,106 +420,112 @@ run_delivery_phase test/webhook-delivery-launchpad.hurl \
   -- launchpad "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
-# Phase 38: OneDev fixture-based delivery tests — native body-typed hooks.
+# Phase 38: Launchpad delivery with "confusio" shape — normalized hook envelopes.
+run_delivery_phase test/webhook-delivery-launchpad-confusio-shape.hurl \
+  -- launchpad "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+  "webhook_target_shape=confusio"
+
+# Phase 39: OneDev fixture-based delivery tests — native body-typed hooks.
 run_delivery_phase test/webhook-delivery-onedev.hurl \
   -- onedev "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
-# Phase 39: OneDev delivery with "confusio" shape — normalized hook envelopes.
+# Phase 40: OneDev delivery with "confusio" shape — normalized hook envelopes.
 run_delivery_phase test/webhook-delivery-onedev-confusio-shape.hurl \
   -- onedev "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
 
-# Phase 40: Phabricator fixture-based delivery tests — native body-typed object families.
+# Phase 41: Phabricator fixture-based delivery tests — native body-typed object families.
 run_delivery_phase test/webhook-delivery-phabricator.hurl \
   -- phabricator "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
-# Phase 41: Phabricator delivery with "confusio" shape — normalized hook envelopes.
+# Phase 42: Phabricator delivery with "confusio" shape — normalized hook envelopes.
 run_delivery_phase test/webhook-delivery-phabricator-confusio-shape.hurl \
   -- phabricator "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
 
-# Phase 42: Radicle fixture-based delivery tests — native body-typed events.
+# Phase 43: Radicle fixture-based delivery tests — native body-typed events.
 run_delivery_phase test/webhook-delivery-radicle.hurl \
   -- radicle "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
-# Phase 43: Radicle delivery with "confusio" shape — normalized hook envelopes.
+# Phase 44: Radicle delivery with "confusio" shape — normalized hook envelopes.
 run_delivery_phase test/webhook-delivery-radicle-confusio-shape.hurl \
   -- radicle "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
 
-# Phase 44: SourceForge fixture-based delivery tests — Allura repo-push events.
+# Phase 45: SourceForge fixture-based delivery tests — Allura repo-push events.
 run_delivery_phase test/webhook-delivery-sourceforge.hurl \
   -- sourceforge "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
-# Phase 45: SourceForge delivery with "confusio" shape — normalized ref events.
+# Phase 46: SourceForge delivery with "confusio" shape — normalized ref events.
 run_delivery_phase test/webhook-delivery-sourceforge-confusio-shape.hurl \
   -- sourceforge "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
 
-# Phase 46: Sourcehut fixture-based delivery tests — native body-typed events.
+# Phase 47: Sourcehut fixture-based delivery tests — native body-typed events.
 run_delivery_phase test/webhook-delivery-sourcehut.hurl \
   -- sourcehut "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
-# Phase 47: Sourcehut delivery with "confusio" shape — normalized hook envelopes.
+# Phase 48: Sourcehut delivery with "confusio" shape — normalized hook envelopes.
 run_delivery_phase test/webhook-delivery-sourcehut-confusio-shape.hurl \
   -- sourcehut "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
 
-# Phase 48: Tuleap fixture-based delivery tests — native project, Git, and tracker events.
+# Phase 49: Tuleap fixture-based delivery tests — native project, Git, and tracker events.
 run_delivery_phase test/webhook-delivery-tuleap.hurl \
   -- tuleap "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
-# Phase 49: Tuleap delivery with "confusio" shape — normalized hook envelopes.
+# Phase 50: Tuleap delivery with "confusio" shape — normalized hook envelopes.
 run_delivery_phase test/webhook-delivery-tuleap-confusio-shape.hurl \
   -- tuleap "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
 
-# Phase 50: CodeCommit fixture-based delivery tests — body-derived push events.
+# Phase 51: CodeCommit fixture-based delivery tests — body-derived push events.
 run_delivery_phase test/webhook-delivery-codecommit.hurl \
   -- codecommit "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
-# Phase 51: CodeCommit delivery with "confusio" shape — normalized hook envelope.
+# Phase 52: CodeCommit delivery with "confusio" shape — normalized hook envelope.
 run_delivery_phase test/webhook-delivery-codecommit-confusio-shape.hurl \
   -- codecommit "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
 
-# Phase 52: RhodeCode fixture-based delivery tests — refs, pull requests, repositories.
+# Phase 53: RhodeCode fixture-based delivery tests — refs, pull requests, repositories.
 run_delivery_phase test/webhook-delivery-rhodecode.hurl \
   -- rhodecode "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
-# Phase 53: RhodeCode delivery with "confusio" shape — normalized hook envelopes.
+# Phase 54: RhodeCode delivery with "confusio" shape — normalized hook envelopes.
 run_delivery_phase test/webhook-delivery-rhodecode-confusio-shape.hurl \
   -- rhodecode "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
 
-# Phase 54: Confusio-to-confusio inbound delivery tests — normalized source to GitHub shape.
+# Phase 55: Confusio-to-confusio inbound delivery tests — normalized source to GitHub shape.
 run_delivery_phase test/webhook-delivery-confusio.hurl \
   -- confusio "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
-# Phase 55: Confusio-to-confusio inbound delivery tests — normalized source preserved.
+# Phase 56: Confusio-to-confusio inbound delivery tests — normalized source preserved.
 run_delivery_phase test/webhook-delivery-confusio-confusio-shape.hurl \
   -- confusio "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
 
-# Phase 56: Startup event synthesis — github shape.
+# Phase 57: Startup event synthesis — github shape.
 # Verifies that confusio synthesizes installation.created and
 # installation_repositories.added before accepting connections, and delivers
 # both to the configured outbound target.  No /reset is called — the hurl file
@@ -528,8 +534,8 @@ run_delivery_phase test/webhook-delivery-startup.hurl \
   -- gitea "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
-# Phase 57: Startup event synthesis — confusio shape.
-# Same as Phase 56 but with webhook_target_shape=confusio; verifies
+# Phase 58: Startup event synthesis — confusio shape.
+# Same as Phase 57 but with webhook_target_shape=confusio; verifies
 # X-Confusio-* headers are used and X-GitHub-Event is absent.
 run_delivery_phase test/webhook-delivery-startup-confusio-shape.hurl \
   -- gitea "http://127.0.0.1:$MOCK_PORT" \

@@ -37,17 +37,25 @@ FILENAME_EVENT_ALIASES = {
     "advsec-code-alert": "code_scanning_alert",
     "advsec-dependency-alert": "dependabot_alert",
     "advsec-secret-alert": "secret_scanning_alert",
+    "archive-binary-build": "workflow_run",
+    "binary-package": "package",
     "build.complete": "workflow_run",
+    "bug-comment": "issue_comment",
     "commit_comment": "pull_request_review_comment",
     "deployment-approval": "deployment_review",
     "deployment-completed": "deployment_status",
     "deployment-started": "deployment",
     "git.pullrequest": "pull_request",
+    "livefs-build": "workflow_run",
+    "merge-proposal": "pull_request",
+    "ocirecipe-build": "workflow_run",
     "pipeline_execution": "workflow_run",
     "pull-request": "pull_request",
     "pull_request_approved": "pull_request_review",
     "pull_request_comment": "pull_request_review_comment",
     "pull_request_rejected": "pull_request_review",
+    "snap-build": "workflow_run",
+    "source-package": "package",
     "stage_execution": "workflow_job",
     "wiki": "gollum",
     "workitem": "issues",
@@ -122,6 +130,24 @@ def validate_catalog_event(backend, event_name, source):
         errors.append(f"UNKNOWN webhook event: {event_name}  ({source})")
 
 
+def validate_provider_claim(backend, event_name, source):
+    if catalog is None:
+        return
+    if not event_name:
+        return
+    if backend in {"delivery", "startup"}:
+        return
+    validate_catalog_event(backend, event_name, source)
+    if backend not in catalog_providers or event_name not in catalog_events:
+        return
+    status = catalog_events[event_name]["providers"][backend]["status"]
+    if status not in {"supported", "partial"}:
+        errors.append(
+            f"UNCLAIMED normalized delivery: {backend}/{event_name}"
+            f" is cataloged as {status}  ({source})"
+        )
+
+
 def validate_normalized_type(value, source):
     if catalog is None:
         return
@@ -180,7 +206,7 @@ for hurl_file in hurl_files:
 
         confusio_event_match = CONFUSIO_EVENT_RE.search(line)
         if confusio_event_match:
-            validate_catalog_event(
+            validate_provider_claim(
                 current_fixture_backend or hurl_backend,
                 confusio_event_match.group(1),
                 source,
