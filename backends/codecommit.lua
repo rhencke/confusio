@@ -226,7 +226,9 @@ local function codecommit_normalized_event_type(internal_event, fields)
 end
 
 local function codecommit_resource_repository_name(payload, detail)
-  for name in pairs(detail.repositories or {}) do
+  local repositories = type(detail.repositories) == "table" and detail.repositories or {}
+  local name = next(repositories)
+  if name then
     return name
   end
   local resource = (payload.resources or {})[1] or ""
