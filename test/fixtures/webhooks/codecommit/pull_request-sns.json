@@ -1,0 +1,6 @@
+{
+  "Type": "Notification",
+  "MessageId": "55555555-aaaa-bbbb-cccc-666666666666",
+  "TopicArn": "arn:aws:sns:us-east-1:123456789012:codecommit",
+  "Message": "{\"version\":\"0\",\"id\":\"55555555-bbbb-cccc-dddd-777777777777\",\"detail-type\":\"CodeCommit Pull Request State Change\",\"source\":\"aws.codecommit\",\"account\":\"123456789012\",\"time\":\"2024-01-15T13:20:00Z\",\"region\":\"us-east-1\",\"resources\":[\"arn:aws:codecommit:us-east-1:123456789012:hello-world\"],\"detail\":{\"author\":\"arn:aws:iam::123456789012:user/mallory\",\"callerUserArn\":\"arn:aws:iam::123456789012:user/quinn\",\"creationDate\":\"2024-01-15T13:00:00Z\",\"description\":\"Add a safer webhook parser.\",\"destinationCommit\":\"1111111111111111111111111111111111111111\",\"destinationReference\":\"refs/heads/main\",\"event\":\"pullRequestSourceBranchUpdated\",\"isMerged\":\"False\",\"lastModifiedDate\":\"2024-01-15T13:20:00Z\",\"pullRequestId\":\"42\",\"pullRequestStatus\":\"Open\",\"repositoryNames\":[\"hello-world\"],\"revisionId\":\"pr-revision-sns\",\"sourceCommit\":\"5555555555555555555555555555555555555555\",\"sourceReference\":\"refs/heads/webhook-parser\",\"title\":\"Add webhook parser\"}}"
+}

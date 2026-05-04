@@ -22,7 +22,7 @@
 -- Globals exported:
 --   make_webhook_receiver   — builder factory; called once at startup
 
--- luacheck: globals webhook_catalog_event_for_normalized_type
+-- luacheck: globals CodeCommitVerifySnsSignature webhook_catalog_event_for_normalized_type
 
 -- KNOWN_BACKENDS maps path segment to true for all recognised inbound sources.
 -- Requests with an unrecognised segment return 404.
@@ -156,6 +156,178 @@ local function sourcehut_ed25519_verify(public_key, body, signature)
   return openssl_ed25519_verify(public_key, body, signature)
 end
 
+local SNS_CERT_CACHE = {}
+
+local function sns_signing_cert_url_valid(url)
+  if type(url) ~= "string" then
+    return false
+  end
+  local host, path = url:match("^https://([^/?#]+)(/[^?#]*)$")
+  if not host or not path then
+    return false
+  end
+  host = host:lower()
+  if not host:match("^sns%.[a-z0-9-]+%.amazonaws%.com$") then
+    return false
+  end
+  return path:match("^/SimpleNotificationService%-[%w%-]+%.pem$") ~= nil
+end
+
+local function sns_fetch_certificate(url)
+  if SNS_CERT_CACHE[url] then
+    return SNS_CERT_CACHE[url]
+  end
+  local ok, status, _, body = pcall(Fetch, url, { method = "GET" })
+  if not ok or status ~= 200 or type(body) ~= "string" then
+    return nil
+  end
+  if not body:find("-----BEGIN CERTIFICATE-----", 1, true) then
+    return nil
+  end
+  SNS_CERT_CACHE[url] = body
+  return body
+end
+
+local function sns_string_to_sign(payload)
+  if type(payload) ~= "table" then
+    return nil
+  end
+
+  local fields
+  if payload.Type == "Notification" then
+    fields = { "Message", "MessageId", "Subject", "Timestamp", "TopicArn", "Type" }
+  elseif
+    payload.Type == "SubscriptionConfirmation" or payload.Type == "UnsubscribeConfirmation"
+  then
+    fields = { "Message", "MessageId", "SubscribeURL", "Timestamp", "Token", "TopicArn", "Type" }
+  else
+    return nil
+  end
+
+  local lines = {}
+  for _, field in ipairs(fields) do
+    local value = payload[field]
+    if not (field == "Subject" and value == nil) then
+      if type(value) ~= "string" then
+        return nil
+      end
+      lines[#lines + 1] = field
+      lines[#lines + 1] = value
+    end
+  end
+  return table.concat(lines, "\n")
+end
+
+local function openssl_sns_verify(cert, string_to_sign, signature, alg)
+  local base = os.tmpname()
+  local cert_path = base .. ".cert.pem"
+  local pub_path = base .. ".pub.pem"
+  local body_path = base .. ".body"
+  local sig_path = base .. ".sig"
+
+  local ok = write_file(cert_path, cert)
+    and write_file(body_path, string_to_sign)
+    and write_file(sig_path, signature)
+  if not ok then
+    os.remove(base)
+    os.remove(cert_path)
+    os.remove(pub_path)
+    os.remove(body_path)
+    os.remove(sig_path)
+    return false
+  end
+
+  local extract_cmd = table.concat({
+    "openssl x509 -pubkey -noout",
+    "-in",
+    shell_quote(cert_path),
+    ">",
+    shell_quote(pub_path),
+    "2>/dev/null",
+  }, " ")
+  local ok_extract, _, extract_code = os.execute(extract_cmd)
+  if not (ok_extract == true or extract_code == 0) then
+    os.remove(base)
+    os.remove(cert_path)
+    os.remove(pub_path)
+    os.remove(body_path)
+    os.remove(sig_path)
+    return false
+  end
+
+  local digest = alg == "sha256" and "-sha256" or "-sha1"
+  local verify_cmd = table.concat({
+    "openssl dgst",
+    digest,
+    "-verify",
+    shell_quote(pub_path),
+    "-signature",
+    shell_quote(sig_path),
+    shell_quote(body_path),
+    ">/dev/null 2>&1",
+  }, " ")
+  local ok_verify, _, verify_code = os.execute(verify_cmd)
+  os.remove(base)
+  os.remove(cert_path)
+  os.remove(pub_path)
+  os.remove(body_path)
+  os.remove(sig_path)
+  return ok_verify == true or verify_code == 0
+end
+
+local function sns_verify_signature(cert, string_to_sign, signature, alg)
+  if type(CodeCommitVerifySnsSignature) == "function" then
+    return CodeCommitVerifySnsSignature(cert, string_to_sign, signature, alg)
+  end
+  return openssl_sns_verify(cert, string_to_sign, signature, alg)
+end
+
+local function verify_codecommit_sns_signature(secret, body)
+  if not secret or secret == "" then
+    return true
+  end
+
+  local ok_parse, payload = pcall(DecodeJson, body)
+  if not ok_parse or type(payload) ~= "table" then
+    return false
+  end
+
+  local string_to_sign = sns_string_to_sign(payload)
+  if not string_to_sign then
+    return false
+  end
+
+  local cert_url = payload.SigningCertURL
+  if not sns_signing_cert_url_valid(cert_url) then
+    return false
+  end
+
+  local version = payload.SignatureVersion
+  local alg
+  if version == "1" then
+    alg = "sha1"
+  elseif version == "2" then
+    alg = "sha256"
+  else
+    return false
+  end
+
+  local signature_b64 = payload.Signature
+  if type(signature_b64) ~= "string" then
+    return false
+  end
+  local ok_sig, signature = pcall(DecodeBase64, strip_ascii_space(signature_b64))
+  if not ok_sig or type(signature) ~= "string" then
+    return false
+  end
+
+  local cert = sns_fetch_certificate(cert_url)
+  if not cert then
+    return false
+  end
+  return sns_verify_signature(cert, string_to_sign, signature, alg)
+end
+
 local function verify_sourcehut_signature(public_key_b64, body)
   if not public_key_b64 or public_key_b64 == "" then
     return true
@@ -248,20 +420,50 @@ local SOURCEHUT_BODY_EVENT_FIELDS = {
   "eventType",
 }
 
-local function codecommit_body_event(payload)
+local function decode_json_table(value)
+  if type(value) ~= "string" or value == "" then
+    return nil
+  end
+  local ok, decoded = pcall(DecodeJson, value)
+  if ok and type(decoded) == "table" then
+    return decoded
+  end
+  return nil
+end
+
+local function codecommit_record_nested_payload(record)
+  record = record or {}
+  local sns = record.Sns or record.sns
+  if type(sns) == "table" then
+    return decode_json_table(sns.Message or sns.message)
+  end
+  return nil
+end
+
+local function codecommit_body_event(payload, depth)
   if type(payload) ~= "table" then
     return nil
   end
-  if payload.Type == "Notification" and type(payload.Message) == "string" then
-    local ok, nested = pcall(DecodeJson, payload.Message)
-    if ok then
-      return codecommit_body_event(nested)
+  depth = (depth or 0) + 1
+  if depth > 8 then
+    return nil
+  end
+  if payload.Type == "Notification" then
+    local nested = decode_json_table(payload.Message)
+    if nested then
+      return codecommit_body_event(nested, depth)
     end
   end
-  if type(payload.Records) == "table" and type(payload.Records[1]) == "table" then
-    local record = payload.Records[1]
-    if record.eventSource == "aws:codecommit" or type(record.codecommit) == "table" then
-      return "codecommit"
+  if type(payload.Records) == "table" then
+    for _, record in ipairs(payload.Records) do
+      if record.eventSource == "aws:codecommit" or type(record.codecommit) == "table" then
+        return "codecommit"
+      end
+      local nested = codecommit_record_nested_payload(record)
+      local nested_event = codecommit_body_event(nested, depth)
+      if nested_event then
+        return nested_event
+      end
     end
   end
   if
@@ -702,12 +904,12 @@ local function verify_signature(backend, secret, body, now)
   elseif backend == "sourcehut" then
     return verify_sourcehut_signature(secret, body)
 
-  -- CodeCommit (SNS X.509):
-  -- Complex platform-managed scheme not yet implemented. Trust-the-network
-  -- when no secret configured; reject otherwise so operators restrict access
-  -- via network policy until full verification ships.
+  -- CodeCommit via SNS: SignatureVersion 1/2 RSA signature over Amazon SNS's
+  -- canonical message fields, verified with the X.509 certificate from the
+  -- SNS-owned SigningCertURL.  With no secret configured, retain the global
+  -- trust-the-network mode for direct CodeCommit trigger/EventBridge delivery.
   elseif backend == "codecommit" then
-    return not secret or secret == ""
+    return verify_codecommit_sns_signature(secret, body)
   else
     return false
   end

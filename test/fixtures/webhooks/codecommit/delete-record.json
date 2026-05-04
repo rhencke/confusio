@@ -1,0 +1,24 @@
+{
+  "Records": [
+    {
+      "awsRegion": "us-east-1",
+      "codecommit": {
+        "references": [
+          {
+            "commit": "0000000000000000000000000000000000000000",
+            "oldCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ref": "refs/heads/feature"
+          }
+        ]
+      },
+      "eventId": "aaaaaaaa-2222-3333-4444-555555555555",
+      "eventName": "ReferenceChanges",
+      "eventSource": "aws:codecommit",
+      "eventSourceARN": "arn:aws:codecommit:us-east-1:123456789012:hello-world",
+      "eventTime": "2024-01-15T12:08:00.000+0000",
+      "eventTriggerName": "confusio",
+      "eventVersion": "1.0",
+      "userIdentityARN": "arn:aws:iam::123456789012:user/ivan"
+    }
+  ]
+}

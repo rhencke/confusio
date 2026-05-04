@@ -1,0 +1,22 @@
+{
+  "version": "0",
+  "id": "ffffffff-1111-2222-3333-444444444444",
+  "detail-type": "CodeCommit Repository State Change",
+  "source": "aws.codecommit",
+  "account": "123456789012",
+  "time": "2024-01-15T12:09:00Z",
+  "region": "us-east-1",
+  "resources": [
+    "arn:aws:codecommit:us-east-1:123456789012:hello-world"
+  ],
+  "detail": {
+    "event": "referenceDeleted",
+    "repositoryName": "hello-world",
+    "repositoryId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    "referenceType": "tag",
+    "referenceName": "v2.0.0",
+    "referenceFullName": "refs/tags/v2.0.0",
+    "oldCommitId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "callerUserArn": "arn:aws:iam::123456789012:user/judy"
+  }
+}

@@ -139,6 +139,7 @@ local EVENT_DEFS = {
     }
   ),
   event("branch_protection_rule", "branch_protection_rule", { "created", "edited", "deleted" }, {
+    supported = { "codecommit" },
     unsupported = provider_list(GITEA_FAMILY, "gitlab"),
   }),
   event("check_run", "check_run", { "created", "completed", "rerequested", "requested_action" }, {
@@ -156,10 +157,10 @@ local EVENT_DEFS = {
     }
   ),
   event("commit_comment", "commit_comment", { "created" }, {
-    supported = { "bitbucket" },
+    supported = { "bitbucket", "codecommit" },
   }),
   event("create", "create", { "" }, {
-    supported = REF_PROVIDERS,
+    supported = provider_list(REF_PROVIDERS, "codecommit"),
   }),
   event("custom_property", "custom_property", { "created", "updated", "deleted" }, {
     partial = { "gitbucket" },
@@ -168,7 +169,7 @@ local EVENT_DEFS = {
     partial = { "gitbucket" },
   }),
   event("delete", "delete", { "" }, {
-    supported = REF_PROVIDERS,
+    supported = provider_list(REF_PROVIDERS, "codecommit"),
   }),
   event(
     "dependabot_alert",
@@ -371,10 +372,16 @@ local EVENT_DEFS = {
     "auto_merge_enabled",
     "auto_merge_disabled",
   }, {
-    supported = PULL_REQUEST_PROVIDERS,
+    supported = provider_list(PULL_REQUEST_PROVIDERS, "codecommit"),
   }),
   event("pull_request_review", "pull_request.review", { "submitted", "edited", "dismissed" }, {
-    supported = provider_list(GITEA_FAMILY, "gitlab", BITBUCKET_FAMILY, CHANGE_REVIEW_PROVIDERS),
+    supported = provider_list(
+      GITEA_FAMILY,
+      "gitlab",
+      BITBUCKET_FAMILY,
+      CHANGE_REVIEW_PROVIDERS,
+      "codecommit"
+    ),
     partial = { "azuredevops", "gitbucket", "radicle", "sourcehut" },
   }),
   event(
@@ -382,7 +389,13 @@ local EVENT_DEFS = {
     "pull_request.review_comment",
     { "created", "edited", "deleted" },
     {
-      supported = provider_list(GITEA_FAMILY, "gitlab", BITBUCKET_FAMILY, CHANGE_REVIEW_PROVIDERS),
+      supported = provider_list(
+        GITEA_FAMILY,
+        "gitlab",
+        BITBUCKET_FAMILY,
+        CHANGE_REVIEW_PROVIDERS,
+        "codecommit"
+      ),
       partial = { "azuredevops", "radicle", "sourcehut" },
     }
   ),
@@ -390,8 +403,7 @@ local EVENT_DEFS = {
     partial = provider_list(GITEA_FAMILY, "gitlab", BITBUCKET_FAMILY),
   }),
   event("push", "push", { "" }, {
-    supported = provider_list(REF_PROVIDERS, "launchpad"),
-    partial = { "codecommit" },
+    supported = provider_list(REF_PROVIDERS, "launchpad", "codecommit"),
   }),
   event("registry_package", "registry_package", { "published", "updated" }, {
     unsupported = provider_list(GITEA_FAMILY, "gitlab"),

@@ -134,7 +134,7 @@ receiver implementation, and a brief note on the signature scheme used.  The
 | `bitbucket` | `POST /webhooks/bitbucket` | `https://bitbucket.org` | bitbucket | `X-Hub-Signature` HMAC-SHA256 |
 | `bitbucket_datacenter` | `POST /webhooks/bitbucket_datacenter` | _(self-hosted)_ | bitbucket_datacenter | `X-Hub-Signature` HMAC-SHA256 |
 | `codeberg` | `POST /webhooks/codeberg` | `https://codeberg.org` | gitea | `X-Gitea-Signature` HMAC-SHA256 |
-| `codecommit` | `POST /webhooks/codecommit` | `https://aws.amazon.com` | codecommit | Trust-the-network mode only; configured secret rejects until SNS verification is implemented |
+| `codecommit` | `POST /webhooks/codecommit` | `https://aws.amazon.com` | codecommit | SNS `SignatureVersion` 1/2 X.509 RSA verification; direct trigger/EventBridge payloads require trusted network delivery |
 | `confusio` | `POST /webhooks/confusio` | _(another confusio instance)_ | confusio | `X-Confusio-Signature-256` HMAC-SHA256 with timestamp |
 | `forgejo` | `POST /webhooks/forgejo` | `https://forgejo.org` | gitea | `X-Gitea-Signature` HMAC-SHA256 |
 | `gerrit` | `POST /webhooks/gerrit` | _(self-hosted)_ | gerrit | Shared secret in `Authorization` header |
@@ -169,7 +169,7 @@ delivered.  Confusio maps these to its canonical internal event family names.
 | bitbucket | `X-Event-Key` | `repo:push`, `pullrequest:created` |
 | bitbucket_datacenter | `X-Event-Key` | `repo:refs_changed`, `pr:opened` |
 | azuredevops | _(body field)_ | `git.push`, `git.pullrequest.created`, `build.complete`, `ms.vss-alerts.alert-created-event` |
-| codecommit | _(SNS `Message.detail-type`)_ | `CodeCommit Repository State Change` |
+| codecommit | _(SNS `Message.detail-type` or body field)_ | `CodeCommit Pull Request State Change` |
 | confusio | _(body field `type`)_ | `push`, `issue.opened`, `pull_request.synchronize` |
 | kallithea | _(body fields)_ | `push`, `CREATE_REPO_HOOK`, `CREATE_PULLREQUEST_HOOK` |
 | pagure | `X-Pagure-Event` | `issue`, `pull-request`, `git` |
@@ -336,7 +336,7 @@ Several distinct schemes appear across the supported inbound sources:
 | `bitbucket` | `X-Hub-Signature` | HMAC-SHA256 | `sha256=<hex>` |
 | `bitbucket_datacenter` | `X-Hub-Signature` | HMAC-SHA256 | `sha256=<hex>` |
 | `codeberg` | `X-Gitea-Signature` | HMAC-SHA256 | `<hex>` |
-| `codecommit` | _(none)_ | Trust-the-network only | configured secret rejects |
+| `codecommit` | SNS body fields | SNS X.509 RSA signature | `SignatureVersion` 1 or 2 |
 | `confusio` | `X-Confusio-Signature-256` | HMAC-SHA256 with timestamp | `sha256=<hex>, v=1, ts=<unix>` |
 | `forgejo` | `X-Gitea-Signature` | HMAC-SHA256 | `<hex>` |
 | `gerrit` | `Authorization` | Basic or Bearer | see notes |
@@ -854,17 +854,37 @@ closest GitHub webhook families:
 
 CodeCommit can deliver repository changes through SNS-style, EventBridge-style, or
 trigger-style JSON payloads.  Confusio currently supports event-family inference and
-payload translation for those body shapes, but it does **not** implement AWS SNS X.509
-signature verification yet.
+payload translation for those body shapes.  When CodeCommit is delivered through SNS,
+confusio can verify the SNS `SignatureVersion` 1 or 2 RSA signature against the
+certificate published in `SigningCertURL`.
 
 When no `webhook_secret_file_codecommit` is configured, CodeCommit ingest runs in
-trust-the-network mode.  When a CodeCommit inbound secret is configured, confusio
-rejects the request with `401` rather than pretending to verify a scheme it does not
-support.  Operators should restrict `/webhooks/codecommit` with network policy until
-full SNS certificate verification is implemented.
+trust-the-network mode for direct trigger, EventBridge, and SNS payloads.  When a
+CodeCommit inbound secret is configured, confusio requires a signed SNS HTTP payload,
+validates that `SigningCertURL` points at an SNS `amazonaws.com` certificate endpoint,
+builds the canonical SNS string-to-sign, fetches and caches the certificate, and
+verifies the decoded signature before dispatch.  Unsigned direct trigger/EventBridge
+payloads are rejected in this mode.
 
 **Configuration:** Register the confusio receiver URL as the CodeCommit/SNS/EventBridge
-HTTP endpoint and leave the CodeCommit inbound secret unset.
+HTTP endpoint.  Leave the CodeCommit inbound secret unset for network-trusted direct
+trigger/EventBridge delivery; set `webhook_secret_file_codecommit` to any non-empty
+value to require SNS signature verification.
+
+**Implemented CodeCommit event families:**
+
+| CodeCommit event family | GitHub event family |
+|-------------------------|---------------------|
+| Repository state changes | `push`, `create`, `delete` |
+| Pull request state and source-branch updates | `pull_request` |
+| Commit comments | `commit_comment` |
+| Pull request comments | `pull_request_review_comment` |
+| Pull request approval state changes | `pull_request_review` |
+| Approval rule and approval rule template lifecycle changes | `branch_protection_rule` |
+
+CodeCommit comment reaction changes, approval-rule override events, and approval rule
+template association/disassociation events have no close GitHub webhook equivalent.
+Confusio rejects those native events instead of claiming a lossy translation.
 
 ---
 
@@ -2402,13 +2422,16 @@ and regenerate this grid with:
 <!-- WEBHOOK_ACTION_SUPPORT_START -->
 | Event | Action | Azure DevOps | Bitbucket | Bitbucket DC | Codeberg | CodeCommit | Forgejo | Gerrit | GitBlit | GitBucket | Gitea | GitLab | Gogs | Harness | Kallithea | Launchpad | NotABug | OneDev | Pagure | Phabricator | Radicle | RhodeCode | SourceForge | Sourcehut | Tuleap |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Create | `create` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ |
+| Create | `create` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ |
 | Custom Property | `created` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `deleted` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `updated` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Custom Property Values | `updated` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| Commit Comments | `created` | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| Delete | `delete` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ |
+| Commit Comments | `created` | ✗ | ✓ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| Delete | `delete` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ |
+| Branch Protection Rule | `created` | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `edited` | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `deleted` | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Discussions | `answered` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `category_changed` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `closed` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
@@ -2468,24 +2491,24 @@ and regenerate this grid with:
 |  | `updated` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Page Build | `page_build` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Ping | `ping` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| Pull Requests | `opened` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✓ | ✗ |
-|  | `closed` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
-|  | `reopened` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
-|  | `edited` | ✗ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
-|  | `synchronize` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| Pull Requests | `opened` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✓ | ✗ |
+|  | `closed` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `reopened` | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `edited` | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `synchronize` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
 |  | `labeled` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `unlabeled` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `assigned` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `unassigned` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `review_requested` | ✗ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `review_request_removed` | ✗ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| PR Reviews | `submitted` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| PR Reviews | `submitted` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `edited` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-|  | `dismissed` | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| PR Review Comments | `created` | ✗ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-|  | `edited` | ✗ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `dismissed` | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| PR Review Comments | `created` | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+|  | `edited` | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `deleted` | ✗ | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| Push | `push` | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ |
+| Push | `push` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ |
 | Release | `published` | ✓ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `edited` | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 |  | `deleted` | ✓ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
@@ -3098,9 +3121,11 @@ Action support for this event is generated in the [action support matrix](#gener
 - **Tuleap** has a pull-request module with review/approval, but its webhook system
   emits generic `pullrequest:update` notifications rather than discrete review events.
   No handler is registered.
-- **CodeCommit** webhooks are delivered via Amazon EventBridge/SNS; the basic PR events
-  do not include a reviewer-approval payload — code review is surfaced through
-  CodeGuru Reviewer as a separate service.  No handler is registered.
+- **CodeCommit** emits pull request approval state changes through EventBridge/SNS.
+  `approvalState: "APPROVE"` maps to `submitted / APPROVED`; `approvalState: "REVOKE"`
+  maps to `dismissed / DISMISSED`.  `review.id`, `review.user`, and direct review URLs
+  are unavailable in the native payload, so confusio emits stable empty/stub values and
+  links back to the pull request console URL.
 - **Harness** is a CI/CD platform whose webhook system covers pipeline and build events;
   it does not emit pull-request review events.  No handler is registered.
 - **Launchpad** uses Bazaar merge proposals rather than pull requests, and its webhook
@@ -3157,6 +3182,10 @@ Action support for this event is generated in the [action support matrix](#gener
   under a review object, so the field is `null`.
 - Bitbucket Cloud does not provide GitHub-style diff hunks or commit IDs on pull-request
   comment webhooks; those fields are emitted as `null`.
+- CodeCommit emits `commentOnPullRequestCreated` and `commentOnPullRequestUpdated`
+  events.  They map to `created` and `edited` pull request review comments.  CodeCommit
+  does not emit a native delete event for pull request comments, and comment reaction
+  changes have no close GitHub webhook equivalent.
 - Most forges do not expose diff-level review comments in webhooks.  Backends not
   listed always emit `✗` for this event.
 
@@ -3224,6 +3253,10 @@ Triggered when a comment is created directly on a commit (not a PR or review).
 - Bitbucket Cloud emits `repo:commit_comment_created`.  It does not emit commit comment
   update/delete events; `comment.commit_id` is extracted from payload links when the SHA is
   not present as a first-class field.
+- CodeCommit emits `commentOnCommitCreated` and `commentOnCommitUpdated`.  Created
+  comments are listed in the generated action matrix; updated comments are delivered as a
+  best-effort `commit_comment` edit because GitHub's native commit comment webhook matrix
+  only exposes `created`.
 - `comment.updated_at`: Gogs webhook payloads do not always include an update timestamp;
   confusio falls back to `created_at` when `updated_at` is absent.
 - Backends not listed (Azure DevOps, etc.) do not emit commit comment events.
@@ -3951,17 +3984,17 @@ GitHub's security event families are mostly GitHub-specific.  Confusio maps Azur
 DevOps Advanced Security alert service hooks and GitLab Vulnerability Hook payloads into
 the closest GitHub alert families where those providers expose equivalent data.
 
-| GitHub event | Azure DevOps | GitLab |
-|---|---|---|
-| `security_advisory` | ✗ | ✗ |
-| `repository_advisory` | ✗ | ✗ |
-| `code_scanning_alert` | ✓ | ~ |
-| `secret_scanning_alert` | ✓ | ~ |
-| `secret_scanning_alert_location` | ✗ | ✗ |
-| `dependabot_alert` | ✓ | ~ |
-| `repository_vulnerability_alert` | ✗ | ✗ |
-| `branch_protection_rule` | ✗ | ✗ |
-| `branch_protection_configuration` | ✗ | ✗ |
+| GitHub event | Azure DevOps | GitLab | CodeCommit |
+|---|---|---|---|
+| `security_advisory` | ✗ | ✗ | ✗ |
+| `repository_advisory` | ✗ | ✗ | ✗ |
+| `code_scanning_alert` | ✓ | ~ | ✗ |
+| `secret_scanning_alert` | ✓ | ~ | ✗ |
+| `secret_scanning_alert_location` | ✗ | ✗ | ✗ |
+| `dependabot_alert` | ✓ | ~ | ✗ |
+| `repository_vulnerability_alert` | ✗ | ✗ | ✗ |
+| `branch_protection_rule` | ✗ | ✗ | ✓ |
+| `branch_protection_configuration` | ✗ | ✗ | ✗ |
 
 Azure DevOps uses the `ms.vss-alerts.*` service-hook family for Advanced Security.
 Confusio derives the GitHub event family from `resource.alertType`: `code` maps to
@@ -4129,6 +4162,9 @@ Triggered when a branch protection rule is created, edited, or deleted.
   `required_status_checks`, and enforcement levels for various checks.
 - `changes`: present only for `edited` action.  Each key in `changes` has a `from` field
   recording the previous value.  Keys match the corresponding fields in `rule`.
+- CodeCommit approval rule and approval rule template create/update/delete events map to
+  this family.  Native approval-rule override and template association/disassociation
+  events have no close GitHub webhook equivalent and are not emitted.
 
 #### `branch_protection_configuration`
 

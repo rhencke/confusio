@@ -1,0 +1,6 @@
+{
+  "Type": "Notification",
+  "MessageId": "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
+  "TopicArn": "arn:aws:sns:us-east-1:123456789012:codecommit",
+  "Message": "{\"version\":\"0\",\"id\":\"bbbbbbbb-cccc-dddd-eeee-ffffffffffff\",\"detail-type\":\"CodeCommit Repository State Change\",\"source\":\"aws.codecommit\",\"account\":\"123456789012\",\"time\":\"2024-01-15T12:03:00Z\",\"region\":\"us-east-1\",\"resources\":[\"arn:aws:codecommit:us-east-1:123456789012:hello-world\"],\"detail\":{\"event\":\"referenceUpdated\",\"repositoryName\":\"hello-world\",\"referenceType\":\"branch\",\"referenceName\":\"release\",\"commitId\":\"5555555555555555555555555555555555555555\",\"oldCommitId\":\"4444444444444444444444444444444444444444\",\"callerUserArn\":\"arn:aws:iam::123456789012:user/dana\"}}"
+}

@@ -1,0 +1,31 @@
+{
+  "version": "0",
+  "id": "44444444-aaaa-bbbb-cccc-555555555555",
+  "detail-type": "CodeCommit Pull Request State Change",
+  "source": "aws.codecommit",
+  "account": "123456789012",
+  "time": "2024-01-15T13:15:00Z",
+  "region": "us-east-1",
+  "resources": [
+    "arn:aws:codecommit:us-east-1:123456789012:hello-world"
+  ],
+  "detail": {
+    "author": "arn:aws:iam::123456789012:user/mallory",
+    "callerUserArn": "arn:aws:iam::123456789012:user/peggy",
+    "creationDate": "2024-01-15T13:00:00Z",
+    "description": "Add a safer webhook parser.",
+    "destinationCommit": "4444444444444444444444444444444444444444",
+    "destinationReference": "refs/heads/main",
+    "event": "pullRequestMergeStatusUpdated",
+    "isMerged": "True",
+    "lastModifiedDate": "2024-01-15T13:15:00Z",
+    "mergeOption": "FAST_FORWARD_MERGE",
+    "pullRequestId": "42",
+    "pullRequestStatus": "Closed",
+    "repositoryNames": ["hello-world"],
+    "revisionId": "pr-revision-merged",
+    "sourceCommit": "3333333333333333333333333333333333333333",
+    "sourceReference": "refs/heads/webhook-parser",
+    "title": "Add webhook parser"
+  }
+}
