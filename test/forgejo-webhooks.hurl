@@ -1,8 +1,8 @@
 # Forgejo webhook normalizer tests — run by test-unit-forgejo.
 #
 # Forgejo is API-compatible with Gitea; it inherits the same webhook handlers
-# via dofile("backends/gitea.lua").  Tests mirror gitea-webhooks.hurl but
-# POST to /webhooks/forgejo.
+# through the Gitea backend spec's __index chain.  Tests mirror gitea-webhooks.hurl
+# but POST to /webhooks/forgejo.
 # Trust-the-network mode (no webhook_secret_BACKEND CLI arg): signature headers omitted.
 # All paths return 200 when a registered handler succeeds.
 

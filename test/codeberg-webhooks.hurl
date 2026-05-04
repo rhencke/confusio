@@ -1,7 +1,7 @@
 # Codeberg webhook normalizer tests — run by test-unit-codeberg.
 #
 # Codeberg is API-compatible with Gitea (it runs Forgejo); it inherits the same
-# webhook handlers via dofile("backends/gitea.lua").  Tests mirror
+# webhook handlers through the Gitea backend spec's __index chain.  Tests mirror
 # gitea-webhooks.hurl but POST to /webhooks/codeberg.
 # Trust-the-network mode (no webhook_secret_BACKEND CLI arg): signature headers omitted.
 # All paths return 200 when a registered handler succeeds.

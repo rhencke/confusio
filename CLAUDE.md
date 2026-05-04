@@ -180,17 +180,23 @@ will catch any mismatch.
      },
    },
    ```
-2. Create `backends/<alias>.lua` — a short file that sets the default base URL and
-   dofiles the root backend:
+2. Create `backends/<alias>.lua` — a short file that sets the default base URL before
+   requiring the root backend, then returns an alias spec that inherits the root spec:
    ```lua
    -- MyAlias is API-compatible with Gitea v1.  Family metadata in provider_families.
    if config.base_url == "" then
      config.base_url = provider_families.gitea.aliases[config.backend].default_url
    end
-   dofile("/zip/backends/gitea.lua")
+
+   local gitea = require("backends.gitea")
+   local handlers = setmetatable({
+     -- only alias-specific differences from Gitea go here
+   }, { __index = gitea })
+
+   return handlers
    ```
-   The root backend (gitea.lua) reads strip patterns from `provider_families` automatically
-   at build time — no separate strip wiring needed in the alias file.
+   The loader applies strip patterns from `provider_families` when it registers the returned
+   spec — no separate strip wiring needed in the alias file.
 3. Add `<alias>` to the `BACKENDS` list in the Makefile.
    No `test/mock-<alias>.lua` file is needed — `.make-families.mk` is auto-generated
    from `provider_families` and builds `mock-<alias>.com` from the root family's mock.
@@ -255,7 +261,7 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
 
 **Adding a standalone backend**: create `backends/<name>.lua`, add `<name>` to `BACKENDS` in the Makefile, create hurl test files, add a `site/compatibility.csv` column.
 
-**Adding a family-alias backend**: update `provider_families` in `internal/families.lua` (the single declaration), create a `backends/<alias>.lua` that sets `config.base_url` from `provider_families` and dofiles the root backend, add to `BACKENDS` — no mock file needed.
+**Adding a family-alias backend**: update `provider_families` in `internal/families.lua` (the single declaration), create a `backends/<alias>.lua` that sets `config.base_url` from `provider_families` and returns a spec inheriting the root backend via `setmetatable(..., { __index = root })`, add to `BACKENDS` — no mock file needed.
 
 **Guardrails — what CI will catch if you get it wrong:**
 
@@ -267,7 +273,7 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
 | New standalone backend | Backend file does NOT assign `app.backend.rest` or `graphql_resolvers` directly | `make validate-builders` |
 | New standalone backend | Mock + hurl tests cover at least every catalog group | `make validate-tests` |
 | New family-alias backend | Alias declared in `provider_families` in `internal/families.lua` | `make validate-providers` |
-| New family-alias backend | `backends/<alias>.lua` dofiles the root backend | `make validate-providers` |
+| New family-alias backend | `backends/<alias>.lua` inherits the root backend with `require("backends.<root>")` and `__index` | `make validate-providers` |
 | New family-alias backend | Alias listed in `BACKENDS` in the Makefile | `make validate-providers` |
 | New capability module | Module registered via `b:capability()` with at least one function | `make validate-capabilities` |
 
@@ -342,10 +348,10 @@ db:close()
   backends belong to the same API family. It drives backend loading, mock building, and
   the `validate-providers` check. Never encode family membership only in filesystem layout
   or Makefile variables — both are derived from this table.
-- **Alias backends set `config.base_url` from `provider_families` and dofile the root backend directly.**
-  The root backend reads the alias's strip patterns from `provider_families` in the final
-  `b:build(strip)` call, so feature gaps are applied declaratively rather than by post-hoc
-  `app.backend.rest` mutation.
+- **Alias backends set `config.base_url` from `provider_families` before requiring the root backend,
+  then inherit the root's returned spec via `__index`.** The loader applies the alias's strip
+  patterns from `provider_families` when registering the returned spec, so feature gaps are
+  declarative rather than post-hoc `app.backend.rest` mutation.
 - **`strip` patterns are Lua patterns, not exact names.** `"_package"` matches any key
   containing `_package` (e.g. `list_packages`, `get_package`). Keep patterns tight enough
   not to accidentally strip unrelated keys.
@@ -357,8 +363,8 @@ db:close()
 - **`make dump-families`** exports `provider_families` as JSON. Useful for debugging and
   piped into `make validate-providers`.
 - **`make validate-providers`** is wired into `make test`. It checks: root backend and mock
-  exist; each alias backend dofiles the root backend; no stale `test/mock-<alias>.lua`
-  files; every alias is in `BACKENDS`.
+  exist; each alias backend inherits the root backend through an explicit `__index` chain;
+  no stale `test/mock-<alias>.lua` files; every alias is in `BACKENDS`.
 
 ### Routing
 
@@ -387,7 +393,7 @@ db:close()
 - **`app.allow_anonymous` is a boolean field on the app context** defaulting to `true`. `OnHttpRequest()` checks it on every request: if `false` and no `Authorization` header is present, confusio returns `401 { message = "This instance requires authentication." }` immediately, before routing.
 - **Only Gitea probes its backend at startup.** The Gitea backend calls `GET /api/v1/settings/api` and sets `app.allow_anonymous = (settings.require_signin_view ~= true)`. If the probe fails (network error or non-200), the default `true` is preserved and anonymous requests are allowed.
 - **All other backends leave the default `true`.** They neither probe nor set `app.allow_anonymous`, so anonymous access is always permitted regardless of the upstream's actual configuration.
-- **Gitea-family backends (forgejo, gogs, codeberg, notabug) inherit Gitea's probe** because their alias backend files dofile `backends/gitea.lua`, which includes the probe block.
+- **Gitea-family backends (forgejo, gogs, codeberg, notabug) inherit Gitea's probe** because their alias backend files set the alias default URL and then require `backends.gitea`, which includes the probe block.
 - **Test pattern**: `*-anon.hurl` files verify that unauthenticated requests succeed when the mock advertises anonymous access. The mock's `/api/v1/settings/api` route returns `{"require_signin_view": false}` to simulate an open instance. Closed-instance (401) behavior is covered by unit tests that set `app.allow_anonymous = false` directly.
 
 ### Mock server design
@@ -581,9 +587,9 @@ OnHttpRequest = make_dispatcher(app)  -- install Redbean entry point
 - **`dump-claims.lua` stubs `Fetch` to a noop** before loading each backend so that
   load-time network probes (e.g. Gitea's anonymous-access check) fail inside their `pcall`
   wrappers without making real network calls. This is necessary for `redbean.com -i` mode.
-- **Alias backends dofile the root backend directly** (`dofile("/zip/backends/<root>.lua")`).
-  The `dump-claims.lua` dofile stub must redirect `/zip/backends/` → `backends/` (not block
-  it) so alias backends load their root correctly.
+- **Alias backends inherit the root backend via `require("backends.<root>")`.**
+  `dump-claims.lua` loads each backend file and registers any returned spec so inherited
+  handlers and alias strip patterns are reflected in the dumped support claims.
 
 ### Code coverage (luacov)
 
