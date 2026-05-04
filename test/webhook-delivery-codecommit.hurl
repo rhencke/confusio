@@ -270,3 +270,129 @@ jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].body_json.ref" == "sns-feature"
 jsonpath "$[0].body_json.ref_type" == "branch"
 jsonpath "$[0].body_json.sender.login" == "kate"
+
+# -- EventBridge pullRequestCreated -> pull_request opened -------------------
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/pull_request-opened.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.action" == "opened"
+jsonpath "$[0].body_json.number" == 42
+jsonpath "$[0].body_json.pull_request.number" == 42
+jsonpath "$[0].body_json.pull_request.state" == "open"
+jsonpath "$[0].body_json.pull_request.title" == "Add webhook parser"
+jsonpath "$[0].body_json.pull_request.head.ref" == "webhook-parser"
+jsonpath "$[0].body_json.pull_request.head.sha" == "2222222222222222222222222222222222222222"
+jsonpath "$[0].body_json.pull_request.base.ref" == "main"
+jsonpath "$[0].body_json.repository.full_name" == "hello-world"
+jsonpath "$[0].body_json.sender.login" == "mallory"
+
+# -- EventBridge pullRequestSourceBranchUpdated -> synchronize ---------------
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/pull_request-synchronize.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.action" == "synchronize"
+jsonpath "$[0].body_json.number" == 42
+jsonpath "$[0].body_json.pull_request.head.sha" == "3333333333333333333333333333333333333333"
+jsonpath "$[0].body_json.sender.login" == "nancy"
+
+# -- EventBridge pullRequestStatusChanged -> closed --------------------------
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/pull_request-closed.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.action" == "closed"
+jsonpath "$[0].body_json.pull_request.state" == "closed"
+jsonpath "$[0].body_json.pull_request.merged" == false
+jsonpath "$[0].body_json.sender.login" == "oscar"
+
+# -- EventBridge pullRequestMergeStatusUpdated -> closed merged --------------
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/pull_request-merged.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.action" == "closed"
+jsonpath "$[0].body_json.pull_request.state" == "closed"
+jsonpath "$[0].body_json.pull_request.merged" == true
+jsonpath "$[0].body_json.pull_request.merge_commit_sha" == "4444444444444444444444444444444444444444"
+jsonpath "$[0].body_json.sender.login" == "peggy"
+
+# -- SNS Notification envelope containing pull request update ----------------
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/pull_request-sns.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.action" == "synchronize"
+jsonpath "$[0].body_json.pull_request.head.sha" == "5555555555555555555555555555555555555555"
+jsonpath "$[0].body_json.sender.login" == "quinn"

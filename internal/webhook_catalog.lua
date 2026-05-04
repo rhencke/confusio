@@ -372,6 +372,7 @@ local EVENT_DEFS = {
     "auto_merge_disabled",
   }, {
     supported = PULL_REQUEST_PROVIDERS,
+    partial = { "codecommit" },
   }),
   event("pull_request_review", "pull_request.review", { "submitted", "edited", "dismissed" }, {
     supported = provider_list(GITEA_FAMILY, "gitlab", BITBUCKET_FAMILY, CHANGE_REVIEW_PROVIDERS),

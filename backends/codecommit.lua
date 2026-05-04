@@ -119,6 +119,14 @@ local function codecommit_ref_name(ref)
   return tostring(ref or ""):match("^refs/[^/]+/(.+)$") or tostring(ref or "")
 end
 
+local function codecommit_bool(value)
+  if type(value) == "boolean" then
+    return value
+  end
+  value = tostring(value or ""):lower()
+  return value == "true" or value == "yes" or value == "1"
+end
+
 local function codecommit_reference_action(raw_action, before, after)
   if raw_action == "referenceCreated" or before == ZERO_SHA then
     return "create"
@@ -135,6 +143,31 @@ local function codecommit_supported_reference_event(raw_action)
     or raw_action == "referenceDeleted"
 end
 
+local CODECOMMIT_PR_ACTIONS = {
+  pullRequestCreated = "opened",
+  pullRequestSourceBranchUpdated = "synchronize",
+}
+
+local function codecommit_pull_request_action(detail)
+  local raw_action = detail.event or ""
+  if raw_action == "pullRequestStatusChanged" then
+    if detail.pullRequestStatus == "Closed" then
+      return "closed"
+    elseif detail.pullRequestStatus == "Open" then
+      return "reopened"
+    end
+  elseif raw_action == "pullRequestMergeStatusUpdated" then
+    return codecommit_bool(detail.isMerged) and "closed" or "edited"
+  end
+  return CODECOMMIT_PR_ACTIONS[raw_action] or "unknown"
+end
+
+local function codecommit_supported_pull_request_event(raw_action)
+  return CODECOMMIT_PR_ACTIONS[raw_action] ~= nil
+    or raw_action == "pullRequestStatusChanged"
+    or raw_action == "pullRequestMergeStatusUpdated"
+end
+
 local function codecommit_normalized_payload_without_envelope_fields(data)
   local payload = {}
   for k, v in pairs(data or {}) do
@@ -143,6 +176,73 @@ local function codecommit_normalized_payload_without_envelope_fields(data)
     end
   end
   return payload
+end
+
+local function codecommit_pr_ref(ref, commit, repository)
+  local short = codecommit_ref_name(ref)
+  return {
+    label = short,
+    ref = short,
+    sha = commit or "",
+    repo = repository,
+  }
+end
+
+local function codecommit_pr_from_detail(payload, detail, repository, sender)
+  local merged = codecommit_bool(detail.isMerged)
+  local closed = detail.pullRequestStatus == "Closed"
+  return {
+    id = tonumber(detail.pullRequestId) or 0,
+    node_id = detail.revisionId or "",
+    number = tonumber(detail.pullRequestId) or 0,
+    state = closed and "closed" or "open",
+    title = detail.title or "",
+    body = detail.description,
+    user = codecommit_user_from_arn(detail.author) or sender,
+    head = codecommit_pr_ref(detail.sourceReference, detail.sourceCommit, repository),
+    base = codecommit_pr_ref(detail.destinationReference, detail.destinationCommit, repository),
+    created_at = detail.creationDate,
+    updated_at = detail.lastModifiedDate or payload.time,
+    closed_at = closed and (detail.lastModifiedDate or payload.time) or nil,
+    merged_at = merged and (detail.lastModifiedDate or payload.time) or nil,
+    merge_commit_sha = merged and detail.destinationCommit or nil,
+    merged = merged,
+    mergeable = detail.mergeOption ~= nil and not merged or nil,
+    mergeable_state = detail.mergeOption or "unknown",
+    html_url = payload.region ~= ""
+        and repository.name ~= ""
+        and detail.pullRequestId
+        and ("https://" .. payload.region .. ".console.aws.amazon.com/codesuite/codecommit/repositories/" .. repository.name .. "/pull-requests/" .. detail.pullRequestId .. "?region=" .. payload.region)
+      or "",
+    url = "",
+  }
+end
+
+local function codecommit_pull_request_from_eventbridge(payload)
+  local detail = payload.detail or {}
+  if not codecommit_supported_pull_request_event(detail.event) then
+    return nil, "Unsupported CodeCommit pull request event"
+  end
+  local action = codecommit_pull_request_action(detail)
+  local repo_names = detail.repositoryNames or {}
+  local repo_name = repo_names[1] or detail.repositoryName or ""
+  local repository = codecommit_repository(repo_name, payload.account or "", payload.region or "")
+  local sender = codecommit_user_from_arn(detail.callerUserArn or detail.author)
+  return make_internal_event({
+    event = "pull_request",
+    action = action,
+    raw_action = action == "unknown" and detail.event or nil,
+    provider = "codecommit",
+    raw = payload,
+    data = {
+      action = action,
+      number = tonumber(detail.pullRequestId) or 0,
+      pull_request = codecommit_pr_from_detail(payload, detail, repository, sender),
+      repository = repository,
+      sender = sender,
+    },
+    timestamp = payload.time or detail.lastModifiedDate or "",
+  })
 end
 
 local function translate_codecommit_normalized_webhook(internal_event, fields)
@@ -335,6 +435,9 @@ local function codecommit_webhook(payload)
   if type(payload.Records) == "table" and type(payload.Records[1]) == "table" then
     return codecommit_push_from_record(payload, payload.Records[1])
   end
+  if payload["detail-type"] == "CodeCommit Pull Request State Change" then
+    return codecommit_pull_request_from_eventbridge(payload)
+  end
   if
     payload.source == "aws.codecommit"
     or payload["detail-type"] == "CodeCommit Repository State Change"
@@ -479,9 +582,11 @@ end)
 b:webhook("codecommit", codecommit_webhook)
 b:webhook_translator("create", translate_codecommit_normalized_webhook)
 b:webhook_translator("delete", translate_codecommit_normalized_webhook)
+b:webhook_translator("pull_request", translate_codecommit_normalized_webhook)
 b:webhook_translator("push", translate_codecommit_normalized_webhook)
 b:webhook_github_translator("create", translate_codecommit_github_webhook)
 b:webhook_github_translator("delete", translate_codecommit_github_webhook)
+b:webhook_github_translator("pull_request", translate_codecommit_github_webhook)
 b:webhook_github_translator("push", translate_codecommit_github_webhook)
 
 b:build()

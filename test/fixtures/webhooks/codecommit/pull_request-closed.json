@@ -1,0 +1,30 @@
+{
+  "version": "0",
+  "id": "33333333-aaaa-bbbb-cccc-444444444444",
+  "detail-type": "CodeCommit Pull Request State Change",
+  "source": "aws.codecommit",
+  "account": "123456789012",
+  "time": "2024-01-15T13:10:00Z",
+  "region": "us-east-1",
+  "resources": [
+    "arn:aws:codecommit:us-east-1:123456789012:hello-world"
+  ],
+  "detail": {
+    "author": "arn:aws:iam::123456789012:user/mallory",
+    "callerUserArn": "arn:aws:iam::123456789012:user/oscar",
+    "creationDate": "2024-01-15T13:00:00Z",
+    "description": "Add a safer webhook parser.",
+    "destinationCommit": "1111111111111111111111111111111111111111",
+    "destinationReference": "refs/heads/main",
+    "event": "pullRequestStatusChanged",
+    "isMerged": "False",
+    "lastModifiedDate": "2024-01-15T13:10:00Z",
+    "pullRequestId": "42",
+    "pullRequestStatus": "Closed",
+    "repositoryNames": ["hello-world"],
+    "revisionId": "pr-revision-closed",
+    "sourceCommit": "3333333333333333333333333333333333333333",
+    "sourceReference": "refs/heads/webhook-parser",
+    "title": "Add webhook parser"
+  }
+}
