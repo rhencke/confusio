@@ -1,4 +1,4 @@
-# Webhooks: GitHub-Emulation Contract
+# Webhooks: Translation Contract
 
 ## Overview
 
@@ -6,15 +6,15 @@ Confusio's webhook surface extends the API translation layer to the **event side
 Where the REST and GraphQL layers let clients *query* any forge as if it were GitHub,
 the webhook layer lets forge events *arrive* at consumers as if they came from GitHub.
 
-Two output shapes are available; targets opt in per registration:
+Two output shapes are available; targets choose one at startup:
 
 | Shape | Description |
 |-------|-------------|
 | **GitHub emulation** | Payloads byte-compatible with GitHub's webhook format. Consumers already wired to GitHub (CI runners, bots, kennel) work without modification. |
 | **Confusio normalized** | Forge-agnostic event stream using confusio's own namespace and envelope. Suitable for consumers that want a stable cross-forge contract without GitHub's legacy quirks. |
 
-Both shapes are first-class.  Every event family is available in both.  Configuration
-selects per-target which shape to emit.
+Both shapes are first-class.  Every event family claimed in the support catalog can be
+emitted in both shapes.  Configuration selects per-target which shape to emit.
 
 ### Goals
 
@@ -23,8 +23,9 @@ selects per-target which shape to emit.
 - **Stable cross-forge contract** — The confusio normalized shape provides a
   forge-agnostic event stream that remains stable as backends evolve and add or
   rename fields.
-- **Universal backend coverage** — All 24 backends supported by confusio's REST/GraphQL
-  layer are also supported as webhook sources.
+- **Provider-bound ingest** — A running confusio process receives webhooks from exactly
+  one configured upstream provider.  Multi-provider deployments run one confusio process
+  per provider.
 - **Signature verification before processing** — Every inbound event is authenticated
   using the originating forge's native scheme before entering the pipeline.  Unverified
   requests are rejected before any payload parsing occurs.
@@ -32,13 +33,16 @@ selects per-target which shape to emit.
   consumers, each with independent shape selection and event-type filtering.
 - **Fire-and-record delivery** — Matching targets are POSTed synchronously during the
   inbound request.  Every attempted delivery is logged, but no
-  retry, outbox, replay, or delivery-inspection layer is currently implemented.
+  retry, outbox, replay, or delivery-inspection layer is implemented.
 
 ### Non-Goals
 
 - **Webhook registration** — Confusio does not create or delete webhooks on forges.
   Forge administrators register the confusio receiver URL manually in forge settings.
   There is no API for managing forge-side webhook subscriptions.
+- **Runtime target registration** — Targets are fixed at startup.  There is no admin UI,
+  config file, environment-variable target registry, or HTTP API for adding, removing,
+  inspecting, or replaying deliveries.
 - **Exactly-once delivery** — Consumers should still treat webhook delivery as
   potentially duplicate, especially when the originating forge retries an inbound
   request.
@@ -58,10 +62,10 @@ Forge                          Confusio                          Consumer(s)
 Gitea   ──▶ /webhooks/gitea  ─┐
 Forgejo ──▶ /webhooks/forgejo ─┤  verify  normalize  choose       ┌─▶ target A  (GitHub shape)
 GitLab  ──▶ /webhooks/gitlab  ─┼──▶ sig ──▶ event ──▶ shape ─────├─▶ target B  (confusio shape)
-GitHub  ──▶ /webhooks/github  ─┤                  fan-out         └─▶ target C  (filtered subset)
+Confusio ─▶ /webhooks/confusio ┤                  fan-out         └─▶ target C  (filtered subset)
 ...     ──▶ ...               ─┘                  (sync)
 
-Operator ──▶ SCRIPTARGS webhook_target=... ──▶ static target registry
+Operator ──▶ startup CLI / SCRIPTARGS ──▶ static target registry
 ```
 
 ### Processing stages
@@ -108,8 +112,10 @@ handling of missing or renamed fields across providers.
 
 ## Receiver Endpoints
 
-Each supported backend has a dedicated ingest endpoint.  Forge administrators register
-the corresponding URL as a webhook target in their forge's settings.
+Each supported inbound source has a dedicated ingest endpoint.  Forge administrators
+register the corresponding URL as a webhook target in their forge's settings.  A
+configured confusio process accepts only the endpoint for its configured provider;
+requests for other known providers are treated as `404 Not Found`.
 
 ```
 POST /webhooks/{backend}
@@ -128,7 +134,8 @@ receiver implementation, and a brief note on the signature scheme used.  The
 | `bitbucket` | `POST /webhooks/bitbucket` | `https://bitbucket.org` | bitbucket | `X-Hub-Signature` HMAC-SHA256 |
 | `bitbucket_datacenter` | `POST /webhooks/bitbucket_datacenter` | _(self-hosted)_ | bitbucket_datacenter | `X-Hub-Signature` HMAC-SHA256 |
 | `codeberg` | `POST /webhooks/codeberg` | `https://codeberg.org` | gitea | `X-Gitea-Signature` HMAC-SHA256 |
-| `codecommit` | `POST /webhooks/codecommit` | `https://aws.amazon.com` | codecommit | AWS SNS subscription confirmation + message signature |
+| `codecommit` | `POST /webhooks/codecommit` | `https://aws.amazon.com` | codecommit | Trust-the-network mode only; configured secret rejects until SNS verification is implemented |
+| `confusio` | `POST /webhooks/confusio` | _(another confusio instance)_ | confusio | `X-Confusio-Signature-256` HMAC-SHA256 with timestamp |
 | `forgejo` | `POST /webhooks/forgejo` | `https://forgejo.org` | gitea | `X-Gitea-Signature` HMAC-SHA256 |
 | `gerrit` | `POST /webhooks/gerrit` | _(self-hosted)_ | gerrit | Shared secret in `Authorization` header |
 | `gitblit` | `POST /webhooks/gitblit` | _(self-hosted)_ | gitblit | Shared token in `X-Gitblit-Token` header |
@@ -159,11 +166,11 @@ delivered.  Confusio maps these to its canonical internal event family names.
 | gitea (gitea, forgejo, codeberg) | `X-Gitea-Event` | `issues`, `push`, `pull_request` |
 | gogs (gogs, notabug) | `X-Gogs-Event` | `issues`, `push`, `pull_request` |
 | gitlab | `X-Gitlab-Event` | `Issue Hook`, `Push Hook`, `Merge Request Hook` |
-| github | `X-GitHub-Event` | `issues`, `push`, `pull_request` |
 | bitbucket | `X-Event-Key` | `repo:push`, `pullrequest:created` |
 | bitbucket_datacenter | `X-Event-Key` | `repo:refs_changed`, `pr:opened` |
 | azuredevops | _(body field)_ | `git.push`, `git.pullrequest.created`, `build.complete`, `ms.vss-alerts.alert-created-event` |
 | codecommit | _(SNS `Message.detail-type`)_ | `CodeCommit Repository State Change` |
+| confusio | _(body field `type`)_ | `push`, `issue.opened`, `pull_request.synchronize` |
 | kallithea | _(body fields)_ | `push`, `CREATE_REPO_HOOK`, `CREATE_PULLREQUEST_HOOK` |
 | pagure | `X-Pagure-Event` | `issue`, `pull-request`, `git` |
 | launchpad | `X-Launchpad-Event-Type` | `git:push:0.1`, `merge-proposal:0.1`, `bug:0.1` |
@@ -178,8 +185,8 @@ Confusio reads the following from every inbound webhook request:
 | Element | How it is used |
 |---------|---------------|
 | Path segment `{backend}` | Selects the signature verification scheme |
-| `Content-Type` header | Must be `application/json`; `application/x-www-form-urlencoded` is rejected |
-| Backend event-type header | Backend-specific (e.g. `X-Gitea-Event`, `X-Gitlab-Event`, `X-GitHub-Event`) — identifies the event family |
+| `Content-Type` header | Must include `application/json`, except Tuleap may send `application/x-www-form-urlencoded` with a JSON `payload` field |
+| Backend event-type header or body field | Backend-specific (e.g. `X-Gitea-Event`, `X-Gitlab-Event`, `payload.type`) — identifies the event family |
 | Signature header(s) | Backend-specific — used for payload verification before any processing |
 | Request body | Raw JSON payload from the forge |
 
@@ -191,7 +198,8 @@ Confusio reads the following from every inbound webhook request:
 | `400 Bad Request` | Malformed payload or unsupported `Content-Type` |
 | `401 Unauthorized` | Signature verification failed |
 | `404 Not Found` | Unknown backend name in path |
-| `422 Unprocessable Entity` | Valid JSON but unrecognised event type (still logged for debugging) |
+| `404 Not Found` | Known backend path that does not match the provider configured for this process |
+| `422 Unprocessable Entity` | Valid JSON but unrecognised event type, unsupported action, or backend/body mismatch |
 
 ### Family aliases
 
@@ -204,6 +212,87 @@ secrets per variant.
 | `gitea` | `forgejo`, `codeberg`, `gogs`, `notabug` |
 
 All other backends have independent receiver implementations.
+
+## Startup Configuration
+
+Webhook configuration is immutable after startup.  To change provider, upstream, target
+URL, target shape, event filter, or secrets, change the launch command and restart the
+process.  There is no config file, environment-variable configuration, admin API,
+runtime target registry, delivery inspection endpoint, retry queue, outbox, or replay
+path.
+
+### Provider and upstream
+
+The preferred startup flags bind one confusio process to exactly one upstream provider:
+
+```sh
+sh ./confusio.com -p 8080 -- \
+  --provider=gitea \
+  --upstream=https://gitea.example
+```
+
+`--provider` names the inbound source and loads the matching backend implementation.
+`--upstream` sets that provider's API base URL.  When `--provider` is used,
+`--upstream` is required.  The older positional form remains supported:
+
+```sh
+sh ./confusio.com -p 8080 -- gitea https://gitea.example
+```
+
+Do not combine `--provider` with positional backend arguments, or `--upstream` with a
+positional upstream URL.  Confusio fails startup on conflicting provider/upstream
+configuration.
+
+### Repeated webhook targets
+
+Use one `--webhook-target` flag per outbound target:
+
+```sh
+sh ./confusio.com -p 8080 -- \
+  --provider=gitea \
+  --upstream=https://gitea.example \
+  --webhook-target=name=fido,url=https://fido.example/webhooks,shape=github,events=issues+pull_request,secret_file=/run/secrets/fido-hook \
+  --webhook-target=name=audit,url=https://audit.example/events,shape=confusio,events=*
+```
+
+Each target spec is comma-separated:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | yes | Unique logical target name used in delivery log lines |
+| `url` | yes | Absolute `http` or `https` URL to POST deliveries to |
+| `shape` | no | `github` (default) or `confusio` |
+| `events` | no | `*` or `+`/`,` separated event-family names such as `issues+push` |
+| `secret` | no | Inline outbound signing secret; useful for tests only |
+| `secret_file` | no | Path to a `0600` file containing the outbound signing secret |
+
+Target names must be unique across all repeated target flags and the legacy single
+target, if one is also configured.
+
+### Legacy SCRIPTARGS compatibility
+
+The original single-target key/value SCRIPTARGS remain supported for compatibility:
+
+| Mechanism | Syntax |
+|-----------|--------|
+| Inbound secret file | `webhook_secret_file_BACKEND=/path` |
+| Outbound target URL | `webhook_target=https://consumer.example/webhooks` |
+| Target name | `webhook_target_name=NAME` |
+| Target events | `webhook_target_events=push,pull_request` |
+| Target shape | `webhook_target_shape=github` or `webhook_target_shape=confusio` |
+| Target secret file | `webhook_target_secret_file=/path` |
+
+Secret files must be owned by the running user and have permissions exactly `0600`.
+Confusio trims trailing whitespace after reading the file.  If a required secret file
+is missing or has broader permissions, startup fails.
+
+### Event filtering
+
+Target filters operate on canonical event-family names, not dotted normalized body
+types.  For example, use `events=issues+pull_request` to receive all issue and pull
+request actions, and inspect the GitHub `action` field or normalized `type` body field
+inside the target if action-level routing is needed.  `events=*` matches every
+accepted event family.
 
 ---
 
@@ -227,7 +316,7 @@ Unauthorized` and no further processing takes place.
 
 ### Scheme types
 
-Four distinct schemes appear across the 24 backends:
+Several distinct schemes appear across the supported inbound sources:
 
 | Scheme | Description | Backends |
 |--------|-------------|----------|
@@ -236,7 +325,8 @@ Four distinct schemes appear across the 24 backends:
 | **HMAC-SHA1** | Signature = `HMAC-SHA1(secret, body)`, hex-encoded | gitbucket (GitHub legacy compat), launchpad, sourceforge |
 | **Shared token** | Secret echoed verbatim in a header or body field; constant-time string compare | gitlab, gitblit, harness, onedev, radicle, rhodecode, tuleap, kallithea |
 | **Bearer / Basic** | Secret in Authorization header (Bearer or Basic form) | azuredevops (Basic), gerrit (Basic or Bearer) |
-| **Asymmetric / platform** | ed25519 or platform-managed certificate signing | sourcehut, codecommit |
+| **Asymmetric / platform** | ed25519 or platform-managed certificate signing | sourcehut |
+| **Confusio HMAC** | Versioned HMAC basestring with timestamp replay window | confusio |
 
 ### Quick reference
 
@@ -246,7 +336,8 @@ Four distinct schemes appear across the 24 backends:
 | `bitbucket` | `X-Hub-Signature` | HMAC-SHA256 | `sha256=<hex>` |
 | `bitbucket_datacenter` | `X-Hub-Signature` | HMAC-SHA256 | `sha256=<hex>` |
 | `codeberg` | `X-Gitea-Signature` | HMAC-SHA256 | `<hex>` |
-| `codecommit` | _(SNS body fields)_ | AWS SNS X.509 | `Signature` in body |
+| `codecommit` | _(none)_ | Trust-the-network only | configured secret rejects |
+| `confusio` | `X-Confusio-Signature-256` | HMAC-SHA256 with timestamp | `sha256=<hex>, v=1, ts=<unix>` |
 | `forgejo` | `X-Gitea-Signature` | HMAC-SHA256 | `<hex>` |
 | `gerrit` | `Authorization` | Basic or Bearer | see notes |
 | `gitblit` | `X-Gitblit-Token` | Shared token | verbatim |
@@ -381,30 +472,6 @@ Confusio should warn operators that GitLab's scheme provides authentication but 
 replay protection.
 
 **Configuration:** Set in GitLab webhook settings as "Secret token".
-
----
-
-### GitHub
-
-GitHub sends two signature headers: the primary SHA-256 variant and a legacy SHA-1
-variant.  Confusio verifies the SHA-256 variant.
-
-```
-Header:    X-Hub-Signature-256
-Format:    sha256=<lowercase hex>
-Algorithm: HMAC-SHA256(secret, raw_body)
-```
-
-```
-expected = "sha256=" ++ HMAC-SHA256(secret, body) as lowercase hex
-received = value of X-Hub-Signature-256
-
-accept if constant_time_equal(expected, received)
-```
-
-The legacy `X-Hub-Signature` (SHA-1) header is also present; confusio ignores it.
-
-**Configuration:** Set in GitHub webhook settings as "Secret".
 
 ---
 
@@ -785,34 +852,41 @@ closest GitHub webhook families:
 
 ### AWS CodeCommit (codecommit)
 
-CodeCommit delivers events through Amazon SNS.  Confusio receives SNS HTTP/HTTPS
-notifications and must validate SNS message signatures before processing.
+CodeCommit can deliver repository changes through SNS-style, EventBridge-style, or
+trigger-style JSON payloads.  Confusio currently supports event-family inference and
+payload translation for those body shapes, but it does **not** implement AWS SNS X.509
+signature verification yet.
 
-**Validation steps:**
+When no `webhook_secret_file_codecommit` is configured, CodeCommit ingest runs in
+trust-the-network mode.  When a CodeCommit inbound secret is configured, confusio
+rejects the request with `401` rather than pretending to verify a scheme it does not
+support.  Operators should restrict `/webhooks/codecommit` with network policy until
+full SNS certificate verification is implemented.
 
-1. **Confirm subscription**: On first delivery, SNS sends a `SubscriptionConfirmation`
-   message.  Confusio must fetch the `SubscribeURL` (HTTPS only) to confirm the
-   subscription.  The URL is validated against the `sns.amazonaws.com` domain before
-   fetching.
+**Configuration:** Register the confusio receiver URL as the CodeCommit/SNS/EventBridge
+HTTP endpoint and leave the CodeCommit inbound secret unset.
 
-2. **Verify message signature**: For `Notification` messages, confusio constructs the
-   canonical signing string from SNS fields (`Message`, `MessageId`, `Subject`,
-   `Timestamp`, `TopicArn`, `Type`) and verifies the `Signature` field using the
-   X.509 certificate at `SigningCertURL`.
+---
 
-3. **Certificate URL validation**: `SigningCertURL` must be a well-formed HTTPS URL on
-   an `amazonaws.com` subdomain.  Confusio must not fetch certificates from arbitrary
-   URLs.
+### Confusio-to-confusio
 
-4. **Certificate caching**: SNS certificates rotate infrequently.  Confusio caches
-   fetched certificates keyed by URL to avoid repeated fetches.
+A confusio instance can receive another confusio instance's normalized envelope at
+`POST /webhooks/confusio`.  The event family is derived from the body `type` field, and
+`X-Confusio-Event` is validated against that family when present.
 
-**No shared secret is required** for CodeCommit/SNS — authenticity is established by
-the AWS-issued certificate chain.  Operators must ensure the SNS topic's access policy
-only allows CodeCommit to publish.
+```
+Header:    X-Confusio-Signature-256
+Format:    sha256=<lowercase hex>, v=1, ts=<unix>
+Algorithm: HMAC-SHA256(secret, "v1:<ts>:<raw_body>")
+```
 
-**Configuration:** Register the confusio receiver URL as an SNS HTTPS endpoint
-subscription on the CodeCommit-linked SNS topic.
+The timestamp must be within the receiver's replay window.  A stale timestamp rejects
+the request even when the HMAC is otherwise correct.
+
+**Configuration:** Configure the receiving instance with
+`webhook_secret_file_confusio=/path` when signed cross-confusio delivery is required.
+With no secret configured, the endpoint uses the same trust-the-network mode as other
+webhook sources.
 
 ---
 
@@ -888,20 +962,20 @@ Confusio sends the following HTTP headers with every GitHub-emulation delivery:
 |--------|-------|-------|
 | `X-GitHub-Event` | GitHub event name (e.g. `push`, `issues`) | Always present |
 | `X-GitHub-Delivery` | UUID v4, unique per delivery attempt | Always present |
-| `X-Hub-Signature-256` | `sha256=<lowercase hex>` | HMAC-SHA256 of body using target's secret; omitted if no secret configured |
-| `X-Hub-Signature` | `sha1=<lowercase hex>` | HMAC-SHA1 of body (legacy compat); omitted if no secret configured |
+| Provider-native signature header(s) | Backend-specific | Present when the outbound target has a secret; produced by the source provider's signing helper |
 | `Content-Type` | `application/json` | Always `application/json` |
-| `User-Agent` | `Confusio-Hookshot/<version>` | Identifies confusio; differs from GitHub's `GitHub-Hookshot/<hash>` |
+| `User-Agent` | `confusio/1.0` | Identifies confusio; differs from GitHub's `GitHub-Hookshot/<hash>` |
 
-**Signature computation:** Both HMAC signatures are computed over the raw delivery
-body bytes using the consumer target's configured secret (not the inbound forge
-secret).  Consumers verify using `X-Hub-Signature-256` and may fall back to
-`X-Hub-Signature` for compatibility with older GitHub webhook clients.
+**Signature computation:** Outbound signing uses the source provider's native scheme
+and the consumer target's configured secret (not the inbound forge secret).  For
+example, a GitHub-shaped delivery sourced from `gitea` carries `X-Gitea-Signature`,
+while one sourced from `gitlab` carries `X-Gitlab-Token`.  This preserves the
+provider-bound trust model across both output shapes.
 
-**`User-Agent` difference:** Confusio emits `Confusio-Hookshot/<version>` rather than
-GitHub's `GitHub-Hookshot/<hash>`.  Consumers that check `User-Agent` exactly will
+**`User-Agent` difference:** Confusio emits `confusio/1.0` rather than GitHub's
+`GitHub-Hookshot/<hash>`.  Consumers that check `User-Agent` exactly will
 need configuration adjustment; consumers that check only `X-GitHub-Event` and
-`X-Hub-Signature-256` are unaffected.
+the configured signature header are unaffected.
 
 ### Concrete delivery example
 
@@ -913,9 +987,8 @@ Host: consumer.example.com
 Content-Type: application/json
 X-GitHub-Event: issues
 X-GitHub-Delivery: 72d3162e-cc78-11e3-81ab-4c9367dc0958
-X-Hub-Signature-256: sha256=d57c68ca6f92289e6987d106c9e3f9b2cc4e0b8c6c6f16e6df27b2c5e8d3a14
-X-Hub-Signature: sha1=4a7b9b4ee6be63e7f8a9c2d5b1f30819c3dd7a3
-User-Agent: Confusio-Hookshot/1.0
+X-Gitea-Signature: d57c68ca6f92289e6987d106c9e3f9b2cc4e0b8c6c6f16e6df27b2c5e8d3a14
+User-Agent: confusio/1.0
 Content-Length: 347
 
 {"action":"opened","issue":{"id":1,"number":42,"title":"Found a bug","body":"Something broke.","state":"open","html_url":"https://gitea.com/alice/myrepo/issues/42","user":{"id":1,"login":"alice","avatar_url":"https://gitea.com/user/avatar/alice","html_url":"https://gitea.com/alice","type":"User"},"labels":[],"assignees":[],"milestone":null,"created_at":"2024-01-15T10:00:00Z","updated_at":"2024-01-15T10:00:00Z","closed_at":null},"repository":{"id":100,"name":"myrepo","full_name":"alice/myrepo","private":false,"html_url":"https://gitea.com/alice/myrepo","description":null,"fork":false,"default_branch":"main","owner":{"id":1,"login":"alice","avatar_url":"https://gitea.com/user/avatar/alice","html_url":"https://gitea.com/alice","type":"User"},"created_at":"2023-01-01T00:00:00Z","updated_at":"2024-01-15T10:00:00Z","pushed_at":"2024-01-15T10:00:00Z"},"sender":{"id":1,"login":"alice","avatar_url":"https://gitea.com/user/avatar/alice","html_url":"https://gitea.com/alice","type":"User"}}
@@ -956,7 +1029,7 @@ action availability.
 | `deployment_status` | Deployment status updated | `created` |
 | `deployment_review` | Deployment awaiting or receiving review | `approved`, `rejected`, `requested` |
 | `deployment_protection_rule` | Deployment protection rule triggered | `requested` |
-| `ping` | Sent on webhook registration | _(no action field)_ |
+| `ping` | Upstream webhook ping/test event | _(no action field)_ |
 | `meta` | Webhook deleted | `deleted` |
 | `page_build` | GitHub Pages build completed | _(no action field)_ |
 | `custom_property` | Org-level custom property lifecycle | `created`, `deleted`, `updated` |
@@ -1299,8 +1372,9 @@ is the list of pull requests that triggered this deployment (may be empty).
 }
 ```
 
-Confusio emits `ping` when a new target registration is confirmed.  The `zen` value
-is drawn from confusio's own zen endpoint.
+Confusio emits `ping` only when an analogous upstream source emits a ping-style event.
+Startup target configuration does not produce a ping; targets are static and there is
+no runtime registration handshake.
 
 #### `fork`
 
@@ -1928,11 +2002,11 @@ across the emitted GitHub-shape payloads:
 
 | Field / feature | Gap | Affected backends |
 |----------------|-----|------------------|
-| `commits[].added` / `removed` / `modified` | Most forges do not include per-file diff in push events; arrays may be empty | All except GitHub passthrough |
+| `commits[].added` / `removed` / `modified` | Most forges do not include per-file diff in push events; arrays may be empty | Varies by provider |
 | `pull_request.requested_reviewers` | Only forges with native reviewer request events provide this | Varies |
 | `release.tarball_url` / `zipball_url` | Emitted when the forge provides download URLs; `null` otherwise | Varies |
 | `sender.name` | Not all forges expose the display name; may be `null` | Varies |
-| `installation` | Never emitted — confusio is not a GitHub App | All backends |
+| `installation` / `installation_repositories` | Emitted only as confusio startup lifecycle events, not sourced from forge webhooks | All forge backends |
 | `check_run` / `check_suite` | Not yet emitted in GitHub-emulation shape | All backends |
 | `repository.pushed_at` | Forges without push timestamps emit the ingest arrival time | Varies |
 
@@ -2263,7 +2337,9 @@ verification code with a simple header-name substitution.
 Field-level mapping tables specify, for each event family, which GitHub-emulation
 output fields can be sourced from each backend and at what fidelity.  The confusio
 normalized shape uses the same source data; differences are noted where the output
-field name or structure changes.
+field name or structure changes.  Some historical tables include a `github` reference
+column for GitHub-native payload behavior; `github` is a compatibility reference here,
+not a supported upstream provider for this provider-bound PR.
 
 ### How to read these tables
 
@@ -2308,15 +2384,16 @@ name is used instead of listing individual backends.
 | bitbucket | `bitbucket` (Bitbucket Cloud) |
 | bitbucket-dc | `bitbucket_datacenter` |
 | gitlab | `gitlab` |
-| github | `github` (passthrough; all fields native) |
+| github | reference only (GitHub-native payload behavior; not a supported upstream provider in this PR) |
 | gitbucket | `gitbucket` |
 
 Backends with independent implementations are listed individually.
 
 ### Generated action support matrix
 
-Webhook event/action support is generated from `internal/catalog.lua` and
-`site/compatibility.csv`; update those source files and regenerate this grid with:
+Webhook event/action support is generated from the catalog exposed by
+`scripts/dump-endpoints.lua` and `site/compatibility.csv`; update those source files
+and regenerate this grid with:
 
 ```sh
 ./redbean.com -i scripts/dump-endpoints.lua | python3 scripts/gen-matrix.py --update-webhook-docs - site/compatibility.csv docs/webhooks.md
@@ -3609,7 +3686,6 @@ Action support for this event is generated in the [action support matrix](#gener
 - `deployment_review` is a GitHub Actions-specific event, but Azure DevOps release
   approvals have a close equivalent.  Confusio maps approval-pending service hooks to
   `requested` and approval-completed hooks to `approved` or `rejected`.
-- When the originating backend is GitHub, the event passes through verbatim.
 
 ---
 
@@ -3634,20 +3710,15 @@ Action support for this event is generated in the [action support matrix](#gener
 
 **Notes:**
 - `deployment_protection_rule` is a GitHub-specific integration mechanism with no
-  cross-forge equivalent.  Confusio marks all non-GitHub backends as `—` (not applicable).
-- When the originating backend is GitHub, the event passes through verbatim.
+  cross-forge equivalent.  Confusio marks configured providers as `—` (not applicable).
 
 ---
 
 ### `ping`
 
-The `ping` event has two origins:
-
-1. **Inbound forge ping** — Several forges emit a `ping`-type event when a webhook is
-   first created.  Confusio normalizes these and forwards them to registered targets.
-2. **Confusio-synthetic outbound ping** — Confusio also emits a `ping` to each newly
-   registered confusio target (via the target management API) to confirm delivery.
-   This ping is generated by confusio itself regardless of the originating backend.
+The `ping` event is translated only when an upstream forge emits a ping/test event.
+Confusio does not synthesize pings for outbound targets because targets are fixed at
+startup and there is no runtime target management API.
 
 #### Inbound forge ping: per-backend field coverage
 
@@ -3668,28 +3739,6 @@ The `ping` event has two origins:
 - GitLab and all other backends: no native ping equivalent; these backends do not emit
   a ping when a webhook is created and confusio has nothing to forward.
 - Backends not listed do not emit ping events.
-
-#### Confusio-synthetic outbound ping
-
-Emitted by confusio itself — not translated from a forge event — when a new target
-registration is confirmed via the target management API.
-
-| Field | Source | Notes |
-|-------|--------|-------|
-| `zen` | Confusio | Drawn from confusio's own zen endpoint (`GET /zen`). |
-| `hook_id` | Confusio | The confusio-assigned registration ID for the new target. |
-| `hook.type` | Confusio | Always `"Repository"`. |
-| `hook.id` | Confusio | Same as `hook_id`. |
-| `hook.active` | Confusio | Always `true` at registration time. |
-| `hook.events` | Confusio | The event filter list from the registration request, or `["*"]`. |
-| `hook.config.url` | Confusio | The target's delivery URL. |
-| `hook.config.content_type` | Confusio | Always `"json"`. |
-| `hook.created_at` | Confusio | ISO 8601 timestamp of the registration. |
-| `hook.updated_at` | Confusio | Same as `created_at` at registration time. |
-| `repository` | Confusio | Constructed from confusio's view of the repository. |
-| `sender` | Confusio | The confusio service user; `login` is `"confusio[bot]"`. |
-
----
 
 ### `meta`
 
@@ -3868,19 +3917,18 @@ Action support for this event is generated in the [action support matrix](#gener
 
 ### CI/CD events beyond `status`
 
-The events below are GitHub-native CI/CD events.  In GitHub-emulation shape, GitHub-originated
-events pass through unchanged; mapped events from other backends keep the GitHub event family
-but carry the source backend's webhook payload.  In confusio-normalized shape, mapped CI/CD
-events use a normalized envelope with the original payload preserved under `raw`.
+The events below are GitHub-native CI/CD families.  Confusio maps analogous signals from
+other providers where they exist, preserving the GitHub event family in GitHub-emulation
+shape and the normalized envelope in confusio shape.
 
-| GitHub event | Emitted from GitHub backend | Emitted from other backends |
-|---|---|---|
-| `check_run` | ✓ pass-through | ✗ |
-| `check_suite` | ✓ pass-through | ✗ |
-| `workflow_run` | ✓ pass-through | Azure DevOps `build.complete`; GitLab/Gitea-family workflow events; Bitbucket Cloud `pipeline:span_created` pipeline-run spans; OneDev build events |
-| `workflow_job` | ✓ pass-through | Bitbucket Cloud `pipeline:span_created` step/command/container/log spans |
-| `deployment_review` | ✓ pass-through | Azure DevOps release approval events |
-| `deployment_protection_rule` | ✓ pass-through | ✗ |
+| GitHub event | Cross-forge mapping status |
+|---|---|
+| `check_run` | ✗ |
+| `check_suite` | ✗ |
+| `workflow_run` | Azure DevOps `build.complete`; GitLab/Gitea-family workflow events; Bitbucket Cloud `pipeline:span_created` pipeline-run spans; OneDev build events |
+| `workflow_job` | Bitbucket Cloud `pipeline:span_created` step/command/container/log spans |
+| `deployment_review` | Azure DevOps release approval events |
+| `deployment_protection_rule` | ✗ |
 
 `deployment_protection_rule` is a GitHub Actions-specific integration event with no
 cross-forge equivalent.  `deployment_review` is GitHub-native, but Azure DevOps release
@@ -3899,22 +3947,21 @@ as workflow runs and step/command/container/log spans treated as workflow jobs.
 
 ### Security events
 
-GitHub's security event families are mostly GitHub-specific.  Confusio passes them
-through from GitHub-compatible sources and maps Azure DevOps Advanced Security alert
-service hooks and GitLab Vulnerability Hook payloads into the closest GitHub alert
-families where those providers expose equivalent data.
+GitHub's security event families are mostly GitHub-specific.  Confusio maps Azure
+DevOps Advanced Security alert service hooks and GitLab Vulnerability Hook payloads into
+the closest GitHub alert families where those providers expose equivalent data.
 
-| GitHub event | GitHub-compatible pass-through | Azure DevOps | GitLab |
-|---|---|---|---|
-| `security_advisory` | ✓ | ✗ | ✗ |
-| `repository_advisory` | ✓ | ✗ | ✗ |
-| `code_scanning_alert` | ✓ | ✓ | ~ |
-| `secret_scanning_alert` | ✓ | ✓ | ~ |
-| `secret_scanning_alert_location` | ✓ | ✗ | ✗ |
-| `dependabot_alert` | ✓ | ✓ | ~ |
-| `repository_vulnerability_alert` | ✓ | ✗ | ✗ |
-| `branch_protection_rule` | ✓ | ✗ | ✗ |
-| `branch_protection_configuration` | ✓ | ✗ | ✗ |
+| GitHub event | Azure DevOps | GitLab |
+|---|---|---|
+| `security_advisory` | ✗ | ✗ |
+| `repository_advisory` | ✗ | ✗ |
+| `code_scanning_alert` | ✓ | ~ |
+| `secret_scanning_alert` | ✓ | ~ |
+| `secret_scanning_alert_location` | ✗ | ✗ |
+| `dependabot_alert` | ✓ | ~ |
+| `repository_vulnerability_alert` | ✗ | ✗ |
+| `branch_protection_rule` | ✗ | ✗ |
+| `branch_protection_configuration` | ✗ | ✗ |
 
 Azure DevOps uses the `ms.vss-alerts.*` service-hook family for Advanced Security.
 Confusio derives the GitHub event family from `resource.alertType`: `code` maps to
@@ -4274,9 +4321,8 @@ Legacy GitHub Packages webhook event name, superseded by `package` (above).
 GitHub still fires `registry_package` for Container Registry activity on some
 repository types alongside the newer `package` event.
 
-**This event has no cross-forge mapping.**  Confusio only emits it when the
-originating backend is GitHub itself (pass-through).  For all other backends this
-event is absent — use `package` instead.
+**This event has no cross-forge mapping for the configured providers in this PR.**  Use
+`package` instead.
 
 | GitHub field | github | All others |
 |---|---|---|
@@ -4313,8 +4359,7 @@ mapping tables that follow.
 | `team_add` | ✓ gitbucket | GitBucket pass-through only |
 | `org_block` | ✗ | No cross-forge equivalent |
 
-When the originating backend is GitHub, all these events pass through verbatim.  For
-backends without a mapping, events are silently dropped.
+For backends without a mapping, these event families are not emitted.
 
 ### Repository automation events
 
@@ -4326,8 +4371,8 @@ The following GitHub repository-management events have no cross-forge mapping to
 | `repository_ruleset` | ✗ | Triggered when a repository ruleset is created, edited, or deleted. Rulesets are a GitHub-specific branch/tag protection feature; no other backend exposes an equivalent webhook event. |
 | `repository_import` | ✗ | Triggered when a repository source import finishes. GitHub's import service is not exposed by any backend confusio supports. |
 
-When the originating backend is GitHub, these events pass through verbatim.  For all other
-backends they are silently dropped — there is no mapping target.
+These events are not emitted for the configured providers in this PR; there is no
+cross-forge mapping target.
 
 ---
 
@@ -4335,7 +4380,7 @@ backends they are silently dropped — there is no mapping target.
 
 GitHub App lifecycle events are generated by GitHub's App platform and mostly have no
 equivalent in any self-hosted forge.  Two events are **synthesized by confusio at startup**
-when a backend is configured and a `webhook_target` is registered:
+when a backend is configured and at least one outbound target is registered:
 
 - **`installation/created`** — fired once at startup to signal that confusio came
   online for the configured backend.  The `installation` object has `app_slug =
@@ -4501,673 +4546,60 @@ response.  Logging is best-effort observability; the inbound response does not i
 that downstream consumers processed the event, and consumers that miss an event must
 reconcile from the upstream forge API.
 
-The durable outbox, replay, pause/resume, retry-budget, and circuit-breaker sections
-below describe planned behavior rather than the currently implemented runtime.
+There is no durable delivery subsystem in this PR.  The sections below describe the
+implemented one-shot behavior and startup-only target configuration.
 
-### Deferred durable delivery design
+### No durable delivery state
 
-The possible future durable-delivery design would guarantee that each event is delivered
-**at least once** to each matching target.  It would **not** guarantee exactly-once
-delivery.  Consumers would still need to be idempotent with respect to duplicate
-deliveries.
+Confusio does not write an outbox entry before dispatch, does not keep per-target
+delivery state, and does not run a retry scheduler.  A process crash during fan-out may
+leave some matching targets undelivered.  This mirrors GitHub webhook expectations:
+receivers must be idempotent and must reconcile missed work from the upstream provider
+API.
 
-Duplicate deliveries arise in two scenarios:
+The only retained delivery information is the process log line for each attempted POST.
+There is no HTTP endpoint for listing, inspecting, replaying, redelivering, pausing, or
+deleting deliveries.
 
-1. **Crash after send, before acknowledgement** — Confusio sent the HTTP request but
-   did not record the 2xx response before the process died.  On restart the delivery
-   is retried from `pending`.
-2. **Explicit replay** — An operator or consumer calls the replay API to re-send a
-   previously delivered event.  Each replay creates a new delivery attempt with a new
-   `X-GitHub-Delivery` / `X-Confusio-Delivery` UUID.
+### Success and failure
 
-The `X-GitHub-Delivery` and `X-Confusio-Delivery` headers carry the **ingest-time**
-delivery ID generated when the event first arrived.  This ID is stable across retries
-for the same delivery attempt.  Each _replay_ generates a fresh UUID so consumers can
-distinguish original deliveries from explicit re-sends by comparing IDs.
+A target attempt is considered successful when the target returns an HTTP 2xx response.
+Any non-2xx response, network error, DNS failure, TLS failure, or fetch exception is
+logged as a failed attempt and then dropped.  Confusio does not follow redirects, retry
+timeouts, open a circuit breaker, or hold failed attempts for later replay.
 
-### Planned durable outbox
+The inbound webhook response still reports whether the inbound event was accepted by
+confusio, not whether every downstream consumer processed it.  Downstream consumers
+that need a complete view should periodically reconcile from the upstream API.
 
-The outbox is a filesystem directory tree persisted to disk before any HTTP delivery
-attempt.  On startup confusio scans the outbox for pending and in-flight deliveries and
-enqueues them for retry.
+### Logging
 
-**Directory layout:**
-
-```
-{outbox_dir}/
-  events/
-    {delivery_id}.json          ← event record (immutable after write)
-  targets/
-    {target_id}/
-      {delivery_id}.json        ← per-target delivery state record
-```
-
-Both `{delivery_id}` and `{target_id}` are UUID v4 strings.
-
-**Event record** (`events/{delivery_id}.json`):
-
-```json
-{
-  "delivery":   "<uuid>",
-  "ingested_at": "<iso8601>",
-  "provider":   "<backend>",
-  "event":      "<event-family>",
-  "action":     "<action or null>",
-  "github_payload":   { ... },
-  "confusio_payload": { ... }
-}
-```
-
-| Field | Description |
-|-------|-------------|
-| `delivery` | Ingest-time UUID v4; matches `X-GitHub-Delivery` / `X-Confusio-Delivery` for the first attempt |
-| `ingested_at` | ISO 8601 UTC timestamp when confusio accepted the inbound request |
-| `provider` | Originating backend (e.g. `"gitea"`) |
-| `event` | Canonical event family name (e.g. `"issues"`) |
-| `action` | Action within the family, or `null` for action-less events |
-| `github_payload` | Pre-translated GitHub-emulation payload object |
-| `confusio_payload` | Pre-translated confusio-normalized payload object |
-
-Both payload variants are serialized at ingest time so that retries and replays
-re-send the original translated payload, not a retranslation of a stale forge payload.
-
-**Per-target delivery state record** (`targets/{target_id}/{delivery_id}.json`):
-
-```json
-{
-  "delivery":     "<uuid>",
-  "target_id":    "<uuid>",
-  "status":       "pending",
-  "attempts":     [],
-  "next_attempt": "<iso8601 or null>"
-}
-```
-
-| Field | Description |
-|-------|-------------|
-| `delivery` | Ingest-time delivery UUID |
-| `target_id` | Target UUID |
-| `status` | Current state — see [Delivery lifecycle](#delivery-lifecycle) |
-| `attempts` | Array of attempt records (see below) |
-| `next_attempt` | ISO 8601 UTC timestamp of the scheduled next attempt; `null` when not retrying |
-
-**Attempt record** (one entry per HTTP delivery attempt):
-
-```json
-{
-  "attempt_id":     "<uuid>",
-  "attempted_at":   "<iso8601>",
-  "duration_ms":    142,
-  "response_status": 200,
-  "response_body":  "<first 1024 bytes of response body>",
-  "outcome":        "delivered"
-}
-```
-
-| Field | Description |
-|-------|-------------|
-| `attempt_id` | UUID v4 unique to this attempt.  For automatic retries (attempts 1–8), `X-GitHub-Delivery` / `X-Confusio-Delivery` still carries the ingest-time `delivery` UUID — `attempt_id` is a per-attempt audit identifier only.  For explicit replays, a fresh UUID is generated and serves as both the `attempt_id` and the delivery header value, allowing consumers to distinguish replays from original deliveries; see [Replay a delivery](#replay-a-delivery). |
-| `attempted_at` | ISO 8601 UTC timestamp when the HTTP request was sent |
-| `duration_ms` | Round-trip time in milliseconds; `null` on connection failure |
-| `response_status` | HTTP response status code; `null` on connection failure |
-| `response_body` | First 1 024 bytes of the response body (for debugging); `null` on connection failure |
-| `outcome` | `"delivered"`, `"error"`, `"timeout"`, or `"connection_error"` — see below |
-
-**`outcome` values** capture the result of a single HTTP delivery attempt.  They are
-distinct from the overall delivery `status`, which reflects whether more attempts will
-follow.
-
-| `outcome` value | Meaning | Retry follows? |
-|-----------------|---------|---------------|
-| `"delivered"` | Target returned a 2xx response | No — delivery state becomes `delivered` |
-| `"error"` | Target returned a non-2xx response; see `response_status` | Yes, unless retry budget exhausted |
-| `"timeout"` | No response received within the 10-second window | Yes, unless retry budget exhausted |
-| `"connection_error"` | Network-level failure (DNS, refused connection, TLS) | Yes, unless retry budget exhausted |
-
-The delivery `status` field in the parent state record reflects the aggregate:
-`"retrying"` means the last attempt had a non-`"delivered"` outcome and a retry is
-scheduled; `"failed"` means no further automatic retries will occur.
-
-### Delivery lifecycle
-
-Each per-target delivery state record transitions through the following states:
-
-```
-pending ──▶ in_flight ──▶ delivered   (2xx response)
-                      ──▶ retrying    (non-2xx or timeout; attempts remain)
-                      ──▶ failed      (max retries exhausted or event expired)
-ignored                               (event filtered out for this target)
-```
-
-| State | Description |
-|-------|-------------|
-| `pending` | Queued; no attempt has been made yet |
-| `in_flight` | HTTP request is in progress |
-| `delivered` | Terminal success — target returned a 2xx response |
-| `retrying` | Delivery failed; a retry is scheduled |
-| `failed` | Terminal failure — max retries exhausted or event older than retention window |
-| `ignored` | Terminal — event type did not match this target's filter; no delivery attempted |
-
-**Terminal states** — `delivered`, `failed`, and `ignored` are final.  A delivery state
-in a terminal state is not retried automatically.  The replay API can initiate a new
-attempt regardless of the current state.
-
-**In-flight on restart** — If confusio restarts while a delivery is `in_flight`, the
-state reverts to `pending` on startup.  The previous in-flight attempt may or may not
-have reached the target; this is the source of the at-least-once (not exactly-once)
-guarantee.
-
-### Success condition
-
-A delivery attempt is considered **successful** if the target returns any HTTP 2xx
-status code (`200`–`299`) within the response timeout.  The response body is captured
-for inspection but its content is not validated.
-
-### Failure conditions and retry triggers
-
-A delivery attempt is marked as **failed** (and a retry scheduled) when any of the
-following occur:
-
-| Condition | Notes |
-|-----------|-------|
-| Connection refused or DNS failure | Network-level error; `duration_ms` is `null` |
-| TLS handshake failure | Treated as a connection error |
-| Response timeout exceeded | Default: 10 seconds per attempt |
-| HTTP 3xx redirect | Confusio does not follow redirects; 3xx is treated as non-2xx |
-| HTTP 4xx or 5xx response | Any non-2xx response triggers a retry |
-
-**Redirect note:** Confusio intentionally does not follow HTTP redirects.  Redirect
-loops and open-redirect attacks on delivery targets are prevented at the cost of
-requiring operators to configure the final canonical URL.
-
-### Retry schedule
-
-Failed delivery attempts are retried with exponential backoff.  Jitter (±10 % of the
-base delay) is added to spread load across targets that share a failure window.
-
-| Attempt # | Base delay after failure | With ±10 % jitter |
-|-----------|--------------------------|-------------------|
-| 1 (initial) | — | — |
-| 2 | 30 s | 27 s – 33 s |
-| 3 | 1 min | 54 s – 66 s |
-| 4 | 5 min | 4.5 min – 5.5 min |
-| 5 | 30 min | 27 min – 33 min |
-| 6 | 2 h | 1 h 48 min – 2 h 12 min |
-| 7 | 8 h | 7 h 12 min – 8 h 48 min |
-| 8 (final) | 24 h | 21 h 36 min – 26 h 24 min |
-
-After the 8th attempt fails, the delivery state transitions to `failed`.  The event
-record is retained in the outbox until the [retention window](#retention-and-pruning)
-expires, and can be replayed manually.
-
-**Maximum total elapsed time** from ingest to final failure: approximately 36 h at
-the upper end of jitter.
-
-**Retry budget override** — future work may allow per-target configuration of the
-maximum retry count and schedule.  Until then, the schedule above applies to all targets.
-
-### Retry budget
-
-To prevent a single high-volume incident from consuming unbounded system resources,
-confusio enforces a **per-target hourly retry budget**.  The budget limits how many
-delivery attempts confusio will dispatch to a given target within a rolling 60-minute
-window, across all events.
-
-**Default limits:**
-
-| Limit | Value | Notes |
-|-------|-------|-------|
-| Attempts per target per hour | 50 | Counted across all in-flight deliveries to that target |
-| Attempts per target per day | 500 | Rolling 24-hour window |
-
-When a target's hourly budget is exhausted, any pending retry for that target is held
-without advancing its `next_attempt` timestamp until the budget refills.  If
-`next_attempt` has already passed (the retry was due but could not fire), the field
-retains the original scheduled time; the implementation re-checks the budget on each
-scheduler tick and dispatches as soon as capacity is available.  Budget
-consumption is recorded in a lightweight counter alongside the target state — it does
-not affect the attempt records or `status` fields.  A `status` of `retrying` with a
-`next_attempt` in the past indicates budget-hold.
-
-**Budget and the retry schedule:** Budget exhaustion delays a retry but does not consume
-the retry slot.  If attempt #4 is due at 14:00 but the hourly budget refills at 14:15,
-the attempt fires at 14:15 and the slot is used normally.  Delays caused by budget
-exhaustion are not reflected in the backoff schedule — the next delay after the attempt
-is calculated from the original schedule, not from the delayed actual time.
-
-**Budget counter persistence:** Budget counters are persisted in
-`targets/{target_id}/budget.json`, updated atomically on every dispatched attempt and on
-each scheduled hourly/daily refill tick.  Counters survive process restarts.  On restart
-confusio reads the persisted counters and continues from the last saved state; no attempt
-slot is lost or double-counted.
-
-**Budget and circuit breaker:** Budget limits are checked before the circuit breaker
-(see below).  A target with an open circuit does not consume budget, because no attempts
-are dispatched.  When the circuit closes and paused retries resume, they are subject to
-the current budget balance — if the budget is exhausted at that moment the retries are
-held until it refills.  The budget counter is not reset when a circuit opens or closes;
-the rolling window continues uninterrupted.
-
-### Circuit breaker
-
-Confusio applies a per-target circuit breaker to protect both confusio and persistently
-failing targets from repeated futile delivery attempts.
-
-**Threshold:** After **5 consecutive non-`"delivered"` outcomes** across any events for a
-target, confusio opens the circuit for that target.
-
-**Open circuit behaviour:**
-- Existing `retrying` deliveries for the target are paused — `next_attempt` is cleared
-  and a new field `circuit_open_until` is set on the target state record.
-- New events arriving for the target are queued as `pending` but no delivery attempt is
-  made immediately.
-- The circuit remains open for **30 minutes**.
-
-**Half-open probe:**
-- After 30 minutes, confusio selects the oldest `pending` delivery for the target and
-  dispatches a single probe attempt.
-- If the probe succeeds (2xx): circuit closes, all `pending` deliveries resume their
-  retry schedules, consecutive-failure counter resets to 0.
-- If the probe fails: circuit stays open, `circuit_open_until` is advanced by another
-  30 minutes, `consecutive_failures` increments.  After the circuit has opened,
-  `consecutive_failures` continues incrementing on each failed probe but does not
-  change the recovery behaviour — every failed probe simply extends the open window by
-  30 minutes regardless of the counter's magnitude.  The counter is a diagnostic metric;
-  confusio does not impose a secondary "give up" threshold.
-
-**Target state record additions for circuit breaker:**
-
-```json
-{
-  "circuit": "open",
-  "circuit_open_until": "<iso8601>",
-  "consecutive_failures": 7
-}
-```
-
-| Field | Description |
-|-------|-------------|
-| `circuit` | `"closed"` (normal), `"open"` (blocking), or `"half_open"` (probe in progress) |
-| `circuit_open_until` | ISO 8601 UTC timestamp when the circuit will move to `half_open`; `null` when `"closed"` |
-| `consecutive_failures` | Count of consecutive non-`"delivered"` outcomes; resets to 0 on any success |
-
-These fields are per-target (not per-delivery).  They are stored in a separate
-`targets/{target_id}/circuit.json` file alongside the per-delivery state records.
-
-**Circuit breaker and replay:**  Replays bypass the circuit breaker.  If an operator
-calls `POST /webhooks/deliveries/{delivery_id}/redeliver` while the circuit is open,
-the replay attempt is dispatched immediately.  A successful replay does **not** close
-the circuit — only the automatic half-open probe can close it.  A failed replay does
-**not** advance the consecutive-failure counter.
-
-**Circuit breaker and the `GET /webhooks/targets/{target_id}` endpoint:**  The target
-detail response (see [Get a target](#get-a-target)) includes the current `circuit` state
-and `circuit_open_until` timestamp so operators can diagnose delivery pauses.
-
-### Retention and pruning
-
-Outbox records are retained for **72 hours** from `ingested_at`, regardless of delivery
-state.  After 72 hours:
-
-- Event records are eligible for pruning.
-- Per-target delivery state records are pruned together with their event.
-- Events that have not reached a terminal state by the 72-hour mark transition to
-  `failed` and are pruned on the next cleanup pass.
-
-Pruning runs on a background timer during normal operation and on startup.  Pruned
-records are not recoverable — the replay API returns `404` for pruned delivery IDs.
-
-**Retention window rationale:** 72 hours matches GitHub's own webhook delivery
-retention, making it familiar to operators migrating consumers from GitHub.
-
-### Response timeout
-
-Each delivery attempt waits at most **10 seconds** for the target to respond.  If no
-response is received within 10 seconds the attempt is recorded as a `"timeout"` outcome
-and a retry is scheduled.
-
-The 10-second limit applies to the full round trip (connection + TLS + headers +
-body).  It is not separately configurable in the current design.
-
----
-
-## Planned Replay API
-
-The replay API allows operators and consumers to inspect the delivery history of any
-event in the retention window and to trigger additional delivery attempts.
-
-All replay endpoints require **admin credentials** — the same authentication used for
-the target registration surface.  Unauthenticated requests receive `401 Unauthorized`.
-
-### Error response format
-
-All replay API endpoints use a consistent JSON error body:
-
-```json
-{
-  "error": "<machine-readable code>",
-  "message": "<human-readable description>"
-}
-```
-
-| HTTP status | `error` code | When |
-|-------------|-------------|------|
-| `400 Bad Request` | `"invalid_request"` | Request body is not valid JSON, or a required field has the wrong type |
-| `400 Bad Request` | `"unknown_target"` | A UUID in `target_ids` does not match any registered target |
-| `401 Unauthorized` | `"unauthorized"` | Missing or invalid admin credentials |
-| `404 Not Found` | `"delivery_not_found"` | Delivery UUID does not exist or has been pruned from the outbox |
-| `404 Not Found` | `"target_not_found"` | Target UUID does not exist |
-| `429 Too Many Requests` | `"rate_limited"` | Admin API rate limit exceeded; `Retry-After` header is set |
-
-**Example error response:**
-
-```http
-HTTP/1.1 404 Not Found
-Content-Type: application/json
-
-{
-  "error": "delivery_not_found",
-  "message": "Delivery 72d3162e-cc78-11e3-81ab-4c9367dc0958 not found. It may have been pruned after the 72-hour retention window."
-}
-```
-
-### Base path
-
-```
-/webhooks/deliveries
-```
-
-### List recent deliveries
-
-```
-GET /webhooks/deliveries
-```
-
-Returns deliveries in reverse chronological order (newest first) across all targets.
-Supports cursor-based pagination using the `cursor` and `per_page` query parameters.
-
-**Query parameters:**
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `per_page` | `30` | Items per page; max `100` |
-| `cursor` | _(start)_ | Opaque pagination cursor from a previous response's `next_cursor` |
-| `event` | _(all)_ | Filter by event family name (e.g. `issues`) |
-| `provider` | _(all)_ | Filter by originating backend (e.g. `gitea`) |
-| `status` | _(all)_ | Filter by delivery state: `pending`, `in_flight`, `delivered`, `retrying`, `failed`, `ignored` |
-
-**Response** (`200 OK`):
-
-```json
-{
-  "deliveries": [
-    {
-      "delivery":     "<uuid>",
-      "ingested_at":  "<iso8601>",
-      "provider":     "<backend>",
-      "event":        "<event-family>",
-      "action":       "<action or null>",
-      "target_count": 3,
-      "delivered":    2,
-      "failed":       0,
-      "pending":      1
-    }
-  ],
-  "next_cursor": "<opaque string or null>"
-}
-```
-
-`next_cursor` is `null` when there are no further pages.
-
-### Get a delivery
-
-```
-GET /webhooks/deliveries/{delivery_id}
-```
-
-Returns the full event record plus per-target delivery state for every registered target.
-
-**Path parameters:**
-
-| Parameter | Description |
-|-----------|-------------|
-| `delivery_id` | UUID v4; ingest-time delivery ID |
-
-**Response** (`200 OK`):
-
-```json
-{
-  "delivery":         "<uuid>",
-  "ingested_at":      "<iso8601>",
-  "provider":         "<backend>",
-  "event":            "<event-family>",
-  "action":           "<action or null>",
-  "github_payload":   { ... },
-  "confusio_payload": { ... },
-  "targets": [
-    {
-      "target_id":    "<uuid>",
-      "status":       "delivered",
-      "next_attempt": null,
-      "attempts": [
-        {
-          "attempt_id":      "<uuid>",
-          "attempted_at":    "<iso8601>",
-          "duration_ms":     142,
-          "response_status": 200,
-          "response_body":   "",
-          "outcome":         "delivered"
-        }
-      ]
-    }
-  ]
-}
-```
-
-**Error responses** (see [Error response format](#error-response-format) for body schema):
-
-| Code | `error` code | When |
-|------|-------------|------|
-| `401 Unauthorized` | `"unauthorized"` | Missing or invalid admin credentials |
-| `404 Not Found` | `"delivery_not_found"` | Delivery UUID unknown or pruned |
-
-### List attempts for a target
-
-```
-GET /webhooks/deliveries/{delivery_id}/targets/{target_id}/attempts
-```
-
-Returns the attempt history for a single target.  Useful for inspecting retry progression
-without the full delivery record.
-
-**Response** (`200 OK`):
-
-```json
-{
-  "delivery":  "<uuid>",
-  "target_id": "<uuid>",
-  "status":    "retrying",
-  "attempts": [
-    {
-      "attempt_id":      "<uuid>",
-      "attempted_at":    "<iso8601>",
-      "duration_ms":     null,
-      "response_status": null,
-      "response_body":   null,
-      "outcome":         "timeout"
-    },
-    {
-      "attempt_id":      "<uuid>",
-      "attempted_at":    "<iso8601>",
-      "duration_ms":     5021,
-      "response_status": 503,
-      "response_body":   "Service Unavailable",
-      "outcome":         "error"
-    }
-  ]
-}
-```
-
-**Error responses** (see [Error response format](#error-response-format) for body schema):
-
-| Code | `error` code | When |
-|------|-------------|------|
-| `401 Unauthorized` | `"unauthorized"` | Missing or invalid admin credentials |
-| `404 Not Found` | `"delivery_not_found"` | Delivery UUID unknown or pruned |
-| `404 Not Found` | `"target_not_found"` | Target UUID does not exist for this delivery |
-
-### Replay a delivery
-
-```
-POST /webhooks/deliveries/{delivery_id}/redeliver
-```
-
-Triggers an immediate additional delivery attempt for all matching targets.  The
-current `status` of each target does not matter — the replay schedules a new attempt
-regardless of whether the delivery previously succeeded, failed, or was ignored.
-
-Each replay attempt receives a **fresh UUID** as its `attempt_id`.  This ID is used as
-the `X-GitHub-Delivery` / `X-Confusio-Delivery` header value for that attempt, allowing
-consumers to distinguish replays from original deliveries.  The ingest-time delivery UUID
-embedded in the event body (`id` field in the confusio-normalized shape) does **not**
-change — it always identifies the original ingest event.
-
-**Replay bypasses the circuit breaker and retry budget.**  The attempt is dispatched
-immediately regardless of whether the target's circuit is open or its hourly budget is
-exhausted.  See [Circuit breaker](#circuit-breaker) for how replay interacts with the
-circuit state.
-
-**Request body (optional):**
-
-```json
-{
-  "target_ids": ["<uuid>", "<uuid>"]
-}
-```
-
-If `target_ids` is provided, only the specified targets receive the replay.  If absent
-or empty, all matching targets are re-delivered.
-
-**Response** (`202 Accepted`):
-
-```json
-{
-  "delivery":      "<uuid>",
-  "replayed_to":   ["<uuid>", "<uuid>"],
-  "attempt_ids":   ["<uuid>", "<uuid>"]
-}
-```
-
-| Field | Description |
-|-------|-------------|
-| `delivery` | The original ingest-time delivery UUID |
-| `replayed_to` | Target UUIDs that received the replay |
-| `attempt_ids` | Attempt UUIDs generated for this replay, one per target in `replayed_to` order |
-
-**Error responses** (see [Error response format](#error-response-format) for body schema):
-
-| Code | `error` code | When |
-|------|-------------|------|
-| `400 Bad Request` | `"invalid_request"` | Request body is not valid JSON, or a field has the wrong type |
-| `400 Bad Request` | `"unknown_target"` | A UUID in `target_ids` does not match any registered target |
-| `401 Unauthorized` | `"unauthorized"` | Missing or invalid admin credentials |
-| `404 Not Found` | `"delivery_not_found"` | Delivery UUID unknown or pruned |
-
-Note: a target registered _after_ the event was ingested is still a valid `target_ids`
-entry.  It has no prior delivery state record, so confusio creates one and dispatches the
-attempt; this counts against neither the retry budget nor the retry schedule — it is
-treated as a fresh first attempt.
-
-**Interaction with pending retries:**  If a target's delivery is currently `in_flight`
-(a scheduled retry is executing), the replay is accepted and dispatched as a separate
-parallel attempt.  Both attempts proceed independently; if both succeed, both are
-recorded in the attempt log and the delivery state remains `delivered`.  If the in-flight
-retry succeeds first, the replay attempt still completes — the target may receive two
-requests.  This is the expected at-least-once behaviour; consumers must be idempotent.
-
-**Interaction with `retrying` state:**  If a target's delivery is `retrying` (an attempt
-failed; the next retry is scheduled but not yet in-flight), the replay fires immediately
-and the existing scheduled retry remains on its original schedule.  The next automatic
-retry fires regardless of whether the replay succeeded.
-
-**Replay of ignored events:** If a target previously received `ignored` for an event
-(because the event type was outside its filter at ingest time), a replay will attempt
-delivery regardless of the current filter configuration.  Operators can use this to
-recover events that were misconfigured at subscription time.
-
-**Replay of expired events:** If the event record has been pruned from the outbox
-(> 72 hours), the delivery UUID returns `404` and replay is not possible.  The original
-forge payload is not retained after pruning.
-
-### Delivery list for a target
-
-```
-GET /webhooks/targets/{target_id}/deliveries
-```
-
-Returns deliveries in reverse chronological order for a single target.  Supports the
-same query parameters as `GET /webhooks/deliveries` (except `status` refers to the
-per-target state for this target).
-
-**Response** (`200 OK`):
-
-```json
-{
-  "deliveries": [
-    {
-      "delivery":        "<uuid>",
-      "ingested_at":     "<iso8601>",
-      "provider":        "<backend>",
-      "event":           "<event-family>",
-      "action":          "<action or null>",
-      "status":          "delivered",
-      "attempt_count":   1,
-      "last_attempt_at": "<iso8601>"
-    }
-  ],
-  "next_cursor": "<opaque string or null>"
-}
-```
-
-**Error responses** (see [Error response format](#error-response-format) for body schema):
-
-| Code | `error` code | When |
-|------|-------------|------|
-| `401 Unauthorized` | `"unauthorized"` | Missing or invalid admin credentials |
-| `404 Not Found` | `"target_not_found"` | Target UUID does not exist |
-
----
-
-### Edge cases
-
-| Scenario | Behaviour |
-|----------|-----------|
-| Target URL unreachable at every attempt | Final attempt exhausted → `failed`; replay available while within retention window |
-| Target registered after an event was ingested | The late-registered target does not receive events ingested before registration |
-| Event pruned during a retry window | In-flight attempt may still proceed; on next scheduled retry the event is found pruned and the state transitions to `failed` |
-| Replay requested for a `delivered` event | Accepted; attempt dispatched regardless of prior success; target may receive a duplicate |
-| Two replays issued concurrently for the same target | Both are accepted; each generates a distinct `attempt_id`; the target receives two requests |
-| Replay issued while target's retry is `in_flight` | Both proceed in parallel; both outcomes recorded; at-least-once behaviour — consumer must be idempotent |
-| Replay issued while target's delivery is `retrying` | Replay fires immediately; scheduled retry fires on its original schedule; target may receive two requests |
-| Hourly retry budget exhausted for a target | Pending retries are held without advancing `next_attempt`; next attempt fires when budget refills |
-| Circuit opens mid-backoff | Remaining retries are paused; `next_attempt` is cleared; circuit probe fires after 30 minutes |
-| Circuit probe succeeds | Circuit closes; all paused `pending` deliveries resume their retry schedules |
-| Circuit probe fails | Circuit stays open; `circuit_open_until` advances by 30 minutes |
-| Replay while circuit is open | Replay bypasses circuit; dispatched immediately; outcome does not affect circuit state |
-| Hourly budget exhausted and circuit closes simultaneously | Retries resume from `pending` after circuit close but are immediately held by budget; they fire as soon as the budget refills in the rolling window |
-| `target_ids` in replay includes a target registered after the event was ingested | The target has no delivery state record for this event; `redeliver` accepts the UUID, creates a new delivery state record for that target, and dispatches the attempt as if the target had been matched at ingest time |
-| Replay with all matching targets in `ignored` state (no `target_ids` specified) | Accepted; `replayed_to` and `attempt_ids` contain all previously-ignored targets; each receives an attempt regardless of the filter that caused the original `ignored` outcome |
-| Replay with explicit `target_ids` where every specified target is `ignored` | Same as above but limited to the specified subset |
-| Budget counter file unreadable or corrupted on startup | Confusio treats counters as zero (fully refilled); the most conservative possible restart gives targets a clean window after a crash |
-| Outbox directory not writable at ingest | Confusio rejects the inbound event with `500 Internal Server Error`; no partial write occurs |
-| `github_payload` or `confusio_payload` too large to store | Payloads larger than 25 MiB are truncated at 25 MiB with a `"_truncated": true` sentinel field added at the top level |
+Each attempted outbound delivery emits one log line with the target URL, HTTP status or
+network error, target name, source backend, event family, generated delivery UUID, and
+elapsed time.  Logs are operational evidence only; they are not a durable delivery
+store and cannot be queried through confusio.
 
 ## Multi-Target Dispatch and Configuration
 
-Current configuration is static and supplied at startup through SCRIPTARGS:
+Targets are registered only from startup arguments.  Repeated `--webhook-target` flags
+create multiple static targets; legacy `webhook_target=*` SCRIPTARGS create one
+additional compatibility target.  All targets live only in process memory and are rebuilt
+from the launch command on restart.
+
+### Current repeated-target configuration
 
 ```sh
-sh ./confusio.com -p 8080 -- gitea \
+sh ./confusio.com -p 8080 -- \
+  --provider=gitea \
+  --upstream=https://gitea.example \
+  --webhook-target=name=fido,url=https://fido.example/webhooks,shape=github,events=issues+pull_request,secret_file=/run/secrets/fido-hook \
+  --webhook-target=name=audit,url=https://audit.example/events,shape=confusio,events=*
+```
+
+### Legacy single-target configuration
+
+```sh
+sh ./confusio.com -p 8080 -- gitea https://gitea.example \
   webhook_target=https://example.com/webhook \
   webhook_target_name=primary \
   webhook_target_events=push,pull_request \
@@ -5175,418 +4607,73 @@ sh ./confusio.com -p 8080 -- gitea \
   webhook_target_secret_file=/run/secrets/webhook-target
 ```
 
-Only one target is registered from CLI configuration today.  `webhook_target_name`
-defaults to `default`, `webhook_target_events` defaults to `*`,
+`webhook_target_name` defaults to `default`, `webhook_target_events` defaults to `*`,
 `webhook_target_shape` defaults to `github`, and the target secret is optional.
-Delivery to matching targets is synchronous and fire-and-record, as described in
-[Delivery Semantics](#delivery-semantics).
-
-The persistent target resource and admin API sections below describe planned behavior
-rather than the currently implemented runtime.
-
-Confusio delivers each inbound event to every matching **target** — an HTTP endpoint
-registered by an operator.  Targets are independent: each has its own event-type filter,
-shape preference, optional signing secret, and lifecycle state.
-
-### Target resource
-
-A target is a persistent object with the following fields:
-
-```json
-{
-  "target_id":  "<uuid>",
-  "url":        "https://example.com/webhook",
-  "status":     "active",
-  "events":     ["issues", "pull_request", "push"],
-  "shape":      "github",
-  "created_at": "<iso8601>",
-  "updated_at": "<iso8601>"
-}
-```
-
-| Field | Description |
-|-------|-------------|
-| `target_id` | UUID v4 assigned at creation; immutable |
-| `url` | Delivery endpoint; must be an `https://` or `http://` absolute URL |
-| `status` | Lifecycle state — see [Target lifecycle](#target-lifecycle) |
-| `events` | Event-type filter — see [Event-type filter](#event-type-filter) |
-| `shape` | Output shape: `"github"` or `"confusio"` — see [Shape selection](#shape-selection) |
-| `created_at` | ISO 8601 UTC timestamp when the target was registered |
-| `updated_at` | ISO 8601 UTC timestamp of the last modification |
-
-The `secret` field (see [Outbound signatures](#outbound-signatures)) is **write-only** —
-it is accepted on create and update but never returned in any response.
-
-### Target lifecycle
-
-Each target has a `status` field that controls its participation in fan-out and retry
-dispatch.
-
-| Status | Description |
-|--------|-------------|
-| `active` | Normal operation; receives new events and retries |
-| `paused` | Excluded from fan-out for new events; existing scheduled retries are suspended (see below) |
-| `deleted` | Soft-deleted; excluded from all fan-out; no new delivery records are created; existing records retained until retention window |
-
-**Paused targets:** When a target is paused, confusio stops dispatching to it.  Events
-ingested while the target is paused are not queued; they will not be delivered unless
-explicitly replayed via the replay API after the target is resumed.  Deliveries that are
-`in_flight` when the pause occurs may complete; if they fail, no retry is scheduled until
-the target is resumed.  Deliveries that are `retrying` have their `next_attempt` cleared
-and will resume their retry schedule when the target is resumed.  Circuit breaker and
-retry budget state are preserved across pause/resume cycles.
-
-**Deleted targets:** Deletion is soft.  The target record is marked `deleted` and
-excluded from all fan-out and retry dispatch.  Existing delivery state records in the
-outbox are retained until the 72-hour retention window expires; the replay API returns
-their history but refuses new replay attempts for a deleted target.  The `target_id` is
-never reused.
-
-**Resuming a paused target:** Setting `status` back to `"active"` (via a PATCH request)
-re-enables fan-out for new events.  Deliveries that were `retrying` when the target was
-paused resume their retry schedules from where they left off.
 
 ### Event-type filter
 
-The `events` field controls which event families are delivered to a target.
+The target event filter controls which event families are delivered to a target.  Filters
+match canonical event-family names such as `issues`, `push`, `pull_request`, and
+`release`.  They do not match action names or normalized dotted body types.
 
 | Value | Meaning |
 |-------|---------|
-| `["*"]` | All event families (wildcard; this is the default) |
-| `["issues", "pull_request"]` | Only the named event families |
+| `*` | All event families; this is the default |
+| `issues+pull_request` | Only issue and pull request families in repeated target syntax |
+| `issues,pull_request` | Only issue and pull request families in legacy syntax |
 
-Event family names match the GitHub event family identifiers used in `X-GitHub-Event`
-(e.g., `"issues"`, `"push"`, `"pull_request"`, `"release"`).  The full list of supported
-families is the set of event families specified in
-[GitHub-Emulation Contract](#github-emulation-contract).
-
-If an inbound event's family is **not** in the target's filter, confusio creates a
-delivery state record with `status: "ignored"` for that target — no HTTP attempt is made.
-The event remains replayable via the replay API for the 72-hour retention window, allowing
-operators to recover events that arrived before a filter was corrected.
-
-**Filter matching is case-sensitive and exact.**  Wildcards (`"*"`) must appear as the
-sole element of the array; a mixed list like `["*", "push"]` is rejected with
-`400 Bad Request`.
+If an inbound event's family is not in the target filter, no HTTP request is attempted
+for that target and no delivery state is saved.
 
 ### Shape selection
 
-The `shape` field selects which output format is sent to the target's `url`.
+The target `shape` field selects the outbound body format for all events delivered to
+that target.
 
 | Value | Description |
 |-------|-------------|
-| `"github"` | GitHub-emulation shape — headers and body byte-compatible with GitHub webhook format (default) |
-| `"confusio"` | Confusio-normalized shape — confusio envelope and namespace; see [Normalized Confusio Event Model](#normalized-confusio-event-model) |
+| `github` | GitHub-emulation shape; this is the default |
+| `confusio` | Confusio-normalized envelope and namespace |
 
-Shape is configured per target and applies to all events delivered to that target.
-Changing the shape of an existing target (via PATCH) takes effect for all subsequent
-delivery attempts, including retries of previously queued events.
-
-**Shape and retry consistency:** If a target's shape is changed while a delivery is
-`retrying`, the next retry attempt uses the new shape.  Both `github_payload` and
-`confusio_payload` are stored in the outbox at ingest time, so the shape selection at
-dispatch time determines which variant is sent — no retranslation is required.
+Changing shape requires changing the launch command and restarting the process.
 
 ### Outbound signatures
 
-When a `secret` is configured on a target, confusio signs outbound delivery payloads
-using **HMAC-SHA256**.  The signature is sent in the `X-Hub-Signature-256` header,
-mirroring GitHub's outbound webhook signing scheme so consumers can verify payloads using
-standard GitHub webhook libraries.
+When a target secret is configured, confusio signs the outbound body with the source
+backend's native signing scheme.  This applies to both GitHub-emulation and
+confusio-normalized shapes.  For example, Gitea-sourced deliveries use
+`X-Gitea-Signature`, GitLab-sourced deliveries use `X-Gitlab-Token`, and
+Confusio-to-confusio deliveries use `X-Confusio-Signature-256`.
 
-**Header format:**
-
-```
-X-Hub-Signature-256: sha256=<lowercase hex digest>
-```
-
-The HMAC is computed over the raw serialized request body (the JSON bytes as sent, before
-any content encoding).  The secret is the HMAC key.
-
-**Secret management:**
-
-- The secret is accepted as a plain UTF-8 string in the `secret` field on create or
-  update.
-- The secret is stored at rest (implementation detail; key management is out of scope for
-  this spec).
-- The secret is **never returned** in any GET or list response.  The response object omits
-  the field entirely — there is no placeholder or masked representation.
-- To rotate a secret, PATCH the target with the new `secret` value.  The new secret takes
-  effect on the next delivery attempt.
-- To remove signing entirely, PATCH with `"secret": null`.
-
-**Targets without a secret** receive no `X-Hub-Signature-256` header.
+Targets without a secret receive no signature header.  Secret rotation is also
+startup-only: update the secret file or target spec and restart.
 
 ### Fan-out dispatch logic
 
-In the deferred durable-delivery design, confusio would perform a fan-out pass before
-returning the HTTP response to the forge.
+For each accepted inbound event, confusio walks the in-memory target list in registration
+order.  For each target whose event filter matches, it serializes the selected shape,
+adds delivery headers and any signature header, performs one synchronous HTTP POST, logs
+the result, and moves to the next target.  There is no cross-target ordering guarantee
+beyond this single process loop, and a failure for one target does not stop attempts to
+other matching targets.
 
-**Fan-out steps:**
+### Explicitly absent surfaces
 
-1. Load all targets with `status == "active"`.
-2. For each active target:
-   - Check if the event family matches the target's `events` filter.
-   - **Match:** write `targets/{target_id}/{delivery_id}.json` with `status: "pending"`
-     and enqueue for asynchronous delivery.
-   - **No match:** write the state record with `status: "ignored"`.
-3. Return `200 OK` (or `202 Accepted`) to the forge.  Delivery is asynchronous from this
-   point.
+Confusio intentionally does not expose any of the following webhook administration or
+delivery-state features in this PR:
 
-**Paused and deleted targets** are skipped entirely during fan-out — no delivery state
-record is created for them.  Events arriving during a pause period will not be delivered
-to that target unless explicitly replayed after resumption.
+| Surface | Status |
+|---------|--------|
+| Config file | Not implemented |
+| Environment-variable target config | Not implemented |
+| Admin UI | Not implemented |
+| Runtime target registration API | Not implemented |
+| `GET /webhooks/targets` or similar target inspection | Not implemented |
+| Delivery list / delivery detail endpoints | Not implemented |
+| Replay or redelivery endpoint | Not implemented |
+| Durable outbox | Not implemented |
+| Retry queue / scheduler | Not implemented |
+| Circuit breaker or retry budget | Not implemented |
 
-**Fan-out atomicity:** All delivery state records for a single event are written before
-the inbound response is returned.  If any write fails, confusio returns
-`500 Internal Server Error` to the forge and does not create a partial set of records.
-The forge will typically retry the inbound request; confusio re-processes it as a new
-event with a new `delivery_id`.
-
-**Fan-out ordering:** Each target's delivery proceeds independently.  No cross-target
-ordering guarantee exists; delivery progress for one target has no effect on another.
-
----
-
-### Admin API
-
-All target management endpoints require **admin credentials** and are grouped under the
-`/webhooks/targets` base path.  Unauthenticated requests receive `401 Unauthorized`.
-
-#### Error response format
-
-All admin API endpoints use the same error body format as the replay API:
-
-```json
-{
-  "error":   "<machine-readable code>",
-  "message": "<human-readable description>"
-}
-```
-
-| HTTP status | `error` code | When |
-|-------------|-------------|------|
-| `400 Bad Request` | `"invalid_request"` | Request body is not valid JSON, a required field is missing, or a field has an invalid value |
-| `400 Bad Request` | `"invalid_filter"` | `events` array contains unrecognized family names, or mixes `"*"` with named families |
-| `400 Bad Request` | `"invalid_url"` | `url` is not a valid absolute HTTP(S) URL |
-| `400 Bad Request` | `"invalid_status"` | `status` value is not a permitted transition for PATCH |
-| `401 Unauthorized` | `"unauthorized"` | Missing or invalid admin credentials |
-| `404 Not Found` | `"target_not_found"` | Target UUID does not exist or has been deleted |
-| `409 Conflict` | `"target_deleted"` | Operation not permitted on a deleted target (e.g., replay attempt via replay API) |
-| `429 Too Many Requests` | `"rate_limited"` | Admin API rate limit exceeded; `Retry-After` header is set |
-
-#### Create a target
-
-```
-POST /webhooks/targets
-```
-
-**Request body:**
-
-```json
-{
-  "url":    "https://example.com/webhook",
-  "events": ["*"],
-  "shape":  "github",
-  "secret": "s3cr3t"
-}
-```
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `url` | Yes | Absolute `http://` or `https://` delivery endpoint URL |
-| `events` | No | Event filter array; defaults to `["*"]` |
-| `shape` | No | `"github"` or `"confusio"`; defaults to `"github"` |
-| `secret` | No | HMAC signing secret; omit for unsigned delivery |
-
-**Response** (`201 Created`):
-
-```json
-{
-  "target_id":  "a2fb4a9c-1234-5678-abcd-000000000001",
-  "url":        "https://example.com/webhook",
-  "status":     "active",
-  "events":     ["*"],
-  "shape":      "github",
-  "created_at": "2026-04-19T00:00:00Z",
-  "updated_at": "2026-04-19T00:00:00Z"
-}
-```
-
-`secret` is not present in the response.
-
-**Error responses:**
-
-| Code | `error` code | When |
-|------|-------------|------|
-| `400 Bad Request` | `"invalid_request"` | Missing `url` or invalid field value |
-| `400 Bad Request` | `"invalid_filter"` | Malformed `events` array |
-| `400 Bad Request` | `"invalid_url"` | `url` is not a valid absolute HTTP(S) URL |
-| `401 Unauthorized` | `"unauthorized"` | Missing or invalid admin credentials |
-
-#### List targets
-
-```
-GET /webhooks/targets
-```
-
-Returns all non-deleted targets in creation order.  Supports cursor-based pagination.
-
-**Query parameters:**
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `per_page` | `30` | Items per page; max `100` |
-| `cursor` | _(start)_ | Opaque pagination cursor from a previous response's `next_cursor` |
-| `status` | _(all non-deleted)_ | Filter by status: `active` or `paused` |
-
-**Response** (`200 OK`):
-
-```json
-{
-  "targets": [
-    {
-      "target_id":  "<uuid>",
-      "url":        "https://example.com/webhook",
-      "status":     "active",
-      "events":     ["*"],
-      "shape":      "github",
-      "created_at": "<iso8601>",
-      "updated_at": "<iso8601>"
-    }
-  ],
-  "next_cursor": null
-}
-```
-
-Deleted targets are excluded from all list results.  Pagination cursors are stable across
-additions and deletions.
-
-**Error responses:**
-
-| Code | `error` code | When |
-|------|-------------|------|
-| `401 Unauthorized` | `"unauthorized"` | Missing or invalid admin credentials |
-
-#### Get a target
-
-```
-GET /webhooks/targets/{target_id}
-```
-
-Returns the full target record including live circuit breaker diagnostics.  Returns `404`
-for deleted targets.
-
-**Response** (`200 OK`):
-
-```json
-{
-  "target_id":           "<uuid>",
-  "url":                 "https://example.com/webhook",
-  "status":              "active",
-  "events":              ["*"],
-  "shape":               "github",
-  "created_at":          "<iso8601>",
-  "updated_at":          "<iso8601>",
-  "circuit":             "closed",
-  "circuit_open_until":  null,
-  "consecutive_failures": 0
-}
-```
-
-The list response omits the circuit fields for compactness; they appear only here.
-
-| Field | Description |
-|-------|-------------|
-| `circuit` | Circuit breaker state: `"closed"` (normal), `"open"` (blocking), or `"half_open"` (probe in progress) |
-| `circuit_open_until` | ISO 8601 UTC timestamp when the circuit moves to `half_open`; `null` when `"closed"` |
-| `consecutive_failures` | Count of consecutive non-`"delivered"` outcomes; resets to 0 on any success |
-
-See [Circuit breaker](#circuit-breaker) for full semantics.
-
-**Error responses:**
-
-| Code | `error` code | When |
-|------|-------------|------|
-| `401 Unauthorized` | `"unauthorized"` | Missing or invalid admin credentials |
-| `404 Not Found` | `"target_not_found"` | Target UUID unknown or deleted |
-
-#### Update a target
-
-```
-PATCH /webhooks/targets/{target_id}
-```
-
-Partial update — only fields included in the request body are modified.
-
-**Request body** (all fields optional):
-
-```json
-{
-  "url":    "https://new.example.com/webhook",
-  "events": ["push", "issues"],
-  "shape":  "confusio",
-  "status": "paused",
-  "secret": "new-secret"
-}
-```
-
-| Field | Description |
-|-------|-------------|
-| `url` | New delivery endpoint URL |
-| `events` | Replacement event filter (full replacement, not merge) |
-| `shape` | New shape; takes effect on the next delivery attempt |
-| `status` | Lifecycle transition: `"active"` or `"paused"`; `"deleted"` is not a valid PATCH value — use DELETE |
-| `secret` | New HMAC signing secret; `null` removes signing |
-
-**Response** (`200 OK`): updated target object (same shape as GET response).
-
-**Error responses:**
-
-| Code | `error` code | When |
-|------|-------------|------|
-| `400 Bad Request` | `"invalid_request"` | Invalid field value |
-| `400 Bad Request` | `"invalid_filter"` | Malformed `events` array |
-| `400 Bad Request` | `"invalid_url"` | Malformed `url` |
-| `400 Bad Request` | `"invalid_status"` | `status` is not `"active"` or `"paused"` |
-| `401 Unauthorized` | `"unauthorized"` | Missing or invalid admin credentials |
-| `404 Not Found` | `"target_not_found"` | Target UUID unknown or deleted |
-
-#### Delete a target
-
-```
-DELETE /webhooks/targets/{target_id}
-```
-
-Soft-deletes the target.  The target is immediately excluded from fan-out and retry
-dispatch.  Existing delivery state records in the outbox are retained until the 72-hour
-retention window expires and are still visible via the replay API delivery history
-endpoints.  Replay is refused for deleted targets.
-
-**Response** (`204 No Content`): empty body.
-
-**Error responses:**
-
-| Code | `error` code | When |
-|------|-------------|------|
-| `401 Unauthorized` | `"unauthorized"` | Missing or invalid admin credentials |
-| `404 Not Found` | `"target_not_found"` | Target UUID unknown or already deleted |
-
----
-
-### Edge cases
-
-| Scenario | Behaviour |
-|----------|-----------|
-| Target paused while a delivery is `in_flight` | In-flight attempt may complete; if it fails, no retry is scheduled; delivery remains `retrying` (paused) until the target is resumed |
-| Target paused while a delivery is `retrying` | `next_attempt` is cleared; retry is held until the target is resumed, then scheduled from where it left off |
-| Target deleted while a delivery is `retrying` | Delivery transitions to `failed`; no further attempts; outbox record retained until retention window |
-| Target URL updated while retries are pending | Next retry uses the new URL; previous attempt records retain the URL that was used at attempt time (implementation detail; URL is not stored per-attempt in this spec) |
-| Shape changed while deliveries are retrying | Next retry uses the new shape variant from the outbox; consumers may observe a shape change mid-stream |
-| Secret removed while retries are pending | Next retry is sent unsigned; `X-Hub-Signature-256` header is omitted |
-| No active targets at ingest time | Fan-out writes zero records; the event is still written to the outbox; operators can register targets and replay within the 72-hour window |
-| Target registered while a matching event is mid-retry | Late-registered target receives no delivery for that event; replay is required |
-| `events: ["*"]` with a new event family added in a future confusio version | Wildcard filter automatically includes the new family; named-event-list filters do not |
-| Replay attempted against a deleted target | `POST /webhooks/deliveries/{delivery_id}/redeliver` with a deleted `target_id` in `target_ids` returns `409 Conflict` with `"target_deleted"` |
-| PATCH sets `status: "active"` on an already-active target | No-op; returns `200 OK` with the unchanged record |
-| PATCH sets `status: "paused"` on an already-paused target | No-op; returns `200 OK` with the unchanged record |
+Restart is the change-control mechanism.  Missed deliveries are handled by receiver-side
+reconciliation against the upstream provider API.
