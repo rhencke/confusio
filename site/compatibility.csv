@@ -1,6 +1,6 @@
 endpoint,azuredevops,bitbucket,bitbucket_datacenter,codeberg,codecommit,forgejo,gerrit,gitblit,gitbucket,gitea,gitlab,gogs,harness,kallithea,launchpad,notabug,onedev,pagure,phabricator,radicle,rhodecode,sourceforge,sourcehut,tuleap
 POST /graphql,"~repository only; no issues, no viewer","~no labels, no reactions; commit email always empty",~no viewer; repository and pulls only,y,n,y,~repository scalar fields only,n,y,y,y,"~no releases, no packages",n,n,~issues only; no repository scalar fields,y,n,~no pull requests,n,n,n,n,~no pull requests,n
-POST /webhooks/{backend},y,y,y,y,~no CI events,y,~no CI events,~push/create/delete only,~no CI events,y,y,y,y,~refs/repos/PRs only,~push/bugs/MPs/builds/packages,y,~refs/issues/PRs/builds/packages,~no CI events,y,~refs/patches only,~no CI events,~no CI events,y,y
+POST /webhooks/{backend},y,y,y,y,~no CI events,y,~no CI events,~push/create/delete only,~no CI events,y,y,y,y,~refs/repos/PRs only,~push/bugs/MPs/builds/packages,y,~refs/issues/PRs/builds/packages,~no CI events,y,~refs/patches only,y,~no CI events,y,y
 GET /repos/{owner}/{repo},y,y,y,y,y,y,y,y,y,y,y,y,y,n,n,y,y,y,n,y,n,n,y,~
 PATCH /repos/{owner}/{repo},y,y,y,y,n,y,y,n,y,y,y,y,y,n,n,y,y,y,n,y,n,n,y,n
 DELETE /repos/{owner}/{repo},y,y,y,y,n,y,n,n,y,y,y,y,y,n,n,y,y,y,n,~stub; returns 405,n,n,y,n
@@ -463,13 +463,13 @@ GET /users/{username}/received_events,~empty list,~empty list,~empty list,~empty
 GET /users/{username}/received_events/public,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
 GET /users/{username}/starred,~empty list,~empty list,~empty list,y,~empty list,y,~empty list,~empty list,~empty list,y,~empty list,y,~empty list,~empty list,~empty list,y,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
 GET /users/{username}/subscriptions,~empty list,~empty list,~empty list,y,~empty list,y,~empty list,~empty list,~empty list,y,~empty list,y,~empty list,~empty list,~empty list,y,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list,~empty list
-webhook create/create,y,y,y,y,y,y,y,y,y,y,y,y,n,y,n,y,y,y,n,y,n,y,y,y
+webhook create/create,y,y,y,y,y,y,y,y,y,y,y,y,n,y,n,y,y,y,n,y,y,y,y,y
 webhook custom_property/created,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook custom_property/deleted,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook custom_property/updated,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook custom_property_values/updated,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook commit_comment/created,n,y,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-webhook delete/delete,y,y,y,y,y,y,y,y,y,y,y,y,n,y,n,y,y,y,n,y,n,y,y,y
+webhook delete/delete,y,y,y,y,y,y,y,y,y,y,y,y,n,y,n,y,y,y,n,y,y,y,y,y
 webhook branch_protection_rule/created,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook branch_protection_rule/edited,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook branch_protection_rule/deleted,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
@@ -532,11 +532,11 @@ webhook package/published,n,n,n,y,n,y,n,n,y,y,n,n,n,n,y,n,y,n,n,n,n,n,n,n
 webhook package/updated,n,n,n,y,n,y,n,n,y,y,n,n,n,n,y,n,n,n,n,n,n,n,n,n
 webhook page_build/page_build,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook ping/ping,n,n,n,y,n,y,n,n,y,y,n,y,n,n,y,n,n,n,n,n,n,n,n,n
-webhook pull_request/opened,y,y,y,y,y,y,y,n,y,y,y,y,n,y,y,y,y,y,y,y,n,n,y,n
-webhook pull_request/closed,y,y,y,y,y,y,y,n,y,y,y,y,n,n,y,y,y,y,y,n,n,n,n,n
-webhook pull_request/reopened,n,n,n,y,y,y,y,n,y,y,y,y,n,n,y,y,y,n,y,n,n,n,n,n
+webhook pull_request/opened,y,y,y,y,y,y,y,n,y,y,y,y,n,y,y,y,y,y,y,y,y,n,y,n
+webhook pull_request/closed,y,y,y,y,y,y,y,n,y,y,y,y,n,n,y,y,y,y,y,n,y,n,n,n
+webhook pull_request/reopened,n,n,n,y,y,y,y,n,y,y,y,y,n,n,y,y,y,n,y,n,y,n,n,n
 webhook pull_request/edited,n,n,y,y,y,y,y,n,y,y,y,y,n,n,y,y,y,n,y,n,n,n,n,n
-webhook pull_request/synchronize,y,y,y,y,y,y,y,n,y,y,y,y,n,n,y,y,y,y,y,y,n,n,n,n
+webhook pull_request/synchronize,y,y,y,y,y,y,y,n,y,y,y,y,n,n,y,y,y,y,y,y,y,n,n,n
 webhook pull_request/labeled,n,n,n,y,n,y,y,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook pull_request/unlabeled,n,n,n,y,n,y,y,n,y,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook pull_request/assigned,n,n,n,y,n,y,y,n,y,y,n,y,n,n,n,y,y,n,n,n,n,n,n,n
@@ -549,15 +549,15 @@ webhook pull_request_review/dismissed,y,y,n,y,y,y,y,n,y,y,y,y,n,n,n,n,n,n,n,n,n,
 webhook pull_request_review_comment/created,n,y,n,y,y,y,n,n,n,y,y,y,n,n,n,n,y,n,n,n,n,n,n,n
 webhook pull_request_review_comment/edited,n,y,n,y,y,y,n,n,n,y,y,y,n,n,n,n,y,n,n,n,n,n,n,n
 webhook pull_request_review_comment/deleted,n,y,n,y,n,y,n,n,n,y,y,y,n,n,n,n,n,n,n,n,n,n,n,n
-webhook push/push,y,y,y,y,y,y,y,y,y,y,y,y,n,y,y,y,y,y,y,y,n,y,y,y
+webhook push/push,y,y,y,y,y,y,y,y,y,y,y,y,n,y,y,y,y,y,y,y,y,y,y,y
 webhook release/published,y,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook release/edited,n,n,n,y,n,y,n,n,n,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook release/deleted,y,n,n,y,n,y,n,n,y,y,y,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook release/prereleased,n,n,n,y,n,y,n,n,n,y,n,y,n,n,n,y,n,n,n,n,n,n,n,n
 webhook registry_package/published,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
 webhook registry_package/updated,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n,n,n
-webhook repository/created,y,y,y,y,n,y,y,n,y,y,y,y,n,y,n,n,n,n,y,n,n,n,y,n
-webhook repository/deleted,y,y,y,y,n,y,y,n,y,y,y,y,n,y,n,n,n,n,y,n,n,n,y,n
+webhook repository/created,y,y,y,y,n,y,y,n,y,y,y,y,n,y,n,n,n,n,y,n,y,n,y,n
+webhook repository/deleted,y,y,y,y,n,y,y,n,y,y,y,y,n,y,n,n,n,n,y,n,y,n,y,n
 webhook repository/edited,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,y,n,n,n,y,n
 webhook repository/renamed,y,n,y,y,n,y,n,n,n,y,y,y,n,n,n,n,n,n,y,n,n,n,n,n
 webhook repository/transferred,n,n,n,n,n,n,n,n,n,n,y,n,n,n,n,n,n,n,n,n,n,n,n,n
