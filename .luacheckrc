@@ -43,6 +43,7 @@ globals = {
   "proxy_204",
   "proxy_json_list",
   "translate_list",
+  "translate_list_fn",
   "proxy_search_envelope",
   "rewrite_link_header",
   "make_translator",
