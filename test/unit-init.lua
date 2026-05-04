@@ -818,6 +818,14 @@ do
     end),
   })
   eq(with_context({ id = 7 }, 3).offset_id, 10, "make_translator: computed sees call context")
+  local passthrough = make_translator({
+    name = field("display_name", { default = "" }),
+  }, { passthrough = true })
+  local passthrough_result = passthrough({ id = 4, display_name = "Fido" })
+  eq(passthrough_result.id, 4, "make_translator: passthrough keeps unspecified fields")
+  eq(passthrough_result.name, "Fido", "make_translator: passthrough allows overrides")
+  local translate_labels = translate_list_fn(translate_label_spec)
+  eq(#translate_labels({ { id = 5, name = "docs" } }), 1, "translate_list_fn: maps arrays")
   eq(
     #translate_issue_spec({ labels = nil }).labels,
     0,

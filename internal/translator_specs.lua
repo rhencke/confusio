@@ -30,6 +30,12 @@ function each(translator, key)
   return make_spec("each", { translator = translator, key = key })
 end
 
+function translate_list_fn(translator)
+  return function(items)
+    return translate_list(translator, items)
+  end
+end
+
 function computed(fn)
   return make_spec("computed", { fn = fn })
 end
@@ -87,6 +93,11 @@ local function translator_apply(translator, input, ...)
     return {}
   end
   local output = {}
+  if translator.passthrough then
+    for key, value in pairs(input) do
+      output[key] = value
+    end
+  end
   for output_key, spec in pairs(translator.spec) do
     local ok, value = pcall(resolve_value, spec, input, output_key, ...)
     if not ok then
@@ -104,5 +115,6 @@ function make_translator(spec, opts)
   return setmetatable({
     spec = spec,
     nil_returns_nil = opts.nil_returns_nil == true,
+    passthrough = opts.passthrough == true,
   }, TRANSLATOR_SPEC_MT)
 end

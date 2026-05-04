@@ -38,25 +38,23 @@ local function filter_verified_emails(emails)
 end
 
 -- Map a Gitea team object to GitHub format.
-local function translate_gitea_team(t)
-  if not t then
-    return {}
-  end
-  local slug = (t.name or ""):lower():gsub("[^%w%-]", "-")
-  return {
-    id = t.id,
-    node_id = "",
-    name = t.name,
-    slug = slug,
-    description = t.description or "",
-    privacy = "closed",
-    notification_setting = "notifications_enabled",
-    permission = t.permission == "owner" and "admin" or (t.permission or "pull"),
-    members_url = "",
-    repositories_url = "",
-    parent = nil,
-  }
-end
+local translate_gitea_team = make_translator({
+  id = "id",
+  node_id = const(""),
+  name = "name",
+  slug = computed(function(t)
+    return (t.name or ""):lower():gsub("[^%w%-]", "-")
+  end),
+  description = field("description", { default = "" }),
+  privacy = const("closed"),
+  notification_setting = const("notifications_enabled"),
+  permission = computed(function(t)
+    return t.permission == "owner" and "admin" or (t.permission or "pull")
+  end),
+  members_url = const(""),
+  repositories_url = const(""),
+  parent = const(nil),
+})
 
 -- Map a Gitea label object to GitHub format.
 -- Gitea color includes a '#' prefix; GitHub does not.
@@ -205,9 +203,7 @@ local translate_gitea_discussion_comment = make_translator({
   end),
 })
 
-local function translate_gitea_labels(labels)
-  return translate_list(translate_gitea_label, labels)
-end
+local translate_gitea_labels = translate_list_fn(translate_gitea_label)
 
 -- GitHub reaction content types and their integer codes.
 -- Gitea reactions have no native ID; we synthesize one from user_id and content code
@@ -226,21 +222,19 @@ local REACTION_BY_CODE = { "+1", "-1", "laugh", "confused", "heart", "hooray", "
 
 -- Translate a single Gitea reaction to GitHub format.
 -- Synthesized ID = user_id * 10 + content_code (1-8), collision-free per user.
-local function translate_gitea_reaction(r)
-  if not r then
-    return {}
-  end
-  local user = translate_user(r.user or {})
-  local content = r.reaction or ""
-  local code = REACTION_CONTENT_CODE[content] or 0
-  return {
-    id = (user.id or 0) * 10 + code,
-    node_id = "",
-    user = user,
-    content = content,
-    created_at = r.created_at or "2020-01-01T00:00:00Z",
-  }
-end
+local translate_gitea_reaction = make_translator({
+  id = computed(function(r)
+    local user = translate_user(r.user or {})
+    local code = REACTION_CONTENT_CODE[r.reaction or ""] or 0
+    return (user.id or 0) * 10 + code
+  end),
+  node_id = const(""),
+  user = computed(function(r)
+    return translate_user(r.user or {})
+  end),
+  content = field("reaction", { default = "" }),
+  created_at = field("created_at", { default = "2020-01-01T00:00:00Z" }),
+})
 
 -- Map a Gitea pull request branch reference to GitHub format.
 local translate_gitea_pr_branch = make_translator({
@@ -342,16 +336,15 @@ local translate_gitea_review_comment = make_translator({
 
 -- Normalise a Gitea branch object to GitHub shape.
 -- Gitea uses commit.id for the SHA; GitHub uses commit.sha.
--- Mutates the input table in place (safe — callers own the decoded object).
-local function translate_gitea_branch(br)
-  if not br then
-    return {}
-  end
-  if br.commit then
-    br.commit.sha = br.commit.id
-  end
-  return br
-end
+local translate_gitea_branch = make_translator({
+  commit = computed(function(br)
+    local commit = br.commit
+    if commit then
+      commit.sha = commit.id
+    end
+    return commit
+  end),
+}, { passthrough = true })
 
 -- Look up a Gitea label ID by name within a repo.
 local function gitea_find_label_id(owner, repo_name, label_name)
@@ -412,40 +405,47 @@ end
 
 -- Translate a Gitea commit status object to a GitHub check run object.
 -- id is taken from the Gitea status.id field (used as check_run_id).
-local function translate_gitea_status_to_check_run(s)
-  if not s then
-    return {}
-  end
-  local gitea_state = s.state or "pending"
+local function gitea_check_run_status(s)
   local gitea_to_gh = {
     pending = { status = "in_progress", conclusion = nil },
     success = { status = "completed", conclusion = "success" },
     failure = { status = "completed", conclusion = "failure" },
     warning = { status = "completed", conclusion = "neutral" },
   }
-  local mapped = gitea_to_gh[gitea_state] or { status = "completed", conclusion = "failure" }
-  local gh_status, gh_conclusion = mapped.status, mapped.conclusion
-  return {
-    id = s.id,
-    node_id = "",
-    head_sha = s.context or "",
-    name = s.context or "",
-    status = gh_status,
-    conclusion = gh_conclusion,
-    started_at = s.created or s.updated,
-    completed_at = gh_status == "completed" and (s.updated or s.created) or nil,
-    output = {
+  return gitea_to_gh[s.state or "pending"] or { status = "completed", conclusion = "failure" }
+end
+
+local translate_gitea_status_to_check_run = make_translator({
+  id = "id",
+  node_id = const(""),
+  head_sha = field("context", { default = "" }),
+  name = field("context", { default = "" }),
+  status = computed(function(s)
+    return gitea_check_run_status(s).status
+  end),
+  conclusion = computed(function(s)
+    return gitea_check_run_status(s).conclusion
+  end),
+  started_at = computed(function(s)
+    return s.created or s.updated
+  end),
+  completed_at = computed(function(s)
+    local gh_status = gitea_check_run_status(s).status
+    return gh_status == "completed" and (s.updated or s.created) or nil
+  end),
+  output = computed(function(s)
+    return {
       title = s.description or "",
       summary = s.description or "",
       text = "",
       annotations_count = 0,
       annotations_url = "",
-    },
-    url = s.url or "",
-    html_url = s.url or "",
-    details_url = s.target_url or "",
-  }
-end
+    }
+  end),
+  url = field("url", { default = "" }),
+  html_url = field("url", { default = "" }),
+  details_url = field("target_url", { default = "" }),
+})
 
 -- Map a GitHub check run request body to a Gitea commit status body.
 local function gh_check_run_to_gitea_status(req)
@@ -471,44 +471,42 @@ end
 
 -- Map a Gitea package entry to a GitHub Package object.
 -- version_count overrides the default of 1 when the caller has aggregated versions.
-local function translate_gitea_package(p, version_count)
-  if not p then
-    return {}
-  end
-  return {
-    id = p.id,
-    name = p.name or "",
-    package_type = p.type or "",
-    url = "",
-    html_url = p.html_url or "",
-    version_count = version_count or 1,
-    visibility = "public",
-    owner = p.owner and translate_user(p.owner) or nil,
-    repository = p.repository and translate_repo(p.repository) or nil,
-    created_at = p.created_at,
-    updated_at = p.created_at,
-  }
-end
+local translate_gitea_package = make_translator({
+  id = "id",
+  name = field("name", { default = "" }),
+  package_type = field("type", { default = "" }),
+  url = const(""),
+  html_url = field("html_url", { default = "" }),
+  version_count = computed(function(_, version_count)
+    return version_count or 1
+  end),
+  visibility = const("public"),
+  owner = computed(function(p)
+    return p.owner and translate_user(p.owner) or nil
+  end),
+  repository = computed(function(p)
+    return p.repository and translate_repo(p.repository) or nil
+  end),
+  created_at = "created_at",
+  updated_at = "created_at",
+})
 
 -- Map a Gitea package entry to a GitHub PackageVersion object.
-local function translate_gitea_package_version(p)
-  if not p then
-    return {}
-  end
-  return {
-    id = p.id,
-    name = p.version or "",
-    url = "",
-    package_html_url = "",
-    html_url = p.html_url or "",
-    license = "",
-    description = "",
-    created_at = p.created_at,
-    updated_at = p.created_at,
-    deleted_at = nil,
-    metadata = { package_type = p.type or "" },
-  }
-end
+local translate_gitea_package_version = make_translator({
+  id = "id",
+  name = field("version", { default = "" }),
+  url = const(""),
+  package_html_url = const(""),
+  html_url = field("html_url", { default = "" }),
+  license = const(""),
+  description = const(""),
+  created_at = "created_at",
+  updated_at = "created_at",
+  deleted_at = const(nil),
+  metadata = computed(function(p)
+    return { package_type = p.type or "" }
+  end),
+})
 
 -- ---------------------------------------------------------------------------
 -- Packages capability module
@@ -689,26 +687,31 @@ packages_cap.delete_version = function(owner, pkg_type, pkg_name, version_id)
 end
 
 -- Translate a Gitea Actions secret to GitHub format.
-local function translate_gitea_actions_secret(s)
-  return { name = s.name, created_at = s.created_at, updated_at = s.updated_at }
-end
+local translate_gitea_actions_secret = make_translator({
+  name = "name",
+  created_at = "created_at",
+  updated_at = "updated_at",
+})
 
 -- Translate a Gitea Actions variable to GitHub format.
-local function translate_gitea_actions_variable(v)
-  return { name = v.name, value = v.value, created_at = v.created_at, updated_at = v.updated_at }
-end
+local translate_gitea_actions_variable = make_translator({
+  name = "name",
+  value = "value",
+  created_at = "created_at",
+  updated_at = "updated_at",
+})
 
 -- Translate a Gitea Actions runner to GitHub format.
-local function translate_gitea_actions_runner(r)
-  return {
-    id = r.id,
-    name = r.name,
-    os = r.os,
-    status = r.status,
-    busy = r.busy or false,
-    labels = r.labels or {},
-  }
-end
+local translate_gitea_actions_runner = make_translator({
+  id = "id",
+  name = "name",
+  os = "os",
+  status = "status",
+  busy = field("busy", { default = false }),
+  labels = computed(function(r)
+    return r.labels or {}
+  end),
+})
 
 -- ---------------------------------------------------------------------------
 -- Actions capability module
@@ -7093,15 +7096,30 @@ end)
 
 -- Extend translate_gitea_milestone to include html_url and creator fields
 -- present in Gitea webhook payloads but absent from REST list responses.
-local function translate_gitea_milestone_webhook(m)
-  if not m then
-    return nil
-  end
-  local ms = translate_gitea_milestone(m) or {}
-  ms.html_url = m.html_url or ""
-  ms.creator = m.creator and translate_user(m.creator) or nil
-  return ms
-end
+local translate_gitea_milestone_webhook = make_translator({
+  id = "id",
+  node_id = const(""),
+  number = "id",
+  title = "title",
+  description = field("description", { default = "" }),
+  state = computed(function(m)
+    return m.state or "open"
+  end),
+  open_issues = computed(function(m)
+    return m.open_issues or 0
+  end),
+  closed_issues = computed(function(m)
+    return m.closed_issues or 0
+  end),
+  created_at = "created_at",
+  updated_at = "updated_at",
+  closed_at = "closed_at",
+  due_on = "due_on",
+  html_url = field("html_url", { default = "" }),
+  creator = computed(function(m)
+    return m.creator and translate_user(m.creator) or nil
+  end),
+}, { nil_returns_nil = true })
 
 -- Action maps: Gitea action string → canonical GitHub action string.
 -- Older Gitea versions (pre-1.19) used different action names for some events;
@@ -7698,20 +7716,17 @@ end)
 -- (pending/success/failure/error) is used as the action value so consumers can
 -- filter by state without inspecting the data payload.
 -- Gitea branch objects use commit.id; normalise to commit.sha for GitHub shape.
-local function translate_gitea_status_branch(br)
-  if not br then
-    return {}
-  end
-  local commit = br.commit or {}
-  return {
-    name = br.name or "",
-    commit = {
+local translate_gitea_status_branch = make_translator({
+  name = field("name", { default = "" }),
+  commit = computed(function(br)
+    local commit = br.commit or {}
+    return {
       sha = commit.sha or commit.id or "",
       url = commit.url or "",
-    },
-    protected = br.protected or false,
-  }
-end
+    }
+  end),
+  protected = field("protected", { default = false }),
+})
 
 register_gitea_webhook("status", function(payload)
   local state = payload.state or "pending"
@@ -7750,32 +7765,36 @@ end)
 --
 -- Gitea commit objects include author/committer git identities and an
 -- optional username.  The compare URL is in `compare_url` (not `compare`).
-local function translate_gitea_push_commit(c)
-  if not c then
-    return {}
-  end
-  local author = c.author or {}
-  local committer = c.committer or {}
+local function gitea_git_identity(identity)
+  identity = identity or {}
   return {
-    id = c.id or "",
-    message = c.message or "",
-    timestamp = c.timestamp or "",
-    url = c.url or "",
-    author = {
-      name = author.name or "",
-      email = author.email or "",
-      username = author.username or "",
-    },
-    committer = {
-      name = committer.name or "",
-      email = committer.email or "",
-      username = committer.username or "",
-    },
-    added = c.added or {},
-    removed = c.removed or {},
-    modified = c.modified or {},
+    name = identity.name or "",
+    email = identity.email or "",
+    username = identity.username or "",
   }
 end
+
+local translate_gitea_push_commit = make_translator({
+  id = field("id", { default = "" }),
+  message = field("message", { default = "" }),
+  timestamp = field("timestamp", { default = "" }),
+  url = field("url", { default = "" }),
+  author = computed(function(c)
+    return gitea_git_identity(c.author)
+  end),
+  committer = computed(function(c)
+    return gitea_git_identity(c.committer)
+  end),
+  added = computed(function(c)
+    return c.added or {}
+  end),
+  removed = computed(function(c)
+    return c.removed or {}
+  end),
+  modified = computed(function(c)
+    return c.modified or {}
+  end),
+})
 
 register_gitea_webhook("push", function(payload)
   local commits = {}
@@ -7870,23 +7889,22 @@ local RELEASE_ACTIONS = {
   deleted = "deleted",
   prereleased = "prereleased",
 }
-local function translate_gitea_webhook_release(r)
-  r = r or {}
-  return {
-    id = r.id,
-    tag_name = r.tag_name or "",
-    name = r.name,
-    body = r.body,
-    draft = r.draft or false,
-    prerelease = r.prerelease or false,
-    html_url = r.html_url or "",
-    tarball_url = r.tarball_url,
-    zipball_url = r.zipball_url,
-    author = translate_user(r.author or {}),
-    created_at = r.created_at or "",
-    published_at = r.published_at,
-  }
-end
+local translate_gitea_webhook_release = make_translator({
+  id = "id",
+  tag_name = field("tag_name", { default = "" }),
+  name = "name",
+  body = "body",
+  draft = field("draft", { default = false }),
+  prerelease = field("prerelease", { default = false }),
+  html_url = field("html_url", { default = "" }),
+  tarball_url = "tarball_url",
+  zipball_url = "zipball_url",
+  author = computed(function(r)
+    return translate_user(r.author or {})
+  end),
+  created_at = field("created_at", { default = "" }),
+  published_at = "published_at",
+})
 
 register_gitea_webhook("release", function(payload)
   local raw_action = payload.action or ""
@@ -8118,21 +8136,24 @@ end)
 -- those native actions so consumers can distinguish Gitea package lifecycle
 -- events from GitHub's package event vocabulary.
 local PACKAGE_ACTIONS = { created = "created", deleted = "deleted" }
-local function translate_gitea_webhook_package(p)
-  p = p or {}
-  local created = p.created_at or ""
-  return {
-    id = p.id,
-    name = p.name or "",
-    namespace = (p.owner and p.owner.login) or "",
-    ecosystem = p.type or "",
-    package_type = p.type or "",
-    html_url = p.html_url or "",
-    created_at = created,
-    updated_at = created,
-    owner = translate_user(p.owner or {}),
-    description = nil,
-    package_version = {
+local translate_gitea_webhook_package = make_translator({
+  id = "id",
+  name = field("name", { default = "" }),
+  namespace = computed(function(p)
+    return (p.owner and p.owner.login) or ""
+  end),
+  ecosystem = field("type", { default = "" }),
+  package_type = field("type", { default = "" }),
+  html_url = field("html_url", { default = "" }),
+  created_at = field("created_at", { default = "" }),
+  updated_at = field("created_at", { default = "" }),
+  owner = computed(function(p)
+    return translate_user(p.owner or {})
+  end),
+  description = const(nil),
+  package_version = computed(function(p)
+    local created = p.created_at or ""
+    return {
       id = nil,
       name = p.version or "",
       html_url = p.html_url or "",
@@ -8140,10 +8161,10 @@ local function translate_gitea_webhook_package(p)
       metadata = {},
       package_files = {},
       installation_command = "",
-    },
-    registry = nil,
-  }
-end
+    }
+  end),
+  registry = const(nil),
+})
 
 register_gitea_webhook("package", function(payload)
   local raw_action = payload.action or ""
