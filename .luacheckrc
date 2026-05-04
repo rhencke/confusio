@@ -58,8 +58,6 @@ globals = {
   "make_app",
   -- Backend builder: internal/registry.lua; backends use this instead of mutating globals
   "make_backend_builder",
-  "backend_strip_patterns",
-  "register_backend_spec",
   -- Capability module helpers: internal/capabilities.lua
   "cap_err",
   "cap_fetch",

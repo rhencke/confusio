@@ -2,7 +2,7 @@
 """Validate provider-family metadata consistency.
 
 Checks that provider_families in .init.lua agrees with:
-  - backend files (each alias inherits from the root backend)
+  - backend files (each alias dofiles the root backend)
   - mock files (no stale test/mock-<alias>.lua for aliases)
   - Makefile BACKENDS list (every alias must be present)
 
@@ -44,26 +44,17 @@ for family in families:
         errors.append(f"ERROR: missing mock for family root: test/mock-{root}.lua")
 
     for alias in aliases:
-        # Alias backend must exist and inherit from the root backend. During
-        # migration, accept both the old dofile bridge and the new explicit
-        # require + __index chain shape.
+        # Alias backend must exist and dofile the root backend.
         backend_path = f"backends/{alias}.lua"
         if not os.path.exists(backend_path):
             errors.append(f"ERROR: missing backend for alias {alias}: {backend_path}")
         else:
             with open(backend_path) as f:
                 content = f.read()
-            dofile_root = f'dofile("/zip/backends/{root}.lua")' in content
-            require_root = re.search(
-                rf"""require\s*\(?\s*["']backends\.{re.escape(root)}["']\s*\)?""",
-                content,
-            )
-            index_chain = re.search(r"__index\s*=", content)
-            if not dofile_root and not (require_root and index_chain):
+            if f'dofile("/zip/backends/{root}.lua")' not in content:
                 errors.append(
-                    f"ERROR: {backend_path} does not inherit the root backend"
-                    f' (expected dofile("/zip/backends/{root}.lua")'
-                    f' or require("backends.{root}") with __index)'
+                    f"ERROR: {backend_path} does not dofile the root backend"
+                    f' (expected: dofile("/zip/backends/{root}.lua"))'
                 )
 
         # No stale per-alias mock lua (aliases share the root mock via the Makefile rule).

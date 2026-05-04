@@ -73,10 +73,7 @@ for _, name in ipairs(cli_backends) do
   } -- luacheck: globals app
   graphql_resolvers = app.backend.graphql -- luacheck: globals graphql_resolvers
   Fetch = noop_fetch -- luacheck: globals Fetch
-  local backend_spec = dofile("/zip/backends/" .. name .. ".lua")
-  if backend_spec ~= nil then
-    register_backend_spec(backend_spec, backend_strip_patterns(name))
-  end
+  dofile("/zip/backends/" .. name .. ".lua")
   Fetch = _real_fetch -- luacheck: globals Fetch
 
   local handlers = {}

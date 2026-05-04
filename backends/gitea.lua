@@ -1,7 +1,7 @@
 -- Gitea backend handler overrides.
--- Loaded by .init.lua when config.backend == "gitea", and required by alias
--- backends (forgejo, codeberg, gogs, notabug) that are API-compatible. Only
--- endpoints that behave differently from the default need to be listed here.
+-- Loaded by .init.lua when config.backend == "gitea", and dofile'd directly by
+-- alias backends (forgejo, codeberg, gogs, notabug) that are API-compatible.
+-- Only endpoints that behave differently from the default need to be listed here.
 if config.base_url == "" then
   config.base_url = "https://gitea.com"
 end
@@ -8340,4 +8340,5 @@ b:capability("markdown", markdown_cap)
 b:capability("meta", meta_cap)
 
 b:set_allow_anonymous(_allow_anon)
-return b:spec()
+local _alias_meta = provider_families.gitea.aliases[config.backend]
+b:build(_alias_meta and _alias_meta.strip)

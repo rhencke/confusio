@@ -8,7 +8,7 @@
 -- b:webhook_translator(event, fn), b:webhook_github_translator(event, fn), and
 -- b:set_allow_anonymous(v) to declare its handlers, resolvers, capabilities,
 -- webhook handlers, and metadata, then calls b:build() to commit them to the
--- app context or b:spec() to return a reusable backend spec table.
+-- app context.
 --
 -- Capability modules are the shared domain layer consumed by both REST handlers and
 -- GraphQL resolvers.  Each module is a table of named operations (e.g.
@@ -36,98 +36,8 @@
 -- Direct assignment to app.backend.rest or graphql_resolvers is forbidden;
 -- make validate-builders enforces this at CI time.
 --
--- Backend specs are plain tables with rest/graphql/capabilities/webhooks fields.
--- Alias backends can inherit a root backend spec with setmetatable(alias,
--- { __index = root }) and can inherit individual handler tables the same way.
--- register_backend_spec() walks those __index chains and commits the resolved
--- spec to the app context.
---
 -- Globals exported:
 --   make_backend_builder   — builder factory; backends call this at load time
---   backend_strip_patterns — returns REST strip patterns for a family alias
---   register_backend_spec  — commits a returned backend spec table
-
-local function iter_index_chain(tbl, visit)
-  local chain = {}
-  local cur = tbl
-  while type(cur) == "table" do
-    chain[#chain + 1] = cur
-    local mt = getmetatable(cur)
-    local index = mt and mt.__index
-    cur = type(index) == "table" and index or nil
-  end
-  for i = #chain, 1, -1 do
-    for key, value in pairs(chain[i]) do
-      visit(key, value)
-    end
-  end
-end
-
-local function should_strip(name, strip)
-  if strip then
-    for _, pat in ipairs(strip) do
-      if name:find(pat) then
-        return true
-      end
-    end
-  end
-  return false
-end
-
-function backend_strip_patterns(name) -- luacheck: globals backend_strip_patterns
-  for _, family in pairs(provider_families) do
-    local alias = family.aliases and family.aliases[name]
-    if alias then
-      return alias.strip
-    end
-  end
-  return nil
-end
-
-local function iter_spec_field(spec, field, visit)
-  local chain = {}
-  local cur = spec
-  while type(cur) == "table" do
-    chain[#chain + 1] = cur
-    local mt = getmetatable(cur)
-    local index = mt and mt.__index
-    cur = type(index) == "table" and index or nil
-  end
-  for i = #chain, 1, -1 do
-    local value = rawget(chain[i], field)
-    if type(value) == "table" then
-      iter_index_chain(value, visit)
-    end
-  end
-end
-
-function register_backend_spec(spec, strip) -- luacheck: globals register_backend_spec
-  assert(type(spec) == "table", "backend spec must be a table")
-
-  iter_spec_field(spec, "rest", function(name, fn)
-    if not should_strip(name, strip) then
-      app.backend.rest[name] = fn
-    end
-  end)
-  iter_spec_field(spec, "graphql", function(key, fn)
-    graphql_resolvers[key] = fn
-  end)
-  iter_spec_field(spec, "capabilities", function(name, module)
-    app.backend.capabilities[name] = module
-  end)
-  iter_spec_field(spec, "webhooks", function(event, fn)
-    app.backend.webhooks[event] = fn
-  end)
-  iter_spec_field(spec, "webhook_translators", function(event, fn)
-    app.backend.webhook_translators[event] = fn
-  end)
-  iter_spec_field(spec, "webhook_github_translators", function(event, fn)
-    app.backend.webhook_github_translators[event] = fn
-  end)
-  if spec.allow_anonymous ~= nil then
-    app.allow_anonymous = spec.allow_anonymous
-  end
-end
 
 function make_backend_builder() -- luacheck: globals make_backend_builder
   local b = {
@@ -212,22 +122,6 @@ function make_backend_builder() -- luacheck: globals make_backend_builder
     return self
   end
 
-  -- Return a reusable backend spec without committing it to the app context.
-  function b:spec()
-    local spec = {
-      rest = self._rest,
-      graphql = self._graphql,
-      capabilities = self._capabilities,
-      webhooks = self._webhooks,
-      webhook_translators = self._webhook_translators,
-      webhook_github_translators = self._webhook_github_translators,
-    }
-    if self._anonymous ~= nil then
-      spec.allow_anonymous = self._anonymous
-    end
-    return spec
-  end
-
   -- Commit all registered handlers, resolvers, capabilities, and webhook handlers
   -- to the app context.
   --
@@ -246,7 +140,38 @@ function make_backend_builder() -- luacheck: globals make_backend_builder
   --   app.backend.webhook_github_translators[event] = fn for each GitHub-shape webhook translator
   --   app.allow_anonymous            = v      only when set_allow_anonymous was called
   function b:build(strip)
-    register_backend_spec(self:spec(), strip)
+    for name, fn in pairs(self._rest) do
+      local skip = false
+      if strip then
+        for _, pat in ipairs(strip) do
+          if name:find(pat) then
+            skip = true
+            break
+          end
+        end
+      end
+      if not skip then
+        app.backend.rest[name] = fn
+      end
+    end
+    for key, fn in pairs(self._graphql) do
+      graphql_resolvers[key] = fn
+    end
+    for name, module in pairs(self._capabilities) do
+      app.backend.capabilities[name] = module
+    end
+    for event, fn in pairs(self._webhooks) do
+      app.backend.webhooks[event] = fn
+    end
+    for event, fn in pairs(self._webhook_translators) do
+      app.backend.webhook_translators[event] = fn
+    end
+    for event, fn in pairs(self._webhook_github_translators) do
+      app.backend.webhook_github_translators[event] = fn
+    end
+    if self._anonymous ~= nil then
+      app.allow_anonymous = self._anonymous
+    end
   end
 
   return b
