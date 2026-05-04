@@ -365,7 +365,7 @@ local function pr_repo_name(value)
   return value or ""
 end
 
-local function pr_branch(payload, pr, repo_name, ref, sha)
+local function pr_branch(payload, repo_name, ref, sha)
   local branch = translate_pr_branch(repo_name, ref)
   branch.sha = sha or ""
   if branch.repo.full_name == "" then
@@ -439,14 +439,12 @@ local function translate_rhodecode_pull_request(payload)
     user = translate_rhodecode_user(pr.owner or payload.created_by or payload.username),
     head = pr_branch(
       payload,
-      pr,
       source_repo,
       pr.other_ref or pr.source_ref or payload.source_ref,
       pr.other_rev or pr.source_rev or pr.source_sha or payload.source_sha
     ),
     base = pr_branch(
       payload,
-      pr,
       target_repo,
       pr.org_ref or pr.target_ref or payload.target_ref,
       pr.org_rev or pr.target_rev or pr.target_sha or payload.target_sha
