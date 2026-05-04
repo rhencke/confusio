@@ -2413,18 +2413,18 @@ end
 
 local translate_ado_deployment = make_translator({
   id = computed(function(resource)
-    local deployment, _release, environment = ado_deployment_parts(resource)
+    local deployment, _, environment = ado_deployment_parts(resource)
     return deployment.id or environment.id or 0
   end),
   node_id = const(""),
   sha = const(""),
   ref = computed(function(resource)
-    local _deployment, release = ado_deployment_parts(resource)
+    local release = select(2, ado_deployment_parts(resource))
     return release.name or ""
   end),
   task = const("deploy"),
   environment = computed(function(resource)
-    local _deployment, _release, environment = ado_deployment_parts(resource)
+    local environment = select(3, ado_deployment_parts(resource))
     return environment.name or ""
   end),
   original_environment = const(""),
@@ -2435,12 +2435,12 @@ local translate_ado_deployment = make_translator({
     return {}
   end),
   creator = computed(function(resource)
-    local _deployment, release, environment = ado_deployment_parts(resource)
+    local _, release, environment = ado_deployment_parts(resource)
     return ado_user(environment.owner or release.createdBy or release.modifiedBy or {})
   end),
   created_at = computed(ado_deployment_timestamp),
   updated_at = computed(function(resource)
-    local deployment, _release, environment = ado_deployment_parts(resource)
+    local deployment, _, environment = ado_deployment_parts(resource)
     return deployment.completedOn or environment.modifiedOn or ado_deployment_timestamp(resource)
   end),
   statuses_url = const(""),
