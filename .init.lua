@@ -19,6 +19,7 @@ local supported_providers = {
   bitbucket_datacenter = true,
   codeberg = true,
   codecommit = true,
+  confusio = true,
   forgejo = true,
   gerrit = true,
   gitblit = true,

@@ -1,0 +1,81 @@
+{
+  "id": "inbound-confusio-push-1",
+  "type": "push",
+  "occurred_at": "2024-01-15T12:00:00Z",
+  "actor": {
+    "login": "alice",
+    "id": 1,
+    "type": "User"
+  },
+  "repository": {
+    "id": 42,
+    "name": "hello-world",
+    "full_name": "octocat/hello-world",
+    "private": false,
+    "owner": {
+      "login": "octocat",
+      "id": 2,
+      "type": "User"
+    },
+    "html_url": "https://git.example/octocat/hello-world",
+    "clone_url": "https://git.example/octocat/hello-world.git",
+    "default_branch": "main"
+  },
+  "payload": {
+    "ref": "refs/heads/main",
+    "before": "1111111111111111111111111111111111111111",
+    "after": "2222222222222222222222222222222222222222",
+    "created": false,
+    "deleted": false,
+    "forced": false,
+    "compare": "https://git.example/octocat/hello-world/compare/1111111...2222222",
+    "commits": [
+      {
+        "id": "2222222222222222222222222222222222222222",
+        "message": "Normalize the good path",
+        "timestamp": "2024-01-15T12:00:00Z",
+        "url": "https://git.example/octocat/hello-world/commit/2222222",
+        "author": {
+          "name": "Alice",
+          "email": "alice@example.com",
+          "username": "alice"
+        },
+        "committer": {
+          "name": "Alice",
+          "email": "alice@example.com",
+          "username": "alice"
+        },
+        "added": [],
+        "removed": [],
+        "modified": [
+          "internal/webhooks.lua"
+        ]
+      }
+    ],
+    "head_commit": {
+      "id": "2222222222222222222222222222222222222222",
+      "message": "Normalize the good path",
+      "timestamp": "2024-01-15T12:00:00Z",
+      "url": "https://git.example/octocat/hello-world/commit/2222222",
+      "author": {
+        "name": "Alice",
+        "email": "alice@example.com",
+        "username": "alice"
+      },
+      "committer": {
+        "name": "Alice",
+        "email": "alice@example.com",
+        "username": "alice"
+      },
+      "added": [],
+      "removed": [],
+      "modified": [
+        "internal/webhooks.lua"
+      ]
+    },
+    "pusher": {
+      "name": "Alice",
+      "email": "alice@example.com"
+    }
+  }
+}

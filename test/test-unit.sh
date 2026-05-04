@@ -508,7 +508,18 @@ run_delivery_phase test/webhook-delivery-rhodecode-confusio-shape.hurl \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
   "webhook_target_shape=confusio"
 
-# Phase 54: Startup event synthesis — github shape.
+# Phase 54: Confusio-to-confusio inbound delivery tests — normalized source to GitHub shape.
+run_delivery_phase test/webhook-delivery-confusio.hurl \
+  -- confusio "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
+
+# Phase 55: Confusio-to-confusio inbound delivery tests — normalized source preserved.
+run_delivery_phase test/webhook-delivery-confusio-confusio-shape.hurl \
+  -- confusio "http://127.0.0.1:$MOCK_PORT" \
+  "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT" \
+  "webhook_target_shape=confusio"
+
+# Phase 56: Startup event synthesis — github shape.
 # Verifies that confusio synthesizes installation.created and
 # installation_repositories.added before accepting connections, and delivers
 # both to the configured outbound target.  No /reset is called — the hurl file
@@ -517,8 +528,8 @@ run_delivery_phase test/webhook-delivery-startup.hurl \
   -- gitea "http://127.0.0.1:$MOCK_PORT" \
   "webhook_target=http://127.0.0.1:$DELIVERY_TARGET_PORT"
 
-# Phase 55: Startup event synthesis — confusio shape.
-# Same as Phase 54 but with webhook_target_shape=confusio; verifies
+# Phase 57: Startup event synthesis — confusio shape.
+# Same as Phase 56 but with webhook_target_shape=confusio; verifies
 # X-Confusio-* headers are used and X-GitHub-Event is absent.
 run_delivery_phase test/webhook-delivery-startup-confusio-shape.hurl \
   -- gitea "http://127.0.0.1:$MOCK_PORT" \

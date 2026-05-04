@@ -295,6 +295,17 @@ local function rhodecode_body_event(payload)
   return nil
 end
 
+local function confusio_body_event(payload)
+  if type(payload) ~= "table" then
+    return nil
+  end
+  local event_name = nil
+  if type(webhook_catalog_event_for_normalized_type) == "function" then -- luacheck: globals webhook_catalog_event_for_normalized_type
+    event_name = webhook_catalog_event_for_normalized_type(payload.type)
+  end
+  return event_name
+end
+
 local function kallithea_body_event(payload)
   return first_string_field(payload, KALLITHEA_BODY_EVENT_FIELDS)
     or first_string_field(payload and payload.data, KALLITHEA_BODY_EVENT_FIELDS)
@@ -833,6 +844,7 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
     --   CodeCommit trigger/SNS/EventBridge payloads identify themselves in body.
     --   RhodeCode integration payloads identify hooks in body, or carry
     --   enough ref / pull-request fields to infer the event family.
+    --   Confusio normalized events carry the dotted event type in the body.
     local ev = event_header(backend)
     if ev == nil and type(payload) == "table" then
       if payload.eventType then
@@ -841,6 +853,8 @@ function make_webhook_receiver(a) -- luacheck: globals make_webhook_receiver
         ev = codecommit_body_event(payload)
       elseif backend == "rhodecode" then
         ev = rhodecode_body_event(payload)
+      elseif backend == "confusio" then
+        ev = confusio_body_event(payload)
       elseif backend == "gitblit" and payload.event then
         ev = payload.event
       elseif (backend == "gerrit" or backend == "onedev") and payload.type then

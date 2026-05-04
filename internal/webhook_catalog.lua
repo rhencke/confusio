@@ -67,7 +67,7 @@ local function status_map(spec)
   local map = {}
   for _, provider in ipairs(PROVIDERS) do
     map[provider] = {
-      status = "no_analog",
+      status = provider == "confusio" and "supported" or "no_analog",
       sources = {},
     }
   end
@@ -223,11 +223,11 @@ local EVENT_DEFS = {
     "installation",
     { "created", "deleted", "new_permissions_accepted", "suspend", "unsuspend" },
     {
-      partial = { "confusio" },
+      supported = { "confusio" },
     }
   ),
   event("installation_repositories", "installation.repositories", { "added", "removed" }, {
-    partial = { "confusio" },
+    supported = { "confusio" },
   }),
   event("installation_target", "installation.target", { "renamed" }, {}),
   event("issue_comment", "issue.comment", { "created", "edited", "deleted" }, {
@@ -532,4 +532,26 @@ end
 function webhook_catalog_normalized_base(name) -- luacheck: globals webhook_catalog_normalized_base
   local def = CATALOG_BY_EVENT[name]
   return def and def.normalized_base or nil
+end
+
+function webhook_catalog_event_for_normalized_type(value) -- luacheck: globals webhook_catalog_event_for_normalized_type
+  if type(value) ~= "string" or value == "" then
+    return nil, nil
+  end
+  local match = nil
+  for _, def in ipairs(EVENT_DEFS) do
+    local base = def.normalized_base
+    if value == base or value:sub(1, #base + 1) == base .. "." then
+      if not match or #base > #match.normalized_base then
+        match = def
+      end
+    end
+  end
+  if not match then
+    return nil, nil
+  end
+  if value == match.normalized_base then
+    return match.name, ""
+  end
+  return match.name, value:sub(#match.normalized_base + 2)
 end
