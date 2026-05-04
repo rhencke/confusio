@@ -15,94 +15,91 @@ local _t = make_backend_transport("basic", PAGES)
 local fetch_json = _t.fetch_json
 local proxy_handler = _t.proxy_handler
 
-local function bb_link(obj, rel)
-  return (obj.links and obj.links[rel] and obj.links[rel].href) or ""
-end
-
 -- Map a Bitbucket repository object to GitHub format.
-local function bb_repo_owner(r)
+local function translate_bb_repo(r)
+  if not r then
+    return {}
+  end
   local owner = r.owner or {}
+  local main = r.mainbranch or {}
   return {
-    login = owner.nickname or owner.display_name or "",
     id = 0,
-    node_id = owner.uuid or "",
-    avatar_url = bb_link(owner, "avatar"),
-    url = "",
-    html_url = bb_link(owner, "html"),
-    type = owner.type == "team" and "Organization" or "User",
+    node_id = r.uuid or "",
+    name = r.slug or r.name,
+    full_name = r.full_name,
+    private = r.is_private,
+    owner = {
+      login = owner.nickname or owner.display_name or "",
+      id = 0,
+      node_id = owner.uuid or "",
+      avatar_url = (owner.links and owner.links.avatar and owner.links.avatar.href) or "",
+      url = "",
+      html_url = (owner.links and owner.links.html and owner.links.html.href) or "",
+      type = owner.type == "team" and "Organization" or "User",
+    },
+    html_url = (r.links and r.links.html and r.links.html.href) or "",
+    description = r.description,
+    fork = r.parent ~= nil,
+    url = (r.links and r.links.self and r.links.self.href) or "",
+    clone_url = "",
+    homepage = r.website or "",
+    size = r.size or 0,
+    stargazers_count = 0,
+    watchers_count = 0,
+    language = r.language,
+    has_issues = r.has_issues,
+    has_wiki = r.has_wiki,
+    forks_count = 0,
+    archived = false,
+    disabled = false,
+    open_issues_count = 0,
+    default_branch = main.name or "main",
+    visibility = r.is_private and "private" or "public",
+    forks = 0,
+    open_issues = 0,
+    watchers = 0,
+    created_at = r.created_on,
+    updated_at = r.updated_on,
+    pushed_at = r.updated_on,
   }
 end
 
-local translate_bb_repo = make_translator({
-  node_id = field("uuid", { default = "" }),
-  name = computed(function(r)
-    return r.slug or r.name
-  end),
-  private = "is_private",
-  owner = computed(bb_repo_owner),
-  html_url = computed(function(r)
-    return bb_link(r, "html")
-  end),
-  fork = computed(function(r)
-    return r.parent ~= nil
-  end),
-  url = computed(function(r)
-    return bb_link(r, "self")
-  end),
-  homepage = field("website", { default = "" }),
-  default_branch = computed(function(r)
-    local main = r.mainbranch or {}
-    return main.name or "main"
-  end),
-  visibility = computed(function(r)
-    return r.is_private and "private" or "public"
-  end),
-  created_at = "created_on",
-  updated_at = "updated_on",
-  pushed_at = "updated_on",
-  copy_fields("full_name", "description", "language", "has_issues"),
-  copy_fields("has_wiki"),
-  const_fields(0, "id", "stargazers_count", "watchers_count", "forks_count"),
-  const_fields(0, "open_issues_count", "forks", "open_issues", "watchers"),
-  const_fields("", "clone_url"),
-  const_fields(false, "archived", "disabled"),
-  default_fields(0, "size"),
-})
-
 -- Translate GitHub create/update request body to Bitbucket format.
 -- Map a Bitbucket user object to GitHub format.
-local translate_bb_user = make_translator({
-  login = computed(function(u)
-    return u.nickname or u.display_name or ""
-  end),
-  node_id = field("account_id", { default = "" }),
-  avatar_url = computed(function(u)
-    return bb_link(u, "avatar")
-  end),
-  html_url = computed(function(u)
-    return bb_link(u, "html")
-  end),
-  name = "display_name",
-  const_fields(0, "id"),
-  const_fields("User", "type"),
-  const_fields(false, "site_admin"),
-})
+local function translate_bb_user(u)
+  if not u then
+    return {}
+  end
+  local links = u.links or {}
+  return {
+    login = u.nickname or u.display_name or "",
+    id = 0,
+    node_id = u.account_id or "",
+    avatar_url = (links.avatar and links.avatar.href) or "",
+    html_url = (links.html and links.html.href) or "",
+    type = "User",
+    site_admin = false,
+    name = u.display_name,
+  }
+end
 
 -- Map a Bitbucket workspace object to GitHub user format (used for user search).
-local translate_bb_workspace = make_translator({
-  login = field("slug", { default = "" }),
-  node_id = field("uuid", { default = "" }),
-  avatar_url = computed(function(w)
-    return bb_link(w, "avatar")
-  end),
-  html_url = computed(function(w)
-    return bb_link(w, "html")
-  end),
-  copy_fields("name"),
-  const_fields(0, "id"),
-  const_fields("User", "type"),
-  const_fields(false, "site_admin"),
-})
+local function translate_bb_workspace(w)
+  if not w then
+    return {}
+  end
+  local links = w.links or {}
+  return {
+    login = w.slug or "",
+    id = 0,
+    node_id = w.uuid or "",
+    avatar_url = (links.avatar and links.avatar.href) or "",
+    html_url = (links.html and links.html.href) or "",
+    type = "User",
+    site_admin = false,
+    name = w.name,
+  }
+end
 
 -- Proxy a Bitbucket paginated response {"values":[...],"size":N,...} to the
 -- GitHub search envelope {"total_count":N,"incomplete_results":false,"items":[...]}.
@@ -131,7 +128,7 @@ local function proxy_search_bb(translate_item, url)
   )
 end
 
-local function bb_req_from_github(body_str)
+local function translate_bb_req(body_str)
   local req = DecodeJson(body_str or "{}")
   local bb = {}
   if req.name then
@@ -155,43 +152,36 @@ local function bb_req_from_github(body_str)
   return EncodeJson(bb)
 end
 
-local function bb_commit_author(c)
+local function translate_bb_commit(c)
+  if not c then
+    return {}
+  end
   local author = c.author or {}
   local user = author.user or {}
-  return {
-    name = user.display_name or author.raw or "",
-    email = "",
-    date = c.date or "",
-  }
-end
-
-local function bb_commit_user(c)
-  local author = c.author or {}
-  local user = author.user or {}
-  return { login = user.nickname or "", id = 0 }
-end
-
-local function bb_commit_parents(c)
   local parents = {}
   for _, p in ipairs(c.parents or {}) do
     parents[#parents + 1] = { sha = p.hash or "" }
   end
-  return parents
-end
-
-local translate_bb_commit = make_translator({
-  sha = field("hash", { default = "" }),
-  commit = computed(function(c)
-    return {
+  return {
+    sha = c.hash or "",
+    commit = {
       message = c.message or "",
-      author = bb_commit_author(c),
-      committer = bb_commit_author(c),
-    }
-  end),
-  author = computed(bb_commit_user),
-  committer = computed(bb_commit_user),
-  parents = computed(bb_commit_parents),
-})
+      author = {
+        name = user.display_name or author.raw or "",
+        email = "",
+        date = c.date or "",
+      },
+      committer = {
+        name = user.display_name or author.raw or "",
+        email = "",
+        date = c.date or "",
+      },
+    },
+    author = { login = user.nickname or "", id = 0 },
+    committer = { login = user.nickname or "", id = 0 },
+    parents = parents,
+  }
+end
 
 local BB_TO_GITHUB_STATE = { SUCCESSFUL = "success", FAILED = "failure", INPROGRESS = "pending" }
 local function bb_state_to_github(state)
@@ -207,183 +197,174 @@ local function bb_lower(value)
   return tostring(value or ""):lower()
 end
 
-local translate_bb_status = make_translator({
-  state = computed(function(s)
-    return bb_state_to_github(s.state)
-  end),
-  context = field("key", { default = "" }),
-  target_url = field("url", { default = "" }),
-  created_at = field("created_on", { default = "" }),
-  updated_at = field("updated_on", { default = "" }),
-  default_fields("", "description"),
-})
+local function translate_bb_status(s)
+  return {
+    state = bb_state_to_github(s.state),
+    context = s.key or "",
+    description = s.description or "",
+    target_url = s.url or "",
+    created_at = s.created_on or "",
+    updated_at = s.updated_on or "",
+  }
+end
 
-local translate_bb_key = make_translator({
-  title = field("label", { default = "" }),
-  created_at = field("created_on", { default = "" }),
-  const_fields(true, "read_only", "verified"),
-  default_fields(0, "id"),
-  default_fields("", "key"),
-})
+local function translate_bb_key(k)
+  return {
+    id = k.id or 0,
+    key = k.key or "",
+    title = k.label or "",
+    read_only = true,
+    verified = true,
+    created_at = k.created_on or "",
+  }
+end
 
-local function bb_hook_events(h)
+local function translate_bb_hook(h)
   local events = {}
   for _, e in ipairs(h.events or {}) do
-    -- "repo:push" -> "push", "pullrequest:created" -> "pull_request"
+    -- "repo:push" → "push", "pullrequest:created" → "pull_request"
     events[#events + 1] = (e:match(":(.+)$") or e):gsub("_", ".")
   end
-  return events
+  return {
+    id = h.uuid and h.uuid:gsub("[{}]", "") or "",
+    config = { url = h.url or "", content_type = "json" },
+    events = events,
+    active = h.active ~= false,
+  }
 end
-
-local translate_bb_hook = make_translator({
-  id = computed(function(h)
-    return h.uuid and h.uuid:gsub("[{}]", "") or ""
-  end),
-  config = computed(function(h)
-    return { url = h.url or "", content_type = "json" }
-  end),
-  events = computed(bb_hook_events),
-  active = computed(function(h)
-    return h.active ~= false
-  end),
-})
 
 -- Map a Bitbucket pull request branch ref to GitHub format.
-local translate_bb_pr_branch = make_translator({
-  label = computed(function(ref)
-    local branch = ref.branch or {}
-    local repo = ref.repository or {}
-    return repo.full_name and (repo.full_name .. ":" .. (branch.name or "")) or (branch.name or "")
-  end),
-  ref = computed(function(ref)
-    return (ref.branch or {}).name or ""
-  end),
-  sha = computed(function(ref)
-    return (ref.commit or {}).hash or ""
-  end),
-})
-
--- Map a Bitbucket pull request object to GitHub format.
-local function bb_pull_state(pr)
-  return pr.state == "OPEN" and "open" or "closed"
+local function translate_bb_pr_branch(ref)
+  if not ref then
+    return {}
+  end
+  local branch = ref.branch or {}
+  local commit = ref.commit or {}
+  local repo = ref.repository or {}
+  return {
+    label = repo.full_name and (repo.full_name .. ":" .. (branch.name or ""))
+      or (branch.name or ""),
+    ref = branch.name or "",
+    sha = commit.hash or "",
+  }
 end
 
-local translate_bb_pull = make_translator({
-  number = field("id", { default = 0 }),
-  state = computed(bb_pull_state),
-  body = field("description", { default = "" }),
-  user = nested(translate_bb_user, "author"),
-  head = nested(translate_bb_pr_branch, "source"),
-  base = nested(translate_bb_pr_branch, "destination"),
-  created_at = field("created_on", { default = "" }),
-  updated_at = field("updated_on", { default = "" }),
-  closed_at = computed(function(pr)
-    return pr.state ~= "MERGED" and bb_pull_state(pr) == "closed" and (pr.updated_on or "") or nil
-  end),
-  merged_at = computed(function(pr)
-    return pr.state == "MERGED" and (pr.updated_on or "") or nil
-  end),
-  merge_commit_sha = computed(function(pr)
-    return (pr.merge_commit or {}).hash or nil
-  end),
-  merged_by = computed(function(pr)
-    return pr.state == "MERGED" and pr.closed_by and translate_bb_user(pr.closed_by) or nil
-  end),
-  html_url = computed(function(pr)
-    return bb_link(pr, "html")
-  end),
-  url = computed(function(pr)
-    return bb_link(pr, "self")
-  end),
-  diff_url = computed(function(pr)
-    return bb_link(pr, "diff")
-  end),
-  mergeable = computed(function(pr)
-    return pr.state == "OPEN" or nil
-  end),
-  const_fields("", "node_id", "patch_url"),
-  const_fields(false, "locked", "draft"),
-  const_fields(0, "comments", "review_comments", "commits", "additions"),
-  const_fields(0, "deletions", "changed_files"),
-  const_fields(nil, "participants"),
-  default_fields(0, "id"),
-  default_fields("", "title"),
-})
+-- Map a Bitbucket pull request object to GitHub format.
+local function translate_bb_pull(pr)
+  if not pr then
+    return {}
+  end
+  local state = pr.state
+  local is_merged = state == "MERGED"
+  local gh_state = state == "OPEN" and "open" or "closed"
+  local merge_commit = pr.merge_commit or {}
+  -- Find merged_by from participant with role AUTHOR only if merged; Bitbucket
+  -- doesn't expose a dedicated merged_by field, so use closed_by if present.
+  local closed_by = pr.closed_by
+  return {
+    id = pr.id or 0,
+    node_id = "",
+    number = pr.id or 0,
+    state = gh_state,
+    locked = false,
+    title = pr.title or "",
+    body = pr.description or "",
+    user = translate_bb_user(pr.author),
+    head = translate_bb_pr_branch(pr.source),
+    base = translate_bb_pr_branch(pr.destination),
+    draft = false,
+    created_at = pr.created_on or "",
+    updated_at = pr.updated_on or "",
+    closed_at = (not is_merged and gh_state == "closed") and (pr.updated_on or "") or nil,
+    merged_at = is_merged and (pr.updated_on or "") or nil,
+    merge_commit_sha = merge_commit.hash or nil,
+    merged_by = (is_merged and closed_by) and translate_bb_user(closed_by) or nil,
+    html_url = (pr.links and pr.links.html and pr.links.html.href) or "",
+    url = (pr.links and pr.links.self and pr.links.self.href) or "",
+    diff_url = (pr.links and pr.links.diff and pr.links.diff.href) or "",
+    patch_url = "",
+    mergeable = state == "OPEN" or nil,
+    comments = 0,
+    review_comments = 0,
+    commits = 0,
+    additions = 0,
+    deletions = 0,
+    changed_files = 0,
+    participants = nil,
+  }
+end
 
-local function bb_values(translator, data)
-  return translate_list(translator, (data or {}).values)
+local function translate_bb_pulls(data)
+  local prs = data.values or {}
+  for i, pr in ipairs(prs) do
+    prs[i] = translate_bb_pull(pr)
+  end
+  return prs
 end
 
 -- Map a Bitbucket diffstat entry to GitHub file format.
-local function bb_diffstat_filename(f)
+local function translate_bb_diffstat_file(f)
+  if not f then
+    return {}
+  end
+  local status = f.status or "modified"
+  -- Bitbucket statuses: "added", "removed", "modified", "renamed"
   local new_file = f.new or {}
   local old_file = f.old or {}
-  return new_file.path or old_file.path or ""
+  return {
+    sha = "",
+    filename = new_file.path or old_file.path or "",
+    status = status,
+    additions = f.lines_added or 0,
+    deletions = f.lines_removed or 0,
+    changes = (f.lines_added or 0) + (f.lines_removed or 0),
+    patch = "",
+  }
 end
-
-local translate_bb_diffstat_file = make_translator({
-  filename = computed(bb_diffstat_filename),
-  additions = field("lines_added", { default = 0 }),
-  deletions = field("lines_removed", { default = 0 }),
-  changes = computed(function(f)
-    return (f.lines_added or 0) + (f.lines_removed or 0)
-  end),
-  const_fields("", "sha", "patch"),
-  default_fields("modified", "status"),
-})
 
 -- Map a Bitbucket PR comment (with inline position) to GitHub review comment format.
-local function bb_comment_body(c)
-  return (c.content or {}).raw or ""
-end
-
-local function bb_inline_position(c, key)
+local function translate_bb_pr_comment(c)
+  if not c then
+    return {}
+  end
+  local content = (c.content or {}).raw or ""
   local inline = c.inline or {}
-  return inline[key]
+  return {
+    id = c.id or 0,
+    node_id = "",
+    path = inline.path or "",
+    position = inline.to or inline.from,
+    original_position = inline.from,
+    commit_id = "",
+    original_commit_id = "",
+    diff_hunk = "",
+    body = content,
+    user = translate_bb_user(c.user or c.author),
+    created_at = c.created_on or "",
+    updated_at = c.updated_on or "",
+    html_url = (c.links and c.links.html and c.links.html.href) or "",
+    pull_request_url = "",
+    url = "",
+  }
 end
-
-local translate_bb_pr_comment = make_translator({
-  path = computed(function(c)
-    return bb_inline_position(c, "path") or ""
-  end),
-  position = computed(function(c)
-    return bb_inline_position(c, "to") or bb_inline_position(c, "from")
-  end),
-  original_position = computed(function(c)
-    return bb_inline_position(c, "from")
-  end),
-  body = computed(bb_comment_body),
-  user = computed(function(c)
-    return translate_bb_user(c.user or c.author)
-  end),
-  created_at = field("created_on", { default = "" }),
-  updated_at = field("updated_on", { default = "" }),
-  html_url = computed(function(c)
-    return bb_link(c, "html")
-  end),
-  const_fields("", "node_id", "commit_id", "original_commit_id", "diff_hunk"),
-  const_fields("", "pull_request_url", "url"),
-  default_fields(0, "id"),
-})
-
-local translate_bb_participant_review = make_translator({
-  id = computed(function(_p, idx)
-    return idx
-  end),
-  user = nested(translate_bb_user),
-  submitted_at = field("participated_on", { default = "" }),
-  const_fields("", "node_id", "body", "html_url", "pull_request_url"),
-  const_fields("APPROVED", "state"),
-})
 
 -- Map Bitbucket PR participants with REVIEWER role to GitHub reviews format.
-local function bb_participants_to_reviews(participants)
+local function translate_bb_participants_to_reviews(participants)
   local result = {}
   local idx = 0
   for _, p in ipairs(participants or {}) do
     if p.role == "REVIEWER" and p.approved then
       idx = idx + 1
-      result[idx] = translate_bb_participant_review(p, idx)
+      result[idx] = {
+        id = idx,
+        node_id = "",
+        user = translate_bb_user(p.user),
+        body = "",
+        state = "APPROVED",
+        submitted_at = p.participated_on or "",
+        html_url = "",
+        pull_request_url = "",
+      }
     end
   end
   return result
@@ -391,17 +372,20 @@ end
 
 -- Translate a Bitbucket issue to GitHub format.
 -- Bitbucket states: "open", "resolved", "wontfix", "invalid", "duplicate", "on hold", "closed"
-local function bb_issue_assignees(i)
+local function translate_bb_issue(i)
+  if not i then
+    return {}
+  end
+  local content = (i.content or {}).raw or ""
+  local state = (i.state == "open") and "open" or "closed"
+  local reporter = translate_bb_user(i.reporter)
   local assignees = {}
   if i.assignee then
     assignees[1] = translate_bb_user(i.assignee)
   end
-  return assignees
-end
-
-local function bb_issue_milestone(i)
+  local ms = nil
   if i.milestone and i.milestone.name then
-    return {
+    ms = {
       id = i.milestone.id or 0,
       number = i.milestone.id or 0,
       title = i.milestone.name,
@@ -410,42 +394,38 @@ local function bb_issue_milestone(i)
       updated_at = "",
     }
   end
-  return nil
+  return {
+    id = i.id or 0,
+    number = i.id or 0,
+    title = i.title or "",
+    body = content,
+    state = state,
+    user = reporter,
+    assignees = assignees,
+    labels = {},
+    milestone = ms,
+    created_at = i.created_on or "",
+    updated_at = i.updated_on or "",
+    closed_at = nil,
+    html_url = (i.links and i.links.html and i.links.html.href) or "",
+  }
 end
 
-local translate_bb_issue = make_translator({
-  number = field("id", { default = 0 }),
-  body = computed(bb_comment_body),
-  state = computed(function(i)
-    return i.state == "open" and "open" or "closed"
-  end),
-  user = nested(translate_bb_user, "reporter"),
-  assignees = computed(bb_issue_assignees),
-  labels = computed(function()
-    return {}
-  end),
-  milestone = computed(bb_issue_milestone),
-  created_at = field("created_on", { default = "" }),
-  updated_at = field("updated_on", { default = "" }),
-  html_url = computed(function(i)
-    return bb_link(i, "html")
-  end),
-  const_fields(nil, "closed_at"),
-  default_fields(0, "id"),
-  default_fields("", "title"),
-})
-
 -- Translate a Bitbucket issue comment to GitHub format.
-local translate_bb_issue_comment = make_translator({
-  body = computed(bb_comment_body),
-  user = nested(translate_bb_user, "author"),
-  created_at = field("created_on", { default = "" }),
-  updated_at = field("updated_on", { default = "" }),
-  html_url = computed(function(c)
-    return bb_link(c, "html")
-  end),
-  default_fields(0, "id"),
-})
+local function translate_bb_issue_comment(c)
+  if not c then
+    return {}
+  end
+  local content = (c.content or {}).raw or ""
+  return {
+    id = c.id or 0,
+    body = content,
+    user = translate_bb_user(c.author),
+    created_at = c.created_on or "",
+    updated_at = c.updated_on or "",
+    html_url = (c.links and c.links.html and c.links.html.href) or "",
+  }
+end
 
 local function bb_commit_comment_sha(c)
   local links = c.links or {}
@@ -465,44 +445,65 @@ local function bb_commit_comment_sha(c)
     or ""
 end
 
-local translate_bb_commit_comment = make_translator({
-  body = computed(bb_comment_body),
-  commit_id = computed(function(c)
-    return c.commit_id or bb_commit_comment_sha(c)
-  end),
-  path = computed(function(c)
-    return bb_inline_position(c, "path")
-  end),
-  position = computed(function(c)
-    return bb_inline_position(c, "to") or bb_inline_position(c, "from")
-  end),
-  line = computed(function(c)
-    return bb_inline_position(c, "to") or bb_inline_position(c, "from")
-  end),
-  user = computed(function(c)
-    return translate_bb_user(c.user or c.author)
-  end),
-  html_url = computed(function(c)
-    return bb_link(c, "html")
-  end),
-  created_at = field("created_on", { default = "" }),
-  updated_at = computed(function(c)
-    return c.updated_on or c.created_on or ""
-  end),
-  default_fields(0, "id"),
-})
+local function translate_bb_commit_comment(c)
+  if not c then
+    return {}
+  end
+  local content = (c.content or {}).raw or ""
+  local inline = c.inline or {}
+  return {
+    id = c.id or 0,
+    body = content,
+    commit_id = c.commit_id or bb_commit_comment_sha(c),
+    path = inline.path,
+    position = inline.to or inline.from,
+    line = inline.to or inline.from,
+    user = translate_bb_user(c.user or c.author),
+    html_url = (c.links and c.links.html and c.links.html.href) or "",
+    created_at = c.created_on or "",
+    updated_at = c.updated_on or c.created_on or "",
+  }
+end
 
 -- Translate a Bitbucket milestone to GitHub format.
 -- Bitbucket milestone: { id, name, resource_uri }
-local translate_bb_milestone = make_translator({
-  number = field("id", { default = 0 }),
-  title = field("name", { default = "" }),
-  const_fields("open", "state"),
-  const_fields("", "created_at", "updated_at"),
-  default_fields(0, "id"),
-})
+local function translate_bb_milestone(m)
+  if not m then
+    return {}
+  end
+  return {
+    id = m.id or 0,
+    number = m.id or 0,
+    title = m.name or "",
+    state = "open",
+    created_at = "",
+    updated_at = "",
+  }
+end
 
-local function bb_hook_req_from_github(body_str)
+local function translate_bb_issues(data)
+  local issues = data.values or {}
+  for i, iss in ipairs(issues) do
+    issues[i] = translate_bb_issue(iss)
+  end
+  return issues
+end
+local function translate_bb_issue_comments_list(data)
+  local comments = data.values or {}
+  for i, c in ipairs(comments) do
+    comments[i] = translate_bb_issue_comment(c)
+  end
+  return comments
+end
+local function translate_bb_milestones(data)
+  local ms = data.values or {}
+  for i, m in ipairs(ms) do
+    ms[i] = translate_bb_milestone(m)
+  end
+  return ms
+end
+
+local function translate_bb_hook_req(body_str)
   local req = DecodeJson(body_str or "{}")
   local bb_events = {}
   for _, e in ipairs(req.events or {}) do
@@ -516,119 +517,132 @@ local function bb_hook_req_from_github(body_str)
   })
 end
 
-local translate_bb_ref = make_translator({
-  ref = computed(function(r)
-    local ref_type = r.type == "tag" and "tags" or "heads"
-    return "refs/" .. ref_type .. "/" .. (r.name or "")
-  end),
-  object = computed(function(r)
-    local sha = (r.target and r.target.hash) or ""
-    return { type = "commit", sha = sha, url = "" }
-  end),
-  const_fields("", "node_id", "url"),
-})
+local function translate_bb_ref(r)
+  local ref_type = r.type == "tag" and "tags" or "heads"
+  local sha = (r.target and r.target.hash) or ""
+  return {
+    ref = "refs/" .. ref_type .. "/" .. (r.name or ""),
+    node_id = "",
+    url = "",
+    object = { type = "commit", sha = sha, url = "" },
+  }
+end
 
 -- Gist helpers ---------------------------------------------------------------
 
 -- Translate a Bitbucket snippet object to GitHub gist format.
 -- Files include only metadata (raw_url, size); content is not eagerly fetched.
 -- gist.id encodes "workspace~encoded_id" for round-trip decoding.
-local function bb_snippet_owner(s)
+local function translate_bb_snippet(s)
+  if not s then
+    return {}
+  end
   local owner = s.owner or {}
   local ws = owner.nickname or owner.display_name or ""
-  return ws, owner
-end
-
-local function bb_snippet_files(s)
   local files = {}
   for name, f in pairs(s.files or {}) do
     files[name] = {
       filename = name,
       type = f.mimetype or "text/plain",
       language = nil,
-      raw_url = bb_link(f, "self"),
+      raw_url = (f.links and f.links.self and f.links.self.href) or "",
       size = f.size or 0,
       truncated = false,
     }
   end
-  return files
-end
-
-local translate_bb_snippet = make_translator({
-  id = computed(function(s)
-    local ws = bb_snippet_owner(s)
-    return ws .. "~" .. tostring(s.id or "")
-  end),
-  html_url = computed(function(s)
-    return bb_link(s, "html")
-  end),
-  files = computed(bb_snippet_files),
-  public = computed(function(s)
-    return not (s.is_private or false)
-  end),
-  created_at = field("created_on", { default = "" }),
-  updated_at = field("updated_on", { default = "" }),
-  description = field("title", { default = "" }),
-  owner = computed(function(s)
-    local ws, owner = bb_snippet_owner(s)
-    return {
+  return {
+    id = ws .. "~" .. tostring(s.id or ""),
+    node_id = "",
+    url = "",
+    html_url = (s.links and s.links.html and s.links.html.href) or "",
+    files = files,
+    public = not (s.is_private or false),
+    created_at = s.created_on or "",
+    updated_at = s.updated_on or "",
+    description = s.title or "",
+    comments = 0,
+    user = nil,
+    owner = {
       login = ws,
       id = 0,
       node_id = owner.uuid or "",
-      avatar_url = bb_link(owner, "avatar"),
+      avatar_url = (owner.links and owner.links.avatar and owner.links.avatar.href) or "",
       url = "",
       html_url = "",
       type = "User",
-    }
-  end),
-  const_fields("", "node_id", "url"),
-  const_fields(0, "comments"),
-  const_fields(nil, "user"),
-  const_fields(false, "truncated"),
-})
+    },
+    truncated = false,
+  }
+end
+
+-- Translate a paginated Bitbucket snippet list to a GitHub gist array.
+local function translate_bb_snippets(data)
+  local result = {}
+  for i, s in ipairs(data.values or {}) do
+    result[i] = translate_bb_snippet(s)
+  end
+  return result
+end
 
 -- Translate a Bitbucket snippet comment to GitHub gist comment format.
-local translate_bb_snippet_comment = make_translator({
-  body = computed(bb_comment_body),
-  user = computed(function(c)
-    local author = c.author or {}
-    return {
+local function translate_bb_snippet_comment(c)
+  if not c then
+    return {}
+  end
+  local author = c.author or {}
+  local content = c.content or {}
+  return {
+    id = c.id or 0,
+    node_id = "",
+    url = "",
+    body = content.raw or "",
+    user = {
       login = author.nickname or author.display_name or "",
       id = 0,
       node_id = author.uuid or "",
-      avatar_url = bb_link(author, "avatar"),
+      avatar_url = (author.links and author.links.avatar and author.links.avatar.href) or "",
       url = "",
       html_url = "",
       type = "User",
-    }
-  end),
-  created_at = field("created_on", { default = "" }),
-  updated_at = field("updated_on", { default = "" }),
-  const_fields("", "node_id", "url"),
-  default_fields(0, "id"),
-})
+    },
+    created_at = c.created_on or "",
+    updated_at = c.updated_on or "",
+  }
+end
 
-local translate_bb_snippet_commit = make_translator({
-  version = field("hash", { default = "" }),
-  user = computed(function(c)
+-- Translate a paginated Bitbucket snippet comment list.
+local function translate_bb_snippet_comments(data)
+  local result = {}
+  for i, c in ipairs(data.values or {}) do
+    result[i] = translate_bb_snippet_comment(c)
+  end
+  return result
+end
+
+-- Translate a paginated Bitbucket snippet commit list to GitHub gist commit format.
+local function translate_bb_snippet_commits(data)
+  local result = {}
+  for i, c in ipairs(data.values or {}) do
     local author = c.author or {}
     local user = author.user or {}
-    return {
-      login = user.nickname or user.display_name or "",
-      id = 0,
-      node_id = user.uuid or "",
-      avatar_url = bb_link(user, "avatar"),
+    result[i] = {
       url = "",
-      html_url = "",
-      type = "User",
+      version = c.hash or "",
+      user = {
+        login = user.nickname or user.display_name or "",
+        id = 0,
+        node_id = user.uuid or "",
+        avatar_url = (user.links and user.links.avatar and user.links.avatar.href) or "",
+        url = "",
+        html_url = "",
+        type = "User",
+      },
+      committed_at = c.date or "",
+      change_status = { total = 0, additions = 0, deletions = 0 },
     }
-  end),
-  committed_at = field("date", { default = "" }),
-  change_status = computed(function()
-    return { total = 0, additions = 0, deletions = 0 }
-  end),
-  const_fields("", "url"),
-})
+  end
+  return result
+end
 
 -- Decode a GitHub gist ID (from a confusio response) back to Bitbucket workspace
 -- and encoded_id.  Returns nil, nil if gist_id is not in "workspace~encoded_id" form.
@@ -665,7 +679,7 @@ b:rest("patch_repo", function(owner, repo_name)
     fetch_json(
       base() .. "/repositories/" .. owner .. "/" .. repo_name,
       "PUT",
-      bb_req_from_github(GetBody())
+      translate_bb_req(GetBody())
     )
   )
 end)
@@ -720,7 +734,7 @@ b:rest("post_org_repos", function(workspace)
     fetch_json(
       base() .. "/repositories/" .. workspace .. "/" .. slug,
       "POST",
-      bb_req_from_github(raw)
+      translate_bb_req(raw)
     )
   )
 end)
@@ -1117,7 +1131,7 @@ b:rest("post_repo_hooks", function(owner, repo_name)
     fetch_json(
       base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/hooks",
       "POST",
-      bb_hook_req_from_github(GetBody())
+      translate_bb_hook_req(GetBody())
     )
   )
 end)
@@ -1137,7 +1151,7 @@ b:rest("patch_repo_hook", function(owner, repo_name, hook_id)
     fetch_json(
       base() .. "/repositories/" .. owner .. "/" .. repo_name .. "/hooks/{" .. hook_id .. "}",
       "PUT",
-      bb_hook_req_from_github(GetBody())
+      translate_bb_hook_req(GetBody())
     )
   )
 end)
@@ -1178,9 +1192,7 @@ b:rest(
 
 b:rest(
   "get_repo_issues",
-  proxy_handler(function(data)
-    return bb_values(translate_bb_issue, data)
-  end, function(o, r)
+  proxy_handler(translate_bb_issues, function(o, r)
     return append_page_params(base() .. "/repositories/" .. o .. "/" .. r .. "/issues", PAGES)
   end)
 )
@@ -1194,9 +1206,7 @@ b:rest(
 
 b:rest(
   "get_issue_comments",
-  proxy_handler(function(data)
-    return bb_values(translate_bb_issue_comment, data)
-  end, function(o, r, n)
+  proxy_handler(translate_bb_issue_comments_list, function(o, r, n)
     return append_page_params(
       base() .. "/repositories/" .. o .. "/" .. r .. "/issues/" .. n .. "/comments",
       PAGES
@@ -1206,9 +1216,7 @@ b:rest(
 
 b:rest(
   "get_repo_milestones",
-  proxy_handler(function(data)
-    return bb_values(translate_bb_milestone, data)
-  end, function(o, r)
+  proxy_handler(translate_bb_milestones, function(o, r)
     return base() .. "/repositories/" .. o .. "/" .. r .. "/milestones"
   end)
 )
@@ -1218,9 +1226,7 @@ b:rest(
 -- GET /repos/{owner}/{repo}/pulls
 b:rest(
   "get_repo_pulls",
-  proxy_handler(function(data)
-    return bb_values(translate_bb_pull, data)
-  end, function(o, r)
+  proxy_handler(translate_bb_pulls, function(o, r)
     return append_page_params(base() .. "/repositories/" .. o .. "/" .. r .. "/pullrequests", PAGES)
   end)
 )
@@ -1403,7 +1409,7 @@ b:rest("get_pull_reviews", function(owner, repo_name, pull_number)
     return
   end
   local pr = DecodeJson(body) or {}
-  respond_json(200, bb_participants_to_reviews(pr.participants))
+  respond_json(200, translate_bb_participants_to_reviews(pr.participants))
 end)
 
 -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
@@ -1420,7 +1426,7 @@ b:rest("get_pull_review", function(owner, repo_name, pull_number, review_id)
     return
   end
   local pr = DecodeJson(body) or {}
-  local reviews = bb_participants_to_reviews(pr.participants)
+  local reviews = translate_bb_participants_to_reviews(pr.participants)
   local rid = tonumber(review_id)
   if rid and reviews[rid] then
     respond_json(200, reviews[rid])
@@ -1819,15 +1825,17 @@ end)
 -- e.g. gist_id = "octocat~pHANT4" → /2.0/snippets/octocat/pHANT4
 
 b:rest("get_gists", function()
-  proxy_json_list(function(data)
-    return bb_values(translate_bb_snippet, data)
-  end, fetch_json(append_page_params(base() .. "/snippets?role=owner", PAGES)))
+  proxy_json_list(
+    translate_bb_snippets,
+    fetch_json(append_page_params(base() .. "/snippets?role=owner", PAGES))
+  )
 end)
 
 b:rest("get_gists_public", function()
-  proxy_json_list(function(data)
-    return bb_values(translate_bb_snippet, data)
-  end, fetch_json(append_page_params(base() .. "/snippets", PAGES)))
+  proxy_json_list(
+    translate_bb_snippets,
+    fetch_json(append_page_params(base() .. "/snippets", PAGES))
+  )
 end)
 
 b:rest("post_gists", function()
@@ -1886,9 +1894,10 @@ end)
 b:rest("get_gist_comments", function(gist_id)
   local url = snippet_url(gist_id)
   if url then
-    proxy_json_list(function(data)
-      return bb_values(translate_bb_snippet_comment, data)
-    end, fetch_json(append_page_params(url .. "/comments", PAGES)))
+    proxy_json_list(
+      translate_bb_snippet_comments,
+      fetch_json(append_page_params(url .. "/comments", PAGES))
+    )
   end
 end)
 
@@ -1940,18 +1949,17 @@ end)
 b:rest("get_gist_commits", function(gist_id)
   local url = snippet_url(gist_id)
   if url then
-    proxy_json_list(function(data)
-      return bb_values(translate_bb_snippet_commit, data)
-    end, fetch_json(append_page_params(url .. "/commits", PAGES)))
+    proxy_json_list(
+      translate_bb_snippet_commits,
+      fetch_json(append_page_params(url .. "/commits", PAGES))
+    )
   end
 end)
 
 b:rest("get_gist_forks", function(gist_id)
   local url = snippet_url(gist_id)
   if url then
-    proxy_json_list(function(data)
-      return bb_values(translate_bb_snippet, data)
-    end, fetch_json(append_page_params(url .. "/forks", PAGES)))
+    proxy_json_list(translate_bb_snippets, fetch_json(append_page_params(url .. "/forks", PAGES)))
   end
 end)
 
@@ -2000,9 +2008,10 @@ b:rest("get_gist_revision", function(gist_id, sha)
 end)
 
 b:rest("get_user_gists", function(username)
-  proxy_json_list(function(data)
-    return bb_values(translate_bb_snippet, data)
-  end, fetch_json(append_page_params(base() .. "/snippets/" .. username, PAGES)))
+  proxy_json_list(
+    translate_bb_snippets,
+    fetch_json(append_page_params(base() .. "/snippets/" .. username, PAGES))
+  )
 end)
 
 -- ---------------------------------------------------------------------------
@@ -2403,7 +2412,7 @@ b:graphql("PullRequest.reviews", function(parent, args, ctx)
     return nil
   end
   -- Reuse the existing REST translator to convert participants to review objects.
-  local reviews = bb_participants_to_reviews(data.participants)
+  local reviews = translate_bb_participants_to_reviews(data.participants)
   local nodes = {}
   for _, r in ipairs(reviews) do
     nodes[#nodes + 1] = graphql_translate_review(r, owner, repo)

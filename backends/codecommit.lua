@@ -17,42 +17,53 @@ local fetch_json = make_backend_transport("basic").fetch_json
 
 local ZERO_SHA = "0000000000000000000000000000000000000000"
 
-local function codecommit_timestamp(value)
-  return value and tostring(value) or nil
-end
-
-local translate_repo_owner = make_translator({
-  login = field("accountId", { default = "" }),
-  const_fields(0, "id"),
-  const_fields("", "node_id", "avatar_url", "url", "html_url"),
-  const_fields("Organization", "type"),
-})
-
 -- Translate a CodeCommit repositoryMetadata (or summary) object to GitHub format.
-local translate_repo = make_translator({
-  node_id = field("repositoryId", { default = "" }),
-  name = field("repositoryName", { default = "" }),
-  full_name = field("repositoryName", { default = "" }),
-  owner = computed(function(r)
-    return translate_repo_owner(r)
-  end),
-  html_url = field("cloneUrlHttp", { default = "" }),
-  description = "repositoryDescription",
-  clone_url = field("cloneUrlHttp", { default = "" }),
-  default_branch = field("defaultBranch", { default = "main" }),
-  created_at = field("creationDate", { transform = codecommit_timestamp }),
-  updated_at = field("lastModifiedDate", { transform = codecommit_timestamp }),
-  pushed_at = field("lastModifiedDate", { transform = codecommit_timestamp }),
-  const_fields(0, "id", "size", "stargazers_count", "watchers_count"),
-  const_fields(0, "forks_count", "open_issues_count", "forks", "open_issues"),
-  const_fields(0, "watchers"),
-  const_fields(true, "private"),
-  const_fields(false, "fork", "has_issues", "has_wiki", "archived"),
-  const_fields(false, "disabled"),
-  const_fields("", "url", "homepage"),
-  const_fields(nil, "language"),
-  const_fields("private", "visibility"),
-})
+local function translate_repo(r)
+  if not r then
+    return {}
+  end
+  local name = r.repositoryName or ""
+  return {
+    id = 0,
+    node_id = r.repositoryId or "",
+    name = name,
+    full_name = name,
+    private = true,
+    owner = {
+      login = r.accountId or "",
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      url = "",
+      html_url = "",
+      type = "Organization",
+    },
+    html_url = r.cloneUrlHttp or "",
+    description = r.repositoryDescription,
+    fork = false,
+    url = "",
+    clone_url = r.cloneUrlHttp or "",
+    homepage = "",
+    size = 0,
+    stargazers_count = 0,
+    watchers_count = 0,
+    language = nil,
+    has_issues = false,
+    has_wiki = false,
+    forks_count = 0,
+    archived = false,
+    disabled = false,
+    open_issues_count = 0,
+    default_branch = r.defaultBranch or "main",
+    visibility = "private",
+    forks = 0,
+    open_issues = 0,
+    watchers = 0,
+    created_at = r.creationDate and tostring(r.creationDate) or nil,
+    updated_at = r.lastModifiedDate and tostring(r.lastModifiedDate) or nil,
+    pushed_at = r.lastModifiedDate and tostring(r.lastModifiedDate) or nil,
+  }
+end
 
 local function codecommit_user_from_arn(arn)
   local login = tostring(arn or ""):match(":user/(.+)$")
