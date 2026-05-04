@@ -157,6 +157,15 @@ local CODECOMMIT_COMMENT_ACTIONS = {
   commentOnPullRequestUpdated = "edited",
 }
 
+local CODECOMMIT_APPROVAL_RULE_ACTIONS = {
+  pullRequestApprovalRuleCreated = "created",
+  pullRequestApprovalRuleUpdated = "edited",
+  pullRequestApprovalRuleDeleted = "deleted",
+  approvalRuleTemplateCreated = "created",
+  approvalRuleTemplateUpdated = "edited",
+  approvalRuleTemplateDeleted = "deleted",
+}
+
 local function codecommit_pull_request_action(detail)
   local raw_action = detail.event or ""
   if raw_action == "pullRequestStatusChanged" then
@@ -175,6 +184,19 @@ local function codecommit_supported_pull_request_event(raw_action)
   return CODECOMMIT_PR_ACTIONS[raw_action] ~= nil
     or raw_action == "pullRequestStatusChanged"
     or raw_action == "pullRequestMergeStatusUpdated"
+end
+
+local function codecommit_is_approval_event(raw_action)
+  return raw_action == "pullRequestApprovalStateChanged"
+    or raw_action == "pullRequestApprovalRuleOverridden"
+    or CODECOMMIT_APPROVAL_RULE_ACTIONS[raw_action] ~= nil
+end
+
+local function codecommit_is_approval_template_association_event(raw_action)
+  return raw_action == "approvalRuleTemplateAssociatedWithRepository"
+    or raw_action == "approvalRuleTemplateDisassociatedFromRepository"
+    or raw_action == "batchAssociateApprovalRuleTemplateWithRepositories"
+    or raw_action == "batchDisassociateApprovalRuleTemplateFromRepositories"
 end
 
 local CODECOMMIT_ACTIONLESS_EVENTS = {
@@ -203,6 +225,22 @@ local function codecommit_normalized_event_type(internal_event, fields)
   return normalized_webhook_event_type(internal_event.event, internal_event.action)
 end
 
+local function codecommit_resource_repository_name(payload, detail)
+  for name in pairs(detail.repositories or {}) do
+    return name
+  end
+  local resource = (payload.resources or {})[1] or ""
+  return resource:match(":([^:]+)$") or ""
+end
+
+local function codecommit_repository_from_detail(payload, detail)
+  local repo_names = detail.repositoryNames or {}
+  local repo_name = repo_names[1]
+    or detail.repositoryName
+    or codecommit_resource_repository_name(payload, detail)
+  return codecommit_repository(repo_name or "", payload.account or "", payload.region or "")
+end
+
 local function codecommit_pr_ref(ref, commit, repository)
   local short = codecommit_ref_name(ref)
   return {
@@ -213,13 +251,22 @@ local function codecommit_pr_ref(ref, commit, repository)
   }
 end
 
-local function codecommit_pr_from_comment_detail(payload, detail, repository, sender)
-  local pull_request_id = tonumber(detail.pullRequestId) or 0
-  local console_base = "https://" .. payload.region .. ".console.aws.amazon.com"
-  local console_path = "/codesuite/codecommit/repositories/"
+local function codecommit_pr_url(payload, repository, pull_request_id)
+  if payload.region == "" or repository.name == "" or not pull_request_id then
+    return ""
+  end
+  return "https://"
+    .. payload.region
+    .. ".console.aws.amazon.com/codesuite/codecommit/repositories/"
     .. repository.name
     .. "/pull-requests/"
     .. pull_request_id
+    .. "?region="
+    .. payload.region
+end
+
+local function codecommit_pr_from_comment_detail(payload, detail, repository, sender)
+  local pull_request_id = tonumber(detail.pullRequestId) or 0
   return {
     id = pull_request_id,
     node_id = detail.revisionId or "",
@@ -233,11 +280,11 @@ local function codecommit_pr_from_comment_detail(payload, detail, repository, se
     created_at = payload.time,
     updated_at = payload.time,
     merged = false,
-    html_url = payload.region ~= ""
-        and repository.name ~= ""
-        and pull_request_id ~= 0
-        and (console_base .. console_path .. "?region=" .. payload.region)
-      or "",
+    html_url = codecommit_pr_url(
+      payload,
+      repository,
+      pull_request_id ~= 0 and pull_request_id or nil
+    ),
     url = "",
   }
 end
@@ -245,11 +292,6 @@ end
 local function codecommit_pr_from_detail(payload, detail, repository, sender)
   local merged = codecommit_bool(detail.isMerged)
   local closed = detail.pullRequestStatus == "Closed"
-  local console_base = "https://" .. payload.region .. ".console.aws.amazon.com"
-  local console_path = "/codesuite/codecommit/repositories/"
-    .. repository.name
-    .. "/pull-requests/"
-    .. detail.pullRequestId
   return {
     id = tonumber(detail.pullRequestId) or 0,
     node_id = detail.revisionId or "",
@@ -268,11 +310,7 @@ local function codecommit_pr_from_detail(payload, detail, repository, sender)
     merged = merged,
     mergeable = detail.mergeOption ~= nil and not merged or nil,
     mergeable_state = detail.mergeOption or "unknown",
-    html_url = payload.region ~= ""
-        and repository.name ~= ""
-        and detail.pullRequestId
-        and (console_base .. console_path .. "?region=" .. payload.region)
-      or "",
+    html_url = codecommit_pr_url(payload, repository, detail.pullRequestId),
     url = "",
   }
 end
@@ -322,6 +360,67 @@ local function codecommit_comment_from_detail(payload, detail, repository, sende
   }
 end
 
+local function codecommit_review_state(approval_status)
+  if approval_status == "APPROVE" then
+    return "submitted", "approved"
+  end
+  if approval_status == "REVOKE" then
+    return "dismissed", "dismissed"
+  end
+  return "unknown", "commented"
+end
+
+local function codecommit_review_from_detail(payload, detail, sender)
+  local action, state = codecommit_review_state(detail.approvalStatus)
+  return {
+    id = 0,
+    node_id = (detail.pullRequestId or "") .. ":" .. (detail.callerUserArn or ""),
+    body = detail.notificationBody,
+    state = state,
+    html_url = codecommit_pr_url(
+      payload,
+      codecommit_repository_from_detail(payload, detail),
+      detail.pullRequestId
+    ),
+    user = sender,
+    submitted_at = payload.time or detail.lastModifiedDate or "",
+    commit_id = detail.destinationCommit or detail.sourceCommit or "",
+  },
+    action
+end
+
+local function codecommit_rule_from_detail(payload, detail, repository)
+  local name = detail.approvalRuleName or detail.approvalRuleTemplateName or ""
+  local id = detail.approvalRuleId or detail.approvalRuleTemplateId or ""
+  local content_sha = detail.approvalRuleContentSha256
+    or detail.approvalRuleTemplateContentSha256
+    or ""
+  return {
+    id = 0,
+    node_id = id,
+    name = name,
+    pattern = codecommit_ref_name(detail.destinationReference or "*"),
+    created_at = detail.creationDate or payload.time or "",
+    updated_at = detail.lastModifiedDate or payload.time or "",
+    required_approving_review_count = 0,
+    required_status_checks = {},
+    admin_enforced = false,
+    allows_deletions = false,
+    allows_force_pushes = false,
+    blocks_creations = false,
+    dismisses_stale_reviews = false,
+    is_admin_enforced = false,
+    repository_id = repository.id or 0,
+    codecommit = {
+      content_sha256 = content_sha,
+      pull_request_id = detail.pullRequestId,
+      repository_names = detail.repositoryNames,
+      template_id = detail.approvalRuleTemplateId,
+      template_name = detail.approvalRuleTemplateName,
+    },
+  }
+end
+
 local function codecommit_pull_request_from_eventbridge(payload)
   local detail = payload.detail or {}
   if not codecommit_supported_pull_request_event(detail.event) then
@@ -347,6 +446,67 @@ local function codecommit_pull_request_from_eventbridge(payload)
     },
     timestamp = payload.time or detail.lastModifiedDate or "",
   })
+end
+
+local function codecommit_approval_from_eventbridge(payload)
+  local detail = payload.detail or {}
+  local raw_action = detail.event or ""
+  if codecommit_is_approval_template_association_event(raw_action) then
+    return nil,
+      "CodeCommit approval rule template association events have no GitHub webhook equivalent"
+  end
+  if raw_action == "pullRequestApprovalRuleOverridden" then
+    return nil, "CodeCommit approval rule override events have no GitHub webhook equivalent"
+  end
+
+  local repository = codecommit_repository_from_detail(payload, detail)
+  local sender = codecommit_user_from_arn(detail.callerUserArn or detail.author)
+  if raw_action == "pullRequestApprovalStateChanged" then
+    local review, action = codecommit_review_from_detail(payload, detail, sender)
+    return make_internal_event({
+      event = "pull_request_review",
+      action = action,
+      raw_action = action == "unknown" and detail.approvalStatus or nil,
+      provider = "codecommit",
+      raw = payload,
+      data = {
+        action = action,
+        review = review,
+        pull_request = codecommit_pr_from_detail(payload, detail, repository, sender),
+        repository = repository,
+        sender = sender,
+      },
+      timestamp = payload.time or detail.lastModifiedDate or "",
+    })
+  end
+
+  local action = CODECOMMIT_APPROVAL_RULE_ACTIONS[raw_action]
+  if action then
+    local data = {
+      action = action,
+      rule = codecommit_rule_from_detail(payload, detail, repository),
+      repository = repository,
+      sender = sender,
+    }
+    if action == "edited" then
+      data.changes = {
+        codecommit_content_sha256 = {
+          from = detail.oldApprovalRuleContentSha256
+            or detail.oldApprovalRuleTemplateContentSha256
+            or "",
+        },
+      }
+    end
+    return make_internal_event({
+      event = "branch_protection_rule",
+      action = action,
+      provider = "codecommit",
+      raw = payload,
+      data = data,
+      timestamp = payload.time or detail.lastModifiedDate or "",
+    })
+  end
+  return nil, "Unsupported CodeCommit approval event"
 end
 
 local function codecommit_comment_from_eventbridge(payload)
@@ -585,7 +745,13 @@ local function codecommit_webhook(payload)
     return codecommit_comment_from_eventbridge(payload)
   end
   if payload["detail-type"] == "CodeCommit Pull Request State Change" then
+    if codecommit_is_approval_event((payload.detail or {}).event) then
+      return codecommit_approval_from_eventbridge(payload)
+    end
     return codecommit_pull_request_from_eventbridge(payload)
+  end
+  if payload["detail-type"] == "CodeCommit Approval Rule Template Change" then
+    return codecommit_approval_from_eventbridge(payload)
   end
   if
     payload.source == "aws.codecommit"
@@ -729,16 +895,20 @@ b:rest("search_repositories", function()
 end)
 
 b:webhook("codecommit", codecommit_webhook)
+b:webhook_translator("branch_protection_rule", translate_codecommit_normalized_webhook)
 b:webhook_translator("commit_comment", translate_codecommit_normalized_webhook)
 b:webhook_translator("create", translate_codecommit_normalized_webhook)
 b:webhook_translator("delete", translate_codecommit_normalized_webhook)
 b:webhook_translator("pull_request", translate_codecommit_normalized_webhook)
+b:webhook_translator("pull_request_review", translate_codecommit_normalized_webhook)
 b:webhook_translator("pull_request_review_comment", translate_codecommit_normalized_webhook)
 b:webhook_translator("push", translate_codecommit_normalized_webhook)
+b:webhook_github_translator("branch_protection_rule", translate_codecommit_github_webhook)
 b:webhook_github_translator("commit_comment", translate_codecommit_github_webhook)
 b:webhook_github_translator("create", translate_codecommit_github_webhook)
 b:webhook_github_translator("delete", translate_codecommit_github_webhook)
 b:webhook_github_translator("pull_request", translate_codecommit_github_webhook)
+b:webhook_github_translator("pull_request_review", translate_codecommit_github_webhook)
 b:webhook_github_translator("pull_request_review_comment", translate_codecommit_github_webhook)
 b:webhook_github_translator("push", translate_codecommit_github_webhook)
 

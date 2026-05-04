@@ -1,0 +1,32 @@
+{
+  "version": "0",
+  "id": "99999999-aaaa-bbbb-cccc-000000000000",
+  "detail-type": "CodeCommit Pull Request State Change",
+  "source": "aws.codecommit",
+  "account": "123456789012",
+  "time": "2024-01-15T15:00:00Z",
+  "region": "us-east-1",
+  "resources": [
+    "arn:aws:codecommit:us-east-1:123456789012:hello-world"
+  ],
+  "detail": {
+    "approvalStatus": "APPROVE",
+    "author": "arn:aws:iam::123456789012:user/yvonne",
+    "callerUserArn": "arn:aws:iam::123456789012:user/xavier",
+    "creationDate": "2024-01-15T13:00:00Z",
+    "description": "Add a safer webhook parser.",
+    "destinationCommit": "1111111111111111111111111111111111111111",
+    "destinationReference": "refs/heads/main",
+    "event": "pullRequestApprovalStateChanged",
+    "isMerged": "False",
+    "lastModifiedDate": "2024-01-15T15:00:00Z",
+    "notificationBody": "CodeCommit approval state changed to APPROVE.",
+    "pullRequestId": "42",
+    "pullRequestStatus": "Open",
+    "repositoryNames": ["hello-world"],
+    "revisionId": "approval-review-approved",
+    "sourceCommit": "2222222222222222222222222222222222222222",
+    "sourceReference": "refs/heads/webhook-parser",
+    "title": "Add webhook parser"
+  }
+}

@@ -34,6 +34,54 @@ HTTP 200
 
 POST http://{{host}}/webhooks/codecommit
 Content-Type: application/json
+file,fixtures/webhooks/codecommit/pull_request_review-submitted.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "pull_request_review"
+jsonpath "$[0].confusio_source" == "codecommit"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "pull_request.review.submitted"
+jsonpath "$[0].body_json.actor.login" == "xavier"
+jsonpath "$[0].body_json.payload.review.state" == "approved"
+jsonpath "$[0].body_json.payload.pull_request.number" == 42
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/branch_protection_rule-created.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "branch_protection_rule"
+jsonpath "$[0].confusio_source" == "codecommit"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "branch_protection_rule.created"
+jsonpath "$[0].body_json.actor.login" == "zara"
+jsonpath "$[0].body_json.payload.rule.node_id" == "rule-created"
+jsonpath "$[0].body_json.payload.rule.codecommit.pull_request_id" == "42"
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
 file,fixtures/webhooks/codecommit/pull_request_review_comment-created.json;
 HTTP 200
 [Asserts]

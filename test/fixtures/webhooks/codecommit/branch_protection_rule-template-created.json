@@ -1,0 +1,20 @@
+{
+  "version": "0",
+  "id": "eeeeeeee-ffff-0000-1111-222222222222",
+  "detail-type": "CodeCommit Approval Rule Template Change",
+  "source": "aws.codecommit",
+  "account": "123456789012",
+  "time": "2024-01-15T15:25:00Z",
+  "region": "us-east-1",
+  "resources": [],
+  "detail": {
+    "approvalRuleTemplateContentSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "approvalRuleTemplateId": "template-created",
+    "approvalRuleTemplateName": "two-approvers-required-for-main",
+    "callerUserArn": "arn:aws:iam::123456789012:user/zara",
+    "creationDate": "2024-01-15T15:25:00Z",
+    "event": "approvalRuleTemplateCreated",
+    "lastModifiedDate": "2024-01-15T15:25:00Z",
+    "repositories": {}
+  }
+}

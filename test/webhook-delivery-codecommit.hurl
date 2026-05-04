@@ -397,6 +397,286 @@ jsonpath "$[0].body_json.action" == "synchronize"
 jsonpath "$[0].body_json.pull_request.head.sha" == "5555555555555555555555555555555555555555"
 jsonpath "$[0].body_json.sender.login" == "quinn"
 
+# -- EventBridge pullRequestApprovalStateChanged -> review submitted ---------
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/pull_request_review-submitted.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request_review"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.action" == "submitted"
+jsonpath "$[0].body_json.review.state" == "approved"
+jsonpath "$[0].body_json.review.user.login" == "xavier"
+jsonpath "$[0].body_json.pull_request.number" == 42
+jsonpath "$[0].body_json.repository.full_name" == "hello-world"
+jsonpath "$[0].body_json.sender.login" == "xavier"
+
+# -- EventBridge pullRequestApprovalStateChanged -> review dismissed ---------
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/pull_request_review-dismissed.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request_review"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.action" == "dismissed"
+jsonpath "$[0].body_json.review.state" == "dismissed"
+jsonpath "$[0].body_json.pull_request.number" == 42
+jsonpath "$[0].body_json.sender.login" == "xavier"
+
+# -- EventBridge pullRequestApprovalRuleCreated -> rule created --------------
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/branch_protection_rule-created.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "branch_protection_rule"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.action" == "created"
+jsonpath "$[0].body_json.rule.node_id" == "rule-created"
+jsonpath "$[0].body_json.rule.name" == "two-approvers-needed"
+jsonpath "$[0].body_json.rule.pattern" == "main"
+jsonpath "$[0].body_json.rule.codecommit.pull_request_id" == "42"
+jsonpath "$[0].body_json.repository.full_name" == "hello-world"
+jsonpath "$[0].body_json.sender.login" == "zara"
+
+# -- EventBridge pullRequestApprovalRuleUpdated -> rule edited ---------------
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/branch_protection_rule-edited.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "branch_protection_rule"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.action" == "edited"
+jsonpath "$[0].body_json.rule.node_id" == "rule-edited"
+jsonpath "$[0].body_json.changes.codecommit_content_sha256.from" == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+jsonpath "$[0].body_json.sender.login" == "zara"
+
+# -- EventBridge pullRequestApprovalRuleDeleted -> rule deleted --------------
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/branch_protection_rule-deleted.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "branch_protection_rule"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.action" == "deleted"
+jsonpath "$[0].body_json.rule.node_id" == "rule-deleted"
+jsonpath "$[0].body_json.sender.login" == "zara"
+
+# -- EventBridge approvalRuleTemplateCreated -> rule created -----------------
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/branch_protection_rule-template-created.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "branch_protection_rule"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.action" == "created"
+jsonpath "$[0].body_json.rule.node_id" == "template-created"
+jsonpath "$[0].body_json.rule.name" == "two-approvers-required-for-main"
+jsonpath "$[0].body_json.rule.codecommit.template_id" == "template-created"
+jsonpath "$[0].body_json.sender.login" == "zara"
+
+# -- EventBridge approvalRuleTemplateUpdated -> rule edited ------------------
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/branch_protection_rule-template-edited.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "branch_protection_rule"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.action" == "edited"
+jsonpath "$[0].body_json.rule.node_id" == "template-edited"
+jsonpath "$[0].body_json.changes.codecommit_content_sha256.from" == "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+jsonpath "$[0].body_json.sender.login" == "zara"
+
+# -- EventBridge approvalRuleTemplateDeleted -> rule deleted -----------------
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/branch_protection_rule-template-deleted.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "branch_protection_rule"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.action" == "deleted"
+jsonpath "$[0].body_json.rule.node_id" == "template-deleted"
+jsonpath "$[0].body_json.sender.login" == "zara"
+
+# -- EventBridge pullRequestApprovalRuleOverridden has no GitHub equivalent --
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/branch_protection_rule-override.json;
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "CodeCommit approval rule override events have no GitHub webhook equivalent"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 0
+
+# -- EventBridge approval template association events have no GitHub equivalent
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/branch_protection_rule-template-associated.json;
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "CodeCommit approval rule template association events have no GitHub webhook equivalent"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 0
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/branch_protection_rule-template-disassociated.json;
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "CodeCommit approval rule template association events have no GitHub webhook equivalent"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 0
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/branch_protection_rule-template-batch-associated.json;
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "CodeCommit approval rule template association events have no GitHub webhook equivalent"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 0
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/branch_protection_rule-template-batch-disassociated.json;
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "CodeCommit approval rule template association events have no GitHub webhook equivalent"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 0
+
 # -- EventBridge commentOnCommitCreated -> commit_comment created ------------
 
 POST http://{{target}}/reset
