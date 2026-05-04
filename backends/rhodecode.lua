@@ -74,40 +74,285 @@ local function full_ref(ref)
   return "refs/heads/" .. (ref.name or "")
 end
 
-local function user_from_login(login, email)
-  login = login or ""
-  return {
-    login = login,
-    id = 0,
-    node_id = "",
-    avatar_url = "",
-    html_url = login ~= "" and (config.base_url .. "/_admin/users/edit/" .. login) or "",
-    type = "User",
-    site_admin = false,
-    name = login,
-    email = email or "",
-    blog = "",
-  }
-end
-
-local function translate_rhodecode_user(payload)
-  payload = payload or {}
+local function rhodecode_user_login(payload)
   if type(payload) == "string" then
-    return user_from_login(payload)
+    return payload
   end
-  return user_from_login(
-    payload.username
-      or payload.user
-      or payload.user_name
-      or payload.actor
-      or payload.created_by
-      or payload.deleted_by
-      or payload.owner,
-    payload.email
-  )
+  payload = payload or {}
+  return payload.username
+    or payload.user
+    or payload.user_name
+    or payload.actor
+    or payload.created_by
+    or payload.deleted_by
+    or payload.owner
+    or ""
 end
 
-local function repo_name_from_payload(payload)
+local function rhodecode_user_url(login)
+  return login ~= "" and (config.base_url .. "/_admin/users/edit/" .. login) or ""
+end
+
+local translate_rhodecode_user = make_translator({
+  login = computed(rhodecode_user_login),
+  id = const(0),
+  node_id = const(""),
+  avatar_url = const(""),
+  html_url = computed(function(payload)
+    return rhodecode_user_url(rhodecode_user_login(payload))
+  end),
+  type = const("User"),
+  site_admin = const(false),
+  name = computed(rhodecode_user_login),
+  email = computed(function(payload)
+    if type(payload) == "table" then
+      return payload.email or ""
+    end
+    return ""
+  end),
+  blog = const(""),
+})
+
+local function rhodecode_user(payload)
+  return translate_rhodecode_user(payload or "")
+end
+
+local repo_name_from_payload
+local repo_table
+local pr_repo_name
+
+local function rhodecode_repo_source(payload)
+  return repo_table(payload)
+end
+
+local function rhodecode_repo_private(payload)
+  local source = rhodecode_repo_source(payload)
+  return bool_value(source.private or source.repo_private or source.is_private)
+end
+
+local function rhodecode_repo_full_name(payload)
+  return repo_name_from_payload(payload)
+end
+
+local translate_rhodecode_repo_owner = make_translator({
+  login = computed(function(payload)
+    local owner = split_repo_name(rhodecode_repo_full_name(payload))
+    return owner
+  end),
+  id = computed(function(payload)
+    return rhodecode_repo_source(payload).owner_id or 0
+  end),
+  node_id = const(""),
+  avatar_url = const(""),
+  url = const(""),
+  html_url = computed(function(payload)
+    local owner = split_repo_name(rhodecode_repo_full_name(payload))
+    return rhodecode_user_url(owner)
+  end),
+  type = const("User"),
+})
+
+local translate_rhodecode_repo = make_translator({
+  id = computed(function(payload)
+    local source = rhodecode_repo_source(payload)
+    return source.repo_id or source.repository_id or source.id or 0
+  end),
+  node_id = const(""),
+  name = computed(function(payload)
+    local _, repo_name = split_repo_name(rhodecode_repo_full_name(payload))
+    return repo_name
+  end),
+  full_name = computed(rhodecode_repo_full_name),
+  private = computed(rhodecode_repo_private),
+  owner = computed(function(payload)
+    return translate_rhodecode_repo_owner(payload)
+  end),
+  html_url = computed(function(payload)
+    local source = rhodecode_repo_source(payload)
+    local full_name = rhodecode_repo_full_name(payload)
+    return source.html_url or (full_name ~= "" and (config.base_url .. "/" .. full_name) or "")
+  end),
+  description = computed(function(payload)
+    return rhodecode_repo_source(payload).description
+  end),
+  fork = computed(function(payload)
+    return rhodecode_repo_source(payload).fork_id ~= nil
+  end),
+  url = const(""),
+  git_url = const(""),
+  ssh_url = const(""),
+  clone_url = computed(function(payload)
+    local source = rhodecode_repo_source(payload)
+    local full_name = rhodecode_repo_full_name(payload)
+    return source.clone_uri
+      or source.clone_url
+      or (full_name ~= "" and (config.base_url .. "/" .. full_name) or "")
+  end),
+  homepage = const(""),
+  size = const(0),
+  stargazers_count = const(0),
+  watchers_count = const(0),
+  language = const(nil),
+  has_issues = const(false),
+  has_wiki = computed(function(payload)
+    return bool_value(rhodecode_repo_source(payload).enable_downloads)
+  end),
+  forks_count = const(0),
+  archived = const(false),
+  disabled = const(false),
+  open_issues_count = const(0),
+  default_branch = computed(function(payload)
+    return rhodecode_repo_source(payload).default_branch or "main"
+  end),
+  visibility = computed(function(payload)
+    return rhodecode_repo_private(payload) and "private" or "public"
+  end),
+  forks = const(0),
+  open_issues = const(0),
+  watchers = const(0),
+  created_at = computed(function(payload)
+    return rhodecode_repo_source(payload).created_on
+  end),
+  updated_at = computed(function(payload)
+    return rhodecode_repo_source(payload).updated_on
+  end),
+  pushed_at = computed(function(payload)
+    return rhodecode_repo_source(payload).pushed_at
+  end),
+})
+
+local function rhodecode_commit_author(c)
+  return (c or {}).author or {}
+end
+
+local function rhodecode_commit_committer(c)
+  return (c or {}).committer or rhodecode_commit_author(c)
+end
+
+local translate_rhodecode_push_commit_author = make_translator({
+  name = computed(function(c)
+    local author = rhodecode_commit_author(c)
+    return author.name or c.author_name or ""
+  end),
+  email = computed(function(c)
+    local author = rhodecode_commit_author(c)
+    return author.email or c.author_email or ""
+  end),
+  username = computed(function(c)
+    return rhodecode_commit_author(c).username or ""
+  end),
+})
+
+local translate_rhodecode_push_commit_committer = make_translator({
+  name = computed(function(c)
+    local committer = rhodecode_commit_committer(c)
+    local author = rhodecode_commit_author(c)
+    return committer.name or c.committer_name or author.name or ""
+  end),
+  email = computed(function(c)
+    local committer = rhodecode_commit_committer(c)
+    local author = rhodecode_commit_author(c)
+    return committer.email or c.committer_email or author.email or ""
+  end),
+  username = computed(function(c)
+    local committer = rhodecode_commit_committer(c)
+    local author = rhodecode_commit_author(c)
+    return committer.username or author.username or ""
+  end),
+})
+
+local translate_rhodecode_push_commit = make_translator({
+  id = computed(function(c)
+    return c.id or c.sha or c.raw_id or ""
+  end),
+  message = field("message", { default = "" }),
+  timestamp = computed(function(c)
+    return c.timestamp or c.date or c.created_on or ""
+  end),
+  url = field("url", { default = "" }),
+  author = computed(function(c)
+    return translate_rhodecode_push_commit_author(c)
+  end),
+  committer = computed(function(c)
+    return translate_rhodecode_push_commit_committer(c)
+  end),
+  added = computed(function(c)
+    return c.added or {}
+  end),
+  removed = computed(function(c)
+    return c.removed or {}
+  end),
+  modified = computed(function(c)
+    return c.modified or {}
+  end),
+})
+
+local translate_pr_branch = make_translator({
+  label = computed(function(repo_name, ref)
+    repo_name = repo_name or ""
+    return repo_name ~= "" and (repo_name .. ":" .. (ref or "")) or (ref or "")
+  end),
+  ref = computed(function(_repo_name, ref)
+    return ref or ""
+  end),
+  sha = const(""),
+  repo = computed(function(repo_name)
+    repo_name = repo_name or ""
+    return translate_rhodecode_repo({ repo_name = repo_name })
+  end),
+})
+
+local function rhodecode_payload_pr(payload)
+  return (payload or {}).pull_request or payload or {}
+end
+
+local function rhodecode_pr_status(payload)
+  local pr = rhodecode_payload_pr(payload)
+  return pr.status or (payload or {}).status or "new"
+end
+
+local function rhodecode_pr_state(payload)
+  local status = rhodecode_pr_status(payload)
+  return (status == "closed" or status == "merged") and "closed" or "open"
+end
+
+local function rhodecode_pr_target_repo(payload)
+  local pr = rhodecode_payload_pr(payload)
+  local target_repo = pr_repo_name(pr.org_repo_name or pr.target_repo or (payload or {}).repository)
+  if target_repo == "" then
+    target_repo = repo_name_from_payload(payload)
+  end
+  return target_repo
+end
+
+local function rhodecode_pr_source_repo(payload)
+  local pr = rhodecode_payload_pr(payload)
+  local source_repo =
+    pr_repo_name(pr.other_repo_name or pr.source_repo or (payload or {}).source_repository)
+  if source_repo == "" then
+    source_repo = rhodecode_pr_target_repo(payload)
+  end
+  return source_repo
+end
+
+local function rhodecode_pr_number(payload)
+  local pr = rhodecode_payload_pr(payload)
+  return (payload or {}).pull_request_id or pr.pull_request_id or pr.id or 0
+end
+
+local function rhodecode_pr_updated_at(payload)
+  local pr = rhodecode_payload_pr(payload)
+  return pr.updated_on or pr.updated_at or (payload or {}).updated_on or ""
+end
+
+local function rhodecode_pr_merged(payload)
+  local pr = rhodecode_payload_pr(payload)
+  return rhodecode_pr_status(payload) == "merged"
+    or (payload or {}).action == "merged"
+    or pr.action == "merged"
+end
+
+function repo_name_from_payload(payload)
   payload = payload or {}
   local repo = payload.repo or payload.repository or payload.project
   if type(repo) == "table" then
@@ -127,89 +372,13 @@ local function repo_name_from_payload(payload)
   ) or ""
 end
 
-local function repo_table(payload)
+function repo_table(payload)
   payload = payload or {}
   local repo = payload.repo or payload.repository or payload.project
   if type(repo) == "table" then
     return repo
   end
   return payload
-end
-
-local function translate_rhodecode_repo(payload)
-  local source = repo_table(payload)
-  local full_name = repo_name_from_payload(payload)
-  local owner, repo_name = split_repo_name(full_name)
-  local private = bool_value(source.private or source.repo_private or source.is_private)
-  return {
-    id = source.repo_id or source.repository_id or source.id or 0,
-    node_id = "",
-    name = repo_name,
-    full_name = full_name,
-    private = private,
-    owner = {
-      login = owner,
-      id = source.owner_id or 0,
-      node_id = "",
-      avatar_url = "",
-      url = "",
-      html_url = owner ~= "" and (config.base_url .. "/_admin/users/edit/" .. owner) or "",
-      type = "User",
-    },
-    html_url = source.html_url or (full_name ~= "" and (config.base_url .. "/" .. full_name) or ""),
-    description = source.description,
-    fork = source.fork_id ~= nil,
-    url = "",
-    git_url = "",
-    ssh_url = "",
-    clone_url = source.clone_uri
-      or source.clone_url
-      or (full_name ~= "" and (config.base_url .. "/" .. full_name) or ""),
-    homepage = "",
-    size = 0,
-    stargazers_count = 0,
-    watchers_count = 0,
-    language = nil,
-    has_issues = false,
-    has_wiki = bool_value(source.enable_downloads),
-    forks_count = 0,
-    archived = false,
-    disabled = false,
-    open_issues_count = 0,
-    default_branch = source.default_branch or "main",
-    visibility = private and "private" or "public",
-    forks = 0,
-    open_issues = 0,
-    watchers = 0,
-    created_at = source.created_on,
-    updated_at = source.updated_on,
-    pushed_at = source.pushed_at,
-  }
-end
-
-local function translate_rhodecode_push_commit(c)
-  c = c or {}
-  local author = c.author or {}
-  local committer = c.committer or author
-  return {
-    id = c.id or c.sha or c.raw_id or "",
-    message = c.message or "",
-    timestamp = c.timestamp or c.date or c.created_on or "",
-    url = c.url or "",
-    author = {
-      name = author.name or c.author_name or "",
-      email = author.email or c.author_email or "",
-      username = author.username or "",
-    },
-    committer = {
-      name = committer.name or c.committer_name or author.name or "",
-      email = committer.email or c.committer_email or author.email or "",
-      username = committer.username or author.username or "",
-    },
-    added = c.added or {},
-    removed = c.removed or {},
-    modified = c.modified or {},
-  }
 end
 
 local function ref_from_pushed_rev(rev)
@@ -349,16 +518,7 @@ local function rhodecode_ref_webhook(payload)
   })
 end
 
-local function translate_pr_branch(repo_name, ref)
-  return {
-    label = repo_name ~= "" and (repo_name .. ":" .. (ref or "")) or (ref or ""),
-    ref = ref or "",
-    sha = "",
-    repo = translate_rhodecode_repo({ repo_name = repo_name }),
-  }
-end
-
-local function pr_repo_name(value)
+function pr_repo_name(value)
   if type(value) == "table" then
     return repo_name_from_payload({ repository = value })
   end
@@ -412,66 +572,87 @@ local function pr_action(payload, pr)
   return "unknown", action ~= "" and action or status
 end
 
-local function translate_rhodecode_pull_request(payload)
-  local pr = payload.pull_request or payload
-  local status = pr.status or payload.status or "new"
-  local state = (status == "closed" or status == "merged") and "closed" or "open"
-  local target_repo = pr_repo_name(pr.org_repo_name or pr.target_repo or payload.repository)
-  if target_repo == "" then
-    target_repo = repo_name_from_payload(payload)
-  end
-  local source_repo =
-    pr_repo_name(pr.other_repo_name or pr.source_repo or payload.source_repository)
-  if source_repo == "" then
-    source_repo = target_repo
-  end
-  local number = payload.pull_request_id or pr.pull_request_id or pr.id or 0
-  local updated_at = pr.updated_on or pr.updated_at or payload.updated_on or ""
-  local merged = status == "merged" or payload.action == "merged" or pr.action == "merged"
-  return {
-    id = number,
-    node_id = "",
-    number = number,
-    state = state,
-    locked = false,
-    title = pr.title or "",
-    body = pr.description or pr.body or "",
-    user = translate_rhodecode_user(pr.owner or payload.created_by or payload.username),
-    head = pr_branch(
+local translate_rhodecode_pull_request = make_translator({
+  id = computed(rhodecode_pr_number),
+  node_id = const(""),
+  number = computed(rhodecode_pr_number),
+  state = computed(rhodecode_pr_state),
+  locked = const(false),
+  title = computed(function(payload)
+    return rhodecode_payload_pr(payload).title or ""
+  end),
+  body = computed(function(payload)
+    local pr = rhodecode_payload_pr(payload)
+    return pr.description or pr.body or ""
+  end),
+  user = computed(function(payload)
+    local pr = rhodecode_payload_pr(payload)
+    return rhodecode_user(pr.owner or (payload or {}).created_by or (payload or {}).username)
+  end),
+  head = computed(function(payload)
+    local pr = rhodecode_payload_pr(payload)
+    return pr_branch(
       payload,
-      source_repo,
-      pr.other_ref or pr.source_ref or payload.source_ref,
-      pr.other_rev or pr.source_rev or pr.source_sha or payload.source_sha
-    ),
-    base = pr_branch(
+      rhodecode_pr_source_repo(payload),
+      pr.other_ref or pr.source_ref or (payload or {}).source_ref,
+      pr.other_rev or pr.source_rev or pr.source_sha or (payload or {}).source_sha
+    )
+  end),
+  base = computed(function(payload)
+    local pr = rhodecode_payload_pr(payload)
+    return pr_branch(
       payload,
-      target_repo,
-      pr.org_ref or pr.target_ref or payload.target_ref,
-      pr.org_rev or pr.target_rev or pr.target_sha or payload.target_sha
-    ),
-    draft = false,
-    created_at = pr.created_on or pr.created_at or payload.created_on or "",
-    updated_at = updated_at,
-    closed_at = state == "closed" and updated_at or nil,
-    merged_at = merged and updated_at or nil,
-    merge_commit_sha = pr.merge_commit_id or pr.merge_commit_sha or payload.merge_commit_sha,
-    merged = merged,
-    merged_by = merged and translate_rhodecode_user(pr.merged_by or payload.merged_by) or nil,
-    diff_url = "",
-    patch_url = "",
-    html_url = target_repo ~= ""
+      rhodecode_pr_target_repo(payload),
+      pr.org_ref or pr.target_ref or (payload or {}).target_ref,
+      pr.org_rev or pr.target_rev or pr.target_sha or (payload or {}).target_sha
+    )
+  end),
+  draft = const(false),
+  created_at = computed(function(payload)
+    local pr = rhodecode_payload_pr(payload)
+    return pr.created_on or pr.created_at or (payload or {}).created_on or ""
+  end),
+  updated_at = computed(rhodecode_pr_updated_at),
+  closed_at = computed(function(payload)
+    local updated_at = rhodecode_pr_updated_at(payload)
+    return rhodecode_pr_state(payload) == "closed" and updated_at or nil
+  end),
+  merged_at = computed(function(payload)
+    local updated_at = rhodecode_pr_updated_at(payload)
+    return rhodecode_pr_merged(payload) and updated_at or nil
+  end),
+  merge_commit_sha = computed(function(payload)
+    local pr = rhodecode_payload_pr(payload)
+    return pr.merge_commit_id or pr.merge_commit_sha or (payload or {}).merge_commit_sha
+  end),
+  merged = computed(rhodecode_pr_merged),
+  merged_by = computed(function(payload)
+    if not rhodecode_pr_merged(payload) then
+      return nil
+    end
+    local pr = rhodecode_payload_pr(payload)
+    return rhodecode_user(pr.merged_by or (payload or {}).merged_by)
+  end),
+  diff_url = const(""),
+  patch_url = const(""),
+  html_url = computed(function(payload)
+    local target_repo = rhodecode_pr_target_repo(payload)
+    local number = rhodecode_pr_number(payload)
+    return target_repo ~= ""
         and (config.base_url .. "/" .. target_repo .. "/pull-request/" .. number)
-      or "",
-    url = "",
-    mergeable = state == "open" or nil,
-    comments = 0,
-    review_comments = 0,
-    commits = 0,
-    additions = 0,
-    deletions = 0,
-    changed_files = 0,
-  }
-end
+      or ""
+  end),
+  url = const(""),
+  mergeable = computed(function(payload)
+    return rhodecode_pr_state(payload) == "open" or nil
+  end),
+  comments = const(0),
+  review_comments = const(0),
+  commits = const(0),
+  additions = const(0),
+  deletions = const(0),
+  changed_files = const(0),
+})
 
 local function rhodecode_pull_request_event(payload)
   local pr = payload.pull_request or payload
@@ -491,7 +672,7 @@ local function rhodecode_pull_request_event(payload)
       number = payload.pull_request_id or pr.pull_request_id or pr.id,
       pull_request = translate_rhodecode_pull_request(payload),
       repository = translate_rhodecode_repo({ repo_name = repository_name }),
-      sender = translate_rhodecode_user(payload.created_by or pr.owner or payload.username),
+      sender = rhodecode_user(payload.created_by or pr.owner or payload.username),
     },
     timestamp = pr.updated_on or pr.updated_at or pr.created_on or pr.created_at or "",
   })
