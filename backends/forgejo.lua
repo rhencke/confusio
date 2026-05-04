@@ -2,4 +2,8 @@
 if config.base_url == "" then
   config.base_url = provider_families.gitea.aliases[config.backend].default_url
 end
-return dofile("/zip/backends/gitea.lua")
+
+local gitea = require("backends.gitea")
+local handlers = setmetatable({}, { __index = gitea })
+
+return handlers
