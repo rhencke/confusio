@@ -16,201 +16,255 @@ local _t = make_backend_transport("token", PAGES)
 local fetch_json = _t.fetch_json
 local proxy_handler = _t.proxy_handler
 
--- Map a Pagure project object to GitHub repo format.
-local function translate_pagure_repo(r)
-  if not r then
-    return {}
+local function pagure_ts(v)
+  if not v then
+    return ""
   end
+  return tostring(v)
+end
+
+local function pagure_repo_owner_login(r)
   local user = r.user or {}
   local ns = r.namespace or ""
-  local owner_login = ns ~= "" and ns or user.name or ""
-  return {
-    id = r.id or 0,
-    node_id = "",
-    name = r.name,
-    full_name = r.fullname or (owner_login .. "/" .. (r.name or "")),
-    private = r.private or false,
-    owner = {
-      login = owner_login,
-      id = 0,
-      node_id = "",
-      avatar_url = "",
-      url = "",
-      html_url = config.base_url .. "/" .. (user.url_path or user.name or ""),
-      type = ns ~= "" and "Organization" or "User",
-    },
-    html_url = config.base_url .. "/" .. (r.url_path or ""),
-    description = r.description,
-    fork = r.parent ~= nil,
-    url = "",
-    clone_url = r.full_url or "",
-    homepage = r.url or "",
-    size = 0,
-    stargazers_count = r.stars or 0,
-    watchers_count = 0,
-    language = nil,
-    has_issues = true,
-    has_wiki = r.settings and r.settings.wiki_enabled or false,
-    forks_count = r.forks_count or 0,
-    archived = r.close_status ~= nil and r.close_status ~= "",
-    disabled = false,
-    open_issues_count = 0,
-    default_branch = r.default_branch or "main",
-    visibility = (r.private or false) and "private" or "public",
-    forks = r.forks_count or 0,
-    open_issues = 0,
-    watchers = 0,
-    created_at = r.date_created,
-    updated_at = r.date_modified,
-    pushed_at = r.date_modified,
-  }
+  return ns ~= "" and ns or user.name or ""
 end
+
+local translate_pagure_repo_owner = make_translator({
+  login = computed(function(user, repo)
+    return pagure_repo_owner_login(repo or {})
+  end),
+  id = const(0),
+  node_id = const(""),
+  avatar_url = const(""),
+  url = const(""),
+  html_url = computed(function(user)
+    return config.base_url .. "/" .. (user.url_path or user.name or "")
+  end),
+  type = computed(function(_user, repo)
+    return (repo and repo.namespace or "") ~= "" and "Organization" or "User"
+  end),
+})
+
+-- Map a Pagure project object to GitHub repo format.
+local translate_pagure_repo = make_translator({
+  id = field("id", { default = 0 }),
+  node_id = const(""),
+  name = "name",
+  full_name = computed(function(r)
+    return r.fullname or (pagure_repo_owner_login(r) .. "/" .. (r.name or ""))
+  end),
+  private = field("private", { default = false }),
+  owner = computed(function(r)
+    return translate_pagure_repo_owner(r.user or {}, r)
+  end),
+  html_url = computed(function(r)
+    return config.base_url .. "/" .. (r.url_path or "")
+  end),
+  description = "description",
+  fork = computed(function(r)
+    return r.parent ~= nil
+  end),
+  url = const(""),
+  clone_url = field("full_url", { default = "" }),
+  homepage = field("url", { default = "" }),
+  size = const(0),
+  stargazers_count = field("stars", { default = 0 }),
+  watchers_count = const(0),
+  language = const(nil),
+  has_issues = const(true),
+  has_wiki = computed(function(r)
+    return r.settings and r.settings.wiki_enabled or false
+  end),
+  forks_count = field("forks_count", { default = 0 }),
+  archived = computed(function(r)
+    return r.close_status ~= nil and r.close_status ~= ""
+  end),
+  disabled = const(false),
+  open_issues_count = const(0),
+  default_branch = field("default_branch", { default = "main" }),
+  visibility = computed(function(r)
+    return (r.private or false) and "private" or "public"
+  end),
+  forks = field("forks_count", { default = 0 }),
+  open_issues = const(0),
+  watchers = const(0),
+  created_at = "date_created",
+  updated_at = "date_modified",
+  pushed_at = "date_modified",
+})
 
 -- Translate a Pagure branch name to GitHub format.
 -- Pagure branch list returns only names, no commit SHAs.
-local function translate_pagure_branch(name)
-  return { name = name, commit = { sha = "", url = "" }, protected = false }
-end
+local translate_pagure_branch = make_translator({
+  name = computed(function(name)
+    return name
+  end),
+  commit = const({ sha = "", url = "" }),
+  protected = const(false),
+})
 
 -- Translate a Pagure commit object to GitHub format.
 -- Pagure: { id, message, date, date_utc, author: { name, email } }
 
 -- Translate a Pagure user to GitHub format.
-local function translate_pagure_user(u)
-  if not u then
-    return {}
-  end
-  return {
-    login = u.name or u.username or "",
-    id = 0,
-    node_id = "",
-    avatar_url = u.avatar_url or "",
-    html_url = config.base_url .. "/" .. (u.url_path or u.name or ""),
-    type = "User",
-    site_admin = false,
-    name = u.fullname or u.name or "",
-  }
-end
+local translate_pagure_user = make_translator({
+  login = computed(function(u)
+    return u.name or u.username or ""
+  end),
+  id = const(0),
+  node_id = const(""),
+  avatar_url = field("avatar_url", { default = "" }),
+  html_url = computed(function(u)
+    return config.base_url .. "/" .. (u.url_path or u.name or "")
+  end),
+  type = const("User"),
+  site_admin = const(false),
+  name = computed(function(u)
+    return u.fullname or u.name or ""
+  end),
+})
 
 -- Translate a Pagure issue tag (string) to a GitHub label object.
-local function translate_pagure_tag(tag)
-  return {
-    id = 0,
-    node_id = "",
-    url = "",
-    name = tag or "",
-    color = "",
-    description = "",
-    default = false,
-  }
-end
+local translate_pagure_tag = make_translator({
+  id = const(0),
+  node_id = const(""),
+  url = const(""),
+  name = computed(function(tag)
+    return tag or ""
+  end),
+  color = const(""),
+  description = const(""),
+  default = const(false),
+})
+
+local translate_pagure_milestone_spec = make_translator({
+  id = field("id", { default = 0 }),
+  node_id = const(""),
+  number = field("id", { default = 0 }),
+  title = computed(function(milestone)
+    return milestone.title or milestone.name or ""
+  end),
+  description = field("description", { default = "" }),
+  state = computed(function(milestone)
+    return (milestone.closed or milestone.status == "Closed") and "closed" or "open"
+  end),
+  created_at = computed(function(milestone)
+    return tostring(milestone.date_created or milestone.created_at or "")
+  end),
+  updated_at = computed(function(milestone)
+    return tostring(milestone.last_updated or milestone.updated_at or "")
+  end),
+  due_on = computed(function(milestone)
+    return milestone.due_on or milestone.date_due
+  end),
+  closed_at = computed(function(milestone)
+    return milestone.closed_at or milestone.date_closed
+  end),
+}, { nil_returns_nil = true })
 
 local function translate_pagure_milestone(milestone)
-  if not milestone or milestone == "" then
+  if milestone == "" then
     return nil
   end
-  if type(milestone) ~= "table" then
+  if type(milestone) ~= "table" and milestone ~= nil then
     milestone = { title = tostring(milestone) }
   end
-  local title = milestone.title or milestone.name or ""
-  local state = (milestone.closed or milestone.status == "Closed") and "closed" or "open"
-  return {
-    id = milestone.id or 0,
-    node_id = "",
-    number = milestone.id or 0,
-    title = title,
-    description = milestone.description or "",
-    state = state,
-    created_at = tostring(milestone.date_created or milestone.created_at or ""),
-    updated_at = tostring(milestone.last_updated or milestone.updated_at or ""),
-    due_on = milestone.due_on or milestone.date_due,
-    closed_at = milestone.closed_at or milestone.date_closed,
-  }
+  return translate_pagure_milestone_spec(milestone)
 end
 
 -- Translate a Pagure issue to GitHub format.
 -- Pagure states: "Open", "Closed"
 -- Pagure dates: Unix timestamps as strings
-local function translate_pagure_issue(i)
-  if not i then
-    return {}
-  end
-  local state = (i.status == "Open") and "open" or "closed"
-  local labels = {}
-  for _, tag in ipairs(i.tags or {}) do
-    labels[#labels + 1] = translate_pagure_tag(tag)
-  end
-  local assignees = {}
-  if i.assignee then
-    assignees[1] = translate_pagure_user(i.assignee)
-  end
-  local user = translate_pagure_user(i.user)
-  -- Pagure date_created is a Unix timestamp string; convert to ISO 8601
-  local function ts(v)
-    if not v then
-      return ""
+local translate_pagure_issue = make_translator({
+  id = field("id", { default = 0 }),
+  number = field("id", { default = 0 }),
+  title = field("title", { default = "" }),
+  body = field("content", { default = "" }),
+  state = computed(function(i)
+    return (i.status == "Open") and "open" or "closed"
+  end),
+  user = nested(translate_pagure_user, "user"),
+  assignees = computed(function(i)
+    if i.assignee then
+      return { translate_pagure_user(i.assignee) }
     end
-    -- Try to return as-is if it looks like a timestamp (digits only)
-    return tostring(v)
-  end
-  local closed_at = nil
-  if state == "closed" then
-    closed_at = ts(i.closed_at or i.date_closed or i.closed_date or i.closed_on or i.last_updated)
-  end
-  return {
-    id = i.id or 0,
-    number = i.id or 0,
-    title = i.title or "",
-    body = i.content or "",
-    state = state,
-    user = user,
-    assignees = assignees,
-    labels = labels,
-    created_at = ts(i.date_created),
-    updated_at = ts(i.last_updated),
-    closed_at = closed_at,
-    html_url = config.base_url .. "/" .. (i.full_url or ""),
-    milestone = translate_pagure_milestone(i.milestone),
-  }
-end
+    return {}
+  end),
+  labels = each(translate_pagure_tag, "tags"),
+  created_at = field("date_created", { transform = pagure_ts }),
+  updated_at = field("last_updated", { transform = pagure_ts }),
+  closed_at = computed(function(i)
+    if i.status == "Open" then
+      return nil
+    end
+    return pagure_ts(i.closed_at or i.date_closed or i.closed_date or i.closed_on or i.last_updated)
+  end),
+  html_url = computed(function(i)
+    return config.base_url .. "/" .. (i.full_url or "")
+  end),
+  milestone = computed(function(i)
+    return translate_pagure_milestone(i.milestone)
+  end),
+})
 
 -- Translate a Pagure comment to GitHub format.
-local function translate_pagure_comment(c, issue)
-  if not c then
-    return {}
-  end
-  local html_url = c.full_url and (config.base_url .. "/" .. c.full_url) or ""
-  if html_url == "" and issue and issue.full_url and c.id then
-    html_url = config.base_url .. "/" .. issue.full_url .. "#comment-" .. c.id
-  end
-  return {
-    id = c.id or 0,
-    body = c.comment or "",
-    user = translate_pagure_user(c.user),
-    created_at = tostring(c.date_created or ""),
-    updated_at = tostring(c.last_updated or c.date_updated or c.date_created or ""),
-    html_url = html_url,
-  }
-end
+local translate_pagure_comment = make_translator({
+  id = field("id", { default = 0 }),
+  body = field("comment", { default = "" }),
+  user = nested(translate_pagure_user, "user"),
+  created_at = computed(function(c)
+    return tostring(c.date_created or "")
+  end),
+  updated_at = computed(function(c)
+    return tostring(c.last_updated or c.date_updated or c.date_created or "")
+  end),
+  html_url = computed(function(c, issue)
+    local html_url = c.full_url and (config.base_url .. "/" .. c.full_url) or ""
+    if html_url == "" and issue and issue.full_url and c.id then
+      html_url = config.base_url .. "/" .. issue.full_url .. "#comment-" .. c.id
+    end
+    return html_url
+  end),
+})
 
-local function translate_pagure_commit(c)
-  if not c then
-    return {}
-  end
-  local author = c.author or {}
-  return {
-    sha = c.id or "",
-    commit = {
-      message = c.message or "",
-      author = { name = author.name or "", email = author.email or "", date = c.date_utc or "" },
-      committer = { name = author.name or "", email = author.email or "", date = c.date_utc or "" },
-    },
-    author = { login = author.name or "", id = 0, avatar_url = "" },
-    committer = { login = author.name or "", id = 0, avatar_url = "" },
-  }
-end
+local translate_pagure_commit_actor = make_translator({
+  login = field("name", { default = "" }),
+  id = const(0),
+  avatar_url = const(""),
+})
 
-local function translate_pagure_issues(data)
+local translate_pagure_commit_signature = make_translator({
+  name = field("name", { default = "" }),
+  email = field("email", { default = "" }),
+  date = computed(function(_author, commit)
+    return commit.date_utc or ""
+  end),
+})
+
+local translate_pagure_commit_body = make_translator({
+  message = field("message", { default = "" }),
+  author = computed(function(c)
+    return translate_pagure_commit_signature(c.author or {}, c)
+  end),
+  committer = computed(function(c)
+    return translate_pagure_commit_signature(c.author or {}, c)
+  end),
+})
+
+local translate_pagure_commit = make_translator({
+  sha = field("id", { default = "" }),
+  commit = computed(function(c)
+    return translate_pagure_commit_body(c)
+  end),
+  author = computed(function(c)
+    return translate_pagure_commit_actor(c.author or {})
+  end),
+  committer = computed(function(c)
+    return translate_pagure_commit_actor(c.author or {})
+  end),
+})
+
+local function pagure_issues(data)
   return translate_list(translate_pagure_issue, data.issues)
 end
 
@@ -558,7 +612,7 @@ end)
 
 b:rest(
   "get_repo_issues",
-  proxy_handler(translate_pagure_issues, function(o, r)
+  proxy_handler(pagure_issues, function(o, r)
     return append_page_params(base() .. "/" .. o .. "/" .. r .. "/issues", PAGES)
   end)
 )
@@ -1057,57 +1111,93 @@ local function pagure_agent_user(agent)
   return translate_pagure_user({ name = agent or "" })
 end
 
--- Translate a Pagure pull request to GitHub format.
-local function translate_pagure_pull(pr, project, actor)
-  if not pr then
-    return {}
-  end
-  local status = pr.status or "Open"
-  local is_merged = status == "Merged"
-  local gh_state = status == "Open" and "open" or "closed"
-  local repo_from = pr.repo_from or {}
-  local head_repo = translate_pagure_repo(repo_from)
-  local base_repo = translate_pagure_repo(project)
-  return {
-    id = pr.id or 0,
-    node_id = "",
-    number = pr.id or 0,
-    state = gh_state,
-    locked = false,
-    title = pr.title or "",
-    body = pr.initial_comment or "",
-    user = translate_pagure_user(pr.user),
-    head = {
-      label = (repo_from.fullname or "") .. ":" .. (pr.branch_from or ""),
-      ref = pr.branch_from or "",
-      sha = pr.commit_stop or "",
-      repo = head_repo,
-    },
-    base = {
-      label = (project and project.fullname or "") .. ":" .. (pr.branch or ""),
-      ref = pr.branch or "",
-      sha = pr.commit_start or "",
-      repo = base_repo,
-    },
-    draft = false,
-    created_at = tostring(pr.date_created or ""),
-    updated_at = tostring(pr.last_updated or ""),
-    closed_at = (not is_merged and gh_state == "closed") and tostring(pr.last_updated or "") or nil,
-    merged_at = is_merged and tostring(pr.last_updated or "") or nil,
-    merge_commit_sha = is_merged and (pr.commit_stop or nil) or nil,
-    merged = is_merged,
-    merged_by = is_merged and pagure_agent_user(pr.closed_by or pr.merged_by or actor) or nil,
-    html_url = config.base_url .. "/" .. (pr.full_url or ""),
-    url = "",
-    mergeable = status == "Open" or nil,
-    comments = 0,
-    review_comments = 0,
-    commits = 0,
-    additions = 0,
-    deletions = 0,
-    changed_files = 0,
-  }
+local function pagure_pull_status(pr)
+  return pr.status or "Open"
 end
+
+local translate_pagure_pull_head = make_translator({
+  label = computed(function(pr)
+    local repo_from = pr.repo_from or {}
+    return (repo_from.fullname or "") .. ":" .. (pr.branch_from or "")
+  end),
+  ref = field("branch_from", { default = "" }),
+  sha = field("commit_stop", { default = "" }),
+  repo = computed(function(pr)
+    return translate_pagure_repo(pr.repo_from or {})
+  end),
+})
+
+local translate_pagure_pull_base = make_translator({
+  label = computed(function(pr, project)
+    return (project and project.fullname or "") .. ":" .. (pr.branch or "")
+  end),
+  ref = field("branch", { default = "" }),
+  sha = field("commit_start", { default = "" }),
+  repo = computed(function(_pr, project)
+    return translate_pagure_repo(project)
+  end),
+})
+
+-- Translate a Pagure pull request to GitHub format.
+local translate_pagure_pull = make_translator({
+  id = field("id", { default = 0 }),
+  node_id = const(""),
+  number = field("id", { default = 0 }),
+  state = computed(function(pr)
+    return pagure_pull_status(pr) == "Open" and "open" or "closed"
+  end),
+  locked = const(false),
+  title = field("title", { default = "" }),
+  body = field("initial_comment", { default = "" }),
+  user = nested(translate_pagure_user, "user"),
+  head = computed(function(pr)
+    return translate_pagure_pull_head(pr)
+  end),
+  base = computed(function(pr, project)
+    return translate_pagure_pull_base(pr, project)
+  end),
+  draft = const(false),
+  created_at = computed(function(pr)
+    return tostring(pr.date_created or "")
+  end),
+  updated_at = computed(function(pr)
+    return tostring(pr.last_updated or "")
+  end),
+  closed_at = computed(function(pr)
+    local status = pagure_pull_status(pr)
+    if status ~= "Open" and status ~= "Merged" then
+      return tostring(pr.last_updated or "")
+    end
+    return nil
+  end),
+  merged_at = computed(function(pr)
+    return pagure_pull_status(pr) == "Merged" and tostring(pr.last_updated or "") or nil
+  end),
+  merge_commit_sha = computed(function(pr)
+    return pagure_pull_status(pr) == "Merged" and (pr.commit_stop or nil) or nil
+  end),
+  merged = computed(function(pr)
+    return pagure_pull_status(pr) == "Merged"
+  end),
+  merged_by = computed(function(pr, _project, actor)
+    return pagure_pull_status(pr) == "Merged"
+        and pagure_agent_user(pr.closed_by or pr.merged_by or actor)
+      or nil
+  end),
+  html_url = computed(function(pr)
+    return config.base_url .. "/" .. (pr.full_url or "")
+  end),
+  url = const(""),
+  mergeable = computed(function(pr)
+    return pagure_pull_status(pr) == "Open" or nil
+  end),
+  comments = const(0),
+  review_comments = const(0),
+  commits = const(0),
+  additions = const(0),
+  deletions = const(0),
+  changed_files = const(0),
+})
 
 b:webhook("issue.new", function(payload)
   local msg = payload.msg or {}
