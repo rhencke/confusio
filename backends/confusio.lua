@@ -90,19 +90,35 @@ local function confusio_webhook(payload)
   })
 end
 
-local function translate_confusio_normalized_webhook(internal_event, fields)
-  local raw = internal_event.raw or {}
+local function confusio_normalized_id(internal_event, fields)
   fields = fields or {}
+  local raw = internal_event.raw or {}
+  return fields.id or raw.id
+end
+
+local translate_confusio_normalized_fields = make_translator({
+  id = computed(confusio_normalized_id),
+  type = computed(function(internal_event)
+    return (internal_event.raw or {}).type
+  end),
+  occurred_at = computed(function(internal_event)
+    return (internal_event.raw or {}).occurred_at
+  end),
+  actor = computed(function(internal_event)
+    return (internal_event.raw or {}).actor
+  end),
+  repository = computed(function(internal_event)
+    return (internal_event.raw or {}).repository
+  end),
+  payload = computed(function(internal_event)
+    return (internal_event.raw or {}).payload
+  end),
+})
+
+local function translate_confusio_normalized_webhook(internal_event, fields)
   return make_normalized_webhook_envelope( -- luacheck: globals make_normalized_webhook_envelope
     internal_event,
-    {
-      id = fields.id or raw.id,
-      type = raw.type,
-      occurred_at = raw.occurred_at,
-      actor = raw.actor,
-      repository = raw.repository,
-      payload = raw.payload,
-    }
+    translate_confusio_normalized_fields(internal_event, fields)
   )
 end
 
