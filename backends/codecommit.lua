@@ -17,53 +17,55 @@ local fetch_json = make_backend_transport("basic").fetch_json
 
 local ZERO_SHA = "0000000000000000000000000000000000000000"
 
--- Translate a CodeCommit repositoryMetadata (or summary) object to GitHub format.
-local function translate_repo(r)
-  if not r then
-    return {}
-  end
-  local name = r.repositoryName or ""
-  return {
-    id = 0,
-    node_id = r.repositoryId or "",
-    name = name,
-    full_name = name,
-    private = true,
-    owner = {
-      login = r.accountId or "",
-      id = 0,
-      node_id = "",
-      avatar_url = "",
-      url = "",
-      html_url = "",
-      type = "Organization",
-    },
-    html_url = r.cloneUrlHttp or "",
-    description = r.repositoryDescription,
-    fork = false,
-    url = "",
-    clone_url = r.cloneUrlHttp or "",
-    homepage = "",
-    size = 0,
-    stargazers_count = 0,
-    watchers_count = 0,
-    language = nil,
-    has_issues = false,
-    has_wiki = false,
-    forks_count = 0,
-    archived = false,
-    disabled = false,
-    open_issues_count = 0,
-    default_branch = r.defaultBranch or "main",
-    visibility = "private",
-    forks = 0,
-    open_issues = 0,
-    watchers = 0,
-    created_at = r.creationDate and tostring(r.creationDate) or nil,
-    updated_at = r.lastModifiedDate and tostring(r.lastModifiedDate) or nil,
-    pushed_at = r.lastModifiedDate and tostring(r.lastModifiedDate) or nil,
-  }
+local function codecommit_timestamp(value)
+  return value and tostring(value) or nil
 end
+
+local translate_repo_owner = make_translator({
+  login = field("accountId", { default = "" }),
+  id = const(0),
+  node_id = const(""),
+  avatar_url = const(""),
+  url = const(""),
+  html_url = const(""),
+  type = const("Organization"),
+})
+
+-- Translate a CodeCommit repositoryMetadata (or summary) object to GitHub format.
+local translate_repo = make_translator({
+  id = const(0),
+  node_id = field("repositoryId", { default = "" }),
+  name = field("repositoryName", { default = "" }),
+  full_name = field("repositoryName", { default = "" }),
+  private = const(true),
+  owner = computed(function(r)
+    return translate_repo_owner(r)
+  end),
+  html_url = field("cloneUrlHttp", { default = "" }),
+  description = "repositoryDescription",
+  fork = const(false),
+  url = const(""),
+  clone_url = field("cloneUrlHttp", { default = "" }),
+  homepage = const(""),
+  size = const(0),
+  stargazers_count = const(0),
+  watchers_count = const(0),
+  language = const(nil),
+  has_issues = const(false),
+  has_wiki = const(false),
+  forks_count = const(0),
+  archived = const(false),
+  disabled = const(false),
+  open_issues_count = const(0),
+  default_branch = field("defaultBranch", { default = "main" }),
+  visibility = const("private"),
+  forks = const(0),
+  open_issues = const(0),
+  watchers = const(0),
+  created_at = field("creationDate", { transform = codecommit_timestamp }),
+  updated_at = field("lastModifiedDate", { transform = codecommit_timestamp }),
+  pushed_at = field("lastModifiedDate", { transform = codecommit_timestamp }),
+})
 
 local function codecommit_user_from_arn(arn)
   local login = tostring(arn or ""):match(":user/(.+)$")
