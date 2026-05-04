@@ -50,6 +50,7 @@ globals = {
   "const",
   "nested",
   "each",
+  "computed",
   "append_page_params",
   "make_fetch_opts",
   "make_proxy_handler",

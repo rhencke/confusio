@@ -771,6 +771,9 @@ do
     number = "iid",
     title = "title",
     state = field("state", { transform = upper }),
+    html_url = computed(function(i)
+      return i.url or i.web_url or ""
+    end),
     user = nested(translate_user_spec, "author"),
     labels = each(translate_label_spec),
   })
@@ -798,6 +801,7 @@ do
   })
   eq(issue.number, 7, "make_translator: field can read from a different key")
   eq(issue.state, "OPEN", "make_translator: transform can rewrite copied values")
+  eq(issue.html_url, "", "make_translator: computed fields can inspect full input")
   eq(issue.user.login, "octo", "make_translator: nested translator reads explicit key")
   eq(issue.user.site_admin, false, "make_translator: nested translator preserves defaults")
   eq(#issue.labels, 2, "make_translator: each maps array values")

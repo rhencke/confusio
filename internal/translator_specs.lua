@@ -30,6 +30,10 @@ function each(translator, key)
   return make_spec("each", { translator = translator, key = key })
 end
 
+function computed(fn)
+  return make_spec("computed", { fn = fn })
+end
+
 local function apply_transform(transform, value)
   if transform then
     return transform(value)
@@ -66,6 +70,9 @@ local function resolve_value(spec, input, output_key)
   if spec.kind == "each" then
     local value = input[spec.key or output_key]
     return translate_list(spec.translator, value)
+  end
+  if spec.kind == "computed" then
+    return spec.fn(input)
   end
   error(
     "unknown translator spec kind for field " .. tostring(output_key) .. ": " .. tostring(spec.kind)

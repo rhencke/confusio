@@ -12,81 +12,78 @@ function owner_repo_id(owner, repo_name)
   return owner .. "%2F" .. repo_name
 end
 
--- translate_repo is global: maps a Gitea-style repo object to GitHub field names.
--- Called by any Gitea-API-compatible backend (gitea, forgejo, gogs, codeberg, notabug).
-function translate_repo(r)
-  if not r then
-    return {}
-  end
-  local owner = r.owner or {}
-  return {
-    id = r.id,
-    node_id = "",
-    name = r.name,
-    full_name = r.full_name,
-    private = r.private,
-    owner = {
-      login = owner.login,
-      id = owner.id,
-      node_id = "",
-      avatar_url = owner.avatar_url,
-      url = owner.url,
-      html_url = owner.html_url,
-      type = owner.type or (owner.is_admin and "Admin" or "User"),
-    },
-    html_url = r.html_url,
-    description = r.description,
-    fork = r.fork,
-    url = r.url,
-    git_url = r.ssh_url,
-    ssh_url = r.ssh_url,
-    clone_url = r.clone_url,
-    homepage = r.website,
-    size = r.size,
-    stargazers_count = r.stars_count,
-    watchers_count = r.watchers_count,
-    language = r.language,
-    has_issues = r.has_issues,
-    has_wiki = r.has_wiki,
-    forks_count = r.forks_count,
-    archived = r.archived,
-    disabled = false,
-    open_issues_count = r.open_issues_count,
-    default_branch = r.default_branch,
-    visibility = r.visibility or (r.private and "private" or "public"),
-    forks = r.forks_count,
-    open_issues = r.open_issues_count,
-    watchers = r.watchers_count,
-    created_at = r.created,
-    updated_at = r.updated,
-    pushed_at = r.updated,
-    permissions = r.permissions,
-  }
-end
+local translate_repo_owner = make_translator({
+  login = "login",
+  id = "id",
+  node_id = const(""),
+  avatar_url = "avatar_url",
+  url = "url",
+  html_url = "html_url",
+  type = computed(function(owner)
+    return owner.type or (owner.is_admin and "Admin" or "User")
+  end),
+})
 
--- translate_user is global: maps a Gitea-style user object to GitHub field names.
--- Called by any Gitea-API-compatible backend (gitea, forgejo, gogs, codeberg, notabug).
-function translate_user(u)
-  if not u then
-    return {}
-  end
-  return {
-    login = u.login,
-    id = u.id,
-    node_id = "",
-    avatar_url = u.avatar_url,
-    html_url = u.html_url,
-    type = "User",
-    site_admin = u.is_admin or false,
-    name = u.full_name,
-    email = u.email,
-    location = u.location,
-    blog = u.website,
-    followers = u.followers_count or 0,
-    following = u.following_count or 0,
-    created_at = u.created,
-  }
-end
+translate_repo = make_translator({
+  id = "id",
+  node_id = const(""),
+  name = "name",
+  full_name = "full_name",
+  private = "private",
+  owner = computed(function(r)
+    return translate_repo_owner(r.owner or {})
+  end),
+  html_url = "html_url",
+  description = "description",
+  fork = "fork",
+  url = "url",
+  git_url = "ssh_url",
+  ssh_url = "ssh_url",
+  clone_url = "clone_url",
+  homepage = "website",
+  size = "size",
+  stargazers_count = "stars_count",
+  watchers_count = "watchers_count",
+  language = "language",
+  has_issues = "has_issues",
+  has_wiki = "has_wiki",
+  forks_count = "forks_count",
+  archived = "archived",
+  disabled = const(false),
+  open_issues_count = "open_issues_count",
+  default_branch = "default_branch",
+  visibility = computed(function(r)
+    return r.visibility or (r.private and "private" or "public")
+  end),
+  forks = "forks_count",
+  open_issues = "open_issues_count",
+  watchers = "watchers_count",
+  created_at = "created",
+  updated_at = "updated",
+  pushed_at = "updated",
+  permissions = "permissions",
+})
+
+translate_user = make_translator({
+  login = "login",
+  id = "id",
+  node_id = const(""),
+  avatar_url = "avatar_url",
+  html_url = "html_url",
+  type = const("User"),
+  site_admin = field("is_admin", { default = false }),
+  name = "full_name",
+  email = "email",
+  location = "location",
+  blog = "website",
+  followers = computed(function(u)
+    return u.followers_count or 0
+  end),
+  following = computed(function(u)
+    return u.following_count or 0
+  end),
+  created_at = "created",
+})
 
 -- translate_migration is global: maps a backend migration object to GitHub field names.
 -- The GitHub migration schema: https://docs.github.com/en/rest/migrations
@@ -94,28 +91,39 @@ end
 --   exclude_metadata, exclude_git_data, exclude_attachments, exclude_releases,
 --   exclude_owner_projects, org_metadata_only, repositories, url, created_at, updated_at.
 -- Optional fields: archive_url, exclude.
-function translate_migration(m)
-  if not m then
-    return {}
-  end
-  return {
-    id = m.id,
-    node_id = m.node_id or "",
-    owner = m.owner,
-    guid = m.guid or "",
-    state = m.state or "pending",
-    lock_repositories = m.lock_repositories or false,
-    exclude_metadata = m.exclude_metadata or false,
-    exclude_git_data = m.exclude_git_data or false,
-    exclude_attachments = m.exclude_attachments or false,
-    exclude_releases = m.exclude_releases or false,
-    exclude_owner_projects = m.exclude_owner_projects or false,
-    org_metadata_only = m.org_metadata_only or false,
-    repositories = m.repositories or {},
-    url = m.url or "",
-    created_at = m.created_at or "",
-    updated_at = m.updated_at or "",
-    archive_url = m.archive_url,
-    exclude = m.exclude or {},
-  }
-end
+translate_migration = make_translator({
+  id = "id",
+  node_id = computed(function(m)
+    return m.node_id or ""
+  end),
+  owner = "owner",
+  guid = computed(function(m)
+    return m.guid or ""
+  end),
+  state = computed(function(m)
+    return m.state or "pending"
+  end),
+  lock_repositories = field("lock_repositories", { default = false }),
+  exclude_metadata = field("exclude_metadata", { default = false }),
+  exclude_git_data = field("exclude_git_data", { default = false }),
+  exclude_attachments = field("exclude_attachments", { default = false }),
+  exclude_releases = field("exclude_releases", { default = false }),
+  exclude_owner_projects = field("exclude_owner_projects", { default = false }),
+  org_metadata_only = field("org_metadata_only", { default = false }),
+  repositories = computed(function(m)
+    return m.repositories or {}
+  end),
+  url = computed(function(m)
+    return m.url or ""
+  end),
+  created_at = computed(function(m)
+    return m.created_at or ""
+  end),
+  updated_at = computed(function(m)
+    return m.updated_at or ""
+  end),
+  archive_url = "archive_url",
+  exclude = computed(function(m)
+    return m.exclude or {}
+  end),
+})
