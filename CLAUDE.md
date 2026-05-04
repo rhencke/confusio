@@ -236,6 +236,10 @@ Historical commits are covered by `.mailmap` — no rewrite needed.
 
 Hard-won insights from building this project. **Keep this section current**: whenever you discover something surprising, fix a non-obvious bug, or learn a constraint that isn't derivable from the code, add it here before committing.
 
+Long-form lessons live in `lessons/*.MD`. Read those files before starting broad refactors, architecture work, or review-driven cleanup. Add or update a lesson when review feedback exposes a durable engineering constraint that future agents should remember.
+
+- `lessons/001-abstraction-costs.MD` — abstractions must pay for themselves in clarity and maintenance cost, not just nominal LOC movement.
+
 ### Architectural deduplication baseline
 
 Issues #111–#117 established four authoritative seams. Future endpoint and provider work should touch only these sources — all other surfaces are derived and must not be edited directly.
