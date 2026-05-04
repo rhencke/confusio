@@ -191,6 +191,11 @@ end
 local function codecommit_pr_from_detail(payload, detail, repository, sender)
   local merged = codecommit_bool(detail.isMerged)
   local closed = detail.pullRequestStatus == "Closed"
+  local console_base = "https://" .. payload.region .. ".console.aws.amazon.com"
+  local console_path = "/codesuite/codecommit/repositories/"
+    .. repository.name
+    .. "/pull-requests/"
+    .. detail.pullRequestId
   return {
     id = tonumber(detail.pullRequestId) or 0,
     node_id = detail.revisionId or "",
@@ -212,7 +217,7 @@ local function codecommit_pr_from_detail(payload, detail, repository, sender)
     html_url = payload.region ~= ""
         and repository.name ~= ""
         and detail.pullRequestId
-        and ("https://" .. payload.region .. ".console.aws.amazon.com/codesuite/codecommit/repositories/" .. repository.name .. "/pull-requests/" .. detail.pullRequestId .. "?region=" .. payload.region)
+        and (console_base .. console_path .. "?region=" .. payload.region)
       or "",
     url = "",
   }
