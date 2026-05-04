@@ -45,6 +45,18 @@ local CHANGE_REVIEW_PROVIDERS = { "gerrit", "onedev" }
 local SIMPLE_GIT_PROVIDERS = { "gitblit", "gitbucket", "kallithea", "pagure" }
 local SOURCEHUT_RELATED = { "phabricator", "radicle", "sourceforge", "sourcehut", "tuleap" }
 
+local RHODECODE_WEBHOOK_SOURCES = {
+  create = { "PUSH_HOOK", "POST_PUSH" },
+  delete = { "PUSH_HOOK", "POST_PUSH" },
+  push = { "PUSH_HOOK", "POST_PUSH" },
+  pull_request = {
+    "webhook integration pull_request",
+    "CREATE_PULLREQUEST_HOOK",
+    "CLOSE_PULLREQUEST_HOOK",
+  },
+  repository = { "CREATE_REPO_HOOK", "DELETE_REPO_HOOK" },
+}
+
 local function append_all(dst, src)
   for _, value in ipairs(src) do
     dst[#dst + 1] = value
@@ -89,6 +101,15 @@ local function event(name, normalized_base, actions, spec)
     actions = actions,
     providers = status_map(spec),
   }
+end
+
+local function attach_provider_sources(defs, provider, sources_by_event)
+  for _, def in ipairs(defs) do
+    local sources = sources_by_event[def.name]
+    if sources and def.providers[provider] then
+      def.providers[provider].sources = sources
+    end
+  end
 end
 
 local REF_PROVIDERS = provider_list(
@@ -539,6 +560,8 @@ local EVENT_DEFS = {
     },
   }),
 }
+
+attach_provider_sources(EVENT_DEFS, "rhodecode", RHODECODE_WEBHOOK_SOURCES)
 
 local CATALOG_BY_EVENT = {}
 local EVENT_NAMES = {}

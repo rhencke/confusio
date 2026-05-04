@@ -4084,6 +4084,269 @@ do
 end
 
 -- ============================================================
+-- RhodeCode webhook handlers
+-- ============================================================
+
+do
+  local saved_rest = app.backend.rest
+  local saved_capabilities = app.backend.capabilities
+  local saved_webhooks = app.backend.webhooks
+  local saved_webhook_translators = app.backend.webhook_translators
+  local saved_webhook_github_translators = app.backend.webhook_github_translators
+  local saved_resolvers = graphql_resolvers -- luacheck: globals graphql_resolvers
+  local saved_base_url = config.base_url
+  local saved_backend = config.backend
+
+  app.backend.rest = {}
+  app.backend.capabilities = {}
+  app.backend.webhooks = {}
+  app.backend.webhook_translators = {}
+  app.backend.webhook_github_translators = {}
+  graphql_resolvers = {} -- luacheck: globals graphql_resolvers
+  config.base_url = "https://rhodecode.example"
+  config.backend = "rhodecode"
+  _real_dofile("backends/rhodecode.lua")
+
+  ok(app.backend.webhooks.PUSH_HOOK ~= nil, "rhodecode webhook: PUSH_HOOK registered")
+  ok(app.backend.webhooks.POST_PUSH ~= nil, "rhodecode webhook: POST_PUSH registered")
+  ok(app.backend.webhooks.CREATE_REPO_HOOK ~= nil, "rhodecode webhook: create repo registered")
+  ok(app.backend.webhooks.DELETE_REPO_HOOK ~= nil, "rhodecode webhook: delete repo registered")
+  ok(app.backend.webhook_translators.push ~= nil, "rhodecode webhook: push translator registered")
+  ok(
+    app.backend.webhook_github_translators.repository ~= nil,
+    "rhodecode webhook: repository GitHub translator registered"
+  )
+
+  local function load_rhodecode_fixture(name)
+    local f = assert(io.open("test/fixtures/webhooks/rhodecode/" .. name .. ".json", "rb"))
+    local body = f:read("*a")
+    f:close()
+    return DecodeJson(body)
+  end
+
+  local push_event = app.backend.webhooks.PUSH_HOOK(load_rhodecode_fixture("push"))
+  eq(push_event.event, "push", "rhodecode webhook: PUSH_HOOK update maps to push")
+  eq(push_event.action, "push", "rhodecode webhook: push action set")
+  eq(push_event.provider, "rhodecode", "rhodecode webhook: push provider set")
+  eq(push_event.data.ref, "refs/heads/main", "rhodecode webhook: push keeps full ref")
+  eq(
+    push_event.data.before,
+    "1111111111111111111111111111111111111111",
+    "rhodecode webhook: push maps old revision"
+  )
+  eq(
+    push_event.data.after,
+    "2222222222222222222222222222222222222222",
+    "rhodecode webhook: push maps new revision"
+  )
+  eq(
+    push_event.data.repository.full_name,
+    "octocat/hello-world",
+    "rhodecode webhook: push maps repository"
+  )
+  eq(push_event.data.sender.login, "alice", "rhodecode webhook: push maps sender")
+  eq(push_event.data.pusher.email, "alice@example.com", "rhodecode webhook: push maps pusher")
+  local push_envelope = app.backend.webhook_translators.push(push_event)
+  eq(push_envelope.type, "push", "rhodecode webhook: normalized push uses actionless type")
+  local push_github_payload = app.backend.webhook_github_translators.push(push_event)
+  eq(push_github_payload.action, nil, "rhodecode webhook: GitHub push has no action")
+  eq(push_github_payload.ref, "refs/heads/main", "rhodecode webhook: GitHub push includes ref")
+
+  local create_event = app.backend.webhooks.POST_PUSH({
+    hook = "POST_PUSH",
+    repo_name = "octocat/hello-world",
+    username = "alice",
+    pushed_revs = { "tag=>v1.2.3" },
+  })
+  eq(create_event.event, "create", "rhodecode webhook: zero old revision maps to create")
+  eq(create_event.data.ref, "v1.2.3", "rhodecode webhook: tag create strips ref prefix")
+  eq(create_event.data.ref_type, "tag", "rhodecode webhook: tag create detects ref type")
+
+  local delete_event = app.backend.webhooks.PUSH_HOOK({
+    event = "PUSH_HOOK",
+    repo = { repo_name = "octocat/hello-world", private = "false" },
+    username = "alice",
+    ref_updates = {
+      {
+        ref_name_full = "refs/tags/v0.9.0",
+        from_hash = "9999999999999999999999999999999999999999",
+        to_hash = "0000000000000000000000000000000000000000",
+      },
+    },
+  })
+  eq(delete_event.event, "delete", "rhodecode webhook: zero new revision maps to delete")
+  eq(delete_event.data.ref, "v0.9.0", "rhodecode webhook: tag delete strips ref prefix")
+  eq(delete_event.data.ref_type, "tag", "rhodecode webhook: tag delete detects ref type")
+  eq(
+    delete_event.data.repository.visibility,
+    "public",
+    "rhodecode webhook: string false private maps to public"
+  )
+
+  local repo_created = app.backend.webhooks.repository({
+    action = "create",
+    repo_name = "octocat/new-repo",
+    repo_private = "yes",
+    created_by = "admin",
+  })
+  eq(repo_created.event, "repository", "rhodecode webhook: repository action maps event")
+  eq(repo_created.action, "created", "rhodecode webhook: repository create normalizes action")
+  eq(
+    repo_created.data.repository.visibility,
+    "private",
+    "rhodecode webhook: repository maps private flag"
+  )
+  eq(repo_created.data.sender.login, "admin", "rhodecode webhook: repository maps sender")
+  local repo_created_payload = app.backend.webhook_github_translators.repository(repo_created)
+  eq(repo_created_payload.action, "created", "rhodecode webhook: GitHub repository action")
+  eq(
+    repo_created_payload.repository.full_name,
+    "octocat/new-repo",
+    "rhodecode webhook: GitHub repository body"
+  )
+
+  local repo_deleted = app.backend.webhooks.DELETE_REPO_HOOK({
+    repo_name = "octocat/old-repo",
+    deleted_by = "admin",
+  })
+  eq(repo_deleted.action, "deleted", "rhodecode webhook: delete repo hook normalizes action")
+  eq(
+    repo_deleted.data.repository.full_name,
+    "octocat/old-repo",
+    "rhodecode webhook: delete repo hook keeps repository"
+  )
+  local repo_deleted_envelope = app.backend.webhook_translators.repository(repo_deleted)
+  eq(
+    repo_deleted_envelope.type,
+    "repository.deleted",
+    "rhodecode webhook: normalized repository includes action"
+  )
+
+  local pr_opened =
+    app.backend.webhooks.CREATE_PULLREQUEST_HOOK(load_rhodecode_fixture("pull_request-opened"))
+  eq(pr_opened.event, "pull_request", "rhodecode webhook: create PR maps event")
+  eq(pr_opened.action, "opened", "rhodecode webhook: create PR maps opened action")
+  eq(pr_opened.data.number, 7, "rhodecode webhook: PR number")
+  eq(pr_opened.data.repository.full_name, "octocat/hello-world", "rhodecode webhook: PR repository")
+  eq(pr_opened.data.pull_request.title, "Add webhook fixtures", "rhodecode webhook: PR title")
+  eq(pr_opened.data.pull_request.head.ref, "feature/rhodecode", "rhodecode webhook: PR head ref")
+  eq(pr_opened.data.pull_request.base.ref, "main", "rhodecode webhook: PR base ref")
+  eq(pr_opened.data.pull_request.state, "open", "rhodecode webhook: opened PR state")
+  local pr_opened_envelope = app.backend.webhook_translators.pull_request(pr_opened)
+  eq(pr_opened_envelope.type, "pull_request.opened", "rhodecode webhook: normalized PR opened type")
+  local pr_opened_payload = app.backend.webhook_github_translators.pull_request(pr_opened)
+  eq(pr_opened_payload.action, "opened", "rhodecode webhook: GitHub PR opened action")
+  eq(
+    pr_opened_payload.pull_request.head.label,
+    "alice/hello-world:feature/rhodecode",
+    "rhodecode webhook: GitHub PR head label"
+  )
+
+  local pr_sync = app.backend.webhooks.pull_request({
+    action = "update",
+    repository = "octocat/hello-world",
+    created_by = "alice",
+    pull_request_id = 7,
+    pull_request = {
+      id = 7,
+      title = "Add webhook fixtures",
+      description = "Updated with another commit.",
+      status = "updated",
+      owner = "alice",
+      org_repo_name = "octocat/hello-world",
+      other_repo_name = "alice/hello-world",
+      org_ref = "main",
+      other_ref = "feature/rhodecode",
+      org_rev = "1111111111111111111111111111111111111111",
+      other_rev = "2222222222222222222222222222222222222222",
+      created_on = "2024-01-15T12:15:00Z",
+      updated_on = "2024-01-15T12:20:00Z",
+    },
+  })
+  eq(pr_sync.action, "synchronize", "rhodecode webhook: update maps synchronize action")
+  eq(
+    pr_sync.data.pull_request.head.sha,
+    "2222222222222222222222222222222222222222",
+    "rhodecode webhook: PR synchronize maps head sha"
+  )
+  eq(
+    app.backend.webhook_translators.pull_request(pr_sync).type,
+    "pull_request.synchronize",
+    "rhodecode webhook: normalized PR synchronize type"
+  )
+
+  local pr_closed =
+    app.backend.webhooks.CLOSE_PULLREQUEST_HOOK(load_rhodecode_fixture("pull_request-closed"))
+  eq(pr_closed.action, "closed", "rhodecode webhook: close PR maps closed action")
+  eq(pr_closed.data.pull_request.state, "closed", "rhodecode webhook: closed PR state")
+  eq(
+    pr_closed.data.pull_request.closed_at,
+    "2024-01-15T13:30:00Z",
+    "rhodecode webhook: closed PR timestamp"
+  )
+
+  local pr_merged = app.backend.webhooks.pull_request({
+    action = "merged",
+    repository = "octocat/hello-world",
+    merged_by = "bob",
+    pull_request_id = 8,
+    pull_request = {
+      id = 8,
+      title = "Close the loop",
+      status = "merged",
+      owner = "bob",
+      org_repo_name = "octocat/hello-world",
+      other_repo_name = "bob/hello-world",
+      org_ref = "main",
+      other_ref = "cleanup",
+      merge_commit_sha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      updated_on = "2024-01-15T13:35:00Z",
+    },
+  })
+  eq(pr_merged.action, "closed", "rhodecode webhook: merged PR maps closed action")
+  ok(pr_merged.data.pull_request.merged == true, "rhodecode webhook: merged flag set")
+  eq(
+    pr_merged.data.pull_request.merged_at,
+    "2024-01-15T13:35:00Z",
+    "rhodecode webhook: merged timestamp"
+  )
+  eq(
+    pr_merged.data.pull_request.merge_commit_sha,
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "rhodecode webhook: merge commit sha"
+  )
+
+  local pr_reopened = app.backend.webhooks.pull_request({
+    action = "reopen",
+    repository = "octocat/hello-world",
+    created_by = "bob",
+    pull_request_id = 8,
+    pull_request = {
+      id = 8,
+      title = "Close the loop",
+      status = "reopened",
+      owner = "bob",
+      org_repo_name = "octocat/hello-world",
+      other_repo_name = "bob/hello-world",
+      org_ref = "main",
+      other_ref = "cleanup",
+      updated_on = "2024-01-15T13:40:00Z",
+    },
+  })
+  eq(pr_reopened.action, "reopened", "rhodecode webhook: reopen maps reopened action")
+  eq(pr_reopened.data.pull_request.state, "open", "rhodecode webhook: reopened PR state")
+
+  app.backend.rest = saved_rest
+  app.backend.capabilities = saved_capabilities
+  app.backend.webhooks = saved_webhooks
+  app.backend.webhook_translators = saved_webhook_translators
+  app.backend.webhook_github_translators = saved_webhook_github_translators
+  graphql_resolvers = saved_resolvers -- luacheck: globals graphql_resolvers
+  config.base_url = saved_base_url
+  config.backend = saved_backend
+end
+
+-- ============================================================
 -- NotABug webhook handlers
 -- ============================================================
 
@@ -6288,6 +6551,21 @@ do
   ok(
     type(issues_def.providers.gitblit) == "table",
     "webhook_catalog_event: unsupported/no-analog provider entries are explicit"
+  )
+
+  local rhodecode_push = webhook_catalog_event("push").providers.rhodecode
+  eq(rhodecode_push.status, "supported", "webhook_catalog_event: rhodecode push supported")
+  eq(
+    table.concat(rhodecode_push.sources, ","),
+    "PUSH_HOOK,POST_PUSH",
+    "webhook_catalog_event: rhodecode push native sources recorded"
+  )
+
+  local rhodecode_pr = webhook_catalog_event("pull_request").providers.rhodecode
+  eq(
+    table.concat(rhodecode_pr.sources, ","),
+    "webhook integration pull_request,CREATE_PULLREQUEST_HOOK,CLOSE_PULLREQUEST_HOOK",
+    "webhook_catalog_event: rhodecode pull_request native sources recorded"
   )
 
   local security_def = webhook_catalog_event("security_advisory")

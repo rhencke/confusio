@@ -952,6 +952,14 @@ branch creation, and one branch deletion against the fixture repository.  Those 
 post-receive commands are the supported Gitblit webhook surface and should assert both
 GitHub-shaped delivery headers and confusio-shaped normalized event bodies.
 
+RhodeCode real-world webhook coverage should run against the
+`rhodecode/rhodecode-community` container when a reachable instance is available,
+configure the webhook authentication token, and drive branch/tag update, create, and
+delete events plus repository create/delete and pull-request open/update/close/merge/reopen
+payloads.  No live RhodeCode instance is configured in CI today, so the mock-backed
+fixture delivery tests are the active coverage signal until the Docker bootstrap is wired
+into the weekly runner.
+
 Tuleap real-world webhook coverage should run against the
 `tuleap/tuleap-community-edition` container, configure a webhook secret, and drive
 project creation, Git branch/tag update/create/delete, and tracker artifact

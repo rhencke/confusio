@@ -11,6 +11,31 @@ end)
 
 local ZERO_SHA = "0000000000000000000000000000000000000000"
 
+local function first_non_empty(...)
+  for i = 1, select("#", ...) do
+    local value = select(i, ...)
+    if value ~= nil and value ~= "" then
+      return value
+    end
+  end
+  return nil
+end
+
+local function is_zero_sha(value)
+  return value == ZERO_SHA
+end
+
+local function bool_value(value)
+  if value == true or value == 1 then
+    return true
+  end
+  if type(value) == "string" then
+    local lower = value:lower()
+    return lower == "true" or lower == "1" or lower == "yes"
+  end
+  return false
+end
+
 local function split_repo_name(name)
   local owner, repo = (name or ""):match("^([^/]+)/(.+)$")
   return owner or "", repo or (name or "")
@@ -34,9 +59,16 @@ local function full_ref(ref)
     return ref.ref
   elseif ref.ref_name and ref.ref_name ~= "" then
     return ref.ref_name
+  elseif ref.ref_name_full and ref.ref_name_full ~= "" then
+    return ref.ref_name_full
   elseif ref.branch and ref.branch ~= "" then
     return "refs/heads/" .. ref.branch
-  elseif ref.type == "tags" or ref.ref_type == "tag" then
+  elseif
+    ref.type == "tag"
+    or ref.type == "tags"
+    or ref.ref_type == "tag"
+    or ref.ref_type == "tags"
+  then
     return "refs/tags/" .. (ref.name or "")
   end
   return "refs/heads/" .. (ref.name or "")
@@ -79,9 +111,20 @@ local function repo_name_from_payload(payload)
   payload = payload or {}
   local repo = payload.repo or payload.repository or payload.project
   if type(repo) == "table" then
-    return repo.full_name or repo.repo_name or repo.name or repo.repo_name_with_group or ""
+    return first_non_empty(
+      repo.full_name,
+      repo.repo_name,
+      repo.repo_name_with_group,
+      repo.path_with_namespace,
+      repo.name
+    ) or ""
   end
-  return payload.repo_name or repo or ""
+  return first_non_empty(
+    payload.repo_name,
+    payload.repo_name_with_group,
+    payload.path_with_namespace,
+    repo
+  ) or ""
 end
 
 local function repo_table(payload)
@@ -97,12 +140,13 @@ local function translate_rhodecode_repo(payload)
   local source = repo_table(payload)
   local full_name = repo_name_from_payload(payload)
   local owner, repo_name = split_repo_name(full_name)
+  local private = bool_value(source.private or source.repo_private or source.is_private)
   return {
     id = source.repo_id or source.repository_id or source.id or 0,
     node_id = "",
     name = repo_name,
     full_name = full_name,
-    private = source.private or false,
+    private = private,
     owner = {
       login = owner,
       id = source.owner_id or 0,
@@ -127,13 +171,13 @@ local function translate_rhodecode_repo(payload)
     watchers_count = 0,
     language = nil,
     has_issues = false,
-    has_wiki = source.enable_downloads or false,
+    has_wiki = bool_value(source.enable_downloads),
     forks_count = 0,
     archived = false,
     disabled = false,
     open_issues_count = 0,
     default_branch = source.default_branch or "main",
-    visibility = source.private and "private" or "public",
+    visibility = private and "private" or "public",
     forks = 0,
     open_issues = 0,
     watchers = 0,
@@ -200,6 +244,22 @@ local function first_ref_update(payload)
   return nil
 end
 
+local function ref_before(ref)
+  return first_non_empty(ref.old_rev, ref.old, ref.before, ref.from, ref.from_hash) or ZERO_SHA
+end
+
+local function ref_after(ref)
+  return first_non_empty(
+    ref.new_rev,
+    ref.new,
+    ref.after,
+    ref.to,
+    ref.to_hash,
+    ref.commit_id,
+    ref.sha
+  )
+end
+
 local function rhodecode_ref_webhook(payload)
   local ref = first_ref_update(payload)
   if not ref then
@@ -207,8 +267,8 @@ local function rhodecode_ref_webhook(payload)
   end
 
   local raw_ref = full_ref(ref)
-  local before = ref.old_rev or ref.old or ref.before or ZERO_SHA
-  local after = ref.new_rev or ref.new or ref.after or ref.commit_id or ""
+  local before = ref_before(ref)
+  local after = ref_after(ref) or ""
   if after == "" and before ~= "" then
     after = ZERO_SHA
   end
@@ -217,7 +277,7 @@ local function rhodecode_ref_webhook(payload)
   local kind = ref_type(raw_ref)
   local name = ref_name(raw_ref)
 
-  if before == ZERO_SHA then
+  if is_zero_sha(before) then
     return make_internal_event({
       event = "create",
       action = "create",
@@ -232,11 +292,11 @@ local function rhodecode_ref_webhook(payload)
         repository = repository,
         sender = sender,
       },
-      timestamp = payload.updated_on or payload.pushed_at or "",
+      timestamp = payload.updated_on or payload.pushed_at or payload.created_on or "",
     })
   end
 
-  if after == ZERO_SHA then
+  if is_zero_sha(after) then
     return make_internal_event({
       event = "delete",
       action = "delete",
@@ -251,7 +311,7 @@ local function rhodecode_ref_webhook(payload)
         repository = repository,
         sender = sender,
       },
-      timestamp = payload.updated_on or payload.pushed_at or "",
+      timestamp = payload.updated_on or payload.pushed_at or payload.deleted_on or "",
     })
   end
 
@@ -272,7 +332,7 @@ local function rhodecode_ref_webhook(payload)
       created = false,
       deleted = false,
       forced = payload.forced or false,
-      compare = "",
+      compare = payload.compare or "",
       commits = commits,
       head_commit = head_commit,
       pusher = {
@@ -282,7 +342,10 @@ local function rhodecode_ref_webhook(payload)
       repository = repository,
       sender = sender,
     },
-    timestamp = head_commit and head_commit.timestamp or payload.updated_on or "",
+    timestamp = head_commit and head_commit.timestamp
+      or payload.updated_on
+      or payload.pushed_at
+      or "",
   })
 end
 
@@ -295,35 +358,76 @@ local function translate_pr_branch(repo_name, ref)
   }
 end
 
+local function pr_repo_name(value)
+  if type(value) == "table" then
+    return repo_name_from_payload({ repository = value })
+  end
+  return value or ""
+end
+
+local function pr_branch(payload, repo_name, ref, sha)
+  local branch = translate_pr_branch(repo_name, ref)
+  branch.sha = sha or ""
+  if branch.repo.full_name == "" then
+    branch.repo = translate_rhodecode_repo(payload)
+  end
+  return branch
+end
+
 local function pr_action(payload, pr)
-  local action = payload.action or pr.action or ""
+  local action = payload.action or payload.event_action or pr.action or ""
   local status = pr.status or payload.status or ""
-  if action == "created" or action == "create" or action == "opened" or action == "" then
+  if
+    action == "created"
+    or action == "create"
+    or action == "open"
+    or action == "opened"
+    or status == "new"
+    or status == "open"
+    or status == "opened"
+    or (action == "" and status == "")
+  then
     return "opened"
-  elseif action == "updated" or action == "update" then
+  elseif
+    action == "updated"
+    or action == "update"
+    or action == "synchronize"
+    or action == "synchronized"
+    or status == "updated"
+    or status == "synchronize"
+    or status == "synchronized"
+  then
     return "synchronize"
-  elseif action == "merged" or status == "merged" or action == "closed" or status == "closed" then
+  elseif
+    action == "merged"
+    or status == "merged"
+    or action == "closed"
+    or action == "close"
+    or status == "closed"
+  then
     return "closed"
-  elseif action == "reopened" then
+  elseif action == "reopened" or action == "reopen" or status == "reopened" then
     return "reopened"
   end
-  return action
+  return "unknown", action ~= "" and action or status
 end
 
 local function translate_rhodecode_pull_request(payload)
   local pr = payload.pull_request or payload
   local status = pr.status or payload.status or "new"
   local state = (status == "closed" or status == "merged") and "closed" or "open"
-  local target_repo = pr.org_repo_name
-    or pr.target_repo
-    or payload.repository
-    or payload.repo_name
-    or ""
-  local source_repo = pr.other_repo_name
-    or pr.source_repo
-    or payload.source_repository
-    or target_repo
+  local target_repo = pr_repo_name(pr.org_repo_name or pr.target_repo or payload.repository)
+  if target_repo == "" then
+    target_repo = repo_name_from_payload(payload)
+  end
+  local source_repo =
+    pr_repo_name(pr.other_repo_name or pr.source_repo or payload.source_repository)
+  if source_repo == "" then
+    source_repo = target_repo
+  end
   local number = payload.pull_request_id or pr.pull_request_id or pr.id or 0
+  local updated_at = pr.updated_on or pr.updated_at or payload.updated_on or ""
+  local merged = status == "merged" or payload.action == "merged" or pr.action == "merged"
   return {
     id = number,
     node_id = "",
@@ -333,15 +437,26 @@ local function translate_rhodecode_pull_request(payload)
     title = pr.title or "",
     body = pr.description or pr.body or "",
     user = translate_rhodecode_user(pr.owner or payload.created_by or payload.username),
-    head = translate_pr_branch(source_repo, pr.other_ref or pr.source_ref or payload.source_ref),
-    base = translate_pr_branch(target_repo, pr.org_ref or pr.target_ref or payload.target_ref),
+    head = pr_branch(
+      payload,
+      source_repo,
+      pr.other_ref or pr.source_ref or payload.source_ref,
+      pr.other_rev or pr.source_rev or pr.source_sha or payload.source_sha
+    ),
+    base = pr_branch(
+      payload,
+      target_repo,
+      pr.org_ref or pr.target_ref or payload.target_ref,
+      pr.org_rev or pr.target_rev or pr.target_sha or payload.target_sha
+    ),
     draft = false,
-    created_at = pr.created_on or "",
-    updated_at = pr.updated_on or "",
-    closed_at = state == "closed" and (pr.updated_on or "") or nil,
-    merged_at = status == "merged" and (pr.updated_on or "") or nil,
-    merge_commit_sha = nil,
-    merged_by = nil,
+    created_at = pr.created_on or pr.created_at or payload.created_on or "",
+    updated_at = updated_at,
+    closed_at = state == "closed" and updated_at or nil,
+    merged_at = merged and updated_at or nil,
+    merge_commit_sha = pr.merge_commit_id or pr.merge_commit_sha or payload.merge_commit_sha,
+    merged = merged,
+    merged_by = merged and translate_rhodecode_user(pr.merged_by or payload.merged_by) or nil,
     diff_url = "",
     patch_url = "",
     html_url = target_repo ~= ""
@@ -360,34 +475,51 @@ end
 
 local function rhodecode_pull_request_event(payload)
   local pr = payload.pull_request or payload
-  local action = pr_action(payload, pr)
+  local action, raw_action = pr_action(payload, pr)
+  local repository_name = pr_repo_name(payload.repository or pr.org_repo_name or pr.target_repo)
+  if repository_name == "" then
+    repository_name = repo_name_from_payload(payload)
+  end
   return make_internal_event({
     event = "pull_request",
     action = action,
+    raw_action = raw_action,
     provider = "rhodecode",
     raw = payload,
     data = {
       action = action,
       number = payload.pull_request_id or pr.pull_request_id or pr.id,
       pull_request = translate_rhodecode_pull_request(payload),
-      repository = translate_rhodecode_repo({
-        repo_name = payload.repository or pr.org_repo_name or pr.target_repo,
-      }),
+      repository = translate_rhodecode_repo({ repo_name = repository_name }),
       sender = translate_rhodecode_user(payload.created_by or pr.owner or payload.username),
     },
-    timestamp = pr.updated_on or pr.created_on or "",
+    timestamp = pr.updated_on or pr.updated_at or pr.created_on or pr.created_at or "",
   })
+end
+
+local function repo_action(payload, fallback)
+  local action = payload.action or payload.event_action or fallback or ""
+  if action == "create" or action == "created" then
+    return "created"
+  elseif action == "delete" or action == "deleted" or action == "destroyed" then
+    return "deleted"
+  end
+  return nil
 end
 
 local function rhodecode_repository_event(action)
   return function(payload)
+    local normalized_action = repo_action(payload, action)
+    if not normalized_action then
+      return nil, "Unsupported RhodeCode repository action"
+    end
     return make_internal_event({
       event = "repository",
-      action = action,
+      action = normalized_action,
       provider = "rhodecode",
       raw = payload,
       data = {
-        action = action,
+        action = normalized_action,
         repository = translate_rhodecode_repo(payload),
         sender = translate_rhodecode_user(payload),
       },
@@ -409,10 +541,9 @@ b:webhook("CLOSE_PULLREQUEST_HOOK", function(payload)
   return rhodecode_pull_request_event(payload)
 end)
 b:webhook("repository", function(payload)
-  if payload.action == "created" then
-    return rhodecode_repository_event("created")(payload)
-  elseif payload.action == "deleted" then
-    return rhodecode_repository_event("deleted")(payload)
+  local action = repo_action(payload)
+  if action then
+    return rhodecode_repository_event(action)(payload)
   end
   return nil, "Unsupported RhodeCode repository action"
 end)

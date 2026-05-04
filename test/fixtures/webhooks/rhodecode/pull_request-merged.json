@@ -1,0 +1,22 @@
+{
+  "event_type": "pull_request",
+  "action": "merged",
+  "repository": "octocat/hello-world",
+  "created_by": "bob",
+  "merged_by": "bob",
+  "pull_request_id": 8,
+  "pull_request": {
+    "id": 8,
+    "title": "Close the loop",
+    "description": "Done.",
+    "status": "merged",
+    "owner": "bob",
+    "org_repo_name": "octocat/hello-world",
+    "other_repo_name": "bob/hello-world",
+    "org_ref": "main",
+    "other_ref": "cleanup",
+    "merge_commit_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "created_on": "2024-01-15T13:00:00Z",
+    "updated_on": "2024-01-15T13:35:00Z"
+  }
+}

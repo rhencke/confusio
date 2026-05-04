@@ -1,0 +1,11 @@
+{
+  "event": "repository",
+  "hook": "DELETE_REPO_HOOK",
+  "action": "deleted",
+  "repo_name": "octocat/old-repo",
+  "repo_id": 100,
+  "deleted_by": "admin",
+  "description": "A repository ready for the archive",
+  "deleted_on": "2024-01-15T14:30:00Z",
+  "private": false
+}
