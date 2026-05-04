@@ -809,6 +809,8 @@ do
 
   local empty = translate_issue_spec(nil)
   ok(type(empty) == "table", "make_translator: nil input returns an empty table")
+  local optional = make_translator({ id = "id" }, { nil_returns_nil = true })
+  ok(optional(nil) == nil, "make_translator: nil_returns_nil preserves nil result")
   eq(
     #translate_issue_spec({ labels = nil }).labels,
     0,

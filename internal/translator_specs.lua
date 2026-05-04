@@ -81,6 +81,9 @@ end
 
 local function translator_apply(translator, input)
   if input == nil then
+    if translator.nil_returns_nil then
+      return nil
+    end
     return {}
   end
   local output = {}
@@ -96,6 +99,10 @@ end
 
 TRANSLATOR_SPEC_MT.__call = translator_apply
 
-function make_translator(spec)
-  return setmetatable({ spec = spec }, TRANSLATOR_SPEC_MT)
+function make_translator(spec, opts)
+  opts = opts or {}
+  return setmetatable({
+    spec = spec,
+    nil_returns_nil = opts.nil_returns_nil == true,
+  }, TRANSLATOR_SPEC_MT)
 end
