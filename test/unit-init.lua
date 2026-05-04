@@ -196,6 +196,44 @@ do
       .. ")"
   )
 
+  arg = { "--config=/tmp/confusio.toml", "--provider=gitea", "--upstream=https://git.example.com" } -- luacheck: globals arg
+  local ok_config_file_flag, err_config_file_flag = pcall(_real_dofile, ".init.lua")
+  assert(not ok_config_file_flag, "config file startup flag should cause startup error")
+  assert(
+    type(err_config_file_flag) == "string" and err_config_file_flag:find("unknown startup flag"),
+    "config file startup flag error should mention unknown startup flag (got: "
+      .. tostring(err_config_file_flag)
+      .. ")"
+  )
+
+  arg = { -- luacheck: globals arg
+    "--webhook-target-env=CONFUSIO_WEBHOOK_TARGETS",
+    "--provider=gitea",
+    "--upstream=https://git.example.com",
+  }
+  local ok_target_env_flag, err_target_env_flag = pcall(_real_dofile, ".init.lua")
+  assert(not ok_target_env_flag, "webhook target env startup flag should cause startup error")
+  assert(
+    type(err_target_env_flag) == "string" and err_target_env_flag:find("unknown startup flag"),
+    "webhook target env startup flag error should mention unknown startup flag (got: "
+      .. tostring(err_target_env_flag)
+      .. ")"
+  )
+
+  arg = { -- luacheck: globals arg
+    "--webhook-secret-env=CONFUSIO_WEBHOOK_SECRET",
+    "--provider=gitea",
+    "--upstream=https://git.example.com",
+  }
+  local ok_secret_env_flag, err_secret_env_flag = pcall(_real_dofile, ".init.lua")
+  assert(not ok_secret_env_flag, "webhook secret env startup flag should cause startup error")
+  assert(
+    type(err_secret_env_flag) == "string" and err_secret_env_flag:find("unknown startup flag"),
+    "webhook secret env startup flag error should mention unknown startup flag (got: "
+      .. tostring(err_secret_env_flag)
+      .. ")"
+  )
+
   arg = { "--provider=gitea", "--upstream=not-a-url" } -- luacheck: globals arg
   local ok_bad_url, err_bad_url = pcall(_real_dofile, ".init.lua")
   assert(not ok_bad_url, "--upstream: invalid URL should cause startup error")
@@ -675,6 +713,30 @@ end
 
 local function eq(a, b, msg)
   ok(a == b, msg .. " (got " .. tostring(a) .. ", want " .. tostring(b) .. ")")
+end
+
+local function read_file(path)
+  local f = assert(io.open(path, "r"))
+  local body = f:read("*a")
+  f:close()
+  return body
+end
+
+do
+  local init_source = read_file(".init.lua")
+  ok(
+    init_source:find("os.getenv", 1, true) == nil,
+    ".init.lua: startup webhook config does not read environment variables"
+  )
+  ok(
+    init_source:find("--config", 1, true) == nil,
+    ".init.lua: startup webhook config has no config-file flag"
+  )
+  local catalog_source = read_file("internal/catalog.lua")
+  ok(
+    catalog_source:find('"/admin', 1, true) == nil,
+    "route catalog: no /admin routes are registered"
+  )
 end
 
 -- ============================================================
@@ -1557,6 +1619,93 @@ reset_response()
 reset_request({ method = "GET", path = "/nonexistent/path/that/does/not/exist" })
 OnHttpRequest()
 eq(_last_status, 404, "OnHttpRequest: unknown path → 404")
+
+-- Webhook configuration is startup-only.  There is no admin API, runtime target
+-- registry, outbox, replay, or Confusio delivery inspection surface.
+reset_response()
+reset_request({ method = "POST", path = "/admin/webhook-targets" })
+OnHttpRequest()
+eq(_last_status, 404, "OnHttpRequest: POST /admin/webhook-targets → 404")
+
+reset_response()
+reset_request({ method = "GET", path = "/admin/webhook-deliveries" })
+OnHttpRequest()
+eq(_last_status, 404, "OnHttpRequest: GET /admin/webhook-deliveries → 404")
+
+reset_response()
+reset_request({ method = "POST", path = "/webhook-targets" })
+OnHttpRequest()
+eq(_last_status, 404, "OnHttpRequest: POST /webhook-targets → 404")
+
+reset_response()
+reset_request({ method = "GET", path = "/deliveries" })
+OnHttpRequest()
+eq(_last_status, 404, "OnHttpRequest: GET /deliveries → 404")
+
+reset_response()
+reset_request({ method = "GET", path = "/outbox" })
+OnHttpRequest()
+eq(_last_status, 404, "OnHttpRequest: GET /outbox → 404")
+
+reset_response()
+reset_request({ method = "POST", path = "/replay" })
+OnHttpRequest()
+eq(_last_status, 404, "OnHttpRequest: POST /replay → 404")
+
+-- GitHub-compatible hook delivery endpoints expose no Confusio delivery state:
+-- lists are empty, individual delivery records are absent, and redelivery is
+-- deliberately not implemented.
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/hooks" })
+OnHttpRequest()
+eq(_last_status, 200, "OnHttpRequest: GET /repos/{owner}/{repo}/hooks → 200")
+eq(_last_body, "[]", "OnHttpRequest: GET /repos/{owner}/{repo}/hooks → body is []")
+
+reset_response()
+reset_request({ method = "POST", path = "/repos/alice/myrepo/hooks" })
+OnHttpRequest()
+eq(_last_status, 501, "OnHttpRequest: POST /repos/{owner}/{repo}/hooks → 501")
+
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/hooks/1/deliveries" })
+OnHttpRequest()
+eq(_last_status, 200, "OnHttpRequest: GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries → 200")
+eq(
+  _last_body,
+  "[]",
+  "OnHttpRequest: GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries → body is []"
+)
+
+reset_response()
+reset_request({ method = "GET", path = "/repos/alice/myrepo/hooks/1/deliveries/abc" })
+OnHttpRequest()
+eq(
+  _last_status,
+  404,
+  "OnHttpRequest: GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries/{delivery_id} → 404"
+)
+
+reset_response()
+reset_request({
+  method = "POST",
+  path = "/repos/alice/myrepo/hooks/1/deliveries/abc/attempts",
+})
+OnHttpRequest()
+eq(
+  _last_status,
+  501,
+  "OnHttpRequest: POST /repos/{owner}/{repo}/hooks/{hook_id}/deliveries/{delivery_id}/attempts → 501"
+)
+
+reset_response()
+reset_request({ method = "GET", path = "/app/hook/deliveries" })
+OnHttpRequest()
+eq(_last_status, 404, "OnHttpRequest: GET /app/hook/deliveries → 404")
+
+reset_response()
+reset_request({ method = "POST", path = "/app/hook/deliveries/abc/attempts" })
+OnHttpRequest()
+eq(_last_status, 404, "OnHttpRequest: POST /app/hook/deliveries/{delivery_id}/attempts → 404")
 
 -- GET /zen — built-in, no backend needed
 reset_response()
