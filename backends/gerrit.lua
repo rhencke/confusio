@@ -25,69 +25,53 @@ local function gerrit_project_parts(full, owner, repo_name)
 end
 
 -- Map a Gerrit project object to GitHub format.
-local translate_gerrit_repo_owner = make_translator({
-  login = computed(function(r, owner, repo_name)
-    local _, o = gerrit_project_parts(r.name, owner, repo_name)
-    return o
-  end),
-  id = const(0),
-  node_id = const(""),
-  avatar_url = const(""),
-  url = const(""),
-  html_url = const(""),
-  type = const("User"),
-})
-
-local translate_gerrit_repo = make_translator({
-  id = const(0),
-  node_id = const(""),
-  name = computed(function(r, owner, repo_name)
-    local _, _, n = gerrit_project_parts(r.name, owner, repo_name)
-    return n
-  end),
-  full_name = computed(function(r, owner, repo_name)
-    local full = gerrit_project_parts(r.name, owner, repo_name)
-    return full
-  end),
-  private = const(false),
-  owner = computed(function(r, owner, repo_name)
-    return translate_gerrit_repo_owner(r, owner, repo_name)
-  end),
-  html_url = computed(function(r, owner, repo_name)
-    local full = gerrit_project_parts(r.name, owner, repo_name)
-    return config.base_url .. "/admin/repos/" .. full
-  end),
-  description = "description",
-  fork = const(false),
-  url = const(""),
-  clone_url = const(""),
-  homepage = const(""),
-  size = const(0),
-  stargazers_count = const(0),
-  watchers_count = const(0),
-  language = const(nil),
-  has_issues = const(false),
-  has_wiki = const(false),
-  forks_count = const(0),
-  archived = computed(function(r)
-    return r.state == "READ_ONLY"
-  end),
-  disabled = computed(function(r)
-    return r.state == "HIDDEN"
-  end),
-  open_issues_count = const(0),
-  default_branch = computed(function(_r, _owner, _repo_name, opts)
-    opts = opts or {}
-    return opts.default_branch or "main"
-  end),
-  visibility = const("public"),
-  forks = const(0),
-  open_issues = const(0),
-  watchers = const(0),
-  created_at = const(nil),
-  updated_at = const(nil),
-  pushed_at = const(nil),
-})
+local function translate_gerrit_repo(r, owner, repo_name, opts)
+  if not r then
+    return {}
+  end
+  opts = opts or {}
+  local full, o, n = gerrit_project_parts(r.name, owner, repo_name)
+  return {
+    id = 0,
+    node_id = "",
+    name = n,
+    full_name = full,
+    private = false,
+    owner = {
+      login = o,
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      url = "",
+      html_url = "",
+      type = "User",
+    },
+    html_url = config.base_url .. "/admin/repos/" .. full,
+    description = r.description,
+    fork = false,
+    url = "",
+    clone_url = "",
+    homepage = "",
+    size = 0,
+    stargazers_count = 0,
+    watchers_count = 0,
+    language = nil,
+    has_issues = false,
+    has_wiki = false,
+    forks_count = 0,
+    archived = r.state == "READ_ONLY",
+    disabled = r.state == "HIDDEN",
+    open_issues_count = 0,
+    default_branch = opts.default_branch or "main",
+    visibility = "public",
+    forks = 0,
+    open_issues = 0,
+    watchers = 0,
+    created_at = nil,
+    updated_at = nil,
+    pushed_at = nil,
+  }
+end
 
 -- Gerrit prepends ")]}'\n" (5 chars) to all JSON responses as XSSI protection.
 local function gerrit_decode(body)
@@ -98,50 +82,40 @@ local function gerrit_decode(body)
 end
 
 -- Map a Gerrit account object to GitHub user format.
-local translate_gerrit_user = make_translator({
-  login = field("username", { default = "" }),
-  id = field("_account_id", { default = 0 }),
-  node_id = const(""),
-  avatar_url = const(""),
-  html_url = const(""),
-  type = const("User"),
-  site_admin = const(false),
-  name = field("name", { default = "" }),
-  email = field("email", { default = "" }),
-})
+local function translate_gerrit_user(u)
+  if not u then
+    return {}
+  end
+  return {
+    login = u.username or "",
+    id = u._account_id or 0,
+    node_id = "",
+    avatar_url = "",
+    html_url = "",
+    type = "User",
+    site_admin = false,
+    name = u.name or "",
+    email = u.email or "",
+  }
+end
 
 -- Gerrit branch: { ref, revision }
-local translate_gerrit_branch_commit = make_translator({
-  sha = field("revision", { default = "" }),
-  url = const(""),
-})
-
-local translate_gerrit_branch = make_translator({
-  name = computed(function(b)
-    return b.ref and b.ref:match("^refs/heads/(.+)") or (b.ref or "")
-  end),
-  commit = computed(function(b)
-    return translate_gerrit_branch_commit(b)
-  end),
-  protected = const(false),
-})
+local function translate_gerrit_branch(b)
+  if not b then
+    return {}
+  end
+  local name = b.ref and b.ref:match("^refs/heads/(.+)") or (b.ref or "")
+  return { name = name, commit = { sha = b.revision or "", url = "" }, protected = false }
+end
 
 -- Gerrit tag: { ref, revision, object }
-local translate_gerrit_tag_commit = make_translator({
-  sha = computed(function(t)
-    return t.revision or t.object or ""
-  end),
-  url = const(""),
-})
-
-local translate_gerrit_tag = make_translator({
-  name = computed(function(t)
-    return t.ref and t.ref:match("^refs/tags/(.+)") or (t.ref or "")
-  end),
-  commit = computed(function(t)
-    return translate_gerrit_tag_commit(t)
-  end),
-})
+local function translate_gerrit_tag(t)
+  if not t then
+    return {}
+  end
+  local name = t.ref and t.ref:match("^refs/tags/(.+)") or (t.ref or "")
+  return { name = name, commit = { sha = t.revision or t.object or "", url = "" } }
+end
 
 -- Gerrit projects endpoints return a dict { project_name → project_info }.
 -- This translate function is shared by get_user_repos, get_users_repos, and
@@ -427,70 +401,52 @@ local function gerrit_ref_type(ref)
   return (ref or ""):match("^refs/tags/") and "tag" or "branch"
 end
 
-local function gerrit_ref_repo(refUpdate)
+local function translate_gerrit_ref_repo(refUpdate)
   return translate_gerrit_repo({ name = gerrit_ref_update_project(refUpdate) })
 end
 
-local function gerrit_project_repo(payload)
+local function translate_gerrit_project_repo(payload)
   payload = payload or {}
   local head = gerrit_short_ref(payload.newHead or payload.headName or payload.projectHead)
   local opts = head ~= "" and { default_branch = head } or nil
   return translate_gerrit_repo({ name = payload.projectName }, nil, nil, opts)
 end
 
-local translate_gerrit_pull_head = make_translator({
-  ref = field("branch", { default = "" }),
-  sha = computed(function(_change, patchSet)
-    return (patchSet or {}).revision or ""
-  end),
-  repo = const(nil),
-})
+local function translate_gerrit_pull_request(change, patchSet, opts)
+  change = change or {}
+  patchSet = patchSet or {}
+  opts = opts or {}
+  local full = change.project or ""
+  return {
+    id = change._number or 0,
+    node_id = "",
+    number = change._number or 0,
+    title = change.subject or "",
+    body = "",
+    state = opts.state or "open",
+    draft = change.wip or false,
+    html_url = config.base_url .. "/c/" .. full .. "/+/" .. (change._number or ""),
+    url = "",
+    user = translate_gerrit_user(change.owner),
+    head = {
+      ref = change.branch or "",
+      sha = patchSet.revision or "",
+      repo = nil,
+    },
+    base = {
+      ref = change.branch or "",
+      sha = "",
+      repo = nil,
+    },
+    created_at = change.created or "",
+    updated_at = change.updated or "",
+    closed_at = opts.closed_at,
+    merged = opts.merged or false,
+    merged_at = opts.merged_at,
+  }
+end
 
-local translate_gerrit_pull_base = make_translator({
-  ref = field("branch", { default = "" }),
-  sha = const(""),
-  repo = const(nil),
-})
-
-local translate_gerrit_pull_request = make_translator({
-  id = field("_number", { default = 0 }),
-  node_id = const(""),
-  number = field("_number", { default = 0 }),
-  title = field("subject", { default = "" }),
-  body = const(""),
-  state = computed(function(_change, _patchSet, opts)
-    opts = opts or {}
-    return opts.state or "open"
-  end),
-  draft = field("wip", { default = false }),
-  html_url = computed(function(change)
-    return config.base_url .. "/c/" .. (change.project or "") .. "/+/" .. (change._number or "")
-  end),
-  url = const(""),
-  user = nested(translate_gerrit_user, "owner"),
-  head = computed(function(change, patchSet)
-    return translate_gerrit_pull_head(change, patchSet)
-  end),
-  base = computed(function(change)
-    return translate_gerrit_pull_base(change)
-  end),
-  created_at = field("created", { default = "" }),
-  updated_at = field("updated", { default = "" }),
-  closed_at = computed(function(_change, _patchSet, opts)
-    opts = opts or {}
-    return opts.closed_at
-  end),
-  merged = computed(function(_change, _patchSet, opts)
-    opts = opts or {}
-    return opts.merged or false
-  end),
-  merged_at = computed(function(_change, _patchSet, opts)
-    opts = opts or {}
-    return opts.merged_at
-  end),
-})
-
-local function gerrit_change(change, patchSet, opts)
+local function translate_gerrit_change(change, patchSet, opts)
   change = change or {}
   local repo = translate_gerrit_repo(
     { name = change.project },
@@ -517,20 +473,24 @@ local function gerrit_change_actor(payload)
     or {}
 end
 
-local translate_gerrit_label = make_translator({
-  id = const(0),
-  node_id = const(""),
-  url = const(""),
-  name = computed(function(name)
-    return name or ""
-  end),
-  color = const(""),
-  description = const(""),
-  default = const(false),
-})
+local function translate_gerrit_label(name)
+  return {
+    id = 0,
+    node_id = "",
+    url = "",
+    name = name or "",
+    color = "",
+    description = "",
+    default = false,
+  }
+end
 
-local function gerrit_hashtags(hashtags)
-  return translate_list(translate_gerrit_label, hashtags)
+local function translate_gerrit_hashtags(hashtags)
+  local labels = {}
+  for _, hashtag in ipairs(hashtags or {}) do
+    labels[#labels + 1] = translate_gerrit_label(hashtag)
+  end
+  return labels
 end
 
 local function gerrit_pull_request_event(payload, action, opts)
@@ -538,7 +498,7 @@ local function gerrit_pull_request_event(payload, action, opts)
   opts = opts or {}
   local timestamp = gerrit_event_timestamp(payload)
   local actor = gerrit_change_actor(payload)
-  local pr, repo = gerrit_change(payload.change, payload.patchSet, {
+  local pr, repo = translate_gerrit_change(payload.change, payload.patchSet, {
     state = opts.state,
     closed_at = opts.closed_at and timestamp or nil,
     merged = opts.merged,
@@ -607,7 +567,7 @@ local function gerrit_ref_update_event(payload, refUpdate)
   local before = refUpdate.oldRev or ZERO_SHA
   local after = refUpdate.newRev or ZERO_SHA
   local ref = gerrit_ref_name(refUpdate)
-  local repo = gerrit_ref_repo(refUpdate)
+  local repo = translate_gerrit_ref_repo(refUpdate)
   local sender = translate_gerrit_user(payload.submitter)
   local timestamp = gerrit_event_timestamp(payload)
   local ref_type = gerrit_ref_type(ref)
@@ -681,7 +641,7 @@ end
 local function gerrit_project_created_event(payload)
   payload = payload or {}
   local head = payload.headName or payload.projectHead or ""
-  local repository = gerrit_project_repo(payload)
+  local repository = translate_gerrit_project_repo(payload)
   local sender = translate_gerrit_user(payload.submitter or payload.creator or payload.createdBy)
   return make_internal_event({
     event = "repository",
@@ -700,7 +660,7 @@ end
 
 local function gerrit_project_deleted_event(payload)
   payload = payload or {}
-  local repository = gerrit_project_repo(payload)
+  local repository = translate_gerrit_project_repo(payload)
   local sender = translate_gerrit_user(payload.submitter or payload.deleter or payload.deletedBy)
   return make_internal_event({
     event = "repository",
@@ -718,7 +678,7 @@ end
 
 local function gerrit_project_head_updated_event(payload)
   payload = payload or {}
-  local repository = gerrit_project_repo(payload)
+  local repository = translate_gerrit_project_repo(payload)
   local sender = translate_gerrit_user(payload.submitter or payload.updater or payload.updatedBy)
   return make_internal_event({
     event = "repository",
@@ -762,11 +722,11 @@ local function gerrit_hashtags_changed_event(payload)
   local label_name = (#added > 0 and added[1]) or (#removed > 0 and removed[1]) or nil
   return gerrit_pull_request_event(payload, action, {
     label = label_name and translate_gerrit_label(label_name) or nil,
-    labels = gerrit_hashtags(payload.hashtags),
+    labels = translate_gerrit_hashtags(payload.hashtags),
     changes = {
       labels = {
-        added = gerrit_hashtags(added),
-        removed = gerrit_hashtags(removed),
+        added = translate_gerrit_hashtags(added),
+        removed = translate_gerrit_hashtags(removed),
       },
     },
   })
@@ -809,26 +769,26 @@ local function gerrit_assignee_changed_event(payload)
   })
 end
 
-local translate_gerrit_review = make_translator({
-  id = const(0),
-  node_id = const(""),
-  user = nested(translate_gerrit_user, "author"),
-  body = field("comment", { default = "" }),
-  state = computed(function(_payload, state)
-    return state
-  end),
-  submitted_at = computed(function(payload)
-    return gerrit_patchset_timestamp(payload.patchSet)
-  end),
-  html_url = const(""),
-  pull_request_url = const(""),
-})
+local function translate_gerrit_review(payload, state)
+  payload = payload or {}
+  local author = payload.author or {}
+  return {
+    id = 0,
+    node_id = "",
+    user = translate_gerrit_user(author),
+    body = payload.comment or "",
+    state = state,
+    submitted_at = gerrit_patchset_timestamp(payload.patchSet),
+    html_url = "",
+    pull_request_url = "",
+  }
+end
 
 local function gerrit_vote_deleted_event(payload)
   payload = payload or {}
   local reviewer = payload.reviewer or {}
   local remover = payload.remover or {}
-  local pr, repo = gerrit_change(payload.change, payload.patchSet)
+  local pr, repo = translate_gerrit_change(payload.change, payload.patchSet)
   local review = {
     id = 0,
     node_id = "",
@@ -860,7 +820,7 @@ end
 b:webhook("comment-added", function(payload)
   local state = gerrit_approval_state(payload.approvals)
   local author = payload.author or {}
-  local pr, repo = gerrit_change(payload.change, payload.patchSet)
+  local pr, repo = translate_gerrit_change(payload.change, payload.patchSet)
   local review = translate_gerrit_review(payload, state)
   return make_internal_event({
     event = "pull_request_review",

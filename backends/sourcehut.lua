@@ -64,7 +64,16 @@ local function ref_type(ref)
   return "branch"
 end
 
-local function srht_repo_default_branch(r)
+-- Map a Sourcehut repository object to GitHub format.
+local function translate_srht_repo(r)
+  if not r then
+    return {}
+  end
+  local owner = r.owner or {}
+  local canonical = sourcehut_canonical(owner)
+  local login = sourcehut_login(owner)
+  local vis = r.visibility or "public"
+  local private = vis == "private" or vis == "PRIVATE"
   local head = r.HEAD or r.head or {}
   local default_branch
   if type(head) == "table" then
@@ -75,158 +84,126 @@ local function srht_repo_default_branch(r)
   if default_branch == "" then
     default_branch = "main"
   end
-  return default_branch
-end
-
-local function srht_visibility_private(entity)
-  local vis = entity.visibility or "public"
-  return vis == "private" or vis == "PRIVATE"
-end
-
-local function srht_repo_owner(r)
-  local owner = r.owner or {}
-  local canonical = sourcehut_canonical(owner)
   return {
-    login = sourcehut_login(owner),
-    id = owner.id or 0,
-    node_id = "",
-    avatar_url = "",
+    id = r.id or 0,
+    node_id = r.rid or "",
+    name = r.name,
+    full_name = login .. "/" .. (r.name or ""),
+    private = private,
+    owner = {
+      login = login,
+      id = owner.id or 0,
+      node_id = "",
+      avatar_url = "",
+      url = "",
+      html_url = config.base_url .. "/" .. canonical,
+      type = "User",
+    },
+    html_url = config.base_url .. "/" .. canonical .. "/" .. (r.name or ""),
+    description = r.description,
+    fork = false,
     url = "",
-    html_url = config.base_url .. "/" .. canonical,
-    type = "User",
+    clone_url = "",
+    homepage = "",
+    size = 0,
+    stargazers_count = 0,
+    watchers_count = 0,
+    language = nil,
+    has_issues = false,
+    has_wiki = false,
+    forks_count = 0,
+    archived = false,
+    disabled = false,
+    open_issues_count = 0,
+    default_branch = default_branch,
+    visibility = private and "private" or "public",
+    forks = 0,
+    open_issues = 0,
+    watchers = 0,
+    created_at = r.created,
+    updated_at = r.updated,
+    pushed_at = r.updated,
   }
 end
 
--- Map a Sourcehut repository object to GitHub format.
-local translate_srht_repo = make_translator({
-  id = field("id", { default = 0 }),
-  node_id = field("rid", { default = "" }),
-  name = "name",
-  full_name = computed(function(r)
-    return sourcehut_login(r.owner) .. "/" .. (r.name or "")
-  end),
-  private = computed(srht_visibility_private),
-  owner = computed(srht_repo_owner),
-  html_url = computed(function(r)
-    return config.base_url .. "/" .. sourcehut_canonical(r.owner) .. "/" .. (r.name or "")
-  end),
-  description = "description",
-  fork = const(false),
-  url = const(""),
-  clone_url = const(""),
-  homepage = const(""),
-  size = const(0),
-  stargazers_count = const(0),
-  watchers_count = const(0),
-  language = const(nil),
-  has_issues = const(false),
-  has_wiki = const(false),
-  forks_count = const(0),
-  archived = const(false),
-  disabled = const(false),
-  open_issues_count = const(0),
-  default_branch = computed(srht_repo_default_branch),
-  visibility = computed(function(r)
-    return srht_visibility_private(r) and "private" or "public"
-  end),
-  forks = const(0),
-  open_issues = const(0),
-  watchers = const(0),
-  created_at = "created",
-  updated_at = "updated",
-  pushed_at = "updated",
-})
-
-local translate_srht_user_spec = make_translator({
-  login = computed(sourcehut_login),
-  id = field("id", { default = 0 }),
-  node_id = const(""),
-  avatar_url = const(""),
-  url = field("url", { default = "" }),
-  html_url = computed(function(u)
-    local canonical = sourcehut_canonical(u)
-    return canonical ~= "" and (config.base_url .. "/" .. canonical) or ""
-  end),
-  type = const("User"),
-  site_admin = const(false),
-  name = computed(function(u)
-    local login = sourcehut_login(u)
-    return u.name or u.username or login
-  end),
-  email = field("email", { default = "" }),
-})
-
 local function translate_srht_user(u)
-  return translate_srht_user_spec(u or {})
+  u = u or {}
+  local canonical = sourcehut_canonical(u)
+  local login = sourcehut_login(u)
+  return {
+    login = login,
+    id = u.id or 0,
+    node_id = "",
+    avatar_url = "",
+    url = u.url or "",
+    html_url = canonical ~= "" and (config.base_url .. "/" .. canonical) or "",
+    type = "User",
+    site_admin = false,
+    name = u.name or u.username or login,
+    email = u.email or "",
+  }
 end
 
-local translate_srht_label_spec = make_translator({
-  id = field("id", { default = 0 }),
-  node_id = field("rid", { default = "" }),
-  url = const(""),
-  name = field("name", { default = "" }),
-  color = computed(function(label)
-    return (label.backgroundColor or label.background_color or ""):gsub("^#", "")
-  end),
-  description = field("description", { default = "" }),
-  default = const(false),
-})
-
 local function translate_srht_label(label)
-  return translate_srht_label_spec(label or {})
+  label = label or {}
+  return {
+    id = label.id or 0,
+    node_id = label.rid or "",
+    url = "",
+    name = label.name or "",
+    color = (label.backgroundColor or label.background_color or ""):gsub("^#", ""),
+    description = label.description or "",
+    default = false,
+  }
 end
 
 local function translate_srht_labels(labels)
-  return translate_list(translate_srht_label, labels)
+  local result = {}
+  for _, label in ipairs(labels or {}) do
+    result[#result + 1] = translate_srht_label(label)
+  end
+  return result
 end
-
-local function srht_tracker_html_url(tracker)
-  local canonical = sourcehut_canonical(tracker.owner)
-  return canonical ~= "" and (todo_base():gsub("/api$", "") .. "/" .. canonical) or ""
-end
-
-local translate_srht_tracker_repo_spec = make_translator({
-  id = field("id", { default = 0 }),
-  node_id = field("rid", { default = "" }),
-  name = field("name", { default = "" }),
-  full_name = computed(function(tracker)
-    local login = sourcehut_login(tracker.owner)
-    return login ~= "" and (login .. "/" .. (tracker.name or "")) or (tracker.name or "")
-  end),
-  private = computed(srht_visibility_private),
-  owner = computed(function(tracker)
-    return translate_srht_user(tracker.owner)
-  end),
-  html_url = computed(srht_tracker_html_url),
-  description = "description",
-  fork = const(false),
-  url = const(""),
-  clone_url = const(""),
-  homepage = const(""),
-  size = const(0),
-  stargazers_count = const(0),
-  watchers_count = const(0),
-  language = const(nil),
-  has_issues = const(true),
-  has_wiki = const(false),
-  forks_count = const(0),
-  archived = const(false),
-  disabled = const(false),
-  open_issues_count = const(0),
-  default_branch = const(""),
-  visibility = computed(function(tracker)
-    return srht_visibility_private(tracker) and "private" or "public"
-  end),
-  forks = const(0),
-  open_issues = const(0),
-  watchers = const(0),
-  created_at = "created",
-  updated_at = "updated",
-  pushed_at = "updated",
-})
 
 local function translate_srht_tracker_repo(tracker)
-  return translate_srht_tracker_repo_spec(tracker or {})
+  tracker = tracker or {}
+  local owner = tracker.owner or {}
+  local canonical = sourcehut_canonical(owner)
+  local login = sourcehut_login(owner)
+  local vis = tracker.visibility or "PUBLIC"
+  local private = vis == "private" or vis == "PRIVATE"
+  return {
+    id = tracker.id or 0,
+    node_id = tracker.rid or "",
+    name = tracker.name or "",
+    full_name = login ~= "" and (login .. "/" .. (tracker.name or "")) or (tracker.name or ""),
+    private = private,
+    owner = translate_srht_user(owner),
+    html_url = canonical ~= "" and (todo_base():gsub("/api$", "") .. "/" .. canonical) or "",
+    description = tracker.description,
+    fork = false,
+    url = "",
+    clone_url = "",
+    homepage = "",
+    size = 0,
+    stargazers_count = 0,
+    watchers_count = 0,
+    language = nil,
+    has_issues = true,
+    has_wiki = false,
+    forks_count = 0,
+    archived = false,
+    disabled = false,
+    open_issues_count = 0,
+    default_branch = "",
+    visibility = private and "private" or "public",
+    forks = 0,
+    open_issues = 0,
+    watchers = 0,
+    created_at = tracker.created,
+    updated_at = tracker.updated,
+    pushed_at = tracker.updated,
+  }
 end
 
 -- Translate GitHub create/update request body to Sourcehut format.
@@ -247,82 +224,73 @@ end
 
 -- Translate a Sourcehut ref to a GitHub branch object.
 -- Only call for refs with names like "refs/heads/main".
-local translate_srht_branch = make_translator({
-  name = computed(function(ref)
-    return ref.name and ref.name:match("^refs/heads/(.+)") or (ref.name or "")
-  end),
-  commit = computed(function(ref)
-    return { sha = ref.target or "", url = "" }
-  end),
-  protected = const(false),
-})
-
-local function srht_ticket_state(t)
-  local status = t.status or "reported"
-  return (status == "resolved" or status == "closed" or status == "RESOLVED" or status == "CLOSED")
-      and "closed"
-    or "open"
+local function translate_srht_branch(ref)
+  if not ref then
+    return {}
+  end
+  local name = ref.name and ref.name:match("^refs/heads/(.+)") or (ref.name or "")
+  return {
+    name = name,
+    commit = { sha = ref.target or "", url = "" },
+    protected = false,
+  }
 end
 
 -- Translate a todo.sr.ht ticket to GitHub issue format.
 -- Sourcehut: { id, created, updated, title, body, status, submitter: { canonical_name, name } }
-local translate_srht_ticket = make_translator({
-  id = field("id", { default = 0 }),
-  node_id = field("rid", { default = "" }),
-  number = field("id", { default = 0 }),
-  title = computed(function(t)
-    return t.subject or t.title or ""
-  end),
-  body = field("body", { default = "" }),
-  state = computed(srht_ticket_state),
-  user = computed(function(t)
-    return translate_srht_user(t.submitter or {})
-  end),
-  assignees = each(translate_srht_user, "assignees"),
-  labels = computed(function(t)
-    return translate_srht_labels(t.labels)
-  end),
-  milestone = const(nil),
-  created_at = field("created", { default = "" }),
-  updated_at = computed(function(t)
-    return t.updated or t.created or ""
-  end),
-  closed_at = const(nil),
-  html_url = const(""),
-})
+local function translate_srht_ticket(t)
+  if not t then
+    return {}
+  end
+  local submitter = t.submitter or {}
+  local status = t.status or "reported"
+  local state = (
+    status == "resolved"
+    or status == "closed"
+    or status == "RESOLVED"
+    or status == "CLOSED"
+  )
+      and "closed"
+    or "open"
+  return {
+    id = t.id or 0,
+    node_id = t.rid or "",
+    number = t.id or 0,
+    title = t.subject or t.title or "",
+    body = t.body or "",
+    state = state,
+    user = translate_srht_user(submitter),
+    assignees = translate_list(translate_srht_user, t.assignees),
+    labels = translate_srht_labels(t.labels),
+    milestone = nil,
+    created_at = t.created or "",
+    updated_at = t.updated or t.created or "",
+    closed_at = nil,
+    html_url = "",
+  }
+end
 
 -- Translate a todo.sr.ht event to GitHub issue comment format.
 -- Events with no comment field (status changes, etc.) are skipped by the caller.
 -- event: { id, created, event_type, comment: { id, created, text, author } }
-local translate_srht_event_comment_spec = make_translator({
-  id = computed(function(e)
-    return (e.comment or {}).id or e.id or 0
-  end),
-  node_id = const(""),
-  url = const(""),
-  body = computed(function(e)
-    return (e.comment or {}).text or ""
-  end),
-  user = computed(function(e)
-    local author = (e.comment or {}).author or {}
-    local canonical = author.canonical_name or ""
-    local login = canonical:sub(1, 1) == "~" and canonical:sub(2) or (author.name or canonical)
-    return { login = login, id = 0, node_id = "", avatar_url = "", url = "", type = "User" }
-  end),
-  created_at = computed(function(e)
-    return (e.comment or {}).created or e.created or ""
-  end),
-  updated_at = computed(function(e)
-    return (e.comment or {}).created or e.created or ""
-  end),
-  html_url = const(""),
-}, { nil_returns_nil = true })
-
 local function translate_srht_event_comment(e)
   if not e or not e.comment then
     return nil
   end
-  return translate_srht_event_comment_spec(e)
+  local comment = e.comment
+  local author = comment.author or {}
+  local canonical = author.canonical_name or ""
+  local login = canonical:sub(1, 1) == "~" and canonical:sub(2) or (author.name or canonical)
+  return {
+    id = comment.id or e.id or 0,
+    node_id = "",
+    url = "",
+    body = comment.text or "",
+    user = { login = login, id = 0, node_id = "", avatar_url = "", url = "", type = "User" },
+    created_at = comment.created or e.created or "",
+    updated_at = comment.created or e.created or "",
+    html_url = "",
+  }
 end
 
 -- Translate a Sourcehut log entry to GitHub commit format.
@@ -342,7 +310,10 @@ end
 --   failed/timeout         → status=completed,   conclusion=failure
 --   cancelled              → status=completed,   conclusion=cancelled
 
-local function srht_check_run_status(j)
+local function translate_srht_job_to_check_run(j)
+  if not j then
+    return {}
+  end
   local srht_status = j.status or "pending"
   local srht_to_gh = {
     success = { status = "completed", conclusion = "success" },
@@ -350,81 +321,55 @@ local function srht_check_run_status(j)
     timeout = { status = "completed", conclusion = "failure" },
     cancelled = { status = "completed", conclusion = "cancelled" },
   }
-  return srht_to_gh[srht_status] or { status = "in_progress", conclusion = nil }
-end
-
-local function srht_check_run_name(j)
-  return j.note or (tostring(j.id or 0))
-end
-
-local translate_srht_job_to_check_run = make_translator({
-  id = field("id", { default = 0 }),
-  node_id = const(""),
-  head_sha = const(""),
-  name = computed(srht_check_run_name),
-  status = computed(function(j)
-    return srht_check_run_status(j).status
-  end),
-  conclusion = computed(function(j)
-    return srht_check_run_status(j).conclusion
-  end),
-  started_at = "created",
-  completed_at = computed(function(j)
-    local mapped = srht_check_run_status(j)
-    return mapped.status == "completed" and (j.updated or j.created) or nil
-  end),
-  output = computed(function(j)
-    local name = srht_check_run_name(j)
-    return {
+  local mapped = srht_to_gh[srht_status] or { status = "in_progress", conclusion = nil }
+  local gh_status, gh_conclusion = mapped.status, mapped.conclusion
+  -- Job name: use note field or fall back to id
+  local name = j.note or (tostring(j.id or 0))
+  return {
+    id = j.id or 0,
+    node_id = "",
+    head_sha = "",
+    name = name,
+    status = gh_status,
+    conclusion = gh_conclusion,
+    started_at = j.created,
+    completed_at = gh_status == "completed" and (j.updated or j.created) or nil,
+    output = {
       title = name,
       summary = name,
       text = "",
       annotations_count = 0,
       annotations_url = "",
-    }
-  end),
-  url = const(""),
-  html_url = const(""),
-  details_url = const(""),
-})
-
-local function srht_signature(sig, date)
-  sig = sig or {}
-  return { name = sig.name or "", email = sig.email or "", date = date or "" }
+    },
+    url = "",
+    html_url = "",
+    details_url = "",
+  }
 end
 
-local function srht_commit_user(sig)
-  sig = sig or {}
-  return { login = sig.name or "", id = 0, avatar_url = "" }
-end
-
-local function srht_commit_author_date(c)
+local function translate_srht_commit(c)
+  if not c then
+    return {}
+  end
   local author = c.author or {}
-  return author.time or c.timestamp or ""
-end
-
-local function srht_commit_committer(c)
-  return c.committer or c.author or {}
-end
-
-local translate_srht_commit = make_translator({
-  sha = field("id", { default = "" }),
-  commit = computed(function(c)
-    local author_date = srht_commit_author_date(c)
-    local committer = srht_commit_committer(c)
-    return {
+  local committer = c.committer or author
+  local author_date = author.time or c.timestamp or ""
+  local committer_date = committer.time or author_date
+  return {
+    sha = c.id or "",
+    commit = {
       message = c.message or "",
-      author = srht_signature(c.author, author_date),
-      committer = srht_signature(committer, committer.time or author_date),
-    }
-  end),
-  author = computed(function(c)
-    return srht_commit_user(c.author)
-  end),
-  committer = computed(function(c)
-    return srht_commit_user(srht_commit_committer(c))
-  end),
-})
+      author = { name = author.name or "", email = author.email or "", date = author_date },
+      committer = {
+        name = committer.name or "",
+        email = committer.email or "",
+        date = committer_date,
+      },
+    },
+    author = { login = author.name or "", id = 0, avatar_url = "" },
+    committer = { login = committer.name or "", id = 0, avatar_url = "" },
+  }
+end
 
 local function sourcehut_payload(payload)
   if type(payload) == "table" and type(payload.data) == "table" then
@@ -748,47 +693,33 @@ local function sourcehut_commit_identity(sig)
   }
 end
 
-local function srht_push_signature(sig)
-  sig = sig or {}
-  return { name = sig.name or "", email = sig.email or "", username = sig.name or "" }
-end
-
-local translate_srht_push_commit_spec = make_translator({
-  id = computed(function(c)
-    return c.id or c.sha or ""
-  end),
-  tree_id = computed(function(c)
-    return type(c.tree) == "table" and (c.tree.id or "") or c.tree or ""
-  end),
-  distinct = computed(function(c)
-    return c.distinct ~= false
-  end),
-  message = field("message", { default = "" }),
-  timestamp = computed(function(c)
-    local author = c.author or {}
-    local committer = c.committer or author
-    return committer.time or author.time or c.timestamp or ""
-  end),
-  url = field("url", { default = "" }),
-  author = computed(function(c)
-    return srht_push_signature(c.author)
-  end),
-  committer = computed(function(c)
-    return srht_push_signature(c.committer or c.author)
-  end),
-  added = computed(function(c)
-    return c.added or {}
-  end),
-  removed = computed(function(c)
-    return c.removed or {}
-  end),
-  modified = computed(function(c)
-    return c.modified or {}
-  end),
-})
-
 local function translate_srht_push_commit(c)
-  return translate_srht_push_commit_spec(c or {})
+  c = c or {}
+  local author = c.author or {}
+  local committer = c.committer or author
+  local author_time = author.time or c.timestamp or ""
+  local committer_time = committer.time or author_time
+  return {
+    id = c.id or c.sha or "",
+    tree_id = type(c.tree) == "table" and (c.tree.id or "") or c.tree or "",
+    distinct = c.distinct ~= false,
+    message = c.message or "",
+    timestamp = committer_time,
+    url = c.url or "",
+    author = {
+      name = author.name or "",
+      email = author.email or "",
+      username = author.name or "",
+    },
+    committer = {
+      name = committer.name or "",
+      email = committer.email or "",
+      username = committer.name or "",
+    },
+    added = c.added or {},
+    removed = c.removed or {},
+    modified = c.modified or {},
+  }
 end
 
 local function sourcehut_update_commits(update)
@@ -943,70 +874,48 @@ local function sourcehut_job_sha(job)
   return sourcehut_first_nonempty(job.commit, job.commitId, job.commit_id, job.sha, job.head_sha)
 end
 
-local function sourcehut_job_url(job)
-  return job.url or job.webUrl or job.web_url or ""
-end
-
-local translate_srht_workflow_spec = make_translator({
-  id = field("id", { default = 0 }),
-  name = computed(sourcehut_job_name),
-  path = computed(sourcehut_job_url),
-  state = const("active"),
-  url = const(""),
-  html_url = computed(sourcehut_job_url),
-  badge_url = const(""),
-  created_at = "created",
-  updated_at = computed(function(job)
-    return job.updated or job.created
-  end),
-})
-
 local function translate_srht_workflow(job)
-  return translate_srht_workflow_spec(job or {})
+  job = job or {}
+  local name = sourcehut_job_name(job)
+  return {
+    id = job.id or 0,
+    name = name,
+    path = job.url or job.webUrl or job.web_url or "",
+    state = "active",
+    url = "",
+    html_url = job.url or job.webUrl or job.web_url or "",
+    badge_url = "",
+    created_at = job.created,
+    updated_at = job.updated or job.created,
+  }
 end
-
-local translate_srht_workflow_run_spec = make_translator({
-  id = field("id", { default = 0 }),
-  name = computed(sourcehut_job_name),
-  head_branch = computed(function(job)
-    return ref_name(sourcehut_job_ref(job))
-  end),
-  head_sha = computed(sourcehut_job_sha),
-  run_number = field("id", { default = 0 }),
-  event = const("push"),
-  display_title = computed(sourcehut_job_name),
-  status = computed(function(job, _, action)
-    local _, status = sourcehut_job_state(job, action)
-    return status
-  end),
-  conclusion = computed(function(job, _, action)
-    local _, _, conclusion = sourcehut_job_state(job, action)
-    return conclusion
-  end),
-  workflow_id = field("id", { default = 0 }),
-  url = const(""),
-  html_url = computed(sourcehut_job_url),
-  pull_requests = computed(function()
-    return {}
-  end),
-  created_at = "created",
-  updated_at = computed(function(job)
-    return job.updated or job.created
-  end),
-  run_attempt = const(1),
-  referenced_workflows = computed(function()
-    return {}
-  end),
-  actor = computed(function(_, payload)
-    return sourcehut_sender(payload)
-  end),
-  triggering_actor = computed(function(_, payload)
-    return sourcehut_sender(payload)
-  end),
-})
 
 local function translate_srht_workflow_run(job, payload, action)
-  return translate_srht_workflow_run_spec(job or {}, payload, action)
+  job = job or {}
+  local _, status, conclusion = sourcehut_job_state(job, action)
+  local sender = sourcehut_sender(payload)
+  local name = sourcehut_job_name(job)
+  return {
+    id = job.id or 0,
+    name = name,
+    head_branch = ref_name(sourcehut_job_ref(job)),
+    head_sha = sourcehut_job_sha(job),
+    run_number = job.id or 0,
+    event = "push",
+    display_title = name,
+    status = status,
+    conclusion = conclusion,
+    workflow_id = job.id or 0,
+    url = "",
+    html_url = job.url or job.webUrl or job.web_url or "",
+    pull_requests = {},
+    created_at = job.created,
+    updated_at = job.updated or job.created,
+    run_attempt = 1,
+    referenced_workflows = {},
+    actor = sender,
+    triggering_actor = sender,
+  }
 end
 
 local function sourcehut_job_event(payload, forced_action)
@@ -1044,104 +953,73 @@ local function sourcehut_patchset_sender(patchset)
   return translate_srht_user(patchset.submitter or patchset.owner or patchset.author)
 end
 
-local function sourcehut_patchset_number(patchset)
-  return patchset.id or patchset.number or 0
-end
-
-local function sourcehut_patchset_base_ref(patchset, repository)
-  return sourcehut_first_nonempty(
+local function translate_srht_patchset(patchset, payload)
+  patchset = patchset or {}
+  local repository = sourcehut_repository(payload)
+  local sender = sourcehut_patchset_sender(patchset)
+  local number = patchset.id or patchset.number or 0
+  local base_ref = sourcehut_first_nonempty(
     patchset.targetBranch,
     patchset.target_branch,
     patchset.base,
     repository.default_branch
   )
-end
-
-local translate_srht_patchset_spec = make_translator({
-  id = field("id", { default = 0 }),
-  node_id = field("rid", { default = "" }),
-  number = computed(sourcehut_patchset_number),
-  state = const("open"),
-  locked = const(false),
-  title = computed(function(patchset)
-    return patchset.subject or patchset.title or ""
-  end),
-  user = computed(sourcehut_patchset_sender),
-  body = computed(function(patchset)
-    return patchset.coverLetter or patchset.cover_letter or patchset.body or ""
-  end),
-  created_at = "created",
-  updated_at = computed(function(patchset)
-    return patchset.updated or patchset.created
-  end),
-  closed_at = const(nil),
-  merged_at = const(nil),
-  merge_commit_sha = const(nil),
-  assignee = const(nil),
-  assignees = computed(function()
-    return {}
-  end),
-  requested_reviewers = computed(function()
-    return {}
-  end),
-  requested_teams = computed(function()
-    return {}
-  end),
-  labels = computed(function()
-    return {}
-  end),
-  milestone = const(nil),
-  draft = const(false),
-  commits_url = const(""),
-  review_comments_url = const(""),
-  review_comment_url = const(""),
-  comments_url = const(""),
-  statuses_url = const(""),
-  head = computed(function(patchset, payload)
-    local repository = sourcehut_repository(payload)
-    local sender = sourcehut_patchset_sender(patchset)
-    local number = sourcehut_patchset_number(patchset)
-    local ref = sourcehut_first_nonempty(patchset.ref, patchset.branch, "patchset/" .. number)
-    return {
-      label = ref,
-      ref = ref,
+  return {
+    id = patchset.id or 0,
+    node_id = patchset.rid or "",
+    number = number,
+    state = "open",
+    locked = false,
+    title = patchset.subject or patchset.title or "",
+    user = sender,
+    body = patchset.coverLetter or patchset.cover_letter or patchset.body or "",
+    created_at = patchset.created,
+    updated_at = patchset.updated or patchset.created,
+    closed_at = nil,
+    merged_at = nil,
+    merge_commit_sha = nil,
+    assignee = nil,
+    assignees = {},
+    requested_reviewers = {},
+    requested_teams = {},
+    labels = {},
+    milestone = nil,
+    draft = false,
+    commits_url = "",
+    review_comments_url = "",
+    review_comment_url = "",
+    comments_url = "",
+    statuses_url = "",
+    head = {
+      label = sourcehut_first_nonempty(patchset.ref, patchset.branch, "patchset/" .. number),
+      ref = sourcehut_first_nonempty(patchset.ref, patchset.branch, "patchset/" .. number),
       sha = sourcehut_first_nonempty(patchset.commit, patchset.commitId, patchset.sha),
       user = sender,
       repo = repository,
-    }
-  end),
-  base = computed(function(patchset, payload)
-    local repository = sourcehut_repository(payload)
-    local base_ref = sourcehut_patchset_base_ref(patchset, repository)
-    return {
+    },
+    base = {
       label = base_ref,
       ref = base_ref,
       sha = sourcehut_first_nonempty(patchset.baseCommit, patchset.base_commit, patchset.baseSha),
       user = repository.owner or {},
       repo = repository,
-    }
-  end),
-  html_url = computed(function(patchset)
-    return patchset.url or patchset.webUrl or patchset.web_url or ""
-  end),
-  url = const(""),
-  diff_url = const(""),
-  patch_url = const(""),
-  merged = const(false),
-  mergeable = const(nil),
-  rebaseable = const(nil),
-  mergeable_state = const("unknown"),
-  merged_by = const(nil),
-  comments = const(0),
-  review_comments = const(0),
-  commits = const(0),
-  additions = const(0),
-  deletions = const(0),
-  changed_files = const(0),
-})
-
-local function translate_srht_patchset(patchset, payload)
-  return translate_srht_patchset_spec(patchset or {}, payload)
+    },
+    html_url = patchset.url or patchset.webUrl or patchset.web_url or "",
+    url = "",
+    diff_url = "",
+    patch_url = "",
+    merged = false,
+    mergeable = nil,
+    rebaseable = nil,
+    mergeable_state = "unknown",
+    merged_by = nil,
+    comments = 0,
+    review_comments = 0,
+    commits = 0,
+    additions = 0,
+    deletions = 0,
+    changed_files = 0,
+  }
 end
 
 local function sourcehut_patchset_event(payload)

@@ -34,36 +34,22 @@ local function bb_repo_owner(r)
 end
 
 local translate_bb_repo = make_translator({
-  id = const(0),
   node_id = field("uuid", { default = "" }),
   name = computed(function(r)
     return r.slug or r.name
   end),
-  full_name = "full_name",
   private = "is_private",
   owner = computed(bb_repo_owner),
   html_url = computed(function(r)
     return bb_link(r, "html")
   end),
-  description = "description",
   fork = computed(function(r)
     return r.parent ~= nil
   end),
   url = computed(function(r)
     return bb_link(r, "self")
   end),
-  clone_url = const(""),
   homepage = field("website", { default = "" }),
-  size = field("size", { default = 0 }),
-  stargazers_count = const(0),
-  watchers_count = const(0),
-  language = "language",
-  has_issues = "has_issues",
-  has_wiki = "has_wiki",
-  forks_count = const(0),
-  archived = const(false),
-  disabled = const(false),
-  open_issues_count = const(0),
   default_branch = computed(function(r)
     local main = r.mainbranch or {}
     return main.name or "main"
@@ -71,12 +57,16 @@ local translate_bb_repo = make_translator({
   visibility = computed(function(r)
     return r.is_private and "private" or "public"
   end),
-  forks = const(0),
-  open_issues = const(0),
-  watchers = const(0),
   created_at = "created_on",
   updated_at = "updated_on",
   pushed_at = "updated_on",
+  copy_fields("full_name", "description", "language", "has_issues"),
+  copy_fields("has_wiki"),
+  const_fields(0, "id", "stargazers_count", "watchers_count", "forks_count"),
+  const_fields(0, "open_issues_count", "forks", "open_issues", "watchers"),
+  const_fields("", "clone_url"),
+  const_fields(false, "archived", "disabled"),
+  default_fields(0, "size"),
 })
 
 -- Translate GitHub create/update request body to Bitbucket format.
@@ -85,7 +75,6 @@ local translate_bb_user = make_translator({
   login = computed(function(u)
     return u.nickname or u.display_name or ""
   end),
-  id = const(0),
   node_id = field("account_id", { default = "" }),
   avatar_url = computed(function(u)
     return bb_link(u, "avatar")
@@ -93,15 +82,15 @@ local translate_bb_user = make_translator({
   html_url = computed(function(u)
     return bb_link(u, "html")
   end),
-  type = const("User"),
-  site_admin = const(false),
   name = "display_name",
+  const_fields(0, "id"),
+  const_fields("User", "type"),
+  const_fields(false, "site_admin"),
 })
 
 -- Map a Bitbucket workspace object to GitHub user format (used for user search).
 local translate_bb_workspace = make_translator({
   login = field("slug", { default = "" }),
-  id = const(0),
   node_id = field("uuid", { default = "" }),
   avatar_url = computed(function(w)
     return bb_link(w, "avatar")
@@ -109,9 +98,10 @@ local translate_bb_workspace = make_translator({
   html_url = computed(function(w)
     return bb_link(w, "html")
   end),
-  type = const("User"),
-  site_admin = const(false),
-  name = "name",
+  copy_fields("name"),
+  const_fields(0, "id"),
+  const_fields("User", "type"),
+  const_fields(false, "site_admin"),
 })
 
 -- Proxy a Bitbucket paginated response {"values":[...],"size":N,...} to the
@@ -222,19 +212,18 @@ local translate_bb_status = make_translator({
     return bb_state_to_github(s.state)
   end),
   context = field("key", { default = "" }),
-  description = field("description", { default = "" }),
   target_url = field("url", { default = "" }),
   created_at = field("created_on", { default = "" }),
   updated_at = field("updated_on", { default = "" }),
+  default_fields("", "description"),
 })
 
 local translate_bb_key = make_translator({
-  id = field("id", { default = 0 }),
-  key = field("key", { default = "" }),
   title = field("label", { default = "" }),
-  read_only = const(true),
-  verified = const(true),
   created_at = field("created_on", { default = "" }),
+  const_fields(true, "read_only", "verified"),
+  default_fields(0, "id"),
+  default_fields("", "key"),
 })
 
 local function bb_hook_events(h)
@@ -280,17 +269,12 @@ local function bb_pull_state(pr)
 end
 
 local translate_bb_pull = make_translator({
-  id = field("id", { default = 0 }),
-  node_id = const(""),
   number = field("id", { default = 0 }),
   state = computed(bb_pull_state),
-  locked = const(false),
-  title = field("title", { default = "" }),
   body = field("description", { default = "" }),
   user = nested(translate_bb_user, "author"),
   head = nested(translate_bb_pr_branch, "source"),
   base = nested(translate_bb_pr_branch, "destination"),
-  draft = const(false),
   created_at = field("created_on", { default = "" }),
   updated_at = field("updated_on", { default = "" }),
   closed_at = computed(function(pr)
@@ -314,17 +298,16 @@ local translate_bb_pull = make_translator({
   diff_url = computed(function(pr)
     return bb_link(pr, "diff")
   end),
-  patch_url = const(""),
   mergeable = computed(function(pr)
     return pr.state == "OPEN" or nil
   end),
-  comments = const(0),
-  review_comments = const(0),
-  commits = const(0),
-  additions = const(0),
-  deletions = const(0),
-  changed_files = const(0),
-  participants = const(nil),
+  const_fields("", "node_id", "patch_url"),
+  const_fields(false, "locked", "draft"),
+  const_fields(0, "comments", "review_comments", "commits", "additions"),
+  const_fields(0, "deletions", "changed_files"),
+  const_fields(nil, "participants"),
+  default_fields(0, "id"),
+  default_fields("", "title"),
 })
 
 local function bb_values(translator, data)
@@ -339,15 +322,14 @@ local function bb_diffstat_filename(f)
 end
 
 local translate_bb_diffstat_file = make_translator({
-  sha = const(""),
   filename = computed(bb_diffstat_filename),
-  status = field("status", { default = "modified" }),
   additions = field("lines_added", { default = 0 }),
   deletions = field("lines_removed", { default = 0 }),
   changes = computed(function(f)
     return (f.lines_added or 0) + (f.lines_removed or 0)
   end),
-  patch = const(""),
+  const_fields("", "sha", "patch"),
+  default_fields("modified", "status"),
 })
 
 -- Map a Bitbucket PR comment (with inline position) to GitHub review comment format.
@@ -361,8 +343,6 @@ local function bb_inline_position(c, key)
 end
 
 local translate_bb_pr_comment = make_translator({
-  id = field("id", { default = 0 }),
-  node_id = const(""),
   path = computed(function(c)
     return bb_inline_position(c, "path") or ""
   end),
@@ -372,9 +352,6 @@ local translate_bb_pr_comment = make_translator({
   original_position = computed(function(c)
     return bb_inline_position(c, "from")
   end),
-  commit_id = const(""),
-  original_commit_id = const(""),
-  diff_hunk = const(""),
   body = computed(bb_comment_body),
   user = computed(function(c)
     return translate_bb_user(c.user or c.author)
@@ -384,21 +361,19 @@ local translate_bb_pr_comment = make_translator({
   html_url = computed(function(c)
     return bb_link(c, "html")
   end),
-  pull_request_url = const(""),
-  url = const(""),
+  const_fields("", "node_id", "commit_id", "original_commit_id", "diff_hunk"),
+  const_fields("", "pull_request_url", "url"),
+  default_fields(0, "id"),
 })
 
 local translate_bb_participant_review = make_translator({
   id = computed(function(_p, idx)
     return idx
   end),
-  node_id = const(""),
   user = nested(translate_bb_user),
-  body = const(""),
-  state = const("APPROVED"),
   submitted_at = field("participated_on", { default = "" }),
-  html_url = const(""),
-  pull_request_url = const(""),
+  const_fields("", "node_id", "body", "html_url", "pull_request_url"),
+  const_fields("APPROVED", "state"),
 })
 
 -- Map Bitbucket PR participants with REVIEWER role to GitHub reviews format.
@@ -439,9 +414,7 @@ local function bb_issue_milestone(i)
 end
 
 local translate_bb_issue = make_translator({
-  id = field("id", { default = 0 }),
   number = field("id", { default = 0 }),
-  title = field("title", { default = "" }),
   body = computed(bb_comment_body),
   state = computed(function(i)
     return i.state == "open" and "open" or "closed"
@@ -454,15 +427,16 @@ local translate_bb_issue = make_translator({
   milestone = computed(bb_issue_milestone),
   created_at = field("created_on", { default = "" }),
   updated_at = field("updated_on", { default = "" }),
-  closed_at = const(nil),
   html_url = computed(function(i)
     return bb_link(i, "html")
   end),
+  const_fields(nil, "closed_at"),
+  default_fields(0, "id"),
+  default_fields("", "title"),
 })
 
 -- Translate a Bitbucket issue comment to GitHub format.
 local translate_bb_issue_comment = make_translator({
-  id = field("id", { default = 0 }),
   body = computed(bb_comment_body),
   user = nested(translate_bb_user, "author"),
   created_at = field("created_on", { default = "" }),
@@ -470,6 +444,7 @@ local translate_bb_issue_comment = make_translator({
   html_url = computed(function(c)
     return bb_link(c, "html")
   end),
+  default_fields(0, "id"),
 })
 
 local function bb_commit_comment_sha(c)
@@ -491,7 +466,6 @@ local function bb_commit_comment_sha(c)
 end
 
 local translate_bb_commit_comment = make_translator({
-  id = field("id", { default = 0 }),
   body = computed(bb_comment_body),
   commit_id = computed(function(c)
     return c.commit_id or bb_commit_comment_sha(c)
@@ -515,17 +489,17 @@ local translate_bb_commit_comment = make_translator({
   updated_at = computed(function(c)
     return c.updated_on or c.created_on or ""
   end),
+  default_fields(0, "id"),
 })
 
 -- Translate a Bitbucket milestone to GitHub format.
 -- Bitbucket milestone: { id, name, resource_uri }
 local translate_bb_milestone = make_translator({
-  id = field("id", { default = 0 }),
   number = field("id", { default = 0 }),
   title = field("name", { default = "" }),
-  state = const("open"),
-  created_at = const(""),
-  updated_at = const(""),
+  const_fields("open", "state"),
+  const_fields("", "created_at", "updated_at"),
+  default_fields(0, "id"),
 })
 
 local function bb_hook_req_from_github(body_str)
@@ -547,12 +521,11 @@ local translate_bb_ref = make_translator({
     local ref_type = r.type == "tag" and "tags" or "heads"
     return "refs/" .. ref_type .. "/" .. (r.name or "")
   end),
-  node_id = const(""),
-  url = const(""),
   object = computed(function(r)
     local sha = (r.target and r.target.hash) or ""
     return { type = "commit", sha = sha, url = "" }
   end),
+  const_fields("", "node_id", "url"),
 })
 
 -- Gist helpers ---------------------------------------------------------------
@@ -586,8 +559,6 @@ local translate_bb_snippet = make_translator({
     local ws = bb_snippet_owner(s)
     return ws .. "~" .. tostring(s.id or "")
   end),
-  node_id = const(""),
-  url = const(""),
   html_url = computed(function(s)
     return bb_link(s, "html")
   end),
@@ -598,8 +569,6 @@ local translate_bb_snippet = make_translator({
   created_at = field("created_on", { default = "" }),
   updated_at = field("updated_on", { default = "" }),
   description = field("title", { default = "" }),
-  comments = const(0),
-  user = const(nil),
   owner = computed(function(s)
     local ws, owner = bb_snippet_owner(s)
     return {
@@ -612,14 +581,14 @@ local translate_bb_snippet = make_translator({
       type = "User",
     }
   end),
-  truncated = const(false),
+  const_fields("", "node_id", "url"),
+  const_fields(0, "comments"),
+  const_fields(nil, "user"),
+  const_fields(false, "truncated"),
 })
 
 -- Translate a Bitbucket snippet comment to GitHub gist comment format.
 local translate_bb_snippet_comment = make_translator({
-  id = field("id", { default = 0 }),
-  node_id = const(""),
-  url = const(""),
   body = computed(bb_comment_body),
   user = computed(function(c)
     local author = c.author or {}
@@ -635,10 +604,11 @@ local translate_bb_snippet_comment = make_translator({
   end),
   created_at = field("created_on", { default = "" }),
   updated_at = field("updated_on", { default = "" }),
+  const_fields("", "node_id", "url"),
+  default_fields(0, "id"),
 })
 
 local translate_bb_snippet_commit = make_translator({
-  url = const(""),
   version = field("hash", { default = "" }),
   user = computed(function(c)
     local author = c.author or {}
@@ -657,6 +627,7 @@ local translate_bb_snippet_commit = make_translator({
   change_status = computed(function()
     return { total = 0, additions = 0, deletions = 0 }
   end),
+  const_fields("", "url"),
 })
 
 -- Decode a GitHub gist ID (from a confusio response) back to Bitbucket workspace

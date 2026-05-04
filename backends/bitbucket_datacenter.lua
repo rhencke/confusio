@@ -28,35 +28,24 @@ local function bbs_page_url(url)
 end
 
 -- Map a Bitbucket DC project key + repo object to GitHub format.
-local function bbs_repo_login(r, proj_key)
+local function translate_bbs_repo(r, proj_key)
+  if not r then
+    return {}
+  end
   local proj = r.project or {}
   local key = proj_key or proj.key or ""
   -- Strip leading ~ for the display login; keep ~ if it's a personal project
-  return key:match("^~(.+)$") or key
-end
-
-local function bbs_self_href(obj)
-  local links = obj.links or {}
+  local login = key:match("^~(.+)$") or key
+  local links = r.links or {}
   local self_links = links.self or {}
-  return (self_links[1] and self_links[1].href) or ""
-end
-
-local translate_bbs_repo = make_translator({
-  id = field("id", { default = 0 }),
-  node_id = const(""),
-  name = computed(function(r)
-    return r.slug or r.name or ""
-  end),
-  full_name = computed(function(r, proj_key)
-    return bbs_repo_login(r, proj_key) .. "/" .. (r.slug or r.name or "")
-  end),
-  private = computed(function(r)
-    return not (r.public or false)
-  end),
-  owner = computed(function(r, proj_key)
-    local proj = r.project or {}
-    local login = bbs_repo_login(r, proj_key)
-    return {
+  local html_url = (self_links[1] and self_links[1].href) or ""
+  return {
+    id = r.id or 0,
+    node_id = "",
+    name = r.slug or r.name or "",
+    full_name = login .. "/" .. (r.slug or r.name or ""),
+    private = not (r.public or false),
+    owner = {
       login = login,
       id = proj.id or 0,
       node_id = "",
@@ -64,68 +53,60 @@ local translate_bbs_repo = make_translator({
       url = "",
       html_url = "",
       type = proj.type == "PERSONAL" and "User" or "Organization",
-    }
-  end),
-  html_url = computed(bbs_self_href),
-  description = "description",
-  fork = computed(function(r)
-    return r.origin ~= nil
-  end),
-  url = computed(bbs_self_href),
-  clone_url = const(""),
-  homepage = const(""),
-  size = const(0),
-  stargazers_count = const(0),
-  watchers_count = const(0),
-  language = const(nil),
-  has_issues = const(false),
-  has_wiki = const(false),
-  forks_count = const(0),
-  archived = field("archived", { default = false }),
-  disabled = const(false),
-  open_issues_count = const(0),
-  default_branch = field("default_branch", { default = "main" }),
-  visibility = computed(function(r)
-    return (r.public or false) and "public" or "private"
-  end),
-  forks = const(0),
-  open_issues = const(0),
-  watchers = const(0),
-  created_at = const(nil),
-  updated_at = const(nil),
-  pushed_at = const(nil),
-})
-
--- Map a Bitbucket DC user object to GitHub format.
-local translate_bbs_user = make_translator({
-  login = computed(function(u)
-    return u.name or u.slug or ""
-  end),
-  id = field("id", { default = 0 }),
-  node_id = const(""),
-  avatar_url = const(""),
-  html_url = const(""),
-  type = const("User"),
-  site_admin = const(false),
-  name = field("displayName", { default = "" }),
-  email = field("emailAddress", { default = "" }),
-})
-
-local function bbs_values(translator, data, ...)
-  local args = { ... }
-  return translate_list(function(item)
-    return translator(item, table.unpack(args))
-  end, (data and data.values))
+    },
+    html_url = html_url,
+    description = r.description,
+    fork = r.origin ~= nil,
+    url = html_url,
+    clone_url = "",
+    homepage = "",
+    size = 0,
+    stargazers_count = 0,
+    watchers_count = 0,
+    language = nil,
+    has_issues = false,
+    has_wiki = false,
+    forks_count = 0,
+    archived = r.archived or false,
+    disabled = false,
+    open_issues_count = 0,
+    default_branch = r.default_branch or "main",
+    visibility = (r.public or false) and "public" or "private",
+    forks = 0,
+    open_issues = 0,
+    watchers = 0,
+    created_at = nil,
+    updated_at = nil,
+    pushed_at = nil,
+  }
 end
 
-local function bbs_repos(data, proj_key)
+-- Map a Bitbucket DC user object to GitHub format.
+local function translate_bbs_user(u)
+  if not u then
+    return {}
+  end
+  return {
+    login = u.name or u.slug or "",
+    id = u.id or 0,
+    node_id = "",
+    avatar_url = "",
+    html_url = "",
+    type = "User",
+    site_admin = false,
+    name = u.displayName or "",
+    email = u.emailAddress or "",
+  }
+end
+
+local function translate_bbs_repos(data, proj_key)
   return translate_list(function(r)
     return translate_bbs_repo(r, proj_key)
   end, (data and data.values))
 end
 
 -- Translate GitHub create/update request body to Bitbucket DC format.
-local function bbs_req_from_github(body_str)
+local function translate_bbs_req(body_str)
   local req = DecodeJson(body_str or "{}")
   local bbs = {}
   if req.name then
@@ -142,77 +123,73 @@ end
 
 -- Translate a DC branch object to GitHub format.
 -- DC: { id: "refs/heads/main", displayId: "main", latestCommit: "abc123..." }
-local translate_bbs_branch = make_translator({
-  name = computed(function(b)
-    return b.displayId or b.id and b.id:match("refs/heads/(.+)") or ""
-  end),
-  commit = computed(function(b)
-    return { sha = b.latestCommit or b.latestChangeset or "", url = "" }
-  end),
-  protected = const(false),
-})
+local function translate_bbs_branch(b)
+  if not b then
+    return {}
+  end
+  return {
+    name = b.displayId or b.id and b.id:match("refs/heads/(.+)") or "",
+    commit = { sha = b.latestCommit or b.latestChangeset or "", url = "" },
+    protected = false,
+  }
+end
 
 -- Translate a DC commit object to GitHub format.
 -- DC: { id, displayId, author: { name, emailAddress }, authorTimestamp, message }
-local function bbs_commit_author(c)
+local function translate_bbs_commit(c)
+  if not c then
+    return {}
+  end
   local author = c.author or {}
   local ts = c.authorTimestamp
   local date = ts and os.date("!%Y-%m-%dT%H:%M:%SZ", math.floor(ts / 1000)) or ""
-  return { name = author.name or "", email = author.emailAddress or "", date = date }
-end
-
-local function bbs_commit_user(c)
-  local author = c.author or {}
-  return { login = author.name or "", id = 0, avatar_url = "" }
-end
-
-local translate_bbs_commit = make_translator({
-  sha = field("id", { default = "" }),
-  commit = computed(function(c)
-    return {
+  return {
+    sha = c.id or "",
+    commit = {
       message = c.message or "",
-      author = bbs_commit_author(c),
-      committer = bbs_commit_author(c),
-    }
-  end),
-  author = computed(bbs_commit_user),
-  committer = computed(bbs_commit_user),
-})
+      author = { name = author.name or "", email = author.emailAddress or "", date = date },
+      committer = { name = author.name or "", email = author.emailAddress or "", date = date },
+    },
+    author = { login = author.name or "", id = 0, avatar_url = "" },
+    committer = { login = author.name or "", id = 0, avatar_url = "" },
+  }
+end
 
 -- Translate a DC deploy key to GitHub format.
 -- DC: { id, key: { id, label, text, createdDate } }
-local translate_bbs_key = make_translator({
-  id = field("id", { default = 0 }),
-  key = computed(function(k)
-    return (k.key or {}).text or ""
-  end),
-  title = computed(function(k)
-    return (k.key or {}).label or ""
-  end),
-  read_only = const(true),
-  verified = const(true),
-  created_at = const(nil),
-})
+local function translate_bbs_key(k)
+  if not k then
+    return {}
+  end
+  local key = k.key or {}
+  return {
+    id = k.id or 0,
+    key = key.text or "",
+    title = key.label or "",
+    read_only = true,
+    verified = true,
+    created_at = nil,
+  }
+end
 
 -- Translate a DC webhook to GitHub format.
 -- DC: { id, name, url, events: [...], active, configuration: {...} }
-local translate_bbs_hook = make_translator({
-  id = field("id", { default = 0 }),
-  name = field("name", { default = "web" }),
-  active = computed(function(h)
-    return h.active ~= false
-  end),
-  events = computed(function(h)
-    return h.events or {}
-  end),
-  config = computed(function(h)
-    return { url = h.url or "", content_type = "json" }
-  end),
-  created_at = const(nil),
-  updated_at = const(nil),
-})
+local function translate_bbs_hook(h)
+  if not h then
+    return {}
+  end
+  return {
+    id = h.id or 0,
+    name = h.name or "web",
+    active = h.active ~= false,
+    events = h.events or {},
+    config = { url = h.url or "", content_type = "json" },
+    created_at = nil,
+    updated_at = nil,
+  }
+end
 
-local function bbs_hook_req_from_github(body_str)
+local function translate_bbs_hook_req(body_str)
   local req = DecodeJson(body_str or "{}")
   local cfg = req.config or {}
   return EncodeJson({
@@ -225,14 +202,12 @@ end
 
 -- Translate a DC tag object to GitHub format.
 -- DC: { id: "refs/tags/v1.0", displayId: "v1.0", latestCommit: "abc..." }
-local translate_bbs_tag = make_translator({
-  name = computed(function(t)
-    return t.displayId or t.id or ""
-  end),
-  commit = computed(function(t)
-    return { sha = t.latestCommit or t.latestChangeset or "", url = "" }
-  end),
-})
+local function translate_bbs_tag(t)
+  return {
+    name = t.displayId or t.id or "",
+    commit = { sha = t.latestCommit or t.latestChangeset or "", url = "" },
+  }
+end
 
 -- Repo path helper: /projects/{owner}/repos/{repo}
 local function repo_path(owner, repo_name)
@@ -248,156 +223,141 @@ local function bbs_ts(ms)
 end
 
 -- Map a DC pull request ref (fromRef/toRef) to GitHub head/base format.
-local function bbs_pr_ref_owner(ref)
+local function translate_bbs_pr_ref(ref)
+  if not ref then
+    return {}
+  end
   local repo = ref.repository or {}
   local proj = repo.project or {}
   local owner = proj.key or ""
   -- Strip leading ~ for personal projects
-  return owner:match("^~(.+)$") or owner
+  owner = owner:match("^~(.+)$") or owner
+  return {
+    label = owner ~= "" and (owner .. "/" .. (repo.slug or "") .. ":" .. (ref.displayId or ""))
+      or (ref.displayId or ""),
+    ref = ref.displayId or (ref.id and ref.id:match("refs/heads/(.+)")) or "",
+    sha = ref.latestCommit or "",
+  }
 end
-
-local translate_bbs_pr_ref = make_translator({
-  label = computed(function(ref)
-    local repo = ref.repository or {}
-    local owner = bbs_pr_ref_owner(ref)
-    return owner ~= "" and (owner .. "/" .. (repo.slug or "") .. ":" .. (ref.displayId or ""))
-      or (ref.displayId or "")
-  end),
-  ref = computed(function(ref)
-    return ref.displayId or (ref.id and ref.id:match("refs/heads/(.+)")) or ""
-  end),
-  sha = field("latestCommit", { default = "" }),
-})
 
 -- Map a DC pull request object to GitHub format.
-local function bbs_pull_state(pr)
-  return pr.state == "OPEN" and "open" or "closed"
+local function translate_bbs_pull(pr)
+  if not pr then
+    return {}
+  end
+  local state = pr.state or ""
+  local is_merged = state == "MERGED"
+  local gh_state = state == "OPEN" and "open" or "closed"
+  local author_obj = pr.author or {}
+  local created = bbs_ts(pr.createdDate)
+  local updated = bbs_ts(pr.updatedDate)
+  local self_links = (pr.links and pr.links.self) or {}
+  local html_url = (self_links[1] and self_links[1].href) or ""
+  return {
+    id = pr.id or 0,
+    node_id = "",
+    number = pr.id or 0,
+    state = gh_state,
+    locked = false,
+    title = pr.title or "",
+    body = pr.description or "",
+    user = translate_bbs_user(author_obj.user),
+    head = translate_bbs_pr_ref(pr.fromRef),
+    base = translate_bbs_pr_ref(pr.toRef),
+    draft = false,
+    created_at = created or "",
+    updated_at = updated or "",
+    closed_at = (not is_merged and gh_state == "closed") and updated or nil,
+    merged_at = is_merged and updated or nil,
+    merge_commit_sha = nil,
+    merged_by = nil,
+    html_url = html_url,
+    url = html_url,
+    diff_url = "",
+    patch_url = "",
+    mergeable = state == "OPEN" or nil,
+    comments = 0,
+    review_comments = 0,
+    commits = 0,
+    additions = 0,
+    deletions = 0,
+    changed_files = 0,
+  }
 end
 
-local translate_bbs_pull = make_translator({
-  id = field("id", { default = 0 }),
-  node_id = const(""),
-  number = field("id", { default = 0 }),
-  state = computed(bbs_pull_state),
-  locked = const(false),
-  title = field("title", { default = "" }),
-  body = field("description", { default = "" }),
-  user = computed(function(pr)
-    return translate_bbs_user((pr.author or {}).user)
-  end),
-  head = nested(translate_bbs_pr_ref, "fromRef"),
-  base = nested(translate_bbs_pr_ref, "toRef"),
-  draft = const(false),
-  created_at = computed(function(pr)
-    return bbs_ts(pr.createdDate) or ""
-  end),
-  updated_at = computed(function(pr)
-    return bbs_ts(pr.updatedDate) or ""
-  end),
-  closed_at = computed(function(pr)
-    local updated = bbs_ts(pr.updatedDate)
-    return pr.state ~= "MERGED" and bbs_pull_state(pr) == "closed" and updated or nil
-  end),
-  merged_at = computed(function(pr)
-    return pr.state == "MERGED" and bbs_ts(pr.updatedDate) or nil
-  end),
-  merge_commit_sha = const(nil),
-  merged_by = const(nil),
-  html_url = computed(bbs_self_href),
-  url = computed(bbs_self_href),
-  diff_url = const(""),
-  patch_url = const(""),
-  mergeable = computed(function(pr)
-    return pr.state == "OPEN" or nil
-  end),
-  comments = const(0),
-  review_comments = const(0),
-  commits = const(0),
-  additions = const(0),
-  deletions = const(0),
-  changed_files = const(0),
-})
-
-local function bbs_pulls(data)
-  return bbs_values(translate_bbs_pull, data)
+local function translate_bbs_pulls(data)
+  return translate_list(translate_bbs_pull, (data and data.values))
 end
 
 -- Map a DC pull request change entry to GitHub file format.
 -- DC: { path: { toString: "README.md" }, type: "ADD"|"MODIFY"|"DELETE"|"MOVE" }
-local function bbs_pr_change_status(c)
+local function translate_bbs_pr_change(c)
+  if not c then
+    return {}
+  end
+  local path_obj = c.path or {}
+  local fname = path_obj.toString or path_obj.name or ""
   local dc_type = c.type or "MODIFY"
-  return dc_type == "ADD" and "added"
+  local status = dc_type == "ADD" and "added"
     or dc_type == "DELETE" and "removed"
     or dc_type == "MOVE" and "renamed"
     or "modified"
+  return {
+    sha = "",
+    filename = fname,
+    status = status,
+    additions = 0,
+    deletions = 0,
+    changes = 0,
+    patch = "",
+  }
 end
-
-local translate_bbs_pr_change = make_translator({
-  sha = const(""),
-  filename = computed(function(c)
-    local path_obj = c.path or {}
-    return path_obj.toString or path_obj.name or ""
-  end),
-  status = computed(bbs_pr_change_status),
-  additions = const(0),
-  deletions = const(0),
-  changes = const(0),
-  patch = const(""),
-})
 
 -- Map a DC pull request comment to GitHub review comment format.
 -- DC: { id, text, author: { name, displayName, ... }, createdDate, updatedDate,
 --       anchor: { path, line, lineType, fileType } }
-local translate_bbs_pr_comment = make_translator({
-  id = field("id", { default = 0 }),
-  node_id = const(""),
-  path = computed(function(c)
-    return (c.anchor or {}).path or ""
-  end),
-  position = computed(function(c)
-    return (c.anchor or {}).line
-  end),
-  original_position = computed(function(c)
-    return (c.anchor or {}).line
-  end),
-  commit_id = const(""),
-  original_commit_id = const(""),
-  diff_hunk = const(""),
-  body = field("text", { default = "" }),
-  user = nested(translate_bbs_user, "author"),
-  created_at = computed(function(c)
-    return bbs_ts(c.createdDate) or ""
-  end),
-  updated_at = computed(function(c)
-    return bbs_ts(c.updatedDate) or ""
-  end),
-  html_url = const(""),
-  pull_request_url = const(""),
-  url = const(""),
-})
-
-local translate_bbs_reviewer_review = make_translator({
-  id = computed(function(_r, idx)
-    return idx
-  end),
-  node_id = const(""),
-  user = nested(translate_bbs_user),
-  body = const(""),
-  state = const("APPROVED"),
-  submitted_at = const(""),
-  html_url = const(""),
-  pull_request_url = const(""),
-})
+local function translate_bbs_pr_comment(c)
+  if not c then
+    return {}
+  end
+  local anchor = c.anchor or {}
+  return {
+    id = c.id or 0,
+    node_id = "",
+    path = anchor.path or "",
+    position = anchor.line,
+    original_position = anchor.line,
+    commit_id = "",
+    original_commit_id = "",
+    diff_hunk = "",
+    body = c.text or "",
+    user = translate_bbs_user(c.author),
+    created_at = bbs_ts(c.createdDate) or "",
+    updated_at = bbs_ts(c.updatedDate) or "",
+    html_url = "",
+    pull_request_url = "",
+    url = "",
+  }
+end
 
 -- Map DC PR reviewers array to GitHub reviews format.
 -- DC reviewer: { user: {...}, role: "REVIEWER", approved: true, status: "APPROVED" }
-local function bbs_reviewers_to_reviews(reviewers)
+local function translate_bbs_reviewers_to_reviews(reviewers)
   local result = {}
   local idx = 0
   for _, r in ipairs(reviewers or {}) do
     if r.approved then
       idx = idx + 1
-      result[idx] = translate_bbs_reviewer_review(r, idx)
+      result[idx] = {
+        id = idx,
+        node_id = "",
+        user = translate_bbs_user(r.user),
+        body = "",
+        state = "APPROVED",
+        submitted_at = "",
+        html_url = "",
+        pull_request_url = "",
+      }
     end
   end
   return result
@@ -427,7 +387,7 @@ b:rest(
 b:rest("patch_repo", function(owner, repo_name)
   proxy_json(function(r)
     return translate_bbs_repo(r, owner)
-  end, fetch_json(repo_path(owner, repo_name), "PUT", bbs_req_from_github(GetBody())))
+  end, fetch_json(repo_path(owner, repo_name), "PUT", translate_bbs_req(GetBody())))
 end)
 
 b:rest("delete_repo", function(owner, repo_name)
@@ -439,7 +399,7 @@ end)
 -- GET /user/repos — DC: GET /repos (all repos visible to the auth'd user)
 b:rest(
   "get_user_repos",
-  proxy_handler(bbs_repos, function()
+  proxy_handler(translate_bbs_repos, function()
     return bbs_page_url(base() .. "/repos")
   end)
 )
@@ -455,7 +415,7 @@ end)
 
 b:rest(
   "get_org_repos",
-  proxy_handler(bbs_repos, function(project_key)
+  proxy_handler(translate_bbs_repos, function(project_key)
     return bbs_page_url(base() .. "/projects/" .. project_key .. "/repos")
   end)
 )
@@ -468,7 +428,7 @@ b:rest("post_org_repos", function(project_key)
     fetch_json(
       base() .. "/projects/" .. project_key .. "/repos",
       "POST",
-      bbs_req_from_github(GetBody())
+      translate_bbs_req(GetBody())
     )
   )
 end)
@@ -477,7 +437,7 @@ end)
 b:rest(
   "get_users_repos",
   proxy_handler(function(data, username)
-    return bbs_repos(data, "~" .. username)
+    return translate_bbs_repos(data, "~" .. username)
   end, function(username)
     return bbs_page_url(base() .. "/projects/~" .. username .. "/repos")
   end)
@@ -486,7 +446,7 @@ b:rest(
 -- GET /repositories — all repos visible to the authenticated user
 b:rest(
   "get_repositories",
-  proxy_handler(bbs_repos, function()
+  proxy_handler(translate_bbs_repos, function()
     return bbs_page_url(base() .. "/repos")
   end)
 )
@@ -624,7 +584,7 @@ end)
 
 b:rest(
   "get_repo_forks",
-  proxy_handler(bbs_repos, function(owner, repo_name)
+  proxy_handler(translate_bbs_repos, function(owner, repo_name)
     return bbs_page_url(repo_path(owner, repo_name) .. "/forks")
   end)
 )
@@ -694,7 +654,7 @@ b:rest("post_repo_hooks", function(owner, repo_name)
     fetch_json(
       repo_path(owner, repo_name) .. "/webhooks",
       "POST",
-      bbs_hook_req_from_github(GetBody())
+      translate_bbs_hook_req(GetBody())
     )
   )
 end)
@@ -712,7 +672,7 @@ b:rest("patch_repo_hook", function(owner, repo_name, hook_id)
     fetch_json(
       repo_path(owner, repo_name) .. "/webhooks/" .. hook_id,
       "PUT",
-      bbs_hook_req_from_github(GetBody())
+      translate_bbs_hook_req(GetBody())
     )
   )
 end)
@@ -759,7 +719,7 @@ b:rest("get_repo_pulls", function(owner, repo_name)
   local state = GetParam("state") or "open"
   local dc_state = state == "closed" and "MERGED,DECLINED" or state == "all" and "ALL" or "OPEN"
   local url = bbs_page_url(repo_path(owner, repo_name) .. "/pull-requests?state=" .. dc_state)
-  proxy_json(bbs_pulls, fetch_json(url))
+  proxy_json(translate_bbs_pulls, fetch_json(url))
 end)
 
 -- POST /repos/{owner}/{repo}/pulls
@@ -923,7 +883,7 @@ b:rest("get_pull_reviews", function(owner, repo_name, pull_number)
     return
   end
   local pr = DecodeJson(body) or {}
-  respond_json(200, bbs_reviewers_to_reviews(pr.reviewers))
+  respond_json(200, translate_bbs_reviewers_to_reviews(pr.reviewers))
 end)
 
 -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
@@ -939,7 +899,7 @@ b:rest("get_pull_review", function(owner, repo_name, pull_number, review_id)
     return
   end
   local pr = DecodeJson(body) or {}
-  local reviews = bbs_reviewers_to_reviews(pr.reviewers)
+  local reviews = translate_bbs_reviewers_to_reviews(pr.reviewers)
   local rid = tonumber(review_id)
   if rid and reviews[rid] then
     respond_json(200, reviews[rid])
@@ -1208,41 +1168,32 @@ end
 
 -- Translate a BBS Code Insights annotation to a GitHub code-scanning alert.
 -- BBS annotation: { reportKey, externalId, message, path, line, severity, type, link }
-local function bbs_annotation_severity(ann)
+local function translate_bbs_annotation(ann, idx)
   local severity = ann.severity or "MEDIUM"
-  return severity == "CRITICAL" and "critical"
+  local gh_severity = severity == "CRITICAL" and "critical"
     or severity == "HIGH" and "high"
     or severity == "MEDIUM" and "medium"
     or "low"
-end
-
-local translate_bbs_annotation = make_translator({
-  number = computed(function(_ann, idx)
-    return idx
-  end),
-  state = const("open"),
-  dismissed_by = const(nil),
-  dismissed_at = const(nil),
-  dismissed_reason = const(nil),
-  dismissed_comment = const(nil),
-  fixed_at = const(nil),
-  rule = computed(function(ann)
-    return {
+  return {
+    number = idx,
+    state = "open",
+    dismissed_by = nil,
+    dismissed_at = nil,
+    dismissed_reason = nil,
+    dismissed_comment = nil,
+    fixed_at = nil,
+    rule = {
       id = ann.reportKey or "",
       name = ann.reportKey or "",
       description = ann.message or "",
-      severity = bbs_annotation_severity(ann),
-    }
-  end),
-  tool = computed(function(ann)
-    return {
+      severity = gh_severity,
+    },
+    tool = {
       name = ann.reportKey or "",
       guid = nil,
       version = nil,
-    }
-  end),
-  most_recent_instance = computed(function(ann)
-    return {
+    },
+    most_recent_instance = {
       ref = "",
       analysis_key = ann.reportKey or "",
       state = "open",
@@ -1255,46 +1206,42 @@ local translate_bbs_annotation = make_translator({
         end_column = nil,
       },
       message = { text = ann.message or "" },
-    }
-  end),
-  instances_url = const(""),
-  html_url = const(""),
-  url = const(""),
-  created_at = const(""),
-  updated_at = const(""),
-})
+    },
+    instances_url = "",
+    html_url = "",
+    url = "",
+    created_at = "",
+    updated_at = "",
+  }
+end
 
 -- Translate a BBS Code Insights report to a GitHub code-scanning analysis.
 -- BBS report: { key, title, reporter, result, createdDate, updatedDate }
-local translate_bbs_report = make_translator({
-  ref = const(""),
-  commit_sha = computed(function(_rpt, _idx, sha)
-    return sha or ""
-  end),
-  analysis_key = field("key", { default = "" }),
-  environment = const("{}"),
-  category = field("key", { default = "" }),
-  error = const(""),
-  created_at = computed(function(rpt)
-    return bbs_ts(rpt.createdDate) or ""
-  end),
-  results_count = const(0),
-  rules_count = const(0),
-  id = computed(function(_rpt, idx)
-    return idx
-  end),
-  url = const(""),
-  sarif_id = const(""),
-  tool = computed(function(rpt)
-    return {
+local function translate_bbs_report(rpt, idx, sha)
+  local ts = rpt.createdDate
+  local created = ts and os.date("!%Y-%m-%dT%H:%M:%SZ", math.floor(ts / 1000)) or ""
+  return {
+    ref = "",
+    commit_sha = sha or "",
+    analysis_key = rpt.key or "",
+    environment = "{}",
+    category = rpt.key or "",
+    error = "",
+    created_at = created,
+    results_count = 0,
+    rules_count = 0,
+    id = idx,
+    url = "",
+    sarif_id = "",
+    tool = {
       name = rpt.reporter or rpt.title or rpt.key or "",
       guid = nil,
       version = nil,
-    }
-  end),
-  deletable = const(false),
-  warning = const(""),
-})
+    },
+    deletable = false,
+    warning = "",
+  }
+end
 
 b:rest("list_repo_code_scanning_alerts", function(owner, repo_name)
   local sha = resolve_ref_sha(owner, repo_name)
@@ -1346,15 +1293,16 @@ end)
 
 -- Git database (refs only; blobs/commits/tag-objects/trees have no DC equivalent) -----
 
-local translate_bbs_ref = make_translator({
-  ref = field("id", { default = "" }),
-  node_id = const(""),
-  url = const(""),
-  object = computed(function(r)
-    local sha = r.latestCommit or r.latestChangeset or ""
-    return { type = "commit", sha = sha, url = "" }
-  end),
-})
+local function translate_bbs_ref(r)
+  local ref_id = r.id or ""
+  local sha = r.latestCommit or r.latestChangeset or ""
+  return {
+    ref = ref_id,
+    node_id = "",
+    url = "",
+    object = { type = "commit", sha = sha, url = "" },
+  }
+end
 
 b:rest("list_git_matching_refs", function(owner, repo_name, ref)
   local endpoint, prefix

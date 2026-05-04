@@ -18,85 +18,58 @@ local proxy_handler_paged = _t.proxy_handler_paged
 
 local project_id = owner_repo_id
 
-local function strip_hash(s)
-  return (s or ""):gsub("^#", "")
+-- Map a GitLab project object to GitHub repo format.
+local function translate_gl_repo(p)
+  if not p then
+    return {}
+  end
+  local ns = p.namespace or {}
+  local owner = {
+    login = ns.path or ns.name or "",
+    id = ns.id or 0,
+    node_id = "",
+    avatar_url = ns.avatar_url or "",
+    url = "",
+    html_url = ns.web_url or "",
+    type = ns.kind == "group" and "Organization" or "User",
+  }
+  return {
+    id = p.id,
+    node_id = "",
+    name = p.path,
+    full_name = p.path_with_namespace,
+    private = p.visibility == "private",
+    owner = owner,
+    html_url = p.web_url,
+    description = p.description,
+    fork = (p.forked_from_project ~= nil),
+    url = p.web_url,
+    ssh_url = p.ssh_url_to_repo,
+    clone_url = p.http_url_to_repo,
+    homepage = p.web_url,
+    size = p.statistics and p.statistics.repository_size or 0,
+    stargazers_count = p.star_count or 0,
+    watchers_count = p.star_count or 0,
+    language = nil,
+    has_issues = p.issues_enabled,
+    has_wiki = p.wiki_enabled,
+    forks_count = p.forks_count or 0,
+    archived = p.archived,
+    disabled = false,
+    open_issues_count = p.open_issues_count or 0,
+    default_branch = p.default_branch,
+    visibility = p.visibility or "public",
+    forks = p.forks_count or 0,
+    open_issues = p.open_issues_count or 0,
+    watchers = p.star_count or 0,
+    created_at = p.created_at,
+    updated_at = p.last_activity_at,
+    pushed_at = p.last_activity_at,
+  }
 end
 
--- Map a GitLab project object to GitHub repo format.
-local translate_gl_repo_owner = make_translator({
-  login = computed(function(ns)
-    return ns.path or ns.name or ""
-  end),
-  id = computed(function(ns)
-    return ns.id or 0
-  end),
-  node_id = const(""),
-  avatar_url = field("avatar_url", { default = "" }),
-  url = const(""),
-  html_url = field("web_url", { default = "" }),
-  type = computed(function(ns)
-    return ns.kind == "group" and "Organization" or "User"
-  end),
-})
-
-local translate_gl_repo = make_translator({
-  id = "id",
-  node_id = const(""),
-  name = "path",
-  full_name = "path_with_namespace",
-  private = computed(function(p)
-    return p.visibility == "private"
-  end),
-  owner = computed(function(p)
-    return translate_gl_repo_owner(p.namespace or {})
-  end),
-  html_url = "web_url",
-  description = "description",
-  fork = computed(function(p)
-    return p.forked_from_project ~= nil
-  end),
-  url = "web_url",
-  ssh_url = "ssh_url_to_repo",
-  clone_url = "http_url_to_repo",
-  homepage = "web_url",
-  size = computed(function(p)
-    return p.statistics and p.statistics.repository_size or 0
-  end),
-  stargazers_count = computed(function(p)
-    return p.star_count or 0
-  end),
-  watchers_count = computed(function(p)
-    return p.star_count or 0
-  end),
-  language = const(nil),
-  has_issues = "issues_enabled",
-  has_wiki = "wiki_enabled",
-  forks_count = computed(function(p)
-    return p.forks_count or 0
-  end),
-  archived = "archived",
-  disabled = const(false),
-  open_issues_count = computed(function(p)
-    return p.open_issues_count or 0
-  end),
-  default_branch = "default_branch",
-  visibility = field("visibility", { default = "public" }),
-  forks = computed(function(p)
-    return p.forks_count or 0
-  end),
-  open_issues = computed(function(p)
-    return p.open_issues_count or 0
-  end),
-  watchers = computed(function(p)
-    return p.star_count or 0
-  end),
-  created_at = "created_at",
-  updated_at = "last_activity_at",
-  pushed_at = "last_activity_at",
-})
-
 -- Translate a GitLab create/update request body from GitHub format to GitLab.
-local function gl_req_from_github(body_str)
+local function translate_gl_req(body_str)
   local req = DecodeJson(body_str or "{}")
   local gl = {}
   if req.name then
@@ -121,20 +94,25 @@ local function gl_req_from_github(body_str)
 end
 
 -- Map a GitLab user object to GitHub format.
-local translate_gl_user = make_translator({
-  login = "username",
-  id = "id",
-  node_id = const(""),
-  avatar_url = field("avatar_url", { default = "" }),
-  html_url = field("web_url", { default = "" }),
-  type = const("User"),
-  site_admin = field("is_admin", { default = false }),
-  name = "name",
-  email = "email",
-  location = "location",
-  blog = "website_url",
-  created_at = "created_at",
-})
+local function translate_gl_user(u)
+  if not u then
+    return {}
+  end
+  return {
+    login = u.username,
+    id = u.id,
+    node_id = "",
+    avatar_url = u.avatar_url or "",
+    html_url = u.web_url or "",
+    type = "User",
+    site_admin = u.is_admin or false,
+    name = u.name,
+    email = u.email,
+    location = u.location,
+    blog = u.website_url,
+    created_at = u.created_at,
+  }
+end
 
 -- Look up a GitLab user ID by username. Returns nil on failure.
 local function gl_user_id(username)
@@ -148,70 +126,87 @@ end
 
 -- Translate a GitLab group to GitHub team format.
 -- Teams in GitHub map to subgroups in GitLab.
-local translate_gl_team = make_translator({
-  id = "id",
-  node_id = const(""),
-  name = "name",
-  slug = "path",
-  description = field("description", { default = "" }),
-  privacy = computed(function(g)
-    return g.visibility == "private" and "secret" or "closed"
-  end),
-  notification_setting = const("notifications_enabled"),
-  permission = const("pull"),
-  members_url = const(""),
-  repositories_url = const(""),
-  parent = const(nil),
-})
+local function translate_gl_team(g)
+  if not g then
+    return {}
+  end
+  return {
+    id = g.id,
+    node_id = "",
+    name = g.name,
+    slug = g.path,
+    description = g.description or "",
+    privacy = g.visibility == "private" and "secret" or "closed",
+    notification_setting = "notifications_enabled",
+    permission = "pull",
+    members_url = "",
+    repositories_url = "",
+    parent = nil,
+  }
+end
 
 -- Translate a GitLab group member to GitHub user format.
-local translate_gl_member = make_translator({
-  login = "username",
-  id = "id",
-  node_id = const(""),
-  avatar_url = field("avatar_url", { default = "" }),
-  html_url = field("web_url", { default = "" }),
-  type = const("User"),
-  site_admin = const(false),
-})
+local function translate_gl_member(m)
+  if not m then
+    return {}
+  end
+  return {
+    login = m.username,
+    id = m.id,
+    node_id = "",
+    avatar_url = m.avatar_url or "",
+    html_url = m.web_url or "",
+    type = "User",
+    site_admin = false,
+  }
+end
 
 -- Map a GitLab label object to GitHub format.
 -- GitLab color includes '#' prefix; GitHub does not.
-local translate_gl_label = make_translator({
-  id = "id",
-  node_id = const(""),
-  url = const(""),
-  name = "name",
-  color = field("color", { default = "", transform = strip_hash }),
-  description = field("description", { default = "" }),
-  default = const(false),
-})
+local function translate_gl_label(l)
+  if not l then
+    return {}
+  end
+  return {
+    id = l.id,
+    node_id = "",
+    url = "",
+    name = l.name,
+    color = (l.color or ""):gsub("^#", ""),
+    description = l.description or "",
+    default = false,
+  }
+end
 
 -- Map a GitLab milestone object to GitHub format.
 -- GitLab state: "active"/"closed" → GitHub: "open"/"closed"
-local translate_gl_milestone = make_translator({
-  id = "id",
-  node_id = const(""),
-  number = computed(function(m)
-    return m.iid or m.id
-  end),
-  title = "title",
-  description = field("description", { default = "" }),
-  state = computed(function(m)
-    return m.state == "active" and "open" or "closed"
-  end),
-  open_issues = const(0),
-  closed_issues = const(0),
-  created_at = "created_at",
-  updated_at = "updated_at",
-  closed_at = "closed_at",
-  due_on = "due_date",
-}, { nil_returns_nil = true })
+local function translate_gl_milestone(m)
+  if not m then
+    return nil
+  end
+  return {
+    id = m.id,
+    node_id = "",
+    number = m.iid or m.id,
+    title = m.title,
+    description = m.description or "",
+    state = m.state == "active" and "open" or "closed",
+    open_issues = 0,
+    closed_issues = 0,
+    created_at = m.created_at,
+    updated_at = m.updated_at,
+    closed_at = m.closed_at,
+    due_on = m.due_date,
+  }
+end
 
 -- Map a GitLab issue object to GitHub format.
 -- GitLab uses iid (project-local number) and "opened"/"closed" states.
-local function gl_issue_labels(i)
-  local labels = {}
+local function translate_gl_issue(i)
+  if not i then
+    return {}
+  end
+  local labels, assignees = {}, {}
   for _, l in ipairs(i.labels or {}) do
     if type(l) == "table" then
       labels[#labels + 1] = translate_gl_label(l)
@@ -220,191 +215,177 @@ local function gl_issue_labels(i)
         { id = 0, node_id = "", url = "", name = l, color = "", description = "", default = false }
     end
   end
-  return labels
+  for _, u in ipairs(i.assignees or {}) do
+    assignees[#assignees + 1] = translate_gl_user(u)
+  end
+  return {
+    id = i.id,
+    node_id = "",
+    number = i.iid,
+    title = i.title,
+    body = i.description,
+    state = i.state == "opened" and "open" or i.state,
+    user = translate_gl_user(i.author),
+    assignees = assignees,
+    labels = labels,
+    milestone = translate_gl_milestone(i.milestone),
+    comments = i.user_notes_count or 0,
+    created_at = i.created_at,
+    updated_at = i.updated_at,
+    closed_at = i.closed_at,
+    html_url = i.web_url or "",
+    url = i.web_url or "",
+    pull_request = nil,
+  }
 end
 
-local translate_gl_issue = make_translator({
-  id = "id",
-  node_id = const(""),
-  number = "iid",
-  title = "title",
-  body = "description",
-  state = computed(function(i)
-    return i.state == "opened" and "open" or i.state
-  end),
-  user = nested(translate_gl_user, "author"),
-  assignees = each(translate_gl_user),
-  labels = computed(gl_issue_labels),
-  milestone = nested(translate_gl_milestone),
-  comments = computed(function(i)
-    return i.user_notes_count or 0
-  end),
-  created_at = "created_at",
-  updated_at = "updated_at",
-  closed_at = "closed_at",
-  html_url = field("web_url", { default = "" }),
-  url = field("web_url", { default = "" }),
-  pull_request = const(nil),
-})
-
 -- Map a GitLab note (issue comment) to GitHub format.
-local translate_gl_note = make_translator({
-  id = "id",
-  node_id = const(""),
-  url = const(""),
-  html_url = const(""),
-  body = "body",
-  user = nested(translate_gl_user, "author"),
-  created_at = "created_at",
-  updated_at = "updated_at",
-})
+local function translate_gl_note(c)
+  if not c then
+    return {}
+  end
+  return {
+    id = c.id,
+    node_id = "",
+    url = "",
+    html_url = "",
+    body = c.body,
+    user = translate_gl_user(c.author),
+    created_at = c.created_at,
+    updated_at = c.updated_at,
+  }
+end
+
+local function translate_gl_issues(issues)
+  return translate_list(translate_gl_issue, issues)
+end
+local function translate_gl_notes(notes)
+  return translate_list(translate_gl_note, notes)
+end
+local function translate_gl_labels(labels)
+  return translate_list(translate_gl_label, labels)
+end
+local function translate_gl_milestones(milestones)
+  return translate_list(translate_gl_milestone, milestones)
+end
+local function translate_gl_members(members)
+  return translate_list(translate_gl_member, members)
+end
 
 -- Map a GitLab group to GitHub organization REST shape.
 -- Used by orgs capability module and GraphQL resolvers.
-local translate_gl_group_to_org = make_translator({
-  login = computed(function(g)
-    return g.path or g.full_path or ""
-  end),
-  name = "name",
-  description = "description",
-  avatar_url = field("avatar_url", { default = "" }),
-  html_url = field("web_url", { default = "" }),
-  blog = const(""),
-  email = const(""),
-  location = const(""),
-  created_at = "created_at",
-}, { nil_returns_nil = true })
+local function translate_gl_group_to_org(g)
+  if not g then
+    return nil
+  end
+  return {
+    login = g.path or g.full_path or "",
+    name = g.name,
+    description = g.description,
+    avatar_url = g.avatar_url or "",
+    html_url = g.web_url or "",
+    blog = "",
+    email = "",
+    location = "",
+    created_at = g.created_at,
+  }
+end
 
 -- Map a GitLab MR (merge request) object to GitHub PR format.
 -- GitLab uses "opened"/"closed"/"merged"; GitHub uses "open"/"closed"/"merged".
-local function gl_mr_state(mr)
-  return mr.state == "opened" and "open" or mr.state
-end
-
-local function gl_mr_head(mr)
+local function translate_gl_mr(mr)
+  if not mr then
+    return {}
+  end
+  local state = mr.state
+  if state == "opened" then
+    state = "open"
+  end
   local diff_refs = mr.diff_refs or {}
   return {
-    label = mr.source_branch or "",
-    ref = mr.source_branch or "",
-    sha = diff_refs.head_sha or mr.sha or "",
-    repo = nil,
+    id = mr.id,
+    node_id = "",
+    number = mr.iid,
+    state = state,
+    locked = false,
+    title = mr.title,
+    body = mr.description,
+    user = translate_gl_user(mr.author),
+    head = {
+      label = mr.source_branch or "",
+      ref = mr.source_branch or "",
+      sha = diff_refs.head_sha or mr.sha or "",
+      repo = nil,
+    },
+    base = {
+      label = mr.target_branch or "",
+      ref = mr.target_branch or "",
+      sha = diff_refs.base_sha or "",
+      repo = nil,
+    },
+    draft = mr.draft or false,
+    created_at = mr.created_at,
+    updated_at = mr.updated_at,
+    closed_at = mr.closed_at,
+    merged_at = mr.merged_at,
+    merge_commit_sha = mr.merge_commit_sha,
+    merged_by = mr.merged_by and translate_gl_user(mr.merged_by) or nil,
+    diff_url = mr.web_url and (mr.web_url .. ".diff") or "",
+    patch_url = mr.web_url and (mr.web_url .. ".patch") or "",
+    html_url = mr.web_url or "",
+    url = mr.web_url or "",
+    mergeable = mr.merge_status == "can_be_merged",
+    comments = mr.user_notes_count or 0,
+    changed_files = mr.changes_count and tonumber(mr.changes_count) or 0,
   }
 end
-
-local function gl_mr_base(mr)
-  local diff_refs = mr.diff_refs or {}
-  return {
-    label = mr.target_branch or "",
-    ref = mr.target_branch or "",
-    sha = diff_refs.base_sha or "",
-    repo = nil,
-  }
-end
-
-local translate_gl_mr = make_translator({
-  id = "id",
-  node_id = const(""),
-  number = "iid",
-  state = computed(gl_mr_state),
-  locked = const(false),
-  title = "title",
-  body = "description",
-  user = nested(translate_gl_user, "author"),
-  head = computed(gl_mr_head),
-  base = computed(gl_mr_base),
-  draft = field("draft", { default = false }),
-  created_at = "created_at",
-  updated_at = "updated_at",
-  closed_at = "closed_at",
-  merged_at = "merged_at",
-  merge_commit_sha = "merge_commit_sha",
-  merged_by = computed(function(mr)
-    return mr.merged_by and translate_gl_user(mr.merged_by) or nil
-  end),
-  diff_url = computed(function(mr)
-    return mr.web_url and (mr.web_url .. ".diff") or ""
-  end),
-  patch_url = computed(function(mr)
-    return mr.web_url and (mr.web_url .. ".patch") or ""
-  end),
-  html_url = field("web_url", { default = "" }),
-  url = field("web_url", { default = "" }),
-  mergeable = computed(function(mr)
-    return mr.merge_status == "can_be_merged"
-  end),
-  comments = computed(function(mr)
-    return mr.user_notes_count or 0
-  end),
-  changed_files = computed(function(mr)
-    return mr.changes_count and tonumber(mr.changes_count) or 0
-  end),
-})
 
 -- Map GitLab MR approvals to GitHub reviews (APPROVED state).
 -- GitLab uses an approvals object; GitHub uses an array of review objects.
-local translate_gl_approval_review = make_translator({
-  id = computed(function(_approval, i)
-    return i
-  end),
-  node_id = const(""),
-  user = computed(function(approval)
-    return translate_gl_user(approval.user)
-  end),
-  body = const(""),
-  state = const("APPROVED"),
-  submitted_at = computed(function(_approval, _i, approvals)
-    return approvals.created_at or ""
-  end),
-  html_url = const(""),
-  pull_request_url = const(""),
-})
-
-local function gl_approvals_to_reviews(approvals)
+local function translate_gl_approvals_to_reviews(approvals)
   if not approvals then
     return {}
   end
   local result = {}
   for i, a in ipairs(approvals.approved_by or {}) do
-    result[i] = translate_gl_approval_review(a, i, approvals)
+    result[i] = {
+      id = i,
+      node_id = "",
+      user = translate_gl_user(a.user),
+      body = "",
+      state = "APPROVED",
+      submitted_at = approvals.created_at or "",
+      html_url = "",
+      pull_request_url = "",
+    }
   end
   return result
 end
 
 -- Map a GitLab MR inline note (position-based) to GitHub review comment format.
-local function gl_mr_note_position(n)
+local function translate_gl_mr_note_to_review_comment(n)
+  if not n then
+    return {}
+  end
   local pos = n.position or {}
-  return pos
+  return {
+    id = n.id,
+    node_id = "",
+    path = pos.new_path or pos.old_path or "",
+    position = pos.new_line or pos.old_line,
+    original_position = pos.old_line,
+    commit_id = pos.head_sha or "",
+    original_commit_id = pos.base_sha or "",
+    diff_hunk = "",
+    body = n.body or "",
+    user = translate_gl_user(n.author),
+    created_at = n.created_at,
+    updated_at = n.updated_at,
+    html_url = "",
+    pull_request_url = "",
+    url = "",
+  }
 end
-
-local translate_gl_mr_note_to_review_comment = make_translator({
-  id = "id",
-  node_id = const(""),
-  path = computed(function(n)
-    local pos = gl_mr_note_position(n)
-    return pos.new_path or pos.old_path or ""
-  end),
-  position = computed(function(n)
-    local pos = gl_mr_note_position(n)
-    return pos.new_line or pos.old_line
-  end),
-  original_position = computed(function(n)
-    return gl_mr_note_position(n).old_line
-  end),
-  commit_id = computed(function(n)
-    return gl_mr_note_position(n).head_sha or ""
-  end),
-  original_commit_id = computed(function(n)
-    return gl_mr_note_position(n).base_sha or ""
-  end),
-  diff_hunk = const(""),
-  body = field("body", { default = "" }),
-  user = nested(translate_gl_user, "author"),
-  created_at = "created_at",
-  updated_at = "updated_at",
-  html_url = const(""),
-  pull_request_url = const(""),
-  url = const(""),
-})
 
 -- Fetch inline MR notes (position-based) for a given MR.
 local function fetch_gl_mr_review_comments(owner, repo_name, pull_number)
@@ -464,37 +445,35 @@ local function gl_tag_by_id(owner, repo_name, release_id)
 end
 
 -- Helper: translate a single GitLab release object to GitHub release format.
-local translate_gl_release = make_translator({
-  id = computed(function(_r, idx)
-    return idx or 1
-  end),
-  tag_name = "tag_name",
-  name = "name",
-  body = "description",
-  draft = const(false),
-  prerelease = const(false),
-  created_at = "created_at",
-  published_at = computed(function(r)
-    return r.released_at or r.created_at
-  end),
-  assets = computed(function()
-    return {}
-  end),
-})
+local function translate_gl_release(r, idx)
+  return {
+    id = idx or 1,
+    tag_name = r.tag_name,
+    name = r.name,
+    body = r.description,
+    draft = false,
+    prerelease = false,
+    created_at = r.created_at,
+    published_at = r.released_at or r.created_at,
+    assets = {},
+  }
+end
 
 -- Helper: translate a GitLab release link to GitHub release asset format.
-local translate_gl_link = make_translator({
-  id = "id",
-  name = "name",
-  label = "name",
-  state = const("uploaded"),
-  content_type = const("application/octet-stream"),
-  size = const(0),
-  download_count = const(0),
-  created_at = field("created_at", { default = "" }),
-  updated_at = field("updated_at", { default = "" }),
-  browser_download_url = "url",
-})
+local function translate_gl_link(l)
+  return {
+    id = l.id,
+    name = l.name,
+    label = l.name,
+    state = "uploaded",
+    content_type = "application/octet-stream",
+    size = 0,
+    download_count = 0,
+    created_at = l.created_at or "",
+    updated_at = l.updated_at or "",
+    browser_download_url = l.url,
+  }
+end
 
 -- Helper: scan all releases for the one containing a link with the given ID.
 -- Returns tag_name or nil. GitLab has no direct link-by-ID endpoint without tag_name.
@@ -550,7 +529,7 @@ local GL_STATUS_TO_CHECK_RUN = {
 
 -- Map a GitLab branch object to GitHub branch format.
 -- Normalises commit.id → commit.sha in place and returns the branch.
-local function gl_branch_to_github(br)
+local function translate_gl_branch(br)
   if not br then
     return {}
   end
@@ -561,11 +540,14 @@ local function gl_branch_to_github(br)
 end
 
 -- Map a GitLab commit object to GitHub commit format.
-local translate_gl_commit = make_translator({
-  sha = "id",
-  html_url = field("web_url", { default = "" }),
-  commit = computed(function(c)
-    return {
+local function translate_gl_commit(c)
+  if not c then
+    return {}
+  end
+  return {
+    sha = c.id,
+    html_url = c.web_url or "",
+    commit = {
       message = c.message,
       author = { name = c.author_name, email = c.author_email, date = c.authored_date },
       committer = {
@@ -573,63 +555,56 @@ local translate_gl_commit = make_translator({
         email = c.committer_email or c.author_email,
         date = c.committed_date or c.authored_date,
       },
-    }
-  end),
-  stats = "stats",
-})
+    },
+    stats = c.stats,
+  }
+end
 
 -- Map a GitLab commit status object to GitHub status format.
-local translate_gl_status = make_translator({
-  id = "id",
-  state = computed(function(s)
-    return GL_STATUS_TO_GH[s.status] or s.status
-  end),
-  description = "description",
-  target_url = "target_url",
-  context = "name",
-  created_at = "created_at",
-  updated_at = "updated_at",
-})
+local function translate_gl_status(s)
+  if not s then
+    return {}
+  end
+  return {
+    id = s.id,
+    state = GL_STATUS_TO_GH[s.status] or s.status,
+    description = s.description,
+    target_url = s.target_url,
+    context = s.name,
+    created_at = s.created_at,
+    updated_at = s.updated_at,
+  }
+end
 
 -- Map a GitLab commit status object to a GitHub check run object.
 -- sha: the commit SHA to embed as head_sha (GitLab status may not include it).
-local function gl_status_check_run_mapping(s)
+local function translate_gl_status_to_check_run(s, sha)
+  if not s then
+    return {}
+  end
   local mapped = GL_STATUS_TO_CHECK_RUN[s.status]
     or { status = "completed", conclusion = "failure" }
-  return mapped
-end
-
-local translate_gl_status_to_check_run = make_translator({
-  id = "id",
-  node_id = const(""),
-  head_sha = computed(function(_s, sha)
-    return sha or ""
-  end),
-  name = field("name", { default = "" }),
-  status = computed(function(s)
-    return gl_status_check_run_mapping(s).status
-  end),
-  conclusion = computed(function(s)
-    return gl_status_check_run_mapping(s).conclusion
-  end),
-  started_at = "created_at",
-  completed_at = computed(function(s)
-    local mapped = gl_status_check_run_mapping(s)
-    return mapped.status == "completed" and s.updated_at or nil
-  end),
-  output = computed(function(s)
-    return {
+  return {
+    id = s.id,
+    node_id = "",
+    head_sha = sha or "",
+    name = s.name or "",
+    status = mapped.status,
+    conclusion = mapped.conclusion,
+    started_at = s.created_at,
+    completed_at = mapped.status == "completed" and s.updated_at or nil,
+    output = {
       title = s.description or "",
       summary = s.description or "",
       text = "",
       annotations_count = 0,
       annotations_url = "",
-    }
-  end),
-  url = const(""),
-  html_url = field("target_url", { default = "" }),
-  details_url = field("target_url", { default = "" }),
-})
+    },
+    url = "",
+    html_url = s.target_url or "",
+    details_url = s.target_url or "",
+  }
+end
 
 -- ---------------------------------------------------------------------------
 -- Repos capability module
@@ -658,7 +633,7 @@ repos.update = function(owner, repo_name, body)
     fetch_json,
     base() .. "/projects/" .. project_id(owner, repo_name),
     "PUT",
-    gl_req_from_github(body)
+    translate_gl_req(body)
   )
   if not raw then
     return nil, err
@@ -695,7 +670,7 @@ end
 
 -- create_user: create a repository under the authenticated user.
 repos.create_user = function(body)
-  local raw, err = cap_fetch(fetch_json, base() .. "/projects", "POST", gl_req_from_github(body))
+  local raw, err = cap_fetch(fetch_json, base() .. "/projects", "POST", translate_gl_req(body))
   if not raw then
     return nil, err
   end
@@ -714,7 +689,7 @@ end
 
 -- create_org: create a repository inside a GitLab group (namespace).
 repos.create_org = function(org, body)
-  local gl_req = gl_req_from_github(body)
+  local gl_req = translate_gl_req(body)
   local gl = DecodeJson(gl_req)
   gl.namespace_id = org
   local raw, err = cap_fetch(fetch_json, base() .. "/projects", "POST", EncodeJson(gl))
@@ -975,7 +950,7 @@ end
 -- ---------------------------------------------------------------------------
 -- Branches capability module
 -- ---------------------------------------------------------------------------
--- Owns fetch + gl_branch_to_github for all branch operations.
+-- Owns fetch + translate_gl_branch for all branch operations.
 -- Paged list operations return (items, headers, nil) or (nil, nil, err).
 -- Single-item operations return (data, nil) or (nil, err).
 
@@ -991,7 +966,7 @@ branches.list = function(owner, repo_name)
   if not items then
     return nil, nil, err
   end
-  return translate_list(gl_branch_to_github, items), hdrs, nil
+  return translate_list(translate_gl_branch, items), hdrs, nil
 end
 
 -- get: fetch a single branch by name.
@@ -1005,7 +980,7 @@ branches.get = function(owner, repo_name, branch)
   if not raw then
     return nil, err
   end
-  return gl_branch_to_github(raw), nil
+  return translate_gl_branch(raw), nil
 end
 
 -- ---------------------------------------------------------------------------
@@ -1207,17 +1182,23 @@ local CONTENT_TO_GL_EMOJI = {
   eyes = "eyes",
 }
 
-local translate_gl_award = make_translator({
-  id = "id",
-  node_id = const(""),
-  user = computed(function(a)
-    return translate_gl_user(a.user or {})
-  end),
-  content = computed(function(a)
-    return GL_EMOJI_TO_CONTENT[a.name] or a.name
-  end),
-  created_at = field("created_at", { default = "2020-01-01T00:00:00Z" }),
-})
+local function translate_gl_award(a)
+  if not a then
+    return {}
+  end
+  local user = translate_gl_user(a.user or {})
+  return {
+    id = a.id,
+    node_id = "",
+    user = user,
+    content = GL_EMOJI_TO_CONTENT[a.name] or a.name,
+    created_at = a.created_at or "2020-01-01T00:00:00Z",
+  }
+end
+
+local function translate_gl_awards(awards)
+  return translate_list(translate_gl_award, awards)
+end
 
 -- ---------------------------------------------------------------------------
 -- Issues capability module
@@ -1237,7 +1218,7 @@ issues_cap.list = function(owner, repo_name)
   if not items then
     return nil, nil, err
   end
-  return translate_list(translate_gl_issue, items), hdrs, nil
+  return translate_gl_issues(items), hdrs, nil
 end
 
 -- get: fetch a single issue by iid.
@@ -1315,7 +1296,7 @@ issues_cap.list_comments = function(owner, repo_name, issue_number)
   if not items then
     return nil, nil, err
   end
-  return translate_list(translate_gl_note, items), hdrs, nil
+  return translate_gl_notes(items), hdrs, nil
 end
 
 -- create_comment: add a note (comment) to an issue.
@@ -1374,7 +1355,7 @@ labels_cap.list_repo = function(owner, repo_name)
   if not items then
     return nil, nil, err
   end
-  return translate_list(translate_gl_label, items), hdrs, nil
+  return translate_gl_labels(items), hdrs, nil
 end
 
 -- create_repo: create a label in a repository.  body is raw GitHub-format JSON.
@@ -1566,7 +1547,7 @@ milestones_cap.list = function(owner, repo_name)
   if not items then
     return nil, nil, err
   end
-  return translate_list(translate_gl_milestone, items), hdrs, nil
+  return translate_gl_milestones(items), hdrs, nil
 end
 
 -- create: create a milestone.  body is raw GitHub-format JSON string.
@@ -1675,7 +1656,7 @@ reactions_cap.list_issue = function(owner, repo_name, issue_number)
   if not items then
     return nil, nil, err
   end
-  return translate_list(translate_gl_award, items), hdrs, nil
+  return translate_gl_awards(items), hdrs, nil
 end
 
 -- create_issue: add a reaction to an issue.  body is raw GitHub-format JSON string.
@@ -1731,15 +1712,20 @@ end
 local contents_cap = {}
 
 -- translate_gl_file: map a GitLab file metadata object to GitHub content shape.
-local translate_gl_file = make_translator({
-  name = "file_name",
-  path = "file_path",
-  sha = "blob_id",
-  size = "size",
-  type = const("file"),
-  encoding = "encoding",
-  content = "content",
-})
+local function translate_gl_file(f)
+  if not f then
+    return {}
+  end
+  return {
+    name = f.file_name,
+    path = f.file_path,
+    sha = f.blob_id,
+    size = f.size,
+    type = "file",
+    encoding = f.encoding,
+    content = f.content,
+  }
+end
 
 -- get_readme: fetch the root README.md for a repository.
 -- Returns translated file shape or (nil, err).
@@ -1903,20 +1889,23 @@ end
 local collaborators_cap = {}
 
 -- translate_gl_collaborator: map a GitLab project member object to GitHub collaborator shape.
-local translate_gl_collaborator = make_translator({
-  login = "username",
-  id = "id",
-  avatar_url = field("avatar_url", { default = "" }),
-  type = const("User"),
-  permissions = computed(function(m)
-    local al = m.access_level or 0
-    return {
+local function translate_gl_collaborator(m)
+  if not m then
+    return {}
+  end
+  local al = m.access_level or 0
+  return {
+    login = m.username,
+    id = m.id,
+    avatar_url = m.avatar_url or "",
+    type = "User",
+    permissions = {
       admin = al >= 50,
       push = al >= 30,
       pull = al >= 10,
-    }
-  end),
-})
+    },
+  }
+end
 
 -- resolve_uid: look up a GitLab user ID by username.
 -- Returns (uid, nil) or (nil, err).
@@ -2317,7 +2306,7 @@ pulls_cap.list_reviews = function(owner, repo_name, pull_number)
   if not raw then
     return nil, err
   end
-  return gl_approvals_to_reviews(raw), nil
+  return translate_gl_approvals_to_reviews(raw), nil
 end
 
 -- get_review: get a single review by 1-based index id.
@@ -4063,9 +4052,7 @@ end)
 -- GET /repos/{owner}/{repo}/assignees  (users eligible for assignment)
 b:rest(
   "get_repo_assignees",
-  proxy_handler_paged(function(members)
-    return translate_list(translate_gl_member, members)
-  end, function(o, r)
+  proxy_handler_paged(translate_gl_members, function(o, r)
     return append_page_params(base() .. "/projects/" .. project_id(o, r) .. "/members/all", PAGES)
   end)
 )
@@ -4436,42 +4423,38 @@ end)
 local packages_cap = {}
 
 -- Helper: translate a single GitLab package entry to GitHub Packages format.
-local translate_gl_package = make_translator({
-  id = "id",
-  name = field("name", { default = "" }),
-  package_type = field("package_type", { default = "" }),
-  url = const(""),
-  html_url = computed(function(p)
-    return p._links and p._links.web_path or ""
-  end),
-  version_count = computed(function(_p, version_count)
-    return version_count or 1
-  end),
-  visibility = const("public"),
-  owner = const(nil),
-  repository = const(nil),
-  created_at = "created_at",
-  updated_at = "created_at",
-})
+local function translate_gl_package(p, version_count)
+  return {
+    id = p.id,
+    name = p.name or "",
+    package_type = p.package_type or "",
+    url = "",
+    html_url = p._links and p._links.web_path or "",
+    version_count = version_count or 1,
+    visibility = "public",
+    owner = nil,
+    repository = nil,
+    created_at = p.created_at,
+    updated_at = p.created_at,
+  }
+end
 
 -- Helper: translate a single GitLab package entry to GitHub package version format.
-local translate_gl_package_version = make_translator({
-  id = "id",
-  name = field("version", { default = "" }),
-  url = const(""),
-  package_html_url = const(""),
-  html_url = computed(function(p)
-    return p._links and p._links.web_path or ""
-  end),
-  license = const(""),
-  description = const(""),
-  created_at = "created_at",
-  updated_at = "created_at",
-  deleted_at = const(nil),
-  metadata = computed(function(p)
-    return { package_type = p.package_type or "" }
-  end),
-})
+local function translate_gl_package_version(p)
+  return {
+    id = p.id,
+    name = p.version or "",
+    url = "",
+    package_html_url = "",
+    html_url = p._links and p._links.web_path or "",
+    license = "",
+    description = "",
+    created_at = p.created_at,
+    updated_at = p.created_at,
+    deleted_at = nil,
+    metadata = { package_type = p.package_type or "" },
+  }
+end
 
 -- list_org: paginated list of packages for an org (GitLab group), optionally
 -- filtered by package_type.  pkg_type may be "" to list all types.
@@ -4764,44 +4747,33 @@ local GH_STATE_TO_GL_ACTION = {
   dismissed = "dismiss",
 }
 
-local function gl_vulnerability_location(v)
+local function translate_gl_vulnerability(v)
+  if not v then
+    return {}
+  end
   local loc = v.location or {}
   local dep = loc.dependency or {}
   local pkg = dep.package or {}
-  local package = { ecosystem = "unknown", name = pkg.name or "" }
-  return loc, dep, package
-end
-
-local function gl_vulnerability_cve(v)
   local identifiers = v.identifiers or {}
+  local cve_id = nil
   for _, id in ipairs(identifiers) do
     if id.type == "cve" then
-      return id.value
+      cve_id = id.value
+      break
     end
   end
-  return nil
-end
-
-local translate_gl_vulnerability = make_translator({
-  number = computed(function(v)
-    return v.id or 0
-  end),
-  state = computed(function(v)
-    return GL_VULN_STATE_TO_GH[v.state or ""] or "open"
-  end),
-  dependency = computed(function(v)
-    local loc, _, package = gl_vulnerability_location(v)
-    return {
+  local package = { ecosystem = "unknown", name = pkg.name or "" }
+  return {
+    number = v.id or 0,
+    state = GL_VULN_STATE_TO_GH[v.state or ""] or "open",
+    dependency = {
       package = package,
       manifest_path = loc.file or "",
       scope = "runtime",
-    }
-  end),
-  security_advisory = computed(function(v)
-    local identifiers = v.identifiers or {}
-    return {
+    },
+    security_advisory = {
       ghsa_id = "",
-      cve_id = gl_vulnerability_cve(v),
+      cve_id = cve_id,
       summary = v.title or "",
       description = v.description or "",
       severity = v.severity or "unknown",
@@ -4811,28 +4783,25 @@ local translate_gl_vulnerability = make_translator({
       updated_at = v.updated_at or "",
       withdrawn_at = nil,
       vulnerabilities = {},
-    }
-  end),
-  security_vulnerability = computed(function(v)
-    local _, dep, package = gl_vulnerability_location(v)
-    return {
+    },
+    security_vulnerability = {
       package = package,
       severity = v.severity or "unknown",
       vulnerable_version_range = dep.version and ("= " .. dep.version) or "",
       first_patched_version = nil,
-    }
-  end),
-  url = const(""),
-  html_url = const(""),
-  created_at = field("created_at", { default = "" }),
-  updated_at = field("updated_at", { default = "" }),
-  dismissed_at = "dismissed_at",
-  dismissed_by = const(nil),
-  dismissed_reason = "dismissed_reason",
-  dismissed_comment = const(nil),
-  fixed_at = const(nil),
-  auto_dismissed_at = const(nil),
-})
+    },
+    url = "",
+    html_url = "",
+    created_at = v.created_at or "",
+    updated_at = v.updated_at or "",
+    dismissed_at = v.dismissed_at,
+    dismissed_by = nil,
+    dismissed_reason = v.dismissed_reason,
+    dismissed_comment = nil,
+    fixed_at = nil,
+    auto_dismissed_at = nil,
+  }
+end
 
 -- ---------------------------------------------------------------------------
 -- Security capability module
@@ -4866,52 +4835,50 @@ local GH_SECRET_STATE_TO_GL_ACTION = {
   resolved = "resolve",
 }
 
-local function gl_secret_state(v)
+local function translate_gl_secret_alert(v)
+  if not v then
+    return {}
+  end
   local state = GL_VULN_STATE_TO_GH[v.state or ""] or "open"
   if v.state == "resolved" then
     state = "resolved"
   end
-  return state
-end
-
-local function gl_secret_type(v)
   local identifiers = v.identifiers or {}
+  local secret_type = ""
   for _, id in ipairs(identifiers) do
     if id.type == "secret_detection" then
-      return id.value or ""
+      secret_type = id.value or ""
+      break
     end
   end
   local scanner = v.scanner or {}
-  return scanner.id or ""
+  if secret_type == "" then
+    secret_type = scanner.id or ""
+  end
+  return {
+    number = v.id or 0,
+    created_at = v.created_at or "",
+    updated_at = v.updated_at or "",
+    url = "",
+    html_url = "",
+    locations_url = "",
+    state = state,
+    resolution = GL_SECRET_DISMISS_REASON_TO_GH[v.dismissed_reason or ""],
+    resolved_by = nil,
+    resolved_at = v.dismissed_at,
+    resolution_comment = nil,
+    secret_type = secret_type,
+    secret_type_display_name = v.title or "",
+    secret = "",
+    push_protection_bypassed = nil,
+    push_protection_bypassed_by = nil,
+    push_protection_bypassed_at = nil,
+    validity = "unknown",
+    publicly_leaked = false,
+    multi_repo = false,
+    auto_dismissed_at = nil,
+  }
 end
-
-local translate_gl_secret_alert = make_translator({
-  number = computed(function(v)
-    return v.id or 0
-  end),
-  created_at = field("created_at", { default = "" }),
-  updated_at = field("updated_at", { default = "" }),
-  url = const(""),
-  html_url = const(""),
-  locations_url = const(""),
-  state = computed(gl_secret_state),
-  resolution = computed(function(v)
-    return GL_SECRET_DISMISS_REASON_TO_GH[v.dismissed_reason or ""]
-  end),
-  resolved_by = const(nil),
-  resolved_at = "dismissed_at",
-  resolution_comment = const(nil),
-  secret_type = computed(gl_secret_type),
-  secret_type_display_name = field("title", { default = "" }),
-  secret = const(""),
-  push_protection_bypassed = const(nil),
-  push_protection_bypassed_by = const(nil),
-  push_protection_bypassed_at = const(nil),
-  validity = const("unknown"),
-  publicly_leaked = const(false),
-  multi_repo = const(false),
-  auto_dismissed_at = const(nil),
-})
 
 -- list_repo_dependabot: paginated list of dependabot (vulnerability) alerts for a repo.
 security_cap.list_repo_dependabot = function(owner, repo_name)
@@ -5074,19 +5041,25 @@ end)
 
 local gists_cap = {}
 
-local translate_gl_snippet_author = make_translator({
-  login = field("username", { default = "" }),
-  id = computed(function(a)
-    return a.id or 0
-  end),
-  node_id = const(""),
-  avatar_url = field("avatar_url", { default = "" }),
-  html_url = field("web_url", { default = "" }),
-  type = const("User"),
-  site_admin = const(false),
-})
+local function translate_gl_snippet_author(a)
+  if not a then
+    return {}
+  end
+  return {
+    login = a.username or "",
+    id = a.id or 0,
+    node_id = "",
+    avatar_url = a.avatar_url or "",
+    html_url = a.web_url or "",
+    type = "User",
+    site_admin = false,
+  }
+end
 
-local function gl_snippet_files(s)
+local function translate_gl_snippet(s)
+  if not s then
+    return {}
+  end
   local files = {}
   for _, f in ipairs(s.files or {}) do
     local name = f.path or ""
@@ -5096,37 +5069,34 @@ local function gl_snippet_files(s)
   if not next(files) and s.file_name then
     files[s.file_name] = { filename = s.file_name, raw_url = s.raw_url or "" }
   end
-  return files
+  return {
+    id = tostring(s.id or ""),
+    description = s.title or "",
+    public = s.visibility == "public",
+    owner = translate_gl_snippet_author(s.author),
+    files = files,
+    created_at = s.created_at,
+    updated_at = s.updated_at,
+    html_url = s.web_url or "",
+    url = "",
+    node_id = "",
+  }
 end
 
-local translate_gl_snippet = make_translator({
-  id = computed(function(s)
-    return tostring(s.id or "")
-  end),
-  description = field("title", { default = "" }),
-  public = computed(function(s)
-    return s.visibility == "public"
-  end),
-  owner = nested(translate_gl_snippet_author, "author"),
-  files = computed(gl_snippet_files),
-  created_at = "created_at",
-  updated_at = "updated_at",
-  html_url = field("web_url", { default = "" }),
-  url = const(""),
-  node_id = const(""),
-})
-
-local translate_gl_snippet_note = make_translator({
-  id = computed(function(n)
-    return n.id or 0
-  end),
-  body = field("body", { default = "" }),
-  user = nested(translate_gl_snippet_author, "author"),
-  created_at = "created_at",
-  updated_at = "updated_at",
-  url = const(""),
-  node_id = const(""),
-})
+local function translate_gl_snippet_note(n)
+  if not n then
+    return {}
+  end
+  return {
+    id = n.id or 0,
+    body = n.body or "",
+    user = translate_gl_snippet_author(n.author),
+    created_at = n.created_at,
+    updated_at = n.updated_at,
+    url = "",
+    node_id = "",
+  }
+end
 
 -- Helper: convert a GitHub gist create/update request body to GitLab snippet format.
 local function gl_snippet_req(req)
@@ -5898,7 +5868,7 @@ b:graphql("PullRequest.reviews", function(parent, args, ctx)
     graphql_error(ctx, err)
     return nil
   end
-  local reviews = gl_approvals_to_reviews(data)
+  local reviews = translate_gl_approvals_to_reviews(data)
   local nodes = {}
   for _, r in ipairs(reviews) do
     nodes[#nodes + 1] = graphql_translate_review(r, owner, repo)
@@ -6042,38 +6012,24 @@ end)
 
 -- Translate a GitLab webhook project object to GitHub repo format.
 -- Webhook project: namespace is a bare string; path_with_namespace gives owner/repo.
-local function gl_webhook_project_parts(p)
+local function translate_gl_webhook_project(p)
+  if not p then
+    return {}
+  end
   local pns = p.path_with_namespace or ""
   local slash = pns:find("/", 1, true)
   local owner_login = slash and pns:sub(1, slash - 1) or pns
   local repo_name = slash and pns:sub(slash + 1) or (p.name or pns)
-  return pns, owner_login, repo_name
-end
-
--- visibility_level: 0=private, 10=internal, 20=public (older versions)
--- visibility: "private"/"internal"/"public" (newer versions)
-local function gl_webhook_project_visibility(p)
+  -- visibility_level: 0=private, 10=internal, 20=public (older versions)
+  -- visibility: "private"/"internal"/"public" (newer versions)
   local vis = p.visibility_level or (p.visibility == "public" and 20 or 0)
-  return vis
-end
-
-local translate_gl_webhook_project = make_translator({
-  id = "id",
-  node_id = const(""),
-  name = computed(function(p)
-    local _, _, repo_name = gl_webhook_project_parts(p)
-    return repo_name
-  end),
-  full_name = computed(function(p)
-    local pns = gl_webhook_project_parts(p)
-    return pns
-  end),
-  private = computed(function(p)
-    return gl_webhook_project_visibility(p) ~= 20
-  end),
-  owner = computed(function(p)
-    local _, owner_login = gl_webhook_project_parts(p)
-    return {
+  return {
+    id = p.id,
+    node_id = "",
+    name = repo_name,
+    full_name = pns,
+    private = vis ~= 20,
+    owner = {
       login = owner_login,
       id = 0,
       node_id = "",
@@ -6081,24 +6037,18 @@ local translate_gl_webhook_project = make_translator({
       url = "",
       html_url = "",
       type = "User",
-    }
-  end),
-  html_url = computed(function(p)
-    return p.web_url or p.homepage or ""
-  end),
-  description = field("description", { default = "" }),
-  fork = const(false),
-  url = computed(function(p)
-    return p.web_url or p.homepage or ""
-  end),
-  ssh_url = field("git_ssh_url", { default = "" }),
-  clone_url = field("git_http_url", { default = "" }),
-  homepage = field("homepage", { default = "" }),
-  default_branch = field("default_branch", { default = "" }),
-  visibility = computed(function(p)
-    return gl_webhook_project_visibility(p) == 20 and "public" or "private"
-  end),
-})
+    },
+    html_url = p.web_url or p.homepage or "",
+    description = p.description or "",
+    fork = false,
+    url = p.web_url or p.homepage or "",
+    ssh_url = p.git_ssh_url or "",
+    clone_url = p.git_http_url or "",
+    homepage = p.homepage or "",
+    default_branch = p.default_branch or "",
+    visibility = vis == 20 and "public" or "private",
+  }
+end
 
 -- Build a normalized pull_request table from a Merge Request Hook payload.
 -- object_attributes carries the MR data; labels, assignees, and reviewers are
@@ -6275,22 +6225,22 @@ local GL_RELEASE_ACTIONS = {
 -- level of the payload (not under object_attributes like most other events).
 -- GitLab uses "tag" instead of "tag_name"; url instead of html_url; and
 -- "released_at" instead of "published_at".
-local translate_gl_webhook_release = make_translator({
-  id = "id",
-  tag_name = field("tag", { default = "" }),
-  name = "name",
-  body = "description",
-  draft = const(false),
-  prerelease = const(false),
-  html_url = field("url", { default = "" }),
-  tarball_url = const(nil),
-  zipball_url = const(nil),
-  author = const(nil), -- GitLab Release Hook does not include the triggering user
-  created_at = field("created_at", { default = "" }),
-  published_at = computed(function(payload)
-    return payload.released_at or payload.created_at
-  end),
-})
+local function translate_gl_webhook_release(payload)
+  return {
+    id = payload.id,
+    tag_name = payload.tag or "",
+    name = payload.name,
+    body = payload.description,
+    draft = false,
+    prerelease = false,
+    html_url = payload.url or "",
+    tarball_url = nil,
+    zipball_url = nil,
+    author = nil, -- GitLab Release Hook does not include the triggering user
+    created_at = payload.created_at or "",
+    published_at = payload.released_at or payload.created_at,
+  }
+end
 
 -- issues: opened, closed, reopened, edited.
 -- Registered for X-Gitlab-Event: Issue Hook.
@@ -6767,46 +6717,47 @@ local GL_ZERO_SHA = "0000000000000000000000000000000000000000"
 
 -- Translate a push-event commit object (different from the REST API commit
 -- shape: no committer field; author is {name, email}).
-local function gl_push_commit_author(c)
+local function translate_gl_push_commit(c)
+  if not c then
+    return {}
+  end
   local author = c.author or {}
   return {
-    name = author.name or "",
-    email = author.email or "",
-    username = "",
+    id = c.id or "",
+    message = c.message or "",
+    timestamp = c.timestamp or "",
+    url = c.url or "",
+    author = {
+      name = author.name or "",
+      email = author.email or "",
+      username = "",
+    },
+    committer = {
+      name = author.name or "",
+      email = author.email or "",
+      username = "",
+    },
+    added = c.added or {},
+    removed = c.removed or {},
+    modified = c.modified or {},
   }
 end
-
-local translate_gl_push_commit = make_translator({
-  id = field("id", { default = "" }),
-  message = field("message", { default = "" }),
-  timestamp = field("timestamp", { default = "" }),
-  url = field("url", { default = "" }),
-  author = computed(gl_push_commit_author),
-  committer = computed(gl_push_commit_author),
-  added = computed(function(c)
-    return c.added or {}
-  end),
-  removed = computed(function(c)
-    return c.removed or {}
-  end),
-  modified = computed(function(c)
-    return c.modified or {}
-  end),
-})
 
 -- Build a GitHub-style sender table from the top-level push payload user
 -- fields.  Push Hook payloads do not have a nested `user` object — user info
 -- sits directly at the root as user_id / user_username / user_name /
 -- user_avatar.
-local gl_push_sender = make_translator({
-  login = field("user_username", { default = "" }),
-  id = field("user_id", { default = 0 }),
-  node_id = const(""),
-  avatar_url = field("user_avatar", { default = "" }),
-  html_url = const(""),
-  type = const("User"),
-  site_admin = const(false),
-})
+local function gl_push_sender(payload)
+  return {
+    login = payload.user_username or "",
+    id = payload.user_id or 0,
+    node_id = "",
+    avatar_url = payload.user_avatar or "",
+    html_url = "",
+    type = "User",
+    site_admin = false,
+  }
+end
 
 -- Push Hook: branch push — also handles branch creation (before = zero SHA)
 -- and branch deletion (after = zero SHA) by routing them to the appropriate
@@ -7001,26 +6952,26 @@ local GL_DEPLOYMENT_STATE = {
 
 -- translate_gl_webhook_deployment: build a GitHub-shaped deployment object from a
 -- GitLab Deployment Hook payload.  Used in both deployment and deployment_status events.
-local translate_gl_webhook_deployment = make_translator({
-  id = field("deployment_id", { default = 0 }),
-  node_id = const(""),
-  sha = field("short_sha", { default = "" }),
-  ref = field("ref", { default = "" }),
-  task = const("deploy"),
-  environment = field("environment", { default = "" }),
-  original_environment = const(""),
-  description = const(nil),
-  payload = computed(function()
-    return {}
-  end),
-  creator = nested(translate_gl_user, "user"),
-  created_at = field("status_changed_at", { default = "" }),
-  updated_at = field("status_changed_at", { default = "" }),
-  statuses_url = const(""),
-  repository_url = const(""),
-  production_environment = const(false),
-  transient_environment = const(false),
-})
+local function translate_gl_webhook_deployment(payload)
+  return {
+    id = payload.deployment_id or 0,
+    node_id = "",
+    sha = payload.short_sha or "",
+    ref = payload.ref or "",
+    task = "deploy",
+    environment = payload.environment or "",
+    original_environment = "",
+    description = nil,
+    payload = {},
+    creator = translate_gl_user(payload.user),
+    created_at = payload.status_changed_at or "",
+    updated_at = payload.status_changed_at or "",
+    statuses_url = "",
+    repository_url = "",
+    production_environment = false,
+    transient_environment = false,
+  }
+end
 
 -- Deployment Hook: maps GitLab deployment lifecycle events to GitHub deployment
 -- and deployment_status events.  GitLab fires one event per status transition.
@@ -7160,28 +7111,19 @@ local function gl_vulnerability_action(event, oa, payload)
   return "created"
 end
 
-local function gl_vulnerability_alert_location(oa)
+local function translate_gl_vulnerability_alert(oa)
   local location = oa.location or {}
-  return location
-end
-
-local translate_gl_vulnerability_alert = make_translator({
-  number = field("id", { default = 0 }),
-  id = "id",
-  node_id = const(""),
-  state = computed(function(oa)
-    return oa.state or oa.status or ""
-  end),
-  html_url = computed(function(oa)
-    return oa.url or oa.web_url or ""
-  end),
-  created_at = "created_at",
-  updated_at = "updated_at",
-  fixed_at = "resolved_at",
-  dismissed_at = "dismissed_at",
-  security_vulnerability = computed(function(oa)
-    local location = gl_vulnerability_alert_location(oa)
-    return {
+  return {
+    number = oa.id or 0,
+    id = oa.id,
+    node_id = "",
+    state = oa.state or oa.status or "",
+    html_url = oa.url or oa.web_url or "",
+    created_at = oa.created_at,
+    updated_at = oa.updated_at,
+    fixed_at = oa.resolved_at,
+    dismissed_at = oa.dismissed_at,
+    security_vulnerability = {
       package = location.dependency and {
         ecosystem = location.dependency.package_manager or "",
         name = location.dependency.package_name or "",
@@ -7195,30 +7137,23 @@ local translate_gl_vulnerability_alert = make_translator({
         summary = oa.title or oa.name or "",
         description = oa.description or "",
       },
-    }
-  end),
-  rule = computed(function(oa)
-    return {
+    },
+    rule = {
       id = oa.uuid or oa.id or "",
       name = oa.title or oa.name or "",
       description = oa.description or "",
       severity = oa.severity or "",
-    }
-  end),
-  tool = computed(function(oa)
-    return {
+    },
+    tool = {
       name = (oa.scanner and oa.scanner.name) or oa.scanner_external_id or "",
       guid = oa.scanner_external_id or "",
-    }
-  end),
-  secret_type = computed(function(oa)
-    return oa.report_type == "secret_detection" and (oa.title or oa.name or "") or nil
-  end),
-  secret_type_display_name = computed(function(oa)
-    return oa.report_type == "secret_detection" and (oa.title or oa.name or "") or nil
-  end),
-  location = computed(gl_vulnerability_alert_location),
-})
+    },
+    secret_type = oa.report_type == "secret_detection" and (oa.title or oa.name or "") or nil,
+    secret_type_display_name = oa.report_type == "secret_detection" and (oa.title or oa.name or "")
+      or nil,
+    location = location,
+  }
+end
 
 -- Vulnerability Hook: GitLab security findings map to the closest GitHub
 -- security alert family based on report_type/scanner metadata.
@@ -7242,60 +7177,33 @@ b:webhook("Vulnerability Hook", function(payload)
   })
 end)
 
-local function gl_resource_token_attributes(payload)
+local function translate_gl_resource_token(payload)
   local oa = payload.object_attributes or {}
-  return oa
+  return {
+    id = oa.id,
+    node_id = "",
+    token_name = oa.name or payload.name or "",
+    token_type = payload.object_kind or "",
+    expires_at = oa.expires_at or payload.expires_at,
+    last_used_at = oa.last_used_at or payload.last_used_at,
+    active = oa.active,
+    scopes = oa.scopes or {},
+  }
 end
 
-local translate_gl_resource_token = make_translator({
-  id = computed(function(payload)
-    return gl_resource_token_attributes(payload).id
-  end),
-  node_id = const(""),
-  token_name = computed(function(payload)
-    local oa = gl_resource_token_attributes(payload)
-    return oa.name or payload.name or ""
-  end),
-  token_type = field("object_kind", { default = "" }),
-  expires_at = computed(function(payload)
-    local oa = gl_resource_token_attributes(payload)
-    return oa.expires_at or payload.expires_at
-  end),
-  last_used_at = computed(function(payload)
-    local oa = gl_resource_token_attributes(payload)
-    return oa.last_used_at or payload.last_used_at
-  end),
-  active = computed(function(payload)
-    return gl_resource_token_attributes(payload).active
-  end),
-  scopes = computed(function(payload)
-    return gl_resource_token_attributes(payload).scopes or {}
-  end),
-})
-
-local translate_gl_resource_token_owner = make_translator({
-  login = computed(function(payload)
-    local group = payload.group or {}
-    return group.path or group.full_path or group.name or ""
-  end),
-  id = computed(function(payload)
-    return (payload.group or {}).id or 0
-  end),
-  node_id = const(""),
-  description = computed(function(payload)
-    return (payload.group or {}).description or ""
-  end),
-  url = computed(function(payload)
-    return (payload.group or {}).web_url or ""
-  end),
-  html_url = computed(function(payload)
-    return (payload.group or {}).web_url or ""
-  end),
-  avatar_url = computed(function(payload)
-    return (payload.group or {}).avatar_url or ""
-  end),
-  type = const("Organization"),
-})
+local function translate_gl_resource_token_owner(payload)
+  local group = payload.group or {}
+  return {
+    login = group.path or group.full_path or group.name or "",
+    id = group.id or 0,
+    node_id = "",
+    description = group.description or "",
+    url = group.web_url or "",
+    html_url = group.web_url or "",
+    avatar_url = group.avatar_url or "",
+    type = "Organization",
+  }
+end
 
 -- Resource Access/Deploy Token Hooks: GitLab emits expiry notifications for
 -- project and group tokens. GitHub's closest normalized security-token event
@@ -7364,31 +7272,19 @@ local GL_SYSTEM_HOOK_MEMBER_ACTIONS = {
 
 -- Build a minimal repository object from a GitLab system hook payload.
 -- System hooks do not carry the full project struct, only path/visibility info.
-local function gl_system_hook_repo_parts(p)
+local function translate_gl_system_hook_repo(p)
   local pns = p.path_with_namespace or ""
   local slash = pns:find("/", 1, true)
   local owner_login = slash and pns:sub(1, slash - 1) or pns
   local repo_name = p.name or (slash and pns:sub(slash + 1) or pns)
-  return pns, owner_login, repo_name
-end
-
-local translate_gl_system_hook_repo = make_translator({
-  id = field("project_id", { default = 0 }),
-  node_id = const(""),
-  name = computed(function(p)
-    local _, _, repo_name = gl_system_hook_repo_parts(p)
-    return repo_name
-  end),
-  full_name = computed(function(p)
-    local pns = gl_system_hook_repo_parts(p)
-    return pns
-  end),
-  private = computed(function(p)
-    return (p.project_visibility or "") ~= "public"
-  end),
-  owner = computed(function(p)
-    local _, owner_login = gl_system_hook_repo_parts(p)
-    return {
+  local vis = p.project_visibility or ""
+  return {
+    id = p.project_id or 0,
+    node_id = "",
+    name = repo_name,
+    full_name = pns,
+    private = vis ~= "public",
+    owner = {
       login = owner_login,
       id = 0,
       node_id = "",
@@ -7396,20 +7292,17 @@ local translate_gl_system_hook_repo = make_translator({
       url = "",
       html_url = "",
       type = "User",
-    }
-  end),
-  html_url = const(""),
-  description = const(""),
-  fork = const(false),
-  url = const(""),
-  default_branch = const(""),
-  visibility = computed(function(p)
-    local vis = p.project_visibility or ""
-    return vis ~= "" and vis or "private"
-  end),
-})
+    },
+    html_url = "",
+    description = "",
+    fork = false,
+    url = "",
+    default_branch = "",
+    visibility = vis ~= "" and vis or "private",
+  }
+end
 
-local function gl_group_membership_event(payload, membership_action)
+local function translate_gl_group_membership_event(payload, membership_action)
   local org = {
     login = payload.group_path or "",
     id = payload.group_id or 0,
@@ -7471,7 +7364,7 @@ local function gl_group_membership_event(payload, membership_action)
   })
 end
 
-local function gl_project_member_event(payload, action)
+local function translate_gl_project_member_event(payload, action)
   local pns = payload.project_path_with_namespace or ""
   local slash = pns:find("/", 1, true)
   local owner_login = slash and pns:sub(1, slash - 1) or pns
@@ -7533,7 +7426,7 @@ local function gl_project_member_event(payload, action)
   })
 end
 
-local function gl_system_event(payload)
+local function translate_gl_system_event(payload)
   local event_name = payload.event_name or ""
 
   -- ── Repository / project events ────────────────────────────────────────────
@@ -7642,22 +7535,22 @@ local function gl_system_event(payload)
   local membership_action = GL_SYSTEM_HOOK_MEMBERSHIP_ACTIONS[event_name]
 
   if membership_action then
-    return gl_group_membership_event(payload, membership_action)
+    return translate_gl_group_membership_event(payload, membership_action)
   end
 
   -- ── Project member / member events ────────────────────────────────────────
   local member_action = GL_SYSTEM_HOOK_MEMBER_ACTIONS[event_name]
 
   if member_action then
-    return gl_project_member_event(payload, member_action)
+    return translate_gl_project_member_event(payload, member_action)
   end
 
   return nil, "Unhandled system hook event: " .. event_name
 end
 
-b:webhook("System Hook", gl_system_event)
-b:webhook("Project Hook", gl_system_event)
-b:webhook("Subgroup Hook", gl_system_event)
+b:webhook("System Hook", translate_gl_system_event)
+b:webhook("Project Hook", translate_gl_system_event)
+b:webhook("Subgroup Hook", translate_gl_system_event)
 
 -- gollum: wiki page created or edited.
 -- GitLab sends X-Gitlab-Event: Wiki Page Hook with object_kind = "wiki_page".
@@ -7704,11 +7597,11 @@ b:webhook("Member Hook", function(payload)
   local event_name = payload.event_name or ""
   local membership_action = GL_SYSTEM_HOOK_MEMBERSHIP_ACTIONS[event_name]
   if membership_action then
-    return gl_group_membership_event(payload, membership_action)
+    return translate_gl_group_membership_event(payload, membership_action)
   end
 
   local action = GL_SYSTEM_HOOK_MEMBER_ACTIONS[event_name] or payload.action or ""
-  return gl_project_member_event(payload, action)
+  return translate_gl_project_member_event(payload, action)
 end)
 
 local GL_ACTIONLESS_NORMALIZED_EVENTS = {

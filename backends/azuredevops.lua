@@ -18,122 +18,109 @@ local function ado_url(path)
   return path .. (path:find("?") and "&" or "?") .. API_VER
 end
 
-local function ado_repo_default_branch(r)
-  return r.defaultBranch and r.defaultBranch:match("refs/heads/(.+)") or "main"
-end
-
-local function ado_repo_owner(r)
+-- Map an Azure DevOps repository object to GitHub format.
+-- ADO: { id, name, remoteUrl, defaultBranch, isDisabled, isPrivate, size, project }
+local function translate_ado_repo(r)
+  if not r then
+    return {}
+  end
   local proj = r.project or {}
+  local branch = r.defaultBranch and r.defaultBranch:match("refs/heads/(.+)") or "main"
   return {
-    login = proj.name or "",
     id = 0,
-    node_id = proj.id or "",
-    avatar_url = "",
+    node_id = r.id or "",
+    name = r.name or "",
+    full_name = (proj.name or "") .. "/" .. (r.name or ""),
+    private = r.isPrivate or false,
+    owner = {
+      login = proj.name or "",
+      id = 0,
+      node_id = proj.id or "",
+      avatar_url = "",
+      url = "",
+      html_url = "",
+      type = "Organization",
+    },
+    html_url = r.remoteUrl or "",
+    description = r.project and r.project.description or nil,
+    fork = false,
     url = "",
-    html_url = "",
-    type = "Organization",
+    clone_url = r.remoteUrl or "",
+    homepage = "",
+    size = r.size or 0,
+    stargazers_count = 0,
+    watchers_count = 0,
+    language = nil,
+    has_issues = true,
+    has_wiki = false,
+    forks_count = 0,
+    archived = false,
+    disabled = r.isDisabled or false,
+    open_issues_count = 0,
+    default_branch = branch,
+    visibility = (r.isPrivate or false) and "private" or "public",
+    forks = 0,
+    open_issues = 0,
+    watchers = 0,
+    created_at = nil,
+    updated_at = nil,
+    pushed_at = nil,
   }
 end
 
--- Map an Azure DevOps repository object to GitHub format.
--- ADO: { id, name, remoteUrl, defaultBranch, isDisabled, isPrivate, size, project }
-local translate_ado_repo = make_translator({
-  id = const(0),
-  node_id = field("id", { default = "" }),
-  name = field("name", { default = "" }),
-  full_name = computed(function(r)
-    return ((r.project or {}).name or "") .. "/" .. (r.name or "")
-  end),
-  private = field("isPrivate", { default = false }),
-  owner = computed(ado_repo_owner),
-  html_url = field("remoteUrl", { default = "" }),
-  description = computed(function(r)
-    return r.project and r.project.description or nil
-  end),
-  fork = const(false),
-  url = const(""),
-  clone_url = field("remoteUrl", { default = "" }),
-  homepage = const(""),
-  size = field("size", { default = 0 }),
-  stargazers_count = const(0),
-  watchers_count = const(0),
-  language = const(nil),
-  has_issues = const(true),
-  has_wiki = const(false),
-  forks_count = const(0),
-  archived = const(false),
-  disabled = field("isDisabled", { default = false }),
-  open_issues_count = const(0),
-  default_branch = computed(ado_repo_default_branch),
-  visibility = computed(function(r)
-    return (r.isPrivate or false) and "private" or "public"
-  end),
-  forks = const(0),
-  open_issues = const(0),
-  watchers = const(0),
-  created_at = const(nil),
-  updated_at = const(nil),
-  pushed_at = const(nil),
-})
-
 -- ADO branch ref: { name, objectId, creator }
-local translate_ado_branch = make_translator({
-  name = computed(function(b)
-    return b.name and b.name:match("refs/heads/(.+)") or (b.name or "")
-  end),
-  commit = computed(function(b)
-    return { sha = b.objectId or "", url = "" }
-  end),
-  protected = const(false),
-})
-
-local function ado_signature_user(u)
-  u = u or {}
-  return { name = u.name or "", email = u.email or "", date = u.date or "" }
-end
-
-local function ado_commit_user(u)
-  u = u or {}
-  return { login = u.name or "", id = 0, avatar_url = "" }
+local function translate_ado_branch(b)
+  if not b then
+    return {}
+  end
+  local name = b.name and b.name:match("refs/heads/(.+)") or (b.name or "")
+  return { name = name, commit = { sha = b.objectId or "", url = "" }, protected = false }
 end
 
 -- ADO commit: { commitId, comment, author, committer }
-local translate_ado_commit = make_translator({
-  sha = field("commitId", { default = "" }),
-  commit = computed(function(c)
-    return {
+local function translate_ado_commit(c)
+  if not c then
+    return {}
+  end
+  local author = c.author or {}
+  local committer = c.committer or {}
+  return {
+    sha = c.commitId or "",
+    commit = {
       message = c.comment or "",
-      author = ado_signature_user(c.author),
-      committer = ado_signature_user(c.committer),
-    }
-  end),
-  author = computed(function(c)
-    return ado_commit_user(c.author)
-  end),
-  committer = computed(function(c)
-    return ado_commit_user(c.committer)
-  end),
-})
+      author = { name = author.name or "", email = author.email or "", date = author.date or "" },
+      committer = {
+        name = committer.name or "",
+        email = committer.email or "",
+        date = committer.date or "",
+      },
+    },
+    author = { login = author.name or "", id = 0, avatar_url = "" },
+    committer = { login = committer.name or "", id = 0, avatar_url = "" },
+  }
+end
 
 -- ADO tag ref: same shape as branch but name is refs/tags/...
-local translate_ado_tag = make_translator({
-  name = computed(function(t)
-    return t.name and t.name:match("refs/tags/(.+)") or (t.name or "")
-  end),
-  commit = computed(function(t)
-    return { sha = t.objectId or "", url = "" }
-  end),
-})
+local function translate_ado_tag(t)
+  if not t then
+    return {}
+  end
+  local name = t.name and t.name:match("refs/tags/(.+)") or (t.name or "")
+  return { name = name, commit = { sha = t.objectId or "", url = "" } }
+end
 
 -- ADO git ref (used by git database endpoints): { name, objectId }
-local translate_ado_ref = make_translator({
-  ref = field("name", { default = "" }),
-  node_id = const(""),
-  url = const(""),
-  object = computed(function(r)
-    return { type = "commit", sha = r.objectId or "", url = "" }
-  end),
-})
+local function translate_ado_ref(r)
+  if not r then
+    return {}
+  end
+  return {
+    ref = r.name or "",
+    node_id = "",
+    url = "",
+    object = { type = "commit", sha = r.objectId or "", url = "" },
+  }
+end
 
 -- Work items (issues) ---------------------------------------------------------
 -- ADO Boards: work items are project-scoped.
@@ -160,69 +147,59 @@ local function ado_identity_login(u)
   return u.uniqueName or u.displayName or ""
 end
 
-local function ado_user(u)
+local function translate_ado_workitem(w)
+  if not w then
+    return {}
+  end
+  local fields = w.fields or {}
+  local created_by = fields["System.CreatedBy"] or {}
+  local id = w.id or 0
   return {
-    login = ado_identity_login(u),
-    id = 0,
+    id = id,
     node_id = "",
-    avatar_url = "",
-    type = "User",
+    number = id,
+    title = fields["System.Title"] or "",
+    body = fields["System.Description"] or "",
+    state = ado_state_to_github(fields["System.State"]),
+    user = {
+      login = ado_identity_login(created_by),
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      type = "User",
+    },
+    assignees = {},
+    labels = {},
+    milestone = nil,
+    created_at = fields["System.CreatedDate"] or "",
+    updated_at = fields["System.ChangedDate"] or "",
+    closed_at = nil,
+    html_url = "",
   }
 end
 
-local function ado_workitem_id(w)
-  return w.id or 0
-end
-
-local function ado_workitem_fields(w)
-  return w.fields or {}
-end
-
-local translate_ado_workitem = make_translator({
-  id = computed(ado_workitem_id),
-  node_id = const(""),
-  number = computed(ado_workitem_id),
-  title = computed(function(w)
-    return ado_workitem_fields(w)["System.Title"] or ""
-  end),
-  body = computed(function(w)
-    return ado_workitem_fields(w)["System.Description"] or ""
-  end),
-  state = computed(function(w)
-    return ado_state_to_github(ado_workitem_fields(w)["System.State"])
-  end),
-  user = computed(function(w)
-    return ado_user(ado_workitem_fields(w)["System.CreatedBy"])
-  end),
-  assignees = computed(function()
+local function translate_ado_workitem_comment(c)
+  if not c then
     return {}
-  end),
-  labels = computed(function()
-    return {}
-  end),
-  milestone = const(nil),
-  created_at = computed(function(w)
-    return ado_workitem_fields(w)["System.CreatedDate"] or ""
-  end),
-  updated_at = computed(function(w)
-    return ado_workitem_fields(w)["System.ChangedDate"] or ""
-  end),
-  closed_at = const(nil),
-  html_url = const(""),
-})
-
-local translate_ado_workitem_comment = make_translator({
-  id = field("id", { default = 0 }),
-  node_id = const(""),
-  url = const(""),
-  body = field("text", { default = "" }),
-  user = computed(function(c)
-    return ado_user(c.revisedBy)
-  end),
-  created_at = field("revisedDate", { default = "" }),
-  updated_at = field("revisedDate", { default = "" }),
-  html_url = const(""),
-})
+  end
+  local revised_by = c.revisedBy or {}
+  return {
+    id = c.id or 0,
+    node_id = "",
+    url = "",
+    body = c.text or "",
+    user = {
+      login = revised_by.uniqueName or revised_by.displayName or "",
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      type = "User",
+    },
+    created_at = c.revisedDate or "",
+    updated_at = c.revisedDate or "",
+    html_url = "",
+  }
+end
 
 -- Checks (via ADO git commit statuses) ---------------------------------------
 --
@@ -248,7 +225,10 @@ local translate_ado_workitem_comment = make_translator({
 --   error          → status=completed,   conclusion=failure
 --   notApplicable  → status=completed,   conclusion=neutral
 
-local function ado_status_mapping(s)
+local function translate_ado_status_to_check_run(s)
+  if not s then
+    return {}
+  end
   local state = s.state or "pending"
   local ado_to_gh = {
     pending = { status = "in_progress", conclusion = nil },
@@ -256,42 +236,30 @@ local function ado_status_mapping(s)
     failed = { status = "completed", conclusion = "failure" },
     notApplicable = { status = "completed", conclusion = "neutral" },
   }
-  return ado_to_gh[state] or { status = "completed", conclusion = "failure" }
-end
-
-local function ado_check_run_status(s)
-  return ado_status_mapping(s).status
-end
-
-local translate_ado_status_to_check_run = make_translator({
-  id = field("id", { default = 0 }),
-  node_id = const(""),
-  head_sha = const(""),
-  name = computed(function(s)
-    return (s.context or {}).name or ""
-  end),
-  status = computed(ado_check_run_status),
-  conclusion = computed(function(s)
-    return ado_status_mapping(s).conclusion
-  end),
-  started_at = "creationDate",
-  completed_at = computed(function(s)
-    local status = ado_check_run_status(s)
-    return status == "completed" and (s.updatedDate or s.creationDate) or nil
-  end),
-  output = computed(function(s)
-    return {
+  local mapped = ado_to_gh[state] or { status = "completed", conclusion = "failure" }
+  local gh_status, gh_conclusion = mapped.status, mapped.conclusion
+  local ctx = s.context or {}
+  return {
+    id = s.id or 0,
+    node_id = "",
+    head_sha = "",
+    name = ctx.name or "",
+    status = gh_status,
+    conclusion = gh_conclusion,
+    started_at = s.creationDate,
+    completed_at = gh_status == "completed" and (s.updatedDate or s.creationDate) or nil,
+    output = {
       title = s.description or "",
       summary = s.description or "",
       text = "",
       annotations_count = 0,
       annotations_url = "",
-    }
-  end),
-  url = field("targetUrl", { default = "" }),
-  html_url = field("targetUrl", { default = "" }),
-  details_url = field("targetUrl", { default = "" }),
-})
+    },
+    url = s.targetUrl or "",
+    html_url = s.targetUrl or "",
+    details_url = s.targetUrl or "",
+  }
+end
 
 local function gh_check_run_to_ado_status(req)
   local status = req.status or "queued"
@@ -319,21 +287,24 @@ local function ado_team_slug(name)
   return (name or ""):lower():gsub("[^%w%-]", "-")
 end
 
-local translate_ado_team = make_translator({
-  id = const(0),
-  node_id = field("id", { default = "" }),
-  name = field("name", { default = "" }),
-  slug = computed(function(t)
-    return ado_team_slug(t.name)
-  end),
-  description = field("description", { default = "" }),
-  privacy = const("closed"),
-  notification_setting = const("notifications_enabled"),
-  permission = const("pull"),
-  members_url = const(""),
-  repositories_url = const(""),
-  parent = const(nil),
-})
+local function translate_ado_team(t)
+  if not t then
+    return {}
+  end
+  return {
+    id = 0,
+    node_id = t.id or "",
+    name = t.name or "",
+    slug = ado_team_slug(t.name),
+    description = t.description or "",
+    privacy = "closed",
+    notification_setting = "notifications_enabled",
+    permission = "pull",
+    members_url = "",
+    repositories_url = "",
+    parent = nil,
+  }
+end
 
 local function ado_find_team(org, slug)
   local ok, status, _, body =
@@ -372,21 +343,20 @@ local function ado_fetch_team_members(proj, team_id)
 end
 
 -- ADO webhook: { id, url, publisherInputs: { repository }, status, eventType }
-local translate_ado_hook = make_translator({
-  id = field("id", { default = 0 }),
-  name = const("web"),
-  active = computed(function(h)
-    return h.status == "enabled"
-  end),
-  events = computed(function(h)
-    return { h.eventType or "" }
-  end),
-  config = computed(function(h)
-    return { url = (h.consumerInputs and h.consumerInputs.url) or "", content_type = "json" }
-  end),
-  created_at = "createdDate",
-  updated_at = "modifiedDate",
-})
+local function translate_ado_hook(h)
+  if not h then
+    return {}
+  end
+  return {
+    id = h.id or 0,
+    name = "web",
+    active = h.status == "enabled",
+    events = { h.eventType or "" },
+    config = { url = (h.consumerInputs and h.consumerInputs.url) or "", content_type = "json" },
+    created_at = h.createdDate,
+    updated_at = h.modifiedDate,
+  }
+end
 
 local b = make_backend_builder()
 b:rest("get_root", function()
@@ -1422,36 +1392,25 @@ local GH_DISMISS_REASON_TO_ADO = {
   ["used in tests"] = "usedInTests",
 }
 
-local function ado_alert_state(a)
-  return ADO_STATE_TO_GH[a.state or ""] or "open"
-end
-
-local function ado_dismissed_reason(dismissal)
-  dismissal = dismissal or {}
-  return ADO_DISMISS_REASON_TO_GH[dismissal.dismissalType or ""]
-end
-
-local function ado_alert_location(a)
+local function translate_ado_alert(a)
+  if not a then
+    return {}
+  end
+  local state = ADO_STATE_TO_GH[a.state or ""] or "open"
+  local dismissal = a.dismissal or {}
+  local dismissed_reason = ADO_DISMISS_REASON_TO_GH[dismissal.dismissalType or ""]
+  local rule = a.rule or {}
   local locations = a.physicalLocations or {}
   local loc = locations[1] or {}
   local region = loc.region or {}
-  return loc, region
-end
-
-local translate_ado_alert = make_translator({
-  number = field("alertId", { default = 0 }),
-  state = computed(ado_alert_state),
-  fixed_at = "fixedDate",
-  dismissed_at = "dismissedDate",
-  dismissed_reason = computed(function(a)
-    return ado_dismissed_reason(a.dismissal)
-  end),
-  dismissed_comment = computed(function(a)
-    return (a.dismissal or {}).message or nil
-  end),
-  rule = computed(function(a)
-    local rule = a.rule or {}
-    return {
+  return {
+    number = a.alertId or 0,
+    state = state,
+    fixed_at = a.fixedDate,
+    dismissed_at = a.dismissedDate,
+    dismissed_reason = dismissed_reason,
+    dismissed_comment = dismissal.message or nil,
+    rule = {
       id = rule.id or "",
       name = rule.name or "",
       severity = (a.severity or ""):lower(),
@@ -1460,18 +1419,13 @@ local translate_ado_alert = make_translator({
       help = { text = "" },
       help_uri = "",
       tags = {},
-    }
-  end),
-  tool = computed(function()
-    return { name = "Advanced Security", guid = nil, version = nil }
-  end),
-  most_recent_instance = computed(function(a)
-    local loc, region = ado_alert_location(a)
-    return {
+    },
+    tool = { name = "Advanced Security", guid = nil, version = nil },
+    most_recent_instance = {
       ref = "",
       analysis_key = "",
       environment = "{}",
-      state = ado_alert_state(a),
+      state = state,
       commit_sha = "",
       location = {
         path = loc.physicalLocation and (loc.physicalLocation.artifactLocation or {}).uri or "",
@@ -1481,36 +1435,37 @@ local translate_ado_alert = make_translator({
         end_column = region.endColumn or region.startColumn or 0,
       },
       classifications = {},
-    }
-  end),
-  created_at = field("firstSeenDate", { default = "" }),
-  updated_at = field("firstSeenDate", { default = "" }),
-  url = const(""),
-  html_url = const(""),
-  instances_url = const(""),
-})
+    },
+    created_at = a.firstSeenDate or "",
+    updated_at = a.firstSeenDate or "",
+    url = "",
+    html_url = "",
+    instances_url = "",
+  }
+end
 
-local translate_ado_analysis = make_translator({
-  ref = field("branch", { default = "" }),
-  commit_sha = field("commitId", { default = "" }),
-  analysis_key = computed(function(an)
-    return tostring(an.analysisId or 0)
-  end),
-  environment = const("{}"),
-  category = const(""),
-  error = const(""),
-  created_at = field("createdDate", { default = "" }),
-  results_count = field("resultCount", { default = 0 }),
-  rules_count = const(0),
-  id = field("analysisId", { default = 0 }),
-  url = const(""),
-  sarif_id = const(""),
-  tool = computed(function()
-    return { name = "Advanced Security", guid = nil, version = nil }
-  end),
-  deletable = const(false),
-  warning = const(""),
-})
+local function translate_ado_analysis(an)
+  if not an then
+    return {}
+  end
+  return {
+    ref = an.branch or "",
+    commit_sha = an.commitId or "",
+    analysis_key = tostring(an.analysisId or 0),
+    environment = "{}",
+    category = "",
+    error = "",
+    created_at = an.createdDate or "",
+    results_count = an.resultCount or 0,
+    rules_count = 0,
+    id = an.analysisId or 0,
+    url = "",
+    sarif_id = "",
+    tool = { name = "Advanced Security", guid = nil, version = nil },
+    deletable = false,
+    warning = "",
+  }
+end
 
 -- Code scanning handlers (kept below for readability; same builder b).
 
@@ -1631,25 +1586,26 @@ local GH_DEPENDABOT_DISMISS_REASON_TO_ADO = {
   ["tolerable_risk"] = "wontFix",
 }
 
-local function ado_dependency_package(a)
+local function translate_ado_dependency_alert(a)
+  if not a then
+    return {}
+  end
+  local state = ADO_STATE_TO_GH[a.state or ""] or "open"
+  local dismissal = a.dismissal or {}
+  local dismissed_reason = ADO_DISMISS_REASON_TO_GH[dismissal.dismissalType or ""]
   local dep = a.dependency or {}
   local pm = (dep.packageManager or ""):lower()
   local ecosystem = ADO_PACKAGE_MANAGER_TO_ECOSYSTEM[pm] or pm
-  return { ecosystem = ecosystem, name = dep.componentName or "" }
-end
-
-local translate_ado_dependency_alert = make_translator({
-  number = field("alertId", { default = 0 }),
-  state = computed(ado_alert_state),
-  dependency = computed(function(a)
-    return {
-      package = ado_dependency_package(a),
+  local package = { ecosystem = ecosystem, name = dep.componentName or "" }
+  return {
+    number = a.alertId or 0,
+    state = state,
+    dependency = {
+      package = package,
       manifest_path = "",
       scope = "runtime",
-    }
-  end),
-  security_advisory = computed(function(a)
-    return {
+    },
+    security_advisory = {
       ghsa_id = "",
       cve_id = a.cve or nil,
       summary = a.title or "",
@@ -1661,32 +1617,25 @@ local translate_ado_dependency_alert = make_translator({
       updated_at = a.firstSeenDate or "",
       withdrawn_at = nil,
       vulnerabilities = {},
-    }
-  end),
-  security_vulnerability = computed(function(a)
-    local dep = a.dependency or {}
-    return {
-      package = ado_dependency_package(a),
+    },
+    security_vulnerability = {
+      package = package,
       severity = (a.severity or ""):lower(),
       vulnerable_version_range = dep.componentVersion and ("= " .. dep.componentVersion) or "",
       first_patched_version = nil,
-    }
-  end),
-  url = const(""),
-  html_url = const(""),
-  created_at = field("firstSeenDate", { default = "" }),
-  updated_at = field("firstSeenDate", { default = "" }),
-  dismissed_at = "dismissedDate",
-  dismissed_by = const(nil),
-  dismissed_reason = computed(function(a)
-    return ado_dismissed_reason(a.dismissal)
-  end),
-  dismissed_comment = computed(function(a)
-    return (a.dismissal or {}).message or nil
-  end),
-  fixed_at = const(nil),
-  auto_dismissed_at = const(nil),
-})
+    },
+    url = "",
+    html_url = "",
+    created_at = a.firstSeenDate or "",
+    updated_at = a.firstSeenDate or "",
+    dismissed_at = a.dismissedDate,
+    dismissed_by = nil,
+    dismissed_reason = dismissed_reason,
+    dismissed_comment = dismissal.message or nil,
+    fixed_at = nil,
+    auto_dismissed_at = nil,
+  }
+end
 
 b:rest("list_repo_dependabot_alerts", function(owner, repo_name)
   local url = advsec_url(advsec_base(owner) .. "/alerts/" .. repo_name .. "?alertType=dependency")
@@ -1785,46 +1734,41 @@ local ADO_SECRET_STATE_TO_GH = {
   fixed = "resolved",
 }
 
-local function ado_secret_state(a)
-  return ADO_SECRET_STATE_TO_GH[a.state or ""] or "open"
+local function translate_ado_secret_alert(a)
+  if not a then
+    return {}
+  end
+  local state = ADO_SECRET_STATE_TO_GH[a.state or ""] or "open"
+  local dismissal = a.dismissal or {}
+  local resolution = ADO_SECRET_DISMISS_REASON_TO_GH[dismissal.dismissalType or ""]
+  local rule = a.rule or {}
+  local locs = a.logicalLocations or {}
+  local secret = (locs[1] or {}).fullyQualifiedName or ""
+  local resolved_at = a.fixedDate or a.dismissedDate
+  return {
+    number = a.alertId or 0,
+    created_at = a.firstSeenDate or "",
+    updated_at = a.firstSeenDate or "",
+    url = "",
+    html_url = "",
+    locations_url = "",
+    state = state,
+    resolution = resolution,
+    resolved_by = nil,
+    resolved_at = resolved_at,
+    resolution_comment = dismissal.message or nil,
+    secret_type = rule.id or "",
+    secret_type_display_name = rule.name or "",
+    secret = secret,
+    push_protection_bypassed = nil,
+    push_protection_bypassed_by = nil,
+    push_protection_bypassed_at = nil,
+    validity = "unknown",
+    publicly_leaked = false,
+    multi_repo = false,
+    auto_dismissed_at = nil,
+  }
 end
-
-local translate_ado_secret_alert = make_translator({
-  number = field("alertId", { default = 0 }),
-  created_at = field("firstSeenDate", { default = "" }),
-  updated_at = field("firstSeenDate", { default = "" }),
-  url = const(""),
-  html_url = const(""),
-  locations_url = const(""),
-  state = computed(ado_secret_state),
-  resolution = computed(function(a)
-    return ADO_SECRET_DISMISS_REASON_TO_GH[(a.dismissal or {}).dismissalType or ""]
-  end),
-  resolved_by = const(nil),
-  resolved_at = computed(function(a)
-    return a.fixedDate or a.dismissedDate
-  end),
-  resolution_comment = computed(function(a)
-    return (a.dismissal or {}).message or nil
-  end),
-  secret_type = computed(function(a)
-    return (a.rule or {}).id or ""
-  end),
-  secret_type_display_name = computed(function(a)
-    return (a.rule or {}).name or ""
-  end),
-  secret = computed(function(a)
-    local locs = a.logicalLocations or {}
-    return (locs[1] or {}).fullyQualifiedName or ""
-  end),
-  push_protection_bypassed = const(nil),
-  push_protection_bypassed_by = const(nil),
-  push_protection_bypassed_at = const(nil),
-  validity = const("unknown"),
-  publicly_leaked = const(false),
-  multi_repo = const(false),
-  auto_dismissed_at = const(nil),
-})
 
 b:rest("list_repo_secret_scanning_alerts", function(owner, repo_name)
   local url = advsec_url(advsec_base(owner) .. "/alerts/" .. repo_name .. "?alertType=secret")
@@ -2016,6 +1960,17 @@ end)
 --     resource.revisedBy  — commenter
 --     resource.revisedDate
 
+-- Helper: build a sender user table from an ADO user field object.
+local function ado_user(u)
+  return {
+    login = ado_identity_login(u),
+    id = 0,
+    node_id = "",
+    avatar_url = "",
+    type = "User",
+  }
+end
+
 -- Helper: derive canonical issues action for workitem.updated from the
 -- diff in resource.fields.  Each changed field is { newValue = ..., oldValue = ... }.
 local function ado_workitem_updated_action(resource)
@@ -2034,61 +1989,48 @@ local function ado_workitem_updated_action(resource)
 end
 
 -- Translate an ADO pull request resource to GitHub format.
-local function ado_pull_ref(name)
-  return name and name:match("refs/heads/(.+)") or (name or "")
+local function translate_ado_pull(pr)
+  if not pr then
+    return {}
+  end
+  local status = pr.status or "active"
+  local is_merged = status == "completed"
+  local gh_state = status == "active" and "open" or "closed"
+  local src_ref = pr.sourceRefName and pr.sourceRefName:match("refs/heads/(.+)")
+    or (pr.sourceRefName or "")
+  local tgt_ref = pr.targetRefName and pr.targetRefName:match("refs/heads/(.+)")
+    or (pr.targetRefName or "")
+  local src_sha = (pr.lastMergeSourceCommit or {}).commitId or ""
+  local tgt_sha = (pr.lastMergeTargetCommit or {}).commitId or ""
+  return {
+    id = pr.pullRequestId or 0,
+    node_id = "",
+    number = pr.pullRequestId or 0,
+    state = gh_state,
+    locked = false,
+    title = pr.title or "",
+    body = pr.description or "",
+    user = ado_user(pr.createdBy),
+    head = { label = src_ref, ref = src_ref, sha = src_sha },
+    base = { label = tgt_ref, ref = tgt_ref, sha = tgt_sha },
+    draft = pr.isDraft or false,
+    created_at = pr.creationDate or "",
+    updated_at = pr.closedDate or pr.creationDate or "",
+    closed_at = (not is_merged and gh_state == "closed") and pr.closedDate or nil,
+    merged_at = is_merged and pr.closedDate or nil,
+    merge_commit_sha = nil,
+    merged_by = nil,
+    html_url = "",
+    url = "",
+    mergeable = status == "active" or nil,
+    comments = 0,
+    review_comments = 0,
+    commits = 0,
+    additions = 0,
+    deletions = 0,
+    changed_files = 0,
+  }
 end
-
-local function ado_pull_state(pr)
-  return (pr.status or "active") == "active" and "open" or "closed"
-end
-
-local translate_ado_pull = make_translator({
-  id = field("pullRequestId", { default = 0 }),
-  node_id = const(""),
-  number = field("pullRequestId", { default = 0 }),
-  state = computed(ado_pull_state),
-  locked = const(false),
-  title = field("title", { default = "" }),
-  body = field("description", { default = "" }),
-  user = computed(function(pr)
-    return ado_user(pr.createdBy)
-  end),
-  head = computed(function(pr)
-    local src_ref = ado_pull_ref(pr.sourceRefName)
-    local src_sha = (pr.lastMergeSourceCommit or {}).commitId or ""
-    return { label = src_ref, ref = src_ref, sha = src_sha }
-  end),
-  base = computed(function(pr)
-    local tgt_ref = ado_pull_ref(pr.targetRefName)
-    local tgt_sha = (pr.lastMergeTargetCommit or {}).commitId or ""
-    return { label = tgt_ref, ref = tgt_ref, sha = tgt_sha }
-  end),
-  draft = field("isDraft", { default = false }),
-  created_at = field("creationDate", { default = "" }),
-  updated_at = computed(function(pr)
-    return pr.closedDate or pr.creationDate or ""
-  end),
-  closed_at = computed(function(pr)
-    local status = pr.status or "active"
-    return status ~= "completed" and ado_pull_state(pr) == "closed" and pr.closedDate or nil
-  end),
-  merged_at = computed(function(pr)
-    return pr.status == "completed" and pr.closedDate or nil
-  end),
-  merge_commit_sha = const(nil),
-  merged_by = const(nil),
-  html_url = const(""),
-  url = const(""),
-  mergeable = computed(function(pr)
-    return (pr.status or "active") == "active" or nil
-  end),
-  comments = const(0),
-  review_comments = const(0),
-  commits = const(0),
-  additions = const(0),
-  deletions = const(0),
-  changed_files = const(0),
-})
 
 b:webhook("workitem.created", function(payload)
   local resource = payload.resource or {}
@@ -2308,34 +2250,27 @@ local function ado_release_project(release, resource)
     or {}
 end
 
-local translate_ado_release = make_translator({
-  id = field("id", { default = 0 }),
-  tag_name = field("name", { default = "" }),
-  name = "name",
-  body = computed(function(_release, resource)
-    resource = resource or {}
-    return (resource.message or {}).text or (resource.detailedMessage or {}).text or ""
-  end),
-  draft = const(false),
-  prerelease = const(false),
-  html_url = computed(ado_release_web_url),
-  tarball_url = const(nil),
-  zipball_url = const(nil),
-  author = computed(function(release)
-    return ado_user(release.createdBy or release.modifiedBy or {})
-  end),
-  created_at = computed(function(release, resource)
-    resource = resource or {}
-    return release.createdOn or resource.createdDate or ""
-  end),
-  published_at = computed(function(release, resource)
-    resource = resource or {}
-    return release.createdOn or resource.createdDate or ""
-  end),
-  target_commitish = computed(function(release)
-    return (release.releaseDefinition or {}).name or ""
-  end),
-})
+local function translate_ado_release(release, resource)
+  release = release or {}
+  resource = resource or {}
+  local definition = release.releaseDefinition or {}
+  local created_by = release.createdBy or release.modifiedBy or {}
+  return {
+    id = release.id or 0,
+    tag_name = release.name or "",
+    name = release.name,
+    body = (resource.message or {}).text or (resource.detailedMessage or {}).text or "",
+    draft = false,
+    prerelease = false,
+    html_url = ado_release_web_url(release),
+    tarball_url = nil,
+    zipball_url = nil,
+    author = ado_user(created_by),
+    created_at = release.createdOn or resource.createdDate or "",
+    published_at = release.createdOn or resource.createdDate or "",
+    target_commitish = definition.name or "",
+  }
+end
 
 local function ado_release_repository(release, resource)
   release = release or {}
@@ -2401,53 +2336,33 @@ local function ado_deployment_url(release, environment)
   return ((environment._links or {}).web or {}).href or environment.url or ""
 end
 
-local function ado_deployment_timestamp(resource)
+local function translate_ado_deployment(resource)
   local deployment, release, environment = ado_deployment_parts(resource)
+  local owner = environment.owner or release.createdBy or release.modifiedBy or {}
   local timestamp = deployment.startedOn
     or environment.modifiedOn
     or release.modifiedOn
     or release.createdOn
     or ""
-  return timestamp
+  return {
+    id = deployment.id or environment.id or 0,
+    node_id = "",
+    sha = "",
+    ref = release.name or "",
+    task = "deploy",
+    environment = environment.name or "",
+    original_environment = "",
+    description = (resource.message or {}).text or "",
+    payload = {},
+    creator = ado_user(owner),
+    created_at = timestamp,
+    updated_at = deployment.completedOn or environment.modifiedOn or timestamp,
+    statuses_url = "",
+    repository_url = "",
+    production_environment = false,
+    transient_environment = false,
+  }
 end
-
-local translate_ado_deployment = make_translator({
-  id = computed(function(resource)
-    local deployment, _, environment = ado_deployment_parts(resource)
-    return deployment.id or environment.id or 0
-  end),
-  node_id = const(""),
-  sha = const(""),
-  ref = computed(function(resource)
-    local release = select(2, ado_deployment_parts(resource))
-    return release.name or ""
-  end),
-  task = const("deploy"),
-  environment = computed(function(resource)
-    local environment = select(3, ado_deployment_parts(resource))
-    return environment.name or ""
-  end),
-  original_environment = const(""),
-  description = computed(function(resource)
-    return (resource.message or {}).text or ""
-  end),
-  payload = computed(function()
-    return {}
-  end),
-  creator = computed(function(resource)
-    local _, release, environment = ado_deployment_parts(resource)
-    return ado_user(environment.owner or release.createdBy or release.modifiedBy or {})
-  end),
-  created_at = computed(ado_deployment_timestamp),
-  updated_at = computed(function(resource)
-    local deployment, _, environment = ado_deployment_parts(resource)
-    return deployment.completedOn or environment.modifiedOn or ado_deployment_timestamp(resource)
-  end),
-  statuses_url = const(""),
-  repository_url = const(""),
-  production_environment = const(false),
-  transient_environment = const(false),
-})
 
 local function ado_deployment_status(resource, state)
   local deployment, _release, environment = ado_deployment_parts(resource)

@@ -30,6 +30,18 @@ function each(translator, key)
   return make_spec("each", { translator = translator, key = key })
 end
 
+function copy_fields(...)
+  return make_spec("copy_fields", { fields = { ... } })
+end
+
+function const_fields(value, ...)
+  return make_spec("const_fields", { value = value, fields = { ... } })
+end
+
+function default_fields(default, ...)
+  return make_spec("default_fields", { default = default, fields = { ... } })
+end
+
 function translate_list_fn(translator)
   return function(items)
     return translate_list(translator, items)
@@ -101,11 +113,32 @@ local function translator_apply(translator, input, ...)
     end
   end
   for output_key, spec in pairs(translator.spec) do
-    local ok, value = pcall(resolve_value, spec, input, output_key, ...)
-    if not ok then
-      error("translator field " .. tostring(output_key) .. ": " .. tostring(value))
+    if type(output_key) == "number" and type(spec) == "table" then
+      if spec.kind == "copy_fields" then
+        for _, field_name in ipairs(spec.fields) do
+          output[field_name] = input[field_name]
+        end
+      elseif spec.kind == "const_fields" then
+        for _, field_name in ipairs(spec.fields) do
+          output[field_name] = spec.value
+        end
+      elseif spec.kind == "default_fields" then
+        for _, field_name in ipairs(spec.fields) do
+          output[field_name] = input[field_name]
+          if output[field_name] == nil then
+            output[field_name] = spec.default
+          end
+        end
+      else
+        error("unknown translator group spec kind: " .. tostring(spec.kind))
+      end
+    else
+      local ok, value = pcall(resolve_value, spec, input, output_key, ...)
+      if not ok then
+        error("translator field " .. tostring(output_key) .. ": " .. tostring(value))
+      end
+      output[output_key] = value
     end
-    output[output_key] = value
   end
   return output
 end

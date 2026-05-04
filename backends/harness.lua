@@ -18,89 +18,58 @@ local proxy_handler = _t.proxy_handler
 
 local repo_ref = owner_repo_id
 
-local function harness_repo_parts(r)
-  local path = (r or {}).path or ""
+-- Map a Harness Code repository object to GitHub format.
+local function translate_harness_repo(r)
+  if not r then
+    return {}
+  end
+  local path = r.path or ""
   -- path is like "space/reponame"; split on last /
   local owner_part, name_part = path:match("^(.+)/([^/]+)$")
   if not owner_part then
     owner_part = ""
     name_part = path
   end
-  return owner_part, name_part, path
-end
-
-local translate_harness_repo_owner = make_translator({
-  login = computed(function(r)
-    local owner_part = harness_repo_parts(r)
-    return owner_part
-  end),
-  id = const(0),
-  node_id = const(""),
-  avatar_url = const(""),
-  url = const(""),
-  html_url = const(""),
-  type = const("User"),
-})
-
--- Map a Harness Code repository object to GitHub format.
-local translate_harness_repo = make_translator({
-  id = field("id", { default = 0 }),
-  node_id = const(""),
-  name = computed(function(r)
-    local _, name_part = harness_repo_parts(r)
-    return name_part
-  end),
-  full_name = computed(function(r)
-    local _, _, path = harness_repo_parts(r)
-    return path
-  end),
-  private = computed(function(r)
-    return not r.is_public
-  end),
-  owner = computed(function(r)
-    return translate_harness_repo_owner(r)
-  end),
-  html_url = computed(function(r)
-    local _, _, path = harness_repo_parts(r)
-    return config.base_url .. "/" .. path
-  end),
-  description = "description",
-  fork = computed(function(r)
-    return r.fork_id ~= nil and r.fork_id > 0
-  end),
-  url = const(""),
-  clone_url = field("git_url", { default = "" }),
-  homepage = const(""),
-  size = field("size", { default = 0 }),
-  stargazers_count = field("num_stars", { default = 0 }),
-  watchers_count = const(0),
-  language = const(nil),
-  has_issues = const(false),
-  has_wiki = const(false),
-  forks_count = field("num_forks", { default = 0 }),
-  archived = const(false),
-  disabled = const(false),
-  open_issues_count = const(0),
-  default_branch = field("default_branch", { default = "main" }),
-  visibility = computed(function(r)
-    return r.is_public and "public" or "private"
-  end),
-  forks = field("num_forks", { default = 0 }),
-  open_issues = const(0),
-  watchers = const(0),
-  created_at = computed(function(r)
-    return r.created and tostring(r.created) or nil
-  end),
-  updated_at = computed(function(r)
-    return r.updated and tostring(r.updated) or nil
-  end),
-  pushed_at = computed(function(r)
-    return r.updated and tostring(r.updated) or nil
-  end),
-})
-
-local function harness_repo_list(repos)
-  return translate_list(translate_harness_repo, repos)
+  return {
+    id = r.id or 0,
+    node_id = "",
+    name = name_part,
+    full_name = path,
+    private = not r.is_public,
+    owner = {
+      login = owner_part,
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      url = "",
+      html_url = "",
+      type = "User",
+    },
+    html_url = config.base_url .. "/" .. path,
+    description = r.description,
+    fork = r.fork_id ~= nil and r.fork_id > 0,
+    url = "",
+    clone_url = r.git_url or "",
+    homepage = "",
+    size = r.size or 0,
+    stargazers_count = r.num_stars or 0,
+    watchers_count = 0,
+    language = nil,
+    has_issues = false,
+    has_wiki = false,
+    forks_count = r.num_forks or 0,
+    archived = false,
+    disabled = false,
+    open_issues_count = 0,
+    default_branch = r.default_branch or "main",
+    visibility = r.is_public and "public" or "private",
+    forks = r.num_forks or 0,
+    open_issues = 0,
+    watchers = 0,
+    created_at = r.created and tostring(r.created) or nil,
+    updated_at = r.updated and tostring(r.updated) or nil,
+    pushed_at = r.updated and tostring(r.updated) or nil,
+  }
 end
 
 -- Translate GitHub create/update request body to Harness Code format.
@@ -122,108 +91,86 @@ local function translate_harness_req(body_str)
   return EncodeJson(h)
 end
 
+local function translate_harness_repos(repos)
+  repos = repos or {}
+  for i, r in ipairs(repos) do
+    repos[i] = translate_harness_repo(r)
+  end
+  return repos
+end
+
 -- Translate a Harness branch object to GitHub format.
 -- Harness: { name, sha, is_default }
-local translate_harness_branch_commit = make_translator({
-  sha = field("sha", { default = "" }),
-  url = const(""),
-})
-
-local translate_harness_branch = make_translator({
-  name = "name",
-  commit = computed(function(b)
-    return translate_harness_branch_commit(b)
-  end),
-  protected = const(false),
-})
+local function translate_harness_branch(b)
+  if not b then
+    return {}
+  end
+  return {
+    name = b.name,
+    commit = { sha = b.sha or "", url = "" },
+    protected = false,
+  }
+end
 
 -- Translate a Harness commit to GitHub format.
 -- Harness: { sha, message, author: { identity: { name, email }, when }, committer: {...}, parent_shas }
-local function harness_identity(actor)
-  return (actor or {}).identity or {}
+local function translate_harness_commit(c)
+  if not c then
+    return {}
+  end
+  local author = c.author or {}
+  local ident = author.identity or {}
+  local committer = c.committer or {}
+  local cident = committer.identity or {}
+  return {
+    sha = c.sha or "",
+    commit = {
+      message = c.message or "",
+      author = { name = ident.name or "", email = ident.email or "", date = author.when or "" },
+      committer = {
+        name = cident.name or "",
+        email = cident.email or "",
+        date = committer.when or "",
+      },
+    },
+    author = { login = ident.name or "", id = 0, avatar_url = "" },
+    committer = { login = cident.name or "", id = 0, avatar_url = "" },
+  }
 end
-
-local translate_harness_commit_signature = make_translator({
-  name = computed(function(actor)
-    return harness_identity(actor).name or ""
-  end),
-  email = computed(function(actor)
-    return harness_identity(actor).email or ""
-  end),
-  date = field("when", { default = "" }),
-})
-
-local translate_harness_commit_user = make_translator({
-  login = computed(function(actor)
-    return harness_identity(actor).name or ""
-  end),
-  id = const(0),
-  avatar_url = const(""),
-})
-
-local translate_harness_commit_body = make_translator({
-  message = field("message", { default = "" }),
-  author = computed(function(c)
-    return translate_harness_commit_signature(c.author or {})
-  end),
-  committer = computed(function(c)
-    return translate_harness_commit_signature(c.committer or {})
-  end),
-})
-
-local translate_harness_commit = make_translator({
-  sha = field("sha", { default = "" }),
-  commit = computed(function(c)
-    return translate_harness_commit_body(c)
-  end),
-  author = computed(function(c)
-    return translate_harness_commit_user(c.author or {})
-  end),
-  committer = computed(function(c)
-    return translate_harness_commit_user(c.committer or {})
-  end),
-})
 
 -- Translate a Harness deploy key to GitHub format.
 -- Harness: { id, identifier, public_key, created, usage }
-local translate_harness_key = make_translator({
-  id = field("id", { default = 0 }),
-  key = field("public_key", { default = "" }),
-  title = field("identifier", { default = "" }),
-  verified = const(true),
-  created_at = computed(function(k)
-    return k.created and tostring(k.created) or nil
-  end),
-  url = const(""),
-  read_only = computed(function(k)
-    return k.usage == "read"
-  end),
-})
+local function translate_harness_key(k)
+  if not k then
+    return {}
+  end
+  return {
+    id = k.id or 0,
+    key = k.public_key or "",
+    title = k.identifier or "",
+    verified = true,
+    created_at = k.created and tostring(k.created) or nil,
+    url = "",
+    read_only = k.usage == "read",
+  }
+end
 
 -- Translate a Harness webhook to GitHub format.
 -- Harness: { id, identifier, url, enabled, triggers: [...] }
-local translate_harness_hook_config = make_translator({
-  url = field("url", { default = "" }),
-  content_type = const("json"),
-})
-
-local translate_harness_hook = make_translator({
-  id = field("id", { default = 0 }),
-  name = const("web"),
-  active = field("enabled", { default = false }),
-  events = computed(function(h)
-    return h.triggers or {}
-  end),
-  config = computed(function(h)
-    return translate_harness_hook_config(h)
-  end),
-  created_at = computed(function(h)
-    return h.created and tostring(h.created) or nil
-  end),
-  updated_at = computed(function(h)
-    return h.updated and tostring(h.updated) or nil
-  end),
-})
+local function translate_harness_hook(h)
+  if not h then
+    return {}
+  end
+  return {
+    id = h.id or 0,
+    name = "web",
+    active = h.enabled or false,
+    events = h.triggers or {},
+    config = { url = h.url or "", content_type = "json" },
+    created_at = h.created and tostring(h.created) or nil,
+    updated_at = h.updated and tostring(h.updated) or nil,
+  }
+end
 
 -- Translate GitHub webhook request to Harness format.
 local function translate_harness_hook_req(body_str)
@@ -269,7 +216,7 @@ end)
 
 b:rest(
   "get_user_repos",
-  proxy_handler(harness_repo_list, function()
+  proxy_handler(translate_harness_repos, function()
     return append_page_params(base() .. "/repos", PAGES)
   end)
 )
@@ -283,7 +230,7 @@ end)
 
 b:rest(
   "get_org_repos",
-  proxy_handler(harness_repo_list, function(space)
+  proxy_handler(translate_harness_repos, function(space)
     return append_page_params(base() .. "/spaces/" .. space .. "/repos", PAGES)
   end)
 )
@@ -318,7 +265,11 @@ end)
 b:rest("get_repo_branches", function(owner, repo_name)
   proxy_json(
     function(branches)
-      return translate_list(translate_harness_branch, branches)
+      branches = branches or {}
+      for i, br in ipairs(branches) do
+        branches[i] = translate_harness_branch(br)
+      end
+      return branches
     end,
     fetch_json(
       append_page_params(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/branches", PAGES)
@@ -343,7 +294,11 @@ b:rest("get_repo_commits", function(owner, repo_name)
   end
   url = append_page_params(url, PAGES)
   proxy_json(function(commits)
-    return translate_list(translate_harness_commit, commits)
+    commits = commits or {}
+    for i, c in ipairs(commits) do
+      commits[i] = translate_harness_commit(c)
+    end
+    return commits
   end, fetch_json(url))
 end)
 
@@ -436,7 +391,7 @@ end)
 
 b:rest(
   "get_repo_forks",
-  proxy_handler(harness_repo_list, function(owner, repo_name)
+  proxy_handler(translate_harness_repos, function(owner, repo_name)
     return append_page_params(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/forks", PAGES)
   end)
 )
@@ -453,7 +408,11 @@ end)
 b:rest("get_repo_keys", function(owner, repo_name)
   proxy_json(
     function(keys)
-      return translate_list(translate_harness_key, keys)
+      keys = keys or {}
+      for i, k in ipairs(keys) do
+        keys[i] = translate_harness_key(k)
+      end
+      return keys
     end,
     fetch_json(
       append_page_params(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/keys", PAGES)
@@ -493,7 +452,11 @@ end)
 b:rest("get_repo_hooks", function(owner, repo_name)
   proxy_json(
     function(hooks)
-      return translate_list(translate_harness_hook, hooks)
+      hooks = hooks or {}
+      for i, h in ipairs(hooks) do
+        hooks[i] = translate_harness_hook(h)
+      end
+      return hooks
     end,
     fetch_json(
       append_page_params(base() .. "/repos/" .. repo_ref(owner, repo_name) .. "/webhooks", PAGES)
@@ -612,7 +575,7 @@ end)
 
 b:rest(
   "get_users_repos",
-  proxy_handler(harness_repo_list, function(username)
+  proxy_handler(translate_harness_repos, function(username)
     return append_page_params(base() .. "/spaces/" .. username .. "/repos", PAGES)
   end)
 )

@@ -23,48 +23,35 @@ end
 
 local translate_repo_owner = make_translator({
   login = field("accountId", { default = "" }),
-  id = const(0),
-  node_id = const(""),
-  avatar_url = const(""),
-  url = const(""),
-  html_url = const(""),
-  type = const("Organization"),
+  const_fields(0, "id"),
+  const_fields("", "node_id", "avatar_url", "url", "html_url"),
+  const_fields("Organization", "type"),
 })
 
 -- Translate a CodeCommit repositoryMetadata (or summary) object to GitHub format.
 local translate_repo = make_translator({
-  id = const(0),
   node_id = field("repositoryId", { default = "" }),
   name = field("repositoryName", { default = "" }),
   full_name = field("repositoryName", { default = "" }),
-  private = const(true),
   owner = computed(function(r)
     return translate_repo_owner(r)
   end),
   html_url = field("cloneUrlHttp", { default = "" }),
   description = "repositoryDescription",
-  fork = const(false),
-  url = const(""),
   clone_url = field("cloneUrlHttp", { default = "" }),
-  homepage = const(""),
-  size = const(0),
-  stargazers_count = const(0),
-  watchers_count = const(0),
-  language = const(nil),
-  has_issues = const(false),
-  has_wiki = const(false),
-  forks_count = const(0),
-  archived = const(false),
-  disabled = const(false),
-  open_issues_count = const(0),
   default_branch = field("defaultBranch", { default = "main" }),
-  visibility = const("private"),
-  forks = const(0),
-  open_issues = const(0),
-  watchers = const(0),
   created_at = field("creationDate", { transform = codecommit_timestamp }),
   updated_at = field("lastModifiedDate", { transform = codecommit_timestamp }),
   pushed_at = field("lastModifiedDate", { transform = codecommit_timestamp }),
+  const_fields(0, "id", "size", "stargazers_count", "watchers_count"),
+  const_fields(0, "forks_count", "open_issues_count", "forks", "open_issues"),
+  const_fields(0, "watchers"),
+  const_fields(true, "private"),
+  const_fields(false, "fork", "has_issues", "has_wiki", "archived"),
+  const_fields(false, "disabled"),
+  const_fields("", "url", "homepage"),
+  const_fields(nil, "language"),
+  const_fields("private", "visibility"),
 })
 
 local function codecommit_user_from_arn(arn)

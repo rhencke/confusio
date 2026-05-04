@@ -32,24 +32,22 @@ local function sourceforge_repo_parts(repo)
   return project or "", tool or repo.name or ""
 end
 
-local function sourceforge_user_login(u)
-  return u.username or u.login or u.name or ""
+local function translate_sourceforge_user(u)
+  u = u or {}
+  local login = u.username or u.login or u.name or ""
+  return {
+    login = login,
+    id = 0,
+    node_id = "",
+    avatar_url = u.avatar_url or "",
+    url = u.url or "",
+    html_url = u.url or "",
+    type = "User",
+    site_admin = false,
+    name = u.name or login,
+    email = u.email or "",
+  }
 end
-
-local translate_sourceforge_user = make_translator({
-  login = computed(sourceforge_user_login),
-  id = const(0),
-  node_id = const(""),
-  avatar_url = field("avatar_url", { default = "" }),
-  url = field("url", { default = "" }),
-  html_url = field("url", { default = "" }),
-  type = const("User"),
-  site_admin = const(false),
-  name = computed(function(u)
-    return u.name or sourceforge_user_login(u)
-  end),
-  email = field("email", { default = "" }),
-})
 
 local function sourceforge_repo_url(owner, name, repo)
   if repo and repo.url and repo.url ~= "" then
@@ -64,148 +62,91 @@ local function sourceforge_repo_url(owner, name, repo)
   return ""
 end
 
-local function sourceforge_repo_name(repo)
-  local _, name = sourceforge_repo_parts(repo)
-  return name
-end
-
-local function sourceforge_repo_owner(repo)
+local function translate_sourceforge_repo(repo)
+  repo = repo or {}
   local owner, name = sourceforge_repo_parts(repo)
-  return owner, name
-end
-
-local function sourceforge_repo_full_name(repo)
-  local owner, name = sourceforge_repo_parts(repo)
+  local url = sourceforge_repo_url(owner, name, repo)
   local full_name = owner ~= "" and name ~= "" and (owner .. "/" .. name)
     or (repo.full_name or name)
-  return full_name
+  return {
+    id = 0,
+    node_id = "",
+    name = name,
+    full_name = full_name,
+    private = false,
+    owner = {
+      login = owner,
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      url = "",
+      html_url = owner ~= "" and (config.base_url .. "/p/" .. owner .. "/") or "",
+      type = "Organization",
+    },
+    html_url = url,
+    description = repo.description,
+    fork = false,
+    url = "",
+    git_url = repo.git_url or "",
+    ssh_url = repo.ssh_url or "",
+    clone_url = repo.clone_url or repo.url or "",
+    homepage = repo.homepage or url,
+    size = 0,
+    stargazers_count = 0,
+    watchers_count = 0,
+    language = nil,
+    has_issues = false,
+    has_wiki = false,
+    forks_count = 0,
+    archived = false,
+    disabled = false,
+    open_issues_count = 0,
+    default_branch = repo.default_branch or "master",
+    visibility = "public",
+    forks = 0,
+    open_issues = 0,
+    watchers = 0,
+    created_at = repo.created_at,
+    updated_at = repo.updated_at,
+    pushed_at = repo.pushed_at,
+  }
 end
 
-local translate_sourceforge_repo_owner = make_translator({
-  login = computed(sourceforge_repo_owner),
-  id = const(0),
-  node_id = const(""),
-  avatar_url = const(""),
-  url = const(""),
-  html_url = computed(function(repo)
-    local owner = sourceforge_repo_owner(repo)
-    return owner ~= "" and (config.base_url .. "/p/" .. owner .. "/") or ""
-  end),
-  type = const("Organization"),
-})
-
-local translate_sourceforge_repo = make_translator({
-  id = const(0),
-  node_id = const(""),
-  name = computed(sourceforge_repo_name),
-  full_name = computed(sourceforge_repo_full_name),
-  private = const(false),
-  owner = computed(function(repo)
-    return translate_sourceforge_repo_owner(repo)
-  end),
-  html_url = computed(function(repo)
-    local owner, name = sourceforge_repo_parts(repo)
-    return sourceforge_repo_url(owner, name, repo)
-  end),
-  description = "description",
-  fork = const(false),
-  url = const(""),
-  git_url = field("git_url", { default = "" }),
-  ssh_url = field("ssh_url", { default = "" }),
-  clone_url = computed(function(repo)
-    return repo.clone_url or repo.url or ""
-  end),
-  homepage = computed(function(repo)
-    local owner, name = sourceforge_repo_parts(repo)
-    local url = sourceforge_repo_url(owner, name, repo)
-    return repo.homepage or url
-  end),
-  size = const(0),
-  stargazers_count = const(0),
-  watchers_count = const(0),
-  language = const(nil),
-  has_issues = const(false),
-  has_wiki = const(false),
-  forks_count = const(0),
-  archived = const(false),
-  disabled = const(false),
-  open_issues_count = const(0),
-  default_branch = field("default_branch", { default = "master" }),
-  visibility = const("public"),
-  forks = const(0),
-  open_issues = const(0),
-  watchers = const(0),
-  created_at = "created_at",
-  updated_at = "updated_at",
-  pushed_at = "pushed_at",
-})
-
-local function sourceforge_commit_author(c)
-  return c.author or {}
+local function translate_sourceforge_commit(c)
+  c = c or {}
+  local author = c.author or {}
+  local committer = c.committer or author
+  return {
+    id = c.id or c.sha or "",
+    message = c.message or "",
+    timestamp = c.timestamp or c.date or "",
+    url = c.url or "",
+    author = {
+      name = author.name or "",
+      email = author.email or "",
+      username = author.username or author.login or author.name or "",
+    },
+    committer = {
+      name = committer.name or author.name or "",
+      email = committer.email or author.email or "",
+      username = committer.username or committer.login or committer.name or author.name or "",
+    },
+    added = c.added or {},
+    removed = c.removed or {},
+    modified = c.modified or {},
+  }
 end
-
-local function sourceforge_commit_committer(c)
-  return c.committer or sourceforge_commit_author(c)
-end
-
-local translate_sourceforge_commit_author = make_translator({
-  name = field("name", { default = "" }),
-  email = field("email", { default = "" }),
-  username = computed(function(author)
-    return author.username or author.login or author.name or ""
-  end),
-})
-
-local translate_sourceforge_commit_committer = make_translator({
-  name = computed(function(c)
-    local committer = sourceforge_commit_committer(c)
-    local author = sourceforge_commit_author(c)
-    return committer.name or author.name or ""
-  end),
-  email = computed(function(c)
-    local committer = sourceforge_commit_committer(c)
-    local author = sourceforge_commit_author(c)
-    return committer.email or author.email or ""
-  end),
-  username = computed(function(c)
-    local committer = sourceforge_commit_committer(c)
-    local author = sourceforge_commit_author(c)
-    return committer.username or committer.login or committer.name or author.name or ""
-  end),
-})
-
-local translate_sourceforge_commit = make_translator({
-  id = computed(function(c)
-    return c.id or c.sha or ""
-  end),
-  message = field("message", { default = "" }),
-  timestamp = computed(function(c)
-    return c.timestamp or c.date or ""
-  end),
-  url = field("url", { default = "" }),
-  author = computed(function(c)
-    return translate_sourceforge_commit_author(sourceforge_commit_author(c))
-  end),
-  committer = computed(function(c)
-    return translate_sourceforge_commit_committer(c)
-  end),
-  added = computed(function(c)
-    return c.added or {}
-  end),
-  removed = computed(function(c)
-    return c.removed or {}
-  end),
-  modified = computed(function(c)
-    return c.modified or {}
-  end),
-})
 
 local function sourceforge_commits(commits)
-  return translate_list(translate_sourceforge_commit, commits)
+  local result = {}
+  for _, commit in ipairs(commits or {}) do
+    result[#result + 1] = translate_sourceforge_commit(commit)
+  end
+  return result
 end
 
 local function sourceforge_sender(payload)
-  return translate_sourceforge_user(payload.sender or payload.pusher or payload.author or {})
+  return translate_sourceforge_user(payload.sender or payload.pusher or payload.author)
 end
 
 local function sourceforge_pusher(payload)
@@ -221,7 +162,7 @@ local function sourceforge_ref_webhook(payload)
   local raw_ref = payload.ref or ""
   local before = payload.before or ""
   local after = payload.after or ""
-  local repository = translate_sourceforge_repo(payload.repository or {})
+  local repository = translate_sourceforge_repo(payload.repository)
   local sender = sourceforge_sender(payload)
 
   if before == ZERO_SHA then

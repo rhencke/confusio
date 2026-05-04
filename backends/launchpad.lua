@@ -100,17 +100,6 @@ local function lp_login(link)
   return (link or ""):match("/~([^/]+)$") or ""
 end
 
-local translate_lp_user = make_translator({
-  login = computed(function(u)
-    return lp_login(u.owner_link)
-  end),
-  id = const(0),
-  node_id = const(""),
-  avatar_url = const(""),
-  url = const(""),
-  type = const("User"),
-})
-
 local function lp_webhook_owner_login(path)
   return (path or ""):match("^~([^/]+)/") or ""
 end
@@ -615,78 +604,73 @@ local function lp_webhook_unimplemented(event_type)
   end
 end
 
-local function lp_task_bug_id(t)
-  return tonumber((t.bug_link or ""):match("/bugs/(%d+)$")) or 0
-end
-
-local function lp_task_state(t)
-  return CLOSED_STATUSES[t.status or ""] and "closed" or "open"
-end
-
-local function lp_bug_state(_bug, task)
-  if task then
-    return CLOSED_STATUSES[task.status or ""] and "closed" or "open"
-  end
-  return "open"
-end
-
-local function lp_task_updated_at(t)
-  return t.date_last_updated or t.date_created or ""
-end
-
-local function lp_bug_updated_at(bug)
-  return bug.date_last_updated or bug.date_created or ""
-end
-
 -- Translate a Launchpad bug task (IBugTask) to GitHub issue format.
 -- Bug tasks come from searchTasks; they have status but not description.
-local translate_lp_task = make_translator({
-  id = computed(lp_task_bug_id),
-  node_id = const(""),
-  number = computed(lp_task_bug_id),
-  title = field("title", { default = "" }),
-  body = const(""),
-  state = computed(lp_task_state),
-  user = computed(function(t)
-    return translate_lp_user(t)
-  end),
-  assignees = computed(function()
+local function translate_lp_task(t)
+  if not t then
     return {}
-  end),
-  labels = computed(function()
-    return {}
-  end),
-  milestone = const(nil),
-  created_at = field("date_created", { default = "" }),
-  updated_at = computed(lp_task_updated_at),
-  closed_at = "date_closed",
-  html_url = const(""),
-})
+  end
+  local bug_id = tonumber((t.bug_link or ""):match("/bugs/(%d+)$")) or 0
+  local state = CLOSED_STATUSES[t.status or ""] and "closed" or "open"
+  return {
+    id = bug_id,
+    node_id = "",
+    number = bug_id,
+    title = t.title or "",
+    body = "",
+    state = state,
+    user = {
+      login = lp_login(t.owner_link),
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      url = "",
+      type = "User",
+    },
+    assignees = {},
+    labels = {},
+    milestone = nil,
+    created_at = t.date_created or "",
+    updated_at = t.date_last_updated or t.date_created or "",
+    closed_at = t.date_closed,
+    html_url = "",
+  }
+end
 
 -- Translate a Launchpad IBug + optional IBugTask to GitHub issue format.
 -- Bug has title/description/reporter; task has per-project status.
-local translate_lp_bug = make_translator({
-  id = field("id", { default = 0 }),
-  node_id = const(""),
-  number = field("id", { default = 0 }),
-  title = field("title", { default = "" }),
-  body = field("description", { default = "" }),
-  state = computed(lp_bug_state),
-  user = computed(function(bug)
-    return translate_lp_user(bug)
-  end),
-  assignees = computed(function()
+local function translate_lp_bug(bug, task)
+  if not bug then
     return {}
-  end),
-  labels = computed(function()
-    return {}
-  end),
-  milestone = const(nil),
-  created_at = field("date_created", { default = "" }),
-  updated_at = computed(lp_bug_updated_at),
-  closed_at = const(nil),
-  html_url = const(""),
-})
+  end
+  local state = "open"
+  if task then
+    state = CLOSED_STATUSES[task.status or ""] and "closed" or "open"
+  end
+  return {
+    id = bug.id or 0,
+    node_id = "",
+    number = bug.id or 0,
+    title = bug.title or "",
+    body = bug.description or "",
+    state = state,
+    user = {
+      login = lp_login(bug.owner_link),
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      url = "",
+      type = "User",
+    },
+    assignees = {},
+    labels = {},
+    milestone = nil,
+    created_at = bug.date_created or "",
+    updated_at = bug.date_last_updated or bug.date_created or "",
+    closed_at = nil,
+    html_url = "",
+  }
+end
 
 local b = make_backend_builder()
 b:rest("get_root", function()

@@ -28,17 +28,13 @@ local function ref_type(ref)
   return "branch"
 end
 
-local function tuleap_repo_project(r)
-  return r.project or {}
-end
-
-local function tuleap_repo_name(r)
-  return r.name or ""
-end
-
-local function tuleap_repo_full_name(r)
-  local project = tuleap_repo_project(r)
-  local name = tuleap_repo_name(r)
+-- Translate a Tuleap git repository object to GitHub format.
+local function translate_tuleap_repo(r)
+  if not r then
+    return {}
+  end
+  local project = r.project or {}
+  local name = r.name or ""
   local full_name = r.full_name or ""
   local shortname = project.shortname
     or project.path
@@ -48,95 +44,73 @@ local function tuleap_repo_full_name(r)
   if full_name == "" then
     full_name = shortname ~= "" and (shortname .. "/" .. name) or name
   end
-  return full_name
+  return {
+    id = r.id or 0,
+    node_id = "",
+    name = name,
+    full_name = full_name,
+    private = false,
+    owner = {
+      login = shortname,
+      id = project.id or 0,
+      node_id = "",
+      avatar_url = "",
+      url = "",
+      html_url = config.base_url .. "/projects/" .. shortname,
+      type = "Organization",
+    },
+    html_url = r.http_url or "",
+    description = r.description,
+    fork = false,
+    url = "",
+    clone_url = r.clone_http_url or "",
+    homepage = "",
+    size = 0,
+    stargazers_count = 0,
+    watchers_count = 0,
+    language = nil,
+    has_issues = true,
+    has_wiki = false,
+    forks_count = 0,
+    archived = false,
+    disabled = false,
+    open_issues_count = 0,
+    default_branch = r.default_branch or "main",
+    visibility = "public",
+    forks = 0,
+    open_issues = 0,
+    watchers = 0,
+    created_at = nil,
+    updated_at = nil,
+    pushed_at = nil,
+  }
 end
 
-local function tuleap_repo_shortname(r)
-  local project = tuleap_repo_project(r)
-  local full_name = r.full_name or ""
-  return project.shortname or project.path or project.name or full_name:match("^([^/]+)/") or ""
-end
-
-local translate_tuleap_repo_owner = make_translator({
-  login = computed(tuleap_repo_shortname),
-  id = computed(function(r)
-    return tuleap_repo_project(r).id or 0
-  end),
-  node_id = const(""),
-  avatar_url = const(""),
-  url = const(""),
-  html_url = computed(function(r)
-    return config.base_url .. "/projects/" .. tuleap_repo_shortname(r)
-  end),
-  type = const("Organization"),
-})
-
--- Translate a Tuleap git repository object to GitHub format.
-local translate_tuleap_repo = make_translator({
-  id = field("id", { default = 0 }),
-  node_id = const(""),
-  name = computed(tuleap_repo_name),
-  full_name = computed(tuleap_repo_full_name),
-  private = const(false),
-  owner = computed(function(r)
-    return translate_tuleap_repo_owner(r)
-  end),
-  html_url = field("http_url", { default = "" }),
-  description = "description",
-  fork = const(false),
-  url = const(""),
-  clone_url = field("clone_http_url", { default = "" }),
-  homepage = const(""),
-  size = const(0),
-  stargazers_count = const(0),
-  watchers_count = const(0),
-  language = const(nil),
-  has_issues = const(true),
-  has_wiki = const(false),
-  forks_count = const(0),
-  archived = const(false),
-  disabled = const(false),
-  open_issues_count = const(0),
-  default_branch = field("default_branch", { default = "main" }),
-  visibility = const("public"),
-  forks = const(0),
-  open_issues = const(0),
-  watchers = const(0),
-  created_at = const(nil),
-  updated_at = const(nil),
-  pushed_at = const(nil),
-})
-
-local function tuleap_user_login(u)
-  return u.username or u.login or u.name or u.real_name or ""
-end
-
-local function tuleap_user_html_url(u)
-  local login = tuleap_user_login(u)
+-- Translate a Tuleap user object to GitHub format.
+local function translate_tuleap_user(u)
+  if not u then
+    return {}
+  end
+  local login = u.username or u.login or u.name or u.real_name or ""
   local html_url = u.user_url or ""
   if html_url == "" then
     html_url = config.base_url .. "/users/" .. login
   elseif html_url:match("^/") then
     html_url = config.base_url .. html_url
   end
-  return html_url
+  return {
+    login = login,
+    id = u.id or 0,
+    node_id = "",
+    avatar_url = u.avatar_url or "",
+    html_url = html_url,
+    type = "User",
+    site_admin = false,
+    name = u.real_name or u.display_name or login,
+    email = u.email or "",
+    blog = "",
+  }
 end
-
--- Translate a Tuleap user object to GitHub format.
-local translate_tuleap_user = make_translator({
-  login = computed(tuleap_user_login),
-  id = field("id", { default = 0 }),
-  node_id = const(""),
-  avatar_url = field("avatar_url", { default = "" }),
-  html_url = computed(tuleap_user_html_url),
-  type = const("User"),
-  site_admin = const(false),
-  name = computed(function(u)
-    return u.real_name or u.display_name or tuleap_user_login(u)
-  end),
-  email = field("email", { default = "" }),
-  blog = const(""),
-})
 
 local function tuleap_project_url(path)
   if path and path ~= "" then
@@ -145,107 +119,62 @@ local function tuleap_project_url(path)
   return ""
 end
 
-local function tuleap_project_webhook_sender(payload)
-  return translate_tuleap_user({
+local function translate_tuleap_project_webhook(payload)
+  payload = payload or {}
+  local sender = translate_tuleap_user({
     id = payload.owner_id,
     username = payload.owner_username or payload.owner_name,
     real_name = payload.owner_name,
     email = payload.owner_email,
   })
+  return {
+    id = payload.project_id or payload.id or 0,
+    node_id = "",
+    name = payload.name or payload.path or "",
+    body = payload.description or "",
+    url = "",
+    html_url = tuleap_project_url(payload.path),
+    owner_url = sender.html_url or "",
+    creator = sender,
+    created_at = payload.created_at or "",
+    updated_at = payload.updated_at or payload.created_at or "",
+    path = payload.path or "",
+    path_with_namespace = payload.path_with_namespace or payload.path or "",
+    visibility = payload.project_visibility or payload.visibility or "",
+  }
 end
 
-local translate_tuleap_project_webhook = make_translator({
-  id = computed(function(payload)
-    return payload.project_id or payload.id or 0
-  end),
-  node_id = const(""),
-  name = computed(function(payload)
-    return payload.name or payload.path or ""
-  end),
-  body = field("description", { default = "" }),
-  url = const(""),
-  html_url = computed(function(payload)
-    return tuleap_project_url(payload.path)
-  end),
-  owner_url = computed(function(payload)
-    return tuleap_project_webhook_sender(payload).html_url or ""
-  end),
-  creator = computed(tuleap_project_webhook_sender),
-  created_at = field("created_at", { default = "" }),
-  updated_at = computed(function(payload)
-    return payload.updated_at or payload.created_at or ""
-  end),
-  path = field("path", { default = "" }),
-  path_with_namespace = computed(function(payload)
-    return payload.path_with_namespace or payload.path or ""
-  end),
-  visibility = computed(function(payload)
-    return payload.project_visibility or payload.visibility or ""
-  end),
-})
-
-local function tuleap_commit_author(c)
-  return c.author or {}
+local function translate_tuleap_commit(c)
+  c = c or {}
+  local author = c.author or {}
+  local committer = c.committer or author
+  return {
+    id = c.id or c.sha or "",
+    message = c.message or "",
+    timestamp = c.timestamp or c.date or "",
+    url = c.url or "",
+    author = {
+      name = author.name or "",
+      email = author.email or "",
+      username = author.username or author.login or author.name or "",
+    },
+    committer = {
+      name = committer.name or author.name or "",
+      email = committer.email or author.email or "",
+      username = committer.username or committer.login or committer.name or author.name or "",
+    },
+    added = c.added or {},
+    removed = c.removed or {},
+    modified = c.modified or {},
+  }
 end
-
-local function tuleap_commit_committer(c)
-  return c.committer or tuleap_commit_author(c)
-end
-
-local translate_tuleap_commit_author = make_translator({
-  name = field("name", { default = "" }),
-  email = field("email", { default = "" }),
-  username = computed(function(author)
-    return author.username or author.login or author.name or ""
-  end),
-})
-
-local translate_tuleap_commit_committer = make_translator({
-  name = computed(function(c)
-    local committer = tuleap_commit_committer(c)
-    local author = tuleap_commit_author(c)
-    return committer.name or author.name or ""
-  end),
-  email = computed(function(c)
-    local committer = tuleap_commit_committer(c)
-    local author = tuleap_commit_author(c)
-    return committer.email or author.email or ""
-  end),
-  username = computed(function(c)
-    local committer = tuleap_commit_committer(c)
-    local author = tuleap_commit_author(c)
-    return committer.username or committer.login or committer.name or author.name or ""
-  end),
-})
-
-local translate_tuleap_commit = make_translator({
-  id = computed(function(c)
-    return c.id or c.sha or ""
-  end),
-  message = field("message", { default = "" }),
-  timestamp = computed(function(c)
-    return c.timestamp or c.date or ""
-  end),
-  url = field("url", { default = "" }),
-  author = computed(function(c)
-    return translate_tuleap_commit_author(tuleap_commit_author(c))
-  end),
-  committer = computed(function(c)
-    return translate_tuleap_commit_committer(c)
-  end),
-  added = computed(function(c)
-    return c.added or {}
-  end),
-  removed = computed(function(c)
-    return c.removed or {}
-  end),
-  modified = computed(function(c)
-    return c.modified or {}
-  end),
-})
 
 local function translate_tuleap_commits(commits)
-  return translate_list(translate_tuleap_commit, commits)
+  local result = {}
+  for _, commit in ipairs(commits or {}) do
+    result[#result + 1] = translate_tuleap_commit(commit)
+  end
+  return result
 end
 
 local function tuleap_sender(payload)
@@ -313,34 +242,29 @@ local function tuleap_artifact_state(artifact)
   return "open"
 end
 
-local translate_tuleap_artifact = make_translator({
-  id = computed(tuleap_artifact_id),
-  node_id = const(""),
-  number = computed(tuleap_artifact_id),
-  title = computed(function(artifact)
-    return tuleap_artifact_field_value(artifact, "Title") or ""
-  end),
-  body = computed(function(artifact)
-    return tuleap_artifact_field_value(artifact, "Description") or ""
-  end),
-  state = computed(tuleap_artifact_state),
-  user = computed(function(artifact)
-    return translate_tuleap_user(artifact.submitted_by_details or {})
-  end),
-  assignees = computed(function()
-    return {}
-  end),
-  labels = computed(function()
-    return {}
-  end),
-  milestone = const(nil),
-  created_at = field("submitted_on", { default = "" }),
-  updated_at = computed(function(artifact)
-    return tuleap_artifact_field_value(artifact, "Last Update On") or artifact.submitted_on or ""
-  end),
-  closed_at = const(nil),
-  html_url = const(""),
-})
+local function translate_tuleap_artifact(artifact)
+  artifact = artifact or {}
+  local issue_id = tuleap_artifact_id(artifact)
+  local submitted_by = artifact.submitted_by_details or {}
+  return {
+    id = issue_id,
+    node_id = "",
+    number = issue_id,
+    title = tuleap_artifact_field_value(artifact, "Title") or "",
+    body = tuleap_artifact_field_value(artifact, "Description") or "",
+    state = tuleap_artifact_state(artifact),
+    user = translate_tuleap_user(submitted_by),
+    assignees = {},
+    labels = {},
+    milestone = nil,
+    created_at = artifact.submitted_on or "",
+    updated_at = tuleap_artifact_field_value(artifact, "Last Update On")
+      or artifact.submitted_on
+      or "",
+    closed_at = nil,
+    html_url = "",
+  }
+end
 
 local function tuleap_artifact_event(action)
   return function(payload)

@@ -61,83 +61,54 @@ end
 
 -- Translate a Maniphest task object (from maniphest.search) to GitHub issue format.
 -- Task: { id, phid, fields: { name, status, authorPHID, ownerPHID, dateCreated, dateModified, description } }
-local function phabricator_task_fields(t)
-  return (t or {}).fields or {}
-end
-
-local function phabricator_task_id(t)
-  local f = phabricator_task_fields(t)
-  return (t or {}).id
-    or f.id
-    or tonumber((t or {}).monogram and (t or {}).monogram:match("^T(%d+)$"))
-    or 0
-end
-
-local function phabricator_task_state(t)
-  local f = phabricator_task_fields(t)
+local function translate_task(t)
+  if not t then
+    return {}
+  end
+  local f = t.fields or {}
   local status_obj = type(f.status) == "table" and f.status or {}
   local status_value = status_obj.value or f.status
   local state = (status_value == "open" or status_value == nil) and "open" or "closed"
   if status_obj.closed or f.closed then
     state = "closed"
   end
-  return state
+  local desc = f.description or {}
+  local id = t.id or f.id or tonumber(t.monogram and t.monogram:match("^T(%d+)$")) or 0
+  return {
+    id = id,
+    node_id = t.phid or "",
+    number = id,
+    title = f.name or t.name or t.title or "",
+    body = type(desc) == "table" and (desc.raw or "") or tostring(desc),
+    state = state,
+    user = {
+      login = f.authorPHID or "",
+      id = 0,
+      node_id = f.authorPHID or "",
+      avatar_url = "",
+      url = "",
+      type = "User",
+    },
+    assignees = {},
+    labels = {},
+    milestone = nil,
+    created_at = ts(f.dateCreated),
+    updated_at = ts(f.dateModified),
+    closed_at = nil,
+    html_url = t.uri or (config.base_url .. "/T" .. id),
+  }
 end
 
-local function phabricator_task_body(t)
-  local desc = phabricator_task_fields(t).description or {}
-  return type(desc) == "table" and (desc.raw or "") or tostring(desc)
+local function translate_phabricator_user(phid)
+  return {
+    login = phid or "",
+    id = 0,
+    node_id = phid or "",
+    avatar_url = "",
+    url = "",
+    type = "User",
+  }
 end
-
-local translate_phabricator_user = make_translator({
-  login = computed(function(phid)
-    return phid or ""
-  end),
-  id = const(0),
-  node_id = computed(function(phid)
-    return phid or ""
-  end),
-  avatar_url = const(""),
-  url = const(""),
-  type = const("User"),
-})
-
-local function phabricator_user(phid)
-  return translate_phabricator_user(phid or "")
-end
-
-local translate_task = make_translator({
-  id = computed(phabricator_task_id),
-  node_id = field("phid", { default = "" }),
-  number = computed(phabricator_task_id),
-  title = computed(function(t)
-    local f = phabricator_task_fields(t)
-    return f.name or t.name or t.title or ""
-  end),
-  body = computed(phabricator_task_body),
-  state = computed(phabricator_task_state),
-  user = computed(function(t)
-    return phabricator_user(phabricator_task_fields(t).authorPHID)
-  end),
-  assignees = computed(function()
-    return {}
-  end),
-  labels = computed(function()
-    return {}
-  end),
-  milestone = const(nil),
-  created_at = computed(function(t)
-    return ts(phabricator_task_fields(t).dateCreated)
-  end),
-  updated_at = computed(function(t)
-    return ts(phabricator_task_fields(t).dateModified)
-  end),
-  closed_at = const(nil),
-  html_url = computed(function(t)
-    local id = phabricator_task_id(t)
-    return t.uri or (config.base_url .. "/T" .. id)
-  end),
-})
 
 local function phabricator_repository(payload)
   return payload.repository or payload.project or {}
@@ -153,80 +124,40 @@ local function phabricator_repository_id(repo)
     or 0
 end
 
-local function phabricator_repository_fields(repo)
-  return (repo or {}).fields or {}
+local function translate_phabricator_repository(repo)
+  repo = repo or {}
+  local f = repo.fields or {}
+  local name = f.shortName or f.name or repo.shortName or repo.name or ""
+  local full_name = f.slug or f.fullName or repo.full_name or name
+  local id = phabricator_repository_id(repo)
+  local default_branch = f.defaultBranch or f.repositoryBranch or repo.default_branch or "master"
+  local clone_url = f.cloneURI or f.uri or f.remoteURI or repo.clone_url or repo.uri or ""
+  return {
+    id = id,
+    node_id = repo.phid or "",
+    name = name,
+    full_name = full_name,
+    private = f.viewPolicy and f.viewPolicy ~= "public" or repo.private or false,
+    owner = {
+      login = f.ownerPHID or "",
+      id = 0,
+      node_id = f.ownerPHID or "",
+      avatar_url = "",
+      url = "",
+      type = "User",
+    },
+    html_url = repo.uri or f.uri or (config.base_url .. "/diffusion/" .. tostring(id)),
+    description = f.description or repo.description,
+    fork = false,
+    url = "",
+    clone_url = clone_url,
+    ssh_url = f.sshURI or repo.ssh_url or clone_url,
+    default_branch = default_branch,
+    master_branch = default_branch,
+    created_at = ts(f.dateCreated),
+    updated_at = ts(f.dateModified),
+  }
 end
-
-local function phabricator_repository_name(repo)
-  local f = phabricator_repository_fields(repo)
-  return f.shortName or f.name or repo.shortName or repo.name or ""
-end
-
-local function phabricator_repository_default_branch(repo)
-  local f = phabricator_repository_fields(repo)
-  return f.defaultBranch or f.repositoryBranch or repo.default_branch or "master"
-end
-
-local function phabricator_repository_clone_url(repo)
-  local f = phabricator_repository_fields(repo)
-  return f.cloneURI or f.uri or f.remoteURI or repo.clone_url or repo.uri or ""
-end
-
-local translate_phabricator_repository_owner = make_translator({
-  login = computed(function(repo)
-    return phabricator_repository_fields(repo).ownerPHID or ""
-  end),
-  id = const(0),
-  node_id = computed(function(repo)
-    return phabricator_repository_fields(repo).ownerPHID or ""
-  end),
-  avatar_url = const(""),
-  url = const(""),
-  type = const("User"),
-})
-
-local translate_phabricator_repository = make_translator({
-  id = computed(phabricator_repository_id),
-  node_id = field("phid", { default = "" }),
-  name = computed(phabricator_repository_name),
-  full_name = computed(function(repo)
-    local f = phabricator_repository_fields(repo)
-    local name = phabricator_repository_name(repo)
-    return f.slug or f.fullName or repo.full_name or name
-  end),
-  private = computed(function(repo)
-    local f = phabricator_repository_fields(repo)
-    return f.viewPolicy and f.viewPolicy ~= "public" or repo.private or false
-  end),
-  owner = computed(function(repo)
-    return translate_phabricator_repository_owner(repo)
-  end),
-  html_url = computed(function(repo)
-    local f = phabricator_repository_fields(repo)
-    return repo.uri
-      or f.uri
-      or (config.base_url .. "/diffusion/" .. tostring(phabricator_repository_id(repo)))
-  end),
-  description = computed(function(repo)
-    local f = phabricator_repository_fields(repo)
-    return f.description or repo.description
-  end),
-  fork = const(false),
-  url = const(""),
-  clone_url = computed(phabricator_repository_clone_url),
-  ssh_url = computed(function(repo)
-    local f = phabricator_repository_fields(repo)
-    return f.sshURI or repo.ssh_url or phabricator_repository_clone_url(repo)
-  end),
-  default_branch = computed(phabricator_repository_default_branch),
-  master_branch = computed(phabricator_repository_default_branch),
-  created_at = computed(function(repo)
-    return ts(phabricator_repository_fields(repo).dateCreated)
-  end),
-  updated_at = computed(function(repo)
-    return ts(phabricator_repository_fields(repo).dateModified)
-  end),
-})
 
 local function phabricator_object_phid_type(phid)
   if type(phid) ~= "string" then
@@ -252,7 +183,7 @@ local function phabricator_sender(payload, tx)
   local action = payload.action or {}
   return payload.sender
     or payload.actor
-    or phabricator_user((tx and tx.authorPHID) or action.actorPHID)
+    or translate_phabricator_user((tx and tx.authorPHID) or action.actorPHID)
 end
 
 local function phabricator_first_transaction_timestamp(payload)
@@ -298,22 +229,19 @@ local function phabricator_comment_body(tx)
   return type(content) == "table" and (content.raw or content.remarkup or "") or tostring(content)
 end
 
-local translate_phabricator_comment = make_translator({
-  id = field("id", { default = 0 }),
-  node_id = field("phid", { default = "" }),
-  url = const(""),
-  body = computed(phabricator_comment_body),
-  user = computed(function(tx)
-    return phabricator_user(tx.authorPHID)
-  end),
-  created_at = computed(function(tx)
-    return ts(tx.dateCreated)
-  end),
-  updated_at = computed(function(tx)
-    return ts(tx.dateModified or tx.dateCreated)
-  end),
-  html_url = const(""),
-})
+local function translate_phabricator_comment(tx)
+  tx = tx or {}
+  return {
+    id = tx.id or 0,
+    node_id = tx.phid or "",
+    url = "",
+    body = phabricator_comment_body(tx),
+    user = translate_phabricator_user(tx.authorPHID),
+    created_at = ts(tx.dateCreated),
+    updated_at = ts(tx.dateModified or tx.dateCreated),
+    html_url = "",
+  }
+end
 
 local function phabricator_task_action(payload)
   for _, tx in ipairs(payload.transactions or {}) do
@@ -357,124 +285,56 @@ local function phabricator_branch_name(value, fallback)
   return value or fallback or ""
 end
 
-local function phabricator_revision_fields(rev)
-  return (rev or {}).fields or {}
-end
-
-local function phabricator_revision_status_value(rev)
-  local f = phabricator_revision_fields(rev)
+local function translate_differential_revision(rev, payload)
+  rev = rev or {}
+  payload = payload or {}
+  local f = rev.fields or {}
+  local id = phabricator_revision_id(rev)
   local status = type(f.status) == "table" and f.status or {}
-  return status.value or f.status or ""
+  local status_value = status.value or f.status or ""
+  local closed = status.closed or status_value == "accepted" or status_value == "abandoned"
+  local source_branch = phabricator_branch_name(f.sourceBranch or f.branch, "HEAD")
+  local target_branch = phabricator_branch_name(f.targetBranch or f.repositoryBranch, "master")
+  local repository = phabricator_repository(payload)
+  return {
+    id = id,
+    node_id = rev.phid or "",
+    number = id,
+    title = f.title or rev.title or rev.name or "",
+    body = type(f.summary) == "table" and (f.summary.raw or "") or tostring(f.summary or ""),
+    state = closed and "closed" or "open",
+    user = translate_phabricator_user(f.authorPHID),
+    head = {
+      label = source_branch,
+      ref = source_branch,
+      sha = f.sourceCommit or f.diffPHID or "",
+      repo = repository,
+    },
+    base = {
+      label = target_branch,
+      ref = target_branch,
+      sha = f.targetCommit or "",
+      repo = repository,
+    },
+    draft = false,
+    created_at = ts(f.dateCreated),
+    updated_at = ts(f.dateModified),
+    closed_at = closed and ts(f.dateModified) or nil,
+    merged_at = status_value == "accepted" and ts(f.dateModified) or nil,
+    merge_commit_sha = nil,
+    merged = status_value == "accepted",
+    merged_by = status_value == "accepted" and translate_phabricator_user(f.authorPHID) or nil,
+    html_url = rev.uri or (config.base_url .. "/D" .. id),
+    url = "",
+    mergeable = not closed or nil,
+    comments = 0,
+    review_comments = 0,
+    commits = 0,
+    additions = 0,
+    deletions = 0,
+    changed_files = 0,
+  }
 end
-
-local function phabricator_revision_closed(rev)
-  local f = phabricator_revision_fields(rev)
-  local status = type(f.status) == "table" and f.status or {}
-  local status_value = phabricator_revision_status_value(rev)
-  return status.closed or status_value == "accepted" or status_value == "abandoned"
-end
-
-local function phabricator_revision_body(rev)
-  local summary = phabricator_revision_fields(rev).summary
-  return type(summary) == "table" and (summary.raw or "") or tostring(summary or "")
-end
-
-local translate_differential_revision_head = make_translator({
-  label = computed(function(rev)
-    local f = phabricator_revision_fields(rev)
-    return phabricator_branch_name(f.sourceBranch or f.branch, "HEAD")
-  end),
-  ref = computed(function(rev)
-    local f = phabricator_revision_fields(rev)
-    return phabricator_branch_name(f.sourceBranch or f.branch, "HEAD")
-  end),
-  sha = computed(function(rev)
-    local f = phabricator_revision_fields(rev)
-    return f.sourceCommit or f.diffPHID or ""
-  end),
-  repo = computed(function(_rev, payload)
-    return phabricator_repository(payload or {})
-  end),
-})
-
-local translate_differential_revision_base = make_translator({
-  label = computed(function(rev)
-    local f = phabricator_revision_fields(rev)
-    return phabricator_branch_name(f.targetBranch or f.repositoryBranch, "master")
-  end),
-  ref = computed(function(rev)
-    local f = phabricator_revision_fields(rev)
-    return phabricator_branch_name(f.targetBranch or f.repositoryBranch, "master")
-  end),
-  sha = computed(function(rev)
-    return phabricator_revision_fields(rev).targetCommit or ""
-  end),
-  repo = computed(function(_rev, payload)
-    return phabricator_repository(payload or {})
-  end),
-})
-
-local translate_differential_revision = make_translator({
-  id = computed(phabricator_revision_id),
-  node_id = field("phid", { default = "" }),
-  number = computed(phabricator_revision_id),
-  title = computed(function(rev)
-    local f = phabricator_revision_fields(rev)
-    return f.title or rev.title or rev.name or ""
-  end),
-  body = computed(phabricator_revision_body),
-  state = computed(function(rev)
-    return phabricator_revision_closed(rev) and "closed" or "open"
-  end),
-  user = computed(function(rev)
-    return phabricator_user(phabricator_revision_fields(rev).authorPHID)
-  end),
-  head = computed(function(rev, payload)
-    return translate_differential_revision_head(rev, payload)
-  end),
-  base = computed(function(rev, payload)
-    return translate_differential_revision_base(rev, payload)
-  end),
-  draft = const(false),
-  created_at = computed(function(rev)
-    return ts(phabricator_revision_fields(rev).dateCreated)
-  end),
-  updated_at = computed(function(rev)
-    return ts(phabricator_revision_fields(rev).dateModified)
-  end),
-  closed_at = computed(function(rev)
-    return phabricator_revision_closed(rev) and ts(phabricator_revision_fields(rev).dateModified)
-      or nil
-  end),
-  merged_at = computed(function(rev)
-    return phabricator_revision_status_value(rev) == "accepted"
-        and ts(phabricator_revision_fields(rev).dateModified)
-      or nil
-  end),
-  merge_commit_sha = const(nil),
-  merged = computed(function(rev)
-    return phabricator_revision_status_value(rev) == "accepted"
-  end),
-  merged_by = computed(function(rev)
-    return phabricator_revision_status_value(rev) == "accepted"
-        and phabricator_user(phabricator_revision_fields(rev).authorPHID)
-      or nil
-  end),
-  html_url = computed(function(rev)
-    local id = phabricator_revision_id(rev)
-    return rev.uri or (config.base_url .. "/D" .. id)
-  end),
-  url = const(""),
-  mergeable = computed(function(rev)
-    return not phabricator_revision_closed(rev) or nil
-  end),
-  comments = const(0),
-  review_comments = const(0),
-  commits = const(0),
-  additions = const(0),
-  deletions = const(0),
-  changed_files = const(0),
-})
 
 local function phabricator_differential_action(payload)
   for _, tx in ipairs(payload.transactions or {}) do
@@ -528,55 +388,27 @@ local function phabricator_git_identity(value, fallback_phid)
   }
 end
 
-local function phabricator_commit_fields(commit)
-  return (commit or {}).fields or {}
-end
-
-local function phabricator_commit_identifier(commit)
-  local f = phabricator_commit_fields(commit)
-  return f.identifier or commit.identifier or commit.name or ""
-end
-
-local translate_phabricator_commit = make_translator({
-  id = computed(phabricator_commit_identifier),
-  message = computed(function(commit)
-    local f = phabricator_commit_fields(commit)
-    return f.message or f.commitMessage or f.summary or commit.message or ""
-  end),
-  timestamp = computed(function(commit)
-    local f = phabricator_commit_fields(commit)
-    return ts(f.epoch or f.dateCreated or commit.epoch or commit.dateCreated)
-  end),
-  url = computed(function(commit)
-    local identifier = phabricator_commit_identifier(commit)
-    return commit.uri or (identifier ~= "" and (config.base_url .. "/r" .. identifier) or "")
-  end),
-  author = computed(function(commit)
-    local f = phabricator_commit_fields(commit)
-    return phabricator_git_identity(
-      f.author or f.authorName or commit.author,
-      f.authorPHID or commit.authorPHID
-    )
-  end),
-  committer = computed(function(commit)
-    local f = phabricator_commit_fields(commit)
-    local author_phid = f.authorPHID or commit.authorPHID
-    local committer_phid = f.committerPHID or commit.committerPHID or author_phid
-    return phabricator_git_identity(
+local function translate_phabricator_commit(commit)
+  commit = commit or {}
+  local f = commit.fields or {}
+  local identifier = f.identifier or commit.identifier or commit.name or ""
+  local author_phid = f.authorPHID or commit.authorPHID
+  local committer_phid = f.committerPHID or commit.committerPHID or author_phid
+  return {
+    id = identifier,
+    message = f.message or f.commitMessage or f.summary or commit.message or "",
+    timestamp = ts(f.epoch or f.dateCreated or commit.epoch or commit.dateCreated),
+    url = commit.uri or (identifier ~= "" and (config.base_url .. "/r" .. identifier) or ""),
+    author = phabricator_git_identity(f.author or f.authorName or commit.author, author_phid),
+    committer = phabricator_git_identity(
       f.committer or f.committerName or commit.committer or f.author or f.authorName,
       committer_phid
-    )
-  end),
-  added = computed(function(commit)
-    return phabricator_commit_fields(commit).added or commit.added or {}
-  end),
-  removed = computed(function(commit)
-    return phabricator_commit_fields(commit).removed or commit.removed or {}
-  end),
-  modified = computed(function(commit)
-    return phabricator_commit_fields(commit).modified or commit.modified or {}
-  end),
-})
+    ),
+    added = f.added or commit.added or {},
+    removed = f.removed or commit.removed or {},
+    modified = f.modified or commit.modified or {},
+  }
+end
 
 local function phabricator_commit_payload(payload)
   payload = payload or {}
@@ -664,75 +496,55 @@ local function resolve_commit_phid(sha)
 end
 
 -- Translate a Harbormaster build object to a GitHub check run object.
-local function harbormaster_build_fields(b)
-  return (b or {}).fields or {}
-end
-
-local function harbormaster_build_status(b)
-  local hs = harbormaster_build_fields(b).buildStatus or {}
-  return hs.value or "building"
-end
-
-local function harbormaster_check_status(raw_status)
+local function translate_harbormaster_build(b, ref)
+  if not b then
+    return {}
+  end
+  local f = b.fields or {}
+  local hs = f.buildStatus or {}
+  local raw_status = hs.value or "building"
+  local gh_status, gh_conclusion
   if raw_status == "passed" then
-    return "completed", "success"
+    gh_status = "completed"
+    gh_conclusion = "success"
   elseif
     raw_status == "failed"
     or raw_status == "aborted"
     or raw_status == "unexpected"
     or raw_status == "deadlocked"
   then
-    return "completed", "failure"
+    gh_status = "completed"
+    gh_conclusion = "failure"
+  else
+    -- building, paused, or unknown
+    gh_status = "in_progress"
+    gh_conclusion = nil
   end
-  return "in_progress", nil
+  local plan = f.buildPlan or {}
+  local name = plan.name or ("build/" .. tostring(b.id or 0))
+  local date_created = ts(f.dateCreated)
+  local date_modified = ts(f.dateModified)
+  return {
+    id = b.id or 0,
+    node_id = b.phid or "",
+    head_sha = ref,
+    name = name,
+    status = gh_status,
+    conclusion = gh_conclusion,
+    started_at = date_created,
+    completed_at = gh_status == "completed" and date_modified or nil,
+    output = {
+      title = name,
+      summary = raw_status,
+      text = "",
+      annotations_count = 0,
+      annotations_url = "",
+    },
+    url = "",
+    html_url = config.base_url .. "/B" .. tostring(b.id or ""),
+    details_url = "",
+  }
 end
-
-local function harbormaster_build_name(b)
-  local plan = harbormaster_build_fields(b).buildPlan or {}
-  return plan.name or ("build/" .. tostring((b or {}).id or 0))
-end
-
-local translate_harbormaster_build_output = make_translator({
-  title = computed(function(b)
-    return harbormaster_build_name(b)
-  end),
-  summary = computed(harbormaster_build_status),
-  text = const(""),
-  annotations_count = const(0),
-  annotations_url = const(""),
-})
-
-local translate_harbormaster_build = make_translator({
-  id = field("id", { default = 0 }),
-  node_id = field("phid", { default = "" }),
-  head_sha = computed(function(_b, ref)
-    return ref
-  end),
-  name = computed(harbormaster_build_name),
-  status = computed(function(b)
-    local status = harbormaster_check_status(harbormaster_build_status(b))
-    return status
-  end),
-  conclusion = computed(function(b)
-    local _, conclusion = harbormaster_check_status(harbormaster_build_status(b))
-    return conclusion
-  end),
-  started_at = computed(function(b)
-    return ts(harbormaster_build_fields(b).dateCreated)
-  end),
-  completed_at = computed(function(b)
-    local status = harbormaster_check_status(harbormaster_build_status(b))
-    return status == "completed" and ts(harbormaster_build_fields(b).dateModified) or nil
-  end),
-  output = computed(function(b)
-    return translate_harbormaster_build_output(b)
-  end),
-  url = const(""),
-  html_url = computed(function(b)
-    return config.base_url .. "/B" .. tostring(b.id or "")
-  end),
-  details_url = const(""),
-})
 
 local PHABRICATOR_HARBORMASTER_FAILURE_STATUSES = {
   failed = "failure",
@@ -821,135 +633,74 @@ local function phabricator_harbormaster_timestamp(payload, object)
   return ts(f.dateModified or f.dateCreated or action.epoch)
 end
 
-local translate_harbormaster_workflow = make_translator({
-  id = computed(function(object)
-    local f = object.fields or {}
-    return f.buildPlanID or 0
-  end),
-  name = computed(phabricator_harbormaster_name),
-  path = const(""),
-  state = const("active"),
-  url = const(""),
-  html_url = computed(function(object)
-    return object.uri or (config.base_url .. "/B" .. tostring(object.id or ""))
-  end),
-  badge_url = const(""),
-  created_at = computed(function(object)
-    local f = object.fields or {}
-    return ts(f.dateCreated)
-  end),
-  updated_at = computed(function(object, payload)
-    return phabricator_harbormaster_timestamp(payload, object)
-  end),
-})
-
-local translate_harbormaster_workflow_run_payload = make_translator({
-  id = field("id", { default = 0 }),
-  name = computed(phabricator_harbormaster_name),
-  head_branch = computed(function(object, payload)
-    return phabricator_harbormaster_branch(payload, object)
-  end),
-  head_sha = computed(function(object, payload)
-    return phabricator_harbormaster_ref(payload, object)
-  end),
-  run_number = field("id", { default = 0 }),
-  event = const("push"),
-  display_title = computed(phabricator_harbormaster_name),
-  status = computed(function(object)
-    local _, status = phabricator_harbormaster_run_state(object)
-    return status
-  end),
-  conclusion = computed(function(object)
-    local _, _, conclusion = phabricator_harbormaster_run_state(object)
-    return conclusion
-  end),
-  workflow_id = computed(function(object)
-    local f = object.fields or {}
-    return f.buildPlanID or 0
-  end),
-  url = const(""),
-  html_url = computed(function(object)
-    return object and (object.uri or (config.base_url .. "/B" .. tostring(object.id or ""))) or ""
-  end),
-  pull_requests = computed(function()
-    return {}
-  end),
-  created_at = computed(function(object)
-    local f = object.fields or {}
-    return ts(f.dateCreated)
-  end),
-  updated_at = computed(function(object, payload)
-    return phabricator_harbormaster_timestamp(payload, object)
-  end),
-  run_attempt = const(1),
-  referenced_workflows = computed(function()
-    return {}
-  end),
-  actor = computed(function(_object, payload)
-    return phabricator_sender(payload)
-  end),
-  triggering_actor = computed(function(_object, payload)
-    return phabricator_sender(payload)
-  end),
-})
-
-local function harbormaster_workflow_run(object, payload)
-  local action, status, conclusion = phabricator_harbormaster_run_state(object)
-  local run = translate_harbormaster_workflow_run_payload(object, payload)
-  run.status = status
-  run.conclusion = conclusion
-  return action, run
+local function translate_harbormaster_workflow(object, payload)
+  object = object or {}
+  local f = object.fields or {}
+  return {
+    id = f.buildPlanID or 0,
+    name = phabricator_harbormaster_name(object),
+    path = "",
+    state = "active",
+    url = "",
+    html_url = object.uri or (config.base_url .. "/B" .. tostring(object.id or "")),
+    badge_url = "",
+    created_at = ts(f.dateCreated),
+    updated_at = phabricator_harbormaster_timestamp(payload, object),
+  }
 end
 
-local translate_harbormaster_workflow_job_payload = make_translator({
-  id = field("id", { default = 0 }),
-  run_id = computed(function(object)
-    local f = object.fields or {}
-    return f.buildID or 0
-  end),
-  run_url = const(""),
-  run_attempt = const(1),
-  name = computed(phabricator_harbormaster_name),
-  head_sha = computed(function(object, payload)
-    return phabricator_harbormaster_ref(payload, object)
-  end),
-  url = const(""),
-  html_url = computed(function(object)
-    return object and (object.uri or (config.base_url .. "/B" .. tostring(object.id or ""))) or ""
-  end),
-  status = computed(function(object)
-    local _, status = phabricator_harbormaster_job_state(object)
-    return status
-  end),
-  conclusion = computed(function(object)
-    local _, _, conclusion = phabricator_harbormaster_job_state(object)
-    return conclusion
-  end),
-  started_at = computed(function(object)
-    local f = object.fields or {}
-    return ts(f.dateStarted or f.dateCreated)
-  end),
-  completed_at = computed(function(object)
-    local _, status = phabricator_harbormaster_job_state(object)
-    local f = object.fields or {}
-    return status == "completed" and ts(f.dateCompleted or f.dateModified) or nil
-  end),
-  steps = computed(function()
-    return {}
-  end),
-  labels = computed(function()
-    return {}
-  end),
-  runner_id = const(nil),
-  runner_name = const(""),
-})
+local function translate_harbormaster_workflow_run(object, payload)
+  local action, status, conclusion = phabricator_harbormaster_run_state(object)
+  local f = object and object.fields or {}
+  local sender = phabricator_sender(payload)
+  return action,
+    {
+      id = object and object.id or 0,
+      name = phabricator_harbormaster_name(object),
+      head_branch = phabricator_harbormaster_branch(payload, object),
+      head_sha = phabricator_harbormaster_ref(payload, object),
+      run_number = object and object.id or 0,
+      event = "push",
+      display_title = phabricator_harbormaster_name(object),
+      status = status,
+      conclusion = conclusion,
+      workflow_id = f.buildPlanID or 0,
+      url = "",
+      html_url = object and (object.uri or (config.base_url .. "/B" .. tostring(object.id or "")))
+        or "",
+      pull_requests = {},
+      created_at = ts(f.dateCreated),
+      updated_at = phabricator_harbormaster_timestamp(payload, object),
+      run_attempt = 1,
+      referenced_workflows = {},
+      actor = sender,
+      triggering_actor = sender,
+    }
+end
 
-local function harbormaster_workflow_job(object, payload)
+local function translate_harbormaster_workflow_job(object, payload)
   local action, status, conclusion = phabricator_harbormaster_job_state(object)
-  local job = translate_harbormaster_workflow_job_payload(object, payload)
-  job.status = status
-  job.conclusion = conclusion
-  return action, job
+  local f = object and object.fields or {}
+  return action,
+    {
+      id = object and object.id or 0,
+      run_id = f.buildID or 0,
+      run_url = "",
+      run_attempt = 1,
+      name = phabricator_harbormaster_name(object),
+      head_sha = phabricator_harbormaster_ref(payload, object),
+      url = "",
+      html_url = object and (object.uri or (config.base_url .. "/B" .. tostring(object.id or "")))
+        or "",
+      status = status,
+      conclusion = conclusion,
+      started_at = ts(f.dateStarted or f.dateCreated),
+      completed_at = status == "completed" and ts(f.dateCompleted or f.dateModified) or nil,
+      steps = {},
+      labels = {},
+      runner_id = nil,
+      runner_name = "",
+    }
 end
 
 local PHABRICATOR_NATIVE_TO_GITHUB_EVENT = {
@@ -1180,7 +931,7 @@ end)
 local function phabricator_harbormaster_workflow_run_event(payload)
   payload = payload or {}
   local object = payload.object or {}
-  local action, workflow_run = harbormaster_workflow_run(object, payload)
+  local action, workflow_run = translate_harbormaster_workflow_run(object, payload)
   return make_internal_event({
     event = "workflow_run",
     action = action,
@@ -1203,7 +954,7 @@ b:webhook("HMBD", phabricator_harbormaster_workflow_run_event)
 b:webhook("HMBT", function(payload)
   payload = payload or {}
   local object = payload.object or {}
-  local action, workflow_job = harbormaster_workflow_job(object, payload)
+  local action, workflow_job = translate_harbormaster_workflow_job(object, payload)
   return make_internal_event({
     event = "workflow_job",
     action = action,

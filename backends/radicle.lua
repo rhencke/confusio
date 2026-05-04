@@ -24,131 +24,81 @@ local function radicle_ref_type(ref)
   return (ref or ""):match("^refs/tags/") and "tag" or "branch"
 end
 
-local function radicle_user_id(u)
-  return u.id or u.did or ""
+local function translate_radicle_user(u)
+  u = u or {}
+  local id = u.id or u.did or ""
+  local login = u.alias or u.username or u.login or u.name or id
+  return {
+    login = login or "",
+    id = 0,
+    node_id = id,
+    avatar_url = u.avatar_url or "",
+    url = "",
+    html_url = u.html_url or "",
+    type = "User",
+    site_admin = false,
+    name = u.name,
+    email = u.email,
+  }
 end
-
-local function radicle_user_login(u)
-  local id = radicle_user_id(u)
-  return u.alias or u.username or u.login or u.name or id or ""
-end
-
-local translate_radicle_user = make_translator({
-  login = computed(radicle_user_login),
-  id = const(0),
-  node_id = computed(radicle_user_id),
-  avatar_url = field("avatar_url", { default = "" }),
-  url = const(""),
-  html_url = field("html_url", { default = "" }),
-  type = const("User"),
-  site_admin = const(false),
-  name = "name",
-  email = "email",
-})
 
 -- Map a Radicle repository object to GitHub format.
-local function radicle_project(r)
-  return (r.payloads and r.payloads["xyz.radicle.project"])
+local function translate_radicle_repo(r)
+  if not r then
+    return {}
+  end
+  -- Radicle project payload is under payloads["xyz.radicle.project"]
+  local proj = (r.payloads and r.payloads["xyz.radicle.project"])
     or {
       name = r.name,
       description = r.description,
       defaultBranch = r.defaultBranch or r.default_branch,
     }
-end
-
-local function radicle_repo_owner(r)
-  return r.owner or {}
-end
-
-local function radicle_repo_delegates(r)
-  return r.delegates or {}
-end
-
-local function radicle_repo_owner_did(r)
-  local delegates = radicle_repo_delegates(r)
-  local owner = radicle_repo_owner(r)
-  return owner.id or owner.did or (delegates[1] and delegates[1].id) or ""
-end
-
-local function radicle_repo_owner_login(r)
-  local owner = radicle_repo_owner(r)
-  local owner_did = radicle_repo_owner_did(r)
-  return owner.alias or owner.login or owner_did:match("did:key:(.+)$") or owner_did
-end
-
-local function radicle_repo_name(r)
-  local proj = radicle_project(r)
-  return proj.name or r.rid or ""
-end
-
-local function radicle_repo_private(r)
-  return r.private or false
-end
-
-local translate_radicle_repo_owner = make_translator({
-  login = computed(radicle_repo_owner_login),
-  id = const(0),
-  node_id = computed(radicle_repo_owner_did),
-  avatar_url = const(""),
-  url = const(""),
-  html_url = const(""),
-  type = const("User"),
-})
-
-local translate_radicle_repo = make_translator({
-  id = const(0),
-  node_id = field("rid", { default = "" }),
-  name = computed(radicle_repo_name),
-  full_name = computed(function(r)
-    local login = radicle_repo_owner_login(r)
-    local name = radicle_repo_name(r)
-    return (login ~= "" and (login .. "/") or "") .. name
-  end),
-  private = computed(radicle_repo_private),
-  owner = computed(function(r)
-    return translate_radicle_repo_owner(r)
-  end),
-  html_url = computed(function(r)
-    return r.web_url or (config.base_url .. "/repos/" .. (r.rid or ""))
-  end),
-  description = computed(function(r)
-    return radicle_project(r).description
-  end),
-  fork = const(false),
-  url = const(""),
-  clone_url = computed(function(r)
-    return r.clone_url or (r.rid and ("rad://" .. r.rid) or "")
-  end),
-  homepage = const(""),
-  size = const(0),
-  stargazers_count = const(0),
-  watchers_count = const(0),
-  language = const(nil),
-  has_issues = const(false),
-  has_wiki = const(false),
-  forks_count = const(0),
-  archived = const(false),
-  disabled = const(false),
-  open_issues_count = const(0),
-  default_branch = computed(function(r)
-    return radicle_project(r).defaultBranch or "main"
-  end),
-  visibility = computed(function(r)
-    return radicle_repo_private(r) and "private" or "public"
-  end),
-  forks = const(0),
-  open_issues = const(0),
-  watchers = const(0),
-  created_at = const(nil),
-  updated_at = const(nil),
-  pushed_at = const(nil),
-})
-
-local function translate_radicle_repo_or_empty(r)
-  if r == nil then
-    return {}
-  end
-  return translate_radicle_repo(r)
+  local delegates = r.delegates or {}
+  local owner = r.owner or {}
+  local owner_did = owner.id or owner.did or (delegates[1] and delegates[1].id) or ""
+  -- DID looks like "did:key:z6Mk..."; extract the key part as login
+  local login = owner.alias or owner.login or owner_did:match("did:key:(.+)$") or owner_did
+  return {
+    id = 0,
+    node_id = r.rid or "",
+    name = proj.name or r.rid or "",
+    full_name = (login ~= "" and (login .. "/") or "") .. (proj.name or r.rid or ""),
+    private = r.private or false,
+    owner = {
+      login = login,
+      id = 0,
+      node_id = owner_did,
+      avatar_url = "",
+      url = "",
+      html_url = "",
+      type = "User",
+    },
+    html_url = r.web_url or (config.base_url .. "/repos/" .. (r.rid or "")),
+    description = proj.description,
+    fork = false,
+    url = "",
+    clone_url = r.clone_url or (r.rid and ("rad://" .. r.rid) or ""),
+    homepage = "",
+    size = 0,
+    stargazers_count = 0,
+    watchers_count = 0,
+    language = nil,
+    has_issues = false,
+    has_wiki = false,
+    forks_count = 0,
+    archived = false,
+    disabled = false,
+    open_issues_count = 0,
+    default_branch = proj.defaultBranch or "main",
+    visibility = (r.private or false) and "private" or "public",
+    forks = 0,
+    open_issues = 0,
+    watchers = 0,
+    created_at = nil,
+    updated_at = nil,
+    pushed_at = nil,
+  }
 end
 
 -- Translate GitHub create request body to Radicle format.
@@ -171,62 +121,39 @@ local function translate_radicle_req(body_str)
 end
 
 local function translate_radicle_repos(repos)
-  return translate_list(translate_radicle_repo_or_empty, repos)
+  return translate_list(translate_radicle_repo, repos)
 end
 
-local function radicle_commit_author(c)
-  return c.author or {}
+local function translate_radicle_commit(c)
+  c = c or {}
+  local author = c.author or {}
+  local committer = c.committer or author
+  return {
+    id = c.id or "",
+    tree_id = c.tree_id or "",
+    distinct = c.distinct ~= false,
+    message = c.message or "",
+    timestamp = c.timestamp or "",
+    url = c.url or "",
+    author = {
+      name = author.name or "",
+      email = author.email or "",
+      username = author.username or author.alias or author.name or "",
+    },
+    committer = {
+      name = committer.name or author.name or "",
+      email = committer.email or author.email or "",
+      username = committer.username or committer.alias or committer.name or author.name or "",
+    },
+  }
 end
-
-local function radicle_commit_committer(c)
-  return c.committer or radicle_commit_author(c)
-end
-
-local translate_radicle_commit_author = make_translator({
-  name = field("name", { default = "" }),
-  email = field("email", { default = "" }),
-  username = computed(function(author)
-    return author.username or author.alias or author.name or ""
-  end),
-})
-
-local translate_radicle_commit_committer = make_translator({
-  name = computed(function(c)
-    local committer = radicle_commit_committer(c)
-    local author = radicle_commit_author(c)
-    return committer.name or author.name or ""
-  end),
-  email = computed(function(c)
-    local committer = radicle_commit_committer(c)
-    local author = radicle_commit_author(c)
-    return committer.email or author.email or ""
-  end),
-  username = computed(function(c)
-    local committer = radicle_commit_committer(c)
-    local author = radicle_commit_author(c)
-    return committer.username or committer.alias or committer.name or author.name or ""
-  end),
-})
-
-local translate_radicle_commit = make_translator({
-  id = field("id", { default = "" }),
-  tree_id = field("tree_id", { default = "" }),
-  distinct = computed(function(c)
-    return c.distinct ~= false
-  end),
-  message = field("message", { default = "" }),
-  timestamp = field("timestamp", { default = "" }),
-  url = field("url", { default = "" }),
-  author = computed(function(c)
-    return translate_radicle_commit_author(radicle_commit_author(c))
-  end),
-  committer = computed(function(c)
-    return translate_radicle_commit_committer(c)
-  end),
-})
 
 local function translate_radicle_commits(commits)
-  return translate_list(translate_radicle_commit, commits)
+  local result = {}
+  for _, commit in ipairs(commits or {}) do
+    result[#result + 1] = translate_radicle_commit(commit)
+  end
+  return result
 end
 
 local function radicle_ref_event(payload)
@@ -238,7 +165,7 @@ local function radicle_ref_event(payload)
     or (payload.branch and ("refs/heads/" .. payload.branch))
     or ""
   local repository = translate_radicle_repo(payload.repository or {})
-  local sender = translate_radicle_user(payload.pusher or payload.sender or {})
+  local sender = translate_radicle_user(payload.pusher or payload.sender)
   local ref_type = radicle_ref_type(ref)
   local ref_short = radicle_short_ref(ref)
 
@@ -312,85 +239,40 @@ local RADICLE_PATCH_ACTIONS = {
   updated = "synchronize",
 }
 
-local function radicle_patch_payload(payload)
-  return (payload or {}).patch or {}
+local function translate_radicle_patch(payload)
+  payload = payload or {}
+  local patch = payload.patch or {}
+  local repository = translate_radicle_repo(payload.repository or {})
+  local author = translate_radicle_user(patch.author or payload.sender)
+  local number = tonumber(patch.number) or 0
+  return {
+    id = number,
+    node_id = patch.id or "",
+    number = number,
+    title = patch.title or "",
+    body = patch.description or "",
+    state = patch.state or "open",
+    draft = false,
+    html_url = patch.url or "",
+    url = patch.url or "",
+    user = author,
+    head = {
+      ref = patch.head_ref or ("patch/" .. tostring(number)),
+      sha = patch.head or "",
+      repo = repository,
+    },
+    base = {
+      ref = patch.target_branch or repository.default_branch or "",
+      sha = patch.base or "",
+      repo = repository,
+    },
+    created_at = patch.created_at or "",
+    updated_at = patch.updated_at or "",
+    closed_at = patch.closed_at,
+    merged = false,
+    merged_at = nil,
+  }
 end
-
-local function radicle_patch_repository(payload)
-  return translate_radicle_repo((payload or {}).repository or {})
-end
-
-local function radicle_patch_number(payload)
-  return tonumber(radicle_patch_payload(payload).number) or 0
-end
-
-local translate_radicle_patch_head = make_translator({
-  ref = computed(function(payload)
-    local patch = radicle_patch_payload(payload)
-    return patch.head_ref or ("patch/" .. tostring(radicle_patch_number(payload)))
-  end),
-  sha = computed(function(payload)
-    return radicle_patch_payload(payload).head or ""
-  end),
-  repo = computed(radicle_patch_repository),
-})
-
-local translate_radicle_patch_base = make_translator({
-  ref = computed(function(payload)
-    local patch = radicle_patch_payload(payload)
-    local repository = radicle_patch_repository(payload)
-    return patch.target_branch or repository.default_branch or ""
-  end),
-  sha = computed(function(payload)
-    return radicle_patch_payload(payload).base or ""
-  end),
-  repo = computed(radicle_patch_repository),
-})
-
-local translate_radicle_patch = make_translator({
-  id = computed(radicle_patch_number),
-  node_id = computed(function(payload)
-    return radicle_patch_payload(payload).id or ""
-  end),
-  number = computed(radicle_patch_number),
-  title = computed(function(payload)
-    return radicle_patch_payload(payload).title or ""
-  end),
-  body = computed(function(payload)
-    return radicle_patch_payload(payload).description or ""
-  end),
-  state = computed(function(payload)
-    return radicle_patch_payload(payload).state or "open"
-  end),
-  draft = const(false),
-  html_url = computed(function(payload)
-    return radicle_patch_payload(payload).url or ""
-  end),
-  url = computed(function(payload)
-    return radicle_patch_payload(payload).url or ""
-  end),
-  user = computed(function(payload)
-    local patch = radicle_patch_payload(payload)
-    return translate_radicle_user(patch.author or (payload or {}).sender or {})
-  end),
-  head = computed(function(payload)
-    return translate_radicle_patch_head(payload)
-  end),
-  base = computed(function(payload)
-    return translate_radicle_patch_base(payload)
-  end),
-  created_at = computed(function(payload)
-    return radicle_patch_payload(payload).created_at or ""
-  end),
-  updated_at = computed(function(payload)
-    return radicle_patch_payload(payload).updated_at or ""
-  end),
-  closed_at = computed(function(payload)
-    return radicle_patch_payload(payload).closed_at
-  end),
-  merged = const(false),
-  merged_at = const(nil),
-})
 
 local function radicle_patch_event(payload)
   payload = payload or {}
@@ -408,7 +290,7 @@ local function radicle_patch_event(payload)
       number = pr.number,
       pull_request = pr,
       repository = translate_radicle_repo(payload.repository or {}),
-      sender = translate_radicle_user(payload.sender or (payload.patch or {}).author or {}),
+      sender = translate_radicle_user(payload.sender or (payload.patch or {}).author),
       revisions = (payload.patch or {}).revisions,
     },
     timestamp = payload.occurred_at or pr.updated_at or pr.created_at or "",

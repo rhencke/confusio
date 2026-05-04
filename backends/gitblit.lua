@@ -27,92 +27,73 @@ local function split_name(name)
   return owner or "", repo or (name or ""):gsub("%.git$", "")
 end
 
-local function gitblit_repo_owner(r)
-  local owner = split_name(r.name or "")
-  return owner
-end
-
-local function gitblit_repo_name(r)
-  local _, repo_name = split_name(r.name or "")
-  return repo_name
-end
-
-local function gitblit_repo_default_branch(r)
-  local branch = r.HEAD and r.HEAD:match("^refs/heads/(.+)") or r.defaultBranch or "main"
-  return branch
-end
-
-local translate_repo_owner = make_translator({
-  login = computed(gitblit_repo_owner),
-  id = const(0),
-  node_id = const(""),
-  avatar_url = const(""),
-  url = const(""),
-  html_url = computed(function(r)
-    return config.base_url .. "/summary/" .. gitblit_repo_owner(r)
-  end),
-  type = const("User"),
-})
-
 -- Translate a Gitblit repository object to GitHub format.
-local translate_repo = make_translator({
-  id = const(0),
-  node_id = const(""),
-  name = computed(gitblit_repo_name),
-  full_name = computed(function(r)
-    return gitblit_repo_owner(r) .. "/" .. gitblit_repo_name(r)
-  end),
-  private = const(false),
-  owner = computed(function(r)
-    return translate_repo_owner(r)
-  end),
-  html_url = computed(function(r)
-    return config.base_url .. "/summary/" .. (r.name or "")
-  end),
-  description = "description",
-  fork = const(false),
-  url = const(""),
-  clone_url = computed(function(r)
-    return config.base_url .. "/r/" .. (r.name or "")
-  end),
-  homepage = const(""),
-  size = const(0),
-  stargazers_count = const(0),
-  watchers_count = const(0),
-  language = const(nil),
-  has_issues = const(true),
-  has_wiki = const(false),
-  forks_count = const(0),
-  archived = const(false),
-  disabled = const(false),
-  open_issues_count = const(0),
-  default_branch = computed(gitblit_repo_default_branch),
-  visibility = const("public"),
-  forks = const(0),
-  open_issues = const(0),
-  watchers = const(0),
-  created_at = "lastChange",
-  updated_at = "lastChange",
-  pushed_at = "lastChange",
-})
+local function translate_repo(r)
+  if not r then
+    return {}
+  end
+  local owner, repo_name = split_name(r.name or "")
+  local branch = r.HEAD and r.HEAD:match("^refs/heads/(.+)") or r.defaultBranch or "main"
+  return {
+    id = 0,
+    node_id = "",
+    name = repo_name,
+    full_name = owner .. "/" .. repo_name,
+    private = false,
+    owner = {
+      login = owner,
+      id = 0,
+      node_id = "",
+      avatar_url = "",
+      url = "",
+      html_url = config.base_url .. "/summary/" .. owner,
+      type = "User",
+    },
+    html_url = config.base_url .. "/summary/" .. (r.name or ""),
+    description = r.description,
+    fork = false,
+    url = "",
+    clone_url = config.base_url .. "/r/" .. (r.name or ""),
+    homepage = "",
+    size = 0,
+    stargazers_count = 0,
+    watchers_count = 0,
+    language = nil,
+    has_issues = true,
+    has_wiki = false,
+    forks_count = 0,
+    archived = false,
+    disabled = false,
+    open_issues_count = 0,
+    default_branch = branch,
+    visibility = "public",
+    forks = 0,
+    open_issues = 0,
+    watchers = 0,
+    created_at = r.lastChange,
+    updated_at = r.lastChange,
+    pushed_at = r.lastChange,
+  }
+end
 
 -- Translate a Gitblit user object to GitHub format.
-local translate_user = make_translator({
-  login = field("name", { default = "" }),
-  id = const(0),
-  node_id = const(""),
-  avatar_url = const(""),
-  html_url = computed(function(u)
-    return config.base_url .. "/user/" .. (u.name or "")
-  end),
-  type = const("User"),
-  site_admin = const(false),
-  name = computed(function(u)
-    return u.displayName or u.name or ""
-  end),
-  email = field("emailAddress", { default = "" }),
-  blog = const(""),
-})
+local function translate_user(u)
+  if not u then
+    return {}
+  end
+  return {
+    login = u.name or "",
+    id = 0,
+    node_id = "",
+    avatar_url = "",
+    html_url = config.base_url .. "/user/" .. (u.name or ""),
+    type = "User",
+    site_admin = false,
+    name = u.displayName or u.name or "",
+    email = u.emailAddress or "",
+    blog = "",
+  }
+end
 
 local ZERO_SHA = "0000000000000000000000000000000000000000"
 
@@ -129,37 +110,31 @@ local function ref_type(ref)
   return "branch"
 end
 
-local function gitblit_commit_author(c)
-  return c.author or {}
+local function translate_push_commit(c)
+  if not c then
+    return {}
+  end
+  local author = c.author or {}
+  return {
+    id = c.id or "",
+    message = c.message or "",
+    timestamp = c.timestamp or "",
+    url = c.url or "",
+    author = {
+      name = author.name or "",
+      email = author.email or "",
+      username = "",
+    },
+    committer = {
+      name = author.name or "",
+      email = author.email or "",
+      username = "",
+    },
+    added = c.added or {},
+    removed = c.removed or {},
+    modified = c.modified or {},
+  }
 end
-
-local translate_push_commit_author = make_translator({
-  name = field("name", { default = "" }),
-  email = field("email", { default = "" }),
-  username = const(""),
-})
-
-local translate_push_commit = make_translator({
-  id = field("id", { default = "" }),
-  message = field("message", { default = "" }),
-  timestamp = field("timestamp", { default = "" }),
-  url = field("url", { default = "" }),
-  author = computed(function(c)
-    return translate_push_commit_author(gitblit_commit_author(c))
-  end),
-  committer = computed(function(c)
-    return translate_push_commit_author(gitblit_commit_author(c))
-  end),
-  added = computed(function(c)
-    return c.added or {}
-  end),
-  removed = computed(function(c)
-    return c.removed or {}
-  end),
-  modified = computed(function(c)
-    return c.modified or {}
-  end),
-})
 
 -- Return all repos from LIST_REPOSITORIES whose name starts with prefix.
 local function list_repos_by_prefix(prefix)

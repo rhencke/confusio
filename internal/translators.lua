@@ -13,45 +13,21 @@ function owner_repo_id(owner, repo_name)
 end
 
 local translate_repo_owner = make_translator({
-  login = "login",
-  id = "id",
-  node_id = const(""),
-  avatar_url = "avatar_url",
-  url = "url",
-  html_url = "html_url",
   type = computed(function(owner)
     return owner.type or (owner.is_admin and "Admin" or "User")
   end),
+  copy_fields("login", "id", "avatar_url", "url"),
+  copy_fields("html_url"),
+  const_fields("", "node_id"),
 })
 
 translate_repo = make_translator({
-  id = "id",
-  node_id = const(""),
-  name = "name",
-  full_name = "full_name",
-  private = "private",
   owner = computed(function(r)
     return translate_repo_owner(r.owner or {})
   end),
-  html_url = "html_url",
-  description = "description",
-  fork = "fork",
-  url = "url",
   git_url = "ssh_url",
-  ssh_url = "ssh_url",
-  clone_url = "clone_url",
   homepage = "website",
-  size = "size",
   stargazers_count = "stars_count",
-  watchers_count = "watchers_count",
-  language = "language",
-  has_issues = "has_issues",
-  has_wiki = "has_wiki",
-  forks_count = "forks_count",
-  archived = "archived",
-  disabled = const(false),
-  open_issues_count = "open_issues_count",
-  default_branch = "default_branch",
   visibility = computed(function(r)
     return r.visibility or (r.private and "private" or "public")
   end),
@@ -61,20 +37,18 @@ translate_repo = make_translator({
   created_at = "created",
   updated_at = "updated",
   pushed_at = "updated",
-  permissions = "permissions",
+  copy_fields("id", "name", "full_name", "private"),
+  copy_fields("html_url", "description", "fork", "url"),
+  copy_fields("ssh_url", "clone_url", "size", "watchers_count"),
+  copy_fields("language", "has_issues", "has_wiki", "forks_count"),
+  copy_fields("archived", "open_issues_count", "default_branch", "permissions"),
+  const_fields("", "node_id"),
+  const_fields(false, "disabled"),
 })
 
 translate_user = make_translator({
-  login = "login",
-  id = "id",
-  node_id = const(""),
-  avatar_url = "avatar_url",
-  html_url = "html_url",
-  type = const("User"),
   site_admin = field("is_admin", { default = false }),
   name = "full_name",
-  email = "email",
-  location = "location",
   blog = "website",
   followers = computed(function(u)
     return u.followers_count or 0
@@ -83,6 +57,10 @@ translate_user = make_translator({
     return u.following_count or 0
   end),
   created_at = "created",
+  copy_fields("login", "id", "avatar_url", "html_url"),
+  copy_fields("email", "location"),
+  const_fields("", "node_id"),
+  const_fields("User", "type"),
 })
 
 -- translate_migration is global: maps a backend migration object to GitHub field names.
@@ -92,24 +70,15 @@ translate_user = make_translator({
 --   exclude_owner_projects, org_metadata_only, repositories, url, created_at, updated_at.
 -- Optional fields: archive_url, exclude.
 translate_migration = make_translator({
-  id = "id",
   node_id = computed(function(m)
     return m.node_id or ""
   end),
-  owner = "owner",
   guid = computed(function(m)
     return m.guid or ""
   end),
   state = computed(function(m)
     return m.state or "pending"
   end),
-  lock_repositories = field("lock_repositories", { default = false }),
-  exclude_metadata = field("exclude_metadata", { default = false }),
-  exclude_git_data = field("exclude_git_data", { default = false }),
-  exclude_attachments = field("exclude_attachments", { default = false }),
-  exclude_releases = field("exclude_releases", { default = false }),
-  exclude_owner_projects = field("exclude_owner_projects", { default = false }),
-  org_metadata_only = field("org_metadata_only", { default = false }),
   repositories = computed(function(m)
     return m.repositories or {}
   end),
@@ -122,8 +91,16 @@ translate_migration = make_translator({
   updated_at = computed(function(m)
     return m.updated_at or ""
   end),
-  archive_url = "archive_url",
   exclude = computed(function(m)
     return m.exclude or {}
   end),
+  copy_fields("id", "owner", "archive_url"),
+  default_fields(
+    false,
+    "lock_repositories",
+    "exclude_metadata",
+    "exclude_git_data",
+    "exclude_attachments"
+  ),
+  default_fields(false, "exclude_releases", "exclude_owner_projects", "org_metadata_only"),
 })
