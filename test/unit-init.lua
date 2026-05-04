@@ -824,6 +824,12 @@ do
   local passthrough_result = passthrough({ id = 4, display_name = "Fido" })
   eq(passthrough_result.id, 4, "make_translator: passthrough keeps unspecified fields")
   eq(passthrough_result.name, "Fido", "make_translator: passthrough allows overrides")
+  local based = make_translator({
+    html_url = field("url", { default = "" }),
+  }, { base = translate_label_spec })
+  local based_result = based({ id = 8, name = "base", color = "#111", url = "/base" })
+  eq(based_result.id, 8, "make_translator: base keeps existing translated fields")
+  eq(based_result.html_url, "/base", "make_translator: base allows extension fields")
   local translate_labels = translate_list_fn(translate_label_spec)
   eq(#translate_labels({ { id = 5, name = "docs" } }), 1, "translate_list_fn: maps arrays")
   eq(

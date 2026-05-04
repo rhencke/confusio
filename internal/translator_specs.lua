@@ -93,7 +93,9 @@ local function translator_apply(translator, input, ...)
     return {}
   end
   local output = {}
-  if translator.passthrough then
+  if translator.base then
+    output = translator.base(input, ...) or {}
+  elseif translator.passthrough then
     for key, value in pairs(input) do
       output[key] = value
     end
@@ -114,6 +116,7 @@ function make_translator(spec, opts)
   opts = opts or {}
   return setmetatable({
     spec = spec,
+    base = opts.base,
     nil_returns_nil = opts.nil_returns_nil == true,
     passthrough = opts.passthrough == true,
   }, TRANSLATOR_SPEC_MT)

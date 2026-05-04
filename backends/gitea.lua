@@ -7097,29 +7097,11 @@ end)
 -- Extend translate_gitea_milestone to include html_url and creator fields
 -- present in Gitea webhook payloads but absent from REST list responses.
 local translate_gitea_milestone_webhook = make_translator({
-  id = "id",
-  node_id = const(""),
-  number = "id",
-  title = "title",
-  description = field("description", { default = "" }),
-  state = computed(function(m)
-    return m.state or "open"
-  end),
-  open_issues = computed(function(m)
-    return m.open_issues or 0
-  end),
-  closed_issues = computed(function(m)
-    return m.closed_issues or 0
-  end),
-  created_at = "created_at",
-  updated_at = "updated_at",
-  closed_at = "closed_at",
-  due_on = "due_on",
   html_url = field("html_url", { default = "" }),
   creator = computed(function(m)
     return m.creator and translate_user(m.creator) or nil
   end),
-}, { nil_returns_nil = true })
+}, { base = translate_gitea_milestone, nil_returns_nil = true })
 
 -- Action maps: Gitea action string → canonical GitHub action string.
 -- Older Gitea versions (pre-1.19) used different action names for some events;
