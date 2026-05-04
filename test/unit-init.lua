@@ -741,6 +741,92 @@ do
 end
 
 -- ============================================================
+-- translator_specs.lua
+-- ============================================================
+
+do
+  local strip_hash = function(s)
+    return (s or ""):gsub("^#", "")
+  end
+  local upper = function(s)
+    return s and s:upper()
+  end
+  local translate_user_spec = make_translator({
+    login = "username",
+    id = "id",
+    node_id = const(""),
+    type = const("User"),
+    site_admin = field("is_admin", { default = false }),
+  })
+  local translate_label_spec = make_translator({
+    id = "id",
+    node_id = const(""),
+    url = field("url", { default = "" }),
+    name = "name",
+    color = field("color", { default = "", transform = strip_hash }),
+    description = field("description", { default = "" }),
+    default = const(false),
+  })
+  local translate_issue_spec = make_translator({
+    number = "iid",
+    title = "title",
+    state = field("state", { transform = upper }),
+    user = nested(translate_user_spec, "author"),
+    labels = each(translate_label_spec),
+  })
+
+  local label = translate_label_spec({
+    id = 42,
+    name = "bug",
+    color = "#ee0701",
+  })
+  eq(label.id, 42, "make_translator: string spec copies same-named field")
+  eq(label.node_id, "", "make_translator: const spec emits a constant")
+  eq(label.url, "", "make_translator: field default used for nil source")
+  eq(label.color, "ee0701", "make_translator: field transform runs after default")
+  eq(label.default, false, "make_translator: false constants are preserved")
+
+  local issue = translate_issue_spec({
+    iid = 7,
+    title = "Hello",
+    state = "open",
+    author = { id = 9, username = "octo" },
+    labels = {
+      { id = 1, name = "help wanted", color = "#008672", description = "Please help" },
+      { id = 2, name = "bug", color = "d73a4a" },
+    },
+  })
+  eq(issue.number, 7, "make_translator: field can read from a different key")
+  eq(issue.state, "OPEN", "make_translator: transform can rewrite copied values")
+  eq(issue.user.login, "octo", "make_translator: nested translator reads explicit key")
+  eq(issue.user.site_admin, false, "make_translator: nested translator preserves defaults")
+  eq(#issue.labels, 2, "make_translator: each maps array values")
+  eq(issue.labels[1].color, "008672", "make_translator: each uses callable translators")
+
+  local empty = translate_issue_spec(nil)
+  ok(type(empty) == "table", "make_translator: nil input returns an empty table")
+  eq(
+    #translate_issue_spec({ labels = nil }).labels,
+    0,
+    "make_translator: each nil source returns empty array"
+  )
+
+  local failing = make_translator({
+    color = field("color", {
+      transform = function()
+        error("boom")
+      end,
+    }),
+  })
+  local ok_fail, err = pcall(failing, { color = "#fff" })
+  ok(not ok_fail, "make_translator: transform errors are raised")
+  ok(
+    type(err) == "string" and err:find("translator field color", 1, true) ~= nil,
+    "make_translator: errors include the output field name"
+  )
+end
+
+-- ============================================================
 -- set_preamble
 -- ============================================================
 
