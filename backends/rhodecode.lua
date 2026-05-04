@@ -358,35 +358,76 @@ local function translate_pr_branch(repo_name, ref)
   }
 end
 
+local function pr_repo_name(value)
+  if type(value) == "table" then
+    return repo_name_from_payload({ repository = value })
+  end
+  return value or ""
+end
+
+local function pr_branch(payload, pr, repo_name, ref, sha)
+  local branch = translate_pr_branch(repo_name, ref)
+  branch.sha = sha or ""
+  if branch.repo.full_name == "" then
+    branch.repo = translate_rhodecode_repo(payload)
+  end
+  return branch
+end
+
 local function pr_action(payload, pr)
-  local action = payload.action or pr.action or ""
+  local action = payload.action or payload.event_action or pr.action or ""
   local status = pr.status or payload.status or ""
-  if action == "created" or action == "create" or action == "opened" or action == "" then
+  if
+    action == "created"
+    or action == "create"
+    or action == "open"
+    or action == "opened"
+    or status == "new"
+    or status == "open"
+    or status == "opened"
+    or (action == "" and status == "")
+  then
     return "opened"
-  elseif action == "updated" or action == "update" then
+  elseif
+    action == "updated"
+    or action == "update"
+    or action == "synchronize"
+    or action == "synchronized"
+    or status == "updated"
+    or status == "synchronize"
+    or status == "synchronized"
+  then
     return "synchronize"
-  elseif action == "merged" or status == "merged" or action == "closed" or status == "closed" then
+  elseif
+    action == "merged"
+    or status == "merged"
+    or action == "closed"
+    or action == "close"
+    or status == "closed"
+  then
     return "closed"
-  elseif action == "reopened" then
+  elseif action == "reopened" or action == "reopen" or status == "reopened" then
     return "reopened"
   end
-  return action
+  return "unknown", action ~= "" and action or status
 end
 
 local function translate_rhodecode_pull_request(payload)
   local pr = payload.pull_request or payload
   local status = pr.status or payload.status or "new"
   local state = (status == "closed" or status == "merged") and "closed" or "open"
-  local target_repo = pr.org_repo_name
-    or pr.target_repo
-    or payload.repository
-    or payload.repo_name
-    or ""
-  local source_repo = pr.other_repo_name
-    or pr.source_repo
-    or payload.source_repository
-    or target_repo
+  local target_repo = pr_repo_name(pr.org_repo_name or pr.target_repo or payload.repository)
+  if target_repo == "" then
+    target_repo = repo_name_from_payload(payload)
+  end
+  local source_repo =
+    pr_repo_name(pr.other_repo_name or pr.source_repo or payload.source_repository)
+  if source_repo == "" then
+    source_repo = target_repo
+  end
   local number = payload.pull_request_id or pr.pull_request_id or pr.id or 0
+  local updated_at = pr.updated_on or pr.updated_at or payload.updated_on or ""
+  local merged = status == "merged" or payload.action == "merged" or pr.action == "merged"
   return {
     id = number,
     node_id = "",
@@ -396,15 +437,28 @@ local function translate_rhodecode_pull_request(payload)
     title = pr.title or "",
     body = pr.description or pr.body or "",
     user = translate_rhodecode_user(pr.owner or payload.created_by or payload.username),
-    head = translate_pr_branch(source_repo, pr.other_ref or pr.source_ref or payload.source_ref),
-    base = translate_pr_branch(target_repo, pr.org_ref or pr.target_ref or payload.target_ref),
+    head = pr_branch(
+      payload,
+      pr,
+      source_repo,
+      pr.other_ref or pr.source_ref or payload.source_ref,
+      pr.other_rev or pr.source_rev or pr.source_sha or payload.source_sha
+    ),
+    base = pr_branch(
+      payload,
+      pr,
+      target_repo,
+      pr.org_ref or pr.target_ref or payload.target_ref,
+      pr.org_rev or pr.target_rev or pr.target_sha or payload.target_sha
+    ),
     draft = false,
-    created_at = pr.created_on or "",
-    updated_at = pr.updated_on or "",
-    closed_at = state == "closed" and (pr.updated_on or "") or nil,
-    merged_at = status == "merged" and (pr.updated_on or "") or nil,
-    merge_commit_sha = nil,
-    merged_by = nil,
+    created_at = pr.created_on or pr.created_at or payload.created_on or "",
+    updated_at = updated_at,
+    closed_at = state == "closed" and updated_at or nil,
+    merged_at = merged and updated_at or nil,
+    merge_commit_sha = pr.merge_commit_id or pr.merge_commit_sha or payload.merge_commit_sha,
+    merged = merged,
+    merged_by = merged and translate_rhodecode_user(pr.merged_by or payload.merged_by) or nil,
     diff_url = "",
     patch_url = "",
     html_url = target_repo ~= ""
@@ -423,22 +477,25 @@ end
 
 local function rhodecode_pull_request_event(payload)
   local pr = payload.pull_request or payload
-  local action = pr_action(payload, pr)
+  local action, raw_action = pr_action(payload, pr)
+  local repository_name = pr_repo_name(payload.repository or pr.org_repo_name or pr.target_repo)
+  if repository_name == "" then
+    repository_name = repo_name_from_payload(payload)
+  end
   return make_internal_event({
     event = "pull_request",
     action = action,
+    raw_action = raw_action,
     provider = "rhodecode",
     raw = payload,
     data = {
       action = action,
       number = payload.pull_request_id or pr.pull_request_id or pr.id,
       pull_request = translate_rhodecode_pull_request(payload),
-      repository = translate_rhodecode_repo({
-        repo_name = payload.repository or pr.org_repo_name or pr.target_repo,
-      }),
+      repository = translate_rhodecode_repo({ repo_name = repository_name }),
       sender = translate_rhodecode_user(payload.created_by or pr.owner or payload.username),
     },
-    timestamp = pr.updated_on or pr.created_on or "",
+    timestamp = pr.updated_on or pr.updated_at or pr.created_on or pr.created_at or "",
   })
 end
 

@@ -4222,6 +4222,120 @@ do
     "rhodecode webhook: normalized repository includes action"
   )
 
+  local pr_opened =
+    app.backend.webhooks.CREATE_PULLREQUEST_HOOK(load_rhodecode_fixture("pull_request-opened"))
+  eq(pr_opened.event, "pull_request", "rhodecode webhook: create PR maps event")
+  eq(pr_opened.action, "opened", "rhodecode webhook: create PR maps opened action")
+  eq(pr_opened.data.number, 7, "rhodecode webhook: PR number")
+  eq(pr_opened.data.repository.full_name, "octocat/hello-world", "rhodecode webhook: PR repository")
+  eq(pr_opened.data.pull_request.title, "Add webhook fixtures", "rhodecode webhook: PR title")
+  eq(pr_opened.data.pull_request.head.ref, "feature/rhodecode", "rhodecode webhook: PR head ref")
+  eq(pr_opened.data.pull_request.base.ref, "main", "rhodecode webhook: PR base ref")
+  eq(pr_opened.data.pull_request.state, "open", "rhodecode webhook: opened PR state")
+  local pr_opened_envelope = app.backend.webhook_translators.pull_request(pr_opened)
+  eq(pr_opened_envelope.type, "pull_request.opened", "rhodecode webhook: normalized PR opened type")
+  local pr_opened_payload = app.backend.webhook_github_translators.pull_request(pr_opened)
+  eq(pr_opened_payload.action, "opened", "rhodecode webhook: GitHub PR opened action")
+  eq(
+    pr_opened_payload.pull_request.head.label,
+    "alice/hello-world:feature/rhodecode",
+    "rhodecode webhook: GitHub PR head label"
+  )
+
+  local pr_sync = app.backend.webhooks.pull_request({
+    action = "update",
+    repository = "octocat/hello-world",
+    created_by = "alice",
+    pull_request_id = 7,
+    pull_request = {
+      id = 7,
+      title = "Add webhook fixtures",
+      description = "Updated with another commit.",
+      status = "updated",
+      owner = "alice",
+      org_repo_name = "octocat/hello-world",
+      other_repo_name = "alice/hello-world",
+      org_ref = "main",
+      other_ref = "feature/rhodecode",
+      org_rev = "1111111111111111111111111111111111111111",
+      other_rev = "2222222222222222222222222222222222222222",
+      created_on = "2024-01-15T12:15:00Z",
+      updated_on = "2024-01-15T12:20:00Z",
+    },
+  })
+  eq(pr_sync.action, "synchronize", "rhodecode webhook: update maps synchronize action")
+  eq(
+    pr_sync.data.pull_request.head.sha,
+    "2222222222222222222222222222222222222222",
+    "rhodecode webhook: PR synchronize maps head sha"
+  )
+  eq(
+    app.backend.webhook_translators.pull_request(pr_sync).type,
+    "pull_request.synchronize",
+    "rhodecode webhook: normalized PR synchronize type"
+  )
+
+  local pr_closed =
+    app.backend.webhooks.CLOSE_PULLREQUEST_HOOK(load_rhodecode_fixture("pull_request-closed"))
+  eq(pr_closed.action, "closed", "rhodecode webhook: close PR maps closed action")
+  eq(pr_closed.data.pull_request.state, "closed", "rhodecode webhook: closed PR state")
+  eq(
+    pr_closed.data.pull_request.closed_at,
+    "2024-01-15T13:30:00Z",
+    "rhodecode webhook: closed PR timestamp"
+  )
+
+  local pr_merged = app.backend.webhooks.pull_request({
+    action = "merged",
+    repository = "octocat/hello-world",
+    merged_by = "bob",
+    pull_request_id = 8,
+    pull_request = {
+      id = 8,
+      title = "Close the loop",
+      status = "merged",
+      owner = "bob",
+      org_repo_name = "octocat/hello-world",
+      other_repo_name = "bob/hello-world",
+      org_ref = "main",
+      other_ref = "cleanup",
+      merge_commit_sha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      updated_on = "2024-01-15T13:35:00Z",
+    },
+  })
+  eq(pr_merged.action, "closed", "rhodecode webhook: merged PR maps closed action")
+  ok(pr_merged.data.pull_request.merged == true, "rhodecode webhook: merged flag set")
+  eq(
+    pr_merged.data.pull_request.merged_at,
+    "2024-01-15T13:35:00Z",
+    "rhodecode webhook: merged timestamp"
+  )
+  eq(
+    pr_merged.data.pull_request.merge_commit_sha,
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "rhodecode webhook: merge commit sha"
+  )
+
+  local pr_reopened = app.backend.webhooks.pull_request({
+    action = "reopen",
+    repository = "octocat/hello-world",
+    created_by = "bob",
+    pull_request_id = 8,
+    pull_request = {
+      id = 8,
+      title = "Close the loop",
+      status = "reopened",
+      owner = "bob",
+      org_repo_name = "octocat/hello-world",
+      other_repo_name = "bob/hello-world",
+      org_ref = "main",
+      other_ref = "cleanup",
+      updated_on = "2024-01-15T13:40:00Z",
+    },
+  })
+  eq(pr_reopened.action, "reopened", "rhodecode webhook: reopen maps reopened action")
+  eq(pr_reopened.data.pull_request.state, "open", "rhodecode webhook: reopened PR state")
+
   app.backend.rest = saved_rest
   app.backend.capabilities = saved_capabilities
   app.backend.webhooks = saved_webhooks
