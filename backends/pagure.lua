@@ -30,7 +30,7 @@ local function pagure_repo_owner_login(r)
 end
 
 local translate_pagure_repo_owner = make_translator({
-  login = computed(function(user, repo)
+  login = computed(function(_user, repo)
     return pagure_repo_owner_login(repo or {})
   end),
   id = const(0),
