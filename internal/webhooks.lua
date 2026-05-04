@@ -193,7 +193,7 @@ local function sns_string_to_sign(payload)
     return nil
   end
 
-  local fields = nil
+  local fields
   if payload.Type == "Notification" then
     fields = { "Message", "MessageId", "Subject", "Timestamp", "TopicArn", "Type" }
   elseif
@@ -303,7 +303,7 @@ local function verify_codecommit_sns_signature(secret, body)
   end
 
   local version = payload.SignatureVersion
-  local alg = nil
+  local alg
   if version == "1" then
     alg = "sha1"
   elseif version == "2" then
