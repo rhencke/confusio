@@ -1,0 +1,23 @@
+{
+  "version": "0",
+  "id": "44444444-aaaa-bbbb-cccc-555555555555",
+  "detail-type": "CodeCommit Comment on Commit",
+  "source": "aws.codecommit",
+  "account": "123456789012",
+  "time": "2024-01-15T14:05:00Z",
+  "region": "us-east-1",
+  "resources": [
+    "arn:aws:codecommit:us-east-1:123456789012:hello-world"
+  ],
+  "detail": {
+    "afterCommitId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "beforeCommitId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "callerUserArn": "arn:aws:iam::123456789012:user/sybil",
+    "commentId": "commit-comment-edited",
+    "content": "This CodeCommit commit comment was edited.",
+    "event": "commentOnCommitUpdated",
+    "inReplyTo": "root-comment",
+    "repositoryId": "repo-id-hello-world",
+    "repositoryName": "hello-world"
+  }
+}

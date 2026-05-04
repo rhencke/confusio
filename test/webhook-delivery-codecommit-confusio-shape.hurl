@@ -34,6 +34,33 @@ HTTP 200
 
 POST http://{{host}}/webhooks/codecommit
 Content-Type: application/json
+file,fixtures/webhooks/codecommit/pull_request_review_comment-created.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].confusio_event" == "pull_request_review_comment"
+jsonpath "$[0].confusio_source" == "codecommit"
+jsonpath "$[0].confusio_delivery" isString
+jsonpath "$[0].github_event" == ""
+jsonpath "$[0].body_json.type" == "pull_request.review_comment.created"
+jsonpath "$[0].body_json.occurred_at" == "2024-01-15T14:10:00Z"
+jsonpath "$[0].body_json.actor.login" == "trent"
+jsonpath "$[0].body_json.repository.full_name" == "hello-world"
+jsonpath "$[0].body_json.payload.action" == "created"
+jsonpath "$[0].body_json.payload.comment.node_id" == "pr-comment-created"
+jsonpath "$[0].body_json.payload.pull_request.number" == 42
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
 file,fixtures/webhooks/codecommit/pull_request-opened.json;
 HTTP 200
 [Asserts]

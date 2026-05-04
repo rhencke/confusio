@@ -1,0 +1,22 @@
+{
+  "version": "0",
+  "id": "77777777-aaaa-bbbb-cccc-888888888888",
+  "detail-type": "CodeCommit Comment Reaction Change",
+  "source": "aws.codecommit",
+  "account": "123456789012",
+  "time": "2024-01-15T14:20:00Z",
+  "region": "us-east-1",
+  "resources": [
+    "arn:aws:codecommit:us-east-1:123456789012:hello-world"
+  ],
+  "detail": {
+    "callerUserArn": "arn:aws:iam::123456789012:user/victor",
+    "commentId": "pr-comment-created",
+    "event": "commentReactionCreated",
+    "reactionEmojis": [""],
+    "reactionShortcodes": [":thumbsup:"],
+    "reactionUnicodes": ["U+1F44D"],
+    "repositoryId": "repo-id-hello-world",
+    "repositoryName": "hello-world"
+  }
+}

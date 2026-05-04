@@ -396,3 +396,141 @@ jsonpath "$[0].github_delivery" isString
 jsonpath "$[0].body_json.action" == "synchronize"
 jsonpath "$[0].body_json.pull_request.head.sha" == "5555555555555555555555555555555555555555"
 jsonpath "$[0].body_json.sender.login" == "quinn"
+
+# -- EventBridge commentOnCommitCreated -> commit_comment created ------------
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/commit_comment-created.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "commit_comment"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.action" == "created"
+jsonpath "$[0].body_json.comment.node_id" == "commit-comment-created"
+jsonpath "$[0].body_json.comment.body" == "This commit comment came from CodeCommit."
+jsonpath "$[0].body_json.comment.commit_id" == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+jsonpath "$[0].body_json.repository.full_name" == "hello-world"
+jsonpath "$[0].body_json.sender.login" == "ruth"
+
+# -- EventBridge commentOnCommitUpdated -> commit_comment edited -------------
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/commit_comment-edited.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "commit_comment"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.action" == "edited"
+jsonpath "$[0].body_json.comment.node_id" == "commit-comment-edited"
+jsonpath "$[0].body_json.comment.body" == "This CodeCommit commit comment was edited."
+jsonpath "$[0].body_json.comment.commit_id" == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+jsonpath "$[0].body_json.sender.login" == "sybil"
+
+# -- EventBridge commentOnPullRequestCreated -> PR review comment created ----
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/pull_request_review_comment-created.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request_review_comment"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.action" == "created"
+jsonpath "$[0].body_json.comment.node_id" == "pr-comment-created"
+jsonpath "$[0].body_json.comment.body" == "This pull request comment came from CodeCommit."
+jsonpath "$[0].body_json.pull_request.number" == 42
+jsonpath "$[0].body_json.repository.full_name" == "hello-world"
+jsonpath "$[0].body_json.sender.login" == "trent"
+
+# -- EventBridge commentOnPullRequestUpdated -> PR review comment edited -----
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/pull_request_review_comment-edited.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "pull_request_review_comment"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.action" == "edited"
+jsonpath "$[0].body_json.comment.node_id" == "pr-comment-edited"
+jsonpath "$[0].body_json.comment.body" == "This CodeCommit pull request comment was edited."
+jsonpath "$[0].body_json.pull_request.number" == 42
+jsonpath "$[0].body_json.sender.login" == "ursula"
+
+# -- EventBridge commentReactionCreated has no GitHub webhook equivalent -----
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/commit_comment-reaction-created.json;
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "CodeCommit comment reaction events have no GitHub webhook equivalent"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 0
+
+# -- EventBridge commentReactionUpdated has no GitHub webhook equivalent -----
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/commit_comment-reaction-edited.json;
+HTTP 422
+[Asserts]
+jsonpath "$.message" == "CodeCommit comment reaction events have no GitHub webhook equivalent"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 0

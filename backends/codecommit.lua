@@ -68,6 +68,8 @@ end
 local function codecommit_user_from_arn(arn)
   local login = tostring(arn or ""):match(":user/(.+)$")
     or tostring(arn or ""):match(":role/(.+)$")
+    or tostring(arn or ""):match(":federated%-user/(.+)$")
+    or tostring(arn or ""):match(":assumed%-role/[^/]+/(.+)$")
     or ""
   return {
     login = login,
@@ -148,6 +150,13 @@ local CODECOMMIT_PR_ACTIONS = {
   pullRequestSourceBranchUpdated = "synchronize",
 }
 
+local CODECOMMIT_COMMENT_ACTIONS = {
+  commentOnCommitCreated = "created",
+  commentOnCommitUpdated = "edited",
+  commentOnPullRequestCreated = "created",
+  commentOnPullRequestUpdated = "edited",
+}
+
 local function codecommit_pull_request_action(detail)
   local raw_action = detail.event or ""
   if raw_action == "pullRequestStatusChanged" then
@@ -168,6 +177,12 @@ local function codecommit_supported_pull_request_event(raw_action)
     or raw_action == "pullRequestMergeStatusUpdated"
 end
 
+local CODECOMMIT_ACTIONLESS_EVENTS = {
+  create = true,
+  delete = true,
+  push = true,
+}
+
 local function codecommit_normalized_payload_without_envelope_fields(data)
   local payload = {}
   for k, v in pairs(data or {}) do
@@ -178,6 +193,16 @@ local function codecommit_normalized_payload_without_envelope_fields(data)
   return payload
 end
 
+local function codecommit_normalized_event_type(internal_event, fields)
+  if fields and fields.type then
+    return fields.type
+  end
+  if CODECOMMIT_ACTIONLESS_EVENTS[internal_event.event] then
+    return normalized_webhook_event_type(internal_event.event, "")
+  end
+  return normalized_webhook_event_type(internal_event.event, internal_event.action)
+end
+
 local function codecommit_pr_ref(ref, commit, repository)
   local short = codecommit_ref_name(ref)
   return {
@@ -185,6 +210,35 @@ local function codecommit_pr_ref(ref, commit, repository)
     ref = short,
     sha = commit or "",
     repo = repository,
+  }
+end
+
+local function codecommit_pr_from_comment_detail(payload, detail, repository, sender)
+  local pull_request_id = tonumber(detail.pullRequestId) or 0
+  local console_base = "https://" .. payload.region .. ".console.aws.amazon.com"
+  local console_path = "/codesuite/codecommit/repositories/"
+    .. repository.name
+    .. "/pull-requests/"
+    .. pull_request_id
+  return {
+    id = pull_request_id,
+    node_id = detail.revisionId or "",
+    number = pull_request_id,
+    state = "open",
+    title = "",
+    body = nil,
+    user = sender,
+    head = codecommit_pr_ref("", detail.afterCommitId, repository),
+    base = codecommit_pr_ref("", detail.beforeCommitId, repository),
+    created_at = payload.time,
+    updated_at = payload.time,
+    merged = false,
+    html_url = payload.region ~= ""
+        and repository.name ~= ""
+        and pull_request_id ~= 0
+        and (console_base .. console_path .. "?region=" .. payload.region)
+      or "",
+    url = "",
   }
 end
 
@@ -223,6 +277,51 @@ local function codecommit_pr_from_detail(payload, detail, repository, sender)
   }
 end
 
+local function codecommit_console_comment_url(payload, repository, detail)
+  if payload.region == "" or repository.name == "" then
+    return ""
+  end
+  local console_base = "https://" .. payload.region .. ".console.aws.amazon.com"
+  if detail.pullRequestId and detail.pullRequestId ~= "" then
+    return console_base
+      .. "/codesuite/codecommit/repositories/"
+      .. repository.name
+      .. "/pull-requests/"
+      .. detail.pullRequestId
+      .. "/activity#"
+      .. (detail.commentId or "")
+      .. "?region="
+      .. payload.region
+  end
+  return console_base
+    .. "/codesuite/codecommit/repositories/"
+    .. repository.name
+    .. "/commit/"
+    .. (detail.afterCommitId or detail.beforeCommitId or "")
+    .. "?region="
+    .. payload.region
+end
+
+local function codecommit_comment_from_detail(payload, detail, repository, sender)
+  local html_url = codecommit_console_comment_url(payload, repository, detail)
+  return {
+    id = tonumber(detail.commentId) or 0,
+    node_id = detail.commentId or "",
+    url = "",
+    html_url = html_url,
+    body = detail.content or detail.commentContent or detail.notificationBody or "",
+    path = detail.filePath,
+    position = tonumber(detail.filePosition or ""),
+    line = tonumber(detail.fileLineNumber or ""),
+    commit_id = detail.afterCommitId or detail.commitId or detail.beforeCommitId or "",
+    original_commit_id = detail.beforeCommitId or detail.commitId or "",
+    user = sender,
+    created_at = payload.time,
+    updated_at = payload.time,
+    author_association = "NONE",
+  }
+end
+
 local function codecommit_pull_request_from_eventbridge(payload)
   local detail = payload.detail or {}
   if not codecommit_supported_pull_request_event(detail.event) then
@@ -250,12 +349,50 @@ local function codecommit_pull_request_from_eventbridge(payload)
   })
 end
 
+local function codecommit_comment_from_eventbridge(payload)
+  local detail = payload.detail or {}
+  local action = CODECOMMIT_COMMENT_ACTIONS[detail.event]
+  if not action then
+    if
+      detail.event == "commentReactionCreated"
+      or detail.event == "commentReactionUpdated"
+      or payload["detail-type"] == "CodeCommit Comment Reaction Change"
+    then
+      return nil, "CodeCommit comment reaction events have no GitHub webhook equivalent"
+    end
+    return nil, "Unsupported CodeCommit comment event"
+  end
+
+  local repository =
+    codecommit_repository(detail.repositoryName or "", payload.account or "", payload.region or "")
+  local sender = codecommit_user_from_arn(detail.callerUserArn)
+  local comment = codecommit_comment_from_detail(payload, detail, repository, sender)
+  local event = detail.pullRequestId and "pull_request_review_comment" or "commit_comment"
+  local data = {
+    action = action,
+    comment = comment,
+    repository = repository,
+    sender = sender,
+  }
+  if event == "pull_request_review_comment" then
+    data.pull_request = codecommit_pr_from_comment_detail(payload, detail, repository, sender)
+  end
+  return make_internal_event({
+    event = event,
+    action = action,
+    provider = "codecommit",
+    raw = payload,
+    data = data,
+    timestamp = payload.time or "",
+  })
+end
+
 local function translate_codecommit_normalized_webhook(internal_event, fields)
   local data = internal_event.data or {}
   fields = fields or {}
   return make_normalized_webhook_envelope(internal_event, {
     id = fields.id,
-    type = fields.type or normalized_webhook_event_type(internal_event.event, ""),
+    type = codecommit_normalized_event_type(internal_event, fields),
     occurred_at = fields.occurred_at,
     actor = fields.actor or data.sender,
     repository = fields.repository or data.repository,
@@ -440,6 +577,13 @@ local function codecommit_webhook(payload)
   if type(payload.Records) == "table" and type(payload.Records[1]) == "table" then
     return codecommit_push_from_record(payload, payload.Records[1])
   end
+  if
+    payload["detail-type"] == "CodeCommit Comment on Commit"
+    or payload["detail-type"] == "CodeCommit Comment on Pull Request"
+    or payload["detail-type"] == "CodeCommit Comment Reaction Change"
+  then
+    return codecommit_comment_from_eventbridge(payload)
+  end
   if payload["detail-type"] == "CodeCommit Pull Request State Change" then
     return codecommit_pull_request_from_eventbridge(payload)
   end
@@ -585,13 +729,17 @@ b:rest("search_repositories", function()
 end)
 
 b:webhook("codecommit", codecommit_webhook)
+b:webhook_translator("commit_comment", translate_codecommit_normalized_webhook)
 b:webhook_translator("create", translate_codecommit_normalized_webhook)
 b:webhook_translator("delete", translate_codecommit_normalized_webhook)
 b:webhook_translator("pull_request", translate_codecommit_normalized_webhook)
+b:webhook_translator("pull_request_review_comment", translate_codecommit_normalized_webhook)
 b:webhook_translator("push", translate_codecommit_normalized_webhook)
+b:webhook_github_translator("commit_comment", translate_codecommit_github_webhook)
 b:webhook_github_translator("create", translate_codecommit_github_webhook)
 b:webhook_github_translator("delete", translate_codecommit_github_webhook)
 b:webhook_github_translator("pull_request", translate_codecommit_github_webhook)
+b:webhook_github_translator("pull_request_review_comment", translate_codecommit_github_webhook)
 b:webhook_github_translator("push", translate_codecommit_github_webhook)
 
 b:build()

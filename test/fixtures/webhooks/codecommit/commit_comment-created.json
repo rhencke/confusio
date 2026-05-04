@@ -1,0 +1,23 @@
+{
+  "version": "0",
+  "id": "33333333-aaaa-bbbb-cccc-444444444444",
+  "detail-type": "CodeCommit Comment on Commit",
+  "source": "aws.codecommit",
+  "account": "123456789012",
+  "time": "2024-01-15T14:00:00Z",
+  "region": "us-east-1",
+  "resources": [
+    "arn:aws:codecommit:us-east-1:123456789012:hello-world"
+  ],
+  "detail": {
+    "afterCommitId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "beforeCommitId": "9999999999999999999999999999999999999999",
+    "callerUserArn": "arn:aws:iam::123456789012:user/ruth",
+    "commentId": "commit-comment-created",
+    "content": "This commit comment came from CodeCommit.",
+    "event": "commentOnCommitCreated",
+    "inReplyTo": "root-comment",
+    "repositoryId": "repo-id-hello-world",
+    "repositoryName": "hello-world"
+  }
+}

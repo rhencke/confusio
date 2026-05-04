@@ -157,6 +157,7 @@ local EVENT_DEFS = {
   ),
   event("commit_comment", "commit_comment", { "created" }, {
     supported = { "bitbucket" },
+    partial = { "codecommit" },
   }),
   event("create", "create", { "" }, {
     supported = provider_list(REF_PROVIDERS, "codecommit"),
@@ -384,7 +385,7 @@ local EVENT_DEFS = {
     { "created", "edited", "deleted" },
     {
       supported = provider_list(GITEA_FAMILY, "gitlab", BITBUCKET_FAMILY, CHANGE_REVIEW_PROVIDERS),
-      partial = { "azuredevops", "radicle", "sourcehut" },
+      partial = { "azuredevops", "codecommit", "radicle", "sourcehut" },
     }
   ),
   event("pull_request_review_thread", "pull_request.review_thread", { "resolved", "unresolved" }, {

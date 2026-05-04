@@ -1,0 +1,22 @@
+{
+  "version": "0",
+  "id": "88888888-aaaa-bbbb-cccc-999999999999",
+  "detail-type": "CodeCommit Comment Reaction Change",
+  "source": "aws.codecommit",
+  "account": "123456789012",
+  "time": "2024-01-15T14:25:00Z",
+  "region": "us-east-1",
+  "resources": [
+    "arn:aws:codecommit:us-east-1:123456789012:hello-world"
+  ],
+  "detail": {
+    "callerUserArn": "arn:aws:iam::123456789012:user/wendy",
+    "commentId": "pr-comment-created",
+    "event": "commentReactionUpdated",
+    "reactionEmojis": [""],
+    "reactionShortcodes": [":smile:"],
+    "reactionUnicodes": ["U+1F604"],
+    "repositoryId": "repo-id-hello-world",
+    "repositoryName": "hello-world"
+  }
+}
