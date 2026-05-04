@@ -28,57 +28,82 @@ local function resolve_project_id(owner, repo_name)
   return projects[1] and projects[1].id
 end
 
--- Map a OneDev project object to GitHub format.
-local function translate_onedev_repo(r)
-  if not r then
-    return {}
-  end
-  local path = r.path or r.name or ""
+local function onedev_repo_path(r)
+  return (r or {}).path or (r or {}).name or ""
+end
+
+local function onedev_repo_parts(r)
+  local path = onedev_repo_path(r)
   local owner_part, name_part = path:match("^(.+)/([^/]+)$")
   if not owner_part then
     owner_part = ""
     name_part = path
   end
-  return {
-    id = r.id or 0,
-    node_id = "",
-    name = name_part,
-    full_name = path,
-    private = not (r.public or false),
-    owner = {
-      login = owner_part,
-      id = 0,
-      node_id = "",
-      avatar_url = "",
-      url = "",
-      html_url = "",
-      type = "User",
-    },
-    html_url = config.base_url .. "/" .. path,
-    description = r.description,
-    fork = r.forkedFrom ~= nil,
-    url = "",
-    clone_url = "",
-    homepage = "",
-    size = 0,
-    stargazers_count = 0,
-    watchers_count = 0,
-    language = nil,
-    has_issues = true,
-    has_wiki = false,
-    forks_count = 0,
-    archived = false,
-    disabled = false,
-    open_issues_count = 0,
-    default_branch = r.defaultBranch or "main",
-    visibility = (r.public or false) and "public" or "private",
-    forks = 0,
-    open_issues = 0,
-    watchers = 0,
-    created_at = nil,
-    updated_at = nil,
-    pushed_at = nil,
-  }
+  return owner_part, name_part, path
+end
+
+local translate_onedev_repo_owner = make_translator({
+  login = computed(function(r)
+    local owner_part = onedev_repo_parts(r)
+    return owner_part
+  end),
+  id = const(0),
+  node_id = const(""),
+  avatar_url = const(""),
+  url = const(""),
+  html_url = const(""),
+  type = const("User"),
+})
+
+-- Map a OneDev project object to GitHub format.
+local translate_onedev_repo = make_translator({
+  id = field("id", { default = 0 }),
+  node_id = const(""),
+  name = computed(function(r)
+    local _, name_part = onedev_repo_parts(r)
+    return name_part
+  end),
+  full_name = computed(onedev_repo_path),
+  private = computed(function(r)
+    return not (r.public or false)
+  end),
+  owner = computed(function(r)
+    return translate_onedev_repo_owner(r)
+  end),
+  html_url = computed(function(r)
+    return config.base_url .. "/" .. onedev_repo_path(r)
+  end),
+  description = "description",
+  fork = computed(function(r)
+    return r.forkedFrom ~= nil
+  end),
+  url = const(""),
+  clone_url = const(""),
+  homepage = const(""),
+  size = const(0),
+  stargazers_count = const(0),
+  watchers_count = const(0),
+  language = const(nil),
+  has_issues = const(true),
+  has_wiki = const(false),
+  forks_count = const(0),
+  archived = const(false),
+  disabled = const(false),
+  open_issues_count = const(0),
+  default_branch = field("defaultBranch", { default = "main" }),
+  visibility = computed(function(r)
+    return (r.public or false) and "public" or "private"
+  end),
+  forks = const(0),
+  open_issues = const(0),
+  watchers = const(0),
+  created_at = const(nil),
+  updated_at = const(nil),
+  pushed_at = const(nil),
+})
+
+local function onedev_repo_list(repos)
+  return translate_list(translate_onedev_repo, repos)
 end
 
 -- Translate GitHub create/update request body to OneDev format.
@@ -97,80 +122,85 @@ local function translate_onedev_req(body_str)
   return EncodeJson(od)
 end
 
-local function translate_onedev_repos(repos)
-  return translate_list(translate_onedev_repo, repos)
-end
-
-local function translate_onedev_user(u)
-  if not u then
-    return {}
-  end
-  return {
-    login = u.name or "",
-    id = u.id or 0,
-    node_id = "",
-    avatar_url = "",
-    html_url = "",
-    type = "User",
-    site_admin = false,
-    name = u.fullName or u.name or "",
-    email = u.email or "",
-  }
-end
+local translate_onedev_user = make_translator({
+  login = field("name", { default = "" }),
+  id = field("id", { default = 0 }),
+  node_id = const(""),
+  avatar_url = const(""),
+  html_url = const(""),
+  type = const("User"),
+  site_admin = const(false),
+  name = computed(function(u)
+    return u.fullName or u.name or ""
+  end),
+  email = field("email", { default = "" }),
+})
 
 -- Translate a OneDev issue object to GitHub format.
 -- OneDev: { id, number, title, state, description, project, submitter, submitDate, updateDate }
-local function translate_onedev_issue(i)
-  if not i then
-    return {}
-  end
-  local project = i.project or {}
-  local state = (i.state == "Open") and "open" or "closed"
-  local number = i.number or i.id or 0
-  return {
-    id = i.id or 0,
-    node_id = "",
-    number = number,
-    title = i.title or "",
-    body = i.description or "",
-    state = state,
-    user = translate_onedev_user(i.submitter or {}),
-    assignees = {},
-    labels = {},
-    milestone = nil,
-    created_at = i.submitDate or "",
-    updated_at = i.updateDate or i.submitDate or "",
-    closed_at = nil,
-    html_url = config.base_url .. "/" .. (project.path or "") .. "/issues/" .. number,
-  }
+local function onedev_issue_number(i)
+  return (i or {}).number or (i or {}).id or 0
 end
+
+local translate_onedev_issue = make_translator({
+  id = field("id", { default = 0 }),
+  node_id = const(""),
+  number = computed(onedev_issue_number),
+  title = field("title", { default = "" }),
+  body = field("description", { default = "" }),
+  state = computed(function(i)
+    return i.state == "Open" and "open" or "closed"
+  end),
+  user = computed(function(i)
+    return translate_onedev_user(i.submitter or {})
+  end),
+  assignees = computed(function()
+    return {}
+  end),
+  labels = computed(function()
+    return {}
+  end),
+  milestone = const(nil),
+  created_at = field("submitDate", { default = "" }),
+  updated_at = computed(function(i)
+    return i.updateDate or i.submitDate or ""
+  end),
+  closed_at = const(nil),
+  html_url = computed(function(i)
+    local project = i.project or {}
+    return config.base_url .. "/" .. (project.path or "") .. "/issues/" .. onedev_issue_number(i)
+  end),
+})
 
 -- Translate a OneDev issue comment to GitHub format.
 -- OneDev: { id, issueId, user, content, date }
-local function translate_onedev_issue_comment(c)
-  if not c then
-    return {}
-  end
-  return {
-    id = c.id or 0,
-    node_id = "",
-    url = "",
-    body = c.content or "",
-    user = translate_onedev_user(c.user or {}),
-    created_at = c.date or "",
-    updated_at = c.date or "",
-    html_url = "",
-  }
-end
+local translate_onedev_issue_comment = make_translator({
+  id = field("id", { default = 0 }),
+  node_id = const(""),
+  url = const(""),
+  body = field("content", { default = "" }),
+  user = computed(function(c)
+    return translate_onedev_user(c.user or {})
+  end),
+  created_at = field("date", { default = "" }),
+  updated_at = field("date", { default = "" }),
+  html_url = const(""),
+})
 
-local function translate_onedev_pr_branch(project, branch, sha)
-  return {
-    label = branch or "",
-    ref = branch or "",
-    sha = sha or "",
-    repo = project and translate_onedev_repo(project) or nil,
-  }
-end
+local translate_onedev_pr_branch = make_translator({
+  label = computed(function(_project, branch)
+    return branch or ""
+  end),
+  ref = computed(function(_project, branch)
+    return branch or ""
+  end),
+  sha = computed(function(_project, _branch, sha)
+    return sha or ""
+  end),
+  repo = computed(function(project)
+    return project and translate_onedev_repo(project) or nil
+  end),
+})
 
 local function onedev_pr_url(project, number)
   local path = (project or {}).path or ""
@@ -180,136 +210,197 @@ local function onedev_pr_url(project, number)
   return config.base_url .. "/" .. path .. "/~pulls/" .. number
 end
 
-local function translate_onedev_pull_request(pr)
-  if not pr then
-    return {}
-  end
-  local target_project = pr.targetProject or pr.project or {}
-  local source_project = pr.sourceProject or target_project
-  local latest_update = pr.latestUpdate or {}
-  local status = pr.status or "OPEN"
-  return {
-    id = pr.id or 0,
-    node_id = "",
-    number = pr.number or pr.id or 0,
-    state = status == "OPEN" and "open" or "closed",
-    locked = false,
-    title = pr.title or "",
-    body = pr.description or "",
-    user = translate_onedev_user(pr.submitter or {}),
-    head = translate_onedev_pr_branch(
-      source_project,
+local function onedev_pr_target_project(pr)
+  return (pr or {}).targetProject or (pr or {}).project or {}
+end
+
+local function onedev_pr_source_project(pr)
+  return (pr or {}).sourceProject or onedev_pr_target_project(pr)
+end
+
+local function onedev_pr_status(pr)
+  return (pr or {}).status or "OPEN"
+end
+
+local function onedev_pr_number(pr)
+  return (pr or {}).number or (pr or {}).id or 0
+end
+
+local translate_onedev_pull_request = make_translator({
+  id = field("id", { default = 0 }),
+  node_id = const(""),
+  number = computed(onedev_pr_number),
+  state = computed(function(pr)
+    return onedev_pr_status(pr) == "OPEN" and "open" or "closed"
+  end),
+  locked = const(false),
+  title = field("title", { default = "" }),
+  body = field("description", { default = "" }),
+  user = computed(function(pr)
+    return translate_onedev_user(pr.submitter or {})
+  end),
+  head = computed(function(pr)
+    local latest_update = pr.latestUpdate or {}
+    return translate_onedev_pr_branch(
+      onedev_pr_source_project(pr),
       pr.sourceBranch,
       latest_update.headCommitHash or pr.buildCommitHash or ""
-    ),
-    base = translate_onedev_pr_branch(
+    )
+  end),
+  base = computed(function(pr)
+    local target_project = pr.targetProject or pr.project or {}
+    local latest_update = pr.latestUpdate or {}
+    return translate_onedev_pr_branch(
       target_project,
       pr.targetBranch,
       latest_update.targetHeadCommitHash or pr.baseCommitHash or ""
-    ),
-    draft = false,
-    created_at = pr.submitDate or "",
-    updated_at = (pr.lastActivity or {}).date or pr.closeDate or pr.submitDate or "",
-    closed_at = pr.closeDate,
-    merged_at = status == "MERGED" and pr.closeDate or nil,
-    merge_commit_sha = (pr.mergePreview or {}).mergeCommitHash or "",
-    merged_by = nil,
-    diff_url = "",
-    patch_url = "",
-    html_url = onedev_pr_url(target_project, pr.number or pr.id),
-    url = "",
-    mergeable = nil,
-    comments = pr.commentCount or 0,
-    review_comments = 0,
-    additions = 0,
-    deletions = 0,
-    changed_files = 0,
-    labels = {},
-    assignees = {},
-    requested_reviewers = {},
-  }
-end
-
-local function translate_onedev_pr_comment(c)
-  if not c then
+    )
+  end),
+  draft = const(false),
+  created_at = field("submitDate", { default = "" }),
+  updated_at = computed(function(pr)
+    return (pr.lastActivity or {}).date or pr.closeDate or pr.submitDate or ""
+  end),
+  closed_at = "closeDate",
+  merged_at = computed(function(pr)
+    return onedev_pr_status(pr) == "MERGED" and pr.closeDate or nil
+  end),
+  merge_commit_sha = computed(function(pr)
+    return (pr.mergePreview or {}).mergeCommitHash or ""
+  end),
+  merged_by = const(nil),
+  diff_url = const(""),
+  patch_url = const(""),
+  html_url = computed(function(pr)
+    return onedev_pr_url(onedev_pr_target_project(pr), onedev_pr_number(pr))
+  end),
+  url = const(""),
+  mergeable = const(nil),
+  comments = field("commentCount", { default = 0 }),
+  review_comments = const(0),
+  additions = const(0),
+  deletions = const(0),
+  changed_files = const(0),
+  labels = computed(function()
     return {}
-  end
-  return {
-    id = c.id or 0,
-    node_id = "",
-    url = "",
-    body = c.content or "",
-    user = translate_onedev_user(c.user or {}),
-    created_at = c.date or "",
-    updated_at = c.date or "",
-    html_url = "",
-  }
+  end),
+  assignees = computed(function()
+    return {}
+  end),
+  requested_reviewers = computed(function()
+    return {}
+  end),
+})
+
+local translate_onedev_pr_comment = translate_onedev_issue_comment
+
+local function onedev_review_mark(c)
+  c = c or {}
+  return c.mark or c.compareContext or {}
 end
 
-local function translate_onedev_pr_review_comment(c, reply)
+local function onedev_review_body_source(c, reply)
   c = c or {}
   reply = reply or {}
-  local mark = c.mark or c.compareContext or {}
-  local body_source = next(reply) and reply or c
-  return {
-    id = body_source.id or c.id or 0,
-    node_id = "",
-    path = mark.path or mark.newPath or mark.oldPath or c.path or "",
-    position = mark.line or mark.newLine or c.line,
-    original_position = mark.oldLine,
-    commit_id = mark.commitHash or mark.newCommitHash or c.commitHash or "",
-    original_commit_id = mark.oldCommitHash or "",
-    diff_hunk = "",
-    body = body_source.content or "",
-    user = translate_onedev_user(body_source.user or c.user or {}),
-    created_at = body_source.date or c.createDate or "",
-    updated_at = body_source.date or c.createDate or "",
-    html_url = "",
-    pull_request_url = "",
-    url = "",
-  }
+  return next(reply) and reply or c
 end
+
+local translate_onedev_pr_review_comment = make_translator({
+  id = computed(function(c, reply)
+    local body_source = onedev_review_body_source(c, reply)
+    return body_source.id or c.id or 0
+  end),
+  node_id = const(""),
+  path = computed(function(c)
+    local mark = c.mark or c.compareContext or {}
+    return mark.path or mark.newPath or mark.oldPath or c.path or ""
+  end),
+  position = computed(function(c)
+    local mark = onedev_review_mark(c)
+    return mark.line or mark.newLine or c.line
+  end),
+  original_position = computed(function(c)
+    return onedev_review_mark(c).oldLine
+  end),
+  commit_id = computed(function(c)
+    local mark = onedev_review_mark(c)
+    return mark.commitHash or mark.newCommitHash or c.commitHash or ""
+  end),
+  original_commit_id = computed(function(c)
+    return onedev_review_mark(c).oldCommitHash or ""
+  end),
+  diff_hunk = const(""),
+  body = computed(function(c, reply)
+    return onedev_review_body_source(c, reply).content or ""
+  end),
+  user = computed(function(c, reply)
+    local body_source = onedev_review_body_source(c, reply)
+    return translate_onedev_user(body_source.user or c.user or {})
+  end),
+  created_at = computed(function(c, reply)
+    local body_source = onedev_review_body_source(c, reply)
+    return body_source.date or c.createDate or ""
+  end),
+  updated_at = computed(function(c, reply)
+    local body_source = onedev_review_body_source(c, reply)
+    return body_source.date or c.createDate or ""
+  end),
+  html_url = const(""),
+  pull_request_url = const(""),
+  url = const(""),
+})
 
 -- Translate a OneDev branch object to GitHub format.
 -- OneDev: { name, commitHash }
-local function translate_onedev_branch(b)
-  if not b then
-    return {}
-  end
-  return {
-    name = b.name,
-    commit = { sha = b.commitHash or "", url = "" },
-    protected = false,
-  }
-end
+local translate_onedev_branch_commit = make_translator({
+  sha = field("commitHash", { default = "" }),
+  url = const(""),
+})
+
+local translate_onedev_branch = make_translator({
+  name = "name",
+  commit = computed(function(b)
+    return translate_onedev_branch_commit(b)
+  end),
+  protected = const(false),
+})
 
 -- Translate a OneDev commit object to GitHub format.
 -- OneDev: { hash, message, author: { name, emailAddress, date }, committer: {...} }
-local function translate_onedev_commit(c)
-  if not c then
-    return {}
-  end
-  local author = c.author or {}
-  local committer = c.committer or {}
-  return {
-    sha = c.hash or "",
-    commit = {
-      message = c.message or "",
-      author = {
-        name = author.name or "",
-        email = author.emailAddress or "",
-        date = author.date or "",
-      },
-      committer = {
-        name = committer.name or "",
-        email = committer.emailAddress or "",
-        date = committer.date or "",
-      },
-    },
-    author = { login = author.name or "", id = 0, avatar_url = "" },
-    committer = { login = committer.name or "", id = 0, avatar_url = "" },
-  }
-end
+local translate_onedev_commit_signature = make_translator({
+  name = field("name", { default = "" }),
+  email = field("emailAddress", { default = "" }),
+  date = field("date", { default = "" }),
+})
+
+local translate_onedev_commit_user = make_translator({
+  login = field("name", { default = "" }),
+  id = const(0),
+  avatar_url = const(""),
+})
+
+local translate_onedev_commit_body = make_translator({
+  message = field("message", { default = "" }),
+  author = computed(function(c)
+    return translate_onedev_commit_signature(c.author or {})
+  end),
+  committer = computed(function(c)
+    return translate_onedev_commit_signature(c.committer or {})
+  end),
+})
+
+local translate_onedev_commit = make_translator({
+  sha = field("hash", { default = "" }),
+  commit = computed(function(c)
+    return translate_onedev_commit_body(c)
+  end),
+  author = computed(function(c)
+    return translate_onedev_commit_user(c.author or {})
+  end),
+  committer = computed(function(c)
+    return translate_onedev_commit_user(c.committer or {})
+  end),
+})
 
 local b = make_backend_builder()
 b:rest("get_root", function()
@@ -353,7 +444,7 @@ b:rest("get_user_repos", function()
   local count = tonumber(GetParam("per_page")) or 30
   local page = tonumber(GetParam("page")) or 1
   proxy_json(
-    translate_onedev_repos,
+    onedev_repo_list,
     fetch_json(base() .. "/projects?count=" .. count .. "&offset=" .. ((page - 1) * count))
   )
 end)
@@ -371,7 +462,7 @@ b:rest("get_org_repos", function(org)
   local count = tonumber(GetParam("per_page")) or 30
   local page = tonumber(GetParam("page")) or 1
   proxy_json(
-    translate_onedev_repos,
+    onedev_repo_list,
     fetch_json(
       base()
         .. "/projects?query="
@@ -552,7 +643,7 @@ b:rest("get_users_repos", function(username)
   local count = tonumber(GetParam("per_page")) or 30
   local page = tonumber(GetParam("page")) or 1
   proxy_json(
-    translate_onedev_repos,
+    onedev_repo_list,
     fetch_json(
       base()
         .. "/projects?query="
@@ -572,7 +663,7 @@ b:rest("get_repositories", function()
   local count = tonumber(GetParam("per_page")) or 30
   local page = tonumber(GetParam("page")) or 1
   proxy_json(
-    translate_onedev_repos,
+    onedev_repo_list,
     fetch_json(
       base()
         .. "/projects?query="
