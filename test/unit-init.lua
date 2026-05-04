@@ -6290,6 +6290,21 @@ do
     "webhook_catalog_event: unsupported/no-analog provider entries are explicit"
   )
 
+  local rhodecode_push = webhook_catalog_event("push").providers.rhodecode
+  eq(rhodecode_push.status, "supported", "webhook_catalog_event: rhodecode push supported")
+  eq(
+    table.concat(rhodecode_push.sources, ","),
+    "PUSH_HOOK,POST_PUSH",
+    "webhook_catalog_event: rhodecode push native sources recorded"
+  )
+
+  local rhodecode_pr = webhook_catalog_event("pull_request").providers.rhodecode
+  eq(
+    table.concat(rhodecode_pr.sources, ","),
+    "webhook integration pull_request,CREATE_PULLREQUEST_HOOK,CLOSE_PULLREQUEST_HOOK",
+    "webhook_catalog_event: rhodecode pull_request native sources recorded"
+  )
+
   local security_def = webhook_catalog_event("security_advisory")
   eq(
     security_def.providers.gitea.status,
