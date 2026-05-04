@@ -54,6 +54,54 @@ jsonpath "$[0].body_json.before" == "2222222222222222222222222222222222222222"
 jsonpath "$[0].body_json.after" == "3333333333333333333333333333333333333333"
 jsonpath "$[0].body_json.sender.login" == "bob"
 
+# -- SNS Notification envelope containing EventBridge -> push ----------------
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/push-sns-eventbridge.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "push"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.ref" == "refs/heads/release"
+jsonpath "$[0].body_json.before" == "4444444444444444444444444444444444444444"
+jsonpath "$[0].body_json.after" == "5555555555555555555555555555555555555555"
+jsonpath "$[0].body_json.sender.login" == "dana"
+
+# -- Lambda-style SNS record envelope containing EventBridge -> push ----------
+
+POST http://{{target}}/reset
+{}
+HTTP 200
+
+POST http://{{host}}/webhooks/codecommit
+Content-Type: application/json
+file,fixtures/webhooks/codecommit/push-sns-record.json;
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "accepted"
+
+GET http://{{target}}/deliveries
+HTTP 200
+[Asserts]
+jsonpath "$" count == 1
+jsonpath "$[0].github_event" == "push"
+jsonpath "$[0].github_delivery" isString
+jsonpath "$[0].body_json.ref" == "refs/tags/v1.2.3"
+jsonpath "$[0].body_json.before" == "5555555555555555555555555555555555555555"
+jsonpath "$[0].body_json.after" == "6666666666666666666666666666666666666666"
+jsonpath "$[0].body_json.sender.login" == "erin"
+
 # -- EventBridge repository state change -> push -----------------------------
 
 POST http://{{target}}/reset

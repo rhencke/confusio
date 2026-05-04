@@ -135,18 +135,52 @@ local function translate_codecommit_github_webhook(internal_event, fields)
   return github_webhook_payload(internal_event, fields)
 end
 
-local function decode_codecommit_message(payload)
-  if
-    type(payload) == "table"
-    and payload.Type == "Notification"
-    and type(payload.Message) == "string"
-  then
-    local ok, nested = pcall(DecodeJson, payload.Message)
-    if ok and type(nested) == "table" then
-      return nested
+local function decode_json_table(value)
+  if type(value) ~= "string" or value == "" then
+    return nil
+  end
+  local ok, decoded = pcall(DecodeJson, value)
+  if ok and type(decoded) == "table" then
+    return decoded
+  end
+  return nil
+end
+
+local function codecommit_record_nested_payload(record)
+  record = record or {}
+  local sns = record.Sns or record.sns
+  if type(sns) == "table" then
+    return decode_json_table(sns.Message or sns.message)
+  end
+  return nil
+end
+
+local function decode_codecommit_message(payload, depth)
+  if type(payload) ~= "table" then
+    return {}
+  end
+  depth = (depth or 0) + 1
+  if depth > 8 then
+    return payload
+  end
+  if payload.Type == "Notification" then
+    local nested = decode_json_table(payload.Message)
+    if nested then
+      return decode_codecommit_message(nested, depth)
     end
   end
-  return payload or {}
+  if type(payload.Records) == "table" then
+    for _, record in ipairs(payload.Records) do
+      if record.eventSource == "aws:codecommit" or type(record.codecommit) == "table" then
+        return payload
+      end
+      local nested = codecommit_record_nested_payload(record)
+      if nested then
+        return decode_codecommit_message(nested, depth)
+      end
+    end
+  end
+  return payload
 end
 
 local function codecommit_push_from_record(payload, record)

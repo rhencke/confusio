@@ -248,20 +248,50 @@ local SOURCEHUT_BODY_EVENT_FIELDS = {
   "eventType",
 }
 
-local function codecommit_body_event(payload)
+local function decode_json_table(value)
+  if type(value) ~= "string" or value == "" then
+    return nil
+  end
+  local ok, decoded = pcall(DecodeJson, value)
+  if ok and type(decoded) == "table" then
+    return decoded
+  end
+  return nil
+end
+
+local function codecommit_record_nested_payload(record)
+  record = record or {}
+  local sns = record.Sns or record.sns
+  if type(sns) == "table" then
+    return decode_json_table(sns.Message or sns.message)
+  end
+  return nil
+end
+
+local function codecommit_body_event(payload, depth)
   if type(payload) ~= "table" then
     return nil
   end
-  if payload.Type == "Notification" and type(payload.Message) == "string" then
-    local ok, nested = pcall(DecodeJson, payload.Message)
-    if ok then
-      return codecommit_body_event(nested)
+  depth = (depth or 0) + 1
+  if depth > 8 then
+    return nil
+  end
+  if payload.Type == "Notification" then
+    local nested = decode_json_table(payload.Message)
+    if nested then
+      return codecommit_body_event(nested, depth)
     end
   end
-  if type(payload.Records) == "table" and type(payload.Records[1]) == "table" then
-    local record = payload.Records[1]
-    if record.eventSource == "aws:codecommit" or type(record.codecommit) == "table" then
-      return "codecommit"
+  if type(payload.Records) == "table" then
+    for _, record in ipairs(payload.Records) do
+      if record.eventSource == "aws:codecommit" or type(record.codecommit) == "table" then
+        return "codecommit"
+      end
+      local nested = codecommit_record_nested_payload(record)
+      local nested_event = codecommit_body_event(nested, depth)
+      if nested_event then
+        return nested_event
+      end
     end
   end
   if
