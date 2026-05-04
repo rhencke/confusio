@@ -159,7 +159,7 @@ local EVENT_DEFS = {
     supported = { "bitbucket" },
   }),
   event("create", "create", { "" }, {
-    supported = REF_PROVIDERS,
+    supported = provider_list(REF_PROVIDERS, "codecommit"),
   }),
   event("custom_property", "custom_property", { "created", "updated", "deleted" }, {
     partial = { "gitbucket" },
@@ -168,7 +168,7 @@ local EVENT_DEFS = {
     partial = { "gitbucket" },
   }),
   event("delete", "delete", { "" }, {
-    supported = REF_PROVIDERS,
+    supported = provider_list(REF_PROVIDERS, "codecommit"),
   }),
   event(
     "dependabot_alert",

@@ -97,7 +97,7 @@ end
 
 local function codecommit_eventbridge_ref(detail)
   detail = detail or {}
-  local name = detail.referenceName or ""
+  local name = detail.referenceFullName or detail.referenceName or ""
   local ref_type = detail.referenceType or "branch"
   if name:match("^refs/") then
     return name
@@ -106,6 +106,33 @@ local function codecommit_eventbridge_ref(detail)
     return "refs/tags/" .. name
   end
   return "refs/heads/" .. name
+end
+
+local function codecommit_ref_type(ref)
+  if tostring(ref or ""):match("^refs/tags/") then
+    return "tag"
+  end
+  return "branch"
+end
+
+local function codecommit_ref_name(ref)
+  return tostring(ref or ""):match("^refs/[^/]+/(.+)$") or tostring(ref or "")
+end
+
+local function codecommit_reference_action(raw_action, before, after)
+  if raw_action == "referenceCreated" or before == ZERO_SHA then
+    return "create"
+  end
+  if raw_action == "referenceDeleted" or after == ZERO_SHA then
+    return "delete"
+  end
+  return "push"
+end
+
+local function codecommit_supported_reference_event(raw_action)
+  return raw_action == "referenceCreated"
+    or raw_action == "referenceUpdated"
+    or raw_action == "referenceDeleted"
 end
 
 local function codecommit_normalized_payload_without_envelope_fields(data)
@@ -201,6 +228,25 @@ local function codecommit_push_from_record(payload, record)
   local account_id = tostring(record.eventSourceARN or ""):match(":codecommit:[^:]+:(%d+):") or ""
   local sender = codecommit_user_from_arn(record.userIdentityARN)
   local repository = codecommit_repository(repo_name, account_id, region)
+  local action = codecommit_reference_action(reference.event, before, after)
+  if action == "create" or action == "delete" then
+    return make_internal_event({
+      event = action,
+      action = action,
+      provider = "codecommit",
+      raw = payload,
+      data = {
+        ref = codecommit_ref_name(raw_ref),
+        ref_type = codecommit_ref_type(raw_ref),
+        master_branch = repository.default_branch or "",
+        description = repository.description,
+        pusher_type = "user",
+        repository = repository,
+        sender = sender,
+      },
+      timestamp = record.eventTime or "",
+    })
+  end
   return make_internal_event({
     event = "push",
     action = "push",
@@ -226,6 +272,9 @@ end
 
 local function codecommit_push_from_eventbridge(payload)
   local detail = payload.detail or {}
+  if not codecommit_supported_reference_event(detail.event) then
+    return nil, "Unsupported CodeCommit reference event"
+  end
   local raw_ref = codecommit_eventbridge_ref(detail)
   local after = detail.commitId or ""
   local before = detail.oldCommitId or ""
@@ -239,6 +288,25 @@ local function codecommit_push_from_eventbridge(payload)
   local repo_name = detail.repositoryName or ""
   local sender = codecommit_user_from_arn(detail.callerUserArn or detail.userIdentityARN)
   local repository = codecommit_repository(repo_name, account_id, region)
+  local action = codecommit_reference_action(detail.event, before, after)
+  if action == "create" or action == "delete" then
+    return make_internal_event({
+      event = action,
+      action = action,
+      provider = "codecommit",
+      raw = payload,
+      data = {
+        ref = codecommit_ref_name(raw_ref),
+        ref_type = codecommit_ref_type(raw_ref),
+        master_branch = repository.default_branch or "",
+        description = repository.description,
+        pusher_type = "user",
+        repository = repository,
+        sender = sender,
+      },
+      timestamp = payload.time or "",
+    })
+  end
   return make_internal_event({
     event = "push",
     action = "push",
@@ -409,7 +477,11 @@ b:rest("search_repositories", function()
 end)
 
 b:webhook("codecommit", codecommit_webhook)
+b:webhook_translator("create", translate_codecommit_normalized_webhook)
+b:webhook_translator("delete", translate_codecommit_normalized_webhook)
 b:webhook_translator("push", translate_codecommit_normalized_webhook)
+b:webhook_github_translator("create", translate_codecommit_github_webhook)
+b:webhook_github_translator("delete", translate_codecommit_github_webhook)
 b:webhook_github_translator("push", translate_codecommit_github_webhook)
 
 b:build()

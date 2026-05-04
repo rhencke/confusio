@@ -1,0 +1,6 @@
+{
+  "Type": "Notification",
+  "MessageId": "ffffffff-1111-2222-3333-aaaaaaaaaaaa",
+  "TopicArn": "arn:aws:sns:us-east-1:123456789012:codecommit",
+  "Message": "{\"version\":\"0\",\"id\":\"ffffffff-2222-3333-4444-555555555555\",\"detail-type\":\"CodeCommit Repository State Change\",\"source\":\"aws.codecommit\",\"account\":\"123456789012\",\"time\":\"2024-01-15T12:10:00Z\",\"region\":\"us-east-1\",\"resources\":[\"arn:aws:codecommit:us-east-1:123456789012:hello-world\"],\"detail\":{\"event\":\"referenceDeleted\",\"repositoryName\":\"hello-world\",\"repositoryId\":\"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\",\"referenceType\":\"branch\",\"referenceName\":\"sns-feature\",\"referenceFullName\":\"refs/heads/sns-feature\",\"oldCommitId\":\"cccccccccccccccccccccccccccccccccccccccc\",\"callerUserArn\":\"arn:aws:iam::123456789012:user/kate\"}}"
+}

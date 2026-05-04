@@ -1,0 +1,6 @@
+{
+  "Type": "Notification",
+  "MessageId": "eeeeeeee-1111-2222-3333-ffffffffffff",
+  "TopicArn": "arn:aws:sns:us-east-1:123456789012:codecommit",
+  "Message": "{\"Records\":[{\"awsRegion\":\"us-east-1\",\"codecommit\":{\"references\":[{\"commit\":\"9999999999999999999999999999999999999999\",\"oldCommit\":\"0000000000000000000000000000000000000000\",\"ref\":\"refs/heads/sns-feature\"}]},\"eventId\":\"99999999-7777-8888-9999-000000000000\",\"eventName\":\"ReferenceChanges\",\"eventSource\":\"aws:codecommit\",\"eventSourceARN\":\"arn:aws:codecommit:us-east-1:123456789012:hello-world\",\"eventTime\":\"2024-01-15T12:07:00.000+0000\",\"eventTriggerName\":\"confusio\",\"eventVersion\":\"1.0\",\"userIdentityARN\":\"arn:aws:iam::123456789012:user/heidi\"}]}"
+}
