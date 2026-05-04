@@ -2422,6 +2422,7 @@ do
     type(b.set_allow_anonymous) == "function",
     "make_backend_builder: has set_allow_anonymous method"
   )
+  ok(type(b.spec) == "function", "make_backend_builder: has spec method")
   ok(type(b.build) == "function", "make_backend_builder: has build method")
 
   -- registration methods return self for chaining
@@ -2439,6 +2440,12 @@ do
     "builder:webhook_github_translator: returns self"
   )
   ok(b2:set_allow_anonymous(true) == b2, "builder:set_allow_anonymous: returns self")
+  ok(type(backend_strip_patterns) == "function", "backend_strip_patterns: is exported") -- luacheck: globals backend_strip_patterns
+  ok(type(register_backend_spec) == "function", "register_backend_spec: is exported") -- luacheck: globals register_backend_spec
+  ok(
+    backend_strip_patterns("gogs")[1] == "_package",
+    "backend_strip_patterns: returns alias strips"
+  ) -- luacheck: globals backend_strip_patterns
 
   -- build() populates app.backend.rest, graphql_resolvers, app.backend.capabilities,
   -- app.backend.webhooks, app.backend.webhook_translators, and
@@ -2521,6 +2528,72 @@ do
     push_fn2,
     "builder:build(strip): webhook handlers are not stripped"
   )
+
+  -- spec() returns reusable declarations without committing them.
+  app.backend.rest = {}
+  app.backend.capabilities = {}
+  app.allow_anonymous = true
+  local b6 = make_backend_builder()
+  local spec_get_fn = function() end
+  local spec_cap = { get = function() end }
+  b6:rest("get_spec_repo", spec_get_fn)
+  b6:capability("repos", spec_cap)
+  b6:set_allow_anonymous(false)
+  local spec = b6:spec()
+  eq(spec.rest["get_spec_repo"], spec_get_fn, "builder:spec: includes REST handlers")
+  eq(spec.capabilities["repos"], spec_cap, "builder:spec: includes capabilities")
+  eq(spec.allow_anonymous, false, "builder:spec: includes allow_anonymous")
+  ok(app.backend.rest["get_spec_repo"] == nil, "builder:spec: does not register handlers")
+  eq(app.allow_anonymous, true, "builder:spec: does not set allow_anonymous")
+
+  -- register_backend_spec() resolves __index chains and applies REST strip patterns.
+  app.backend.rest = {}
+  app.backend.capabilities = {}
+  app.backend.webhooks = {}
+  app.backend.webhook_translators = {}
+  app.backend.webhook_github_translators = {}
+  graphql_resolvers = {} -- luacheck: globals graphql_resolvers
+  app.allow_anonymous = true
+  local parent_rest = {
+    get_repo = function() end,
+    get_package_info = function() end,
+  }
+  local child_rest = setmetatable({
+    get_repo = function() end,
+    get_child_only = function() end,
+  }, { __index = parent_rest })
+  local parent_spec = {
+    rest = parent_rest,
+    graphql = { ["Query.parent"] = function() end },
+    capabilities = { repos = { get = function() end } },
+    webhooks = { push = function() end },
+    webhook_translators = { push = function() end },
+    webhook_github_translators = { push = function() end },
+    allow_anonymous = false,
+  }
+  local child_spec = setmetatable({
+    rest = child_rest,
+    graphql = { ["Query.child"] = function() end },
+  }, { __index = parent_spec })
+  local child_get_repo = child_rest.get_repo
+
+  register_backend_spec(child_spec, { "_package" }) -- luacheck: globals register_backend_spec
+  eq(app.backend.rest["get_repo"], child_get_repo, "register_backend_spec: child overrides parent")
+  ok(app.backend.rest["get_child_only"] ~= nil, "register_backend_spec: registers child REST")
+  ok(app.backend.rest["get_package_info"] == nil, "register_backend_spec: strips inherited REST")
+  ok(graphql_resolvers["Query.parent"] ~= nil, "register_backend_spec: registers parent GraphQL")
+  ok(graphql_resolvers["Query.child"] ~= nil, "register_backend_spec: registers child GraphQL")
+  ok(app.backend.capabilities["repos"] ~= nil, "register_backend_spec: inherits capabilities")
+  ok(app.backend.webhooks["push"] ~= nil, "register_backend_spec: inherits webhooks")
+  ok(
+    app.backend.webhook_translators["push"] ~= nil,
+    "register_backend_spec: inherits normalized webhook translators"
+  )
+  ok(
+    app.backend.webhook_github_translators["push"] ~= nil,
+    "register_backend_spec: inherits GitHub-shape webhook translators"
+  )
+  eq(app.allow_anonymous, false, "register_backend_spec: inherits allow_anonymous")
 
   -- two builders are independent and do not share state
   app.backend.rest = {}

@@ -301,9 +301,14 @@ app.backend.graphql = graphql_resolvers
 -- of loading graphql_executor.lua.
 graphql_register_builtin_resolvers()
 
+package.path = "/zip/?.lua;./?.lua;" .. package.path
+
 if config.backend ~= "" then
   assert(config.backend:match("^[%a][%w_]*$"), "invalid backend name: " .. config.backend)
-  dofile("/zip/backends/" .. config.backend .. ".lua")
+  local backend_spec = dofile("/zip/backends/" .. config.backend .. ".lua")
+  if backend_spec ~= nil then
+    register_backend_spec(backend_spec, backend_strip_patterns(config.backend))
+  end
 end
 
 dofile("/zip/internal/defaults.lua")
