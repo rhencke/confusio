@@ -28,6 +28,59 @@ local gb_to_gh = {
   warning = { status = "completed", conclusion = "neutral" },
 }
 
+local function gitbucket_check_run_mapping(s)
+  local state = s.state or "pending"
+  return gb_to_gh[state] or { status = "completed", conclusion = "failure" }
+end
+
+local function gitbucket_check_run_name(s, _sha, req)
+  req = req or {}
+  return s.context or req.name or ""
+end
+
+local function gitbucket_check_run_started_at(s)
+  return s.created_at or s.updated_at
+end
+
+local function gitbucket_check_run_completed_at(s)
+  local mapped = gitbucket_check_run_mapping(s)
+  if mapped.status == "completed" then
+    return s.updated_at or s.created_at
+  end
+  return nil
+end
+
+local function gitbucket_check_run_output(s)
+  return {
+    title = s.description or "",
+    summary = s.description or "",
+    text = "",
+    annotations_count = 0,
+    annotations_url = "",
+  }
+end
+
+local translate_gitbucket_check_run = make_translator({
+  id = field("id", { default = 0 }),
+  node_id = const(""),
+  head_sha = computed(function(_s, sha)
+    return sha
+  end),
+  name = computed(gitbucket_check_run_name),
+  status = computed(function(s)
+    return gitbucket_check_run_mapping(s).status
+  end),
+  conclusion = computed(function(s)
+    return gitbucket_check_run_mapping(s).conclusion
+  end),
+  started_at = computed(gitbucket_check_run_started_at),
+  completed_at = computed(gitbucket_check_run_completed_at),
+  output = computed(gitbucket_check_run_output),
+  url = const(""),
+  html_url = field("target_url", { default = "" }),
+  details_url = field("target_url", { default = "" }),
+})
+
 local b = make_backend_builder()
 b:rest("get_root", function()
   proxy_health_check(pcall(Fetch, base() .. "/rate_limit", auth()))
@@ -213,32 +266,7 @@ b:rest("post_check_runs", function(owner, repo_name)
   local gb_state = status == "completed" and (gh_conclusion_to_gb[conclusion] or "error")
     or "pending"
   local function translate(s)
-    if not s then
-      return {}
-    end
-    local state = s.state or "pending"
-    local mapped = gb_to_gh[state] or { status = "completed", conclusion = "failure" }
-    local gh_status, gh_conclusion = mapped.status, mapped.conclusion
-    return {
-      id = s.id or 0,
-      node_id = "",
-      head_sha = sha,
-      name = s.context or req.name or "",
-      status = gh_status,
-      conclusion = gh_conclusion,
-      started_at = s.created_at or s.updated_at,
-      completed_at = gh_status == "completed" and (s.updated_at or s.created_at) or nil,
-      output = {
-        title = s.description or "",
-        summary = s.description or "",
-        text = "",
-        annotations_count = 0,
-        annotations_url = "",
-      },
-      url = "",
-      html_url = s.target_url or "",
-      details_url = s.target_url or "",
-    }
+    return translate_gitbucket_check_run(s, sha, req)
   end
   proxy_json_created(
     translate,
