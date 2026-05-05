@@ -4250,43 +4250,82 @@ end)
 -- Labels (repo-level) -------------------------------------------------------
 
 -- GET /repos/{owner}/{repo}/labels
+b:rest("get_repo_labels", function(owner, repo_name)
+  local items, hdrs, err = labels_cap.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
+
 -- POST /repos/{owner}/{repo}/labels
+b:rest("post_repo_labels", function(owner, repo_name)
+  local data, err = labels_cap.create(owner, repo_name, GetBody())
+  cap_rest_created(data, err)
+end)
+
 -- GET /repos/{owner}/{repo}/labels/{name}
 -- GitHub uses label name in the URL; Gitea uses numeric ID.
+b:rest("get_repo_label", function(owner, repo_name, label_name)
+  local id = gitea_find_label_id(owner, repo_name, label_name)
+  if not id then
+    respond_json(404, { message = "Label not found" })
+    return
+  end
+  local data, err = labels_cap.get(owner, repo_name, id)
+  cap_rest_respond(data, err)
+end)
+
 -- PATCH /repos/{owner}/{repo}/labels/{name}
+b:rest("patch_repo_label", function(owner, repo_name, label_name)
+  local id = gitea_find_label_id(owner, repo_name, label_name)
+  if not id then
+    respond_json(404, { message = "Label not found" })
+    return
+  end
+  local data, err = labels_cap.update(owner, repo_name, id, GetBody())
+  cap_rest_respond(data, err)
+end)
+
 -- DELETE /repos/{owner}/{repo}/labels/{name}
-register_repo_resource_rest_handlers(b, {
-  cap = labels_cap,
-  pages = PAGES,
-  resolve_id = gitea_find_label_id,
-  not_found_message = "Label not found",
-  routes = {
-    list = "get_repo_labels",
-    create = "post_repo_labels",
-    get = "get_repo_label",
-    update = "patch_repo_label",
-    delete = "delete_repo_label",
-  },
-})
+b:rest("delete_repo_label", function(owner, repo_name, label_name)
+  local id = gitea_find_label_id(owner, repo_name, label_name)
+  if not id then
+    respond_json(404, { message = "Label not found" })
+    return
+  end
+  local ok, err = labels_cap.delete(owner, repo_name, id)
+  cap_rest_204(ok, err)
+end)
 
 -- Milestones ----------------------------------------------------------------
 
 -- GET /repos/{owner}/{repo}/milestones
+b:rest("get_repo_milestones", function(owner, repo_name)
+  local items, hdrs, err = milestones_cap.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
+
 -- POST /repos/{owner}/{repo}/milestones
+b:rest("post_repo_milestones", function(owner, repo_name)
+  local data, err = milestones_cap.create(owner, repo_name, GetBody())
+  cap_rest_created(data, err)
+end)
+
 -- GET /repos/{owner}/{repo}/milestones/{milestone_number}
+b:rest("get_repo_milestone", function(owner, repo_name, milestone_number)
+  local data, err = milestones_cap.get(owner, repo_name, milestone_number)
+  cap_rest_respond(data, err)
+end)
+
 -- PATCH /repos/{owner}/{repo}/milestones/{milestone_number}
+b:rest("patch_repo_milestone", function(owner, repo_name, milestone_number)
+  local data, err = milestones_cap.update(owner, repo_name, milestone_number, GetBody())
+  cap_rest_respond(data, err)
+end)
+
 -- DELETE /repos/{owner}/{repo}/milestones/{milestone_number}
-register_repo_resource_rest_handlers(b, {
-  cap = milestones_cap,
-  pages = PAGES,
-  routes = {
-    list = "get_repo_milestones",
-    create = "post_repo_milestones",
-    get = "get_repo_milestone",
-    update = "patch_repo_milestone",
-    delete = "delete_repo_milestone",
-  },
-})
+b:rest("delete_repo_milestone", function(owner, repo_name, milestone_number)
+  local ok, err = milestones_cap.delete(owner, repo_name, milestone_number)
+  cap_rest_204(ok, err)
+end)
 
 -- GET /repos/{owner}/{repo}/milestones/{milestone_number}/labels
 b:rest("get_repo_milestone_labels", function(owner, repo_name, milestone_number)

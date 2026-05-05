@@ -4008,19 +4008,28 @@ b:rest(
 -- Pull Requests (mapped to GitLab Merge Requests) --------------------------
 
 -- GET /repos/{owner}/{repo}/pulls
+b:rest("get_repo_pulls", function(owner, repo_name)
+  local items, hdrs, err = pulls_cap.list(owner, repo_name)
+  cap_rest_paged(items, hdrs, err, PAGES)
+end)
+
 -- POST /repos/{owner}/{repo}/pulls
+b:rest("post_repo_pulls", function(owner, repo_name)
+  local data, err = pulls_cap.create(owner, repo_name, GetBody())
+  cap_rest_created(data, err)
+end)
+
 -- GET /repos/{owner}/{repo}/pulls/{pull_number}
+b:rest("get_repo_pull", function(owner, repo_name, pull_number)
+  local data, err = pulls_cap.get(owner, repo_name, pull_number)
+  cap_rest_respond(data, err)
+end)
+
 -- PATCH /repos/{owner}/{repo}/pulls/{pull_number}
-register_repo_resource_rest_handlers(b, {
-  cap = pulls_cap,
-  pages = PAGES,
-  routes = {
-    list = "get_repo_pulls",
-    create = "post_repo_pulls",
-    get = "get_repo_pull",
-    update = "patch_repo_pull",
-  },
-})
+b:rest("patch_repo_pull", function(owner, repo_name, pull_number)
+  local data, err = pulls_cap.update(owner, repo_name, pull_number, GetBody())
+  cap_rest_respond(data, err)
+end)
 
 -- GET /repos/{owner}/{repo}/pulls/{pull_number}/commits
 b:rest("get_pull_commits", function(owner, repo_name, pull_number)
