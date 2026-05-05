@@ -342,23 +342,6 @@ local function ado_fetch_team_members(proj, team_id)
   return DecodeJson(body) or nil
 end
 
-local function ado_find_team_member(proj, team_id, username)
-  local data = ado_fetch_team_members(proj, team_id)
-  if not data then
-    return nil, nil
-  end
-  for _, m in ipairs(data.value or {}) do
-    local ident = m.identity or {}
-    for _, name in ipairs({ ident.uniqueName or "", ident.displayName or "" }) do
-      local short = name:match("^([^@]+)") or name
-      if name == username or short == username then
-        return true, m
-      end
-    end
-  end
-  return true, nil
-end
-
 -- ADO webhook: { id, url, publisherInputs: { repository }, status, eventType }
 local function translate_ado_hook(h)
   if not h then
@@ -968,14 +951,19 @@ b:rest("get_team_member", function(team_id, username)
     respond_json(404, { message = "Not Found" })
     return
   end
-  local ok, member = ado_find_team_member(t.projectName or "", team_id, username)
-  if not ok then
+  local data = ado_fetch_team_members(t.projectName or "", team_id)
+  if not data then
     respond_json(503, {})
     return
   end
-  if member then
-    SetStatus(204, "No Content")
-    return
+  for _, m in ipairs(data.value or {}) do
+    local ident = m.identity or {}
+    local name = ident.uniqueName or ident.displayName or ""
+    local short = name:match("^([^@]+)") or name
+    if name == username or short == username then
+      SetStatus(204, "No Content")
+      return
+    end
   end
   respond_json(404, { message = "Not Found" })
 end)
@@ -1031,18 +1019,23 @@ b:rest("get_team_membership", function(team_id, username)
     respond_json(404, { message = "Not Found" })
     return
   end
-  local ok, member = ado_find_team_member(t.projectName or "", team_id, username)
-  if not ok then
+  local data = ado_fetch_team_members(t.projectName or "", team_id)
+  if not data then
     respond_json(503, {})
     return
   end
-  if member then
-    respond_json(200, {
-      url = "",
-      role = member.isTeamAdmin and "maintainer" or "member",
-      state = "active",
-    })
-    return
+  for _, m in ipairs(data.value or {}) do
+    local ident = m.identity or {}
+    local name = ident.uniqueName or ident.displayName or ""
+    local short = name:match("^([^@]+)") or name
+    if name == username or short == username then
+      respond_json(200, {
+        url = "",
+        role = m.isTeamAdmin and "maintainer" or "member",
+        state = "active",
+      })
+      return
+    end
   end
   respond_json(404, { message = "Not Found" })
 end)
