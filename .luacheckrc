@@ -66,6 +66,8 @@ globals = {
   "cap_rest_created",
   "cap_rest_204",
   "cap_rest_paged",
+  -- Backend registration helpers: internal/backend_helpers.lua
+  "register_repo_rest_handlers",
   -- Default stub handlers: populated by internal/defaults.lua, read by the catalog in .init.lua
   "defaults",
   -- Router: populated by internal/router.lua, used by the catalog and OnHttpRequest in .init.lua
