@@ -961,10 +961,7 @@ end)
 -- USER: GET /users?username={query}  (returns name list; build minimal user objects)
 -- ISSUE: Pagure has no simple keyword issue search; returns empty.
 b:graphql("Query.search", function(_parent, args, ctx)
-  local query = args.query or ""
-  local search_type = args.type or "REPOSITORY"
-  local per_page = args.first or 30
-  local q = EscapeParam(query)
+  local search_type, per_page, q = graphql_search_params(args)
 
   local nodes = {}
   local repo_count, user_count, issue_count = 0, 0, 0
@@ -1007,33 +1004,11 @@ b:graphql("Query.search", function(_parent, args, ctx)
     end
   end
 
-  local edges = {}
-  for i, node in ipairs(nodes) do
-    edges[i] = {
-      __typename = "SearchResultItemEdge",
-      cursor = graphql_page_to_cursor(1, i),
-      node = node,
-    }
-  end
-  local n = #edges
-  return {
-    __typename = "SearchResultItemConnection",
-    nodes = nodes,
-    edges = edges,
-    pageInfo = {
-      __typename = "PageInfo",
-      hasNextPage = false,
-      hasPreviousPage = false,
-      startCursor = n > 0 and edges[1].cursor or nil,
-      endCursor = n > 0 and edges[n].cursor or nil,
-    },
-    repositoryCount = repo_count,
-    userCount = user_count,
-    issueCount = issue_count,
-    codeCount = 0,
-    discussionCount = 0,
-    wikiCount = 0,
-  }
+  return graphql_search_connection(nodes, {
+    repository = repo_count,
+    user = user_count,
+    issue = issue_count,
+  })
 end)
 
 -- Webhook handlers: Pagure uses X-Pagure-Event header.
