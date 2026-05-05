@@ -2162,20 +2162,9 @@ end)
 -- Repository.defaultBranchRef: enrich the inline stub with full branch data.
 -- The parent already carries {__typename="Ref",name="main"} from graphql_translate_repo.
 b:graphql("Repository.defaultBranchRef", function(parent, _args, _ctx)
-  local branch = parent.defaultBranchRef and parent.defaultBranchRef.name
-  if not branch then
-    return nil
-  end
-  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
-  if not owner then
-    return nil
-  end
-  local data, _ =
-    graphql_fetch(fetch_json, base() .. "/repos/" .. owner .. "/" .. name .. "/branches/" .. branch)
-  if not data then
-    return nil
-  end
-  return graphql_translate_ref(data, parent)
+  return graphql_default_branch_ref(parent, fetch_json, function(owner, name, branch)
+    return base() .. "/repos/" .. owner .. "/" .. name .. "/branches/" .. branch
+  end)
 end)
 
 -- Repository.languages: fetch language byte-count breakdown as a LanguageConnection.
@@ -2190,33 +2179,7 @@ b:graphql("Repository.languages", function(parent, _args, _ctx)
   if not data then
     return nil
   end
-  local nodes, edges = {}, {}
-  local total_size = 0
-  for lang_name, size in pairs(data) do
-    total_size = total_size + size
-    local node = {
-      __typename = "Language",
-      id = encode_node_id("Language", lang_name),
-      name = lang_name,
-      color = nil,
-    }
-    nodes[#nodes + 1] = node
-    edges[#edges + 1] = { cursor = "", node = node, size = size }
-  end
-  return {
-    __typename = "LanguageConnection",
-    totalCount = #nodes,
-    totalSize = total_size,
-    pageInfo = {
-      __typename = "PageInfo",
-      hasNextPage = false,
-      hasPreviousPage = false,
-      startCursor = nil,
-      endCursor = nil,
-    },
-    nodes = nodes,
-    edges = edges,
-  }
+  return graphql_language_connection(data)
 end)
 
 -- ---------------------------------------------------------------------------
@@ -2228,10 +2191,7 @@ end)
 -- the standard {total_count, items} envelope.
 -- ISSUE search is not supported (GitBucket has no /search/issues endpoint).
 b:graphql("Query.search", function(_parent, args, _ctx)
-  local query = args.query or ""
-  local search_type = args.type or "REPOSITORY"
-  local per_page = args.first or 30
-  local q = EscapeParam(query)
+  local search_type, per_page, q = graphql_search_params(args)
 
   local nodes = {}
   local repo_count, user_count, issue_count = 0, 0, 0
@@ -2258,33 +2218,11 @@ b:graphql("Query.search", function(_parent, args, _ctx)
     end
   end
 
-  local edges = {}
-  for i, node in ipairs(nodes) do
-    edges[i] = {
-      __typename = "SearchResultItemEdge",
-      cursor = graphql_page_to_cursor(1, i),
-      node = node,
-    }
-  end
-  local n = #edges
-  return {
-    __typename = "SearchResultItemConnection",
-    nodes = nodes,
-    edges = edges,
-    pageInfo = {
-      __typename = "PageInfo",
-      hasNextPage = false,
-      hasPreviousPage = false,
-      startCursor = n > 0 and edges[1].cursor or nil,
-      endCursor = n > 0 and edges[n].cursor or nil,
-    },
-    repositoryCount = repo_count,
-    userCount = user_count,
-    issueCount = issue_count,
-    codeCount = 0,
-    discussionCount = 0,
-    wikiCount = 0,
-  }
+  return graphql_search_connection(nodes, {
+    repository = repo_count,
+    user = user_count,
+    issue = issue_count,
+  })
 end)
 
 -- Webhook handlers: GitBucket emits GitHub-compatible webhook payloads, so

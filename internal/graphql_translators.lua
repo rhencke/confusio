@@ -320,6 +320,66 @@ function graphql_inline_connection(typename, nodes) -- luacheck: globals graphql
   }
 end
 
+-- graphql_language_connection is global: converts a provider language map
+-- {"Language": size} into GitHub's GraphQL LanguageConnection shape.
+function graphql_language_connection(languages) -- luacheck: globals graphql_language_connection
+  local nodes, edges = {}, {}
+  local total_size = 0
+  for lang_name, size in pairs(languages or {}) do
+    total_size = total_size + size
+    local node = {
+      __typename = "Language",
+      id = encode_node_id("Language", lang_name),
+      name = lang_name,
+      color = nil,
+    }
+    nodes[#nodes + 1] = node
+    edges[#edges + 1] = { cursor = "", node = node, size = size }
+  end
+  return {
+    __typename = "LanguageConnection",
+    totalCount = #nodes,
+    totalSize = total_size,
+    pageInfo = {
+      __typename = "PageInfo",
+      hasNextPage = false,
+      hasPreviousPage = false,
+      startCursor = nil,
+      endCursor = nil,
+    },
+    nodes = nodes,
+    edges = edges,
+  }
+end
+
+-- graphql_default_branch_ref is global: fetches and translates a repository's
+-- default branch while letting each backend provide its own branch URL.
+function graphql_default_branch_ref(parent, fetch_json, branch_url, normalize) -- luacheck: globals graphql_default_branch_ref
+  local branch = parent.defaultBranchRef and parent.defaultBranchRef.name
+  if not branch then
+    return nil
+  end
+  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
+  if not owner then
+    return nil
+  end
+  local data, _ = graphql_fetch(fetch_json, branch_url(owner, name, branch))
+  if not data then
+    return nil
+  end
+  if normalize then
+    normalize(data)
+  end
+  return graphql_translate_ref(data, parent)
+end
+
+-- graphql_search_params is global: normalizes Query.search arguments shared by
+-- backend-specific search resolvers.
+function graphql_search_params(args) -- luacheck: globals graphql_search_params
+  local query = args.query or ""
+  return args.type or "REPOSITORY", args.first or 30, EscapeParam(query)
+end
+
 -- graphql_make_connection is global: builds a Relay Connection for a paginated REST list.
 -- typename: GraphQL type name of the items (e.g. "Issue", "Repository")
 -- nodes:    array of already-translated GraphQL objects for this page
@@ -443,6 +503,39 @@ function graphql_make_connection(typename, nodes, args, total, _ctx) -- luacheck
     },
     nodes = nodes,
     edges = edges,
+  }
+end
+
+-- graphql_search_connection is global: builds the GitHub GraphQL search result
+-- connection shape after backend-specific search fetching and translation.
+function graphql_search_connection(nodes, counts) -- luacheck: globals graphql_search_connection
+  local edges = {}
+  for i, node in ipairs(nodes) do
+    edges[i] = {
+      __typename = "SearchResultItemEdge",
+      cursor = graphql_page_to_cursor(1, i),
+      node = node,
+    }
+  end
+  local n = #edges
+  counts = counts or {}
+  return {
+    __typename = "SearchResultItemConnection",
+    nodes = nodes,
+    edges = edges,
+    pageInfo = {
+      __typename = "PageInfo",
+      hasNextPage = false,
+      hasPreviousPage = false,
+      startCursor = n > 0 and edges[1].cursor or nil,
+      endCursor = n > 0 and edges[n].cursor or nil,
+    },
+    repositoryCount = counts.repository or 0,
+    userCount = counts.user or 0,
+    issueCount = counts.issue or 0,
+    codeCount = 0,
+    discussionCount = 0,
+    wikiCount = 0,
   }
 end
 

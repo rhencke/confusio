@@ -2243,25 +2243,13 @@ end)
 -- Repository.defaultBranchRef: enrich the inline stub with full branch data.
 -- The parent already carries {__typename="Ref",name="main"} from graphql_translate_repo.
 b:graphql("Repository.defaultBranchRef", function(parent, _args, _ctx)
-  local branch = parent.defaultBranchRef and parent.defaultBranchRef.name
-  if not branch then
-    return nil
-  end
-  local owner, name = parent.nameWithOwner:match("^([^/]+)/(.+)$")
-  if not owner then
-    return nil
-  end
-  local data, _ = graphql_fetch(
-    fetch_json,
-    base() .. "/repositories/" .. owner .. "/" .. name .. "/refs/branches/" .. branch
-  )
-  if not data then
-    return nil
-  end
-  if data.target and not data.commit then
-    data.commit = { sha = data.target.hash }
-  end
-  return graphql_translate_ref(data, parent)
+  return graphql_default_branch_ref(parent, fetch_json, function(owner, name, branch)
+    return base() .. "/repositories/" .. owner .. "/" .. name .. "/refs/branches/" .. branch
+  end, function(data)
+    if data.target and not data.commit then
+      data.commit = { sha = data.target.hash }
+    end
+  end)
 end)
 
 -- Repository.languages: fetch primary language as a LanguageConnection.
@@ -2277,32 +2265,10 @@ b:graphql("Repository.languages", function(parent, _args, _ctx)
     return nil
   end
   local lang = data.language
-  local nodes, edges = {}, {}
-  local total_size = 0
   if lang and lang ~= "" then
-    local node = {
-      __typename = "Language",
-      id = encode_node_id("Language", lang),
-      name = lang,
-      color = nil,
-    }
-    nodes[1] = node
-    edges[1] = { cursor = "", node = node, size = 0 }
+    return graphql_language_connection({ [lang] = 0 })
   end
-  return {
-    __typename = "LanguageConnection",
-    totalCount = #nodes,
-    totalSize = total_size,
-    pageInfo = {
-      __typename = "PageInfo",
-      hasNextPage = false,
-      hasPreviousPage = false,
-      startCursor = nil,
-      endCursor = nil,
-    },
-    nodes = nodes,
-    edges = edges,
-  }
+  return graphql_language_connection({})
 end)
 
 -- Issue.comments: paginated list of comments for a single issue.
@@ -2428,10 +2394,7 @@ end)
 -- Supports REPOSITORY (via /repositories?q=name~"...") and USER
 -- (via /workspaces?q=slug~"..."). ISSUE search is not supported.
 b:graphql("Query.search", function(_parent, args, _ctx)
-  local query = args.query or ""
-  local search_type = args.type or "REPOSITORY"
-  local per_page = args.first or 30
-  local q = EscapeParam(query)
+  local search_type, per_page, q = graphql_search_params(args)
 
   local nodes = {}
   local repo_count, user_count, issue_count = 0, 0, 0
@@ -2456,33 +2419,11 @@ b:graphql("Query.search", function(_parent, args, _ctx)
     end
   end
 
-  local edges = {}
-  for i, node in ipairs(nodes) do
-    edges[i] = {
-      __typename = "SearchResultItemEdge",
-      cursor = graphql_page_to_cursor(1, i),
-      node = node,
-    }
-  end
-  local n = #edges
-  return {
-    __typename = "SearchResultItemConnection",
-    nodes = nodes,
-    edges = edges,
-    pageInfo = {
-      __typename = "PageInfo",
-      hasNextPage = false,
-      hasPreviousPage = false,
-      startCursor = n > 0 and edges[1].cursor or nil,
-      endCursor = n > 0 and edges[n].cursor or nil,
-    },
-    repositoryCount = repo_count,
-    userCount = user_count,
-    issueCount = issue_count,
-    codeCount = 0,
-    discussionCount = 0,
-    wikiCount = 0,
-  }
+  return graphql_search_connection(nodes, {
+    repository = repo_count,
+    user = user_count,
+    issue = issue_count,
+  })
 end)
 
 -- Webhook handlers: Bitbucket Cloud uses X-Event-Key header.
