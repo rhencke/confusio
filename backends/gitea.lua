@@ -6040,43 +6040,55 @@ end
 
 -- Query.search: map GitHub GraphQL search to Gitea search endpoints.
 -- Supports REPOSITORY, USER, and ISSUE types; all others return empty.
-b:graphql(
-  "Query.search",
-  graphql_search_resolver({
-    REPOSITORY = {
-      fetch = function(q, per_page)
-        local list, err =
-          search_fetch(base() .. "/repos/search?q=" .. q .. "&limit=" .. per_page, "data")
-        return list, nil, err
-      end,
-      translate = function(r)
-        return graphql_translate_repo(translate_repo(r))
-      end,
-    },
-    USER = {
-      fetch = function(q, per_page)
-        local list, err =
-          search_fetch(base() .. "/users/search?q=" .. q .. "&limit=" .. per_page, "data")
-        return list, nil, err
-      end,
-      translate = function(u)
-        return graphql_translate_user(translate_user(u))
-      end,
-    },
-    ISSUE = {
-      fetch = function(q, per_page)
-        local list, err = search_fetch(
-          base() .. "/repos/issues/search?q=" .. q .. "&type=issues&limit=" .. per_page,
-          nil
-        )
-        return list, nil, err
-      end,
-      translate = function(i)
-        return graphql_translate_issue(translate_gitea_issue(i))
-      end,
-    },
+b:graphql("Query.search", function(_parent, args, ctx)
+  local search_type, per_page, q = graphql_search_params(args)
+
+  local nodes = {}
+  local repo_count, user_count, issue_count = 0, 0, 0
+
+  if search_type == "REPOSITORY" then
+    local list, err =
+      search_fetch(base() .. "/repos/search?q=" .. q .. "&limit=" .. per_page, "data")
+    if not list then
+      graphql_error(ctx, err)
+    else
+      for _, r in ipairs(list) do
+        nodes[#nodes + 1] = graphql_translate_repo(translate_repo(r))
+      end
+      repo_count = #nodes
+    end
+  elseif search_type == "USER" then
+    local list, err =
+      search_fetch(base() .. "/users/search?q=" .. q .. "&limit=" .. per_page, "data")
+    if not list then
+      graphql_error(ctx, err)
+    else
+      for _, u in ipairs(list) do
+        nodes[#nodes + 1] = graphql_translate_user(translate_user(u))
+      end
+      user_count = #nodes
+    end
+  elseif search_type == "ISSUE" then
+    local list, err = search_fetch(
+      base() .. "/repos/issues/search?q=" .. q .. "&type=issues&limit=" .. per_page,
+      nil
+    )
+    if not list then
+      graphql_error(ctx, err)
+    else
+      for _, i in ipairs(list) do
+        nodes[#nodes + 1] = graphql_translate_issue(translate_gitea_issue(i))
+      end
+      issue_count = #nodes
+    end
+  end
+
+  return graphql_search_connection(nodes, {
+    repository = repo_count,
+    user = user_count,
+    issue = issue_count,
   })
-)
+end)
 
 -- ---------------------------------------------------------------------------
 -- GraphQL mutation resolvers

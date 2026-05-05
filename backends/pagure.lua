@@ -960,37 +960,38 @@ end)
 -- REPOSITORY: GET /projects?search={query}
 -- USER: GET /users?username={query}  (returns name list; build minimal user objects)
 -- ISSUE: Pagure has no simple keyword issue search; returns empty.
-b:graphql(
-  "Query.search",
-  graphql_search_resolver({
-    REPOSITORY = {
-      fetch = function(q, per_page)
-        local data, _, err = graphql_fetch_with_headers(
-          fetch_json,
-          base() .. "/projects?search=" .. q .. "&per_page=" .. per_page
-        )
-        if not data then
-          return nil, nil, err
-        end
-        return (type(data) == "table") and (data.projects or {}) or {}, nil, nil
-      end,
-      translate = function(r)
-        return graphql_translate_repo(translate_pagure_repo(r))
-      end,
-    },
-    USER = {
-      fetch = function(q, per_page)
-        local data, _, err = graphql_fetch_with_headers(
-          fetch_json,
-          base() .. "/users?username=" .. q .. "&per_page=" .. per_page
-        )
-        if not data then
-          return nil, nil, err
-        end
-        return (type(data) == "table") and (data.users or {}) or {}, nil, nil
-      end,
-      translate = function(u_name)
-        return graphql_translate_user({
+b:graphql("Query.search", function(_parent, args, ctx)
+  local search_type, per_page, q = graphql_search_params(args)
+
+  local nodes = {}
+  local repo_count, user_count, issue_count = 0, 0, 0
+
+  if search_type == "REPOSITORY" then
+    local data, _, err = graphql_fetch_with_headers(
+      fetch_json,
+      base() .. "/projects?search=" .. q .. "&per_page=" .. per_page
+    )
+    if not data then
+      graphql_error(ctx, err)
+    else
+      local items = (type(data) == "table") and (data.projects or {}) or {}
+      for _, r in ipairs(items) do
+        nodes[#nodes + 1] = graphql_translate_repo(translate_pagure_repo(r))
+      end
+      repo_count = #nodes
+    end
+  elseif search_type == "USER" then
+    local data, _, err = graphql_fetch_with_headers(
+      fetch_json,
+      base() .. "/users?username=" .. q .. "&per_page=" .. per_page
+    )
+    if not data then
+      graphql_error(ctx, err)
+    else
+      -- Pagure /users returns an array of login names, not full user objects.
+      local items = (type(data) == "table") and (data.users or {}) or {}
+      for _, u_name in ipairs(items) do
+        nodes[#nodes + 1] = graphql_translate_user({
           login = u_name,
           name = nil,
           email = "",
@@ -998,10 +999,17 @@ b:graphql(
           html_url = config.base_url .. "/" .. u_name,
           site_admin = false,
         })
-      end,
-    },
+      end
+      user_count = #nodes
+    end
+  end
+
+  return graphql_search_connection(nodes, {
+    repository = repo_count,
+    user = user_count,
+    issue = issue_count,
   })
-)
+end)
 
 -- Webhook handlers: Pagure uses X-Pagure-Event header.
 -- All issue and comment events share the same payload envelope:

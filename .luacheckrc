@@ -166,7 +166,6 @@ globals = {
   "graphql_language_connection",
   "graphql_default_branch_ref",
   "graphql_search_params",
-  "graphql_search_resolver",
   "graphql_make_connection",
   "graphql_search_connection",
   "graphql_issues_connection",

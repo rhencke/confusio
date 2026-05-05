@@ -5803,47 +5803,59 @@ end)
 -- Query.search: map GitHub GraphQL search to GitLab search endpoints.
 -- Supports REPOSITORY, USER, and ISSUE types; all others return empty.
 -- GitLab uses /projects?search=, /users?search=, and /issues?search=.
-b:graphql(
-  "Query.search",
-  graphql_search_resolver({
-    REPOSITORY = {
-      fetch = function(q, per_page)
-        local data, _, err = graphql_fetch_with_headers(
-          fetch_json,
-          base() .. "/projects?search=" .. q .. "&per_page=" .. per_page
-        )
-        return data, nil, err
-      end,
-      translate = function(r)
-        return graphql_translate_repo(translate_gl_repo(r))
-      end,
-    },
-    USER = {
-      fetch = function(q, per_page)
-        local data, _, err = graphql_fetch_with_headers(
-          fetch_json,
-          base() .. "/users?search=" .. q .. "&per_page=" .. per_page
-        )
-        return data, nil, err
-      end,
-      translate = function(u)
-        return graphql_translate_user(translate_gl_user(u))
-      end,
-    },
-    ISSUE = {
-      fetch = function(q, per_page)
-        local data, _, err = graphql_fetch_with_headers(
-          fetch_json,
-          base() .. "/issues?search=" .. q .. "&per_page=" .. per_page
-        )
-        return data, nil, err
-      end,
-      translate = function(i)
-        return graphql_translate_issue(translate_gl_issue(i))
-      end,
-    },
+b:graphql("Query.search", function(_parent, args, ctx)
+  local search_type, per_page, q = graphql_search_params(args)
+
+  local nodes = {}
+  local repo_count, user_count, issue_count = 0, 0, 0
+
+  if search_type == "REPOSITORY" then
+    local data, _, err = graphql_fetch_with_headers(
+      fetch_json,
+      base() .. "/projects?search=" .. q .. "&per_page=" .. per_page
+    )
+    if not data then
+      graphql_error(ctx, err)
+    else
+      for _, r in ipairs(data) do
+        nodes[#nodes + 1] = graphql_translate_repo(translate_gl_repo(r))
+      end
+      repo_count = #nodes
+    end
+  elseif search_type == "USER" then
+    local data, _, err = graphql_fetch_with_headers(
+      fetch_json,
+      base() .. "/users?search=" .. q .. "&per_page=" .. per_page
+    )
+    if not data then
+      graphql_error(ctx, err)
+    else
+      for _, u in ipairs(data) do
+        nodes[#nodes + 1] = graphql_translate_user(translate_gl_user(u))
+      end
+      user_count = #nodes
+    end
+  elseif search_type == "ISSUE" then
+    local data, _, err = graphql_fetch_with_headers(
+      fetch_json,
+      base() .. "/issues?search=" .. q .. "&per_page=" .. per_page
+    )
+    if not data then
+      graphql_error(ctx, err)
+    else
+      for _, i in ipairs(data) do
+        nodes[#nodes + 1] = graphql_translate_issue(translate_gl_issue(i))
+      end
+      issue_count = #nodes
+    end
+  end
+
+  return graphql_search_connection(nodes, {
+    repository = repo_count,
+    user = user_count,
+    issue = issue_count,
   })
-)
+end)
 
 -- ─── Inbound webhook event handlers ─────────────────────────────────────────
 --

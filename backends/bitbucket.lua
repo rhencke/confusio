@@ -2393,41 +2393,38 @@ end)
 -- Query.search: map GitHub GraphQL search to Bitbucket search endpoints.
 -- Supports REPOSITORY (via /repositories?q=name~"...") and USER
 -- (via /workspaces?q=slug~"..."). ISSUE search is not supported.
-b:graphql(
-  "Query.search",
-  graphql_search_resolver({
-    REPOSITORY = {
-      fetch = function(q, per_page)
-        local data, _ = graphql_fetch(
-          fetch_json,
-          base() .. '/repositories?q=name~"' .. q .. '"&pagelen=' .. per_page
-        )
-        if data and data.values then
-          return data.values, data.size, nil
-        end
-        return {}, nil, nil
-      end,
-      translate = function(r)
-        return graphql_translate_repo(translate_bb_repo(r))
-      end,
-    },
-    USER = {
-      fetch = function(q, per_page)
-        local data, _ = graphql_fetch(
-          fetch_json,
-          base() .. '/workspaces?q=slug~"' .. q .. '"&pagelen=' .. per_page
-        )
-        if data and data.values then
-          return data.values, data.size, nil
-        end
-        return {}, nil, nil
-      end,
-      translate = function(w)
-        return graphql_translate_user(translate_bb_workspace(w))
-      end,
-    },
+b:graphql("Query.search", function(_parent, args, _ctx)
+  local search_type, per_page, q = graphql_search_params(args)
+
+  local nodes = {}
+  local repo_count, user_count, issue_count = 0, 0, 0
+
+  if search_type == "REPOSITORY" then
+    local data, _ =
+      graphql_fetch(fetch_json, base() .. '/repositories?q=name~"' .. q .. '"&pagelen=' .. per_page)
+    if data and data.values then
+      for _, r in ipairs(data.values) do
+        nodes[#nodes + 1] = graphql_translate_repo(translate_bb_repo(r))
+      end
+      repo_count = data.size or #nodes
+    end
+  elseif search_type == "USER" then
+    local data, _ =
+      graphql_fetch(fetch_json, base() .. '/workspaces?q=slug~"' .. q .. '"&pagelen=' .. per_page)
+    if data and data.values then
+      for _, w in ipairs(data.values) do
+        nodes[#nodes + 1] = graphql_translate_user(translate_bb_workspace(w))
+      end
+      user_count = data.size or #nodes
+    end
+  end
+
+  return graphql_search_connection(nodes, {
+    repository = repo_count,
+    user = user_count,
+    issue = issue_count,
   })
-)
+end)
 
 -- Webhook handlers: Bitbucket Cloud uses X-Event-Key header.
 -- Event keys relevant to the issues family:

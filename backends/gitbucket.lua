@@ -2190,35 +2190,40 @@ end)
 -- GitBucket exposes GitHub-compatible /search/{repositories,users} returning
 -- the standard {total_count, items} envelope.
 -- ISSUE search is not supported (GitBucket has no /search/issues endpoint).
-b:graphql(
-  "Query.search",
-  graphql_search_resolver({
-    REPOSITORY = {
-      fetch = function(q, per_page)
-        local data, _ = graphql_fetch(
-          fetch_json,
-          base() .. "/search/repositories?q=" .. q .. "&per_page=" .. per_page
-        )
-        if data and data.items then
-          return data.items, data.total_count, nil
-        end
-        return {}, nil, nil
-      end,
-      translate = graphql_translate_repo,
-    },
-    USER = {
-      fetch = function(q, per_page)
-        local data, _ =
-          graphql_fetch(fetch_json, base() .. "/search/users?q=" .. q .. "&per_page=" .. per_page)
-        if data and data.items then
-          return data.items, data.total_count, nil
-        end
-        return {}, nil, nil
-      end,
-      translate = graphql_translate_user,
-    },
+b:graphql("Query.search", function(_parent, args, _ctx)
+  local search_type, per_page, q = graphql_search_params(args)
+
+  local nodes = {}
+  local repo_count, user_count, issue_count = 0, 0, 0
+
+  if search_type == "REPOSITORY" then
+    local data, _ = graphql_fetch(
+      fetch_json,
+      base() .. "/search/repositories?q=" .. q .. "&per_page=" .. per_page
+    )
+    if data and data.items then
+      for _, r in ipairs(data.items) do
+        nodes[#nodes + 1] = graphql_translate_repo(r)
+      end
+      repo_count = data.total_count or #nodes
+    end
+  elseif search_type == "USER" then
+    local data, _ =
+      graphql_fetch(fetch_json, base() .. "/search/users?q=" .. q .. "&per_page=" .. per_page)
+    if data and data.items then
+      for _, u in ipairs(data.items) do
+        nodes[#nodes + 1] = graphql_translate_user(u)
+      end
+      user_count = data.total_count or #nodes
+    end
+  end
+
+  return graphql_search_connection(nodes, {
+    repository = repo_count,
+    user = user_count,
+    issue = issue_count,
   })
-)
+end)
 
 -- Webhook handlers: GitBucket emits GitHub-compatible webhook payloads, so
 -- action names and payload structure match GitHub's format exactly.
