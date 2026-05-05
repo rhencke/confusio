@@ -8,7 +8,7 @@
 --
 -- Authoritative source for every registered endpoint, organised by API
 -- group. Each section is { group_name, { entries... } } where each entry is
--- { "METHOD /path", handler_name [, default_fn] }.
+-- { "METHOD /path", handler_name [, default_handler] }.
 --
 -- group_name matches the test file suffix (<backend>-<group>.hurl) and the
 -- compatibility matrix sections in site/compatibility.csv.
@@ -2848,7 +2848,7 @@ for _, section in ipairs(endpoint_sections) do
     if e[3] then
       rest_defaults[e[2]] = e[3]
     end
-    route_add(e[1], e[2], e[3])
+    route_add(e[1], e[2])
   end
 end
 

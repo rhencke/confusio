@@ -1783,7 +1783,7 @@ reset_request({ method = "DELETE", path = "/user/interaction-limits" })
 OnHttpRequest()
 eq(_last_status, 204, "OnHttpRequest: DELETE /user/interaction-limits → 204")
 
--- GET /repos/{owner}/{repo} — no backend → 404 (no default_fn)
+-- GET /repos/{owner}/{repo} — no backend → 404 (no catalog default)
 reset_response()
 reset_request({ method = "GET", path = "/repos/alice/myrepo" })
 OnHttpRequest()
