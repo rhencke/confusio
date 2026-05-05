@@ -68,6 +68,9 @@ globals = {
   "cap_rest_paged",
   -- Backend registration helpers: internal/backend_helpers.lua
   "register_repo_rest_handlers",
+  "register_graphql_local_id_node_resolver",
+  "register_graphql_login_query_resolver",
+  "register_graphql_owner_repo_number_node_resolver",
   -- Default stub handlers: populated by internal/defaults.lua, read by the catalog in .init.lua
   "defaults",
   -- Router: populated by internal/router.lua, used by the catalog and OnHttpRequest in .init.lua

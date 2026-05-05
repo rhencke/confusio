@@ -5601,89 +5601,54 @@ b:graphql("node.Repository", function(local_id, _ctx)
 end)
 
 -- node.User: fetch a user by login.
-b:graphql("node.User", function(local_id, _ctx)
-  local data, _ = users.get(local_id)
-  if not data then
-    return nil
-  end
-  return graphql_translate_user(data)
-end)
+register_graphql_local_id_node_resolver(b, "node.User", users.get, graphql_translate_user)
 
 -- node.Organization: fetch an organization by login.
-b:graphql("node.Organization", function(local_id, _ctx)
-  local data, _ = orgs.get(local_id)
-  if not data then
-    return nil
-  end
-  return graphql_translate_org(data)
-end)
+register_graphql_local_id_node_resolver(b, "node.Organization", orgs.get, graphql_translate_org)
 
 -- node.Issue: fetch an issue by "owner/repo/number" local ID.
-b:graphql("node.Issue", function(local_id, _ctx)
-  local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
-  if not owner then
-    return nil
-  end
-  local data, _ = issues_cap.get(owner, repo, number)
-  if not data then
-    return nil
-  end
-  return graphql_translate_issue(data, owner, repo)
-end)
+register_graphql_owner_repo_number_node_resolver(
+  b,
+  "node.Issue",
+  issues_cap.get,
+  graphql_translate_issue
+)
 
 -- node.PullRequest: fetch a pull request by "owner/repo/number" local ID.
-b:graphql("node.PullRequest", function(local_id, _ctx)
-  local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
-  if not owner then
-    return nil
-  end
-  local data, _ = pulls_cap.get(owner, repo, number)
-  if not data then
-    return nil
-  end
-  return graphql_translate_pr(data, owner, repo)
-end)
+register_graphql_owner_repo_number_node_resolver(
+  b,
+  "node.PullRequest",
+  pulls_cap.get,
+  graphql_translate_pr
+)
 
 -- node.IssueComment: fetch an issue comment by "owner/repo/comment_id" local ID.
-b:graphql("node.IssueComment", function(local_id, _ctx)
-  local owner, repo, cid = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
-  if not owner then
-    return nil
-  end
-  local data, _ = comments_cap.get(owner, repo, cid)
-  if not data then
-    return nil
-  end
-  return graphql_translate_comment(data, owner, repo)
-end)
+register_graphql_owner_repo_number_node_resolver(
+  b,
+  "node.IssueComment",
+  comments_cap.get,
+  graphql_translate_comment
+)
 
 -- Query.user: look up a User by login.
 -- Returns nil (and no error) when the user does not exist.
-b:graphql("Query.user", function(_parent, args, ctx)
-  if not args.login then
-    graphql_error(ctx, "user requires a login argument")
-    return nil
-  end
-  local data, _ = users.get(args.login)
-  if not data then
-    return nil
-  end
-  return graphql_translate_user(data)
-end)
+register_graphql_login_query_resolver(
+  b,
+  "Query.user",
+  "user requires a login argument",
+  users.get,
+  graphql_translate_user
+)
 
 -- Query.organization: look up an Organization by login.
 -- Returns nil (and no error) when the organization does not exist.
-b:graphql("Query.organization", function(_parent, args, ctx)
-  if not args.login then
-    graphql_error(ctx, "organization requires a login argument")
-    return nil
-  end
-  local data, _ = orgs.get(args.login)
-  if not data then
-    return nil
-  end
-  return graphql_translate_org(data)
-end)
+register_graphql_login_query_resolver(
+  b,
+  "Query.organization",
+  "organization requires a login argument",
+  orgs.get,
+  graphql_translate_org
+)
 
 -- Query.repository: look up a Repository by owner login and repo name.
 -- Returns nil (and no error) when the repository does not exist.

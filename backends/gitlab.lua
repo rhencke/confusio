@@ -5310,30 +5310,22 @@ b:graphql("Query.viewer", function(_parent, _args, ctx)
 end)
 
 -- Query.user: look up a User by login.
-b:graphql("Query.user", function(_parent, args, ctx)
-  if not args.login then
-    graphql_error(ctx, "user requires a login argument")
-    return nil
-  end
-  local data, _ = users.by_username(args.login)
-  if not data then
-    return nil
-  end
-  return graphql_translate_user(data)
-end)
+register_graphql_login_query_resolver(
+  b,
+  "Query.user",
+  "user requires a login argument",
+  users.by_username,
+  graphql_translate_user
+)
 
 -- Query.organization: look up a GitLab group by path.
-b:graphql("Query.organization", function(_parent, args, ctx)
-  if not args.login then
-    graphql_error(ctx, "organization requires a login argument")
-    return nil
-  end
-  local data, _ = orgs.get(args.login)
-  if not data then
-    return nil
-  end
-  return graphql_translate_org(data)
-end)
+register_graphql_login_query_resolver(
+  b,
+  "Query.organization",
+  "organization requires a login argument",
+  orgs.get,
+  graphql_translate_org
+)
 
 -- Query.repository: look up a Repository by owner and name.
 b:graphql("Query.repository", function(_parent, args, ctx)
@@ -5362,52 +5354,28 @@ b:graphql("node.Repository", function(local_id, _ctx)
 end)
 
 -- node.User: fetch a user by login.
-b:graphql("node.User", function(local_id, _ctx)
-  local data, _ = users.by_username(local_id)
-  if not data then
-    return nil
-  end
-  return graphql_translate_user(data)
-end)
+register_graphql_local_id_node_resolver(b, "node.User", users.by_username, graphql_translate_user)
 
 -- node.Organization: fetch a group by path.
-b:graphql("node.Organization", function(local_id, _ctx)
-  local data, _ = orgs.get(local_id)
-  if not data then
-    return nil
-  end
-  return graphql_translate_org(data)
-end)
+register_graphql_local_id_node_resolver(b, "node.Organization", orgs.get, graphql_translate_org)
 
 -- node.Issue: fetch an issue by "owner/repo/iid" local ID.
-b:graphql("node.Issue", function(local_id, _ctx)
-  local owner, repo, iid = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
-  if not owner then
-    return nil
-  end
-  local data, _ = graphql_fetch(
+register_graphql_owner_repo_number_node_resolver(b, "node.Issue", function(owner, repo, iid)
+  return graphql_fetch(
     fetch_json,
     base() .. "/projects/" .. project_id(owner, repo) .. "/issues/" .. iid
   )
-  if not data then
-    return nil
-  end
+end, function(data, owner, repo)
   return graphql_translate_issue(translate_gl_issue(data), owner, repo)
 end)
 
 -- node.PullRequest: fetch a merge request by "owner/repo/iid" local ID.
-b:graphql("node.PullRequest", function(local_id, _ctx)
-  local owner, repo, iid = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
-  if not owner then
-    return nil
-  end
-  local data, _ = graphql_fetch(
+register_graphql_owner_repo_number_node_resolver(b, "node.PullRequest", function(owner, repo, iid)
+  return graphql_fetch(
     fetch_json,
     base() .. "/projects/" .. project_id(owner, repo) .. "/merge_requests/" .. iid
   )
-  if not data then
-    return nil
-  end
+end, function(data, owner, repo)
   return graphql_translate_pr(translate_gl_mr(data), owner, repo)
 end)
 
