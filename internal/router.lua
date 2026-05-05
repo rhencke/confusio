@@ -63,23 +63,25 @@ local function _trie_walk(root, key)
   return node, caps
 end
 
--- route_add("VERB /path", handler_name)
+-- route_add("VERB /path", handler_name [, default_fn])
 -- e.g. route_add("GET /repos/{owner}/{repo}", "get_repo")
-function route_add(route, handler_name) -- luacheck: globals route_add
+-- When default_fn is given it is used if the backend has no handler for handler_name.
+function route_add(route, handler_name, default_fn) -- luacheck: globals route_add
   local verb, path = route:match("^(%S+)%s+(.+)$")
   local n = _trie_insert(trie, verb .. path)
   n.handler = handler_name
+  n.default = default_fn
   _trie_insert(path_trie, path).handler = true
 end
 
--- route_match returns handler_name, captures for a matched route, or nil, nil
--- when no route matches.
+-- route_match returns handler_name, captures, default_fn for a matched route,
+-- or nil, nil, nil when no route matches.
 function route_match(method, path) -- luacheck: globals route_match
   local node, caps = _trie_walk(trie, method .. path)
   if node then
-    return node.handler, caps
+    return node.handler, caps, node.default
   end
-  return nil, nil
+  return nil, nil, nil
 end
 
 -- path_known returns true when the path matches a registered route (any verb).

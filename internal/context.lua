@@ -7,9 +7,7 @@
 --   config          — backend config table (same object as the global `config`)
 --   backend         — backend runtime object:
 --     backend.rest          — REST handler registry; keyed by handler name
---                             (e.g. "get_repo"); set by b:build() via make_backend_builder.
---                             After the catalog loads, missing keys fall through
---                             to catalog-derived rest_defaults via __index.
+--                             (e.g. "get_repo"); set by b:build() via make_backend_builder
 --     backend.graphql       — GraphQL resolver registry; keyed by resolver key
 --                             (e.g. "Query.viewer", "node.Repository");
 --                             wired to the graphql_resolvers global in .init.lua

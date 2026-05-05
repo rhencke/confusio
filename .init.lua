@@ -309,7 +309,6 @@ end
 dofile("/zip/internal/defaults.lua")
 dofile("/zip/internal/router.lua")
 dofile("/zip/internal/catalog.lua")
-setmetatable(app.backend.rest, { __index = rest_defaults })
 dofile("/zip/internal/dispatch.lua")
 dofile("/zip/internal/util.lua")
 dofile("/zip/internal/signing.lua")

@@ -1,5 +1,4 @@
--- Endpoint catalog (populates global `endpoints`, derives default REST
--- handlers, and registers all routes).
+-- Endpoint catalog (populates global `endpoints` and registers all routes).
 --
 -- Requires: defaults (internal/defaults.lua), route_add (internal/router.lua).
 --
@@ -8,7 +7,7 @@
 --
 -- Authoritative source for every registered endpoint, organised by API
 -- group. Each section is { group_name, { entries... } } where each entry is
--- { "METHOD /path", handler_name [, default_handler] }.
+-- { "METHOD /path", handler_name [, default_fn] }.
 --
 -- group_name matches the test file suffix (<backend>-<group>.hurl) and the
 -- compatibility matrix sections in site/compatibility.csv.
@@ -2834,21 +2833,16 @@ local endpoint_sections = {
   },
 }
 
--- Flatten sections into the global endpoints table, derive handler-name
--- defaults, and register routes.
+-- Flatten sections into the global endpoints table and register routes.
 -- endpoints[i].group is the authoritative group name for each endpoint;
 -- downstream tools (scripts/dump-endpoints.lua) consume it.
 endpoints = {}
-rest_defaults = {} -- luacheck: globals rest_defaults
 for _, section in ipairs(endpoint_sections) do
   local g = section[1]
   for _, e in ipairs(section[2]) do
     e.group = g
     endpoints[#endpoints + 1] = e
-    if e[3] then
-      rest_defaults[e[2]] = e[3]
-    end
-    route_add(e[1], e[2])
+    route_add(e[1], e[2], e[3])
   end
 end
 

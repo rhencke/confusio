@@ -28,9 +28,9 @@ function make_dispatcher(a) -- luacheck: globals make_dispatcher
       respond_json(401, { message = "This instance requires authentication." })
       return
     end
-    local ep, caps = a.route_match(GetMethod(), GetPath())
+    local ep, caps, default_fn = a.route_match(GetMethod(), GetPath())
     if ep then
-      local fn = a.backend.rest[ep]
+      local fn = a.backend.rest[ep] or default_fn
       if fn then
         fn(table.unpack(caps))
       else
