@@ -340,6 +340,28 @@ local function translate_bbs_pr_comment(c)
   }
 end
 
+local function respond_bbs_inline_pr_comments(owner, repo_name, pull_number)
+  local ok, status, _, body = fetch_json(
+    bbs_page_url(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number .. "/comments")
+  )
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local data = DecodeJson(body) or {}
+  local result = {}
+  for _, c in ipairs(data.values or {}) do
+    if c.anchor then
+      result[#result + 1] = translate_bbs_pr_comment(c)
+    end
+  end
+  respond_json(200, result)
+end
+
 -- Map DC PR reviewers array to GitHub reviews format.
 -- DC reviewer: { user: {...}, role: "REVIEWER", approved: true, status: "APPROVED" }
 local function translate_bbs_reviewers_to_reviews(reviewers)
@@ -911,25 +933,7 @@ end)
 -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments
 -- DC has no per-review comments; return all PR inline comments.
 b:rest("get_pull_review_comments", function(owner, repo_name, pull_number)
-  local ok, status, _, body = fetch_json(
-    bbs_page_url(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number .. "/comments")
-  )
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
-  end
-  local data = DecodeJson(body) or {}
-  local result = {}
-  for _, c in ipairs(data.values or {}) do
-    if c.anchor then
-      result[#result + 1] = translate_bbs_pr_comment(c)
-    end
-  end
-  respond_json(200, result)
+  respond_bbs_inline_pr_comments(owner, repo_name, pull_number)
 end)
 
 -- Issues -----------------------------------------------------------------------
@@ -962,25 +966,7 @@ end)
 -- GET /repos/{owner}/{repo}/pulls/{pull_number}/comments
 -- DC inline PR comments (those with an anchor field).
 b:rest("get_pull_comments", function(owner, repo_name, pull_number)
-  local ok, status, _, body = fetch_json(
-    bbs_page_url(repo_path(owner, repo_name) .. "/pull-requests/" .. pull_number .. "/comments")
-  )
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
-  end
-  local data = DecodeJson(body) or {}
-  local result = {}
-  for _, c in ipairs(data.values or {}) do
-    if c.anchor then
-      result[#result + 1] = translate_bbs_pr_comment(c)
-    end
-  end
-  respond_json(200, result)
+  respond_bbs_inline_pr_comments(owner, repo_name, pull_number)
 end)
 
 -- Checks (via Bitbucket DC build status API) ------------------------------------
