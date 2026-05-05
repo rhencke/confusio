@@ -2303,6 +2303,71 @@ OnHttpRequest()
 eq(_last_status, 501, "OnHttpRequest: GET /feeds → 501 (activity not implemented)")
 
 -- ============================================================
+-- REST default fallthrough via backend handler metatable
+-- ============================================================
+
+do
+  local saved_rest = app.backend.rest
+  local override_called = false
+  local override_fn = function()
+    override_called = true
+    respond_json(202, { ok = true })
+  end
+
+  ok(
+    getmetatable(saved_rest).__index == rest_defaults,
+    "app.backend.rest: falls through to rest_defaults"
+  )
+  eq(
+    rest_defaults["get_rate_limit"],
+    defaults.rate_limit_response,
+    "rest_defaults: keyed by handler name"
+  )
+
+  app.backend.rest = setmetatable({}, { __index = rest_defaults })
+  eq(
+    app.backend.rest["get_rate_limit"],
+    defaults.rate_limit_response,
+    "backend.rest: default handler resolves through __index"
+  )
+
+  reset_response()
+  reset_request({ method = "GET", path = "/rate_limit" })
+  OnHttpRequest()
+  eq(_last_status, 200, "OnHttpRequest: default handler reached through backend.rest __index")
+
+  app.backend.rest = setmetatable({ get_rate_limit = override_fn }, { __index = rest_defaults })
+  reset_response()
+  reset_request({ method = "GET", path = "/rate_limit" })
+  OnHttpRequest()
+  eq(_last_status, 202, "OnHttpRequest: backend override wins over default __index")
+  ok(override_called, "OnHttpRequest: backend override function was called")
+
+  app.backend.rest = setmetatable({}, { __index = rest_defaults })
+  local bt = make_backend_builder()
+  bt:rest("get_rate_limit", override_fn)
+  bt:rest("get_repo", function() end)
+  bt:build({ "rate_limit" })
+  eq(
+    app.backend.rest["get_rate_limit"],
+    defaults.rate_limit_response,
+    "builder:build(strip): stripped REST handler falls back to default"
+  )
+  ok(
+    app.backend.rest["get_repo"] ~= nil,
+    "builder:build(strip): non-stripped REST handler remains registered"
+  )
+
+  app.backend.rest = setmetatable({}, { __index = rest_defaults })
+  reset_response()
+  reset_request({ method = "GET", path = "/repos/alice/myrepo" })
+  OnHttpRequest()
+  eq(_last_status, 404, "OnHttpRequest: endpoint without default still returns 404")
+
+  app.backend.rest = saved_rest
+end
+
+-- ============================================================
 -- b:build() strip patterns (alias feature gaps)
 -- ============================================================
 
