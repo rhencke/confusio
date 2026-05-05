@@ -11,7 +11,7 @@ local auth = function()
   return make_fetch_opts("basic")
 end
 local PAGES = { per_page = "pagelen", page = "page" }
-local _t = with_pagination(PAGES, with_auth("basic", base_transport))
+local _t = make_backend_transport("basic", PAGES)
 local fetch_json = _t.fetch_json
 local proxy_handler = _t.proxy_handler
 

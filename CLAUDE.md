@@ -37,7 +37,7 @@ Only spelunk the output if the exit code is non-zero.
 internal/
   http.lua                   — HTTP response primitives: set_preamble, respond_json
   proxy.lua                  — upstream proxy helpers: proxy_json family, translate_list, proxy_search_envelope
-  transport.lua              — auth/fetch layers: base_transport, with_auth, with_pagination, with_error_shape, make_fetch_opts, make_proxy_handler, append_page_params
+  transport.lua              — auth/fetch scaffolding: make_fetch_opts, make_proxy_handler, make_backend_transport, append_page_params
   capabilities.lua           — capability module helpers: cap_fetch, cap_fetch_paged, cap_err; REST adapters: cap_rest_respond, cap_rest_created, cap_rest_204, cap_rest_paged
   translators.lua            — shared Gitea-family translators: translate_repo, translate_user, translate_migration, owner_repo_id
   families.lua               — provider_families table
@@ -146,10 +146,7 @@ When implementing a new endpoint, check the spec for:
    when `config.backend == "<name>"` — no changes to `.init.lua` needed.
    ```lua
    local b = make_backend_builder()
-   local _t = with_pagination(
-     { per_page = "limit", page = "page" },
-     with_auth("token", base_transport)
-   )
+   local _t = make_backend_transport("token", { per_page = "limit", page = "page" })
    local fetch_json = _t.fetch_json
 
    b:rest("get_repo", function(owner, repo) ... end)
@@ -253,7 +250,7 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
 |---------|---------------------|------------------------|
 | Routes and default handler stubs | `endpoint_sections` in `internal/catalog.lua` | route registration, `defaults` table wire-up, compatibility matrix sections, test file discovery, `make dump-endpoints` / `validate-tests` / `validate-csv` / `site` |
 | Provider family membership | `provider_families` in `internal/families.lua` | mock building via `.make-families.mk` (auto-generated), `make validate-providers`, alias backend base URL and strip wiring |
-| Backend transport layers | `base_transport`, `with_auth`, `with_pagination`, and `with_error_shape` in `internal/transport.lua` | `fetch_json`, proxy handlers, decoded JSON fetch helpers, pagination params, and error mapping — all consumed by backends via the transport object |
+| Backend transport scaffold | `make_backend_transport` in `internal/transport.lua` | `fetch_json`, `proxy_json*`, `proxy_204`, `proxy_json_list`, `proxy_health_check`, pagination params — all consumed by backends via the transport object |
 | Application module layout | eleven `internal/*.lua` files, dofile'd in fixed order by `.init.lua` | the full global surface for backends; see "Internal module layout" for load order and exported globals |
 
 **Adding an endpoint**: touch `internal/catalog.lua` (`endpoint_sections`) and `internal/defaults.lua`, plus per-backend overrides in `backends/<name>.lua` if native support is needed.
@@ -519,7 +516,7 @@ The twelve `internal/` modules are loaded by `.init.lua` in a fixed order. Each 
 |--------|-----------------|----------|
 | `http.lua` | `set_preamble`, `respond_json` | all modules + backends |
 | `proxy.lua` | `proxy_json`, `proxy_json_paged`, `proxy_json_created`, `proxy_health_check`, `proxy_204`, `proxy_json_list`, `translate_list`, `proxy_search_envelope`, `rewrite_link_header` | backends |
-| `transport.lua` | `append_page_params`, `make_fetch_opts`, `make_proxy_handler`, `base_transport`, `with_auth`, `with_pagination`, `with_error_shape` | backends |
+| `transport.lua` | `append_page_params`, `make_fetch_opts`, `make_proxy_handler`, `make_backend_transport` | backends |
 | `capabilities.lua` | `cap_err`, `cap_fetch`, `cap_fetch_paged`, `cap_rest_respond`, `cap_rest_created`, `cap_rest_204`, `cap_rest_paged` | backends (capability modules) |
 | `translators.lua` | `owner_repo_id`, `translate_repo`, `translate_user`, `translate_migration` | backends |
 | `families.lua` | `provider_families` | backends + Makefile scripts |

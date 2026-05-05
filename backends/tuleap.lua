@@ -12,7 +12,7 @@ end
 local auth = function()
   return make_fetch_opts("bearer")
 end
-local fetch_json = with_auth("bearer", base_transport).fetch_json
+local fetch_json = make_backend_transport("bearer").fetch_json
 local ZERO_SHA = "0000000000000000000000000000000000000000"
 
 local function short_ref(ref)

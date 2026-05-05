@@ -1437,10 +1437,11 @@ handler3()
 eq(_last_status, 201, "make_proxy_handler: custom proxy_fn (proxy_json_created) used")
 
 -- ============================================================
--- layered transport primitives
+-- make_backend_transport
 -- ============================================================
 
 do
+  -- Stub Fetch for this section so fetch_json doesn't hit the network.
   -- luacheck: push
   -- luacheck: globals Fetch
   local captured_url, captured_opts, stub_ok, stub_status, stub_headers, stub_body
@@ -1462,45 +1463,115 @@ do
   end
   -- luacheck: pop
 
-  reset_request({ headers = { Authorization = "token layered" } })
-  set_fetch_stub(true, 200, {}, '{"ok":true}')
-  local auth_transport = with_auth("bearer", base_transport)
-  local ok_fetch, status_fetch, _, decoded =
-    auth_transport.fetch_decoded_json("https://example.com/api")
-  ok(ok_fetch, "with_auth fetch_decoded_json: pcall ok")
-  eq(status_fetch, 200, "with_auth fetch_decoded_json: status 200")
-  ok(decoded and decoded.ok == true, "base_transport fetch_decoded_json: decodes response JSON")
-  eq(
-    captured_opts and captured_opts.headers and captured_opts.headers["Authorization"],
-    "Bearer layered",
-    "with_auth: adds Authorization while falling through to base fetch"
+  -- Returns the four sub-fields.
+  local t_tok = make_backend_transport("token", { per_page = "limit", page = "page" })
+  ok(type(t_tok.fetch_json) == "function", "make_backend_transport: fetch_json is a function")
+  ok(type(t_tok.proxy_handler) == "function", "make_backend_transport: proxy_handler is a function")
+  ok(
+    type(t_tok.proxy_handler_created) == "function",
+    "make_backend_transport: proxy_handler_created is a function"
+  )
+  ok(
+    type(t_tok.proxy_handler_paged) == "function",
+    "make_backend_transport: proxy_handler_paged is a function when pages supplied"
   )
 
+  -- Without pages, proxy_handler_paged is nil.
+  local t_nopages = make_backend_transport("bearer")
+  ok(
+    t_nopages.proxy_handler_paged == nil,
+    "make_backend_transport: proxy_handler_paged is nil when pages omitted"
+  )
+
+  -- fetch_json GET: no method or body modifications.
+  reset_request({ headers = { Authorization = "token mytoken" } })
+  set_fetch_stub(true, 200, {}, '{"ok":true}')
+  captured_url, captured_opts = nil, nil
+  local ok2, status2 = t_tok.fetch_json("https://example.com/api/repos")
+  ok(ok2, "make_backend_transport fetch_json GET: pcall ok")
+  eq(status2, 200, "make_backend_transport fetch_json GET: status 200")
+  eq(
+    captured_url,
+    "https://example.com/api/repos",
+    "make_backend_transport fetch_json GET: url forwarded"
+  )
+  ok(
+    captured_opts == nil or captured_opts.method == nil,
+    "make_backend_transport fetch_json GET: no method override"
+  )
+  ok(
+    captured_opts == nil
+      or captured_opts.headers == nil
+      or captured_opts.headers["Content-Type"] == nil,
+    "make_backend_transport fetch_json GET: no Content-Type"
+  )
+
+  -- fetch_json POST with body: sets method and Content-Type.
+  reset_request({ headers = { Authorization = "token mytoken" } })
   set_fetch_stub(true, 201, {}, '{"id":1}')
-  auth_transport.fetch_json("https://example.com/api/repos", "POST", '{"name":"repo"}')
-  eq(captured_url, "https://example.com/api/repos", "base_transport fetch_json: forwards URL")
-  eq(captured_opts and captured_opts.method, "POST", "base_transport fetch_json: sets method")
+  captured_opts = nil
+  t_tok.fetch_json("https://example.com/api/repos", "POST", '{"name":"foo"}')
+  eq(
+    captured_opts and captured_opts.method,
+    "POST",
+    "make_backend_transport fetch_json POST: method set"
+  )
   eq(
     captured_opts and captured_opts.body,
-    '{"name":"repo"}',
-    "base_transport fetch_json: sets body"
+    '{"name":"foo"}',
+    "make_backend_transport fetch_json POST: body set"
   )
   eq(
     captured_opts and captured_opts.headers and captured_opts.headers["Content-Type"],
     "application/json",
-    "base_transport fetch_json: sets JSON content type"
+    "make_backend_transport fetch_json POST: Content-Type set"
   )
 
-  local paged_transport = with_pagination({ per_page = "limit", page = "page" }, auth_transport)
-  ok(
-    type(paged_transport.proxy_handler_paged) == "function",
-    "with_pagination: adds proxy_handler_paged"
+  -- fetch_json POST without body: method set, no Content-Type.
+  reset_request({ headers = { Authorization = "token mytoken" } })
+  set_fetch_stub(true, 204, {}, "")
+  captured_opts = nil
+  t_tok.fetch_json("https://example.com/api/repos", "DELETE")
+  eq(
+    captured_opts and captured_opts.method,
+    "DELETE",
+    "make_backend_transport fetch_json DELETE: method set"
   )
   ok(
-    type(paged_transport.proxy_handler) == "function",
-    "with_pagination: falls through to auth proxy_handler"
+    captured_opts == nil
+      or captured_opts.headers == nil
+      or captured_opts.headers["Content-Type"] == nil,
+    "make_backend_transport fetch_json DELETE: no Content-Type without body"
   )
 
+  -- fetch_json: auth header forwarded under the requested scheme.
+  reset_request({ headers = { Authorization = "token mytoken" } })
+  set_fetch_stub(true, 200, {}, "{}")
+  captured_opts = nil
+  t_tok.fetch_json("https://example.com/api")
+  ok(
+    captured_opts ~= nil and captured_opts.headers["Authorization"] == "token mytoken",
+    "make_backend_transport fetch_json: token auth scheme forwarded"
+  )
+
+  reset_request({ headers = { Authorization = "token mybearer" } })
+  local t_bearer = make_backend_transport("bearer")
+  set_fetch_stub(true, 200, {}, "{}")
+  captured_opts = nil
+  t_bearer.fetch_json("https://example.com/api")
+  ok(
+    captured_opts ~= nil and captured_opts.headers["Authorization"] == "Bearer mybearer",
+    "make_backend_transport fetch_json: bearer auth scheme forwarded"
+  )
+
+  -- fetch_json with no Authorization: opts nil, no header sent.
+  reset_request({ headers = {} })
+  set_fetch_stub(true, 200, {}, "{}")
+  captured_opts = "sentinel"
+  t_tok.fetch_json("https://example.com/api")
+  ok(captured_opts == nil, "make_backend_transport fetch_json: nil opts when no Authorization")
+
+  -- proxy_handler_paged uses the correct pages mapping.
   reset_request({
     headers = { Host = "proxy.example.com", ["X-Forwarded-Proto"] = "http" },
     path = "/user/repos",
@@ -1509,33 +1580,22 @@ do
   set_fetch_stub(
     true,
     200,
-    { Link = '<https://upstream.example.com/api/repos?limit=5&page=2>; rel="next"' },
+    { Link = '<https://upstream.example.com/api/repos?limit=10&page=2>; rel="next"' },
     '[{"id":1}]'
   )
   reset_response()
-  paged_transport.proxy_handler_paged(nil, function()
-    return "https://upstream.example.com/api/repos"
-  end)()
-  eq(_last_status, 200, "with_pagination proxy_handler_paged: 200 on success")
+  local paged_h = t_tok.proxy_handler_paged(nil, function()
+    return "https://upstream.example.com/api/repos?limit=10"
+  end)
+  paged_h()
+  eq(_last_status, 200, "make_backend_transport proxy_handler_paged: 200 on success")
   ok(
-    _last_headers["Link"] and _last_headers["Link"]:find("per_page=5") ~= nil,
-    "with_pagination proxy_handler_paged: rewrites Link header"
+    _last_headers["Link"] ~= nil,
+    "make_backend_transport proxy_handler_paged: Link header rewritten"
   )
-
-  local shaped_transport = with_error_shape(function(_status, body)
-    local raw = DecodeJson(body) or {}
-    return { message = raw.error or "Error" }
-  end, paged_transport)
-  set_fetch_stub(true, 404, {}, '{"error":"Missing"}')
-  reset_response()
-  shaped_transport.proxy_handler(nil, function()
-    return "https://upstream.example.com/missing"
-  end)()
-  eq(_last_status, 404, "with_error_shape proxy_handler: preserves status")
-  ok(_last_body:find("Missing") ~= nil, "with_error_shape proxy_handler: maps provider error body")
   ok(
-    type(shaped_transport.proxy_handler_paged) == "function",
-    "with_error_shape: preserves paged proxy helper when parent has pagination"
+    _last_headers["Link"]:find("per_page=10") ~= nil,
+    "make_backend_transport proxy_handler_paged: limit translated to per_page"
   )
 end
 

@@ -27,7 +27,7 @@ local auth = function()
   return make_fetch_opts("token")
 end
 local PAGES = { per_page = "limit" }
-local _t = with_pagination(PAGES, with_auth("token", base_transport))
+local _t = make_backend_transport("token", PAGES)
 local fetch_json = _t.fetch_json
 local proxy_handler = _t.proxy_handler
 

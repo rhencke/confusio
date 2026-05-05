@@ -107,7 +107,7 @@ end
 -- Returns (decoded_table, nil)       on HTTP 2xx with a valid JSON body.
 -- Returns (nil, error_string)        on network failure, non-2xx status, or bad JSON.
 --
--- fetch_json: the backend's local fetch function (from its transport stack)
+-- fetch_json: the backend's local fetch function (from make_backend_transport)
 -- path:       full URL to request
 -- method:     HTTP method string, or nil for GET
 -- body:       request body (JSON-encoded string) or nil
@@ -156,7 +156,7 @@ end
 -- failure and returns nil, so callers can write `if not data then return nil end` instead
 -- of repeating the HTTP-status → error-code mapping in every resolver.
 --
--- fetch_json:  the backend's fetch function (from its transport stack)
+-- fetch_json:  the backend's fetch function (from make_backend_transport)
 -- path:        full URL to request
 -- ctx:         GraphQL execution context (errors array)
 -- field_node:  FieldNode being resolved (for location tracking), or nil
