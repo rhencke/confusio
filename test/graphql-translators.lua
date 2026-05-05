@@ -8,7 +8,11 @@
 -- ============================================================
 
 -- Globals provided by the driver (test/unit-graphql.lua):
--- luacheck: globals ok eq PASS FAIL
+-- luacheck: globals ok eq PASS FAIL EscapeParam graphql_search_resolver
+
+EscapeParam = function(s)
+  return "escaped:" .. tostring(s)
+end
 
 -- ============================================================
 -- Sample REST fixtures
@@ -137,6 +141,67 @@ local SAMPLE_PR = {
   updated_at = "2011-01-26T19:14:43Z",
   closed_at = nil,
 }
+
+-- ============================================================
+-- graphql_search_resolver
+-- ============================================================
+
+do -- builds a search connection from a backend-specific handler
+  local seen_q, seen_per_page
+  local resolver = graphql_search_resolver({
+    REPOSITORY = {
+      fetch = function(q, per_page)
+        seen_q = q
+        seen_per_page = per_page
+        return { { name = "Hello-World" } }, 12, nil
+      end,
+      translate = function(repo)
+        return { __typename = "Repository", name = repo.name }
+      end,
+    },
+  })
+  local conn = resolver(
+    nil,
+    { query = "hello world", type = "REPOSITORY", first = 5 },
+    { errors = {} }
+  )
+  eq(seen_q, "escaped:hello world", "search_resolver: escapes query")
+  eq(seen_per_page, 5, "search_resolver: passes first as per_page")
+  eq(conn.__typename, "SearchResultItemConnection", "search_resolver: connection type")
+  eq(conn.repositoryCount, 12, "search_resolver: repository count uses total")
+  eq(conn.userCount, 0, "search_resolver: user count defaults to zero")
+  eq(#conn.nodes, 1, "search_resolver: one node")
+  eq(conn.nodes[1].name, "Hello-World", "search_resolver: translates item")
+  eq(conn.edges[1].node, conn.nodes[1], "search_resolver: edge points at translated node")
+end
+
+do -- unsupported search types return an empty connection
+  local resolver = graphql_search_resolver({})
+  local conn = resolver(nil, { query = "anything", type = "ISSUE", first = 5 }, { errors = {} })
+  eq(#conn.nodes, 0, "search_resolver: unsupported type has no nodes")
+  eq(conn.repositoryCount, 0, "search_resolver: unsupported type repository count")
+  eq(conn.userCount, 0, "search_resolver: unsupported type user count")
+  eq(conn.issueCount, 0, "search_resolver: unsupported type issue count")
+end
+
+do -- fetch errors are recorded when a resolver context is available
+  local resolver = graphql_search_resolver({
+    USER = {
+      fetch = function()
+        return nil, nil, "upstream unavailable"
+      end,
+      translate = function(user)
+        return user
+      end,
+    },
+  })
+  local ctx = { errors = {} }
+  local conn = resolver(nil, { query = "octocat", type = "USER", first = 5 }, ctx)
+  eq(#ctx.errors, 1, "search_resolver: records fetch error")
+  eq(ctx.errors[1].message, "upstream unavailable", "search_resolver: error message")
+  eq(#conn.nodes, 0, "search_resolver: failed fetch has no nodes")
+  eq(conn.userCount, 0, "search_resolver: failed fetch count")
+end
 
 -- ============================================================
 -- graphql_translate_user
