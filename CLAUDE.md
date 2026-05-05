@@ -239,6 +239,7 @@ Hard-won insights from building this project. **Keep this section current**: whe
 Long-form lessons live in `lessons/*.MD`. Read those files before starting broad refactors, architecture work, or review-driven cleanup. Add or update a lesson when review feedback exposes a durable engineering constraint that future agents should remember.
 
 - `lessons/001-abstraction-costs.MD` — abstractions must pay for themselves in clarity and maintenance cost, not just nominal LOC movement.
+- `lessons/002-explicit-alias-chains.MD` — making an implicit relationship explicit still has to reduce maintenance weight.
 
 ### Architectural deduplication baseline
 
