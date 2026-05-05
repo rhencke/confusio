@@ -241,6 +241,7 @@ Long-form lessons live in `lessons/*.MD`. Read those files before starting broad
 - `lessons/001-abstraction-costs.MD` — abstractions must pay for themselves in clarity and maintenance cost, not just nominal LOC movement.
 - `lessons/002-explicit-alias-chains.MD` — making an implicit relationship explicit still has to reduce maintenance weight.
 - `lessons/003-default-fallthrough.MD` — replacing explicit fallback logic with lookup indirection must make default behavior easier to reason about.
+- `lessons/004-transport-layers.MD` — composable transport layers must solve real variation before replacing the compact factory.
 
 ### Architectural deduplication baseline
 
