@@ -6707,29 +6707,25 @@ local function gl_push_sender(payload)
   }
 end
 
--- Push Hook: branch push — also handles branch creation (before = zero SHA)
--- and branch deletion (after = zero SHA) by routing them to the appropriate
--- GitHub event type.  GitLab has no separate create/delete webhook event for
--- branches; all three operations arrive via Push Hook.
-b:webhook("Push Hook", function(payload)
+local function make_gl_ref_push_event(payload, ref_type, ref_prefix)
   local before = payload.before or ""
   local after = payload.after or ""
   local project = payload.project or {}
   local sender = gl_push_sender(payload)
   local repository = translate_gl_webhook_project(project)
 
-  if before == GL_ZERO_SHA then
-    -- Branch created — emit GitHub create event.
+  if before == GL_ZERO_SHA or after == GL_ZERO_SHA then
     local raw_ref = payload.ref or ""
-    local ref = raw_ref:match("^refs/heads/(.+)$") or raw_ref
+    local ref = raw_ref:match("^" .. ref_prefix .. "(.+)$") or raw_ref
+    local event = before == GL_ZERO_SHA and "create" or "delete"
     return make_internal_event({
-      event = "create",
-      action = "create",
+      event = event,
+      action = event,
       provider = config.backend,
       raw = payload,
       data = {
         ref = ref,
-        ref_type = "branch",
+        ref_type = ref_type,
         master_branch = project.default_branch or "",
         description = project.description,
         pusher_type = "user",
@@ -6740,29 +6736,6 @@ b:webhook("Push Hook", function(payload)
     })
   end
 
-  if after == GL_ZERO_SHA then
-    -- Branch deleted — emit GitHub delete event.
-    local raw_ref = payload.ref or ""
-    local ref = raw_ref:match("^refs/heads/(.+)$") or raw_ref
-    return make_internal_event({
-      event = "delete",
-      action = "delete",
-      provider = config.backend,
-      raw = payload,
-      data = {
-        ref = ref,
-        ref_type = "branch",
-        master_branch = project.default_branch or "",
-        description = project.description,
-        pusher_type = "user",
-        repository = repository,
-        sender = sender,
-      },
-      timestamp = "",
-    })
-  end
-
-  -- Regular branch push — emit GitHub push event.
   local push_commits = {}
   for _, c in ipairs(payload.commits or {}) do
     push_commits[#push_commits + 1] = translate_gl_push_commit(c)
@@ -6796,96 +6769,21 @@ b:webhook("Push Hook", function(payload)
     },
     timestamp = head_commit and head_commit.timestamp or "",
   })
+end
+
+-- Push Hook: branch push — also handles branch creation (before = zero SHA)
+-- and branch deletion (after = zero SHA) by routing them to the appropriate
+-- GitHub event type.  GitLab has no separate create/delete webhook event for
+-- branches; all three operations arrive via Push Hook.
+b:webhook("Push Hook", function(payload)
+  return make_gl_ref_push_event(payload, "branch", "refs/heads/")
 end)
 
 -- Tag Push Hook: tag push — same routing logic as Push Hook (creation,
 -- deletion, and regular push) but for tag refs.  GitLab fires this event
 -- type exclusively for tag operations.
 b:webhook("Tag Push Hook", function(payload)
-  local before = payload.before or ""
-  local after = payload.after or ""
-  local project = payload.project or {}
-  local sender = gl_push_sender(payload)
-  local repository = translate_gl_webhook_project(project)
-
-  if before == GL_ZERO_SHA then
-    -- Tag created — emit GitHub create event.
-    local raw_ref = payload.ref or ""
-    local ref = raw_ref:match("^refs/tags/(.+)$") or raw_ref
-    return make_internal_event({
-      event = "create",
-      action = "create",
-      provider = config.backend,
-      raw = payload,
-      data = {
-        ref = ref,
-        ref_type = "tag",
-        master_branch = project.default_branch or "",
-        description = project.description,
-        pusher_type = "user",
-        repository = repository,
-        sender = sender,
-      },
-      timestamp = "",
-    })
-  end
-
-  if after == GL_ZERO_SHA then
-    -- Tag deleted — emit GitHub delete event.
-    local raw_ref = payload.ref or ""
-    local ref = raw_ref:match("^refs/tags/(.+)$") or raw_ref
-    return make_internal_event({
-      event = "delete",
-      action = "delete",
-      provider = config.backend,
-      raw = payload,
-      data = {
-        ref = ref,
-        ref_type = "tag",
-        master_branch = project.default_branch or "",
-        description = project.description,
-        pusher_type = "user",
-        repository = repository,
-        sender = sender,
-      },
-      timestamp = "",
-    })
-  end
-
-  -- Regular tag push — emit GitHub push event.
-  local push_commits = {}
-  for _, c in ipairs(payload.commits or {}) do
-    push_commits[#push_commits + 1] = translate_gl_push_commit(c)
-  end
-  local head_commit = #push_commits > 0 and push_commits[#push_commits] or nil
-  local web_url = project.web_url or project.homepage or ""
-  local compare = (before ~= "" and after ~= "")
-      and (web_url .. "/compare/" .. before .. "..." .. after)
-    or ""
-  return make_internal_event({
-    event = "push",
-    action = "push",
-    provider = config.backend,
-    raw = payload,
-    data = {
-      ref = payload.ref or "",
-      before = before,
-      after = after,
-      created = false,
-      deleted = false,
-      forced = false,
-      compare = compare,
-      commits = push_commits,
-      head_commit = head_commit,
-      pusher = {
-        name = payload.user_name or "",
-        email = payload.user_email or "",
-      },
-      repository = repository,
-      sender = sender,
-    },
-    timestamp = head_commit and head_commit.timestamp or "",
-  })
+  return make_gl_ref_push_event(payload, "tag", "refs/tags/")
 end)
 
 -- GL_DEPLOYMENT_STATE: map GitLab deployment status to GitHub deployment_status state.
