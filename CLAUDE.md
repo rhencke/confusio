@@ -39,6 +39,7 @@ internal/
   proxy.lua                  — upstream proxy helpers: proxy_json family, translate_list, proxy_search_envelope
   transport.lua              — auth/fetch scaffolding: make_fetch_opts, make_proxy_handler, make_backend_transport, append_page_params
   capabilities.lua           — capability module helpers: cap_fetch, cap_fetch_paged, cap_err; REST adapters: cap_rest_respond, cap_rest_created, cap_rest_204, cap_rest_paged
+  backend_helpers.lua        — shared backend registration helpers
   translators.lua            — shared Gitea-family translators: translate_repo, translate_user, translate_migration, owner_repo_id
   families.lua               — provider_families table
   defaults.lua               — default stub handlers collected in the global `defaults` table
@@ -253,7 +254,7 @@ Issues #111–#117 established four authoritative seams. Future endpoint and pro
 | Routes and default handler stubs | `endpoint_sections` in `internal/catalog.lua` | route registration, `defaults` table wire-up, compatibility matrix sections, test file discovery, `make dump-endpoints` / `validate-tests` / `validate-csv` / `site` |
 | Provider family membership | `provider_families` in `internal/families.lua` | mock building via `.make-families.mk` (auto-generated), `make validate-providers`, alias backend base URL and strip wiring |
 | Backend transport scaffold | `make_backend_transport` in `internal/transport.lua` | `fetch_json`, `proxy_json*`, `proxy_204`, `proxy_json_list`, `proxy_health_check`, pagination params — all consumed by backends via the transport object |
-| Application module layout | eleven `internal/*.lua` files, dofile'd in fixed order by `.init.lua` | the full global surface for backends; see "Internal module layout" for load order and exported globals |
+| Application module layout | `internal/*.lua` files, dofile'd in fixed order by `.init.lua` | the full global surface for backends; see "Internal module layout" for load order and exported globals |
 
 **Adding an endpoint**: touch `internal/catalog.lua` (`endpoint_sections`) and `internal/defaults.lua`, plus per-backend overrides in `backends/<name>.lua` if native support is needed.
 
@@ -510,7 +511,7 @@ Do **not** use `proxy_search_envelope` when:
 
 ### Internal module layout
 
-The twelve `internal/` modules are loaded by `.init.lua` in a fixed order. Each exports only globals — no `require`/`return` pattern; `dofile` runs in global scope.
+The `internal/` modules are loaded by `.init.lua` in a fixed order. Each exports only globals — no `require`/`return` pattern; `dofile` runs in global scope.
 
 **Load order and exports:**
 
@@ -520,6 +521,7 @@ The twelve `internal/` modules are loaded by `.init.lua` in a fixed order. Each 
 | `proxy.lua` | `proxy_json`, `proxy_json_paged`, `proxy_json_created`, `proxy_health_check`, `proxy_204`, `proxy_json_list`, `translate_list`, `proxy_search_envelope`, `rewrite_link_header` | backends |
 | `transport.lua` | `append_page_params`, `make_fetch_opts`, `make_proxy_handler`, `make_backend_transport` | backends |
 | `capabilities.lua` | `cap_err`, `cap_fetch`, `cap_fetch_paged`, `cap_rest_respond`, `cap_rest_created`, `cap_rest_204`, `cap_rest_paged` | backends (capability modules) |
+| `backend_helpers.lua` | `register_repo_rest_handlers` | backends |
 | `translators.lua` | `owner_repo_id`, `translate_repo`, `translate_user`, `translate_migration` | backends |
 | `families.lua` | `provider_families` | backends + Makefile scripts |
 | `registry.lua` | `make_backend_builder` | backends |
@@ -546,6 +548,7 @@ OnHttpRequest = make_dispatcher(app)  -- install Redbean entry point
 - Proxy: all of `proxy.lua`'s exports
 - Transport: all of `transport.lua`'s exports
 - Capabilities: all of `capabilities.lua`'s exports — `cap_fetch`, `cap_fetch_paged` for operations; `cap_rest_*` for REST handlers; `cap_err` for error construction
+- Backend helpers: `register_repo_rest_handlers`
 - Translators: all of `translators.lua`'s exports
 - Family metadata: `provider_families`
 
