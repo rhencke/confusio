@@ -391,6 +391,28 @@ end
 --   last: N, before: cursor(P)  → page P-1; hasNextPage = true (cursor page P exists)
 --   last: N  (no before)        → last page when total known; page 1 otherwise (resolver fallback)
 --   before: cursor(1) or malformed before → empty connection (nothing exists before page 1)
+local function graphql_paged_connection(typename, nodes, page, total, has_next, has_previous)
+  local count = #nodes
+  local edges = {}
+  for i, node in ipairs(nodes) do
+    edges[i] =
+      { __typename = typename .. "Edge", cursor = graphql_page_to_cursor(page, i), node = node }
+  end
+  return {
+    __typename = typename .. "Connection",
+    totalCount = total or count,
+    pageInfo = {
+      __typename = "PageInfo",
+      hasNextPage = has_next,
+      hasPreviousPage = has_previous,
+      startCursor = count > 0 and edges[1].cursor or nil,
+      endCursor = count > 0 and edges[count].cursor or nil,
+    },
+    nodes = nodes,
+    edges = edges,
+  }
+end
+
 function graphql_make_connection(typename, nodes, args, total, _ctx) -- luacheck: globals graphql_make_connection
   if args.last or args.before then
     local per_page = args.last or 30
@@ -416,25 +438,7 @@ function graphql_make_connection(typename, nodes, args, total, _ctx) -- luacheck
       end
       -- before_page >= 2: the target page is one step before the cursor.
       local page = before_page - 1
-      local count = #nodes
-      local edges = {}
-      for i, node in ipairs(nodes) do
-        edges[i] =
-          { __typename = typename .. "Edge", cursor = graphql_page_to_cursor(page, i), node = node }
-      end
-      return {
-        __typename = typename .. "Connection",
-        totalCount = total or count,
-        pageInfo = {
-          __typename = "PageInfo",
-          hasNextPage = true, -- items exist at before_page and beyond (cursor proves it)
-          hasPreviousPage = page > 1,
-          startCursor = count > 0 and edges[1].cursor or nil,
-          endCursor = count > 0 and edges[count].cursor or nil,
-        },
-        nodes = nodes,
-        edges = edges,
-      }
+      return graphql_paged_connection(typename, nodes, page, total, true, page > 1)
     else
       -- Backward pagination from the end: last N items overall.
       local page
@@ -450,24 +454,7 @@ function graphql_make_connection(typename, nodes, args, total, _ctx) -- luacheck
       else
         has_next = count == per_page -- heuristic when total is unknown
       end
-      local edges = {}
-      for i, node in ipairs(nodes) do
-        edges[i] =
-          { __typename = typename .. "Edge", cursor = graphql_page_to_cursor(page, i), node = node }
-      end
-      return {
-        __typename = typename .. "Connection",
-        totalCount = total or count,
-        pageInfo = {
-          __typename = "PageInfo",
-          hasNextPage = has_next,
-          hasPreviousPage = page > 1,
-          startCursor = count > 0 and edges[1].cursor or nil,
-          endCursor = count > 0 and edges[count].cursor or nil,
-        },
-        nodes = nodes,
-        edges = edges,
-      }
+      return graphql_paged_connection(typename, nodes, page, total, has_next, page > 1)
     end
   end
   -- Forward pagination.
@@ -486,24 +473,7 @@ function graphql_make_connection(typename, nodes, args, total, _ctx) -- luacheck
   else
     has_next = count == per_page
   end
-  local edges = {}
-  for i, node in ipairs(nodes) do
-    edges[i] =
-      { __typename = typename .. "Edge", cursor = graphql_page_to_cursor(page, i), node = node }
-  end
-  return {
-    __typename = typename .. "Connection",
-    totalCount = total or count,
-    pageInfo = {
-      __typename = "PageInfo",
-      hasNextPage = has_next,
-      hasPreviousPage = page > 1,
-      startCursor = count > 0 and edges[1].cursor or nil,
-      endCursor = count > 0 and edges[count].cursor or nil,
-    },
-    nodes = nodes,
-    edges = edges,
-  }
+  return graphql_paged_connection(typename, nodes, page, total, has_next, page > 1)
 end
 
 -- graphql_search_connection is global: builds the GitHub GraphQL search result
