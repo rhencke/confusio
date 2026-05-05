@@ -239,7 +239,7 @@ the Connection is built by the sub-resolver instead.
 ## `graphql_fetch` helper
 
 Resolvers should not call `Fetch` directly.  `graphql_fetch` is a thin adapter that:
-1. Calls the backend's local `fetch_json` (closed over from `make_backend_transport`)
+1. Calls the backend's local `fetch_json` (from its transport stack)
 2. Decodes the JSON body
 3. Returns `decoded_table, nil` on success or `nil, "error message"` on failure
 4. Appends an error to `ctx.errors` on failure

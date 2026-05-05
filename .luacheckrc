@@ -52,7 +52,6 @@ globals = {
   "with_auth",
   "with_pagination",
   "with_error_shape",
-  "make_backend_transport",
   "owner_repo_id",
   "translate_repo",
   "translate_user",

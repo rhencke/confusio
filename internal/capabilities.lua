@@ -36,7 +36,7 @@ end
 
 -- cap_fetch calls fetch_json, checks the response status, and decodes the JSON body.
 --
--- fetch_json: the backend's local fetch function from make_backend_transport
+-- fetch_json: the backend's local fetch function from its transport stack
 -- url:        full upstream URL
 -- method:     HTTP method string, or nil for GET
 -- body:       request body (JSON-encoded string), or nil

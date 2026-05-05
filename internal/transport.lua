@@ -7,7 +7,6 @@
 -- with_auth              — transport layer: add upstream Authorization
 -- with_pagination        — transport layer: add paged proxy helpers
 -- with_error_shape       — transport layer: map provider errors to GitHub-shaped errors
--- make_backend_transport — factory: build the full fetch+proxy scaffolding for a backend
 
 -- append_page_params appends translated pagination params to url.
 -- mapping: { per_page = "upstream_name", page = "upstream_name" }
@@ -63,7 +62,6 @@ function make_fetch_opts(scheme)
 end
 
 -- make_proxy_handler is global: returns a proxy_handler bound to a backend's fetch_json.
--- Each backend calls: local proxy_handler = make_proxy_handler(fetch_json)
 --
 -- The returned proxy_handler(xform, url_fn) builds a handler function that fetches
 -- url_fn(...) and passes the decoded response through xform (plus handler args).
@@ -241,21 +239,4 @@ function with_error_shape(map_error, parent)
     )
   end
   return transport_layer(parent, fields)
-end
-
--- make_backend_transport is global: builds the standard transport scaffolding for a backend.
---
--- Returns a table with:
---   fetch_json(url[, method[, body]])  — authorized fetch; adds method + Content-Type for
---                                        non-GET calls with a body
---   proxy_handler                       — make_proxy_handler(fetch_json) using proxy_json
---   proxy_handler_created               — make_proxy_handler(fetch_json, proxy_json_created)
---   proxy_handler_paged                 — make_proxy_handler bound to proxy_json_paged with
---                                         the given pages mapping; nil when pages is omitted
---
--- scheme: "token" | "bearer" | "basic" | "basic-colon"  (forwarded to make_fetch_opts)
--- pages:  { per_page = "upstream_name" [, page = "upstream_name"] } for paged endpoints;
---         omit (or pass nil) when the backend has no paged handler.
-function make_backend_transport(scheme, pages)
-  return with_pagination(pages, with_auth(scheme, base_transport))
 end

@@ -13,7 +13,7 @@ below is preserved for historical context.
 Before #203, `.init.lua` ran a fixed sequence of `dofile` calls.  Each call mutated the
 global environment:
 
-- Core modules populated helpers (`respond_json`, `proxy_json`, `make_backend_transport`,
+- Core modules populated helpers (`respond_json`, `proxy_json`, transport helpers,
   `graphql_resolvers`, …).
 - `backend_impl = {}` and `backend_allow_anonymous = true` were initialized as globals.
 - The backend file (e.g. `backends/gitea.lua`) was `dofile`'d; it read and mutated
