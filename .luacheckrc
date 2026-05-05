@@ -163,6 +163,7 @@ globals = {
   "graphql_cursor_url",
   "graphql_prefetch_total_from_headers",
   "graphql_inline_connection",
+  "graphql_pull_request_commits_connection",
   "graphql_language_connection",
   "graphql_default_branch_ref",
   "graphql_search_params",
