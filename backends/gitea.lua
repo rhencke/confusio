@@ -5909,41 +5909,18 @@ end)
 -- Decodes the PullRequest node ID (PullRequest:owner/repo/number) for coordinates,
 -- then fetches /api/v1/repos/{owner}/{repo}/pulls/{number}/commits.
 b:graphql("PullRequest.commits", function(parent, args, ctx)
-  local _, local_id = decode_node_id(parent.id)
-  if not local_id then
-    return nil
-  end
-  local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
-  if not owner then
-    return nil
-  end
-  local url_base = base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number .. "/commits"
-  local total
-  if args.last and not args.before then
-    total =
-      graphql_prefetch_total_from_headers(fetch_json, url_base, GITEA_PAGES, GITEA_TOTAL_HEADERS)
-  end
-  local url = graphql_cursor_url(url_base, args, GITEA_PAGES, total)
-  local data, headers, err = graphql_fetch_with_headers(fetch_json, url)
-  if not data then
-    graphql_error(ctx, err)
-    return nil
-  end
-  total = gitea_total(headers) or total
-  -- PullRequest.commits returns PullRequestCommitConnection, whose nodes are
-  -- PullRequestCommit objects (not bare Commit objects).  Each PullRequestCommit
-  -- wraps the Commit so clients can query commits { nodes { commit { oid } } }.
-  local nodes = {}
-  for _, c in ipairs(data) do
-    local sha = c.sha or (c.commit and c.commit.id) or ""
-    nodes[#nodes + 1] = {
-      __typename = "PullRequestCommit",
-      id = encode_node_id("PullRequestCommit", sha),
-      commit = graphql_translate_commit(c, owner, repo),
-      url = c.html_url,
-    }
-  end
-  return graphql_make_connection("PullRequestCommit", nodes, args, total, ctx)
+  return graphql_pull_request_commits_connection(parent, args, ctx, {
+    fetch_json = fetch_json,
+    pages = GITEA_PAGES,
+    total_headers = GITEA_TOTAL_HEADERS,
+    total = gitea_total,
+    url_base = function(owner, repo, number)
+      return base() .. "/repos/" .. owner .. "/" .. repo .. "/pulls/" .. number .. "/commits"
+    end,
+    sha = function(c)
+      return c.sha or (c.commit and c.commit.id) or ""
+    end,
+  })
 end)
 
 -- PullRequest.reviews: paginated review list for a pull request.

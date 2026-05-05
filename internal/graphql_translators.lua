@@ -15,6 +15,7 @@
 --   graphql_cursor_url(url_base, args, param_names[, total])
 --   graphql_prefetch_total_from_headers(fetch_json, url_base, param_names, header_names)
 --   graphql_inline_connection(typename, nodes)
+--   graphql_pull_request_commits_connection(parent, args, ctx, opts)
 --   graphql_make_connection(typename, nodes, args, total[, ctx])
 --   graphql_issues_connection(nodes, args, total[, ctx])
 --   graphql_prs_connection(nodes, args, total[, ctx])
@@ -318,6 +319,45 @@ function graphql_inline_connection(typename, nodes) -- luacheck: globals graphql
     nodes = nodes,
     edges = edges,
   }
+end
+
+-- graphql_pull_request_commits_connection is global: builds the common
+-- PullRequestCommitConnection shape for GitHub-compatible commit-list endpoints.
+function graphql_pull_request_commits_connection(parent, args, ctx, opts) -- luacheck: globals graphql_pull_request_commits_connection
+  local _, local_id = decode_node_id(parent.id)
+  if not local_id then
+    return nil
+  end
+  local owner, repo, number = local_id:match("^([^/]+)/([^/]+)/(%d+)$")
+  if not owner then
+    return nil
+  end
+
+  local url_base = opts.url_base(owner, repo, number)
+  local total
+  if args.last and not args.before then
+    total =
+      graphql_prefetch_total_from_headers(opts.fetch_json, url_base, opts.pages, opts.total_headers)
+  end
+  local url = graphql_cursor_url(url_base, args, opts.pages, total)
+  local data, headers, err = graphql_fetch_with_headers(opts.fetch_json, url)
+  if not data then
+    graphql_error(ctx, err)
+    return nil
+  end
+  total = opts.total(headers) or total
+
+  local nodes = {}
+  for _, c in ipairs(data) do
+    local sha = opts.sha(c)
+    nodes[#nodes + 1] = {
+      __typename = "PullRequestCommit",
+      id = encode_node_id("PullRequestCommit", sha),
+      commit = graphql_translate_commit(c, owner, repo),
+      url = c.html_url,
+    }
+  end
+  return graphql_make_connection("PullRequestCommit", nodes, args, total, ctx)
 end
 
 -- graphql_language_connection is global: converts a provider language map
