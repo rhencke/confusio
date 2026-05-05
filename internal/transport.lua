@@ -3,6 +3,10 @@
 -- append_page_params     — append translated pagination params to an upstream URL
 -- make_fetch_opts        — build a Fetch options table forwarding the caller's auth header
 -- make_proxy_handler     — factory: bind a fetch_json function to a proxy response helper
+-- base_transport         — base Fetch/JSON transport layer
+-- with_auth              — transport layer: add upstream Authorization
+-- with_pagination        — transport layer: add paged proxy helpers
+-- with_error_shape       — transport layer: map provider errors to GitHub-shaped errors
 -- make_backend_transport — factory: build the full fetch+proxy scaffolding for a backend
 
 -- append_page_params appends translated pagination params to url.
@@ -79,6 +83,166 @@ function make_proxy_handler(fetch_fn, proxy_fn)
   end
 end
 
+local function copy_opts(opts)
+  if not opts then
+    return nil
+  end
+  local out = {}
+  for k, v in pairs(opts) do
+    out[k] = v
+  end
+  if opts.headers then
+    out.headers = {}
+    for k, v in pairs(opts.headers) do
+      out.headers[k] = v
+    end
+  end
+  return out
+end
+
+local function normalize_fetch_opts(method, body, opts)
+  opts = copy_opts(opts)
+  if method ~= nil and method ~= "GET" then
+    opts = opts or {}
+    opts.method = method
+    if body then
+      opts.body = body
+      opts.headers = opts.headers or {}
+      opts.headers["Content-Type"] = "application/json"
+    end
+  end
+  return opts
+end
+
+local function decode_json_body(body)
+  return DecodeJson(body) or {}
+end
+
+local function proxy_json_with_error(map_error)
+  return function(translate, ok, status, _headers, body)
+    if ok and status == 200 then
+      local data = decode_json_body(body)
+      respond_json(200, translate and translate(data) or data)
+    elseif ok then
+      respond_json(status, map_error(status, body))
+    else
+      respond_json(503, {})
+    end
+  end
+end
+
+local function proxy_json_created_with_error(map_error)
+  return function(translate, ok, status, _headers, body)
+    if ok and (status == 200 or status == 201) then
+      local data = decode_json_body(body)
+      respond_json(201, translate and translate(data) or data)
+    elseif ok then
+      respond_json(status, map_error(status, body))
+    else
+      respond_json(503, {})
+    end
+  end
+end
+
+local function proxy_json_paged_with_error(page_params, map_error)
+  return function(translate, ok, status, headers, body)
+    if ok and status == 200 then
+      local data = decode_json_body(body)
+      local link = headers and (headers["Link"] or headers["link"])
+      local rewritten = rewrite_link_header(link, page_params)
+      set_preamble(200)
+      if rewritten then
+        SetHeader("Link", rewritten)
+      end
+      Write(EncodeJson(translate and translate(data) or data))
+    elseif ok then
+      respond_json(status, map_error(status, body))
+    else
+      respond_json(503, {})
+    end
+  end
+end
+
+local function default_error_shape(_status, _body)
+  return {}
+end
+
+local function transport_layer(parent, fields)
+  return setmetatable(fields or {}, { __index = parent })
+end
+
+local function transport_scaffold(fetch_json, fields)
+  fields = fields or {}
+  fields.fetch_json = fetch_json
+  fields.fetch_decoded_json = function(url, method, body)
+    local ok, status, headers, raw = fetch_json(url, method, body)
+    return ok, status, headers, ok and decode_json_body(raw) or nil, raw
+  end
+  fields.proxy_handler = make_proxy_handler(fetch_json)
+  fields.proxy_handler_created = make_proxy_handler(fetch_json, proxy_json_created)
+  return fields
+end
+
+-- base_transport is global: the root transport layer. It owns the low-level Fetch
+-- call, JSON decoding, method/body option shaping, and default proxy helpers.
+base_transport = transport_scaffold(function(url, method, body, opts)
+  return pcall(Fetch, url, normalize_fetch_opts(method, body, opts))
+end, {
+  decode_json = decode_json_body,
+  map_error = default_error_shape,
+})
+
+-- with_auth is global: returns a transport layer that forwards the inbound
+-- Authorization header using the provider's auth scheme.
+function with_auth(scheme, parent)
+  parent = parent or base_transport
+  return transport_layer(
+    parent,
+    transport_scaffold(function(url, method, body)
+      return parent.fetch_json(url, method, body, make_fetch_opts(scheme))
+    end)
+  )
+end
+
+-- with_pagination is global: returns a transport layer with paged proxy helpers.
+function with_pagination(pages, parent)
+  parent = parent or base_transport
+  if not pages then
+    return parent
+  end
+  return transport_layer(parent, {
+    page_params = pages,
+    proxy_handler_paged = make_proxy_handler(
+      parent.fetch_json,
+      function(translate, ok, status, headers, body)
+        proxy_json_paged(translate, pages, ok, status, headers, body)
+      end
+    ),
+  })
+end
+
+-- with_error_shape is global: returns a transport layer whose proxy helpers map
+-- non-2xx provider response bodies to GitHub-shaped error bodies.
+function with_error_shape(map_error, parent)
+  parent = parent or base_transport
+  map_error = map_error or default_error_shape
+  local fields = {
+    map_error = map_error,
+    proxy_handler = make_proxy_handler(parent.fetch_json, proxy_json_with_error(map_error)),
+    proxy_handler_created = make_proxy_handler(
+      parent.fetch_json,
+      proxy_json_created_with_error(map_error)
+    ),
+  }
+  if parent.page_params then
+    fields.proxy_handler_paged = make_proxy_handler(
+      parent.fetch_json,
+      proxy_json_paged_with_error(parent.page_params, map_error)
+    )
+  end
+  return transport_layer(parent, fields)
+end
+
 -- make_backend_transport is global: builds the standard transport scaffolding for a backend.
 --
 -- Returns a table with:
@@ -93,32 +257,5 @@ end
 -- pages:  { per_page = "upstream_name" [, page = "upstream_name"] } for paged endpoints;
 --         omit (or pass nil) when the backend has no paged handler.
 function make_backend_transport(scheme, pages)
-  local function fetch_json(url, method, body)
-    local opts = make_fetch_opts(scheme)
-    if method ~= nil and method ~= "GET" then
-      opts = opts or {}
-      opts.method = method
-      if body then
-        opts.body = body
-        opts.headers = opts.headers or {}
-        opts.headers["Content-Type"] = "application/json"
-      end
-    end
-    return pcall(Fetch, url, opts)
-  end
-  local proxy_handler_paged
-  if pages then
-    proxy_handler_paged = make_proxy_handler(
-      fetch_json,
-      function(translate, ok, status, headers, body)
-        proxy_json_paged(translate, pages, ok, status, headers, body)
-      end
-    )
-  end
-  return {
-    fetch_json = fetch_json,
-    proxy_handler = make_proxy_handler(fetch_json),
-    proxy_handler_created = make_proxy_handler(fetch_json, proxy_json_created),
-    proxy_handler_paged = proxy_handler_paged,
-  }
+  return with_pagination(pages, with_auth(scheme, base_transport))
 end

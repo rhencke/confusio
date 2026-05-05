@@ -1437,6 +1437,109 @@ handler3()
 eq(_last_status, 201, "make_proxy_handler: custom proxy_fn (proxy_json_created) used")
 
 -- ============================================================
+-- layered transport primitives
+-- ============================================================
+
+do
+  -- luacheck: push
+  -- luacheck: globals Fetch
+  local captured_url, captured_opts, stub_ok, stub_status, stub_headers, stub_body
+
+  local function set_fetch_stub(stub_ok_arg, status, headers, body)
+    stub_ok = stub_ok_arg
+    stub_status = status
+    stub_headers = headers
+    stub_body = body
+    Fetch = function(url, opts)
+      captured_url = url
+      captured_opts = opts
+      if stub_ok then
+        return stub_status, stub_headers, stub_body
+      else
+        error("network error")
+      end
+    end
+  end
+  -- luacheck: pop
+
+  reset_request({ headers = { Authorization = "token layered" } })
+  set_fetch_stub(true, 200, {}, '{"ok":true}')
+  local auth_transport = with_auth("bearer", base_transport)
+  local ok_fetch, status_fetch, _, decoded =
+    auth_transport.fetch_decoded_json("https://example.com/api")
+  ok(ok_fetch, "with_auth fetch_decoded_json: pcall ok")
+  eq(status_fetch, 200, "with_auth fetch_decoded_json: status 200")
+  ok(decoded and decoded.ok == true, "base_transport fetch_decoded_json: decodes response JSON")
+  eq(
+    captured_opts and captured_opts.headers and captured_opts.headers["Authorization"],
+    "Bearer layered",
+    "with_auth: adds Authorization while falling through to base fetch"
+  )
+
+  set_fetch_stub(true, 201, {}, '{"id":1}')
+  auth_transport.fetch_json("https://example.com/api/repos", "POST", '{"name":"repo"}')
+  eq(captured_url, "https://example.com/api/repos", "base_transport fetch_json: forwards URL")
+  eq(captured_opts and captured_opts.method, "POST", "base_transport fetch_json: sets method")
+  eq(
+    captured_opts and captured_opts.body,
+    '{"name":"repo"}',
+    "base_transport fetch_json: sets body"
+  )
+  eq(
+    captured_opts and captured_opts.headers and captured_opts.headers["Content-Type"],
+    "application/json",
+    "base_transport fetch_json: sets JSON content type"
+  )
+
+  local paged_transport = with_pagination({ per_page = "limit", page = "page" }, auth_transport)
+  ok(
+    type(paged_transport.proxy_handler_paged) == "function",
+    "with_pagination: adds proxy_handler_paged"
+  )
+  ok(
+    type(paged_transport.proxy_handler) == "function",
+    "with_pagination: falls through to auth proxy_handler"
+  )
+
+  reset_request({
+    headers = { Host = "proxy.example.com", ["X-Forwarded-Proto"] = "http" },
+    path = "/user/repos",
+    params = {},
+  })
+  set_fetch_stub(
+    true,
+    200,
+    { Link = '<https://upstream.example.com/api/repos?limit=5&page=2>; rel="next"' },
+    '[{"id":1}]'
+  )
+  reset_response()
+  paged_transport.proxy_handler_paged(nil, function()
+    return "https://upstream.example.com/api/repos"
+  end)()
+  eq(_last_status, 200, "with_pagination proxy_handler_paged: 200 on success")
+  ok(
+    _last_headers["Link"] and _last_headers["Link"]:find("per_page=5") ~= nil,
+    "with_pagination proxy_handler_paged: rewrites Link header"
+  )
+
+  local shaped_transport = with_error_shape(function(_status, body)
+    local raw = DecodeJson(body) or {}
+    return { message = raw.error or "Error" }
+  end, paged_transport)
+  set_fetch_stub(true, 404, {}, '{"error":"Missing"}')
+  reset_response()
+  shaped_transport.proxy_handler(nil, function()
+    return "https://upstream.example.com/missing"
+  end)()
+  eq(_last_status, 404, "with_error_shape proxy_handler: preserves status")
+  ok(_last_body:find("Missing") ~= nil, "with_error_shape proxy_handler: maps provider error body")
+  ok(
+    type(shaped_transport.proxy_handler_paged) == "function",
+    "with_error_shape: preserves paged proxy helper when parent has pagination"
+  )
+end
+
+-- ============================================================
 -- make_backend_transport
 -- ============================================================
 
