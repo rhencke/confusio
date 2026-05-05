@@ -348,6 +348,38 @@ local function translate_bb_pr_comment(c)
   }
 end
 
+local function respond_bb_inline_pr_comments(owner, repo_name, pull_number)
+  local ok, status, _, body = fetch_json(
+    append_page_params(
+      base()
+        .. "/repositories/"
+        .. owner
+        .. "/"
+        .. repo_name
+        .. "/pullrequests/"
+        .. pull_number
+        .. "/comments",
+      PAGES
+    )
+  )
+  if not ok then
+    respond_json(503, {})
+    return
+  end
+  if status ~= 200 then
+    respond_json(status, {})
+    return
+  end
+  local data = DecodeJson(body) or {}
+  local result = {}
+  for _, c in ipairs(data.values or {}) do
+    if c.inline then
+      result[#result + 1] = translate_bb_pr_comment(c)
+    end
+  end
+  respond_json(200, result)
+end
+
 -- Map Bitbucket PR participants with REVIEWER role to GitHub reviews format.
 local function translate_bb_participants_to_reviews(participants)
   local result = {}
@@ -1438,69 +1470,13 @@ end)
 -- GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments
 -- Bitbucket has no per-review inline comments; return all inline PR comments.
 b:rest("get_pull_review_comments", function(owner, repo_name, pull_number)
-  local ok, status, _, body = fetch_json(
-    append_page_params(
-      base()
-        .. "/repositories/"
-        .. owner
-        .. "/"
-        .. repo_name
-        .. "/pullrequests/"
-        .. pull_number
-        .. "/comments",
-      PAGES
-    )
-  )
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
-  end
-  local data = DecodeJson(body) or {}
-  local result = {}
-  for _, c in ipairs(data.values or {}) do
-    if c.inline then
-      result[#result + 1] = translate_bb_pr_comment(c)
-    end
-  end
-  respond_json(200, result)
+  respond_bb_inline_pr_comments(owner, repo_name, pull_number)
 end)
 
 -- GET /repos/{owner}/{repo}/pulls/{pull_number}/comments
 -- Bitbucket inline PR comments (those with an "inline" field).
 b:rest("get_pull_comments", function(owner, repo_name, pull_number)
-  local ok, status, _, body = fetch_json(
-    append_page_params(
-      base()
-        .. "/repositories/"
-        .. owner
-        .. "/"
-        .. repo_name
-        .. "/pullrequests/"
-        .. pull_number
-        .. "/comments",
-      PAGES
-    )
-  )
-  if not ok then
-    respond_json(503, {})
-    return
-  end
-  if status ~= 200 then
-    respond_json(status, {})
-    return
-  end
-  local data = DecodeJson(body) or {}
-  local result = {}
-  for _, c in ipairs(data.values or {}) do
-    if c.inline then
-      result[#result + 1] = translate_bb_pr_comment(c)
-    end
-  end
-  respond_json(200, result)
+  respond_bb_inline_pr_comments(owner, repo_name, pull_number)
 end)
 
 -- Search -----------------------------------------------------------------------
