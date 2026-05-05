@@ -242,6 +242,7 @@ Long-form lessons live in `lessons/*.MD`. Read those files before starting broad
 - `lessons/002-explicit-alias-chains.MD` — making an implicit relationship explicit still has to reduce maintenance weight.
 - `lessons/003-default-fallthrough.MD` — replacing explicit fallback logic with lookup indirection must make default behavior easier to reason about.
 - `lessons/004-transport-layers.MD` — composable transport layers must solve real variation before replacing the compact factory.
+- `lessons/005-metatable-epic-recap.MD` — broad architectural themes still have to prove the whole branch is simpler.
 
 ### Architectural deduplication baseline
 
