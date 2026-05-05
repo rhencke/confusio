@@ -13,7 +13,7 @@ local auth = function()
   return make_fetch_opts("bearer")
 end
 local PAGES = { per_page = "perPage", page = "page" }
-local fetch_json = make_backend_transport("bearer", PAGES).fetch_json
+local fetch_json = with_pagination(PAGES, with_auth("bearer", base_transport)).fetch_json
 local ZERO_SHA = "0000000000000000000000000000000000000000"
 
 local function radicle_short_ref(ref)

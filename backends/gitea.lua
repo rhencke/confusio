@@ -13,7 +13,7 @@ local auth = function()
   return make_fetch_opts("token")
 end
 local PAGES = { per_page = "limit", page = "page" }
-local _t = make_backend_transport("token", PAGES)
+local _t = with_pagination(PAGES, with_auth("token", base_transport))
 local fetch_json = _t.fetch_json
 
 -- Check if this Gitea instance allows anonymous access.

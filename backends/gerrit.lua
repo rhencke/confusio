@@ -8,7 +8,7 @@ end
 local auth = function()
   return make_fetch_opts("basic")
 end
-local _t = make_backend_transport("basic")
+local _t = with_auth("basic", base_transport)
 local fetch_json = _t.fetch_json
 local proxy_handler = _t.proxy_handler
 

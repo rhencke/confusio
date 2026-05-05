@@ -11,7 +11,7 @@ end
 local auth = function()
   return make_fetch_opts("bearer")
 end
-local _t = make_backend_transport("bearer")
+local _t = with_auth("bearer", base_transport)
 local fetch_json = _t.fetch_json
 local proxy_handler = _t.proxy_handler
 

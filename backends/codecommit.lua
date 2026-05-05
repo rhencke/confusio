@@ -13,7 +13,7 @@ end
 local auth = function()
   return make_fetch_opts("basic")
 end
-local fetch_json = make_backend_transport("basic").fetch_json
+local fetch_json = with_auth("basic", base_transport).fetch_json
 
 local ZERO_SHA = "0000000000000000000000000000000000000000"
 
